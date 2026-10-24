@@ -17,10 +17,18 @@ import { useEffect, useSyncExternalStore } from "react";
 import { keepDraft } from "../chat/draft";
 
 /**
- * `null` is "just open it" — the drawer opens and asks nothing. `fresh` asks
- * in a new conversation rather than the one on screen.
+ * The angles the Ticker page's "Analyse with AI" offers. The server writes
+ * the brief each one stands for (`chat/brief.py`) — lenses, position, report
+ * dates, structure — so the prompt shown is a label, not the instructions.
  */
-type Listener = (prompt: string | null, fresh?: boolean) => void;
+export type Brief = "full" | "bear" | "earnings" | "fit";
+
+/**
+ * `null` is "just open it" — the drawer opens and asks nothing. `fresh` asks
+ * in a new conversation rather than the one on screen; `brief` names the
+ * angle the server expands the prompt into.
+ */
+type Listener = (prompt: string | null, fresh?: boolean, brief?: Brief) => void;
 
 const listeners = new Set<Listener>();
 
@@ -31,10 +39,13 @@ const listeners = new Set<Listener>();
  * guest's is the locked drawer (`chat/Locked.tsx`), which shows the question
  * and keeps it for after the sign-in rather than answering it.
  */
-export function askAssistant(prompt: string, { fresh = false } = {}): void {
+export function askAssistant(
+  prompt: string,
+  { fresh = false, brief }: { fresh?: boolean; brief?: Brief } = {},
+): void {
   const text = prompt.trim();
   if (!text) return;
-  for (const listener of listeners) listener(text, fresh);
+  for (const listener of listeners) listener(text, fresh, brief);
 }
 
 /**

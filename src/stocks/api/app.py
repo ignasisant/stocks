@@ -17,6 +17,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from urllib.error import URLError
 
+import requests
+from curl_cffi.requests import exceptions as curl
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
@@ -275,6 +277,22 @@ def _throttled(request: Request, exc: YFRateLimitError) -> JSONResponse:
 @app.exception_handler(URLError)
 def _unreachable(request: Request, exc: URLError) -> JSONResponse:
     return _unavailable(request, "offline")
+
+
+def _dropped_offline(request: Request, exc: Exception) -> JSONResponse:
+    return _unavailable(request, "offline")
+
+
+# The same drop through the other two HTTP stacks: yfinance rides curl_cffi and
+# the SEC/news fetchers ride requests. A DNS failure there raised past the
+# urllib handler above and reached the page as a bare 500.
+for _dropped in (
+    curl.ConnectionError,
+    curl.Timeout,
+    requests.ConnectionError,
+    requests.Timeout,
+):
+    app.add_exception_handler(_dropped, _dropped_offline)
 
 
 # Open: a liveness probe carries no credentials, and the design tokens and

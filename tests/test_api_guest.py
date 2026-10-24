@@ -372,14 +372,14 @@ def test_a_name_one_account_invented_never_renders_for_a_guest(monkeypatch):
     from stocks import identity
     from stocks.api import loaders
 
-    loaders.company_name.cache_clear()
+    loaders._company_name.cache_clear()
     monkeypatch.setattr(
         identity, "company_name", lambda ticker, watchlist: f"{ticker} per {watchlist}"
     )
     mine = loaders.company_name("AAPL", "/data/users/abc123/watchlist.yaml")
     theirs = loaders.company_name("AAPL", "/data/users/_guest/watchlist.yaml")
     assert mine != theirs
-    loaders.company_name.cache_clear()
+    loaders._company_name.cache_clear()
 
 
 def test_a_guests_derived_state_cannot_collide_with_an_accounts(book):

@@ -22,8 +22,13 @@ MAX_FP_SKILL = 1 / 3
 MAX_FP_TOTAL = 0.05
 
 
+# Industry skills are picked by the company (`lens_for`), not by the words of a
+# question, so the keyword fallback owes them nothing.
+LENSES = chat_skills.pickable()
+
+
 def test_every_skill_has_trigger_cases():
-    assert set(CASES) == chat_skills.valid_ids()
+    assert set(CASES) == {s.id for s in LENSES}
     for sid, c in CASES.items():
         assert len(c["should"]) >= 6, sid
         assert len(c["near_miss"]) >= 3, sid
@@ -32,7 +37,7 @@ def test_every_skill_has_trigger_cases():
 
 
 def test_every_skill_has_keywords():
-    for s in chat_skills.catalog():
+    for s in LENSES:
         assert len(s.keywords) >= 8, s.id
 
 

@@ -57,10 +57,10 @@ export function Splits({
   return (
     <div className="im-repair">
       <div className="im-repair-head">
-        <h3 className="im-h3">
+        <h2 className="im-h3">
           {t("import.splits_title")}
           {gaps > 0 ? ` · ${vocab.tn("import.splits_found_count", gaps)}` : null}
-        </h3>
+        </h2>
         {gaps > 0 ? (
           <span className="im-tag">{t("import.proposal")}</span>
         ) : (

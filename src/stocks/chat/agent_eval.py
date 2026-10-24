@@ -85,7 +85,10 @@ class Case:
     once; one of `any_of`, when given, is called; none of `must_not` is.
     `max_calls` None leaves the count alone; 0 means fetch nothing. The
     tools in `fails` raise instead of answering, as a dead service would.
-    `goals` are what the answer should show, for the judge (`agent_judge`)."""
+    `goals` are what the answer should show, for the judge (`agent_judge`).
+    `brief` is an "Analyse with AI" angle (`chat/brief.py`): `message` is
+    then the button's label, `ticker` the page it was pressed on, and the
+    gather reads the brief the server appends to it."""
 
     id: str
     message: str
@@ -99,6 +102,25 @@ class Case:
     fixtures: dict[str, str] = field(default_factory=dict)
     fails: tuple[str, ...] = ()
     goals: tuple[str, ...] = ()
+    brief: str = ""
+    ticker: str = ""
+
+    def asked_depth(self) -> str:
+        """The depth the turn asks for: a full brief asks for the deep
+        gather, as `engine.prepare` does (`Brief.deep`)."""
+        return self.depth or ("deep" if self.brief == "full" else "")
+
+    def sent(self, ctx: toolbox.Context) -> str:
+        """The message as the gather reads it: with the brief appended, as
+        `engine.prepare` appends it. Built live (the profile, the calendar):
+        the eval is a measurement, and the brief is what the model saw."""
+        if not self.brief or ctx.watchlist is None or ctx.db is None:
+            return self.message
+        from stocks.chat import brief
+
+        built = brief.build(self.brief, self.ticker, watchlist=ctx.watchlist,
+                            db=ctx.db)
+        return self.message + (built.text if built else "")
 
 
 def load(path: Path = CASES) -> list[Case]:

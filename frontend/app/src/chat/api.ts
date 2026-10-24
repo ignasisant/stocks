@@ -10,6 +10,7 @@
 
 import type { ResumeEntry, RunAgentInput, Tool } from "@ag-ui/core";
 import { ApiError, NotSignedIn, get, retryAfter, send } from "../shell/api";
+import type { Brief } from "../shell/assistant";
 import type { A2uiAction, A2uiMessage } from "./a2ui";
 import { keyHeaders } from "./sessionKey";
 import type {
@@ -242,8 +243,22 @@ export const readMemories = () => get<Memories>("/chat/memories");
 export const addMemory = (body: { text: string; kind?: string }) =>
   send<Memory>("POST", "/chat/memories", body);
 
-export const editMemory = (lid: string, body: { text?: string; kind?: string }) =>
-  send<Memory>("PATCH", `/chat/memories/${id(lid)}`, body);
+export const editMemory = (
+  lid: string,
+  body: { text?: string; kind?: string; until?: string | null },
+) => send<Memory>("PATCH", `/chat/memories/${id(lid)}`, body);
+
+/** Memory `lid` takes the place of `old`, which is deleted. 404 when either is gone. */
+export const replaceMemory = (lid: string, old: string) =>
+  send<Memory>("POST", `/chat/memories/${id(lid)}/replace`, { old });
+
+/** Apply or dismiss one tidy-up proposal. 404 when it is no longer open. */
+export const settleSuggestion = (sid: string, action: "apply" | "dismiss") =>
+  send<{ op: string; changes: unknown[] }>(
+    "POST",
+    `/chat/memories/suggestions/${id(sid)}`,
+    { action },
+  );
 
 /** Forget one. 404 when it is already gone — an undo that removed nothing. */
 export const dropMemory = (lid: string) =>
@@ -419,6 +434,8 @@ export function runInput(
     staged_import?: string;
     /** "In depth": the research reads further (`agent.DEEP`). A question's only. */
     depth?: "deep";
+    /** The Ticker page's angle on `focus`, which the server writes out. A question's only. */
+    brief?: Brief;
   },
 ): RunAgentInput {
   const props: Record<string, unknown> = {};
@@ -427,6 +444,7 @@ export function runInput(
   if (where.staged_import && ask.message !== undefined)
     props.staged_import = where.staged_import;
   if (where.depth && ask.message !== undefined) props.depth = where.depth;
+  if (where.brief && ask.message !== undefined) props.brief = where.brief;
   return {
     threadId: where.conversation ?? "",
     runId: fresh(),

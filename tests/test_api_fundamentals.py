@@ -791,6 +791,31 @@ def test_an_unreachable_upstream_says_offline_instead(client, monkeypatch):
     assert response.json()["reason"] == "offline"
 
 
+@pytest.mark.parametrize(
+    "dropped",
+    [
+        "curl_cffi.requests.exceptions.DNSError",
+        "curl_cffi.requests.exceptions.Timeout",
+        "requests.exceptions.ConnectionError",
+    ],
+)
+def test_a_dropped_network_on_any_http_stack_says_offline(client, monkeypatch, dropped):
+    """yfinance fetches through curl_cffi: a DNS failure there is no URLError,
+    and it reached the page as a bare 500."""
+    import importlib
+
+    module, _, name = dropped.rpartition(".")
+    error = getattr(importlib.import_module(module), name)
+
+    def raises(_ticker):
+        raise error("could not resolve host")
+
+    monkeypatch.setattr(loaders, "fundamentals", raises)
+    response = client.get("/v1/ticker/AAPL/metrics", headers=AUTH)
+    assert response.status_code == 503
+    assert response.json()["reason"] == "offline"
+
+
 def test_a_verdict_ships_the_tone_its_band_carries(client, monkeypatch):
     """The labels are a growing set — "net cash", "buybacks", "heavy dilution".
     A client colouring by label shows every band it has not heard of as

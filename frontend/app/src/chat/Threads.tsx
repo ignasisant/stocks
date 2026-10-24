@@ -16,8 +16,14 @@ import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import type { Conversation } from "./types";
 
-/** A thread's display name: its title, or a placeholder while unnamed. */
-function label(conv: Conversation, t: (key: string) => string, limit = 30): string {
+/** A thread's display name: its title, or a placeholder while unnamed.
+ *  `limit` cuts it only inside running copy (the delete question); the row's
+ *  title is left whole so CSS ellipses it at the width the drawer actually has. */
+function label(
+  conv: Conversation,
+  t: (key: string) => string,
+  limit = Infinity,
+): string {
   const title = (conv.title || "").trim() || t("chat.untitled");
   return title.length <= limit ? title : `${title.slice(0, limit - 1)}…`;
 }
@@ -114,7 +120,7 @@ function Row({
         title={(conv.title || "").trim() || undefined}
         onClick={onOpen}
       >
-        <span className="ag-chat-card-title">{label(conv, t, 26)}</span>
+        <span className="ag-chat-card-title">{label(conv, t)}</span>
         <span className="ag-chat-card-meta">
           {t("chat.thread_meta", {
             when: stamp(conv.updated, lang),

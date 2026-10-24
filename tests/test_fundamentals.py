@@ -16,6 +16,7 @@ from stocks.analysis.fundamentals import (
     format_value,
     fundamental_tiles,
     lens_verdict,
+    missing_reasons,
     peer_band,
     quarterly_eps,
     sources_table,
@@ -73,6 +74,64 @@ def test_an_acquirers_return_is_read_on_its_own_capital_too():
     # (120e9 EBIT + 10e9 amortisation) * (1 - 0.15) / (200e9 - 120e9)
     assert m["roic_ex_goodwill"] == pytest.approx(130e9 * 0.85 / 80e9)
     assert m["roic"] == pytest.approx(0.51)
+
+
+def test_a_loss_reads_as_a_negative_trailing_pe_not_a_blank():
+    # Yahoo drops trailingPE on a loss (CoreWeave) and keeps forwardPE negative.
+    raw = sample_raw()
+    del raw.info["trailingPE"]
+    raw.info["netIncomeToCommon"] = -1.9e11
+    m = compute_metrics(raw)
+    assert m["pe_ttm"] == pytest.approx(3.8e12 / -1.9e11)
+    assert verdict("pe_ttm", m["pe_ttm"]) == ("loss", "red")
+    # A profit without Yahoo's figure (Samsung, 005930.KS) reads the same way.
+    raw.info["netIncomeToCommon"] = 1.9e11
+    assert compute_metrics(raw)["pe_ttm"] == pytest.approx(3.8e12 / 1.9e11)
+
+
+def test_missing_reasons_tell_the_companys_gaps_from_the_feeds():
+    raw = sample_raw()
+    raw.info["forwardPE"] = -20.0
+    del raw.info["enterpriseToEbitda"]
+    raw.income.loc["EBITDA"] = [-5e9] * 5
+    raw.cashflow = pd.DataFrame()
+    m = compute_metrics(raw)
+    del raw.info["forwardPE"]
+    keys = ["peg", "ev_ebitda", "net_debt_ebitda", "fcf_yield", "roic", "pe_ttm"]
+    assert missing_reasons(raw, m, keys) == {
+        "peg": "loss",
+        "ev_ebitda": "loss",
+        "net_debt_ebitda": "loss",
+        "fcf_yield": "no_statements",
+    }
+    m["pe_fwd"] = None
+    assert missing_reasons(raw, m, ["pe_fwd"]) == {"pe_fwd": "no_estimates"}
+    m["share_dilution"] = None
+    assert missing_reasons(raw, m, ["share_dilution"]) == {
+        "share_dilution": "short_history"
+    }
+
+
+def test_dilution_runs_to_the_latest_quarter():
+    # CoreWeave: a flat pre-IPO count filed, then shares issued every quarter.
+    raw = sample_raw()
+    raw.income = raw.income.iloc[:, :4]
+    raw.income.columns = pd.to_datetime(
+        ["2025-12-31", "2024-12-31", "2023-12-31", "2022-12-31"]
+    )
+    raw.income.loc["Diluted Average Shares"] = [435e6, 464e6, 403.7e6, 403.7e6]
+    raw.income_q = pd.DataFrame(
+        {"Diluted Average Shares": [551e6, 527e6]},
+        index=pd.to_datetime(["2026-06-30", "2026-03-31"]),
+    ).T
+    years = (pd.Timestamp("2026-06-30") - pd.Timestamp("2022-12-31")).days / 365.25
+    expected = (551e6 / 403.7e6) ** (1 / years) - 1
+    assert compute_metrics(raw)["share_dilution"] == pytest.approx(expected)
+    # A quarter no newer than the last filed year adds nothing.
+    raw.income_q.columns = pd.to_datetime(["2025-12-31", "2025-09-30"])
+    assert compute_metrics(raw)["share_dilution"] == pytest.approx(
+        (435e6 / 403.7e6) ** (1 / 3) - 1
+    )
 
 
 def test_cagr_basic():

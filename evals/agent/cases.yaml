@@ -216,3 +216,65 @@
   max_calls: 3
   fixtures:
     lookup_knowledge: "(lookup_knowledge: nothing found)"
+
+# "Analyse with AI" on the ticker page (src/stocks/chat/brief.py): the
+# message is the button's label, `brief` the angle, `ticker` the page. The
+# brief rides on the message, built live from the company's profile, so
+# these read what the reader of that page would have sent.
+
+- id: brief-full-uranium
+  message: "Analiza Centrus Energy (LEU): negocio, fundamentales, valoración frente a su historia y cómo encaja en mi cartera."
+  brief: full
+  ticker: LEU
+  kind: capability
+  profile: deep
+  goals:
+    - Reads it as a uranium enricher, not an oil and gas company
+    - Says whether to open a position and at what starting size
+    - Says what the material could not tell
+  must: [search_web]
+
+- id: brief-bear-growth
+  message: "Caso bajista de Cerebras Systems (CBRS): qué puede salir mal y cuándo salir."
+  brief: bear
+  ticker: CBRS
+  kind: capability
+  goals:
+    - Tells a pre-mortem, the failure story, before any upside
+    - Names the signs that would say to sell
+  any_of: [search_web, read_page]
+  max_calls: 8
+
+- id: brief-earnings-bank
+  message: "Analiza los últimos resultados de JPMorgan Chase (JPM) frente al consenso."
+  brief: earnings
+  ticker: JPM
+  kind: capability
+  goals:
+    - Compares the quarter with the consensus
+    - Reads a bank's measures (net interest income, credit costs), not a tech company's
+  must: [search_web]
+  max_calls: 8
+
+- id: brief-fit-reit
+  message: "¿Encaja Realty Income (O) en mi cartera? Solapes, peso y riesgo."
+  brief: fit
+  ticker: O
+  kind: capability
+  goals:
+    - Reads the book before answering
+    - Judges it as a REIT (AFFO, rates), not by its P/E
+  any_of: [portfolio_snapshot, allocation]
+  must_not: [simulate_sale]
+  max_calls: 6
+
+- id: brief-full-biotech
+  message: "Analiza CRISPR Therapeutics (CRSP): negocio, fundamentales, valoración frente a su historia y cómo encaja en mi cartera."
+  brief: full
+  ticker: CRSP
+  kind: capability
+  profile: deep
+  goals:
+    - Reads it by its pipeline and cash runway, not its P/E
+    - Says whether to open a position and at what starting size
+  must: [search_web]

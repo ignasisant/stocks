@@ -49,7 +49,8 @@ MAX_RESUMES = 2
 
 #: How a run was asked, beyond the question — what `_events` needs to build
 #: it again. Never a key.
-PROPS = ("lang", "staged_import", "view", "focus", "guided", "linked", "depth")
+PROPS = ("lang", "staged_import", "view", "focus", "guided", "linked", "depth",
+         "brief")
 
 
 def folder(chat_path: Path) -> Path:

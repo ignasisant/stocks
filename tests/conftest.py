@@ -393,6 +393,16 @@ def _own_logo_cache(_scratch):
 
 
 @pytest.fixture(autouse=True)
+def _forget_listing_names():
+    """Names one test's fake spark taught `listing_names` stay in that test."""
+    from stocks.api import loaders
+
+    loaders._LISTING_NAMES.clear()
+    yield
+    loaders._LISTING_NAMES.clear()
+
+
+@pytest.fixture(autouse=True)
 def _own_world_search_memo(_scratch):
     """Point the shared worldwide-search memo at this test's scratch.
 

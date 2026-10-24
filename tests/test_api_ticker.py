@@ -210,6 +210,27 @@ def test_the_quote_says_whether_the_market_is_open(client, monkeypatch):
     assert body["session"] == "post" and body["pct"] == 0.012
 
 
+def test_the_quote_carries_the_years_range_when_the_feed_has_one(client, monkeypatch):
+    """The price card's range tile reads the year off the quote row already
+    fetched — no second request — and a fallback row without one leaves it
+    null rather than inventing a range."""
+    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.session_quote",
+        lambda t: {"price": 190.0, "pct": 0.012, "session": None, "as_of": None,
+                   "high_52w": 260.1, "low_52w": 164.08},
+    )
+    body = client.get("/v1/ticker/AAPL/quote", headers=AUTH).json()
+    assert (body["high_52w"], body["low_52w"]) == (260.1, 164.08)
+
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.session_quote",
+        lambda t: {"price": 190.0, "pct": 0.012, "session": None, "as_of": None},
+    )
+    body = client.get("/v1/ticker/AAPL/quote", headers=AUTH).json()
+    assert body["high_52w"] is None and body["low_52w"] is None
+
+
 def test_an_unquotable_ticker_reads_null_not_zero(client, monkeypatch):
     monkeypatch.setattr("stocks.api.routes.ticker.session_quote", lambda t: None)
     monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
@@ -391,8 +412,8 @@ def test_a_ticker_this_account_does_not_hold(client, account, monkeypatch):
     assert body == {
         "ticker": "AAPL", "held": False, "shares": None, "currency": None,
         "cost_native": None, "avg_cost_native": None, "base": None,
-        "value": None, "weight": None, "trades": [], "brokers": {},
-        "custody": [],
+        "value": None, "weight": None, "cost_base": None, "trades": [],
+        "brokers": {}, "custody": [],
     }
 
 
@@ -526,6 +547,7 @@ def test_a_held_position_reports_native_cost_and_the_broker_split(
     assert (body["shares"], body["currency"]) == (10.0, "USD")
     assert body["avg_cost_native"] == 100.0, "in USD, not converted to the base"
     assert body["value"] == 1200.0 and body["weight"] == pytest.approx(1.0)
+    assert body["cost_base"] == 900.0, "the basis in the base, off the same pass as value"
     assert body["brokers"] == {"Revolut": 6.0, "IBKR": 4.0}
 
 
@@ -674,16 +696,47 @@ def test_an_unpriced_holding_keeps_its_shares_and_loses_only_its_value(
 def test_peers_are_suggestions_with_names_where_the_sec_map_has_them(
     client, monkeypatch
 ):
+    from stocks.data import spark
+
     monkeypatch.setattr(loaders, "related", lambda t: ("MSFT", "NOKIA.HE"))
     monkeypatch.setattr(
         loaders, "sec_title", lambda t: "Microsoft Corp" if t == "MSFT" else None
     )
+    monkeypatch.setattr(spark, "names", lambda symbols: {})
     body = client.get("/v1/ticker/AAPL/peers", headers=AUTH).json()
     assert body["related"] == [
         {"ticker": "MSFT", "name": "Microsoft Corp"},
-        # Not a US filer: a bare symbol rather than a round trip per suggestion.
+        # Not a US filer and Yahoo would not say: a bare symbol, never a guess.
         {"ticker": "NOKIA.HE", "name": ""},
     ]
+
+
+def test_a_peer_only_yahoo_names_is_named_in_one_request(client, monkeypatch):
+    """Sony's peers are Tokyo listings no SEC map knows. Bare, the list read
+    "7974.T", "8306.T"; spark names twenty in one request."""
+    from stocks.data import profiles, spark
+
+    asked: list[list[str]] = []
+
+    def names(symbols):
+        asked.append(list(symbols))
+        return {"7974.T": "Nintendo Co., Ltd.", "8306.T": "Mitsubishi UFJ"}
+
+    monkeypatch.setattr(loaders, "related", lambda t: ("7974.T", "8306.T", "ZZ.T"))
+    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    monkeypatch.setattr(profiles, "known", lambda t: None)
+    monkeypatch.setattr(spark, "names", names)
+    body = client.get("/v1/ticker/6758.T/peers", headers=AUTH).json()
+    assert body["related"] == [
+        {"ticker": "7974.T", "name": "Nintendo Co., Ltd."},
+        {"ticker": "8306.T", "name": "Mitsubishi UFJ"},
+        {"ticker": "ZZ.T", "name": ""},
+    ]
+    assert asked == [["7974.T", "8306.T", "ZZ.T"]]
+    # Learned once: asked again, only the one nobody named goes back out.
+    client.get("/v1/ticker/6758.T/peers", headers=AUTH)
+    assert asked[-1] == ["ZZ.T"]
+    assert loaders.learned_name("7974.T") == "Nintendo Co., Ltd."
 
 
 def test_a_coin_is_never_suggested_as_a_comparable(client, monkeypatch):
@@ -745,11 +798,48 @@ def test_a_name_no_source_knows_comes_back_empty_never_invented(
 ):
     monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
     monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
+    monkeypatch.setattr(loaders, "listing_name", lambda t: None)
     monkeypatch.setattr(loaders, "logo", lambda t: None)
     body = client.get(
         "/v1/ticker/ZZQQ/profile", params={"account": EMAIL}, headers=AUTH
     ).json()
     assert (body["name"], body["logo"]) == ("", None)
+
+
+def test_a_listing_only_yahoo_names_still_gets_its_name(
+    client, account, monkeypatch
+):
+    """"005930.KS" alone does not say Samsung: no local source names a non-US
+    listing nobody holds, so the header asks Yahoo for it."""
+    from stocks.data import fetch, profiles
+
+    monkeypatch.setattr(profiles, "known", lambda t: None)
+    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
+    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    monkeypatch.setattr(
+        fetch,
+        "info",
+        lambda t: {"quoteType": "EQUITY", "longName": "Samsung Electronics Co., Ltd."},
+    )
+    body = _profile(client, "005930.KS")
+    assert (body["name"], body["found"]) == ("Samsung Electronics Co., Ltd.", True)
+
+
+def test_a_refused_name_lookup_leaves_the_header_on_its_symbol(
+    client, account, monkeypatch
+):
+    from stocks.data import fetch, profiles
+
+    def refused(t):
+        raise RuntimeError("Too Many Requests")
+
+    monkeypatch.setattr(profiles, "known", lambda t: None)
+    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
+    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    monkeypatch.setattr(fetch, "info", refused)
+    assert _profile(client, "2330.TW")["name"] == ""
 
 
 def test_a_closed_end_fund_profiles_as_a_fund(client, account, monkeypatch):
@@ -783,6 +873,7 @@ def _profile(client, ticker):
 def bare_header(monkeypatch):
     monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
     monkeypatch.setattr(loaders, "company_name", lambda t, w: "")
+    monkeypatch.setattr(loaders, "listing_name", lambda t: None)
     monkeypatch.setattr(loaders, "logo", lambda t: None)
 
 

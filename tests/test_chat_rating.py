@@ -15,6 +15,7 @@ hoy?") that searched for its own words with no ticker in them.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -35,6 +36,10 @@ from .test_api_chat import (  # noqa: F401 — fixtures
     signed_in,
     token,
 )
+
+# Recent, so the thread is not an idle one (`auth.KEEP_DAYS`); fixed, so a
+# rating that touched `updated` would show.
+STAMP = (datetime.now(UTC) - timedelta(days=1)).isoformat(timespec="seconds")
 
 
 @pytest.fixture
@@ -65,7 +70,7 @@ def _answered(signed_in) -> tuple[str, str]:
 def test_rate_turn_sets_and_clears_without_touching_updated(tmp_path):
     path = tmp_path / "chat.json"
     book = {"conversations": [{
-        "id": "c1", "title": "t", "updated": "2026-01-01T00:00:00",
+        "id": "c1", "title": "t", "updated": STAMP,
         "messages": [{"role": "user", "content": "why up?"},
                      {"role": "assistant", "content": "because", "id": "a1"}],
     }], "active": "c1"}
@@ -76,7 +81,7 @@ def test_rate_turn_sets_and_clears_without_touching_updated(tmp_path):
     assert found["answer"]["rating"] == "down"
     conv = auth.load_book(path)["conversations"][0]
     assert conv["messages"][1]["rating"] == "down"
-    assert conv["updated"] == "2026-01-01T00:00:00"
+    assert conv["updated"] == STAMP
 
     auth.rate_turn("a1", None, path)
     assert "rating" not in auth.load_book(path)["conversations"][0]["messages"][1]
@@ -87,13 +92,13 @@ def test_rate_turn_sets_and_clears_without_touching_updated(tmp_path):
 def test_a_conversation_keeps_one_rating(tmp_path):
     path = tmp_path / "chat.json"
     book = {"conversations": [
-        {"id": "c1", "title": "t", "updated": "2026-01-01T00:00:00", "messages": [
+        {"id": "c1", "title": "t", "updated": STAMP, "messages": [
             {"role": "user", "content": "first"},
             {"role": "assistant", "content": "one", "id": "a1"},
             {"role": "user", "content": "second"},
             {"role": "assistant", "content": "two", "id": "a2"},
         ]},
-        {"id": "c2", "title": "u", "updated": "2026-01-01T00:00:00", "messages": [
+        {"id": "c2", "title": "u", "updated": STAMP, "messages": [
             {"role": "user", "content": "other"},
             {"role": "assistant", "content": "three", "id": "b1", "rating": "up"},
         ]},

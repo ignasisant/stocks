@@ -562,8 +562,9 @@ export function Legend({
   onFocus?: (key: string | null) => void;
   hidden?: ReadonlySet<string>;
 }) {
+  // Nothing to press means nothing a keyboard can reach to scroll it: wrap.
   return (
-    <ul className="tk-legend">
+    <ul className={onToggle ? "tk-legend" : "tk-legend tk-legend-wrap"}>
       {items.map((item) => {
         const swatch = (
           <span

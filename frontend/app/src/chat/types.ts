@@ -8,6 +8,7 @@
  * reload redraws the conversation differently from the way it was written.
  */
 
+import type { Brief } from "../shell/assistant";
 import type { A2uiMessage } from "./a2ui";
 
 /** One web hit that grounded an answer. */
@@ -106,6 +107,9 @@ export type Learned = {
   before?: string;
   /** Days a question was asked on before it became a routine. */
   repeated?: number;
+  /** A kept memory an added one may clash with: "Replace it" deletes it. */
+  related_id?: string;
+  related_text?: string;
 };
 
 /**
@@ -226,6 +230,11 @@ export type Turn = Message & {
    * through a transcription they did not proof-read.
    */
   spoken?: boolean;
+  /**
+   * The Ticker page's angle this question was asked with — session-only, so
+   * Retry asks the same analysis again rather than its one-line label.
+   */
+  brief?: Brief;
 };
 
 export type Conversation = {
@@ -345,6 +354,29 @@ export type Memory = {
   thread_title: string | null;
   created: string;
   updated: string;
+  /** The ISO day it stops holding; null holds for good. */
+  until: string | null;
+  /** Past `until`: kept on the list, out of the prompt. */
+  expired: boolean;
+  /** How often the reader's questions touched it, and the last day. */
+  uses: number;
+  last_used: string | null;
+  /** What it said before it was reworded, newest last. */
+  replaced: string[];
+};
+
+/**
+ * A change the weekly tidy-up proposes (`chat/memory_review.py`), never made
+ * until the reader applies it: drop `ids`, merge them into `text`, or reword
+ * the one in `ids` as `text`. A "model" reason carries the model's `note`.
+ */
+export type Suggestion = {
+  sid: string;
+  action: "drop" | "merge" | "reword";
+  ids: string[];
+  reason: "expired" | "idle" | "same" | "model";
+  text: string;
+  note: string;
 };
 
 export type Memories = {
@@ -354,6 +386,9 @@ export type Memories = {
   max: number;
   max_chars: number;
   kinds: string[];
+  /** The memory a full list offers to let go; null while there is room. */
+  suggest_drop: string | null;
+  suggestions: Suggestion[];
 };
 
 /** One ledger row as the preview shows it, and as the commit sends it back. */

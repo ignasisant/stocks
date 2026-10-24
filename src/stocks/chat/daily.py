@@ -2293,9 +2293,10 @@ def to_store(
 # Every card the reader is shown is also filed in the chat, as a thread of its
 # own (`auth.save_card_thread`): it is one assistant, and what it said on Home
 # is something it said. The thread is what the card's "Ask" opens, so a
-# question about a line is asked with the line above it; it is listed with
-# the reader's other conversations; and it is indexed like them, so the chat
-# and the Telegram bot can recall what a card said when a message names it.
+# question about a line is asked with the line above it; it joins the list of
+# the reader's conversations once they open or write in it; and it is indexed
+# like them, so the chat and the Telegram bot can recall what a card said when
+# a message names it.
 
 
 def card_path(chat_path: Path) -> Path:

@@ -156,10 +156,10 @@ def _answer(provider, key: str, model: str, message: str,
         [{"role": "user", "content": ev.augment(message)}])
 
 
-def _judged(provider, key: str, args, c, ev: agent.Evidence
+def _judged(provider, key: str, args, c, ev: agent.Evidence, sent: str
             ) -> agent_judge.Judgment | None:
     try:
-        answer = _answer(provider, key, args.model, c.message, ev)
+        answer = _answer(provider, key, args.model, sent, ev)
         said = agent_judge.judge(provider, key, c.goals, c.message, ev.calls,
                                  answer, model=args.judge_model)
     except Exception as exc:  # noqa: BLE001 — a rate limit, off contract
@@ -189,7 +189,7 @@ def main() -> int:
 
     if args.dry_run:
         for c in cases:
-            routed = agent.profile_for(c.message, c.depth).name
+            routed = agent.profile_for(c.message, c.asked_depth()).name
             mark = "ok " if routed == c.profile else "BAD"
             print(f"{mark} {c.id:<20} {routed:<4} {c.kind[:3]}  {c.message}")
         return 0
@@ -224,7 +224,8 @@ def main() -> int:
                 if args.pace and not first:
                     time.sleep(args.pace)
                 first = False
-                profile = agent.profile_for(c.message, c.depth)
+                profile = agent.profile_for(c.message, c.asked_depth())
+                sent = c.sent(ctx)
                 for tries in range(max(0, args.retry_dead) + 1):
                     if tries:
                         print(f"retry {c.id} in {DEAD_WAIT_S:.0f}s "
@@ -235,7 +236,7 @@ def main() -> int:
                           metering.metered() as meter):
                         ev = agent.gather(
                             provider, key,
-                            [{"role": "user", "content": c.message}], ctx,
+                            [{"role": "user", "content": sent}], ctx,
                             model=args.model, profile=profile,
                             timeout=max(args.timeout, profile.timeout))
                     seconds = time.perf_counter() - t0
@@ -265,7 +266,7 @@ def main() -> int:
                 if args.judge and (not args.judge_runs
                                    or len(runs[c.id]) < args.judge_runs):
                     with metering.metered() as judging:
-                        said = _judged(provider, key, args, c, ev)
+                        said = _judged(provider, key, args, c, ev, sent)
                     jtokens, jcost = judging.tokens(), judging.usd()
                     priced = priced and jcost is not None
                     spent += jcost or 0.0

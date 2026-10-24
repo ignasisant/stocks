@@ -185,7 +185,7 @@ function TargetRange({ data }: { data: Analysts }) {
           <span className="tk-targets-price" style={{ left: at(now) }} />
         ) : null}
       </div>
-      <ul className="tk-legend tk-targets-legend">
+      <ul className="tk-legend tk-legend-wrap tk-targets-legend">
         <li>
           {t("ticker.analysts_low")} {price(low)}
         </li>
@@ -253,7 +253,7 @@ function RatingSplit({ months }: { months: AnalystMonth[] }) {
           </li>
         ))}
       </ul>
-      <ul className="tk-legend">
+      <ul className="tk-legend tk-legend-wrap">
         {BUCKETS.map((bucket) => (
           <li key={bucket}>
             <span className={`tk-swatch tk-ratings-${bucket}`} />

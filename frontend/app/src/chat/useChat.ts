@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang } from "../shell/i18n";
+import type { Brief } from "../shell/assistant";
 import { useRoute } from "../shell/router";
 import {
   asBase64,
@@ -184,6 +185,11 @@ export function useChat(live: boolean) {
   const tab = (route.params.get("tab") ?? "").trim();
   const [state, setState] = useState<ChatState | null>(null);
   const [threads, setThreads] = useState<Conversation[] | null>(null);
+  // The list as last read, for callbacks that must not change with it.
+  const threadsRef = useRef<Conversation[] | null>(null);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -547,7 +553,13 @@ export function useChat(live: boolean) {
   }, []);
 
   const send = useCallback(
-    async (text: string, spoken = false, again = false, deep = false) => {
+    async (
+      text: string,
+      spoken = false,
+      again = false,
+      deep = false,
+      brief?: Brief,
+    ) => {
       const message = text.trim();
       // A second send while one is in flight is refused, not queued: one
       // thread takes one answer at a time, and the server says 409 anyway.
@@ -563,7 +575,9 @@ export function useChat(live: boolean) {
       // where it is on screen and only the answer under it is replaced.
       setTurns((list) => [
         ...(again ? list.slice(0, -1) : list),
-        ...(again ? [] : [{ ...blank("user", message), ts: started, spoken } as Turn]),
+        ...(again
+          ? []
+          : [{ ...blank("user", message), ts: started, spoken, brief } as Turn]),
         { ...blank("assistant", ""), pending: true },
       ]);
       // Read when the question goes out, not when it is answered: a reader who
@@ -576,6 +590,7 @@ export function useChat(live: boolean) {
         // A card is waiting: "import these" is answered with its button.
         staged_import: preview?.filename,
         ...(deep ? { depth: "deep" as const } : {}),
+        ...(brief ? { brief } : {}),
       });
       await track(
         input.runId,
@@ -840,7 +855,7 @@ export function useChat(live: boolean) {
     const question = turns[turns.length - 2];
     if (busy || !unfiled(answer) || question?.role !== "user") return;
     setTurns((list) => list.slice(0, -2));
-    void send(question.content);
+    void send(question.content, false, false, false, question.brief);
   }, [busy, send, turns]);
 
   /**
@@ -933,7 +948,17 @@ export function useChat(live: boolean) {
       try {
         await editThread(cid, { active: true });
         show(await readThread(cid));
-        setThreads((list) => (list ?? []).map((c) => ({ ...c, active: c.id === cid })));
+        // A daily card's thread is not listed until somebody opens it — Home's
+        // "Ask" just did — so one the list does not know is read back from the
+        // server, where it is the active thread now. The header names it.
+        const known = (threadsRef.current ?? []).some((c) => c.id === cid);
+        if (known) {
+          setThreads((list) =>
+            (list ?? []).map((c) => ({ ...c, active: c.id === cid })),
+          );
+        } else {
+          setThreads(await readThreads());
+        }
       } finally {
         setOpening(false);
       }

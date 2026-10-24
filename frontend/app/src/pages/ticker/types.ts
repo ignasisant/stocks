@@ -55,6 +55,9 @@ export type Quote = {
   fx_as_of: string | null;
   /** The reporting currency asked for. */
   base: string | null;
+  /** The year's high and low in the listing's currency; null when the feed had no year. */
+  high_52w?: number | null;
+  low_52w?: number | null;
 };
 
 export type Trade = {
@@ -88,6 +91,8 @@ export type TickerPosition = {
   /** Null means the price pass had nothing — never that it is worth zero. */
   value: number | null;
   weight: number | null;
+  /** Basis in `base` at each trade date's rate: `value` minus this is the book's gain. */
+  cost_base?: number | null;
   /** Every buy and sell, oldest first; present even when the position closed. */
   trades: Trade[];
   brokers: Record<string, number>;

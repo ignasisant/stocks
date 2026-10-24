@@ -24,7 +24,7 @@ PROFILE_CACHE = DATA_DIR / "profiles.json"
 
 # What is kept. Anything that moves (prices, market cap, margins) is
 # deliberately not on the list — this memo has no TTL.
-FIELDS = ("sector", "country", "currency", "quoteType", "name")
+FIELDS = ("sector", "industry", "country", "currency", "quoteType", "name")
 
 _lock = threading.Lock()
 _memo: dict[str, dict[str, str]] | None = None

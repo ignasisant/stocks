@@ -20,6 +20,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
 import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
 import {
+  type Brief,
   setAssistantWorking,
   useAssistantAsks,
   useAssistantThreads,
@@ -108,12 +109,17 @@ export function Drawer() {
   // for the same reason: the press happens while `useChat` is still loading.
   // `fresh` (Review's "Ask the AI") starts a new conversation first: a prompt
   // that long is its own subject, not a follow-up to whatever was on screen.
-  const [queued, setQueued] = useState<{ text: string; fresh: boolean } | null>(null);
+  // `brief` is the Ticker page's angle, expanded by the server.
+  const [queued, setQueued] = useState<{
+    text: string;
+    fresh: boolean;
+    brief?: Brief;
+  } | null>(null);
   const onAsk = useCallback(
-    (prompt: string | null, fresh = false) => {
+    (prompt: string | null, fresh = false, brief?: Brief) => {
       // A null prompt is "show me the assistant" — the tour's stop and the
       // Home checklist's row both mean that, and neither should spend a turn.
-      if (prompt) setQueued({ text: prompt, fresh });
+      if (prompt) setQueued({ text: prompt, fresh, brief });
       show(true);
     },
     [show],
@@ -148,12 +154,12 @@ export function Drawer() {
       setQueued(null);
       void create()
         .catch(() => {})
-        .finally(() => setQueued({ text: queued.text, fresh: false }));
+        .finally(() => setQueued({ ...queued, fresh: false }));
       return;
     }
     if (busy) return;
     setQueued(null);
-    void ask(queued.text);
+    void ask(queued.text, false, false, false, queued.brief);
   }, [queued, open, state, busy, ask, create]);
 
   // The walkthrough opens itself, in the drawer — once per tab, and only for

@@ -245,11 +245,14 @@ export function QualityMap({
   held,
   candidates,
   taxCurrency,
+  onAdd,
 }: {
   held: ReviewRow[];
   candidates: ReviewRow[];
   /** The plan's, for the sale's tax in a held name's details. */
   taxCurrency: string;
+  /** Weighs a ticker from outside the page; the search offers the market. */
+  onAdd?: (ticker: string) => void;
 }) {
   const t = useT();
   const [ref, width] = useWidth(640);
@@ -337,6 +340,9 @@ export function QualityMap({
   const searchable = placed.length >= FIND_MIN;
   const query = searchable ? needle.trim() : "";
   const symbolOf = (row: ReviewRow) => (row.symbol || row.ticker).toUpperCase();
+  const known = new Set(
+    rows.flatMap((row) => [row.ticker.toUpperCase(), symbolOf(row)]),
+  );
   // A symbol that starts with what was typed beats a name that contains it.
   const suggested = query
     ? findRows(rows, query, words).sort(
@@ -486,6 +492,8 @@ export function QualityMap({
             needle={needle}
             matches={suggested}
             placed={(row) => placed.includes(row)}
+            known={known}
+            onAdd={onAdd}
             onType={(value) => {
               setNeedle(value);
               setPicked(null);

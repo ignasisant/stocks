@@ -58,7 +58,7 @@ import {
   parseFilter,
   splitCoins,
 } from "./filter";
-import { askAgain, longDay, parseAdded, percent } from "./format";
+import { askAgain, longDay, MAX_ADDED, parseAdded, percent, SYMBOL } from "./format";
 import { buildPrompt, noteText } from "./prompt";
 import type { Review, ReviewNote, ReviewRow } from "./types";
 import "./review.css";
@@ -130,6 +130,18 @@ export default function Page() {
       in: includeParam(next.sources, held),
     });
 
+  const setAdded = (next: string[]) =>
+    setParams({ add: next.length ? next.join(",") : undefined });
+  // The map's search offers the market too; a pick there joins `?add=` the
+  // way the ticker box's does, within the same checks.
+  const addOne = (ticker: string) => {
+    const symbol = ticker.trim().toUpperCase();
+    if (!SYMBOL.test(symbol) || added.includes(symbol) || added.length >= MAX_ADDED)
+      return;
+    setAdded([...added, symbol]);
+  };
+  const canAdd = added.length < MAX_ADDED ? addOne : undefined;
+
   return (
     <>
       {book ? (
@@ -146,22 +158,29 @@ export default function Page() {
           <h1 className="ag-rev-h1">{t("review.title")}</h1>
           <p className="ag-rev-caption ag-rev-intro">{t("review.intro")}</p>
         </div>
-        <AddTickers
-          added={added}
-          onChange={(next) =>
-            setParams({ add: next.length ? next.join(",") : undefined })
-          }
-        />
+        <AddTickers added={added} onChange={setAdded} />
       </div>
       {stale ? (
         <div className="ag-rev-body" aria-busy="true">
-          <Screen data={stale} filter={filter} onFilter={setFilter} measured />
+          <Screen
+            data={stale}
+            filter={filter}
+            onFilter={setFilter}
+            onAdd={canAdd}
+            measured
+          />
         </div>
       ) : (
         <Loaded query={review} skeleton={<Skeleton rows={8} />}>
           {(data) => (
             <div className="ag-rev-body">
-              <Screen data={data} filter={filter} onFilter={setFilter} measured />
+              <Screen
+                data={data}
+                filter={filter}
+                onFilter={setFilter}
+                onAdd={canAdd}
+                measured
+              />
             </div>
           )}
         </Loaded>
@@ -201,11 +220,14 @@ function Screen({
   data: read,
   filter,
   onFilter,
+  onAdd,
   measured = false,
 }: {
   data: Review;
   filter: Filter;
   onFilter: (next: Filter) => void;
+  /** Weighs a ticker from the map's search; the import wall's glass has none. */
+  onAdd?: (ticker: string) => void;
   /** Ask what each name returned; the import wall's glass does not. */
   measured?: boolean;
 }) {
@@ -265,6 +287,7 @@ function Screen({
           held={data.held}
           candidates={data.candidates}
           taxCurrency={plan.tax_currency}
+          onAdd={onAdd}
         />
 
         {data.held.length > 0 && (

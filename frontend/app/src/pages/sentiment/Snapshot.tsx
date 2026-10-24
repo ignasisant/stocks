@@ -124,9 +124,9 @@ export function Snapshot({
   return (
     <>
       <div className="sn-sec-head">
-        <h3 className="sn-sec-t" id="ag-snapshot">
+        <h2 className="sn-sec-t" id="ag-snapshot">
           {t("sentiment.snapshot_title")}
-        </h3>
+        </h2>
         <span className="sn-mono">{t("sentiment.snapshot_hint")}</span>
         <span className="sn-spacer" />
         {/* Every figure on this page names where it came from, and these are

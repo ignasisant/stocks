@@ -172,6 +172,62 @@ export function moveBetween(
   return { a, z, start, end, pct: (end / start - 1) * 100 };
 }
 
+/**
+ * The stretch a drag or two fingers cover, in bar order, or null while it is
+ * still a single bar (a press that has not moved yet).
+ */
+export function stretch(
+  pair: { from: number; to: number } | null,
+): { a: number; b: number } | null {
+  if (!pair || pair.from === pair.to) return null;
+  return { a: Math.min(pair.from, pair.to), b: Math.max(pair.from, pair.to) };
+}
+
+/**
+ * How far apart two bars are, in the unit a reader counts in: trading
+ * sessions on a daily chart, weeks or months on the coarser "max" one, and on
+ * an intraday chart the market time between them — or the sessions, once the
+ * two ends fall on different days and the overnight gap would make a clock
+ * figure meaningless. A count of "bars" said nothing without knowing what a
+ * bar was on this range.
+ */
+export function spanLength(
+  dates: readonly string[],
+  interval: string,
+  a: number,
+  z: number,
+  t: Translate,
+): string {
+  const gap = z - a;
+  const count = (unit: string, n: number) =>
+    n === 1 ? t(`ticker.span_${unit}_one`) : t(`ticker.span_${unit}_n`, { n });
+  if (interval === "1wk") return count("weeks", gap);
+  if (interval === "1mo") return count("months", gap);
+  const clock = /^(\d+)([mh])$/.exec(interval);
+  if (!clock) return count("sessions", gap);
+  const dayA = (dates[a] ?? "").slice(0, 10);
+  const dayZ = (dates[z] ?? "").slice(0, 10);
+  if (dayA !== dayZ) {
+    const days = new Set(dates.slice(a, z + 1).map((stamp) => stamp.slice(0, 10)));
+    return count("sessions", days.size - 1);
+  }
+  const step = Number(clock[1]) * (clock[2] === "h" ? 60 : 1);
+  const total = gap * step;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h === 0
+    ? t("ticker.span_minutes", { m })
+    : t("ticker.span_hours", { h, m: String(m).padStart(2, "0") });
+}
+
+/** Whether a stretch is wide enough to zoom into rather than a mis-click. */
+export function zoomable(span: { a: number; b: number } | null): boolean {
+  return span !== null && span.b - span.a >= MIN_SPAN;
+}
+
+/** A zoomed window's move, its ends already dated for the reader. */
+export type ChartWindow = { pct: number; start: string; end: string };
+
 export function PriceChart({
   bars,
   events,
@@ -182,6 +238,7 @@ export function PriceChart({
   overlays: shown = ALL_OVERLAYS,
   markers = ALL_MARKERS,
   mobile,
+  onWindow,
   t,
 }: {
   bars: Bars;
@@ -201,6 +258,12 @@ export function PriceChart({
   /** The corporate events worth a vertical on this kind of chart. */
   markers?: readonly Marker[];
   mobile: boolean;
+  /**
+   * The zoomed window's move, or null when the whole range is on screen: the
+   * price figure over the chart reads the stretch the chart shows, not the
+   * range the pills say it came from.
+   */
+  onWindow?: (window: ChartWindow | null) => void;
   t: Translate;
 }) {
   const lang = useLang();
@@ -216,6 +279,10 @@ export function PriceChart({
   const [hover, setHover] = useState<number | null>(null);
   // Two bars being compared (`Chart`'s `onSpan`), in bar order.
   const [span, setSpan] = useState<{ a: number; b: number } | null>(null);
+  // On a phone, the last stretch two fingers measured: it outlives the lift
+  // and the reading's dismissal, so the zoom button under the chart can still
+  // act on it — a finger drag there has to scroll the page, never brush.
+  const [pick, setPick] = useState<{ a: number; b: number } | null>(null);
   const [wrap, width] = useWidth(FALLBACK_WIDTH);
   // What the reader switched off in the legend: overlay keys and marker kinds.
   // The 200-day average starts off on a phone, where three lines and the price
@@ -251,12 +318,33 @@ export function PriceChart({
     setZoom(null);
     setDrag(null);
     setSpan(null);
+    setPick(null);
   }, [bars]);
 
   const from = zoom ? Math.max(0, zoom.from) : 0;
   const to = zoom ? Math.min(n - 1, zoom.to) : n - 1;
 
   const close = bars.series.Close ?? [];
+  const intradayBars = /[mh]$/.test(bars.interval);
+  useEffect(() => {
+    if (!onWindow) return;
+    const move = zoom ? moveBetween(close, from, to) : null;
+    if (!move) {
+      onWindow(null);
+      return;
+    }
+    const format = labeller(lang, intradayBars);
+    onWindow({
+      pct: move.pct,
+      start: format(bars.dates[move.a] ?? ""),
+      end: format(bars.dates[move.z] ?? ""),
+    });
+    // `close` is read off `bars`, which is in the list: listing the array
+    // itself would re-fire on the `[]` a series without closes makes anew.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom, from, to, bars, lang, intradayBars, onWindow]);
+  // Gone with the chart (a new range loading): the figure goes back to the range.
+  useEffect(() => () => onWindow?.(null), [onWindow]);
   const open = bars.series.Open ?? [];
   const high = bars.series.High ?? [];
   const low = bars.series.Low ?? [];
@@ -273,7 +361,7 @@ export function PriceChart({
    * quotes minutes as "5m" and "30m", and a month would be "1mo" — a test that
    * read the number first would label a five-minute chart in days.
    */
-  const intraday = /[mh]$/.test(bars.interval);
+  const intraday = intradayBars;
 
   // Drawn at the width the card really has, so a unit is a pixel and the
   // labels print at the size they say. On a phone the y labels move inside the
@@ -415,19 +503,23 @@ export function PriceChart({
     return best ?? indexAt(x);
   };
 
-  const finish = (x: number) => {
-    if (!drag) return;
-    const end = indexAt(x);
-    const lo = Math.min(drag.from, end);
-    const hi = Math.max(drag.from, end);
+  const zoomTo = (picked: { a: number; b: number }) => {
+    setZoom({ from: picked.a, to: picked.b });
     setDrag(null);
-    if (hi - lo < MIN_SPAN) return;
-    setZoom({ from: lo, to: hi });
+    setSpan(null);
+    setPick(null);
+    setHover(null);
   };
+
+  // Letting go of a drag ends the measure and nothing else: the chart stays on
+  // the range the pills picked. A zoom that followed every release threw away
+  // the view the reader came to measure inside of.
+  const finish = () => setDrag(null);
 
   const reset = () => {
     setZoom(null);
     setDrag(null);
+    setPick(null);
   };
 
   // The area fade runs against an invisible baseline pinned at the window's
@@ -519,7 +611,14 @@ export function PriceChart({
 
   // A span of one bar is a mouse anchor just dropped: until the pointer moves
   // off it there is nothing to compare, and the bar reads as usual.
-  const measure = span && span.b > span.a ? moveBetween(close, span.a, span.b) : null;
+  // A drag reads like a measure while it is happening: the change over the
+  // stretch it covers, live, so the window is chosen by what it shows rather
+  // than released blind and read afterwards.
+  const dragged = stretch(drag);
+  const marked = dragged ?? (span && span.b > span.a ? span : null);
+  const measure = marked ? moveBetween(close, marked.a, marked.b) : null;
+  const picked =
+    mobile && zoomable(pick) && pick ? moveBetween(close, pick.a, pick.b) : null;
   // The readout is a strip over the plot, never a box beside the crosshair: a
   // box sat on the line the reader was following. With nothing pointed at, a
   // desktop strip reads the window's last bar, so the space it keeps is never
@@ -614,6 +713,7 @@ export function PriceChart({
     const digits = Math.abs(move.start) < 1 ? 4 : 2;
     const delta = move.end - move.start;
     const tone = delta > 0 ? "up" : delta < 0 ? "down" : undefined;
+    const length = spanLength(bars.dates, bars.interval, move.a, move.z, t);
     const title = `${hoverTitle(bars.dates[move.a] ?? "", intraday)} → ${hoverTitle(
       bars.dates[move.z] ?? "",
       intraday,
@@ -643,10 +743,8 @@ export function PriceChart({
           ],
         },
         {
-          text: t("ticker.span_bars", { count: move.z - move.a }),
-          parts: [
-            { text: t("ticker.span_bars", { count: move.z - move.a }), tone: "dim" },
-          ],
+          text: length,
+          parts: [{ text: length, tone: "dim" }],
         },
       ],
     };
@@ -675,7 +773,17 @@ export function PriceChart({
   });
 
   return (
-    <div className="tk-plot tk-plot-strip" ref={wrap}>
+    <div
+      className="tk-plot tk-plot-strip"
+      ref={wrap}
+      // Escape backs out one step: a drag in progress, else the zoom. A click
+      // focuses the plot, so the key reaches here after any mouse gesture.
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        if (drag) setDrag(null);
+        else if (zoom) reset();
+      }}
+    >
       <Chart
         frame={box}
         label={label}
@@ -686,7 +794,10 @@ export function PriceChart({
           set: (index) => setHover(index === null ? null : from + index),
         }}
         readout={pointed ? spoken(pointed.title, pointed.lines) : null}
-        onPointer={(x) => setHover(markerAt(x))}
+        onPointer={(x) => {
+          setHover(markerAt(x));
+          setDrag((now) => now && { from: now.from, to: indexAt(x) });
+        }}
         onLeave={() => {
           setHover(null);
           setDrag(null);
@@ -694,12 +805,13 @@ export function PriceChart({
         }}
         onSpan={(pair) => {
           if (pair) learn();
-          setSpan(
-            pair && {
-              a: indexAt(Math.min(pair[0], pair[1])),
-              b: indexAt(Math.max(pair[0], pair[1])),
-            },
-          );
+          const next = pair && {
+            a: indexAt(Math.min(pair[0], pair[1])),
+            b: indexAt(Math.max(pair[0], pair[1])),
+          };
+          setSpan(next);
+          // A fresh single touch on the plot (null) puts the offer away too.
+          if (mobile) setPick(zoomable(next) ? next : null);
         }}
         // A phone pins the window: a finger drag has to scroll the page.
         onDown={
@@ -918,42 +1030,36 @@ export function PriceChart({
           })}
         />
 
-        {/* The drag, while it is happening. */}
-        {drag && hover !== null ? (
-          <rect
-            className="tk-brush"
-            x={Math.min(xOf(drag.from), xOf(hover)) - band / 2}
-            y={box.top}
-            width={Math.max(band, Math.abs(xOf(hover) - xOf(drag.from)) + band)}
-            height={plotHeight(box)}
-          />
-        ) : null}
-
-        {/* The two bars being compared, and the stretch between them. */}
-        {span ? (
-          <g className="tk-span">
-            {span.b > span.a ? (
-              <rect
-                x={xOf(span.a)}
-                y={box.top}
-                width={xOf(span.b) - xOf(span.a)}
-                height={plotHeight(box)}
+        {/* The stretch being dragged out or measured, with an edge at each
+            end. */}
+        {(() => {
+          const shown = dragged ?? span;
+          if (!shown) return null;
+          return (
+            <g className={`tk-span${dragged ? " tk-brush" : ""}`}>
+              {shown.b > shown.a ? (
+                <rect
+                  x={xOf(shown.a)}
+                  y={box.top}
+                  width={xOf(shown.b) - xOf(shown.a)}
+                  height={plotHeight(box)}
+                />
+              ) : null}
+              <line
+                x1={xOf(shown.a)}
+                x2={xOf(shown.a)}
+                y1={box.top}
+                y2={box.height - box.bottom}
               />
-            ) : null}
-            <line
-              x1={xOf(span.a)}
-              x2={xOf(span.a)}
-              y1={box.top}
-              y2={box.height - box.bottom}
-            />
-            <line
-              x1={xOf(span.b)}
-              x2={xOf(span.b)}
-              y1={box.top}
-              y2={box.height - box.bottom}
-            />
-          </g>
-        ) : null}
+              <line
+                x1={xOf(shown.b)}
+                x2={xOf(shown.b)}
+                y1={box.top}
+                y2={box.height - box.bottom}
+              />
+            </g>
+          );
+        })()}
 
         {hover !== null && !measure ? (
           <line
@@ -1023,21 +1129,42 @@ export function PriceChart({
           }
         />
         {/* A zoomed window says so, with its change and the way back: the
-            range control above still reads the range it came from. */}
-        {zoom && whole ? (
-          <p className="tk-zoom">
-            <span className={`tk-is-${whole.pct >= 0 ? "green" : "red"}`}>
-              {t("ticker.range_change", {
-                pct: `${signed(whole.pct)}%`,
-                start: dateLabel(bars.dates[whole.a] ?? ""),
-                end: dateLabel(bars.dates[whole.z] ?? ""),
-              })}
-            </span>
-            <button type="button" className="tk-zoom-reset" onClick={reset}>
-              {t("ticker.zoom_reset")}
-            </button>
-          </p>
-        ) : null}
+            range control above still reads the range it came from. On a
+            phone, a stretch two fingers measured offers the zoom a mouse
+            gets by dragging. */}
+        {(() => {
+          // A zoom's own change is the price figure's note now (`onWindow`):
+          // here only the way back, and on a phone the stretch on offer.
+          const move = picked ?? (zoom && !onWindow ? whole : null);
+          if (!move && !zoom) return null;
+          return (
+            <p className="tk-zoom">
+              {move ? (
+                <span className={`tk-is-${move.pct >= 0 ? "green" : "red"}`}>
+                  {t("ticker.range_change", {
+                    pct: `${signed(move.pct)}%`,
+                    start: dateLabel(bars.dates[move.a] ?? ""),
+                    end: dateLabel(bars.dates[move.z] ?? ""),
+                  })}
+                </span>
+              ) : null}
+              {picked && pick ? (
+                <button
+                  type="button"
+                  className="tk-zoom-reset tk-zoom-in"
+                  onClick={() => zoomTo(pick)}
+                >
+                  {t("ticker.zoom_in")}
+                </button>
+              ) : null}
+              {zoom ? (
+                <button type="button" className="tk-zoom-reset" onClick={reset}>
+                  {t("ticker.zoom_reset")}
+                </button>
+              ) : null}
+            </p>
+          );
+        })()}
       </div>
       {/* How to zoom and measure, for the input this device has — until the
           reader has measured once. */}

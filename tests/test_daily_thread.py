@@ -20,7 +20,7 @@ said, so the chat has to know it. What is tested here:
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -117,6 +117,40 @@ def test_a_card_rewritten_after_the_reader_answered_lands_after_their_turns(chat
     assert turns[-1]["content"].startswith("**Written**")
 
 
+# ----------------------------------------------------------------- listing
+#
+# The panel's list (`list_conversations(cards=False)`) is the reader's own
+# conversations. A card nobody wrote in is not one yet: it is there to be
+# opened from Home, and listed once that happens.
+
+
+def test_a_card_nobody_wrote_in_is_not_in_the_panels_list(chat):
+    auth.save_chat([{"role": "user", "content": "hola"}], chat)
+    cid = daily.record(chat, card())
+
+    assert cid not in {c["id"] for c in auth.list_conversations(chat, cards=False)}
+    assert cid in {c["id"] for c in auth.list_conversations(chat)}, "by id it exists"
+
+
+def test_the_card_thread_is_listed_while_it_is_the_open_one(chat):
+    auth.save_chat([{"role": "user", "content": "hola"}], chat)
+    cid = daily.record(chat, card())
+    auth.set_active_conversation(cid, chat)
+
+    listed = auth.list_conversations(chat, cards=False)
+    assert [c["id"] for c in listed if c["active"]] == [cid]
+
+
+def test_a_card_thread_the_reader_wrote_in_stays_listed(chat):
+    cid = daily.record(chat, card())
+    auth.set_active_conversation(cid, chat)
+    auth.save_chat([*auth.load_chat(chat),
+                    {"role": "user", "content": "¿por qué NVDA?"}], chat)
+    auth.new_conversation(chat, "")  # the reader moves on
+
+    assert cid in {c["id"] for c in auth.list_conversations(chat, cards=False)}
+
+
 def test_each_day_is_its_own_thread(chat):
     first = daily.record(chat, card(day="2026-10-02"))
     second = daily.record(chat, card(day="2026-10-03"))
@@ -159,9 +193,12 @@ def _thread(i: int, *, daily_day: str = "", user: bool = True) -> dict:
         turns.append({"role": "assistant", "content": "card", "daily": daily_day})
     if user:
         turns.append({"role": "user", "content": str(i)})
+    # Recent stamps: an idle thread is dropped on its own (`auth.KEEP_DAYS`),
+    # and this is the count cap under test.
+    when = datetime.now(UTC) - timedelta(hours=1, seconds=-i)
     return {"id": f"c_{i:04d}", "title": str(i), "title_auto": True,
-            "created": "2020-01-01T00:00:00+00:00",
-            "updated": f"2020-01-01T00:{i // 60:02d}:{i % 60:02d}+00:00",
+            "created": when.isoformat(timespec="seconds"),
+            "updated": when.isoformat(timespec="seconds"),
             "messages": turns, **({"daily": daily_day} if daily_day else {})}
 
 

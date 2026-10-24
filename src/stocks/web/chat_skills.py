@@ -9,6 +9,15 @@ catalog entry; the body is the framework itself. Bodies are English because the
 system prompt is English regardless of UI language — the UI label is localized
 separately under the ``chat.skill.<id>`` locale keys.
 
+Two kinds share the folder. A *lens* (the default) is a sector, style or task
+framework the reader may also pin by hand. An *industry* skill (``kind:
+industry``) is narrower — semiconductors, REITs, uranium — and its
+``industries:`` line lists the Yahoo ``industry`` strings it fits (a trailing
+``*`` is a prefix match). Those are picked by the company, not by the reader:
+`lens_for` maps a ticker's sector and industry to one, and the router may
+still choose one from the catalog for a typed question. They stay out of the
+manual picker, which would otherwise be a wall of three dozen chips.
+
 Auto mode routes every message through the provider's cheapest model
 (``Provider.classifier_model``): the catalog plus the question go in, a JSON
 list of at most MAX_AUTO skill ids comes out. Any failure — network, bad JSON,
@@ -44,6 +53,21 @@ class Skill:
     description: str  # one line; the classifier catalog entry
     body: str  # the framework text injected into the system prompt
     keywords: tuple[str, ...] = ()  # offline fallback vocabulary (see `heuristic`)
+    kind: str = "lens"  # "lens" (pickable) or "industry" (picked by the company)
+    industries: tuple[str, ...] = ()  # Yahoo industry names; "X*" = prefix
+
+    def fits(self, industry: str) -> bool:
+        """Whether Yahoo's `industry` string is one this skill covers."""
+        got = (industry or "").strip().lower()
+        if not got:
+            return False
+        for name in self.industries:
+            want = name.strip().lower()
+            if want.endswith("*") and got.startswith(want[:-1].strip()):
+                return True
+            if got == want:
+                return True
+        return False
 
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)
@@ -66,7 +90,14 @@ def _parse(text: str, path: Path) -> Skill:
         raise ValueError(f"{path.name}: empty body")
     keywords = tuple(k.strip().lower() for k in meta.get("keywords", "").split(",")
                      if k.strip())
-    return Skill(meta["id"], meta["name"], meta["description"], body, keywords)
+    kind = meta.get("kind", "lens")
+    if kind not in ("lens", "industry"):
+        raise ValueError(f"{path.name}: kind must be lens or industry")
+    industries = tuple(
+        i.strip() for i in meta.get("industries", "").split(",") if i.strip()
+    )
+    return Skill(meta["id"], meta["name"], meta["description"], body,
+                 keywords, kind, industries)
 
 
 @lru_cache(maxsize=1)
@@ -80,6 +111,41 @@ def catalog() -> tuple[Skill, ...]:
 
 def valid_ids() -> set[str]:
     return {s.id for s in catalog()}
+
+
+def pickable() -> tuple[Skill, ...]:
+    """The skills a reader may pin by hand: every lens, no industry skill."""
+    return tuple(s for s in catalog() if s.kind == "lens")
+
+
+# Yahoo's sector, for a company whose industry no skill names. The broad lens
+# is still better than none — and better than the router guessing from a
+# company name ("Centrus Energy" read as oil and gas).
+SECTOR_LENS = {
+    "Technology": "tech",
+    "Communication Services": "internet-platforms",
+    "Energy": "energy",
+    "Utilities": "utilities",
+    "Financial Services": "financials",
+    "Healthcare": "healthcare",
+    "Real Estate": "reits",
+    "Basic Materials": "mining-metals",
+    "Consumer Defensive": "consumer-staples",
+    "Industrials": "industrials-capital-goods",
+}
+
+
+def lens_for(sector: str = "", industry: str = "") -> str:
+    """The one skill a company's sector and industry call for, or "".
+
+    Industry first, in catalog order — any skill may claim industries, so the
+    broad sector lenses can take theirs too ("Banks*" is financials). Then the
+    sector's lens. An id the catalog does not hold is "" rather than a guess."""
+    for s in catalog():
+        if s.fits(industry):
+            return s.id
+    by_sector = SECTOR_LENS.get((sector or "").strip(), "")
+    return by_sector if by_sector in valid_ids() else ""
 
 
 def skills_block(ids: list[str]) -> str:

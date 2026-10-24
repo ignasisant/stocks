@@ -52,6 +52,7 @@ from stocks.chat import (
     toolbox,
     whatif,
 )
+from stocks.chat import brief as ticker_brief
 from stocks.config import DATA_DIR, currency_symbol
 from stocks.secrets_env import secret
 from stocks.web import chat_skills, chat_web, llm, metering
@@ -1167,6 +1168,16 @@ def resolve_skills(prefs: dict, provider: Provider, api_key: str,
     return ids
 
 
+def _brief_skills(prefs: dict, asked_for: ticker_brief.Brief) -> list[str]:
+    """The lenses a ticker page's brief picked, over the saved routing mode:
+    the reader pressed a button about one company, and its industry is a
+    better router than a classifier reading the button's sentence. "Off"
+    still means off."""
+    if prefs.get("chat_skills_mode", "auto") == "off":
+        return []
+    return list(asked_for.skills)
+
+
 # -------------------------------------------------------------- web search
 
 
@@ -2049,6 +2060,45 @@ def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
                            routines=routines)
 
 
+def used_by(items: list[learnings.Learning], message: str,
+            known: dict[str, str]) -> list[str]:
+    """The ids of the saved memories `message` is about: its words, and every
+    holding it names under any name it goes by ("Nvidia" touches the memory
+    filed under NVDA)."""
+    tickers = set(market.mentioned(message, known, lookup=lambda _name: ""))
+    tickers |= {known[form.upper()] for form in
+                market.aliases(market.named(message), message, known)
+                if form.upper() in known}
+    return learnings.relevant(items, message, tickers)
+
+
+def note_used(prefs: dict, chat_path: Path, message: str,
+              known: dict[str, str]) -> None:
+    """Count the saved memories `message` is about (`learnings.relevant`) —
+    on a thread of its own, since it is a write to the bucket and a count is
+    never worth a slower answer. Nothing is written when none is touched."""
+    from stocks.accounts import GuestIsReadOnly, writable
+
+    path = learnings.path_for(chat_path)
+    if not memory_on(prefs) or not path.exists():
+        return
+    try:
+        writable(path)
+    except GuestIsReadOnly:
+        return
+
+    def work() -> None:
+        try:
+            ids = used_by(learnings.load(path), message, known)
+            if ids:
+                learnings.note_used(path, ids)
+        except Exception as exc:  # noqa: BLE001 — a count never costs a turn
+            obs.warn("chat.memory.used_failed", error_type=type(exc).__name__,
+                     error=str(exc)[:200])
+
+    threading.Thread(target=work, name="chat-memory-used", daemon=True).start()
+
+
 def talk_about(prefs: dict, chat_path: Path, names: list[str], *,
                exclude_thread: str = "",
                limit: int = memory.ABOUT_LIMIT,
@@ -2205,6 +2255,7 @@ def _snippet(text: str) -> str:
 
 
 def earlier(prefs: dict, chat_path: Path, message: str,
+            known: dict[str, str] | None = None,
             ) -> tuple[list[memory.Memory], list[dict]]:
     """The earlier conversations about what `message` names: (the turns to
     staple onto it, the conversations they came from as `Reply.recalled`).
@@ -2213,10 +2264,15 @@ def earlier(prefs: dict, chat_path: Path, message: str,
     local file and reaches nothing. What it finds and why it is strict about
     it is `memory.about`'s business. A turn from a thread that is no longer
     in the book is dropped even if the index still has it: deleting a
-    conversation is the reader's way of saying it must not come back."""
+    conversation is the reader's way of saying it must not come back.
+    `known` is the watchlist's names (`market.watchlist_names`): with it, a
+    holding is found under every name it goes by (`market.aliases`), so
+    "Nvidia" also brings back the turn that said "NVDA"."""
     from stocks.web import auth
 
     names = market.named(message) if recall_on(prefs) else []
+    if recall_on(prefs) and known:
+        names = market.aliases(names, message, known)
     if not names or not chat_path.exists():
         return [], []
     current = auth.active_conversation(chat_path)["id"]
@@ -2272,19 +2328,39 @@ def remember(order: learnings.Command, *, prefs: dict, chat_path: Path,
         tickers = market.mentioned(order.text,
                                    market.watchlist_names(watchlist),
                                    lookup=lambda _name: "")
-        item, new = learnings.add(path, order.text, kind=order.kind or None,
-                                  tickers=tickers, thread=_thread_id(chat_path))
+        done = learnings.save(path, order.text, kind=order.kind or None,
+                              tickers=tickers, thread=_thread_id(chat_path))
     except learnings.RoutinesFull:
         return _tr("chat.routines_full", lang, max=learnings.MAX_ROUTINES), []
     except learnings.Full:
-        return _tr("chat.memory_full", lang, max=learnings.MAX_ITEMS), []
+        # Full is the user's to settle, but not blind: name the memory that
+        # earns its place least, so the choice is one word away.
+        items = learnings.load(path)
+        least = learnings.suggest_drop(items, learnings.usage(path))
+        if least is None:
+            return _tr("chat.memory_full", lang, max=learnings.MAX_ITEMS), []
+        return _tr("chat.memory_full_suggest", lang, max=learnings.MAX_ITEMS,
+                   text=least.text), []
     except GuestIsReadOnly:
         return _tr("chat.memory_off", lang), []
-    if not new:
+    item = done.item
+    if done.op == "known":
         return _tr("chat.memory_known", lang, text=item.text), []
-    obs.event("chat.memory_saved", via="chat", kind=item.kind)
+    if done.op == "updated":
+        obs.event("chat.memory_corrected", via="chat", kind=item.kind)
+        return (_tr("chat.memory_corrected", lang, text=item.text,
+                    before=done.before),
+                [learnings.change("updated", item, before=done.before)])
+    obs.event("chat.memory_saved", via="chat", kind=item.kind,
+              related=done.related is not None)
     saved = "chat.routine_saved" if item.kind == "routine" else "chat.memory_saved"
-    return (_tr(saved, lang, text=item.text), [learnings.change("added", item)])
+    note = _tr(saved, lang, text=item.text)
+    extra: dict = {}
+    if done.related is not None:
+        note += " " + _tr("chat.memory_related", lang, text=done.related.text)
+        extra = {"related_id": done.related.id,
+                 "related_text": done.related.text}
+    return note, [learnings.change("added", item, **extra)]
 
 
 LEARN_TIMEOUT = 45.0  # one provider's go at an extraction
@@ -2473,7 +2549,8 @@ def clean_focus(raw: str | None) -> str:
     return sym
 
 
-def view_context(page: str = "", focus: str = "", tab: str = "") -> str:
+def view_context(page: str = "", focus: str = "", tab: str = "",
+                 about: str = "") -> str:
     """What the reader is looking at, from values the caller already resolved.
 
     "Is this a good entry?" means nothing without the page it was asked on,
@@ -2481,7 +2558,9 @@ def view_context(page: str = "", focus: str = "", tab: str = "") -> str:
     in. `page` is a human page name (already localized), `tab` the open tab's
     own label on a page that has tabs (so "what is this column?" asked on the
     Fees tab is about fees), `focus` a symbol that has been through
-    `clean_focus`.
+    `clean_focus`. `about` is that ticker's sector and industry ("Energy ·
+    Uranium"), when known: the skill router reads this context too, and
+    without it a company is routed by its name.
     """
     bits = []
     if page and tab:
@@ -2489,7 +2568,8 @@ def view_context(page: str = "", focus: str = "", tab: str = "") -> str:
     elif page:
         bits.append(f"The user is currently on the {page} page.")
     if focus:
-        bits.append(f"The ticker in focus is {focus}.")
+        bits.append(f"The ticker in focus is {focus}"
+                    + (f" ({about})." if about else "."))
     return ("Current view: " + " ".join(bits) + "\n\n") if bits else ""
 
 
@@ -2684,6 +2764,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             turn_id: str = "",
             on_plan: Callable[[list[dict]], None] | None = None,
             checkpoint: Checkpoint | None = None,
+            brief: str = "",
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -2730,6 +2811,13 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
 
     `depth` is how far the research goes (`agent.profile_for`): "fast" or
     "deep" when the reader chose, "" to let the message decide.
+
+    `brief` is the angle the ticker page's "Analyse with AI" asked for
+    (`chat/brief.py`) on `focus`: the server writes the instructions the
+    button's short sentence stands for — the company's lenses, the reader's
+    position, the report dates, the answer's structure — onto the outgoing
+    turn, and a full analysis or a bear case runs deep and argued. "" is a
+    typed question.
     """
     from stocks.chat import tools
     from stocks.web import auth, llm
@@ -2896,6 +2984,24 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         stopping.check()
 
     msgs = recent(history)
+    # The button's brief rides on the turn before the research starts, so the
+    # gather reads which KPIs the answer will need.
+    asked_for = None
+    if brief and focus:
+        try:
+            asked_for = ticker_brief.build(brief, focus, watchlist=watchlist,
+                                           db=db, currency=reporting_currency(prefs))
+        except Exception as exc:  # noqa: BLE001 — a press with less context is still a question
+            obs.warn("chat.brief_failed", angle=brief, ticker=focus,
+                     error_type=type(exc).__name__, error=str(exc)[:200])
+    if asked_for is not None:
+        msgs[-1]["content"] += asked_for.text
+        # Filed on the stored turn, so a regenerate asks the same brief.
+        history[-1]["brief"] = {"angle": asked_for.angle, "ticker": focus}
+        obs.event("chat.brief", angle=asked_for.angle, ticker=focus,
+                  skills=",".join(asked_for.skills) or "-",
+                  dossier="kept" if asked_for.dossier else
+                  "draft" if asked_for.needs_dossier else "-")
     say("gathering")
     # A question that is research gets the deep gather: more rounds, the
     # answering model choosing what to read, the app's engines as tools. It
@@ -2903,7 +3009,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # go on before the research is back.
     # A caller's `timeout_s` has always bounded the quick gather too; a deep
     # one may take longer than that, and the lookups beside it wait as long.
-    profile = agent.profile_for(message, depth)
+    profile = agent.profile_for(
+        message, depth or ("deep" if asked_for is not None and asked_for.deep
+                           else ""))
     if (profile is agent.DEEP and provider.id == "free"
             and free_account_left(prefs) < DEEP_UNITS):
         # The research runs before the answer is charged, so what it may
@@ -2915,9 +3023,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     try:
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
-        skills, evidence, sale, chart, mix, losses, moved = in_parallel(
-            lambda: resolve_skills(prefs, provider, key, history,
-                                   context=context + view),
+        skills, evidence, sale, chart, mix, losses, moved, drafted = in_parallel(
+            lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
+                     else resolve_skills(prefs, provider, key, history,
+                                         context=context + view)),
             lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
                                     chat_path, timeout=researched, focus=focus,
                                     on_tool=watch if on_tool else None,
@@ -2934,6 +3043,11 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             lambda: _harvest(message, db, prefs_path, lang, told) if one else None,
             lambda: (_rebalance(message, watchlist, db, prefs_path, focus, lang,
                                 told) if one else None),
+            # A company met for the first time this month gets its notes
+            # drafted beside the research, on the cheapest model.
+            lambda: (ticker_brief.draft_dossier(provider, key, asked_for.facts)
+                     if asked_for is not None and asked_for.needs_dossier
+                     else None),
             timeout=researched + 5.0,
             # A stopped turn stops waiting here (`chat/stopping.py`); the gather
             # beside it has already stopped starting things. So does a message
@@ -2980,7 +3094,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     except guard.Blocked as refused:
         return settled(_refused(refused.refusal, history, chat_path, thread,
                                 turn_id, lang, provider.id))
-    recalled_notes, recalled = earlier(prefs, chat_path, message)
+    known = market.watchlist_names(watchlist)
+    recalled_notes, recalled = earlier(prefs, chat_path, message, known)
+    note_used(prefs, chat_path, message, known)
     system = system_prompt(
         auth.load_profile(prefs),
         # The turn's own part: where the reader is, what the surface draws
@@ -3004,6 +3120,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
         msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
+    if asked_for is not None:
+        notes = asked_for.dossier or (
+            drafted if isinstance(drafted, ticker_brief.Dossier) else None)
+        msgs[-1]["content"] += ticker_brief.dossier_block(notes)
     if isinstance(sale, whatif.Scenario):
         msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
@@ -3020,7 +3140,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # join the question and the whole is fitted again.
     sides: list[dict] = []
     stopping.check()
-    if on_subagent is not None and debate.wants(message):
+    if on_subagent is not None and (
+            debate.wants(message) or (asked_for is not None and asked_for.debate)):
         say("debating")
         sides = debate.run(provider, key, msgs, lang, on_event=on_subagent,
                            timeout=min(timeout_s, debate.TIMEOUT))
@@ -3396,6 +3517,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   thread: str | None = None,
                   depth: str = "",
                   checkpoint: Checkpoint | None = None,
+                  brief: str = "",
                   ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
@@ -3419,8 +3541,9 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     answer mid-paragraph reads as corruption. What arrived is kept and stored,
     so the thread does not lose it.
 
-    `thread` and `depth` are `prepare`'s: the conversation the answer is
-    stored in, and how far its research goes.
+    `thread`, `depth` and `brief` are `prepare`'s: the conversation the
+    answer is stored in, how far its research goes, and the ticker page's
+    requested angle.
     """
     meter = metering.Meter()
     built: dict = {}
@@ -3437,7 +3560,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             view=view, focus=focus, fence=fence, session_keys=session_keys,
             polish=polish, confirm_actions=confirm_actions, debating=debating,
             draws=draws, thread=thread, depth=depth, built=built,
-            turn_id=turn_id, halt=halt, checkpoint=checkpoint,
+            turn_id=turn_id, halt=halt, checkpoint=checkpoint, brief=brief,
         ), meter=meter, fields={"turn": turn_id})
     finally:
         halt.set()
@@ -3455,6 +3578,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                    thread: str | None, depth: str, built: dict,
                    turn_id: str, halt: threading.Event,
                    checkpoint: Checkpoint | None = None,
+                   brief: str = "",
                    ) -> Iterator[tuple[str, object]]:
     """`answer_stream`'s body; the turn it builds goes in `built`."""
     # In the stream's own context, which the prepare worker below copies.
@@ -3483,6 +3607,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 view=view, focus=focus, fence=fence, session_keys=session_keys,
                 confirm_actions=confirm_actions, draws=draws, thread=thread,
                 depth=depth, turn_id=turn_id, checkpoint=checkpoint,
+                brief=brief,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc

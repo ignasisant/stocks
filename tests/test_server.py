@@ -580,6 +580,12 @@ def test_the_api_has_a_ceiling_of_its_own(metered):
     assert codes(metered, "/api/v1/health", 10)[-1] == 429
 
 
+def test_the_string_catalog_rides_free(metered):
+    """A shipped file like the bundle. Refused once, the shell drew every
+    label as its dotted key — `common.data_unavailable` on a retry button."""
+    assert 429 not in codes(metered, "/api/v1/i18n/es", 12)
+
+
 def test_a_guest_gets_a_smaller_share_of_the_api(metered, monkeypatch):
     monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 4)
     assert codes(metered, "/api/v1/health", 5)[-1] == 429

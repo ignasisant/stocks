@@ -268,6 +268,9 @@ export default function Page() {
 
   return (
     <div className="hm-page">
+      {/* Every other page opens on its title; Home has none on screen, so a
+          screen reader's heading list would start at a card. */}
+      <h1 className="ag-sr">{t("nav.home")}</h1>
       {/* Above the checklist: what to do first comes before what is switched
           on. Both vanish once they are answered.
 

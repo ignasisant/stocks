@@ -244,6 +244,31 @@ def test_a_dead_tier_degrades_the_search_instead_of_failing_it(
     assert [m["ticker"] for m in find(client, "AAPL") if m["kind"] == "watch"] == ["AAPL"]
 
 
+def test_a_cooling_yahoo_is_flagged_not_passed_off_as_nothing(
+    client, account, token, monkeypatch
+):
+    """Samsung read as only "Analyze SAMSUNG" while Yahoo cooled down: the box
+    must be told the worldwide tier was not asked, and only then."""
+    from stocks.data import symbols
+
+    def down(**params):
+        params = {"q": "samsung", **WHO, **params}
+        response = client.get("/v1/search", params=params, headers=AUTH)
+        return response.json()["world_down"]
+
+    monkeypatch.setattr(symbols, "reachable", lambda: False)
+    assert down()
+    assert not down(world="false")  # a local-only ask never claims it
+    # A memo hit answered anyway: the tier spoke.
+    monkeypatch.setattr(
+        loaders, "world_matches", lambda q: [("005930.KS", "Samsung", "Korea")]
+    )
+    assert not down()
+    monkeypatch.setattr(symbols, "reachable", lambda: True)
+    monkeypatch.setattr(loaders, "world_matches", lambda q: [])
+    assert not down()
+
+
 def test_without_world_the_yahoo_tier_is_not_asked(client, account, token, monkeypatch):
     """`world=false` is the box's first paint: local rows at once, no Yahoo."""
 

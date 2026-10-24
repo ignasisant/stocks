@@ -35,6 +35,12 @@ class LlmResponseParser:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="DetectAction", llm_response=llm_response, mode="request")
         return typing.cast(types.ActionCall, __result__)
 
+    def DraftDossier(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.Dossier:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="DraftDossier", llm_response=llm_response, mode="request")
+        return typing.cast(types.Dossier, __result__)
+
     def ExtractLessons(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.LessonOps:
@@ -101,6 +107,12 @@ class LlmResponseParser:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ResolveSymbols", llm_response=llm_response, mode="request")
         return typing.cast(typing.Dict[str, typing.Optional[str]], __result__)
 
+    def ReviewMemories(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.ReviewOps:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ReviewMemories", llm_response=llm_response, mode="request")
+        return typing.cast(types.ReviewOps, __result__)
+
     def WriteAnalysis(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.AnalysisReply:
@@ -138,6 +150,12 @@ class LlmStreamParser:
     ) -> stream_types.ActionCall:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="DetectAction", llm_response=llm_response, mode="stream")
         return typing.cast(stream_types.ActionCall, __result__)
+
+    def DraftDossier(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.Dossier:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="DraftDossier", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.Dossier, __result__)
 
     def ExtractLessons(
         self, llm_response: str, baml_options: BamlCallOptions = {},
@@ -204,6 +222,12 @@ class LlmStreamParser:
     ) -> typing.Dict[str, typing.Optional[str]]:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ResolveSymbols", llm_response=llm_response, mode="stream")
         return typing.cast(typing.Dict[str, typing.Optional[str]], __result__)
+
+    def ReviewMemories(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.ReviewOps:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ReviewMemories", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.ReviewOps, __result__)
 
     def WriteAnalysis(
         self, llm_response: str, baml_options: BamlCallOptions = {},

@@ -3,16 +3,21 @@
  *
  * The range is state and the zoom window is a slice of the bars.
  *
- * The holding is folded into the hero on a phone and into the price row on
- * desktop — either way beside the price it is valued at.
+ * The row beside the price answers a holder's questions in the order they are
+ * asked: what the price did today and why (the price tile, and a results
+ * line when a report landed this week); where that price sits (the year's
+ * range, the P/E against its own average, the next results date — the kind's
+ * cells, `layout.ts`); and what it does to the holding (value, gain and
+ * weight, in the reader's own money). RSI and the averages stay on the chart,
+ * where they can be read against the line rather than as two more figures.
  *
- * The figures beside the price are the asset kind's (`layout.ts`): momentum
- * and trend for a share or a fund of shares; momentum and the distance from the
- * all-time high for a coin; payout and duration for
- * a bond fund; yield against the policy rate for a money-market fund; premium
- * to NAV for a closed-end fund.
+ * Every figure of the holding is priced at the same number the price tile
+ * shows — off-session the quote, in session the last bar — so a pre-market
+ * drop is not printed beside a value that still stands at last night's close.
  */
 
+import { useState, type ReactNode } from "react";
+import { calendarDay } from "../../shell/dates";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import type { Query } from "../../shell/useApi";
@@ -21,8 +26,10 @@ import {
   barsDayPct,
   currencySymbol,
   earliest,
+  known,
   latest,
   money,
+  orElse,
   percent,
   shares,
   signed,
@@ -30,9 +37,17 @@ import {
   type Translate,
 } from "./format";
 import { layout, type MetricId, type Shape } from "./layout";
-import { PriceChart, PriceChartWait } from "./PriceChart";
+import { PriceChart, PriceChartWait, type ChartWindow } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
-import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
+import {
+  Chip,
+  type ChipSpec,
+  Kpi,
+  KpiGrid,
+  type Tone,
+  bandTone,
+  chipFor,
+} from "../../ui/Kpi";
 import type {
   AssetStats,
   Bars,
@@ -42,6 +57,7 @@ import type {
   Quote,
   TickerPosition,
   Trade,
+  Valuation,
 } from "./types";
 import { num } from "../../shell/numbers";
 
@@ -59,6 +75,9 @@ export function isRange(value: string): value is Range {
  */
 const PHONE_RANGES = RANGES.filter((one) => one !== "6m" && one !== "2y");
 
+/** How many days after a report its line still explains the price. */
+const RESULTS_FRESH_DAYS = 7;
+
 export function PriceSection({
   query,
   quote,
@@ -73,6 +92,7 @@ export function PriceSection({
   fund = null,
   stats = null,
   cycle = [],
+  valuation = null,
 }: {
   /**
    * The bars as a query rather than as data, because the controls do not wait
@@ -99,20 +119,26 @@ export function PriceSection({
   shape?: Shape;
   /** `/fund`'s answer — where a fund's figures beside the price come from. */
   fund?: Fund | null;
-  /** `/crypto`'s answer — where a coin's all-time high comes from. */
+  /** `/crypto`'s answer — where a coin's all-time high and year come from. */
   stats?: AssetStats | null;
   /** A coin's dated cycle events, for the chart's verticals. */
   cycle?: CycleEvent[];
+  /** `/valuation`'s answer, which the page fetches anyway: the P/E cell. */
+  valuation?: Valuation | null;
 }) {
   const t = useT();
   const mobile = useMobile();
   const bars = query.state === "loaded" ? query.data : null;
+  // The stretch a drag zoomed the chart into, so the period figure reads what
+  // the chart shows; null on the whole range.
+  const [zoomed, setZoomed] = useState<ChartWindow | null>(null);
   // No figures over bars that have nothing to show: the metric row clears
   // whenever the chart under it cannot draw.
   const drawable = Boolean(bars && bars.dates.length > 0);
   // The quote's move when there is one; the bars' own otherwise, so a
   // throttled quote costs the page its live figure and not the day change.
   const dayPct = quote?.pct ?? barsDayPct(bars);
+  const dim = quote?.market_open === false;
 
   const close = bars?.series.Close;
   const last = latest(close);
@@ -120,43 +146,69 @@ export function PriceSection({
   // Off-session the quote is the honest figure: the last bar is a stale close,
   // and the page dims the day change for exactly that reason.
   const live =
-    quote?.market_open === false && quote.price !== null ? quote.price : last;
+    dim && quote?.price !== null && quote?.price !== undefined ? quote.price : last;
+  const today = isoToday();
   const cells = shape.metrics.map((id) =>
-    cell(id, { bars, last, fund: fund?.is_fund ? fund : null, stats, t }),
+    cell(id, {
+      bars,
+      live,
+      fund: fund?.is_fund ? fund : null,
+      stats,
+      quote,
+      valuation,
+      events,
+      today,
+      t,
+    }),
   );
   const extended = quote?.session === "pre" || quote?.session === "post";
   const sessionNote =
     extended && quote?.session ? t(`ticker.session_${quote.session}`) : "";
 
-  // Change over the SELECTED range. `bars` is already trimmed to the display
-  // window, so its first close is the period's start.
-  const periodPct =
-    last !== null && first !== null && first !== 0
+  // Change over the SELECTED range — or over the stretch the chart is zoomed
+  // into, which is what the reader is looking at. `bars` is already trimmed
+  // to the display window, so its first close is the period's start.
+  const periodPct = zoomed
+    ? zoomed.pct
+    : last !== null && first !== null && first !== 0
       ? ((last - first) / first) * 100
       : null;
   // "+11% in Max" says nothing; the whole history reads as since inception.
   const periodLine =
     periodPct === null
       ? ""
-      : range === "max"
-        ? t("ticker.period_change_max", { pct: `${signed(periodPct)}%` })
-        : t("ticker.period_change", {
+      : zoomed
+        ? t("ticker.range_change", {
             pct: `${signed(periodPct)}%`,
-            period: t(`ticker.period_${range}`),
-          });
-  // Only set once `/quote` found a currency other than the reader's own and a
-  // rate to restate it at — a bare number here would read as the reader's
-  // money, and a KRW close is not that.
-  // Never for an index: its level is points, and points restated in euros are
-  // a number that is nobody's money.
-  const approxLine =
-    !shape.points && quote?.price_base !== null && quote?.price_base !== undefined
-      ? approx(quote.price_base, quote.base)
-      : "";
+            start: zoomed.start,
+            end: zoomed.end,
+          })
+        : range === "max"
+          ? t("ticker.period_change_max", { pct: `${signed(periodPct)}%` })
+          : t("ticker.period_change", {
+              pct: `${signed(periodPct)}%`,
+              period: t(`ticker.period_${range}`),
+            });
   const unit = shape.points ? t("ticker.points") : (quote?.currency ?? null);
   // An index is followed, not held: no position block even if a ledger row
   // somehow names one.
-  const held = shape.holdable ? position : null;
+  const held = shape.holdable && position?.held ? position : null;
+  // The price restated in the reader's own money, for a reader who does not
+  // hold the name: a holder reads their euros on the value tile instead, and
+  // the same conversion printed twice in one row is noise. Only set once
+  // `/quote` found a currency other than the reader's own and a rate to
+  // restate it at — a bare number here would read as the reader's money, and
+  // a KRW close is not that. Never for an index: its level is points, and
+  // points restated in euros are a number that is nobody's money.
+  const approxLine =
+    !held && !shape.points && known(quote?.price_base)
+      ? approx(quote.price_base, quote.base)
+      : "";
+  const tiles = held
+    ? positionTiles(held, live, dayPct, dim, quote, shape.units, t)
+    : [];
+  // Why the price moved, when a report landed this week.
+  const recent = recentResults(events, today);
 
   return (
     <Card>
@@ -189,48 +241,51 @@ export function PriceSection({
         <Hero
           price={live}
           dayPct={dayPct}
-          dim={quote?.market_open === false}
+          dim={dim}
           sessionNote={sessionNote}
           periodLine={periodLine}
           periodUp={periodPct !== null && periodPct >= 0}
-          position={held}
-          last={last}
+          tiles={tiles}
           cells={cells}
           currency={unit}
           approxLine={approxLine}
-          units={shape.units}
+          recent={recent}
           t={t}
         />
       ) : (
-        // The kind's cells, then the holding's four: the holding sits in the
-        // price row, beside the price it is valued at, rather than in a card
-        // further down.
-        <Metrics>
-          <Metric
-            // Extended hours are named in the label, the way the page names
-            // them: "Price · pre-market". A day move printed without that reads
-            // as today's session when it is not.
-            label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
-            value={live === null ? DASH : `${money(live)}${unit ? ` ${unit}` : ""}`}
-            delta={dayPct}
-            dim={quote?.market_open === false}
-            note={[periodLine, approxLine].filter(Boolean).join(" · ")}
-            noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
-          />
-          {cells.map((one) => (
+        // The price, the kind's cells, then the holding's three: the holding
+        // sits in the price row, beside the price it is valued at, rather
+        // than in a card further down.
+        <>
+          <Metrics>
             <Metric
-              key={one.id}
-              label={one.label}
-              value={one.value}
-              help={one.help}
-              note={one.note}
-              noteTone={one.tone}
+              // Extended hours are named in the label, the way the page names
+              // them: "Price · pre-market". A day move printed without that reads
+              // as today's session when it is not.
+              label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
+              value={live === null ? DASH : `${money(live)}${unit ? ` ${unit}` : ""}`}
+              delta={dayPct}
+              dim={dim}
+              note={[periodLine, approxLine].filter(Boolean).join(" · ")}
+              noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
             />
-          ))}
-          {held?.held ? (
-            <PositionMetrics position={held} last={last} units={shape.units} t={t} />
-          ) : null}
-        </Metrics>
+            {cells.map((one) => (
+              <CellTile key={one.id} one={one} />
+            ))}
+            {tiles.map((one) => (
+              <Kpi
+                key={one.key}
+                label={one.label}
+                help={one.help}
+                value={one.value}
+                chip={one.chip}
+                note={one.note}
+                noteTone={one.noteTone}
+              />
+            ))}
+          </Metrics>
+          {recent ? <ResultsLine event={recent} t={t} /> : null}
+        </>
       )}
 
       {query.state !== "loaded" ? (
@@ -252,11 +307,12 @@ export function PriceSection({
           overlays={shape.overlays}
           markers={shape.markers}
           mobile={mobile}
+          onWindow={setZoomed}
           t={t}
         />
       ) : null}
 
-      <LastBuy position={held} last={last} units={shape.units} t={t} />
+      <LastBuy position={held} last={live} units={shape.units} t={t} />
     </Card>
   );
 }
@@ -275,6 +331,7 @@ function LastBuy({
   t,
 }: {
   position: TickerPosition | null;
+  /** The price the row above is valued at. */
   last: number | null;
   /** Count the holding in units — a coin — rather than shares. */
   units: boolean;
@@ -329,12 +386,11 @@ function Hero({
   sessionNote,
   periodLine,
   periodUp,
-  position,
-  last,
+  tiles,
   cells,
   currency,
   approxLine,
-  units,
+  recent,
   t,
 }: {
   price: number | null;
@@ -343,8 +399,8 @@ function Hero({
   sessionNote: string;
   periodLine: string;
   periodUp: boolean;
-  position: TickerPosition | null;
-  last: number | null;
+  /** The holding's tiles; empty for a reader who does not hold the name. */
+  tiles: Tile[];
   /** The kind's figures — the desktop row's cells, read as one line here. */
   cells: Cell[];
   /**
@@ -354,21 +410,23 @@ function Hero({
   currency: string | null;
   /** The price restated in the reader's own money; blank with nothing to show. */
   approxLine: string;
-  /** Count the holding in units — a coin — rather than shares. */
-  units: boolean;
+  /** This week's report, when there was one. */
+  recent: EarningsEvent | null;
   t: Translate;
 }) {
-  const held = position?.held ? position : null;
-  const lines = cells.filter((one) => one.value !== DASH).map(inline);
+  const shown = cells.filter((one) => one.value !== DASH);
   // Not held: no tiles to fold the first figure into, so what the desktop row
-  // carries stands on its own line under the price — "RSI 45.3 · neutral ·
-  // SMA20 187.40 · above" for a share. Without it a phone reader of a name
-  // they do not own gets a price and nothing to read it against.
-  const trendLine = lines.join(" · ");
-  // Held: the first figure folds into the tiles and the rest keep a line of
-  // their own under them — a coin's distance from its peak is not dropped
-  // because its RSI took the only slot.
-  const restLine = lines.slice(1).join(" · ");
+  // carries stands on its own line under the price — "52w range 243 – 348 ·
+  // −8,2 % off the high · P/E now 31,4 · +12 % vs 5y avg" for a share. Without
+  // it a phone reader of a name they do not own gets a price and nothing to
+  // read it against.
+  const trendLine = shown.map(inline).join(" · ");
+  // Held: the first figure folds into the tiles as the fourth of the 2×2 —
+  // the year's range with its meter — and the rest keep a line of their own
+  // under them, so a coin's distance from its peak is not dropped because
+  // the range took the only slot.
+  const lead = shown[0] ?? null;
+  const restLine = shown.slice(1).map(inline).join(" · ");
 
   return (
     <div className="tk-hero">
@@ -388,42 +446,114 @@ function Hero({
       {/* Only when `/quote` converted the native close: a bare number here
           would read as the reader's own money, and often is not. */}
       {approxLine ? <p className="tk-hero-trend">{approxLine}</p> : null}
-      {held ? (
+      {tiles.length > 0 ? (
         <>
-          <PositionTiles
-            position={held}
-            last={last}
-            note={lines[0] ?? ""}
-            units={units}
-            t={t}
-          />
+          <KpiGrid>
+            {tiles.map((one) => (
+              <Kpi
+                key={one.key}
+                label={one.label}
+                help={one.help}
+                value={one.value}
+                chip={one.chip}
+                note={one.note}
+                noteTone={one.noteTone}
+              />
+            ))}
+            {lead ? <CellTile one={lead} /> : null}
+          </KpiGrid>
           {restLine ? <p className="tk-hero-trend">{restLine}</p> : null}
         </>
       ) : trendLine ? (
         <p className="tk-hero-trend">{trendLine}</p>
       ) : null}
+      {recent ? <ResultsLine event={recent} t={t} /> : null}
     </div>
   );
 }
 
 /**
- * The "≈ €12,345.67" under the native value: the holding in the reporting
+ * The "≈ €12,345.67" under the native price: the figure in the reporting
  * currency, with its mark ahead of the figure, not the code after it.
  */
 function approx(value: number, base: string | null | undefined): string {
   return `≈ ${currencySymbol(base)}${money(value)}`;
 }
 
+/** "+€735,26" / "-$12,00": a signed amount with its currency's mark. */
+function signedMoney(value: number, currency: string | null | undefined): string {
+  return `${value < 0 ? "-" : "+"}${currencySymbol(currency)}${money(Math.abs(value))}`;
+}
+
+/** The local calendar day, as the API writes dates. */
+function isoToday(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/** Whole days from `from` to `to`, both "YYYY-MM-DD"; negative when `to` is earlier. */
+function daysBetween(from: string, to: string): number {
+  const a = Date.UTC(
+    Number(from.slice(0, 4)),
+    Number(from.slice(5, 7)) - 1,
+    Number(from.slice(8, 10)),
+  );
+  const b = Date.UTC(
+    Number(to.slice(0, 4)),
+    Number(to.slice(5, 7)) - 1,
+    Number(to.slice(8, 10)),
+  );
+  return Math.round((b - a) / 86_400_000);
+}
+
 /**
- * The holding restated in the reader's own money — or nothing when it already
- * is: "1,234.56 EUR" over "≈ €1,234.56" is the same figure twice, and the
- * "≈" claims a conversion that never happened.
+ * The report that explains this week's move, or null: the latest reported
+ * event dated within `RESULTS_FRESH_DAYS` of today. Older than that it is
+ * history the chart's markers already carry; a date still to come is the next
+ * results cell's, not this line's.
  */
-function baseNote(position: TickerPosition): string {
-  if (position.value === null) return "";
-  const own = (position.currency ?? "").toUpperCase();
-  if (own && own === (position.base ?? "").toUpperCase()) return "";
-  return approx(position.value, position.base);
+function recentResults(events: EarningsEvent[], today: string): EarningsEvent | null {
+  let best: EarningsEvent | null = null;
+  for (const one of events) {
+    if (one.reported_eps === null || one.date > today) continue;
+    if (daysBetween(one.date, today) > RESULTS_FRESH_DAYS) continue;
+    if (!best || one.date > best.date) best = one;
+  }
+  return best;
+}
+
+/**
+ * "**Results 21 Oct 2026**  EPS 3,83 vs 5,46 est. · −29,9 % surprise": the
+ * reason for the week's move, under the tiles and above the chart. Only the
+ * surprise is coloured, and it carries its sign and the word beside it, so
+ * the colour is never the only thing saying which way it went.
+ */
+function ResultsLine({ event, t }: { event: EarningsEvent; t: Translate }) {
+  const fields = {
+    date: calendarDay(event.date),
+    eps: money(event.reported_eps),
+    est: money(event.eps_estimate),
+  };
+  const line = known(event.eps_estimate)
+    ? t("ticker.results_recent", fields)
+    : t("ticker.results_recent_bare", fields);
+  const surprise = event.surprise_pct;
+  return (
+    <p className="tk-results">
+      <Bold text={line} />
+      {known(surprise) ? (
+        <>
+          {" · "}
+          <strong className={surprise >= 0 ? "tk-is-green" : "tk-is-red"}>
+            {signed(surprise, 1)}%
+          </strong>{" "}
+          {t("ticker.hover_surprise")}
+        </>
+      ) : null}
+    </p>
+  );
 }
 
 /** One figure beside the price, whichever kind of asset asked for it. */
@@ -436,9 +566,26 @@ type Cell = {
   help?: string;
   note: string;
   tone: string | null;
+  /** Anything drawn under the figure: the range meter. */
+  extra?: ReactNode;
 };
 
-/** "RSI (14) 45.3 · neutral": a cell as a phrase of the phone's summary line. */
+/** A cell as the app-wide tile. */
+function CellTile({ one }: { one: Cell }) {
+  return (
+    <Kpi
+      label={one.label}
+      value={one.value}
+      help={one.help}
+      note={one.note}
+      noteTone={one.tone ? bandTone(one.tone) : null}
+    >
+      {one.extra}
+    </Kpi>
+  );
+}
+
+/** "52w range 243 – 348 · −8,2 % off the high": a cell as a phrase of the phone's summary line. */
 function inline(one: Cell): string {
   return [`${one.short ?? one.label} ${one.value}`, one.note]
     .filter(Boolean)
@@ -446,21 +593,51 @@ function inline(one: Cell): string {
 }
 
 /**
- * The server's RSI band in the reader's language. A switch of literal keys, so
- * the catalog scan sees every one; an unknown band prints nothing rather than
- * a raw English word.
+ * Where today's price sits between the year's low and high, as a track with
+ * a dot. Decoration for a sighted reader: the cell's note says the same in
+ * words ("−8,2 % off the high"), so the meter is hidden from a screen reader
+ * rather than read out as an empty span.
  */
-function rsiBand(t: Translate, verdict: string | null | undefined): string {
-  switch (verdict) {
-    case "oversold":
-      return t("ticker.rsi_oversold");
-    case "neutral":
-      return t("ticker.rsi_neutral");
-    case "overbought":
-      return t("ticker.rsi_overbought");
-    default:
-      return "";
+function RangeMeter({ at }: { at: number }) {
+  return (
+    <span className="tk-range" aria-hidden="true">
+      <span className="tk-range-dot" style={{ left: `${at * 100}%` }} />
+    </span>
+  );
+}
+
+/**
+ * The year's low and high, from whichever source has them: a coin's `/crypto`
+ * stats, the quote's own row (Yahoo's, in the listing's currency), or the
+ * bars on screen when they reach back a full year — a Finnhub quote has no
+ * year, and a reader on the 5y range still gets the cell.
+ */
+function yearRange(
+  quote: Quote | null,
+  stats: AssetStats | null,
+  bars: Bars | null,
+): { low: number; high: number } | null {
+  if (known(stats?.high_52w) && known(stats?.low_52w)) {
+    return { low: stats.low_52w, high: stats.high_52w };
   }
+  if (known(quote?.high_52w) && known(quote?.low_52w)) {
+    return { low: quote.low_52w, high: quote.high_52w };
+  }
+  if (!bars || bars.dates.length < 2) return null;
+  const lastDay = (bars.dates[bars.dates.length - 1] ?? "").slice(0, 10);
+  const firstDay = (bars.dates[0] ?? "").slice(0, 10);
+  if (!firstDay || !lastDay || daysBetween(firstDay, lastDay) < 365) return null;
+  const since = daysBetween(firstDay, lastDay) - 365;
+  let low = Infinity;
+  let high = -Infinity;
+  (bars.series.Close ?? []).forEach((one, i) => {
+    if (!known(one)) return;
+    const day = (bars.dates[i] ?? "").slice(0, 10);
+    if (daysBetween(firstDay, day) < since) return;
+    low = Math.min(low, one);
+    high = Math.max(high, one);
+  });
+  return Number.isFinite(low) && Number.isFinite(high) ? { low, high } : null;
 }
 
 /** Which bank's rate a money-market fund is read against, in words. */
@@ -478,53 +655,142 @@ function bankLabel(t: Translate, bank: string | null): string {
 /**
  * The figure a cell id stands for, off the payloads the page already holds.
  *
- * A fund figure `/fund` has not answered yet — or does not have — prints a
- * dash in its cell rather than moving the row about: the layout is the kind's,
+ * A figure its feed has not answered yet — or does not have — prints a dash
+ * in its cell rather than moving the row about: the layout is the kind's,
  * the data fills it in.
  */
 function cell(
   id: MetricId,
   {
     bars,
-    last,
+    live,
     fund,
     stats,
+    quote,
+    valuation,
+    events,
+    today,
     t,
   }: {
     bars: Bars | null;
-    last: number | null;
+    /** The price the row is read at — the tile's, not always the last bar. */
+    live: number | null;
     fund: Fund | null;
     stats: AssetStats | null;
+    quote: Quote | null;
+    valuation: Valuation | null;
+    events: EarningsEvent[];
+    today: string;
     t: Translate;
   },
 ): Cell {
   switch (id) {
-    case "rsi": {
-      const rsi = latest(bars?.series.RSI14);
+    case "range_52w": {
+      const year = yearRange(quote, stats, bars);
+      const label = t("ticker.range_52w");
+      const help = t("ticker.range_52w_help");
+      if (!year || live === null || year.high <= 0) {
+        return { id, label, value: DASH, help, note: "", tone: null };
+      }
+      // A share over 100 reads whole — "243 – 348" — and a penny stock keeps
+      // its cents: the range is a frame for the price, not a quote.
+      const digits = year.high >= 100 ? 0 : 2;
+      const span = year.high - year.low;
+      const at = span > 0 ? Math.min(1, Math.max(0, (live - year.low) / span)) : 1;
+      const offHigh = live / year.high - 1;
       return {
         id,
-        label: t("ticker.rsi_label"),
-        value: rsi === null ? DASH : num(rsi, 1),
-        help: t("ticker.rsi_help"),
-        // The band is the server's, not a threshold picked here.
-        note: rsiBand(t, bars?.rsi_verdict),
-        tone: bars?.rsi_tone ?? null,
+        label,
+        value: `${money(year.low, digits)} – ${money(year.high, digits)}`,
+        help,
+        // Within half a tenth of the high is at it: a pre-market print a cent
+        // over last year's intraday peak is not "+0,0 % off the high".
+        note:
+          offHigh >= -0.0005
+            ? t("ticker.at_high")
+            : t("ticker.off_high", { pct: signedPercent(offHigh, 1) }),
+        tone: null,
+        extra: <RangeMeter at={at} />,
       };
     }
-    case "sma20": {
-      const sma20 = latest(bars?.series.SMA20);
-      const known = last !== null && sma20 !== null;
+    case "pe": {
+      const current = valuation?.current ?? null;
+      // Five years is the frame the valuation card opens on; the first window
+      // stands in for a company younger than that.
+      const window =
+        valuation?.windows.find((one) => one.window === "5y") ??
+        valuation?.windows[0] ??
+        null;
+      const premium = window?.premium ?? null;
+      const percentile = window?.percentile ?? null;
+      const label = t("ticker.kpi_pe_current");
+      const help = t("ticker.kpi_pe_current_help");
+      if (current === null) {
+        return { id, label, value: DASH, help, note: "", tone: null };
+      }
       return {
         id,
-        label: t("ticker.sma20_label"),
-        short: "SMA20",
-        value: sma20 === null ? DASH : money(sma20),
-        help: t("ticker.sma20_help"),
-        // Price against its 20-day average: a trend read beside the level.
-        note: known
-          ? t(last >= sma20 ? "ticker.price_above" : "ticker.price_below")
-          : "",
-        tone: known ? (last >= sma20 ? "green" : "red") : null,
+        label,
+        value: num(current, 1),
+        help,
+        // Against its own average when there is one; the grid's band when
+        // the history is too short to have one.
+        note:
+          window && known(premium)
+            ? t("ticker.pe_vs_avg", {
+                pct: signedPercent(premium, 0),
+                rng: window.window,
+              })
+            : orElse(t, `ticker.verdict_${valuation?.current_verdict ?? ""}`, ""),
+        // The same thresholds the valuation card bands on: the top fifth of
+        // its own history is rich, the bottom fifth cheap, the rest unsaid.
+        tone:
+          percentile === null
+            ? (valuation?.current_tone ?? null)
+            : percentile >= 80
+              ? "red"
+              : percentile <= 20
+                ? "green"
+                : null,
+      };
+    }
+    case "next_results": {
+      const label = t("ticker.next_results");
+      const help = t("ticker.next_results_help");
+      let next: EarningsEvent | null = null;
+      let lastReported: EarningsEvent | null = null;
+      for (const one of events) {
+        if (one.reported_eps === null && one.date >= today) {
+          if (!next || one.date < next.date) next = one;
+        } else if (one.reported_eps !== null) {
+          if (!lastReported || one.date > lastReported.date) lastReported = one;
+        }
+      }
+      if (!next) {
+        return {
+          id,
+          label,
+          value: DASH,
+          help,
+          note: lastReported
+            ? t("ticker.last_results", { date: calendarDay(lastReported.date) })
+            : "",
+          tone: null,
+        };
+      }
+      const days = daysBetween(today, next.date);
+      return {
+        id,
+        label,
+        value: calendarDay(next.date),
+        help,
+        note:
+          days === 0
+            ? t("ticker.results_today")
+            : days === 1
+              ? t("ticker.in_one_day")
+              : t("ticker.in_days", { n: days }),
+        tone: null,
       };
     }
     case "distribution":
@@ -615,9 +881,9 @@ function cell(
       };
     case "ath_drawdown": {
       const peak = stats?.ath ?? null;
-      // Measured against tonight's close, not a night-old peak's own price:
-      // a coin past last night's high is at its peak, never above it.
-      const drop = last !== null && peak ? Math.min(0, last / peak - 1) : null;
+      // Measured against the price on the tile, not a night-old peak's own
+      // price: a coin past last night's high is at its peak, never above it.
+      const drop = live !== null && peak ? Math.min(0, live / peak - 1) : null;
       return {
         id,
         label: t("ticker.ath_label"),
@@ -640,35 +906,6 @@ function cell(
   }
 }
 
-/**
- * The holding's four figures: value, unrealised P/L, weight, average cost.
- *
- * One function for both layouts — the phone tiles and the desktop price row —
- * because the arithmetic is the part that must not differ, and it is
- * arithmetic the server deliberately does not do: `/position` reports cost in
- * the position's own currency and prices nothing, so value and P/L are the last
- * close against that basis.
- */
-function holding(position: TickerPosition, last: number | null) {
-  const count = position.shares ?? null;
-  const valueNative = count !== null && last !== null ? count * last : null;
-  const pnlNative =
-    valueNative !== null &&
-    position.cost_native !== null &&
-    position.cost_native !== undefined
-      ? valueNative - position.cost_native
-      : null;
-  const pnlPct =
-    last !== null && position.avg_cost_native
-      ? (last / position.avg_cost_native - 1) * 100
-      : null;
-  return { count, valueNative, pnlNative, pnlPct, ccy: position.currency ?? "" };
-}
-
-/**
- * The holding as four cells of the desktop price row, in this order: value,
- * weight, P/L, average cost.
- */
 /** "67 shares", or "0.0773 units" for a coin, which has no shares. */
 function countNote(t: Translate, count: number, units: boolean): string {
   return units
@@ -676,99 +913,133 @@ function countNote(t: Translate, count: number, units: boolean): string {
     : t("ticker.n_shares", { n: shares(count) });
 }
 
-function PositionMetrics({
-  position,
-  last,
-  units,
-  t,
-}: {
-  position: TickerPosition;
-  last: number | null;
-  /** Count the holding in units — a coin — rather than shares. */
-  units: boolean;
-  t: Translate;
-}) {
-  const { count, valueNative, pnlNative, pnlPct, ccy } = holding(position, last);
-  return (
-    <>
-      <Metric
-        label={t("ticker.position_value")}
-        value={valueNative === null ? DASH : `${money(valueNative)} ${ccy}`.trim()}
-        note={baseNote(position)}
-      />
-      <Metric
-        label={t("ticker.pct_portfolio")}
-        help={t("ticker.pct_portfolio_help")}
-        value={position.weight === null ? DASH : `${num(position.weight * 100, 1)}%`}
-      />
-      <Metric
-        label={t("ticker.unrealised_pl")}
-        help={t("ticker.unrealised_pl_help")}
-        value={pnlNative === null ? DASH : `${signed(pnlNative)} ${ccy}`.trim()}
-        // A fraction, as `delta` takes it: the same pill the price's day move
-        // wears, which is what `st.metric`'s delta draws there.
-        delta={pnlPct === null ? null : pnlPct / 100}
-      />
-      <Metric
-        label={t("ticker.avg_buy_price")}
-        value={
-          position.avg_cost_native === null
-            ? DASH
-            : `${money(position.avg_cost_native)} ${ccy}`.trim()
-        }
-        note={count === null ? "" : countNote(t, count, units)}
-      />
-    </>
-  );
-}
-
-/** The holding as 2×2 tiles, for the phone hero. */
-function PositionTiles({
-  position,
-  last,
-  note,
-  units,
-  t,
-}: {
-  position: TickerPosition;
-  /** The last close the chart drew — what the holding is valued at. */
-  last: number | null;
-  /** The line under the weight tile: the RSI read. */
+/** One of the holding's tiles, ready for `Kpi` in either layout. */
+type Tile = {
+  key: "value" | "gain" | "weight";
+  label: string;
+  help?: string;
+  value: string;
+  chip?: ChipSpec | null;
   note?: string;
-  /** Count the holding in units — a coin — rather than shares. */
-  units: boolean;
-  t: Translate;
-}) {
-  const { count, valueNative, pnlNative, pnlPct, ccy } = holding(position, last);
+  noteTone?: Tone | null;
+};
 
-  return (
-    <KpiGrid>
-      <Kpi
-        label={t("ticker.position_value")}
-        value={valueNative === null ? DASH : `${money(valueNative)} ${ccy}`.trim()}
-        note={baseNote(position)}
-      />
-      <Kpi
-        label={t("ticker.unrealised_pl")}
-        help={t("ticker.unrealised_pl_help")}
-        value={pnlNative === null ? DASH : `${signed(pnlNative)} ${ccy}`.trim()}
-        chip={chipFor(pnlPct, pnlPct === null ? null : `${signed(pnlPct)}%`)}
-      />
-      <Kpi
-        label={t("ticker.pct_portfolio")}
-        help={t("ticker.pct_portfolio_help")}
-        value={position.weight === null ? DASH : `${num(position.weight * 100, 1)}%`}
-        note={note ?? ""}
-      />
-      <Kpi
-        label={t("ticker.avg_buy_price")}
-        value={
-          position.avg_cost_native === null
-            ? DASH
-            : `${money(position.avg_cost_native)} ${ccy}`.trim()
-        }
-        note={count === null ? "" : countNote(t, count, units)}
-      />
-    </KpiGrid>
-  );
+/**
+ * The holding's three figures: value, gain and weight, in this order and in
+ * the reader's own money.
+ *
+ * One function for both layouts — the phone tiles and the desktop price row —
+ * because the arithmetic is the part that must not differ. The native value
+ * is the count times the price on the tile; it is restated through the same
+ * rate `/quote` restated the price with (which also absorbs a minor-unit
+ * listing — pence against pounds), and falls back to `/position`'s own pass,
+ * a close older than the tile, marked "≈". The gain is that value less the
+ * basis `/position` carries in the reader's money at each trade's rate, so
+ * it is the gain the Portfolio page prints, FX moves included; without that
+ * basis it is the native gain, which says less and is labelled as such by
+ * its currency.
+ */
+function positionTiles(
+  position: TickerPosition,
+  live: number | null,
+  dayPct: number | null,
+  dim: boolean,
+  quote: Quote | null,
+  units: boolean,
+  t: Translate,
+): Tile[] {
+  const count = position.shares ?? null;
+  const native = position.currency ?? "";
+  const base = position.base ?? null;
+  const valueNative = count !== null && live !== null ? count * live : null;
+  // Case-sensitive on purpose: "GBp" is not "GBP", and a pence value printed
+  // as pounds is a hundredfold.
+  const sameMoney = Boolean(native && base && native === base);
+  const rate =
+    quote && known(quote.price_base) && known(quote.price) && quote.price !== 0
+      ? quote.price_base / quote.price
+      : null;
+  let valueBase: number | null = null;
+  let approxValue = false;
+  if (valueNative !== null && sameMoney) {
+    valueBase = valueNative;
+  } else if (valueNative !== null && rate !== null) {
+    valueBase = valueNative * rate;
+  } else if (known(position.value)) {
+    valueBase = position.value;
+    approxValue = true;
+  }
+  const money_ = (value: number) => `${currencySymbol(base)}${money(value)}`;
+
+  // Today's move in the reader's money: the value now against the value
+  // before the day's change, off the same percentage the price tile shows.
+  const todayBase =
+    valueBase !== null && dayPct !== null && dayPct > -1
+      ? valueBase - valueBase / (1 + dayPct)
+      : null;
+  const value: Tile = {
+    key: "value",
+    label: t("ticker.position_value"),
+    help: t("ticker.position_value_help"),
+    value:
+      valueBase === null
+        ? valueNative === null
+          ? DASH
+          : `${money(valueNative)} ${native}`.trim()
+        : `${approxValue ? "≈ " : ""}${money_(valueBase)}`,
+    chip:
+      todayBase === null
+        ? null
+        : chipFor(
+            dayPct,
+            t("ticker.today_chip", { amt: signedMoney(todayBase, base) }),
+            dim,
+          ),
+    note:
+      valueBase !== null && valueNative !== null && !sameMoney
+        ? `${money(valueNative)} ${native}`.trim()
+        : "",
+  };
+
+  const basis = position.cost_base ?? null;
+  let gainBase: number | null = null;
+  let gainNative: number | null = null;
+  if (valueBase !== null && known(basis)) {
+    gainBase = valueBase - basis;
+  } else if (valueNative !== null && known(position.cost_native)) {
+    gainNative = valueNative - position.cost_native;
+  }
+  const gainPct =
+    gainBase !== null && known(basis) && basis !== 0
+      ? gainBase / basis
+      : gainNative !== null && known(position.cost_native) && position.cost_native !== 0
+        ? gainNative / position.cost_native
+        : null;
+  const gain: Tile = {
+    key: "gain",
+    label: t("ticker.unrealised_pl"),
+    help: t("ticker.unrealised_pl_help"),
+    value:
+      gainBase !== null
+        ? signedMoney(gainBase, base)
+        : gainNative !== null
+          ? `${signed(gainNative)} ${native}`.trim()
+          : DASH,
+    chip: chipFor(gainPct, gainPct === null ? null : signedPercent(gainPct, 2)),
+    note: known(position.avg_cost_native)
+      ? t("ticker.avg_cost_note", {
+          avg: `${money(position.avg_cost_native)} ${native}`.trim(),
+        })
+      : "",
+  };
+
+  const weight: Tile = {
+    key: "weight",
+    label: t("ticker.pct_portfolio"),
+    help: t("ticker.pct_portfolio_help"),
+    value: known(position.weight) ? `${num(position.weight * 100, 1)}%` : DASH,
+    note: count === null ? "" : countNote(t, count, units),
+  };
+
+  return [value, gain, weight];
 }

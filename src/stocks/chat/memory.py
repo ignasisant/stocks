@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -197,6 +198,30 @@ def _lexical(db: sqlite3.Connection, query: str, depth: int) -> list[int]:
         return []
 
 
+def said_since(path: Path, since: str, limit: int = 40) -> list[str]:
+    """What the user said (their turns only, never an answer) on `since`
+    (ISO date) or after, newest first — for the weekly memory tidy-up."""
+    if not available() or not path.exists():
+        return []
+    try:
+        db = _connect(path)
+    except Exception as exc:
+        obs.warn("chat.memory.recall_connect_failed",
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return []
+    try:
+        rows = db.execute(
+            "SELECT text FROM notes WHERE role = 'user' AND when_iso >= ?"
+            " ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
+    except Exception as exc:
+        obs.warn("chat.memory.search_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        return []
+    finally:
+        db.close()
+    return [r[0] for r in rows]
+
+
 def recall(path: Path, query: str, limit: int = RECALL_LIMIT,
            exclude_thread: str = "") -> list[Memory]:
     """The stored turns most like `query`, best first — meaning and words both.
@@ -354,6 +379,19 @@ def augment(message: str, hits: list[Memory]) -> str:
             + "\n".join(h.line() for h in hits))
 
 
+def _drop_thread(db: sqlite3.Connection, thread: str) -> int:
+    """Delete one thread's rows from the three tables; rows removed."""
+    ids = [r[0] for r in db.execute(
+        "SELECT id FROM notes WHERE thread = ?", (thread,))]
+    for note_id in ids:
+        db.execute("DELETE FROM notes_vec WHERE note_id = ?", (note_id,))
+        db.execute("INSERT INTO notes_fts (notes_fts, rowid, text)"
+                   " VALUES ('delete', ?, (SELECT text FROM notes"
+                   " WHERE id = ?))", (note_id, note_id))
+    db.execute("DELETE FROM notes WHERE thread = ?", (thread,))
+    return len(ids)
+
+
 def forget(path: Path, thread: str) -> int:
     """Drop one thread's memories — what a deleted conversation must mean.
 
@@ -369,15 +407,34 @@ def forget(path: Path, thread: str) -> int:
         return 0
     try:
         with db:
-            ids = [r[0] for r in db.execute(
-                "SELECT id FROM notes WHERE thread = ?", (thread,))]
-            for note_id in ids:
-                db.execute("DELETE FROM notes_vec WHERE note_id = ?", (note_id,))
-                db.execute("INSERT INTO notes_fts (notes_fts, rowid, text)"
-                           " VALUES ('delete', ?, (SELECT text FROM notes"
-                           " WHERE id = ?))", (note_id, note_id))
-            db.execute("DELETE FROM notes WHERE thread = ?", (thread,))
-            return len(ids)
+            return _drop_thread(db, thread)
+    except Exception as exc:
+        obs.warn("chat.memory.forget_delete_failed",
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return 0
+    finally:
+        db.close()
+
+
+def forget_except(path: Path, keep: Collection[str]) -> int:
+    """Drop the memories of every thread not in `keep` — the book's threads,
+    after a write that may have let some go (`auth.save_book`).
+
+    Returns rows removed. Never raises, and costs one small query when there
+    is nothing to drop, which is nearly every write."""
+    if not path.exists():
+        return 0
+    try:
+        db = _connect(path)
+    except Exception as exc:
+        obs.warn("chat.memory.forget_connect_failed",
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return 0
+    try:
+        with db:
+            gone = [r[0] for r in db.execute("SELECT DISTINCT thread FROM notes")
+                    if r[0] not in keep]
+            return sum(_drop_thread(db, thread) for thread in gone)
     except Exception as exc:
         obs.warn("chat.memory.forget_delete_failed",
                  error_type=type(exc).__name__, error=str(exc)[:300])

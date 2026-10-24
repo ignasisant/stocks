@@ -41,9 +41,9 @@ export function Book({
 
   const head = (
     <div className="sn-sec-head">
-      <h3 className="sn-sec-t" id="ag-book">
+      <h2 className="sn-sec-t" id="ag-book">
         {t("sentiment.book_title")}
-      </h3>
+      </h2>
       <Badge tone="brand">{t("sentiment.book_badge")}</Badge>
       <span className="sn-spacer" />
       <span className="sn-mono">{t("sentiment.book_src")}</span>

@@ -122,6 +122,20 @@ class BamlSyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.ActionCall, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    def DraftDossier(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.Dossier:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            __stream__ = self.stream.DraftDossier(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = self.__options.merge_options(baml_options).call_function_sync(function_name="DraftDossier", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.Dossier, __result__.cast_to(types, types, stream_types, False, __runtime__))
     def ExtractLessons(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.LessonOps:
@@ -276,6 +290,20 @@ class BamlSyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(typing.Dict[str, typing.Optional[str]], __result__.cast_to(types, types, stream_types, False, __runtime__))
+    def ReviewMemories(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.ReviewOps:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            __stream__ = self.stream.ReviewMemories(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = self.__options.merge_options(baml_options).call_function_sync(function_name="ReviewMemories", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.ReviewOps, __result__.cast_to(types, types, stream_types, False, __runtime__))
     def WriteAnalysis(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.AnalysisReply:
@@ -349,6 +377,18 @@ class BamlStreamClient:
           __result__,
           lambda x: typing.cast(stream_types.ActionCall, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(types.ActionCall, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
+    def DraftDossier(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.Dossier, types.Dossier]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_sync_stream(function_name="DraftDossier", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlSyncStream[stream_types.Dossier, types.Dossier](
+          __result__,
+          lambda x: typing.cast(stream_types.Dossier, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.Dossier, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
     def ExtractLessons(self, instructions: str,input: str,
@@ -483,6 +523,18 @@ class BamlStreamClient:
           lambda x: typing.cast(typing.Dict[str, typing.Optional[str]], x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
+    def ReviewMemories(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.ReviewOps, types.ReviewOps]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_sync_stream(function_name="ReviewMemories", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlSyncStream[stream_types.ReviewOps, types.ReviewOps](
+          __result__,
+          lambda x: typing.cast(stream_types.ReviewOps, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.ReviewOps, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     def WriteAnalysis(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[stream_types.AnalysisReply, types.AnalysisReply]:
@@ -541,6 +593,13 @@ class BamlHttpRequestClient:
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
+    def DraftDossier(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="DraftDossier", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
     def ExtractLessons(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -615,6 +674,13 @@ class BamlHttpRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ResolveSymbols", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
+    def ReviewMemories(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ReviewMemories", args={
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
@@ -661,6 +727,13 @@ class BamlHttpStreamRequestClient:
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__
+    def DraftDossier(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="DraftDossier", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
     def ExtractLessons(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -735,6 +808,13 @@ class BamlHttpStreamRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ResolveSymbols", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
+    def ReviewMemories(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ReviewMemories", args={
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__

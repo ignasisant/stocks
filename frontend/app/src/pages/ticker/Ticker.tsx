@@ -66,7 +66,7 @@ import { PriceSection, isRange, type Range } from "./Price";
 import { SplitRepair } from "./Splits";
 import { AssetStatsSection, KpiSourcesSection } from "./Reference";
 import { CycleSection, HoldingSection, PositioningSection } from "./Crypto";
-import { askAssistant } from "../../shell/assistant";
+import { AiAsk } from "./AiAsk";
 import {
   ComparablesSection,
   FundSection,
@@ -390,21 +390,13 @@ export default function Page() {
             symbol still loading reads as a share: the prompt is a question,
             not a claim. */}
         {ticker && shape.ai && !absent ? (
-          <button
-            type="button"
-            className="ag-ai tk-ai"
-            title={t("ticker.ai_analyze_help", { ticker })}
-            onClick={() =>
-              askAssistant(
-                t(shape.ai ?? "ticker.ai_prompt", {
-                  ticker,
-                  name: drawn?.name || ticker,
-                }),
-              )
-            }
-          >
-            {mobile ? "✨" : t("ticker.ai_analyze")}
-          </button>
+          <AiAsk
+            ticker={ticker}
+            name={drawn?.name || ticker}
+            prompt={shape.ai}
+            angles={shape.kind === "stock"}
+            compact={mobile}
+          />
         ) : null}
         {/* One swap covers three controls: the star, the tag menu and the
             price alert are all somebody's own edits to their own list, and all
@@ -461,6 +453,7 @@ export default function Page() {
             fund={fund.state === "loaded" ? fund.data : null}
             stats={stats.state === "loaded" ? stats.data : null}
             cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
+            valuation={valuation.state === "loaded" ? valuation.data : null}
           />
 
           {/* Right under the price it rebases: "did it beat the index" is the

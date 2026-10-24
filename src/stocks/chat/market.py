@@ -265,6 +265,63 @@ def named(message: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+# What a legal name carries that nobody types: "NVIDIA Corporation" is said
+# "Nvidia", "Banco Santander, S.A." is "Banco Santander".
+_LEGAL = frozenset("""
+    inc incorporated corp corporation company co plc ltd limited sa se ag nv
+    holding holdings group class adr spa ab asa oyj
+""".split())
+# Too common to name one company on its own.
+_COMMON = frozenset("""
+    banco bank international global technologies technology systems american
+    first general united the energy group
+""".split())
+
+
+def _short(name: str) -> str:
+    """A company's name as it is said: legal suffixes and share classes off."""
+    words = _words(name)
+    while words and (words[-1] in _LEGAL or len(words[-1]) == 1):
+        words.pop()
+    return " ".join(words)
+
+
+def aliases(names: Iterable[str], message: str,
+            known: dict[str, str]) -> list[str]:
+    """`names` (as `named` found them) with every other name the same
+    holding goes by on the watchlist — "Nvidia" is also "NVDA" and "NVIDIA
+    Corporation" — so a past conversation that called it the other way is
+    still about it. A watchlist company said in lower case ("¿y nvidia?")
+    counts as named too. A typed name that fits two holdings is left alone:
+    widening it would be a guess."""
+    by_ticker: dict[str, list[str]] = {}
+    for name, tk in known.items():
+        by_ticker.setdefault(tk.upper(), []).append(name)
+    said = f" {' '.join(_words(message))} "
+    out = list(names)
+    hits: list[str] = []
+    for typed in out:
+        words = set(_words(typed))
+        if not words or words <= _COMMON:
+            continue
+        fits = {tk.upper() for name, tk in known.items()
+                if name == typed.upper() or words <= set(_words(name))}
+        if len(fits) == 1:
+            hits.extend(fits)
+    for tk, forms in by_ticker.items():
+        for form in forms:
+            short = _short(form)
+            if (len(short) >= 4 and short not in _COMMON
+                    and f" {short} " in said):
+                hits.append(tk)
+    for tk in dict.fromkeys(hits):
+        for form in (tk, *by_ticker.get(tk, ())):
+            out.append(form)
+            if (short := _short(form)) and short.upper() != form.upper():
+                out.append(short)
+    return list(dict.fromkeys(out))
+
+
 # ----------------------------------------------------------------- quotes
 
 

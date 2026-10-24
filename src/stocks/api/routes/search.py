@@ -59,6 +59,7 @@ def find(
     )
     return SearchResults(
         query=q.strip().upper(),
+        world_down=world and _world_down(q, rows),
         matches=[
             SearchMatch(
                 ticker=row.ticker,
@@ -71,6 +72,20 @@ def find(
             for row in rows
         ],
     )
+
+
+def _world_down(q: str, rows) -> bool:
+    """Yahoo could not be asked for a query long enough to ask it about.
+
+    A memo hit still answers while the host cools down, so a worldwide row
+    present means the tier spoke, whatever the cooldown says.
+    """
+    from stocks.data import symbols
+    from stocks.fuzzy import MIN_QUERY
+
+    if len(q.strip()) < MIN_QUERY or any(row.kind == "world" for row in rows):
+        return False
+    return not symbols.reachable()
 
 
 def _asset(row) -> str | None:

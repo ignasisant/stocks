@@ -84,7 +84,7 @@ export function MoveList({
   return (
     <div className="im-repair">
       <div className="im-repair-head">
-        <h3 className="im-h3">{t("import.moves_title")}</h3>
+        <h2 className="im-h3">{t("import.moves_title")}</h2>
       </div>
       {moves.length > 0 && (
         <Found

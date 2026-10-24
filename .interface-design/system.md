@@ -117,6 +117,13 @@ no Tailwind.
 - **Dense rows** tint `--ag-surface-hover` on hover, `(hover: hover)` only.
 - **Box tools** (`.ag-box-tool`): coarse `::before` grows the hit area to 44px
   tall; width stays so neighbours never overlap.
+- **Split action** (`pages/ticker/AiAsk.tsx`): the primary press does the
+  common thing; a quiet chevron beside it (`aria-haspopup="menu"`,
+  `aria-expanded`, 44px coarse) opens a `role="menu"` popover of the
+  variants, each a label over a one-line secondary hint. Arrows/Home/End
+  walk it, Escape returns focus to the chevron, Tab or a press outside
+  closes it. The common path first, the rest one level deeper — never a
+  row of sibling buttons.
 - **Mobile (≤640px):** 12px gap between cards, 44px touch targets.
 - **Hex:** none outside `shell/theme.ts` (`tests/test_frontend_tokens.py`);
   use tokens, or `black`/`transparent` for masks.

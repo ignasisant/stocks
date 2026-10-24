@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (30)
+# Generated classes (33)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -145,6 +145,12 @@ class CryptoMap(BaseModel):
     thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
     type_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the type column -> buy, sell, trade, convert, reward, receive, send, move, fee or ignore')
 
+class Dossier(BaseModel):
+    business: typing.Optional[str] = Field(default=None, description='what it sells, to whom and how it earns, one sentence')
+    lens: typing.Optional[str] = Field(default=None, description='one industry skill id from the catalog, or empty')
+    debates: typing.Optional[typing.List[str]] = Field(default=None, description='two or three questions bulls and bears disagree on for this company')
+    watch: typing.Optional[typing.List[str]] = Field(default=None, description='two or three company-specific metrics or events to watch')
+
 class ExitEventVerdict(BaseModel):
     met: typing.Optional[bool] = Field(default=None, description='true only when a passage plainly says the event happened')
     item: typing.Optional[int] = Field(default=None, description='the number of the passage that says so')
@@ -177,6 +183,15 @@ class PeerPicks(BaseModel):
 
 class QueryPlan(BaseModel):
     queries: typing.Optional[typing.List[str]] = Field(default=None, description='web search queries; empty when none is needed')
+
+class ReviewOp(BaseModel):
+    action: typing.Optional[str] = Field(default=None, description='merge, drop or reword')
+    ids: typing.Optional[typing.List[str]] = Field(default=None, description='the saved items\' ids it is about')
+    text: typing.Optional[str] = Field(default=None, description='merge and reword: the new wording')
+    reason: typing.Optional[str] = Field(default=None, description='one short sentence: why')
+
+class ReviewOps(BaseModel):
+    ops: typing.Optional[typing.List["ReviewOp"]] = None
 
 class RoutineAnswer(BaseModel):
     id: typing.Optional[str] = Field(default=None, description='the `id` of the routine in the data, copied exactly')
@@ -228,7 +243,7 @@ class StatementRow(BaseModel):
 
 
 # #########################################################################
-# Model rebuilds (30)
+# Model rebuilds (33)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -247,6 +262,7 @@ Columns.model_rebuild()
 CriterionRule.model_rebuild()
 CryptoColumns.model_rebuild()
 CryptoMap.model_rebuild()
+Dossier.model_rebuild()
 ExitEventVerdict.model_rebuild()
 GoalJudged.model_rebuild()
 LessonOp.model_rebuild()
@@ -255,6 +271,8 @@ MarketNote.model_rebuild()
 MarketReply.model_rebuild()
 PeerPicks.model_rebuild()
 QueryPlan.model_rebuild()
+ReviewOp.model_rebuild()
+ReviewOps.model_rebuild()
 RoutineAnswer.model_rebuild()
 RoutinePlan.model_rebuild()
 RoutinePlans.model_rebuild()

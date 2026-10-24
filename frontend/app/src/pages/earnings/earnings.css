@@ -280,9 +280,11 @@
   color: var(--ag-text-muted);
 }
 
+/* Page-dark on the accent (6.8:1): the white meant for the CTA fill read
+   2.6:1 on this lighter purple. */
 .earn-day.today .earn-daynum {
   background: var(--ag-brand-accent);
-  color: var(--ag-on-brand);
+  color: var(--ag-surface-page);
 }
 
 /* "+3" under a full cell: quieter than any chip, so it reads as a fold rather

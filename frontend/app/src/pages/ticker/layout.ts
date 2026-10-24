@@ -8,11 +8,15 @@
  * "Analyse" button for an index nobody can buy. Each row here is what that kind
  * is actually read by:
  *
- * - a **share** and an **equity fund** trade on momentum and trend, so they
- *   keep the RSI / SMA20 row, all three averages and candles;
- * - a **coin** too, except that its SMA20 cell gives way to its distance from
- *   the all-time high, and it gets the cycle, positioning and holding cards a
- *   share's company sections would otherwise fill;
+ * - a **share** is read by where its price sits in the year, what it costs
+ *   against its own history and when it next reports; its RSI and averages
+ *   stay on the chart as overlays, where they can be read against the line
+ *   rather than as two more figures beside the price;
+ * - an **equity fund** by the year's range alone — a basket has no P/E of
+ *   its own and no results date;
+ * - a **coin** by the year's range and its distance from the all-time high,
+ *   and it gets the cycle, positioning and holding cards a share's company
+ *   sections would otherwise fill;
  * - a **bond fund** is read by what it pays and how far a rate move pushes it;
  * - a **money-market fund** by its yield against the central bank's rate and
  *   its cost — its chart is a straight line, so no averages and no candles;
@@ -25,8 +29,9 @@
 import type { AssetKind } from "../../shell/assets";
 
 export type MetricId =
-  | "rsi"
-  | "sma20"
+  | "range_52w"
+  | "pe"
+  | "next_results"
   | "distribution"
   | "duration"
   | "cash_yield"
@@ -77,7 +82,8 @@ export type Shape = {
 
 const ALL_AVERAGES: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const SLOW_AVERAGES: readonly Overlay[] = ["SMA50", "SMA200"];
-const MOMENTUM: readonly MetricId[] = ["rsi", "sma20"];
+/** Where the price sits, what it costs, when it next reports. */
+const MARKET: readonly MetricId[] = ["range_52w", "pe", "next_results"];
 
 const NO_SECTIONS = {
   company: false,
@@ -93,7 +99,7 @@ const FUND = { ...NO_SECTIONS, fund: true, fundHoldings: true };
 const SHAPES: Record<AssetKind, Shape> = {
   stock: {
     kind: "stock",
-    metrics: MOMENTUM,
+    metrics: MARKET,
     overlays: ALL_AVERAGES,
     candles: true,
     markers: ["results", "dividends"],
@@ -106,7 +112,7 @@ const SHAPES: Record<AssetKind, Shape> = {
   },
   equity_fund: {
     kind: "equity_fund",
-    metrics: MOMENTUM,
+    metrics: ["range_52w"],
     overlays: ALL_AVERAGES,
     candles: true,
     markers: ["dividends"],
@@ -160,9 +166,9 @@ const SHAPES: Record<AssetKind, Shape> = {
   crypto: {
     kind: "crypto",
     // A coin has no earnings to anchor it, so its peak stands in: how far under
-    // the all-time high it trades is the line a crypto reader looks at first.
-    // SMA20 moves out of the row (the chart still draws it).
-    metrics: ["rsi", "ath_drawdown"],
+    // the all-time high it trades is the line a crypto reader looks at first,
+    // beside the year's range. The averages stay on the chart.
+    metrics: ["range_52w", "ath_drawdown"],
     overlays: ALL_AVERAGES,
     candles: true,
     markers: ["cycle"],
@@ -181,7 +187,7 @@ const SHAPES: Record<AssetKind, Shape> = {
   },
   index: {
     kind: "index",
-    metrics: MOMENTUM,
+    metrics: ["range_52w"],
     overlays: ALL_AVERAGES,
     candles: true,
     markers: [],

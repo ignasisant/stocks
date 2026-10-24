@@ -485,6 +485,15 @@ class Quote(BaseModel):
     base: str | None = Field(
         default=None, description="The reporting currency asked for with `?base=`."
     )
+    high_52w: float | None = Field(
+        default=None,
+        description=(
+            "The year's highest regular-session price, in the listing's own "
+            "currency, off the same quote row. Null when the feed had no year "
+            "(a Finnhub fallback, a listing younger than that)."
+        ),
+    )
+    low_52w: float | None = Field(default=None, description="…and its lowest.")
 
 
 class Quotes(BaseModel):
@@ -697,6 +706,14 @@ class TickerPosition(BaseModel):
     )
     weight: float | None = Field(
         default=None, description="Share of the book by market value."
+    )
+    cost_base: float | None = Field(
+        default=None,
+        description=(
+            "Basis in `base`, at each trade date's rate, off the same pricing "
+            "pass as `value` — so value minus this is the gain the Portfolio "
+            "page prints, FX moves included. Null whenever `value` is."
+        ),
     )
     trades: list[Trade] = Field(
         default_factory=list,
@@ -1729,6 +1746,13 @@ class SearchResults(BaseModel):
     matches: list[SearchMatch] = Field(
         default_factory=list,
         description="Already in the order to draw, tiers included.",
+    )
+    world_down: bool = Field(
+        False,
+        description=(
+            "The worldwide (Yahoo) tier was asked and could not answer: the "
+            "rows are local only, and a listing may be missing from them."
+        ),
     )
 
 

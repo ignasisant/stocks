@@ -25,7 +25,7 @@ import json
 import threading
 import uuid
 from collections.abc import Container
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 
@@ -289,9 +289,17 @@ def profile_is_set(prefs: dict) -> bool:
 
 CHAT_VERSION = 2
 MAX_CONVERSATIONS = 50  # oldest by last use pruned first; never the active one
+# A thread nobody has written in for this long is dropped — on read, so every
+# reader agrees (`load_book`), and from the file on the next write. Never the
+# active one: it is the thread the next turn lands in, however old. "Written
+# in" is `updated`: opening, rating or renaming a thread is not a use.
+KEEP_DAYS = 30
 # Home's daily cards are filed as threads of their own (save_card_thread), one
 # a day. The ones nobody wrote in are kept on a budget of their own: a month of
-# cards must not push the reader's conversations out of MAX_CONVERSATIONS.
+# cards must not push the reader's conversations out of MAX_CONVERSATIONS. Nor
+# out of sight: the panel's list leaves them out (`list_conversations`, cards=
+# False) until the reader opens one or writes in it — the list is what they
+# said, not what they were told.
 MAX_CARD_THREADS = 30
 _TITLE_MAX = 80
 
@@ -340,6 +348,11 @@ def load_book(path: Path) -> dict:
     absent when it never existed). A v1 file (the bare list of turns the
     single-thread assistant wrote) migrates to one conversation; anything
     missing or corrupt yields a fresh empty book.
+
+    Threads idle beyond KEEP_DAYS are left out here rather than on write, so
+    the list a returning reader opens the drawer on and the book their first
+    turn is saved into agree. The file loses them on that write (`save_book`),
+    and the memory index with it.
     """
     try:
         data = json.loads(path.read_text())
@@ -370,7 +383,21 @@ def load_book(path: Path) -> dict:
     active = data.get("active")
     if active not in {c["id"] for c in convs}:
         active = convs[0]["id"]
+    cutoff = datetime.now(UTC) - timedelta(days=KEEP_DAYS)
+    convs = [c for c in convs if c["id"] == active or not _idle_since(c, cutoff)]
     return {"version": CHAT_VERSION, "active": active, "conversations": convs}
+
+
+def _idle_since(conv: dict, cutoff: datetime) -> bool:
+    """Whether nothing was written in `conv` since `cutoff`. A stamp that does
+    not parse keeps its thread: an unreadable date is no reason to lose one."""
+    try:
+        when = datetime.fromisoformat(str(conv.get("updated") or ""))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when < cutoff
 
 
 def _unread_card(conv: dict) -> bool:
@@ -410,8 +437,15 @@ def _pruned(book: dict) -> dict:
 
 
 def save_book(book: dict, path: Path) -> None:
-    atomic.write_json(path, _pruned(book), indent=2)
+    kept = _pruned(book)
+    atomic.write_json(path, kept, indent=2)
     _persist(path)
+    # A thread that is gone must not keep answering questions through the
+    # memory index — whether the reader deleted it, KEEP_DAYS ran out on it or
+    # a cap let it go. Swept here, where every one of those lands.
+    index = memory_path(path)
+    if memory.forget_except(index, {c["id"] for c in kept["conversations"]}):
+        _persist(index)
 
 
 def _active(book: dict) -> dict:
@@ -477,9 +511,15 @@ def save_chat(history: list[dict], path: Path, cid: str | None = None) -> None:
         _persist(index)  # only when it actually grew — most saves add nothing
 
 
-def list_conversations(path: Path) -> list[dict]:
+def list_conversations(path: Path, cards: bool = True) -> list[dict]:
     """Conversation metadata (no message bodies), most recently used first.
-    `daily` is the card day of a daily card's thread, "" for any other."""
+    `daily` is the card day of a daily card's thread, "" for any other.
+
+    `cards=False` is the panel's list: it leaves out the card threads nobody
+    wrote in (`_unread_card`) unless one is the active thread — the card's
+    "Ask" just opened it. A month of cards would otherwise bury the reader's
+    own conversations, and nothing in them was theirs to find. Every lookup
+    by id keeps the default: the threads exist, they are only not listed."""
     book = load_book(path)
     metas = [
         {
@@ -489,6 +529,7 @@ def list_conversations(path: Path) -> list[dict]:
             "daily": str(c.get("daily") or ""),
         }
         for c in book["conversations"]
+        if cards or c["id"] == book["active"] or not _unread_card(c)
     ]
     return sorted(metas, key=lambda m: m["updated"], reverse=True)
 
@@ -564,12 +605,7 @@ def delete_conversation(cid: str, path: Path) -> None:
     if book["active"] == cid:
         book["active"] = max(kept, key=lambda c: c["updated"])["id"]
     book["conversations"] = kept
-    save_book(book, path)
-    # A deleted conversation must not keep answering questions through the
-    # memory index.
-    index = memory_path(path)
-    if memory.forget(index, cid):
-        _persist(index)
+    save_book(book, path)  # forgets its memories too
 
 
 @_locked
@@ -618,7 +654,8 @@ def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     made active: the card is written in the background, and a reader halfway
     through a conversation must not find it carrying on somewhere else.
     Opening it is the card's "Ask" button, and the reader then asks with the
-    card in the thread above the question.
+    card in the thread above the question. Until then it is not in the
+    panel's list either (`list_conversations`, cards=False).
 
     A card rewritten the same day (the computed stand-in, then the model's)
     replaces its turn while nobody has answered it, and lands after the

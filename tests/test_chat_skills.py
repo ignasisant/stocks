@@ -11,13 +11,60 @@ EXPECTED_IDS = {
     "earnings-review", "portfolio-risk", "spain-tax", "us-tax", "bear-case",
     "etfs", "tax",
 }
+INDUSTRY_IDS = {
+    "semiconductors", "internet-platforms", "hardware-devices",
+    "nuclear-uranium", "utilities", "insurance", "reits", "biotech-clinical",
+    "pharma", "medtech", "payments", "retail-restaurants", "consumer-staples",
+    "autos-ev", "mining-metals", "aerospace-defense",
+    "industrials-capital-goods", "telecom", "asset-managers-exchanges",
+}
 
 
 def test_catalog_loads_all_skills():
     skills = chat_skills.catalog()
-    assert {s.id for s in skills} == EXPECTED_IDS
+    assert {s.id for s in skills} == EXPECTED_IDS | INDUSTRY_IDS
     for s in skills:
         assert s.name and s.description and s.body, s.id
+
+
+def test_industry_skills_stay_out_of_the_picker():
+    assert {s.id for s in chat_skills.pickable()} == EXPECTED_IDS
+    for s in chat_skills.catalog():
+        if s.id in INDUSTRY_IDS:
+            assert s.kind == "industry" and s.industries, s.id
+
+
+@pytest.mark.parametrize(("sector", "industry", "expected"), [
+    # The bug this exists for: Yahoo files Centrus under Energy, and the
+    # oil-and-gas lens is the wrong one.
+    ("Energy", "Uranium", "nuclear-uranium"),
+    ("Energy", "Oil & Gas E&P", "energy"),
+    ("Technology", "Semiconductors", "semiconductors"),
+    ("Technology", "Software - Infrastructure", "tech"),
+    ("Financial Services", "Banks - Regional", "financials"),
+    ("Financial Services", "Insurance - Property & Casualty", "insurance"),
+    ("Real Estate", "REIT - Industrial", "reits"),
+    ("Healthcare", "Biotechnology", "biotech-clinical"),
+    ("Healthcare", "Drug Manufacturers - General", "pharma"),
+    # No industry match: the sector's broad lens.
+    ("Utilities", "", "utilities"),
+    ("Healthcare", "Something New", "healthcare"),
+    ("", "", ""),
+    ("Nowhere", "Nothing", ""),
+])
+def test_lens_for(sector, industry, expected):
+    assert chat_skills.lens_for(sector, industry) == expected
+
+
+def test_fits_is_case_insensitive_with_prefixes():
+    s = chat_skills.Skill("x", "X", "d", "b", kind="industry",
+                         industries=("Banks*", "Solar"))
+    assert s.fits("banks - regional") and s.fits("Solar")
+    assert not s.fits("Solar Inverters") and not s.fits("") and not s.fits("Bank")
+
+
+def test_every_lens_for_target_exists():
+    assert set(chat_skills.SECTOR_LENS.values()) <= chat_skills.valid_ids()
 
 
 def test_skills_block_empty_without_ids():

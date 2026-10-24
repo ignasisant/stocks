@@ -478,7 +478,6 @@ body {
 
 .ag-skeleton-secs {
   font-variant-numeric: tabular-nums;
-  opacity: 0.8;
 }
 
 .ag-skeleton-secs::before {
@@ -764,7 +763,9 @@ body {
       .pr-btn,
       .sn-btn,
       .sn-cta,
-      .earn-chip
+      .earn-chip,
+      .tk-ai-more,
+      .tk-ai-item
     ):active:not(:disabled) {
     scale: 0.97;
   }
