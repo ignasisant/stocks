@@ -72,6 +72,17 @@ Kind = Literal[
     # produces: the feed mixed units or currencies, or kept a stale close
     # across a split. Past `QUOTE_JUMP_DROPPED` the day move is not shown.
     "quote_jump",
+    # A fill or a close a hundred times off its counterpart: pence booked as
+    # pounds, or the feed quoting in minor units the book does not (replay,
+    # corporate). Split from `price_off_market` so the unit slips, which a
+    # scale fixes, count apart from the wrong-name ones.
+    "currency_off",
+    # A buy or sell dated on a day its market printed no bar, nor the day
+    # before: a weekday holiday, a date shifted by a parser (replay).
+    "trade_off_calendar",
+    # A day the whole book's value moved past `QUOTE_JUMP_SAID` net of its
+    # flows — a price slip, or a flow the ledger never saw (replay).
+    "twr_jump",
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 
@@ -132,6 +143,21 @@ def ratio(part: float, whole: float) -> float | None:
     if not whole:
         return None
     return round(part / whole, 3)
+
+
+# Off by about a hundred, either way: the minor-unit slip (GBp against GBP,
+# ZAc against ZAR, ILA against ILS). Wide enough for a session's drift on
+# top of the 100x, narrow enough that no split ratio this side of 50:1 lands
+# in it.
+UNIT_SLIP = (50.0, 200.0)
+
+
+def unit_slip(off: float | None) -> bool:
+    """Whether `off`, a price over its counterpart, is the minor-unit slip."""
+    if not off or off <= 0:
+        return False
+    low, high = UNIT_SLIP
+    return low <= off <= high or low <= 1 / off <= high
 
 
 # A price this many times its previous close, either way, is not a session's

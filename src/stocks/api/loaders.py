@@ -55,7 +55,7 @@ from stocks.api.cache import (
 from stocks.config import DATA_DIR
 from stocks.data.shared_memo import SharedMemo
 from stocks.frames import midnights
-from stocks.portfolio import fees, transfers
+from stocks.portfolio import consistency, fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build
@@ -534,16 +534,8 @@ def _frame_closes(db: str, mtime: float, column: str, txs) -> dict[str, pd.Serie
 # A live price about a hundred times the name's last close, or a hundredth of
 # it, is another unit (pence against pounds), not a move. Anything nearer is
 # left alone: a small cap doubling in a session is a real day (AB9.DE,
-# 2026-10-13, 2.60 to 5.99), and hiding it shows yesterday's price.
-_UNIT_SLIP = (50.0, 200.0)
-
-
-def _unit_slip(price: float, last: float) -> bool:
-    low, high = _UNIT_SLIP
-    ratio = price / last
-    return low <= ratio <= high or low <= 1 / ratio <= high
-
-
+# 2026-10-13, 2.60 to 5.99), and hiding it shows yesterday's price
+# (`consistency.unit_slip`).
 def _overlay_live(
     closes: dict[str, pd.Series], key: tuple | None
 ) -> dict[str, pd.Series]:
@@ -576,7 +568,7 @@ def _overlay_live(
             last_day, last = series.index[-1], float(series.iloc[-1])
             if when < last_day or (when == last_day and price == last):
                 continue
-            if last > 0 and _unit_slip(float(price), last):
+            if last > 0 and consistency.unit_slip(float(price) / last):
                 rejected += 1
                 obs.warn_once(
                     "prices.live_rejected", ticker, ticker=ticker, last=last, live=price

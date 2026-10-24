@@ -12,9 +12,11 @@ from dataclasses import replace
 from datetime import date
 from typing import get_args
 
+import pandas as pd
 import pytest
 
 from stocks import obs
+from stocks.analysis.portfolio import _audit_twr, plausible_closes
 from stocks.portfolio import consistency, corporate, doctor, positions
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult, check_consistency
@@ -175,3 +177,120 @@ def test_a_day_move_needs_both_sides(lines):
     assert consistency.day_move(100.0, None) is None
     assert consistency.day_move(100.0, 0.0) is None
     assert lines == []
+
+
+# ------------------------------------------------- units, calendar, value path
+
+
+def _closes(start: str, end: str, price: float, skip: tuple[str, ...] = ()):
+    days = pd.bdate_range(start, end)
+    days = days[~days.isin(pd.to_datetime(list(skip)))]
+    return pd.Series(price, index=days)
+
+
+def test_the_hundred_band_is_the_unit_slip():
+    assert consistency.unit_slip(100.0) and consistency.unit_slip(0.01)
+    assert consistency.unit_slip(0.0125)
+    # A 20:1 split and a doubling small cap are not a unit.
+    assert not consistency.unit_slip(20.0) and not consistency.unit_slip(2.0)
+    assert not consistency.unit_slip(None) and not consistency.unit_slip(0.0)
+
+
+def test_a_fill_in_pence_booked_as_pounds_is_said(lines):
+    book = [
+        Transaction("2025-03-03", "VOD.L", "buy", 100, 0.75, "GBP"),
+        Transaction("2025-03-10", "VOD.L", "buy", 100, 0.75, "GBP"),
+        Transaction("2025-03-17", "VOD.L", "buy", 100, 75.0, "GBP"),
+    ]
+    closes = {"VOD.L": _closes("2025-03-01", "2025-03-31", 0.75)}
+    kept = plausible_closes(closes, book, {"VOD.L": ("GBP", 1.0)})
+    assert "VOD.L" in kept
+    [line] = lines
+    assert (line["kind"], line["source"], line["ticker"]) == (
+        "currency_off",
+        "replay",
+        "VOD.L",
+    )
+    assert (line["n"], line["first"]) == (1, "2025-03-17")
+    assert not PRIVATE & set(line)
+
+
+def test_a_series_in_minor_units_is_said_and_dropped(lines):
+    book = [Transaction("2025-03-03", "VOD.L", "buy", 100, 0.75, "GBP")]
+    closes = {"VOD.L": _closes("2025-03-01", "2025-03-31", 75.0)}
+    assert plausible_closes(closes, book, {"VOD.L": ("GBP", 1.0)}) == {}
+    [line] = lines
+    assert (line["kind"], line["off"], line["n"]) == ("currency_off", 100.0, 1)
+
+
+def test_a_trade_on_a_day_the_market_was_shut_is_said(lines):
+    book = [
+        Transaction("2025-12-19", "AAPL", "buy", 1, 200.0, "USD"),
+        # Christmas, a weekday with no bar.
+        Transaction("2025-12-25", "AAPL", "buy", 1, 200.0, "USD"),
+        # A Friday after-hours fill stamped Saturday in UTC: Friday's bar.
+        Transaction("2025-12-20", "AAPL", "buy", 1, 200.0, "USD"),
+        # Before the series starts: history the feed lacks, not a holiday.
+        Transaction("2025-11-27", "AAPL", "buy", 1, 200.0, "USD"),
+    ]
+    closes = {"AAPL": _closes("2025-12-01", "2025-12-31", 200.0, skip=("2025-12-25",))}
+    plausible_closes(closes, book, {"AAPL": ("USD", 1.0)})
+    [line] = lines
+    assert (line["kind"], line["n"], line["first"]) == (
+        "trade_off_calendar",
+        1,
+        "2025-12-25",
+    )
+
+
+def test_crypto_trades_any_day(lines):
+    book = [Transaction("2025-12-25", "BTC-EUR", "buy", 0.1, 90000.0, "EUR")]
+    days = pd.date_range("2025-12-01", "2025-12-31")
+    closes = {"BTC-EUR": pd.Series(90000.0, index=days)}
+    plausible_closes(closes, book, {"BTC-EUR": ("EUR", 1.0)})
+    assert lines == []
+
+
+def test_a_book_that_triples_in_a_day_is_said_once_with_its_worst_day(lines):
+    days = pd.bdate_range("2025-03-03", periods=5)
+    twr = pd.Series([0.01, 2.5, -0.02, 0.0], index=days[1:])
+    twr.attrs["dropped_days"] = [days[0]]
+    _audit_twr(twr)
+    [line] = lines
+    assert (line["kind"], line["source"], line["n"], line["dropped"]) == (
+        "twr_jump",
+        "replay",
+        1,
+        1,
+    )
+    assert (line["day"], line["off"]) == ("2025-03-05", 3.5)
+    assert not PRIVATE & set(line)
+
+
+def test_an_ordinary_value_path_says_nothing(lines):
+    twr = pd.Series([0.01, -0.03, 0.02], index=pd.bdate_range("2025-03-03", periods=3))
+    twr.attrs["dropped_days"] = []
+    _audit_twr(twr)
+    assert lines == []
+
+
+def test_a_buy_a_hundred_off_its_close_is_a_unit_not_a_wrong_name(lines):
+    book = [Transaction("2025-03-03", "BP.L", "buy", 10, 480.0, "GBP")]
+    corporate.missing_splits(
+        book,
+        splits=lambda t: [("2025-06-02", 2.0)],
+        close_on=lambda t, d: 4.80,
+        source="page",
+    )
+    [line] = lines
+    assert (line["kind"], line["off"]) == ("currency_off", 100.0)
+
+
+def test_the_doctor_says_why_a_book_does_not_balance(lines):
+    rows = [
+        Transaction("2025-01-02", "NVDA", "buy", 10, 100.0, "USD", 0, "ibkr", id=1),
+        Transaction("2025-03-02", "NVDA", "sell", 40, 30.0, "USD", 0, "ibkr", id=2),
+    ]
+    doctor.scan(rows)
+    [line] = [ln for ln in lines if ln["source"] == "doctor"]
+    assert (line["kind"], line["cause"]) == ("oversold", "split")
