@@ -1572,7 +1572,7 @@
   height: 18px;
   border-radius: 50%;
   background: var(--ag-warn);
-  color: #1c1b1f;
+  color: var(--ag-surface-page);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -1752,7 +1752,7 @@ button.ag-chat-op-mark::before {
   inset: 13px;
   border-radius: 50%;
   background: var(--ag-warn);
-  color: #1c1b1f;
+  color: var(--ag-surface-page);
 }
 .ag-chat-op .ag-chat-fix {
   grid-column: 2 / -1;
