@@ -38,6 +38,7 @@ from stocks.analysis.fundamentals import (
     format_value,
     fundamental_tiles,
     lens_verdict,
+    missing_reasons,
     peer_band,
     quarterly_eps,
     verdict,
@@ -267,15 +268,21 @@ def compare(
             }
         names = [ticker, *asked]
         quoted = pool.submit(carried(listing_currencies), names)
+        # Beside the downloads, not after them: a cold name is a spark request.
+        labels = pool.submit(
+            carried(loaders.listing_names),
+            [*shares[:OFFERED_PEERS], *(n for n in names if n not in INDICES)],
+        )
         df = shown.result()
         got = {name: future.result() for name, future in closes.items()}
         currencies = quoted.result()
+        named = labels.result()
 
     offered = [CompareOffer(ticker=index, role="index") for index in INDICES]
     if etf and etf != ticker:
         offered.append(CompareOffer(ticker=etf, role="sector", sector=own_sector))
     offered += [
-        CompareOffer(ticker=peer, name=loaders.sec_title(peer) or "", role="peer")
+        CompareOffer(ticker=peer, name=named.get(peer, ""), role="peer")
         for peer in shares[:OFFERED_PEERS]
     ]
     if df.empty:
@@ -308,7 +315,7 @@ def compare(
         lines=[
             CompareLine(
                 ticker=name,
-                name="" if name in INDICES else (loaders.sec_title(name) or ""),
+                name="" if name in INDICES else named.get(name, ""),
                 role=role(name),
                 points=drawn[name],
             )
@@ -404,6 +411,8 @@ def quote(symbol: Symbol, base: Base = None) -> Quote:
         fx_rate=rate,
         fx_as_of=as_of,
         base=ccy,
+        high_52w=snapshot.get("high_52w"),
+        low_52w=snapshot.get("low_52w"),
     )
 
 
@@ -520,6 +529,7 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
         table = pd.DataFrame()
     value = None
     weight = None
+    cost_base = None
     if not table.empty and ticker in table.index:
         raw = table.at[ticker, "value"]
         if pd.notna(raw):
@@ -528,6 +538,11 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
             value = float(raw)
             share = value_weights(table).get(ticker)
             weight = None if share is None or pd.isna(share) else float(share)
+            # The same row's basis, in the reporting currency at each trade
+            # date's rate: what the page subtracts to print the gain the
+            # Portfolio page prints, rather than a native gain restated today.
+            basis = table.at[ticker, "cost"] if "cost" in table else None
+            cost_base = None if basis is None or pd.isna(basis) else float(basis)
 
     brokers = loaders.custody(db, mtime).get(ticker, {})
     # Largest custodian first, and resolved here rather than by the client: the
@@ -553,6 +568,7 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
         base=ccy,
         value=value,
         weight=weight,
+        cost_base=cost_base,
         trades=fills,
         brokers={name: c.quantity for name, c in brokers.items()},
         custody=marks,
@@ -720,6 +736,8 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
         else (None, {})
     )
     normal = review.peak_pe(computed) if equity else None
+    if equity:
+        _log_missing(ticker, raw, computed, view, [tile.key for tile in tiles])
     return Metrics(
         ticker=ticker,
         currency=cast(str | None, computed.get("currency")),
@@ -741,6 +759,21 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
         fx_as_of=as_of,
         base=ccy,
     )
+
+
+def _log_missing(ticker: str, raw, computed: dict, view: str, keys: list[str]) -> None:
+    """One `data.missing` line per blank tile, once a window per ticker.
+
+    `stocks logs stats --event data.missing --by reason` tells the gaps a
+    company has (a loss has no P/E per growth) from the ones the feed left
+    (no statements, a Yahoo field that never came), and `--by kpi` which tile
+    goes blank most. A log line never fails the grid.
+    """
+    with obs.swallow("data.missing_failed", ticker=ticker):
+        for key, reason in missing_reasons(raw, computed, keys).items():
+            if obs.first_sighting("data.missing", (ticker, key)):
+                obs.event("data.missing", ticker=ticker, kpi=key, reason=reason,
+                          lens=view)
 
 
 def _peer_band(
@@ -1016,9 +1049,13 @@ def profile(symbol: Symbol, account: Account) -> Profile:
         logo = pool.submit(loaders.logo, ticker)
         kind = pool.submit(loaders.asset_kind, resolved)
         asset = kind.result()
-        known = name.result() or ""
         # After the kind, not beside it: both read the same `.info`, and the
-        # kind has memoized it by now.
+        # kind has memoized it by now. A bare code is what a non-US listing
+        # nobody holds gets from every local source, and "005930.KS" alone
+        # does not say Samsung.
+        known = name.result() or (
+            "" if asset == CRYPTO else loaders.listing_name(resolved) or ""
+        )
         missing = loaders.missing(ticker, str(account.db), known)
         return Profile(
             ticker=ticker,
@@ -1040,17 +1077,16 @@ def peers(symbol: Symbol) -> Peers:
     the same choice, and for the same reason: each peer is a fundamentals pull,
     and a table nobody asked for spends them on a guess.
 
-    Names come from the SEC map, so a non-US listing arrives as a bare symbol
-    rather than as a second network round-trip per suggestion.
+    Names from the SEC map and the profile memo, and one spark request for
+    every twenty they leave unnamed (`loaders.listing_names`) — not a
+    round-trip per suggestion, and not "7974.T" where Nintendo was meant.
     """
     ticker = symbol.strip().upper()
+    others = [other for other in loaders.related(ticker) if not is_crypto(other)]
+    named = loaders.listing_names(others)
     return Peers(
         ticker=ticker,
-        related=[
-            Peer(ticker=other, name=loaders.sec_title(other) or "")
-            for other in loaders.related(ticker)
-            if not is_crypto(other)
-        ],
+        related=[Peer(ticker=other, name=named.get(other, "")) for other in others],
     )
 
 

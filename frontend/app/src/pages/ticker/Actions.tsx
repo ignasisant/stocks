@@ -262,18 +262,21 @@ export function Actions({
   const tags = entry?.tags ?? [];
 
   // Rules belong to the company on screen and the count rides the button, so
-  // they are fetched on arrival rather than when the panel opens. The route
-  // 404s for a ticker nobody has listed — that is "no rules", not a failure.
+  // they are fetched on arrival rather than when the panel opens. Only for a
+  // listed ticker: rules live on the watchlist row, and the route 404s for
+  // one nobody listed — a red line in the console on every other company.
+  const listed = entry !== null;
+  useEffect(() => setRules([]), [ticker]);
   useEffect(() => {
+    if (!listed) return;
     let live = true;
-    setRules([]);
     getAlerts(ticker)
       .then((body) => live && setRules(body.alerts))
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [ticker]);
+  }, [ticker, listed]);
 
   const write = useCallback(
     (fields: { favorite?: boolean; tags?: string[] }) => {

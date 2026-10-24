@@ -607,9 +607,9 @@ export function Detail({
   return (
     <>
       <div className="sn-sec-head">
-        <h3 className="sn-sec-t" id="ag-detail">
+        <h2 className="sn-sec-t" id="ag-detail">
           {t("sentiment.detail_title")}
-        </h3>
+        </h2>
         <span className="sn-mono">{t("sentiment.detail_hint")}</span>
       </div>
       {/* A tab is not a navigation the back button should walk through. */}

@@ -809,6 +809,42 @@
   margin: 0;
 }
 
+/* Past its `until`: kept on the list, out of the prompt, so it reads as
+   set aside rather than gone. */
+.ag-chat-memory-expired .ag-chat-memory-text {
+  color: var(--ag-text-muted);
+}
+
+.ag-chat-memory-until {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-chat-memory-until input {
+  align-self: flex-start;
+}
+
+.ag-chat-memory-proposal .ag-chat-confirm-row {
+  margin-top: 4px;
+}
+
+/* Undo / Replace under a turn, apply / dismiss and the day picker are pressed with a thumb on a phone;
+   16px keeps iOS from zooming into the date field. */
+@media (pointer: coarse) {
+  .ag-chat-memo .ag-chat-meta-btn,
+  .ag-chat-memory-proposal .ag-chat-btn,
+  .ag-chat-memory-until input {
+    min-height: 44px;
+  }
+
+  .ag-chat-memory-until input {
+    font-size: 16px;
+  }
+}
+
 .ag-chat-memory-clear {
   align-self: flex-start;
   margin-top: 12px;

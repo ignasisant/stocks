@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import pandas as pd
 
@@ -237,7 +238,7 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "Diluted shares CAGR",
         "pct",
         "derived",
-        "computed from yfinance 'Diluted Average Shares'",
+        "computed from yfinance 'Diluted Average Shares', annual to latest quarter",
         "EDGAR 10-K share counts",
         "positive = dilution (SBC), negative = net buybacks",
         desc="Yearly change in diluted share count. Positive = you're being diluted "
@@ -405,6 +406,26 @@ def _series_cagr(df: pd.DataFrame, label: str) -> float | None:
         return None
     newest, oldest = float(row.iloc[0]), float(row.iloc[-1])
     return cagr(oldest, newest, years=len(row) - 1)
+
+
+def _dilution(raw: RawFundamentals) -> float | None:
+    """Diluted shares CAGR from the oldest filed year to the latest quarter.
+
+    The annual series alone ends at the last 10-K, up to a year old, and a
+    company issuing fast (CoreWeave: 487M to 551M shares in a year) read 2.5 %
+    off a pre-IPO count restated flat. The newest quarter after that year is
+    the end point when the feed has one; the span is then measured in days.
+    """
+    annual = _row(raw.income, "Diluted Average Shares")
+    quarter = _row(raw.income_q, "Diluted Average Shares")
+    if annual is None or quarter is None:
+        return _series_cagr(raw.income, "Diluted Average Shares")
+    newest, oldest = pd.to_datetime([quarter.index[0], annual.index[-1]], errors="coerce")
+    last_year = pd.to_datetime(annual.index[0], errors="coerce")
+    if pd.isna(newest) or pd.isna(oldest) or pd.isna(last_year) or newest <= last_year:
+        return _series_cagr(raw.income, "Diluted Average Shares")
+    years = (newest - oldest).days / 365.25
+    return cagr(float(annual.iloc[-1]), float(quarter.iloc[0]), years=years)
 
 
 def annual_financials(raw: RawFundamentals) -> pd.DataFrame:
@@ -660,6 +681,13 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
             quoted=str(info.get("currency")),
         )
     cap = m["market_cap"]
+    # Yahoo drops the trailing P/E on a loss but keeps a negative forward one,
+    # so a loss-maker (CoreWeave) read n/a beside "Loss"; it also drops it on
+    # some foreign listings that earn (Samsung, 005930.KS). Cap over the last
+    # four quarters' net income (filing currency, hence the rate) is that reading.
+    ttm_net = info.get("netIncomeToCommon")
+    if m["pe_ttm"] is None and ttm_net and cap and rate:
+        m["pe_ttm"] = cap / (ttm_net * rate)
     m["fcf_yield"] = fcf * rate / cap if fcf and cap and rate else None
     # Yahoo's FCF adds share-based pay back as if it cost nothing; for a
     # software house it can be most of the figure (HubSpot: 528M of 577M).
@@ -781,7 +809,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["revenue_cagr"] = _series_cagr(raw.income, "Total Revenue")
     m["net_income_cagr"] = _series_cagr(raw.income, "Net Income")
     m["fcf_cagr"] = _series_cagr(raw.cashflow, "Free Cash Flow")
-    m["share_dilution"] = _series_cagr(raw.income, "Diluted Average Shares")
+    m["share_dilution"] = _dilution(raw)
     moat = moat_score(raw)
     m["moat"] = moat.score
     # Not KPIs: the operating margin over the filed years, so the review can
@@ -802,6 +830,74 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
 
     m["peg"] = growth_pe(m)
     return m
+
+
+# Why a KPI `compute_metrics` left blank is blank. The company's own reasons
+# first — a loss has no P/E per growth, no estimates no forward P/E — then the
+# feed's: no statements, too few years, no rate between two currencies, or a
+# Yahoo field that never came.
+MissingReason = Literal[
+    "loss", "no_growth", "no_estimates", "no_statements", "short_history", "fx", "feed"
+]
+_FROM_STATEMENTS = {
+    "roic": "income",
+    "roic_ex_goodwill": "income",
+    "fcf_yield": "cashflow",
+    "owner_fcf_yield": "cashflow",
+    "net_debt_ebitda": "income",
+    "share_dilution": "income",
+    "revenue_cagr": "income",
+    "net_income_cagr": "income",
+    "fcf_cagr": "cashflow",
+    "cash_conversion": "cashflow",
+    "ptbv": "balance",
+    "rotce": "balance",
+}
+_FROM_SERIES = frozenset(
+    {"share_dilution", "revenue_cagr", "net_income_cagr", "fcf_cagr"})
+_CONVERTED = frozenset(
+    {"fcf_yield", "owner_fcf_yield", "ev_ebitda", "ev_sales", "pb", "ptbv"})
+_ON_EBITDA = frozenset({"net_debt_ebitda", "ev_ebitda"})
+
+
+def missing_reasons(
+    raw: RawFundamentals, metrics: Mapping, keys: Iterable[str]
+) -> dict[str, MissingReason]:
+    """KPI -> why it is blank, for each of `keys` `metrics` has no value for."""
+    from stocks.analysis.review import per_share_growth
+
+    info = raw.info
+    ebitda = _latest(raw.income, "EBITDA")
+    split = str(info.get("financialCurrency") or "").upper() != str(
+        info.get("currency") or ""
+    ).upper()
+    out: dict[str, MissingReason] = {}
+    for key in keys:
+        if metrics.get(key) is not None:
+            continue
+        statement = getattr(raw, _FROM_STATEMENTS.get(key, ""), None)
+        if key == "peg":
+            pe = metrics.get("pe_fwd")
+            pe = metrics.get("pe_ttm") if pe is None else pe
+            if pe is not None and pe <= 0:
+                out[key] = "loss"
+            elif pe is not None or per_share_growth(metrics) is None:
+                out[key] = "no_growth"
+            else:
+                out[key] = "feed"
+        elif key in _ON_EBITDA and ebitda is not None and ebitda <= 0:
+            out[key] = "loss"
+        elif key == "pe_fwd" and info.get("forwardEps") is None:
+            out[key] = "no_estimates"
+        elif isinstance(statement, pd.DataFrame) and statement.empty:
+            out[key] = "no_statements"
+        elif key in _FROM_SERIES:
+            out[key] = "short_history"
+        elif key in _CONVERTED and split and _statement_fx(info) is None:
+            out[key] = "fx"
+        else:
+            out[key] = "feed"
+    return out
 
 
 # A year's statements reach the feed weeks after it closes: a 10-K is due

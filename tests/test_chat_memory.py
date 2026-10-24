@@ -268,6 +268,17 @@ def test_a_forgotten_turn_can_be_remembered_again(index):
     assert memory.remember(index, _T1, "t1") == 2
 
 
+def test_forget_except_keeps_only_the_named_threads(index):
+    assert memory.forget_except(index, {"t2", "t_unindexed"}) == 2
+    assert {m.thread for m in memory.recall(index, "position cartera")} == {"t2"}
+
+
+def test_forget_except_with_nothing_to_drop_changes_nothing(index, tmp_path):
+    assert memory.forget_except(index, {"t1", "t2"}) == 0
+    assert memory.forget_except(tmp_path / "absent.db", set()) == 0
+    assert {m.thread for m in memory.recall(index, "position cartera")} == {"t1", "t2"}
+
+
 # ------------------------------------------------------------- degradation
 
 

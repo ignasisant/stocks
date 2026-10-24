@@ -1598,13 +1598,96 @@ def missing(ticker: str, db: str, name: str | None) -> bool:
 
 
 @ttl_cache(_IDENTITY_TTL, max_entries=512)
+def _company_name(ticker: str, watchlist: str) -> str | None:
+    return identity.company_name(ticker, watchlist)
+
+
 def company_name(ticker: str, watchlist: str) -> str | None:
     """Human name for a ticker.
 
     `watchlist` is in the key, not just the arguments: a custom name one
     account set on its own list must never render for another.
+
+    A miss is not held for the day like a hit: it asks the two memos again,
+    which costs two dict reads. A name the page header (`listing_name`) or a
+    peer list (`listing_names`) learns after the miss would otherwise leave
+    every list drawing "2330.TW" while the header above says TSMC.
     """
-    return identity.company_name(ticker, watchlist)
+    if name := _company_name(ticker, watchlist):
+        return name
+    from stocks.data import profiles
+
+    symbol = display_symbol(ticker)
+    return (profiles.known(symbol) or {}).get("name") or learned_name(symbol)
+
+
+
+def listing_name(symbol: str) -> str | None:
+    """Yahoo's own name for a listing, asked when no local source has one.
+
+    `company_name` never reaches Yahoo for it: the bulk routes (search, the
+    profiles batch) call it per row, and a quoteSummary each is what the
+    profile memo exists to avoid. The page header is one symbol, and a non-US
+    listing nobody holds — "005930.KS", which is Samsung — has no other source,
+    so the header asks here once. The blob lands in the profile memo, so the
+    next `company_name` miss finds it. Not memoized: a refused fetch must be
+    asked again, not held as "no name" for a day.
+    """
+    from stocks.data import profiles
+    from stocks.data.fetch import info
+
+    if name := (profiles.known(symbol) or {}).get("name"):
+        return name
+    try:
+        blob = info(symbol)
+    except Exception:
+        return None
+    return blob.get("longName") or blob.get("shortName") or None
+
+
+# What `listing_names` has learned, per process. Names only, never written
+# into the profile memo: a blob there with a name and no sector would read
+# as a company with no sector to the allocation donuts that trust it.
+_LISTING_NAMES: dict[str, str] = {}
+_LISTING_NAMES_CAP = 4096
+
+
+def listing_names(symbols: list[str]) -> dict[str, str]:
+    """`{symbol: name}` for a list of other companies — peers, compare lines.
+
+    The SEC map and the profile memo first, then one spark request for every
+    twenty still unnamed (`spark.names`), where `.info` would be one each. A
+    non-US peer has no other source: without this "Valores relacionados" on
+    Sony read "7974.T", "8306.T". Only names found are kept, so a refused
+    request is asked again next time rather than held as "no name".
+    """
+    from stocks.data import profiles
+    from stocks.data.spark import names
+
+    out: dict[str, str] = {}
+    cold: list[str] = []
+    for symbol in dict.fromkeys(symbols):
+        name = (
+            sec_title(symbol)
+            or (profiles.known(symbol) or {}).get("name")
+            or _LISTING_NAMES.get(symbol)
+        )
+        if name:
+            out[symbol] = name
+        else:
+            cold.append(symbol)
+    if cold:
+        found = names(cold)
+        if len(_LISTING_NAMES) + len(found) > _LISTING_NAMES_CAP:
+            _LISTING_NAMES.clear()
+        _LISTING_NAMES.update(found)
+        out.update(found)
+    return out
+
+
+def learned_name(symbol: str) -> str | None:
+    """A name `listing_names` already found, without asking anybody."""
+    return _LISTING_NAMES.get(symbol)
 
 
 @ttl_cache(_IDENTITY_TTL, max_entries=512)

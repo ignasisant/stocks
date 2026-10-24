@@ -261,6 +261,26 @@ def test_renaming_pins_the_title(client, account, signed_in):
     assert body.json()["title_auto"] is False
 
 
+def test_a_daily_card_is_not_listed_until_it_is_opened(client, account, signed_in):
+    """Home's card is filed as a thread (`auth.save_card_thread`), but the list
+    is the reader's conversations: the card joins it when its "Ask" opens it,
+    and stays once they write in it."""
+    from stocks.web import auth
+
+    mine = signed_in.post("/v1/chat/conversations", json={"title": "Mine"}).json()
+    cid = auth.save_card_thread("2026-10-03", "Daily action · Oct 3", "**NVDA**",
+                                account.chat)
+
+    listed = signed_in.get("/v1/chat/conversations").json()["conversations"]
+    assert [c["id"] for c in listed] == [mine["id"]]
+    assert signed_in.get(f"/v1/chat/conversations/{cid}").status_code == 200
+
+    signed_in.patch(f"/v1/chat/conversations/{cid}", json={"active": True})
+    listed = signed_in.get("/v1/chat/conversations").json()["conversations"]
+    assert {c["id"] for c in listed} == {mine["id"], cid}
+    assert next(c for c in listed if c["id"] == cid)["daily"] == "2026-10-03"
+
+
 def test_an_unknown_thread_is_a_404_everywhere_it_is_named(
     client, account, signed_in
 ):
@@ -1046,9 +1066,14 @@ class Recorder(FakeProvider):
 def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
     client, account, signed_in, served, monkeypatch
 ):
-    """What the drawer says the reader is looking at: the page, the ticker,
-    and a quote lookup aimed at "it"."""
+    """What the drawer says the reader is looking at: the page, the ticker
+    with its industry when the profile memo knows it, and a quote lookup
+    aimed at "it"."""
+    from stocks.data import profiles
+
     provider = served(Recorder())
+    monkeypatch.setattr(profiles, "known", lambda t: {
+        "sector": "Technology", "industry": "Semiconductors"} if t == "NVDA" else {})
     focused: list[str] = []
     monkeypatch.setattr(
         engine.market, "lookup_for",
@@ -1059,7 +1084,8 @@ def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
         json=run("is it cheap?", view="ticker", focus="nvda", lang="en"),
     )
     assert "Current view: The user is currently on the Ticker page. " \
-        "The ticker in focus is NVDA." in provider.systems[0]
+        "The ticker in focus is NVDA (Technology · Semiconductors)." \
+        in provider.systems[0]
     assert focused == ["NVDA"]
 
 
@@ -2215,6 +2241,117 @@ def test_a_token_reads_the_memory_but_never_writes_it(client, account, signed_in
     assert account.learnings.exists()
 
 
+
+def test_an_add_says_whether_it_corrected_or_may_clash(client, account, signed_in):
+    first = signed_in.post("/v1/chat/memories",
+                           json={"text": "Nunca más de un 10% en una posición"}).json()
+    assert first["op"] == "added" and first["related"] is None
+    fixed = signed_in.post("/v1/chat/memories",
+                           json={"text": "Nunca más de un 5% en una posición"}).json()
+    assert fixed["op"] == "updated" and fixed["id"] == first["id"]
+    assert fixed["before"] == first["text"]
+    assert fixed["replaced"] == [first["text"]]
+
+    reduce = signed_in.post("/v1/chat/memories",
+                            json={"text": "Quiero reducir mi peso en bancos"}).json()
+    grow = signed_in.post("/v1/chat/memories",
+                          json={"text": "Quiero aumentar mi peso en bancos"}).json()
+    assert grow["related"]["id"] == reduce["id"]
+
+    kept = signed_in.post(f"/v1/chat/memories/{grow['id']}/replace",
+                          json={"old": reduce["id"]})
+    assert kept.status_code == 200 and kept.json()["replaced"] == [reduce["text"]]
+    ids = [m["id"] for m in signed_in.get("/v1/chat/memories").json()["memories"]]
+    assert reduce["id"] not in ids and grow["id"] in ids
+    assert signed_in.post(f"/v1/chat/memories/{grow['id']}/replace",
+                          json={"old": reduce["id"]}).status_code == 404
+
+
+def test_a_memory_holds_until_a_day(client, account, signed_in):
+    made = signed_in.post("/v1/chat/memories",
+                          json={"text": "Hasta fin de año no vendo nada"}).json()
+    assert made["until"] and made["expired"] is False
+    lid = made["id"]
+    past = signed_in.patch(f"/v1/chat/memories/{lid}",
+                           json={"until": "2020-01-31"}).json()
+    assert past["until"] == "2020-01-31" and past["expired"] is True
+    assert signed_in.patch(f"/v1/chat/memories/{lid}",
+                           json={"until": None}).json()["until"] is None
+    assert signed_in.patch(f"/v1/chat/memories/{lid}",
+                           json={"until": "soon"}).status_code == 422
+
+
+def test_a_full_list_names_the_one_to_let_go(client, account, signed_in, monkeypatch):
+    from stocks.chat import learnings
+
+    monkeypatch.setattr(learnings, "MAX_ITEMS", 2)
+    a = signed_in.post("/v1/chat/memories", json={"text": "Vivo en Barcelona"}).json()
+    b = signed_in.post("/v1/chat/memories",
+                       json={"text": "Prefiero dividendos crecientes"}).json()
+    learnings.note_used(account.learnings, [b["id"]])
+    listed = signed_in.get("/v1/chat/memories").json()
+    assert listed["suggest_drop"] == a["id"]
+    used = {m["id"]: m["uses"] for m in listed["memories"]}
+    assert used == {a["id"]: 0, b["id"]: 1}
+
+
+def test_tidy_up_proposals_are_applied_or_dismissed_by_the_reader(
+    client, account, signed_in
+):
+    from stocks.chat import memory_review
+
+    a = signed_in.post("/v1/chat/memories", json={"text": "Vivo en Barcelona"}).json()
+    b = signed_in.post("/v1/chat/memories",
+                       json={"text": "Prefiero dividendos crecientes"}).json()
+    move = memory_review.proposal("reword", (a["id"],), "model",
+                                  text="Vivo en Valencia", note="Te mudaste.")
+    drop = memory_review.proposal("drop", (b["id"],), "idle")
+    memory_review.keep(account.learnings, [move, drop], "2026-10-23")
+
+    listed = signed_in.get("/v1/chat/memories").json()
+    assert [s["sid"] for s in listed["suggestions"]] == [move.sid, drop.sid]
+
+    applied = signed_in.post(f"/v1/chat/memories/suggestions/{move.sid}",
+                             json={"action": "apply"}).json()
+    assert applied["op"] == "apply" and applied["changes"][0]["op"] == "updated"
+    dismissed = signed_in.post(f"/v1/chat/memories/suggestions/{drop.sid}",
+                               json={"action": "dismiss"}).json()
+    assert dismissed == {"op": "dismiss", "changes": []}
+
+    listed = signed_in.get("/v1/chat/memories").json()
+    assert listed["suggestions"] == []
+    texts = {m["id"]: m["text"] for m in listed["memories"]}
+    assert texts == {a["id"]: "Vivo en Valencia", b["id"]: b["text"]}
+    assert signed_in.post(f"/v1/chat/memories/suggestions/{move.sid}",
+                          json={"action": "apply"}).status_code == 404
+
+
+def test_a_turn_names_the_memory_a_new_one_may_clash_with(
+    client, account, signed_in, served
+):
+    served(Recorder())
+    old = signed_in.post("/v1/chat/memories",
+                         json={"text": "Quiero reducir mi peso en bancos"}).json()
+    body = signed_in.post("/v1/chat/runs", json=run(
+        "recuerda que quiero aumentar mi peso en bancos", lang="es")).text
+    done = finished(events(body))["result"]
+    [change] = done["learned"]
+    assert change["related_id"] == old["id"]
+    assert change["related_text"] == old["text"]
+    assert "Puede chocar" in done["text"]
+    cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
+    turns = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"]
+    assert turns[-1]["learned"][0]["related_id"] == old["id"]
+
+
+def test_a_token_cannot_settle_a_proposal(client, account, signed_in):
+    client.cookies.clear()
+    assert client.post("/v1/chat/memories/suggestions/r_x", params=WHO,
+                       headers=AUTH, json={"action": "apply"}).status_code == 403
+    assert client.post("/v1/chat/memories/m_x/replace", params=WHO,
+                       headers=AUTH, json={"old": "m_y"}).status_code == 403
+
+
 class Learner(Recorder):
     """A Recorder that also answers the background read for memories: with
     `ops`, once `gate` (if any) is open."""
@@ -2546,3 +2683,42 @@ def test_the_research_plan_streams_as_it_is_updated(
     assert said["value"] == plan
     assert stream.index(said) < next(
         i for i, e in enumerate(stream) if e["type"] == "TEXT_MESSAGE_CONTENT")
+
+
+class Briefed(Listener):
+    """A Listener whose cheap calls (the debate's two sides) answer too."""
+
+    classifier_model = "fake-mini"
+
+    def complete(self, api_key, model, system, messages):
+        return "- a case"
+
+
+def test_the_ticker_brief_rides_on_the_turn_and_survives_a_regenerate(
+    client, account, signed_in, served
+):
+    """"Analyse with AI" sends a one-line label and `forwardedProps.brief`.
+    The model is handed the server's brief; the thread keeps the label; a
+    regenerate on the same ticker asks the same brief again."""
+    provider = served(Briefed())
+    label = "Bear case on Centrus (LEU)."
+    stream = events(signed_in.post("/v1/chat/runs", json=run(
+        label, view="ticker", focus="LEU", brief="bear")).text)
+    assert "[Requested analysis." in provider.asked[-1]
+    # A bear brief is argued by both sides first, like a typed "should I buy".
+    assert {e["name"] for e in stream if e["type"] == "SUBAGENT_STARTED"} == {
+        "bull", "bear"}
+    assert "Pre-mortem" in provider.asked[-1]
+
+    cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
+    turns = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"]
+    assert turns[0]["content"] == label
+
+    signed_in.post("/v1/chat/runs", json=run(regenerate=True, view="ticker",
+                                             focus="LEU"))
+    assert "Pre-mortem" in provider.asked[-1]
+    # A typed question is not briefed, and an unknown angle is refused.
+    signed_in.post("/v1/chat/runs", json=run("¿y AMD?", view="ticker", focus="LEU"))
+    assert "[Requested analysis." not in provider.asked[-1]
+    refused = signed_in.post("/v1/chat/runs", json=run("x", brief="hype"))
+    assert refused.status_code == 422

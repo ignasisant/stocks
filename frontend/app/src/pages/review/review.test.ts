@@ -17,6 +17,7 @@ import { BUDGET, buildPrompt, noteText } from "./prompt";
 import { countryName } from "./countries";
 import { NARROW, lineSlots } from "./lines";
 import { labelRank, placeLabels } from "./labels";
+import { marketRows } from "./MapFind";
 import {
   driftOf,
   gainOf,
@@ -594,5 +595,36 @@ describe("map trail", () => {
   it("starts a short window at its own first day alone", () => {
     expect(trailOf("1m", at).map((point) => point.cheapness)).toEqual([70]);
     expect(trailOf("1y", at).map((point) => point.cheapness)).toEqual([40, 60]);
+  });
+});
+
+describe("marketRows", () => {
+  const match = (ticker: string, kind = "world") => ({
+    ticker,
+    name: ticker,
+    kind,
+    mark: "",
+    exchange: "",
+  });
+
+  it("offers only listings the page does not already weigh", () => {
+    const known = new Set(["CRWV", "AAPL"]);
+    const rows = marketRows(
+      [match("crwv", "watch"), match("CORE"), match("CORT", "sec"), match("AAPL")],
+      known,
+    );
+    expect(rows.map((row) => row.ticker)).toEqual(["CORE", "CORT"]);
+  });
+
+  it("leaves out the analyze guess and coins, and keeps the list short", () => {
+    const rows = marketRows(
+      [
+        match("CORE", "analyze"),
+        match("CORE-USD", "crypto"),
+        ...["A", "B", "C", "D", "E", "F"].map((t) => match(t)),
+      ],
+      new Set(),
+    );
+    expect(rows.map((row) => row.ticker)).toEqual(["A", "B", "C", "D"]);
   });
 });

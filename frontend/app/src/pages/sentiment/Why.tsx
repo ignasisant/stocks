@@ -46,9 +46,9 @@ export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) 
   const t = useT();
   const head = (
     <div className="sn-sec-head">
-      <h3 className="sn-sec-t" id="ag-why">
+      <h2 className="sn-sec-t" id="ag-why">
         {t("sentiment.why_title")}
-      </h3>
+      </h2>
       <span className="sn-mono">{t("sentiment.why_hint")}</span>
     </div>
   );

@@ -15,8 +15,8 @@ import { layout, resolveKind } from "./layout";
 describe("layout", () => {
   it("draws a money-market fund by its yield, not its momentum", () => {
     const shape = layout("money_market");
-    expect(shape.metrics).not.toContain("rsi");
-    expect(shape.metrics).not.toContain("sma20");
+    expect(shape.metrics).not.toContain("pe");
+    expect(shape.metrics).not.toContain("range_52w");
     expect(shape.metrics).toEqual(["cash_yield", "policy", "ter"]);
     expect(shape.candles).toBe(false);
     expect(shape.overlays).toEqual([]);
@@ -45,9 +45,9 @@ describe("layout", () => {
     expect(units).toEqual(["crypto"]);
   });
 
-  it("reads a coin by its distance from the peak, not its SMA20", () => {
+  it("reads a coin by its range and its distance from the peak", () => {
     const shape = layout("crypto");
-    expect(shape.metrics).toEqual(["rsi", "ath_drawdown"]);
+    expect(shape.metrics).toEqual(["range_52w", "ath_drawdown"]);
     expect(shape.markers).toEqual(["cycle"]);
     expect(shape.overlays).toContain("SMA20");
   });
@@ -61,8 +61,20 @@ describe("layout", () => {
 
   it("an unnamed kind is a share", () => {
     expect(layout(null)).toBe(layout("stock"));
-    expect(layout(null).metrics).toEqual(["rsi", "sma20"]);
+    expect(layout(null).metrics).toEqual(["range_52w", "pe", "next_results"]);
     expect(layout(null).markers).toEqual(["results", "dividends"]);
+  });
+
+  it("only a share is priced against its earnings", () => {
+    const earnings = ASSET_KINDS.filter((kind) => layout(kind).metrics.includes("pe"));
+    expect(earnings).toEqual(["stock"]);
+    const dated = ASSET_KINDS.filter((kind) =>
+      layout(kind).metrics.includes("next_results"),
+    );
+    expect(dated).toEqual(["stock"]);
+    // A basket and an index still say where the year put them.
+    expect(layout("equity_fund").metrics).toEqual(["range_52w"]);
+    expect(layout("index").metrics).toEqual(["range_52w"]);
   });
 
   it("every kind has a label and a line", () => {

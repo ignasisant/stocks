@@ -31,7 +31,7 @@ import { Glyph } from "./icons";
 import { href, Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
-import { addMemory, dropMemory, editMemory, rateTurn } from "./api";
+import { addMemory, dropMemory, editMemory, rateTurn, replaceMemory } from "./api";
 import {
   capMessage,
   clock,
@@ -329,7 +329,7 @@ function Recalled({
   );
 }
 
-type Undo = "idle" | "working" | "undone";
+type Undo = "idle" | "working" | "undone" | "gone" | "full" | "failed";
 
 /** The memory screen's write that takes `change` back. */
 export function undoMemory(change: Learned): Promise<unknown> {
@@ -350,6 +350,10 @@ export function undoMemory(change: Learned): Promise<unknown> {
  * back a memory is not something to ask a model to do. Session-only, like
  * the clock — a reloaded turn offers the undo again, and pressing it on a
  * change that was already taken back says so (a 404) instead of failing.
+ *
+ * A memory added next to one it may clash with names that one, and offers
+ * to let the new one replace it — the reader decides, nothing is merged
+ * behind their back.
  */
 function Change({
   change,
@@ -363,6 +367,20 @@ function Change({
 }) {
   const t = useT();
   const [undo, setUndo] = useState<Undo>("idle");
+  const [swap, setSwap] = useState<Undo>("idle");
+  const related = change.op === "added" && change.related_id ? change.related_id : "";
+
+  const replace = async () => {
+    setSwap("working");
+    try {
+      await replaceMemory(change.id, related);
+      setSwap("undone");
+    } catch (failure) {
+      setSwap(
+        failure instanceof ApiError && failure.status === 404 ? "gone" : "failed",
+      );
+    }
+  };
 
   const take = async () => {
     setUndo("working");
@@ -413,12 +431,30 @@ function Change({
             {t("chat.mem_was", { text: change.before })}
           </span>
         )}
+        {related && undo === "idle" && swap !== "gone" && (
+          <span className="ag-chat-memo-was">
+            {swap === "undone"
+              ? t("chat.mem_replaced")
+              : t("chat.mem_related", { text: change.related_text ?? "" })}
+          </span>
+        )}
       </span>
       {undo === "working" ? (
         <Status label={t("chat.mem_undoing")} />
+      ) : swap === "working" ? (
+        <Status label={t("chat.mem_replacing")} />
       ) : (
         <span className="ag-chat-memo-acts">
-          {undo === "idle" && (
+          {related && undo === "idle" && (swap === "idle" || swap === "failed") && (
+            <button
+              type="button"
+              className="ag-chat-meta-btn"
+              onClick={() => void replace()}
+            >
+              {t("chat.mem_replace")}
+            </button>
+          )}
+          {(undo === "idle" || undo === "failed") && swap !== "undone" && (
             <button
               type="button"
               className="ag-chat-meta-btn"
@@ -434,6 +470,12 @@ function Change({
           )}
         </span>
       )}
+      {undo === "gone" && <p className="ag-chat-hint">{t("chat.mem_undo_gone")}</p>}
+      {undo === "full" && <p className="ag-chat-hint">{t("chat.mem_full_note")}</p>}
+      {(undo === "failed" || swap === "failed") && (
+        <p className="ag-chat-hint">{t("chat.api_error")}</p>
+      )}
+      {swap === "gone" && <p className="ag-chat-hint">{t("chat.mem_undo_gone")}</p>}
     </div>
   );
 }

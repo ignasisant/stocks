@@ -406,8 +406,11 @@ CLIENT_MAX_DOCS = 60
 CLIENT_WINDOW_S = 60
 
 # Not metered: the mirrored logos, the shell's bundle and the landing's
-# assets, and the probes an uptime monitor hits on a schedule.
-_UNMETERED = (ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS)
+# assets, and the probes an uptime monitor hits on a schedule. And the string
+# catalog, which is a shipped file like the bundle: it costs a memoized dict
+# merge, and a 429 on it left every label in the app as its dotted key.
+I18N_PATH = f"{API_PREFIX}v1/i18n/"
+_UNMETERED = (ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS, I18N_PATH)
 
 # The API gets its own budget, on its own key. A document and an API call are
 # not the same unit of work: the shell's ticker page asks for its price bars,

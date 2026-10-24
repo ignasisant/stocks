@@ -428,6 +428,17 @@
   opacity: 0.55;
 }
 
+/* A gauge with no reading still names itself: its words go muted rather than
+   faded, and the dashed track already says it is blank. At 0.55 the whole
+   row measured 2.7:1, which hid what the gauge would show and why. */
+.sn-comp-row.sn-dim {
+  opacity: 1;
+}
+
+.sn-comp-row.sn-dim .sn-comp-l span:first-child {
+  color: var(--ag-text-muted);
+}
+
 .sn-comp-l {
   display: flex;
   flex-direction: column;
@@ -744,9 +755,10 @@
    turn is a turn, and painting "broke down but recovering" green would read as
    a buy signal from a page that does not give them. They separate on border:
    solid when a rally is losing its footing, dashed when a downtrend recovers. */
+/* The gain green on its own fill measured 4.48:1; the primary text clears 4.5. */
 .sn-st-up {
   background: var(--ag-success-fill);
-  color: var(--ag-up);
+  color: var(--ag-text-primary);
 }
 
 .sn-st-down {

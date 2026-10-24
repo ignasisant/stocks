@@ -77,6 +77,8 @@ export function Search({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [matches, setMatches] = useState<Match[] | null>(null);
+  // Yahoo could not be asked: the rows are local only, and the panel says so.
+  const [worldDown, setWorldDown] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -123,6 +125,7 @@ export function Search({
 
   useEffect(() => {
     const term = query.trim();
+    setWorldDown(false);
     if (!term) {
       setMatches(null);
       setBusy(false);
@@ -138,7 +141,9 @@ export function Search({
           full = true;
           // A reply for a query the reader has already typed past is not an
           // answer any more — it would overwrite the newer one it raced.
-          if (live) setMatches(results.matches);
+          if (!live) return;
+          setMatches(results.matches);
+          setWorldDown(Boolean(results.world_down));
         })
         .catch(() => {
           full = true;
@@ -299,6 +304,7 @@ export function Search({
           {term ? (
             <Found
               busy={busy}
+              worldDown={worldDown}
               rows={rows}
               analyze={analyze}
               term={term}
@@ -335,6 +341,7 @@ export function Search({
 
 function Found({
   busy,
+  worldDown,
   rows,
   analyze,
   term,
@@ -347,6 +354,7 @@ function Found({
   optionId: (index: number) => string;
   active: number;
   busy: boolean;
+  worldDown: boolean;
   rows: Match[];
   analyze: Match | undefined;
   term: string;
@@ -365,7 +373,7 @@ function Found({
     // which is the state this line exists to distinguish itself from.
     return (
       <p className="ag-search-caption" role="status">
-        {t("widgets.no_results")}
+        {t(worldDown ? "widgets.world_down" : "widgets.no_results")}
       </p>
     );
   }
@@ -429,6 +437,10 @@ function Found({
       {busy ? (
         <p className="ag-search-caption" role="status">
           {t("widgets.searching")}
+        </p>
+      ) : worldDown ? (
+        <p className="ag-search-caption" role="status">
+          {t("widgets.world_down")}
         </p>
       ) : null}
     </>

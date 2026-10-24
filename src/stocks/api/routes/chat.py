@@ -66,6 +66,7 @@ from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
 from stocks.chat import (
     a2ui,
+    brief,
     charts,
     engine,
     guide_ai,
@@ -223,7 +224,9 @@ class Learned(BaseModel):
     what the drawer needs to say so and to undo it. `auto` when it was learned
     without being asked; `before` is what an update replaced, its undo;
     `repeated` the days a question was asked on before it became a routine
-    (`learnings.notice`), 0 otherwise."""
+    (`learnings.notice`), 0 otherwise. `related_id` / `related_text` name a
+    kept memory an added one may clash with — the drawer offers to let the
+    new one replace it."""
 
     op: str
     id: str
@@ -232,6 +235,8 @@ class Learned(BaseModel):
     auto: bool = False
     before: str = ""
     repeated: int = 0
+    related_id: str = ""
+    related_text: str = ""
 
 
 class Recalled(BaseModel):
@@ -569,6 +574,11 @@ class Forwarded(BaseModel):
     # "in depth" switch, "" lets the question decide. Never "fast" from the
     # panel — a reader cannot ask for less than the question needs.
     depth: Literal["", "deep"] = ""
+    # The angle the ticker page's "Analyse with AI" asked for on the focused
+    # symbol (`chat/brief.py`): the server writes the brief the button's short
+    # sentence stands for. "" is a typed question.
+    # `brief.ANGLES`, spelled out: the field shadows the module here.
+    brief: Literal["", "full", "bear", "earnings", "fit"] = ""
 
 
 class Run(RunAgentInput):
@@ -672,7 +682,7 @@ def _view(view: str, focus: str, lang: str, tab: str = "") -> tuple[str, str]:
     tab_key = navigate.tab_label(slug, tab) if page else ""
     tab_name = translate(tab_key, lang) if tab_key else ""
     sym = engine.clean_focus(focus)
-    return engine.view_context(page, sym, tab_name), sym
+    return engine.view_context(page, sym, tab_name, brief.about(sym)), sym
 
 
 def _turn(raw: dict, lang: str = "en") -> Message:
@@ -709,7 +719,9 @@ def _turn(raw: dict, lang: str = "en") -> Message:
                     kind=str(c.get("kind") or "context"),
                     auto=c.get("auto") is True,
                     before=str(c.get("before") or ""),
-                    repeated=int(c.get("repeated") or 0))
+                    repeated=int(c.get("repeated") or 0),
+                    related_id=str(c.get("related_id") or ""),
+                    related_text=str(c.get("related_text") or ""))
             for c in (raw.get("learned") or [])
             if isinstance(c, dict) and c.get("id")
         ],
@@ -862,7 +874,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
         ),
         skills=[
             SkillInfo(id=s.id, name=s.name, description=s.description)
-            for s in chat_skills.catalog()
+            for s in chat_skills.pickable()
         ],
         skills_mode=prefs.get("chat_skills_mode", "auto"),
         skills_selected=[
@@ -889,6 +901,11 @@ def conversations(paths: Account) -> Conversations:
     until something is saved — so handing that id out would give a client a
     thread it cannot then rename or delete. A read says what exists; the first
     turn (or `POST /chat/conversations`) is what makes one exist.
+
+    A daily card's thread the reader never wrote in is left out, unless it is
+    the active one: the list is their conversations, and a month of cards would
+    bury them. The thread is still there — the card's "Ask" opens it by id,
+    and once they write in it, it is listed like any other.
     """
     from stocks.web import auth
 
@@ -896,7 +913,8 @@ def conversations(paths: Account) -> Conversations:
         return Conversations(conversations=[])
     return Conversations(
         conversations=[
-            Conversation(**c) for c in auth.list_conversations(paths.chat)
+            Conversation(**c)
+            for c in auth.list_conversations(paths.chat, cards=False)
         ]
     )
 
@@ -1211,7 +1229,7 @@ def _events(
     lang: str, staged_import: str = "", view: str = "", focus: str = "",
     guided: bool = False, linked: bool = False,
     held: dict[str, str] | None = None, depth: str = "",
-    checkpoint: Checkpoint | None = None,
+    checkpoint: Checkpoint | None = None, angle: str = "",
 ) -> Generator[str]:
     """The turn, as AG-UI events. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
@@ -1385,6 +1403,7 @@ def _events(
             thread=thread,
             depth=depth,
             checkpoint=checkpoint,
+            brief=angle,
         ):
             if kind == "phase":
                 yield from close_step()
@@ -1544,8 +1563,11 @@ def _settled(*, thread: str, run: str, reply: engine.Reply,
     ))
 
 
-def _rewind(paths: UserPaths) -> str:
-    """Take the last answer and its question off the thread; return the question.
+def _rewind(paths: UserPaths) -> tuple[str, dict]:
+    """Take the last answer and its question off the thread; return the
+    question, and the ticker brief it was asked with ({} for a typed one —
+    `engine.prepare` files it on the turn, so regenerating "Analyse with AI"
+    asks the same analysis again, not its one-line label).
 
     Both, not just the answer: the engine appends the question it is given, so
     leaving the old one in place would file it twice with two answers under it.
@@ -1567,7 +1589,8 @@ def _rewind(paths: UserPaths) -> str:
             detail="the answer on this thread has no question above it",
         )
     auth.save_chat(history[:-2], paths.chat)
-    return str(asked["content"]).strip()
+    briefed = asked.get("brief")
+    return str(asked["content"]).strip(), briefed if isinstance(briefed, dict) else {}
 
 
 def _answer(entry: ResumeEntry) -> Verdict:
@@ -1691,14 +1714,18 @@ def ask(
         # the thread for a run that is then refused.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="this thread is still being answered")
+    angle = props.brief
     if props.regenerate:
-        message = _rewind(paths)
+        message, briefed = _rewind(paths)
+        if briefed.get("ticker") == focus:
+            angle = str(briefed.get("angle") or "")
     held = session_keys(x_chat_provider, x_chat_key)
     asked_how = {
         "lang": lang, "staged_import": props.staged_import.strip(), "view": view,
         "focus": focus, "guided": guided,
         "linked": not guided and body.declares(navigate.TOOL_NAME),
         "depth": props.depth,
+        "brief": angle,
     }
     try:
         run = _launch(paths, request, rid=body.run_id, thread=thread,
@@ -1750,6 +1777,7 @@ def _launch(paths: UserPaths, request: Request, *, rid: str, thread: str,
                 held=held,
                 depth=str(how.get("depth") or ""),
                 checkpoint=point,
+                angle=str(how.get("brief") or ""),
             ),
             stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
             failed=lambda frame: '"type":"RUN_ERROR"' in frame,

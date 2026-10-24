@@ -11,6 +11,11 @@ the sign-in screen needs them before anyone is signed in.
 A language nobody ships (a browser set to Italian) gets English, with `lang`
 saying so. The front end asks for whatever the browser reports, and a 404 there
 left it with no strings at all — every label rendered as its dotted key.
+
+`async` on purpose, the one route here that is: it reads memoized files and
+never blocks, and every label in the app waits on it. A sync route queues in
+the threadpool behind whatever Yahoo is being slow about, and the page draws
+`common.waiting_for` until a thread frees up.
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ class Catalog(BaseModel):
 
 
 @router.get("/{lang}", response_model=Catalog, summary="One language's strings")
-def catalog(
+async def catalog(
     lang: Annotated[str, Path(min_length=2, max_length=8)],
     prefix: Annotated[
         str | None,

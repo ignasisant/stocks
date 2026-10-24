@@ -893,6 +893,13 @@
   opacity: 0.7;
 }
 
+/* A market row's "+": what a pick does, in the verdict chip's column. */
+.ag-rev-map-add {
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-md);
+  line-height: 1;
+}
+
 /* Left out by the map's search: there to keep the plane, not to be read. */
 .ag-rev-dot-dim {
   opacity: 0.15;

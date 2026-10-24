@@ -901,6 +901,34 @@ def test_session_quote_prices_the_premarket_move(monkeypatch):
     assert abs(quote["pct"] - (435.0 / 500.0 - 1)) < 1e-9
 
 
+def test_session_quote_carries_the_years_extremes_off_the_same_row(monkeypatch):
+    """The price card's range reads the year off the quote already fetched —
+    no second request — and a row without one (Finnhub's) leaves it null."""
+    _patch_quote(
+        monkeypatch,
+        {
+            "marketState": "REGULAR",
+            "regularMarketPrice": 500.0,
+            "regularMarketPreviousClose": 480.0,
+            "fiftyTwoWeekHigh": 620.0,
+            "fiftyTwoWeekLow": 310.5,
+        },
+    )
+    quote = session_quote("MDB")
+    assert (quote["high_52w"], quote["low_52w"]) == (620.0, 310.5)
+
+    _patch_quote(
+        monkeypatch,
+        {
+            "marketState": "REGULAR",
+            "regularMarketPrice": 500.0,
+            "regularMarketPreviousClose": 480.0,
+        },
+    )
+    quote = session_quote("MDB")
+    assert quote["high_52w"] is None and quote["low_52w"] is None
+
+
 def test_session_quote_keeps_the_price_and_drops_a_move_no_session_makes(monkeypatch):
     """A previous close in pence against a price in pounds: the card keeps the
     price, shows no day move, and the feed's slip is one logged contradiction

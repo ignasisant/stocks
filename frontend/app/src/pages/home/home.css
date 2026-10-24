@@ -1166,9 +1166,10 @@ a.hm-step {
   font-variant-numeric: tabular-nums;
 }
 
+/* Primary text, not the gain green: that one sits at 4.48:1 on this fill. */
 .hm-regime-up {
   background: var(--ag-success-fill);
-  color: var(--ag-up);
+  color: var(--ag-text-primary);
 }
 
 .hm-regime-down {

@@ -48,7 +48,7 @@ def offline(tmp_path, monkeypatch):
     monkeypatch.setattr(symbols, "_isin_memo", None)
     monkeypatch.setattr(symbols, "_isin_misses", set())
     monkeypatch.setattr(symbols, "_quotes", lambda query, count: [])
-    loaders.company_name.cache_clear()
+    loaders._company_name.cache_clear()
     loaders.display_symbol.cache_clear()
     loaders.logo.cache_clear()
 

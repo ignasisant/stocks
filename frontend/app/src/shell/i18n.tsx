@@ -12,14 +12,26 @@
  * and left the shell unable to render a label before the page loaded.
  */
 
-import { createContext, useContext, type ReactNode } from "react";
-import { get } from "./api";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
+import { ApiError, get } from "./api";
 import { setNumberLang } from "./numbers";
 import { useApi } from "./useApi";
 
 type Catalog = { lang: string; strings: Record<string, string> };
 
-const Strings = createContext<Catalog>({ lang: "en", strings: {} });
+/** `ready` is false until the catalog has arrived (true outside a provider). */
+const Strings = createContext<Catalog & { ready: boolean }>({
+  lang: "en",
+  strings: {},
+  ready: true,
+});
 
 /**
  * `t("portfolio.tab_positions")`, with `{placeholder}` slots filled in.
@@ -88,6 +100,18 @@ export function useLang(): string {
   return useContext(Strings).lang;
 }
 
+/**
+ * Whether the catalog is in. For copy that is optional while it is not — a
+ * loading caption — and would otherwise print its dotted keys on a slow start.
+ */
+export function useStringsReady(): boolean {
+  return useContext(Strings).ready;
+}
+
+/** How many times a failed catalog is asked again, and the base wait between. */
+const RETRIES = 5;
+const RETRY_S = 3;
+
 export function Translations({
   lang,
   children,
@@ -96,12 +120,34 @@ export function Translations({
   children: ReactNode;
 }) {
   const catalog = useApi(() => get<Catalog>(`/i18n/${lang}`), [lang]);
+  // Asked again when it fails, a few times. It is asked once per session, so
+  // one refusal — a 429 from a burst of tabs, a dropped connection — otherwise
+  // left every label in the app as its dotted key until a reload.
+  const tries = useRef(0);
+  useEffect(() => {
+    if (catalog.state === "loaded") tries.current = 0;
+    if (catalog.state !== "failed" || tries.current >= RETRIES) return;
+    tries.current += 1;
+    const after =
+      catalog.error instanceof ApiError ? catalog.error.retryAfter : undefined;
+    const timer = setTimeout(catalog.retry, (after ?? RETRY_S * tries.current) * 1000);
+    return () => clearTimeout(timer);
+  }, [catalog]);
   // A catalog that will not load must not blank the app: every key falls back
   // to itself, which is ugly and still navigable. Blocking here would turn a
   // CDN hiccup into a white screen.
-  const value = catalog.state === "loaded" ? catalog.data : { lang, strings: {} };
+  const loaded = catalog.state === "loaded" ? catalog.data : null;
+  const value = useMemo(
+    () => (loaded ? { ...loaded, ready: true } : { lang, strings: {}, ready: false }),
+    [loaded, lang],
+  );
   // Published before any child renders, so number helpers without a `lang`
   // argument spell figures in the same language as the words around them.
   setNumberLang(value.lang);
+  // The document's own language too (WCAG 3.1.1): index.html ships `en`, and
+  // a screen reader reading Spanish copy with English phonetics is noise.
+  useEffect(() => {
+    document.documentElement.lang = value.lang;
+  }, [value.lang]);
   return <Strings.Provider value={value}>{children}</Strings.Provider>;
 }

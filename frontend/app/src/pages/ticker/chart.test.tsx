@@ -9,7 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { moveBetween, PriceChart } from "./PriceChart";
+import { moveBetween, PriceChart, spanLength, stretch, zoomable } from "./PriceChart";
 import { Legend, Tooltip, frame } from "./plot";
 import type { Bars } from "./types";
 
@@ -101,6 +101,57 @@ describe("moveBetween", () => {
   it("says nothing with one priced bar or a zero start", () => {
     expect(moveBetween([null, 50, null], 0, 2)).toBeNull();
     expect(moveBetween([0, 50], 0, 1)).toBeNull();
+  });
+});
+
+describe("stretch", () => {
+  it("orders a drag that ran right to left", () => {
+    expect(stretch({ from: 9, to: 4 })).toEqual({ a: 4, b: 9 });
+  });
+
+  it("is nothing while the press has not moved off its bar", () => {
+    expect(stretch({ from: 4, to: 4 })).toBeNull();
+    expect(stretch(null)).toBeNull();
+  });
+});
+
+describe("spanLength", () => {
+  const t = (key: string, values?: Record<string, string | number>) =>
+    values ? `${key} ${JSON.stringify(values)}` : key;
+
+  it("counts sessions on a daily chart, singular for one", () => {
+    expect(spanLength(dates, "1d", 0, 80, t)).toBe('ticker.span_sessions_n {"n":80}');
+    expect(spanLength(dates, "1d", 3, 4, t)).toBe("ticker.span_sessions_one");
+  });
+
+  it("counts weeks and months on the coarser max chart", () => {
+    expect(spanLength(dates, "1wk", 0, 12, t)).toBe('ticker.span_weeks_n {"n":12}');
+    expect(spanLength(dates, "1mo", 0, 1, t)).toBe("ticker.span_months_one");
+  });
+
+  it("reads market time inside one intraday session", () => {
+    const day = ["2026-05-18 09:30", "2026-05-18 09:35", "2026-05-18 09:40"];
+    const many = Array.from({ length: 81 }, (_, i) => `2026-05-18 ${i}`);
+    expect(spanLength(day, "5m", 0, 2, t)).toBe('ticker.span_minutes {"m":10}');
+    expect(spanLength(many, "5m", 0, 80, t)).toBe('ticker.span_hours {"h":6,"m":"40"}');
+  });
+
+  it("counts sessions once intraday ends fall on different days", () => {
+    const week = [
+      "2026-05-18 15:30",
+      "2026-05-19 09:30",
+      "2026-05-19 15:30",
+      "2026-05-20 09:30",
+    ];
+    expect(spanLength(week, "30m", 0, 3, t)).toBe('ticker.span_sessions_n {"n":2}');
+  });
+});
+
+describe("zoomable", () => {
+  it("takes three bars or more, and calls anything shorter a mis-click", () => {
+    expect(zoomable({ a: 4, b: 7 })).toBe(true);
+    expect(zoomable({ a: 4, b: 6 })).toBe(false);
+    expect(zoomable(null)).toBe(false);
   });
 });
 

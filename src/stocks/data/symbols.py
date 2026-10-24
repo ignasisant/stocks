@@ -109,6 +109,13 @@ def _quotes(query: str, count: int, min_len: int = MIN_QUERY) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
+def reachable() -> bool:
+    """False while `_quotes` is cooling down after a failure: an empty answer
+    then is "could not ask", which a search box should say rather than show
+    as "nothing listed"."""
+    return time.monotonic() >= _blocked_until
+
+
 def search_symbols(query: str, limit: int = 6) -> list[tuple[str, str, str]]:
     """(symbol, name, exchange) matches for `query`, best first.
 

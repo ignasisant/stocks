@@ -151,3 +151,35 @@ def closes(
             progress.tick(len(batch))
         rec["series"] = len(out)
     return out
+
+
+def names(symbols: list[str], *, budget: float = TIMEOUT) -> dict[str, str]:
+    """`{symbol: company name}`, from the meta of the same spark request.
+
+    Twenty listings named in one request, where `.info` is one each — the
+    difference between a peer list that reads "Nintendo Co., Ltd." and one
+    that reads "7974.T". Symbols Yahoo does not know, or names it gives
+    none for, are absent.
+
+    Never raises, unlike `closes`: a name is a label beside a symbol, and
+    no label is a page that still works. Empty while the host is cooling off.
+    """
+    symbols = list(dict.fromkeys(symbols))
+    if not symbols or throttle_remaining() > 0:
+        return {}
+    deadline = time.monotonic() + budget
+    out: dict[str, str] = {}
+    try:
+        for i in range(0, len(symbols), CHUNK):
+            for entry in _ask(symbols[i : i + CHUNK], "1d", deadline):
+                responses = entry.get("response") or [{}]
+                first = responses[0] if isinstance(responses[0], dict) else {}
+                meta = first.get("meta")
+                meta = meta if isinstance(meta, dict) else {}
+                name = str(meta.get("longName") or meta.get("shortName") or "").strip()
+                symbol = str(entry.get("symbol") or "")
+                if symbol and name:
+                    out[symbol] = name
+    except YFRateLimitError:
+        pass
+    return out

@@ -9,15 +9,22 @@ active conversation.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from stocks.chat import memory
 from stocks.web import auth
 
 
 @pytest.fixture
 def chat(tmp_path):
     return tmp_path / "chat.json"
+
+
+def ago(**delta) -> str:
+    """An `updated` stamp that long before now, in the store's own format."""
+    return (datetime.now(UTC) - timedelta(**delta)).isoformat(timespec="seconds")
 
 
 # ------------------------------------------------------------------ loading
@@ -125,7 +132,7 @@ def test_list_is_ordered_by_last_use(chat):
     book = auth.load_book(chat)
     for c in book["conversations"]:
         if c["id"] == older:
-            c["updated"] = "2020-01-01T00:00:00+00:00"
+            c["updated"] = ago(days=1)
     auth.save_book(book, chat)
 
     assert [c["id"] for c in auth.list_conversations(chat)] == [newer, older]
@@ -192,8 +199,8 @@ def test_cap_prunes_least_recently_used_and_keeps_the_active_one(chat):
     book = auth.load_book(chat)
     book["conversations"] = [
         {"id": f"c_{i:04d}", "title": str(i), "title_auto": True,
-         "created": "2020-01-01T00:00:00+00:00",
-         "updated": f"2020-01-01T00:00:{i:02d}+00:00",
+         "created": ago(hours=2),
+         "updated": ago(hours=1, seconds=-i),  # higher i = more recent
          "messages": [{"role": "user", "content": str(i)}]}
         for i in range(auth.MAX_CONVERSATIONS + 5)
     ]
@@ -205,3 +212,76 @@ def test_cap_prunes_least_recently_used_and_keeps_the_active_one(chat):
     assert "c_0000" in kept
     assert f"c_{auth.MAX_CONVERSATIONS + 4:04d}" in kept  # newest kept
     assert "c_0001" not in kept  # next-oldest pruned first
+
+
+# --------------------------------------------------------------------- age
+
+
+def _idle(cid: str, **since) -> dict:
+    return {"id": cid, "title": cid, "title_auto": True, "created": ago(**since),
+            "updated": ago(**since),
+            "messages": [{"role": "user", "content": cid}]}
+
+
+def test_a_thread_idle_for_keep_days_is_dropped_on_read_and_gone_on_write(chat):
+    book = auth.load_book(chat)
+    book["conversations"] = [_idle("c_stale", days=auth.KEEP_DAYS, hours=1),
+                             _idle("c_fresh", days=auth.KEEP_DAYS, hours=-1)]
+    book["active"] = "c_fresh"
+    chat.write_text(json.dumps(book))  # written past the store: both on disk
+
+    assert [c["id"] for c in auth.list_conversations(chat)] == ["c_fresh"]
+    assert len(json.loads(chat.read_text())["conversations"]) == 2, "a read never writes"
+
+    auth.save_chat([*auth.load_chat(chat), {"role": "user", "content": "back"}], chat)
+    assert [c["id"] for c in json.loads(chat.read_text())["conversations"]] == ["c_fresh"]
+
+
+def test_the_active_thread_outlives_keep_days(chat):
+    """It is the thread the next turn lands in; a reader back after two months
+    types into what they left, not into a blank."""
+    book = auth.load_book(chat)
+    book["conversations"] = [_idle("c_old", days=60), _idle("c_older", days=90)]
+    book["active"] = "c_old"
+    chat.write_text(json.dumps(book))
+
+    assert [c["id"] for c in auth.list_conversations(chat)] == ["c_old"]
+    assert auth.load_chat(chat) == [{"role": "user", "content": "c_old"}]
+
+
+def test_an_unreadable_stamp_keeps_its_thread(chat):
+    book = auth.load_book(chat)
+    book["conversations"] = [_idle("c_ok", days=1),
+                             {**_idle("c_odd", days=1), "updated": "yesterday"}]
+    book["active"] = "c_ok"
+    chat.write_text(json.dumps(book))
+
+    assert {c["id"] for c in auth.list_conversations(chat)} == {"c_ok", "c_odd"}
+
+
+def test_a_write_sweeps_the_memories_of_the_threads_it_let_go(chat, monkeypatch):
+    """Every way a thread goes — deleted, idle past KEEP_DAYS, over a cap —
+    lands in save_book, so that is where its memories are forgotten."""
+    swept: list[set[str]] = []
+
+    def forget_except(path, keep):
+        swept.append(set(keep))
+        return 1
+
+    persisted: list[str] = []
+    monkeypatch.setattr(memory, "forget_except", forget_except)
+    monkeypatch.setattr(auth, "_persist", lambda p: persisted.append(p.name))
+
+    book = auth.load_book(chat)
+    book["conversations"] = [_idle("c_stale", days=auth.KEEP_DAYS + 1),
+                             _idle("c_kept", days=1)]
+    book["active"] = "c_kept"
+    chat.write_text(json.dumps(book))
+    auth.save_chat([*auth.load_chat(chat), {"role": "user", "content": "hi"}], chat)
+
+    assert swept[-1] == {"c_kept"}
+    assert memory.FILE in persisted, "the index changed, so it is mirrored"
+
+    auth.delete_conversation("c_kept", chat)
+    assert "c_kept" not in swept[-1]
+

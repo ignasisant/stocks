@@ -95,6 +95,24 @@ function ExtractLessons(instructions: string, input: string) -> LessonOps {
   prompt #"{{ Frame(instructions, input) }}"#
 }
 
+// The weekly tidy-up of saved memories (chat/memory_review.py): changes
+// proposed to the user, never made.
+class ReviewOp {
+  action string? @description("merge, drop or reword")
+  ids string[]? @description("the saved items' ids it is about")
+  text string? @description("merge and reword: the new wording")
+  reason string? @description("one short sentence: why")
+}
+
+class ReviewOps {
+  ops ReviewOp[]?
+}
+
+function ReviewMemories(instructions: string, input: string) -> ReviewOps {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}
+
 // The chat's input guard (chat/guard.py): is this message something an
 // investing assistant is for? Fail-open, so every field has a safe default.
 class ScopeVerdict {

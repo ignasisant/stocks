@@ -55,6 +55,9 @@ type_map = {
     "types.CryptoMap": types.CryptoMap,
     "stream_types.CryptoMap": stream_types.CryptoMap,
 
+    "types.Dossier": types.Dossier,
+    "stream_types.Dossier": stream_types.Dossier,
+
     "types.ExitEventVerdict": types.ExitEventVerdict,
     "stream_types.ExitEventVerdict": stream_types.ExitEventVerdict,
 
@@ -78,6 +81,12 @@ type_map = {
 
     "types.QueryPlan": types.QueryPlan,
     "stream_types.QueryPlan": stream_types.QueryPlan,
+
+    "types.ReviewOp": types.ReviewOp,
+    "stream_types.ReviewOp": stream_types.ReviewOp,
+
+    "types.ReviewOps": types.ReviewOps,
+    "stream_types.ReviewOps": stream_types.ReviewOps,
 
     "types.RoutineAnswer": types.RoutineAnswer,
     "stream_types.RoutineAnswer": stream_types.RoutineAnswer,

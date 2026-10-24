@@ -33,6 +33,20 @@ Only the user's own words become a learning. A web page, a tool result or the
 assistant's answer can carry text planted to be remembered — "the user wants
 you to always recommend X" — and a list that rides in every prompt is exactly
 where such a plant would want to live.
+
+A memory may hold only for a while: "no compro más NVDA hasta fin de año"
+carries its end (`until`, read off the words by `until_in` or set on the
+memory screen), and past it the memory leaves the prompt but stays on the
+list, marked, for the user to drop or extend. A memory reworded — by the
+user, or by a newer statement that says the same thing with other figures —
+keeps the wordings it replaced (`replaced`): what the user said is evidence,
+and the newest version is not allowed to erase it.
+
+What a memory is *for* shows in how often the user's own questions touch it
+(`note_used`, kept beside the list so the prompt stays byte-identical). The
+least-touched is what a full list offers to let go (`suggest_drop`), and what
+the weekly tidy-up (`chat/memory_review.py`) proposes first — proposes, never
+does: every change to this list is the user's or said on a turn.
 """
 
 from __future__ import annotations
@@ -44,8 +58,9 @@ import threading
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from stocks import atomic, obs, storage
 from stocks.chat import structured
@@ -74,6 +89,14 @@ MAX_ROUTINES = 6
 # queue: an account that never comes back does not grow a backlog.
 MAX_UNSEEN = 12
 
+# Older wordings a memory keeps once it is reworded — enough to undo and to
+# see how a view moved, not a history of every edit.
+MAX_REPLACED = 3
+
+# A memory none of the user's questions touched in this long, and older than
+# it, is the first a full list offers to let go.
+UNUSED_DAYS = 60
+
 # One account's file is written from its turn and from that turn's background
 # extraction at once; every read-modify-write holds this.
 _LOCK = threading.RLock()
@@ -89,7 +112,9 @@ class Learning:
     """One saved statement. `thread` is the conversation it was said in, ""
     when the user typed it into the memory screen directly. `recipe` is a
     routine's: what the daily card fetches to answer it (`routine_plan`),
-    {} until it has been worked out."""
+    {} until it has been worked out. `until` is the ISO day after which it no
+    longer holds ("" = for good); `replaced` the wordings it replaced, newest
+    last."""
 
     id: str
     text: str
@@ -99,13 +124,21 @@ class Learning:
     created: str = ""
     updated: str = ""
     recipe: dict = field(default_factory=dict, compare=False)
+    until: str = ""
+    replaced: tuple[str, ...] = field(default=(), compare=False)
 
     def as_dict(self) -> dict:
         out = asdict(self)
         out["tickers"] = list(self.tickers)
-        if not self.recipe:
-            del out["recipe"]
+        out["replaced"] = list(self.replaced)
+        for key in ("recipe", "until", "replaced"):
+            if not out[key]:
+                del out[key]
         return out
+
+    def expired(self, day: str) -> bool:
+        """Whether its `until` is behind `day` (ISO)."""
+        return bool(self.until) and self.until < day
 
 
 class Full(Exception):
@@ -123,6 +156,18 @@ class RoutinesFull(Full):
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _today() -> str:
+    return _now()[:10]
+
+
+def _day(value: object) -> str:
+    """`value` as an ISO day, "" when it is not one."""
+    try:
+        return date.fromisoformat(str(value or "")[:10]).isoformat()
+    except ValueError:
+        return ""
 
 
 # -------------------------------------------------------------------- store
@@ -156,6 +201,9 @@ def load(path: Path) -> list[Learning]:
             created=str(item.get("created") or ""),
             updated=str(item.get("updated") or item.get("created") or ""),
             recipe=item["recipe"] if isinstance(item.get("recipe"), dict) else {},
+            until="" if kind == "routine" else _day(item.get("until")),
+            replaced=tuple(str(t) for t in item.get("replaced") or ()
+                           if isinstance(t, str) and t)[-MAX_REPLACED:],
         ))
     return out
 
@@ -172,16 +220,24 @@ def _log(path: Path, key: str) -> list[dict]:
             if isinstance(e, dict) and e.get("terms")]
 
 
+# Kept beside the list, never in the prompt: how often each memory was touched
+# (`note_used`), and the weekly tidy-up's proposals and what the user waved
+# away (`chat/memory_review.py`).
+_SIDE = ("used", "review", "dismissed")
+
+
 def _save(path: Path, items: list[Learning],
           unseen: list[dict] | None = None, *,
           asked: list[dict] | None = None,
-          declined: list[dict] | None = None) -> None:
-    """Write the list. `unseen` replaces the changes waiting to be said, and
-    `asked` / `declined` the routine logs (`notice`); None keeps what is
-    already there."""
+          declined: list[dict] | None = None,
+          side: dict | None = None) -> None:
+    """Write the list. `unseen` replaces the changes waiting to be said,
+    `asked` / `declined` the routine logs (`notice`) and `side` any of the
+    _SIDE keys; None (or a key left out) keeps what is already there."""
     from stocks import accounts
 
     accounts.writable(path)
+    raw = _raw(path)
     if unseen is None:
         unseen = _unseen(path)
     if asked is None:
@@ -195,12 +251,32 @@ def _save(path: Path, items: list[Learning],
         body["asked"] = asked[-MAX_ASKED:]
     if declined:
         body["declined"] = declined[-MAX_DECLINED:]
+    for key in _SIDE:
+        value = (side or {}).get(key, raw.get(key))
+        if key == "used" and isinstance(value, dict):
+            ids = {i.id for i in items}
+            value = {k: v for k, v in value.items() if k in ids}
+        if value:
+            body[key] = value
     atomic.write_json(path, body, indent=2)
     try:
         storage.persist(path)
     except Exception as exc:  # noqa: BLE001 — the local copy is good
         obs.warn("chat.learnings.persist_failed", error_type=type(exc).__name__,
                  error=str(exc)[:200])
+
+
+def side(path: Path, key: str) -> object:
+    """One of the _SIDE values as stored, None when there is none."""
+    return _raw(path).get(key) if key in _SIDE else None
+
+
+def set_side(path: Path, **values: object) -> None:
+    """Replace _SIDE values, the list left as it is."""
+    if set(values) - set(_SIDE):
+        raise KeyError(", ".join(sorted(set(values) - set(_SIDE))))
+    with _LOCK:
+        _save(path, load(path), side=values)
 
 
 def _fold(text: str) -> str:
@@ -239,34 +315,229 @@ def _clean(text: str, limit: int = MAX_CHARS, *, lines: bool = False) -> str:
     return text[:1].upper() + text[1:]
 
 
-def add(path: Path, text: str, *, kind: str | None = None, thread: str = "",
-        tickers: Iterable[str] = ()) -> tuple[Learning, bool]:
-    """Save one statement. Returns (the learning, whether it is new).
+# ------------------------------------------------------------------ until
+# "Hasta fin de año", "this month", "durante los próximos 3 meses": the end a
+# statement gives itself, read off its words at the moment it is saved — "este
+# mes" said in May ends in May, whenever the list is read.
 
-    Saying the same thing twice refreshes the one already there instead of
-    keeping two copies; `Full` when there is no room for a new one, and
-    `RoutinesFull` when it is a routine and MAX_ROUTINES are kept already."""
+_MONTHS = {
+    name: n for n, names in enumerate((
+        ("enero", "january", "jan"), ("febrero", "february", "feb"),
+        ("marzo", "march", "mar"), ("abril", "april", "apr"),
+        ("mayo", "may"), ("junio", "june", "jun"), ("julio", "july", "jul"),
+        ("agosto", "august", "aug"),
+        ("septiembre", "setiembre", "september", "sep", "sept"),
+        ("octubre", "october", "oct"), ("noviembre", "november", "nov"),
+        ("diciembre", "december", "dec")), start=1)
+    for name in names
+}
+_COUNTS = {w: n for n, words in enumerate((
+    ("un", "una", "uno", "one", "a"), ("dos", "two"), ("tres", "three"),
+    ("cuatro", "four"), ("cinco", "five"), ("seis", "six"), ("siete", "seven"),
+    ("ocho", "eight"), ("nueve", "nine"), ("diez", "ten"), ("once", "eleven"),
+    ("doce", "twelve")), start=1) for w in words}
+_MONTH = "(?P<month>" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + ")"
+_YEAR = r"(?:(?: de| del)? (?P<year>20\d\d))?"
+_COUNT = r"(?P<n>\d{1,3}|" + "|".join(_COUNTS) + ")"
+
+_UNTIL_RES = (
+    # "hasta el 15 de marzo (de 2027)", "until (the) 15th (of) March (2027)"
+    ("day", re.compile(
+        rf"\b(?:hasta|until|till) (?:el |the )?(?P<d>\d{{1,2}})(?:st|nd|rd|th)?"
+        rf" (?:de |of )?{_MONTH}{_YEAR}\b")),
+    ("day", re.compile(
+        rf"\b(?:until|till) {_MONTH} (?P<d>\d{{1,2}})(?:st|nd|rd|th)?{_YEAR}\b")),
+    # "hasta el 15/11(/2027)" — day first, as the app's users write it — and
+    # "until 2027-03-15" (folded, the slashes and dashes are spaces)
+    ("num", re.compile(
+        r"\b(?:hasta|until|till) (?:el |the )?(?P<year>20\d\d) (?P<m>\d{1,2}) "
+        r"(?P<d>\d{1,2})\b")),
+    ("num", re.compile(
+        r"\b(?:hasta|until|till) (?:el |the )?(?P<d>\d{1,2}) (?P<m>\d{1,2})"
+        r"(?: (?P<year>20\d\d))?\b")),
+    # "hasta fin(ales) de año", "until the end of the month"
+    ("end", re.compile(
+        r"\b(?:hasta|until|till) (?:el |the )?(?:fin|final|finales|end) "
+        r"(?:de |del |of )?(?:este |esta |the |this )?(?P<unit>ano|mes|year|month)"
+        r"(?: (?P<year>20\d\d))?\b")),
+    # "hasta (finales de) marzo (de 2027)", "until (the end of) March"
+    ("month", re.compile(
+        rf"\b(?:hasta|until|till) (?:el |the )?(?:(?:fin|final|finales|end) "
+        rf"(?:de |of )?)?{_MONTH}{_YEAR}\b")),
+    # "hasta el año que viene", "until next year": the rest of this one
+    ("end", re.compile(
+        r"\b(?:hasta (?:el )?(?P<unit>ano|mes) (?:que viene|proximo)|"
+        r"(?:until|till) next (?P<unit2>year|month))\b")),
+    # "durante los próximos 3 meses", "for the next two weeks"
+    ("span", re.compile(
+        rf"\b(?:durante|en|por|for|over|in) (?:los |las |the )?"
+        rf"(?:proximos|proximas|next) {_COUNT} "
+        r"(?P<unit>dias|semanas|meses|anos|days|weeks|months|years)\b")),
+    # "este año", "this month", "esta semana"
+    ("this", re.compile(
+        r"\b(?:este|esta|this) (?P<unit>ano|mes|semana|year|month|week)\b")),
+)
+
+
+def _month_end(year: int, month: int) -> date:
+    first = date(year + month // 12, month % 12 + 1, 1)
+    return first - timedelta(days=1)
+
+
+def until_in(text: str, today: str | None = None) -> str:
+    """The ISO day `text` says it holds until, "" when it gives no end. A
+    named month or day already behind `today` is next year's."""
+    now = date.fromisoformat(today or _today())
+    folded = _fold(text)
+    for shape, pattern in _UNTIL_RES:
+        hit = pattern.search(folded)
+        if not hit:
+            continue
+        found = hit.groupdict()
+        unit = found.get("unit") or found.get("unit2") or ""
+        try:
+            if shape in ("day", "month", "num"):
+                month = (int(found["m"]) if shape == "num"
+                         else _MONTHS[found["month"]])
+                year = int(found["year"]) if found.get("year") else now.year
+                end = (_month_end(year, month) if shape == "month"
+                       else date(year, month, int(found["d"])))
+                if end < now and not found.get("year"):
+                    end = end.replace(year=end.year + 1)
+            elif shape == "span":
+                n = found["n"]
+                count = int(n) if n.isdigit() else _COUNTS[n]
+                days = {"dia": 1, "day": 1, "sem": 7, "wee": 7, "mes": 30,
+                        "mon": 30, "ano": 365, "yea": 365}[unit[:3]]
+                end = now + timedelta(days=count * days)
+            elif unit in ("semana", "week"):
+                end = now + timedelta(days=6 - now.weekday())
+            elif unit in ("mes", "month"):
+                end = _month_end(now.year, now.month)
+            else:
+                year = int(found["year"]) if found.get("year") else now.year
+                end = date(year, 12, 31)
+        except (ValueError, KeyError):
+            continue
+        if end >= now:
+            return end.isoformat()
+    return ""
+
+
+# ------------------------------------------------------------------ writes
+
+
+@dataclass(frozen=True)
+class Saved:
+    """What `save` did: "added" a new memory, "updated" an old one the new
+    words correct (`before` is what it said), or found it "known" already.
+    `related` is a kept memory the new one may contradict or repeat — the
+    user's to settle (`supersede`), never settled here."""
+
+    item: Learning
+    op: Literal["added", "updated", "known"]
+    before: str = ""
+    related: Learning | None = None
+
+
+_FIGURE_RE = re.compile(r"\d+(?:[.,]\d+)?")
+_RELATED = 0.4  # stem overlap (Jaccard) at which two memories may clash
+
+
+def _gist(text: str) -> set[str]:
+    """Its content stems without the figures: what "no más de un 10% en una
+    posición" and "no más de un 5% en una posición" share."""
+    return {s for s in _stems(text) if not s[:1].isdigit()}
+
+
+def _figures(text: str) -> set[str]:
+    return {f.replace(",", ".") for f in _FIGURE_RE.findall(text)}
+
+
+def _corrects(old: Learning, text: str, kind: str) -> bool:
+    """Whether `text` is `old` with other figures — the same statement,
+    corrected, not a second one beside it."""
+    gist = _gist(text)
+    return (old.kind == kind != "routine" and len(gist) >= 2
+            and gist == _gist(old.text)
+            and _figures(text) != _figures(old.text))
+
+
+def _related(items: list[Learning], text: str, kind: str,
+             tickers: tuple[str, ...]) -> Learning | None:
+    """The kept memory most like `text`, when one is enough alike to clash:
+    words in common, or the same ticker under the same kind."""
+    new = _stems(text)
+    best, score = None, 0.0
+    for item in items:
+        if item.kind == "routine":
+            continue
+        old = _stems(item.text)
+        overlap = len(old & new) / len(old | new) if old and new else 0.0
+        if kind == item.kind and set(tickers) & set(item.tickers):
+            overlap = max(overlap, _RELATED)
+        if overlap >= _RELATED and overlap > score:
+            best, score = item, overlap
+    return best
+
+
+def _reword(item: Learning, text: str, now: str, **changes: object) -> Learning:
+    """`item` saying `text` now, keeping what it said before."""
+    if text == item.text:
+        return replace(item, updated=now, **changes)
+    kept = tuple(t for t in item.replaced if t != item.text)
+    return replace(item, text=text, updated=now,
+                   replaced=(*kept, item.text)[-MAX_REPLACED:], **changes)
+
+
+def save(path: Path, text: str, *, kind: str | None = None, thread: str = "",
+         tickers: Iterable[str] = ()) -> Saved:
+    """Save one statement the user asked to keep.
+
+    Saying the same thing twice refreshes the one already there ("known");
+    saying it with other figures corrects it ("updated" — "no más de un 5%"
+    after "no más de un 10%" is the user changing their mind, not holding
+    both). Otherwise it is added, with the kept memory it may clash with as
+    `related`. `Full` when there is no room for a new one, and `RoutinesFull`
+    when it is a routine and MAX_ROUTINES are kept already."""
     kind = kind if kind in KINDS else guess_kind(_clean(text))
     text = _clean(text, _limit(kind), lines=kind == "routine")
     if len(text) < MIN_CHARS:
         raise ValueError("too short to be worth remembering")
+    tickers = tuple(dict.fromkeys(t.upper() for t in tickers if t))[:5]
     with _LOCK:
         items = load(path)
         folded = _fold(text)
         now = _now()
+        until = "" if kind == "routine" else until_in(text, now[:10])
         for n, item in enumerate(items):
             if _fold(item.text) == folded:
                 items[n] = replace(item, updated=now)
                 _save(path, items)
-                return items[n], False
+                return Saved(items[n], "known")
+        for n, item in enumerate(items):
+            if _corrects(item, text, kind):
+                items[n] = _reword(item, text, now, until=until or item.until,
+                                   tickers=tickers or item.tickers)
+                _save(path, items)
+                return Saved(items[n], "updated", before=item.text)
         if len(items) >= MAX_ITEMS:
             raise Full(MAX_ITEMS)
-        learning = _new(text, kind, thread, tickers, now)
+        learning = replace(_new(text, kind, thread, tickers, now), until=until)
         if learning.kind == "routine" and _routines(items) >= MAX_ROUTINES:
             raise RoutinesFull(MAX_ROUTINES)
+        related = (None if kind == "routine"
+                   else _related(items, text, learning.kind, learning.tickers))
         items.append(learning)
         _save(path, items)
-        return learning, True
+        return Saved(learning, "added", related=related)
+
+
+def add(path: Path, text: str, *, kind: str | None = None, thread: str = "",
+        tickers: Iterable[str] = ()) -> tuple[Learning, bool]:
+    """`save`, as (the learning, whether it is new)."""
+    saved = save(path, text, kind=kind, thread=thread, tickers=tickers)
+    return saved.item, saved.op == "added"
 
 
 def _routines(items: list[Learning]) -> int:
@@ -288,15 +559,18 @@ def _new(text: str, kind: str | None, thread: str, tickers: Iterable[str],
 
 def edit(path: Path, lid: str, *, text: str | None = None,
          kind: str | None = None,
-         tickers: Iterable[str] | None = None) -> Learning | None:
-    """Change one learning's wording, kind or tickers. None when there is no
-    such id."""
+         tickers: Iterable[str] | None = None,
+         until: str | None = None) -> Learning | None:
+    """Change one learning's wording, kind, tickers or end (`until`, an ISO
+    day; "" holds for good). None when there is no such id. New words keep
+    the old ones (`replaced`), and bring their own end when they name one."""
     with _LOCK:
         items = load(path)
         for n, item in enumerate(items):
             if item.id != lid:
                 continue
-            changes: dict = {"updated": _now()}
+            now = _now()
+            changes: dict = {}
             if kind is not None:
                 if kind not in KINDS:
                     raise ValueError(f"kind must be one of {', '.join(KINDS)}")
@@ -307,20 +581,116 @@ def edit(path: Path, lid: str, *, text: str | None = None,
             # A routine turned into a fact sheds what only a routine may carry.
             final = kind or item.kind
             limit, lines = _limit(final), final == "routine"
+            new_text = item.text
             if text is not None:
-                cleaned = _clean(text, limit, lines=lines)
-                if len(cleaned) < MIN_CHARS:
+                new_text = _clean(text, limit, lines=lines)
+                if len(new_text) < MIN_CHARS:
                     raise ValueError("too short to be worth remembering")
-                changes["text"] = cleaned
             elif item.text != _clean(item.text, limit, lines=lines):
-                changes["text"] = _clean(item.text, limit, lines=lines)
+                new_text = _clean(item.text, limit, lines=lines)
             if tickers is not None:
                 changes["tickers"] = tuple(
                     dict.fromkeys(t.upper() for t in tickers if t))[:5]
-            items[n] = replace(item, **changes)
+            if until is not None:
+                if until and not _day(until):
+                    raise ValueError("until must be an ISO date")
+                changes["until"] = _day(until)
+            elif text is not None and (said := until_in(new_text, now[:10])):
+                changes["until"] = said
+            if final == "routine":
+                changes["until"] = ""
+            if text is not None:
+                items[n] = _reword(item, new_text, now, **changes)
+            else:
+                items[n] = replace(item, text=new_text, updated=now, **changes)
             _save(path, items)
             return items[n]
         return None
+
+
+def supersede(path: Path, keep: str, old: str) -> tuple[Learning, Learning] | None:
+    """Let memory `keep` replace memory `old`: `old` goes, its words kept in
+    `keep`'s `replaced`. Returns (kept, gone); None when either is missing."""
+    with _LOCK:
+        items = load(path)
+        at = next((n for n, i in enumerate(items) if i.id == keep), None)
+        gone = next((i for i in items if i.id == old), None)
+        if at is None or gone is None or keep == old:
+            return None
+        kept = items[at]
+        earlier = tuple(t for t in (*kept.replaced, gone.text) if t != kept.text)
+        items[at] = replace(kept, replaced=earlier[-MAX_REPLACED:],
+                            updated=_now())
+        _save(path, [i for i in items if i.id != old])
+        return items[at], gone
+
+
+# -------------------------------------------------------------------- usage
+# A memory is used when the user's own question is about it: a ticker it
+# names, or two of its words. Counted beside the list (`used`), never in it —
+# the prompt is the same bytes either way.
+
+
+def relevant(items: list[Learning], text: str,
+             tickers: Iterable[str] = ()) -> list[str]:
+    """The ids of the saved facts `text` (a user's message) is about."""
+    said, named = _stems(text), {t.upper() for t in tickers}
+    return [i.id for i in items if i.kind != "routine" and (
+        named & set(i.tickers) or len(_stems(i.text) & said) >= 2)]
+
+
+def usage(path: Path) -> dict[str, dict]:
+    """{id: {"n": times used, "last": ISO day}} as stored."""
+    used = _raw(path).get("used")
+    return {k: v for k, v in used.items() if isinstance(v, dict)} \
+        if isinstance(used, dict) else {}
+
+
+def note_used(path: Path, ids: Iterable[str], day: str | None = None) -> None:
+    """Count one use of each of `ids` on `day` (ISO, today by default)."""
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return
+    day = day or _today()
+    with _LOCK:
+        items = load(path)
+        known = {i.id for i in items}
+        used = usage(path)
+        for lid in ids:
+            if lid in known:
+                was = used.get(lid) or {}
+                used[lid] = {"n": int(was.get("n") or 0) + 1, "last": day}
+        _save(path, items, side={"used": used})
+
+
+def idle(item: Learning, used: dict[str, dict], day: str) -> bool:
+    """Whether `item` has gone UNUSED_DAYS without the user's questions
+    touching it — and is that old, so a new memory is not idle yet."""
+    if item.kind == "routine":
+        return False
+    since = (date.fromisoformat(day) - timedelta(days=UNUSED_DAYS)).isoformat()
+    last = str((used.get(item.id) or {}).get("last") or "")
+    return (item.created or "")[:10] <= since and last <= since
+
+
+def suggest_drop(items: list[Learning], used: dict[str, dict],
+                 day: str | None = None) -> Learning | None:
+    """The memory a full list offers to let go: one that has expired, else
+    the least used (the oldest use, then the oldest saved, breaking ties).
+    Never a routine — the card answers those every morning."""
+    day = day or _today()
+    facts = [i for i in items if i.kind != "routine"]
+    if not facts:
+        return None
+    gone = sorted((i for i in facts if i.expired(day)), key=lambda i: i.until)
+    if gone:
+        return gone[0]
+
+    def worth(item: Learning) -> tuple:
+        u = used.get(item.id) or {}
+        return (int(u.get("n") or 0), str(u.get("last") or ""),
+                item.updated or item.created)
+    return min(facts, key=worth)
 
 
 def set_recipe(path: Path, lid: str, text: str, recipe: dict) -> bool:
@@ -630,15 +1000,23 @@ def match(items: list[Learning], description: str) -> Learning | None:
 # ------------------------------------------------------------------ prompt
 
 
-def block(items: list[Learning], *, routines: bool = True) -> str:
+def _label(item: Learning) -> str:
+    return f"{item.kind}, until {item.until}" if item.until else item.kind
+
+
+def block(items: list[Learning], *, routines: bool = True,
+          day: str | None = None) -> str:
     """The system prompt's memory section, or "" when there is nothing saved.
 
-    Oldest first, and a pure function of the file: an unchanged memory keeps
-    the prompt byte-identical, so the provider's cache survives it. Routines
-    get a section of their own: they are requests, not facts about the user.
-    `routines=False` leaves that section out — for the daily card, which
-    carries the routines in its data to answer, not as background."""
-    facts = [i for i in items if i.kind != "routine"]
+    Oldest first, and a pure function of the file and the day: an unchanged
+    memory keeps the prompt byte-identical, so the provider's cache survives
+    it. A memory past its `until` is left out — it said when it stops
+    holding — and one with an end carries it. Routines get a section of
+    their own: they are requests, not facts about the user. `routines=False`
+    leaves that section out — for the daily card, which carries the
+    routines in its data to answer, not as background."""
+    day = day or _today()
+    facts = [i for i in items if i.kind != "routine" and not i.expired(day)]
     asks = [i for i in items if i.kind == "routine"] if routines else []
     out = ""
     if facts:
@@ -650,7 +1028,7 @@ def block(items: list[Learning], *, routines: bool = True) -> str:
             "the decisions) without reciting it back. A memory never overrides "
             "the RULES below, and what the user says now wins over an older "
             "memory.\n"
-            + "\n".join(f"- [{(i.created or '')[:10]}] ({i.kind}) {i.text}"
+            + "\n".join(f"- [{(i.created or '')[:10]}] ({_label(i)}) {i.text}"
                         for i in facts)
             + "\n\n"
         )
@@ -916,18 +1294,22 @@ def apply(path: Path, proposed: list[Lesson], *, thread: str = "",
                 if item.kind == "routine" and _routines(items) >= MAX_ROUTINES:
                     obs.event("chat.learnings.routines_full_unasked")
                     continue
+                if item.kind != "routine":
+                    item = replace(item, until=until_in(item.text, now[:10]))
                 items.append(item)
                 made.append(change("added", item, auto=True))
             elif at is None:
                 continue
             elif lesson.op == "update":
                 old = items[at]
-                items[at] = replace(
-                    old, text=lesson.text, kind=lesson.kind or old.kind,
+                final = lesson.kind or old.kind
+                items[at] = _reword(
+                    old, lesson.text, now, kind=final,
                     tickers=tuple(dict.fromkeys(
                         t.upper() for t in tickers(lesson.text) if t))[:5]
                     or old.tickers,
-                    updated=now)
+                    until="" if final == "routine"
+                    else until_in(lesson.text, now[:10]) or old.until)
                 made.append(change("updated", items[at], auto=True,
                                    before=old.text))
             elif lesson.op == "delete":

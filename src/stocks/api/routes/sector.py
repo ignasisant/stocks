@@ -192,6 +192,10 @@ def cohort(
     rows.sort(key=order)
     for place, row in enumerate(rows, start=1):
         row.rank = place
+    # Names for the rows no local source knows, learned before the table asks
+    # `/market/profiles` for them — which never fetches. One spark request for
+    # the cohort; without it Taiwan's and Tokyo's rows were bare codes.
+    loaders.listing_names([row.ticker for row in rows])
 
     tech_rows = [
         CohortRow(

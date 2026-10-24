@@ -771,6 +771,10 @@ WRITES = {
     ("/v1/chat/memories", "delete"),
     ("/v1/chat/memories/{lid}", "patch"),
     ("/v1/chat/memories/{lid}", "delete"),
+    # One memory taking another's place, and the weekly tidy-up's proposals
+    # applied or dismissed: the same list, rewritten.
+    ("/v1/chat/memories/{lid}/replace", "post"),
+    ("/v1/chat/memories/suggestions/{sid}", "post"),
     # Marking the what's-new modal as read. A write because that is exactly
     # what it is: the stamp is what stops the card interrupting this account
     # again, and a token that could set it would retire an announcement the

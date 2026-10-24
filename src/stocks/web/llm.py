@@ -326,6 +326,43 @@ def _anthropic_stream(api_key, model, system, messages):
             yield Cut()
 
 
+# Context editing for the tool loops. A deep research runs up to eight rounds,
+# and every round resends what all the earlier ones read: by the sixth, the
+# model pays for (and wades through) pages it has already taken in. Once the
+# results still on the wire pass CLEAR_AFTER characters, those older than the
+# last KEEP_ROUNDS rounds are cut to their opening and marked — in one go, so
+# a provider's prompt cache breaks once, not every round. Only the loop's
+# copy: the calls it returns keep every result whole, and the answer is
+# written from those.
+CLEAR_AFTER = 80_000
+KEEP_ROUNDS = 2
+CLEARED_CHARS = 300
+CLEARED = ("\n[Already read earlier in this research — cleared here to save "
+           "room; the answer still gets it in full.]")
+
+
+def _clear_old_results(rounds: list[list[dict]]) -> int:
+    """Clear the results of all but the last KEEP_ROUNDS rounds, in place,
+    when what is left of them all passes CLEAR_AFTER. `rounds` holds each
+    round's result dicts as sent ("content" is the text). Returns how many
+    were cleared."""
+    live = sum(len(str(r.get("content") or "")) for batch in rounds
+               for r in batch if not str(r.get("content") or "").endswith(CLEARED))
+    if live <= CLEAR_AFTER:
+        return 0
+    cleared = 0
+    for batch in rounds[:-KEEP_ROUNDS]:
+        for r in batch:
+            text = str(r.get("content") or "")
+            if text.endswith(CLEARED) or len(text) <= CLEARED_CHARS:
+                continue
+            r["content"] = text[:CLEARED_CHARS].rstrip() + CLEARED
+            cleared += 1
+    if cleared:
+        obs.event("llm.tool_results_cleared", results=cleared, chars=live)
+    return cleared
+
+
 def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds,
                      stop=None):
     """Anthropic's tool loop: create, run every tool_use block, feed the results
@@ -347,8 +384,10 @@ def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds,
     # own call after, which sends the same parts).
     convo = _with_cache_breakpoint(list(messages))
     calls: list[ToolCall] = []
+    sent: list[list[dict]] = []  # each round's results, for `_clear_old_results`
     text = ""
     for _ in range(max(1, rounds)):
+        _clear_old_results(sent)
         resp = client.messages.create(
             model=model, max_tokens=MAX_TOKENS, system=cast(Any, _system_blocks(system)),
             messages=cast(Any, convo), tools=cast(Any, schema),
@@ -366,6 +405,7 @@ def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds,
             calls.append(ToolCall(name, args, out))
             results.append({"type": "tool_result", "tool_use_id": block.id,
                             "content": out or "(no result)"})
+        sent.append(results)
         convo.append({"role": "user", "content": results})
         if stop is not None and stop():
             return ToolRun("", calls)
@@ -481,8 +521,10 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
         convo = [{"role": "system", "content": system}] + list(messages)
         schema_tokens = _count(json.dumps(schema)) if cap else 0
         calls: list[ToolCall] = []
+        sent: list[list[dict]] = []  # each round's results (`_clear_old_results`)
         text = ""
         for _ in range(max(1, rounds)):
+            _clear_old_results(sent)
             if cap:
                 _squeeze_tool_results(convo, cap - schema_tokens)
             resp = client.chat.completions.create(
@@ -520,14 +562,17 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
                     continue
                 wanted.append((tc.function.name, args))
             ran = iter(zip(wanted, _execute_round(execute, wanted), strict=True))
+            batch: list[dict] = []
             for n, tc in enumerate(asked):
                 if n in bad:
                     out = BAD_ARGS
                 else:
                     (name, args), out = next(ran)
                     calls.append(ToolCall(name, args, out))
-                convo.append({"role": "tool", "tool_call_id": tc.id,
+                batch.append({"role": "tool", "tool_call_id": tc.id,
                               "content": out or "(no result)"})
+            convo.extend(batch)
+            sent.append(batch)
             if stop is not None and stop():
                 return ToolRun("", calls)
         return ToolRun(text, calls)

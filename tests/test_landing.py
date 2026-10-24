@@ -198,14 +198,16 @@ def test_the_page_is_one_element_with_every_section(body):
 def test_the_lens_strip_names_every_skill_the_assistant_actually_ships(as_lang):
     """The strip is a claim about the skill library, so it has to match it.
 
-    `_LENSES` mirrors web/skills/*.md the way `_BROKERS` mirrors platforms.py.
-    A new skill file with no landing entry would leave the page advertising a
-    smaller library than the panel offers, and a stale id would render its own
-    locale key as the label.
+    `_LENSES` mirrors the reader-pickable skills in web/skills/*.md the way
+    `_BROKERS` mirrors platforms.py. A new lens with no landing entry would
+    leave the page advertising a smaller library than the panel offers, and a
+    stale id would render its own locale key as the label. Industry skills
+    (`kind: industry`) are the company's to pick, not the reader's, and would
+    turn the strip into a wall.
     """
     from stocks.web import chat_skills
 
-    assert set(landing._LENSES) == chat_skills.valid_ids()
+    assert set(landing._LENSES) == {s.id for s in chat_skills.pickable()}
     as_lang("en")
     html = landing._assistant()
     assert f"{len(landing._LENSES)} analysis lenses" in html

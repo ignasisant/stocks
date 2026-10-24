@@ -27,7 +27,23 @@ def test_every_case_names_real_tools_and_a_real_profile():
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.id)
 def test_each_case_is_routed_to_its_profile(case):
-    assert agent.profile_for(case.message, case.depth).name == case.profile
+    assert agent.profile_for(case.message, case.asked_depth()).name == case.profile
+
+
+def test_a_brief_case_names_an_angle_and_its_page(monkeypatch, tmp_path):
+    from stocks.chat import brief
+
+    briefed = [c for c in CASES if c.brief]
+    assert briefed
+    for c in briefed:
+        assert c.brief in brief.ANGLES and c.ticker, c.id
+    monkeypatch.setattr(brief, "build", lambda angle, ticker, **kw: brief.Brief(
+        angle, ticker, brief.Facts(ticker), [], f" [{angle} on {ticker}]"))
+    ctx = agent_eval.context(tmp_path)
+    assert briefed[0].sent(ctx).endswith(f" [{briefed[0].brief} on {briefed[0].ticker}]")
+    assert CASES[0].sent(ctx) == CASES[0].message
+    assert agent_eval.Case("c", "m", brief="full").asked_depth() == "deep"
+    assert agent_eval.Case("c", "m", brief="full", depth="fast").asked_depth() == "fast"
 
 
 def _calls(*names):

@@ -1005,6 +1005,18 @@ def start(
             # back on the moves proposed a month and a quarter ago.
             journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
                            _closes_on, day)
+            _review_memories()
+
+    def _review_memories() -> None:
+        """The weekly tidy-up of the saved memories, when it is due: on a
+        thread of its own, after the card, which never waits for it."""
+        from stocks.chat import memory_review
+
+        try:
+            memory_review.start(prefs, paths.chat, day=day.isoformat())
+        except Exception as exc:  # noqa: BLE001 — a tidy-up never costs a card
+            obs.warn("chat.memory_review.start_failed",
+                     error_type=type(exc).__name__)
 
     thread = threading.Thread(target=work, name="daily-action", daemon=True)
     thread.start()

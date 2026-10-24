@@ -9,7 +9,7 @@
 
 import { get } from "./api";
 
-type Results<M> = { query: string; matches: M[] };
+type Results<M> = { query: string; matches: M[]; world_down?: boolean };
 
 const KEEP_MS = 60_000;
 const MAX_KEPT = 200;
@@ -38,9 +38,12 @@ export function findTickers<M>(
   kept.set(key, { at: Date.now(), answer });
   if (kept.size > MAX_KEPT) kept.delete(kept.keys().next().value as string);
   // A failure is not an answer: the next keystroke on this query asks again.
-  answer.catch(() => {
+  // Nor is one Yahoo could not be asked for — the listing may be the very
+  // row it left out.
+  const drop = () => {
     if (kept.get(key)?.answer === answer) kept.delete(key);
-  });
+  };
+  answer.then((results) => results.world_down && drop(), drop);
   return answer;
 }
 

@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","AnswerJudged","BriefSection","CardLine","CardReply","ColumnMap","Columns","CriterionRule","CryptoColumns","CryptoMap","ExitEventVerdict","GoalJudged","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","ScopeVerdict","ScoreJudged","SectionNote","SkillPick","StatementPage","StatementRow",]
+          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","AnswerJudged","BriefSection","CardLine","CardReply","ColumnMap","Columns","CriterionRule","CryptoColumns","CryptoMap","Dossier","ExitEventVerdict","GoalJudged","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","ReviewOp","ReviewOps","RoutineAnswer","RoutinePlan","RoutinePlans","ScopeVerdict","ScoreJudged","SectionNote","SkillPick","StatementPage","StatementRow",]
         ), enums=set(
           ["AssetClass","CryptoLayout","DocumentKind",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -43,7 +43,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 30
+    # Generated classes 33
     # #########################################################################
 
     @property
@@ -99,6 +99,10 @@ class TypeBuilder(type_builder.TypeBuilder):
         return CryptoMapViewer(self)
 
     @property
+    def Dossier(self) -> "DossierViewer":
+        return DossierViewer(self)
+
+    @property
     def ExitEventVerdict(self) -> "ExitEventVerdictViewer":
         return ExitEventVerdictViewer(self)
 
@@ -129,6 +133,14 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def QueryPlan(self) -> "QueryPlanViewer":
         return QueryPlanViewer(self)
+
+    @property
+    def ReviewOp(self) -> "ReviewOpViewer":
+        return ReviewOpViewer(self)
+
+    @property
+    def ReviewOps(self) -> "ReviewOpsViewer":
+        return ReviewOpsViewer(self)
 
     @property
     def RoutineAnswer(self) -> "RoutineAnswerViewer":
@@ -308,7 +320,7 @@ class DocumentKindValues:
 
 
 # #########################################################################
-# Generated classes 30
+# Generated classes 33
 # #########################################################################
 
 class ActionCallAst:
@@ -1138,6 +1150,57 @@ class CryptoMapProperties:
     
 
 
+class DossierAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("Dossier")
+        self._properties: typing.Set[str] = set([  "business",  "lens",  "debates",  "watch",  ])
+        self._props = DossierProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "DossierProperties":
+        return self._props
+
+
+class DossierViewer(DossierAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class DossierProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def business(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("business"))
+    
+    @property
+    def lens(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("lens"))
+    
+    @property
+    def debates(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("debates"))
+    
+    @property
+    def watch(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("watch"))
+    
+    
+
+
 class ExitEventVerdictAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -1482,6 +1545,96 @@ class QueryPlanProperties:
     @property
     def queries(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("queries"))
+    
+    
+
+
+class ReviewOpAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("ReviewOp")
+        self._properties: typing.Set[str] = set([  "action",  "ids",  "text",  "reason",  ])
+        self._props = ReviewOpProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ReviewOpProperties":
+        return self._props
+
+
+class ReviewOpViewer(ReviewOpAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ReviewOpProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def action(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("action"))
+    
+    @property
+    def ids(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("ids"))
+    
+    @property
+    def text(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("text"))
+    
+    @property
+    def reason(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("reason"))
+    
+    
+
+
+class ReviewOpsAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("ReviewOps")
+        self._properties: typing.Set[str] = set([  "ops",  ])
+        self._props = ReviewOpsProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ReviewOpsProperties":
+        return self._props
+
+
+class ReviewOpsViewer(ReviewOpsAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ReviewOpsProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def ops(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("ops"))
     
     
 

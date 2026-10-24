@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useT } from "./i18n";
+import { useStringsReady, useT } from "./i18n";
 import { kindOf, useActivity } from "./activity";
 import { barShare, useServerProgress } from "./progress";
 import { useKeptSince, useRetry, useStaleSince } from "./freshness";
@@ -398,6 +398,7 @@ export function Skeleton({
   shape?: "kpis" | "table" | "chart";
 }) {
   const t = useT();
+  const ready = useStringsReady();
   const urls = useContext(WaitingFor);
   const [start] = useState(() => Date.now());
   const ref = useRef<HTMLDivElement>(null);
@@ -436,7 +437,9 @@ export function Skeleton({
           </div>
         ))
       )}
-      {seconds >= CAPTION_S ? (
+      {/* Bars only while the strings are still on their way: the caption
+          would read `common.waiting_for · common.seconds`. */}
+      {seconds >= CAPTION_S && ready ? (
         <span className="ag-skeleton-cap" aria-hidden="true">
           <span className="ag-work-glyph">✻</span>
           {t("common.waiting_for", { what })}

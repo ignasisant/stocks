@@ -204,3 +204,47 @@ def test_a_refused_spark_is_a_refused_tail(monkeypatch):
     monkeypatch.setattr(fetch, "_place_isins", lambda tickers: None)
     with pytest.raises(YFRateLimitError):
         fetch.fetch_tail(["AAPL"])
+
+
+# ------------------------------------------------------------------- names
+
+
+def _named(symbol, long_name=None, short_name=None):
+    entry = _entry(symbol, NY, [1.0, 2.0, 3.0])
+    meta = entry["response"][0]["meta"]
+    if long_name:
+        meta["longName"] = long_name
+    if short_name:
+        meta["shortName"] = short_name
+    return entry
+
+
+def test_names_come_twenty_to_a_request(monkeypatch):
+    """A peer list's labels: one request per twenty, not an `.info` each."""
+    many = {f"{n}.T": _named(f"{n}.T", f"Company {n}") for n in range(1000, 1025)}
+    fake, calls = _market(**many)
+    monkeypatch.setattr(spark, "_fetch", fake)
+    out = spark.names(list(many))
+    assert out["1000.T"] == "Company 1000" and len(out) == 25
+    assert [len(c) for c in calls] == [20, 5]
+
+
+def test_a_name_falls_back_to_the_short_one_and_a_nameless_listing_is_absent(
+    monkeypatch,
+):
+    fake, _ = _market(
+        **{"7974.T": _named("7974.T", short_name="NINTENDO CO LTD")},
+        **{"ZZ.T": _named("ZZ.T")},
+    )
+    monkeypatch.setattr(spark, "_fetch", fake)
+    assert spark.names(["7974.T", "ZZ.T", "NOPE.T"]) == {"7974.T": "NINTENDO CO LTD"}
+
+
+def test_a_refusal_is_no_names_never_an_error(monkeypatch):
+    """A label beside a symbol must not be what fails a page."""
+
+    def refused(symbols, range_, timeout):
+        raise RuntimeError("Too Many Requests")
+
+    monkeypatch.setattr(spark, "_fetch", refused)
+    assert spark.names(["7974.T"]) == {}

@@ -552,6 +552,14 @@
   display: none;
 }
 
+/* A legend with nothing to press wraps instead: a hidden-scrollbar row of
+   plain text is a region no keyboard can scroll, so its tail is unreadable
+   without a mouse (axe scrollable-region-focusable). */
+.tk-legend-wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
 .tk-legend li {
   flex: none;
   white-space: nowrap;
@@ -630,6 +638,7 @@
 /* The legend, and at its right a zoomed window's change and the way back. */
 .tk-chart-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px 16px;
 }
@@ -657,6 +666,19 @@
   color: var(--ag-text-primary);
   font: inherit;
   cursor: pointer;
+}
+
+/* The offer to zoom into a measured stretch: the one action in the row. */
+.tk-zoom-in {
+  border-color: var(--ag-brand-accent);
+  color: var(--ag-brand-accent);
+}
+
+@media (pointer: coarse) {
+  .tk-zoom-reset {
+    min-height: 44px;
+    padding: 0 14px;
+  }
 }
 
 @media (hover: hover) {
@@ -698,12 +720,45 @@
   color: var(--ag-text-muted);
 }
 
-/* A phone reader who does not hold the name: RSI and the SMA20 trend on one
-   muted line where the holding tiles would be. */
+/* A phone reader who does not hold the name: the range, the P/E and the next
+   results date on one muted line where the holding tiles would be. */
 .tk-hero-trend {
   margin: 0;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Where today's price sits between the year's low and high: a track with a
+   dot under the two figures. No text, so nothing to fall under the floor;
+   the tile's note says the same in words for a screen reader. */
+.tk-range {
+  display: block;
+  position: relative;
+  height: 4px;
+  margin: 8px 5px 2px;
+  background: var(--ag-surface-hover);
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-range-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+  border: 2px solid var(--ag-surface-card);
+  transform: translate(-50%, -50%);
+}
+
+/* Why the price moved: the report that landed this week, under the tiles and
+   above the chart that shows the gap it opened. */
+.tk-results {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 
@@ -876,6 +931,13 @@
    reads as a lean before any count is read. */
 .tk-ratings-strong_buy {
   background: color-mix(in srgb, var(--ag-up) 70%, var(--ag-surface-card));
+}
+
+/* The saturated ends are pale, so their counts print in the card's own dark:
+   7.4:1 and 6.1:1, where the primary text on them was 1.9:1 and 2.3:1. */
+.tk-ratings-seg.tk-ratings-strong_buy,
+.tk-ratings-seg.tk-ratings-strong_sell {
+  color: var(--ag-surface-card);
 }
 
 .tk-ratings-buy {
@@ -1403,6 +1465,116 @@
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* The press and the chevron beside it, which opens the other angles
+   (`AiAsk.tsx`). The menu hangs from the group's right edge, like the
+   header's other popovers. */
+.tk-ai-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tk-ai-more {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--ag-dur-hover) var(--ag-ease-out),
+    color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (hover: hover) {
+  .tk-ai-more:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
+}
+
+/* A chevron drawn in CSS, pointing down; up while the menu is open. */
+.tk-ai-chevron {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  transition: transform var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.tk-ai-more[aria-expanded="true"] .tk-ai-chevron {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.tk-ai-menu {
+  display: flex;
+  flex-direction: column;
+  width: min(280px, calc(100vw - 32px));
+  padding: 4px;
+}
+
+.tk-ai-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.tk-ai-item:focus-visible {
+  background: var(--ag-surface-hover);
+}
+
+@media (hover: hover) {
+  .tk-ai-item:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+.tk-ai-item-label {
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+.tk-ai-item-hint {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+@media (pointer: coarse) {
+  .tk-ai-more {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tk-ai-item {
+    min-height: 44px;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-ai-chevron {
+    transition: none;
+  }
 }
 
 /* -------------------------------------------------------------- coin cards
