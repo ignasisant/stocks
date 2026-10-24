@@ -774,7 +774,8 @@ def test_a_met_event_rule_quotes_where_it_was_read(rule, lang):
 
 def test_each_provider_gets_a_background_job_s_time(monkeypatch):
     """The card is written off the request: a 25 s cap cut both providers off
-    mid-answer in prod, and the computed card stood in."""
+    mid-answer in prod, and the computed card stood in. The free chain's
+    answers landed 88–163 s in, so the cap has to clear that."""
     seen = []
 
     def attempts(prefs, system, messages, timeout_s, **kw):
@@ -783,4 +784,4 @@ def test_each_provider_gets_a_background_job_s_time(monkeypatch):
 
     monkeypatch.setattr(daily.engine, "complete_attempts", attempts)
     daily.generate({}, {}, facts(), "en", DAY)
-    assert seen and seen[0] >= 60
+    assert seen and seen[0] >= 165

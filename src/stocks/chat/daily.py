@@ -110,8 +110,10 @@ UNITS_KEY = "daily_units"
 # runs on its own thread (`api/briefing.py`) while Home shows the stand-in and
 # polls. A ~12k-token prompt asking for the whole card as JSON ran past the
 # old 25 s on both providers tried (prod, 10-20 → 10-24), and the card fell
-# back to the computed one.
-TIMEOUT_S = 90.0
+# back to the computed one. The free chain's answer did come, 88–163 s in
+# (trimmed on groq, written by openrouter), and was thrown away: the cap sits
+# above that, not at the median.
+TIMEOUT_S = 180.0
 # Past headlines kept with the card, shown to the next day's call so it does
 # not re-emit yesterday's line with new numbers (the trick notify/narrative.py
 # uses for the digest highlight).
