@@ -254,10 +254,23 @@ export default function Panel({
           type="button"
           className="ag-chat-thread-btn"
           title={named || t("chat.threads_title")}
-          aria-label={t("chat.threads_title")}
+          aria-label={
+            chat.unread.size > 0
+              ? `${t("chat.threads_title")} · ${t("chat.unread_any")}`
+              : t("chat.threads_title")
+          }
           onClick={() => setView("threads")}
         >
           <Glyph name="forum" size={16} />
+          {/* An answer landed on another thread: the way to the list says
+              so, since the list is where it is marked. */}
+          {chat.unread.size > 0 && (
+            <span
+              className="ag-chat-dot ag-chat-head-dot"
+              data-state="unread"
+              aria-hidden="true"
+            />
+          )}
           <span className={named ? "" : "ag-chat-untitled"}>
             {named || t("chat.untitled")}
           </span>
@@ -359,6 +372,7 @@ export default function Panel({
       {state && view === "threads" && (
         <Threads
           threads={chat.threads ?? []}
+          unread={chat.unread}
           onBack={() => setView("thread")}
           onOpen={openThread}
           onRename={(cid, title) => void chat.rename(cid, title)}

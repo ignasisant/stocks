@@ -247,6 +247,8 @@ export type Conversation = {
   active: boolean;
   /** The day of a daily card's thread, "" for any other conversation. */
   daily?: string;
+  /** An answer is still being written on it (`landed.ts` watches for it). */
+  answering?: boolean;
 };
 
 /**

@@ -30,11 +30,14 @@ function label(
 
 function Row({
   conv,
+  unread,
   onOpen,
   onRename,
   onDelete,
 }: {
   conv: Conversation;
+  /** An answer landed on it while the reader was on another (`landed.ts`). */
+  unread: boolean;
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
@@ -112,6 +115,15 @@ function Row({
     );
   }
 
+  // Still being answered, or answered while the reader was elsewhere: said in
+  // words on the meta line, with a dot beside the title for the scan down the
+  // list. The open thread is neither — its answer is on screen.
+  const answering = !conv.active && !!conv.answering;
+  const status = answering
+    ? t("chat.thread_answering")
+    : unread
+      ? t("chat.thread_unread")
+      : null;
   return (
     <div className={`ag-chat-card${conv.active ? " ag-chat-card-on" : ""}`}>
       <button
@@ -120,8 +132,22 @@ function Row({
         title={(conv.title || "").trim() || undefined}
         onClick={onOpen}
       >
-        <span className="ag-chat-card-title">{label(conv, t)}</span>
+        <span className="ag-chat-card-title">
+          {status && (
+            <span
+              className="ag-chat-dot"
+              data-state={answering ? "answering" : "unread"}
+              aria-hidden="true"
+            />
+          )}
+          {label(conv, t, 26)}
+        </span>
         <span className="ag-chat-card-meta">
+          {status ? (
+            <span className={answering ? undefined : "ag-chat-card-new"}>
+              {status} ·{" "}
+            </span>
+          ) : null}
           {t("chat.thread_meta", {
             when: stamp(conv.updated, lang),
             n: conv.messages,
@@ -152,12 +178,14 @@ function Row({
 
 export function Threads({
   threads,
+  unread,
   onBack,
   onOpen,
   onRename,
   onDelete,
 }: {
   threads: Conversation[];
+  unread: ReadonlySet<string>;
   onBack: () => void;
   onOpen: (cid: string) => void;
   onRename: (cid: string, title: string) => void;
@@ -199,6 +227,7 @@ export function Threads({
             {first && next && <div className="ag-chat-group">{next}</div>}
             <Row
               conv={conv}
+              unread={unread.has(conv.id)}
               onOpen={() => onOpen(conv.id)}
               onRename={(title) => onRename(conv.id, title)}
               onDelete={() => onDelete(conv.id)}

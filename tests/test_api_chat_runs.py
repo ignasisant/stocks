@@ -182,6 +182,25 @@ def test_the_thread_names_the_run_it_is_being_answered_by(
     assert signed_in.get(f"/v1/chat/conversations/{cid}").json()["running"] is None
 
 
+def test_the_list_marks_the_threads_still_being_answered(
+    client, account, signed_in, gated, gate, leaving
+):
+    gated()
+    busy = fresh_thread(signed_in)
+    signed_in.post("/v1/chat/runs", json=run("hola", thread=busy))
+    started(account)
+    idle = fresh_thread(signed_in)  # the reader moved on
+
+    def answering() -> dict[str, bool]:
+        listed = signed_in.get("/v1/chat/conversations").json()["conversations"]
+        return {c["id"]: c["answering"] for c in listed}
+
+    assert answering() == {busy: True, idle: False}
+    gate.set()
+    ended(account)
+    assert answering() == {busy: False, idle: False}
+
+
 def test_a_refusal_nobody_saw_is_shown_once(
     client, account, signed_in, monkeypatch, leaving
 ):

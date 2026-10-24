@@ -295,6 +295,9 @@ class Conversation(BaseModel):
     active: bool
     # The day of a daily card's thread (`auth.save_card_thread`), "" otherwise.
     daily: str = ""
+    # An answer is still being written on it (`runs.live_threads`). The panel
+    # polls the list while one it is not showing is, to say when it lands.
+    answering: bool = False
 
 
 class Conversations(BaseModel):
@@ -906,14 +909,18 @@ def conversations(paths: Account) -> Conversations:
     the active one: the list is their conversations, and a month of cards would
     bury them. The thread is still there — the card's "Ask" opens it by id,
     and once they write in it, it is listed like any other.
+
+    `answering` marks a thread with an answer still being written — the reader
+    moved to another one meanwhile, and the panel says when it lands.
     """
     from stocks.web import auth
 
     if not paths.chat.exists():
         return Conversations(conversations=[])
+    live = runs.live_threads(str(paths.chat))
     return Conversations(
         conversations=[
-            Conversation(**c)
+            Conversation(**c, answering=c["id"] in live)
             for c in auth.list_conversations(paths.chat, cards=False)
         ]
     )

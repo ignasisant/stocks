@@ -355,6 +355,16 @@ def test_us_session_is_none_without_a_key(monkeypatch):
     assert finnhub.us_session(sync=True) is None
 
 
+def test_us_session_asks_on_a_machine_booted_a_moment_ago(keyed_get, monkeypatch):
+    """The monotonic clock counts from boot: on a fresh CI runner it reads
+    seconds, and "never asked" must still be older than the minute."""
+    asked, install = keyed_get
+    install(lambda path, params: {"isOpen": True, "session": "regular"})
+    monkeypatch.setattr(finnhub.time, "monotonic", lambda: 5.0)
+    assert finnhub.us_session(sync=True)["open"] is True
+    assert len(asked) == 1
+
+
 def test_us_session_is_a_memo_for_a_minute(keyed_get):
     asked, install = keyed_get
     install(lambda path, params: {"isOpen": True, "session": "regular"})

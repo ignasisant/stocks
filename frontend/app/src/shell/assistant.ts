@@ -147,3 +147,28 @@ export function useAssistantWorking(): boolean {
     () => false,
   );
 }
+
+let unread = false;
+const unreadListeners = new Set<() => void>();
+
+/**
+ * An answer landed on a thread the reader was not on (`chat/landed.ts`), and
+ * the drawer is shut: the phone tab bar's Assistant item carries the dot the
+ * floating button carries elsewhere.
+ */
+export function setAssistantUnread(next: boolean): void {
+  if (unread === next) return;
+  unread = next;
+  for (const listener of unreadListeners) listener();
+}
+
+export function useAssistantUnread(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      unreadListeners.add(listener);
+      return () => unreadListeners.delete(listener);
+    },
+    () => unread,
+    () => false,
+  );
+}

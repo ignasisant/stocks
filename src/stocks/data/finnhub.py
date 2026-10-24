@@ -98,7 +98,10 @@ _window: tuple[float, date | None, dict[str, list[dict]] | None] = (0.0, None, N
 _window_lock = threading.Lock()
 
 # (monotonic when last asked, monotonic when the answer landed, the answer).
-_status: tuple[float, float, dict | None] = (0.0, 0.0, None)
+# Never asked is -inf, not 0.0: the monotonic clock counts from boot, and a
+# runner a minute old would read 0.0 as "asked just now".
+_NEVER = float("-inf")
+_status: tuple[float, float, dict | None] = (_NEVER, _NEVER, None)
 _status_lock = threading.Lock()
 _status_flight = False
 
@@ -130,7 +133,7 @@ def clear() -> None:
     with _window_lock:
         _window = (0.0, None, None)
     with _status_lock:
-        _status = (0.0, 0.0, None)
+        _status = (_NEVER, _NEVER, None)
         _status_flight = False
 
 
