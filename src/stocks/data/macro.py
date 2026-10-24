@@ -122,14 +122,19 @@ def fred(sid: str, *, years: int = 3) -> pd.Series:
     yield series) and are dropped, so the index is trading days only.
     """
     start = (date.today() - timedelta(days=365 * years + 30)).isoformat()
-    body = _cached(
-        f"fred_{sid}_{years}y",
-        lambda: get_bytes(
-            FRED_URL.format(sid=sid, start=start),
-            user_agent=USER_AGENT,
-            timeout=20,
-        ),
-    )
+
+    def fetch() -> bytes:
+        body = get_bytes(
+            FRED_URL.format(sid=sid, start=start), user_agent=USER_AGENT, timeout=20
+        )
+        # FRED sometimes answers 200 with its HTML error page. Raising here lets
+        # `_cached` serve the stale CSV instead of storing the page for 6 h.
+        head = body.lstrip(b"\xef\xbb\xbf").lstrip()[:32].lower()
+        if not head.startswith((b"observation_date,", b"date,")):
+            raise ValueError(f"FRED {sid}: not a CSV body")
+        return body
+
+    body = _cached(f"fred_{sid}_{years}y", fetch)
     if not body:
         return pd.Series(dtype=float, name=sid)
     rows = list(csv.reader(io.StringIO(body.decode("utf-8-sig"))))
@@ -144,8 +149,10 @@ def fred(sid: str, *, years: int = 3) -> pd.Series:
         except ValueError:
             continue
         idx.append(row[0])
-    s = pd.Series(vals, index=pd.to_datetime(idx), dtype=float, name=sid)
-    return s.sort_index()
+    # A body cached before the CSV check above can still be HTML: a row that is
+    # not a date is dropped rather than failing the whole card.
+    s = pd.Series(vals, index=pd.to_datetime(idx, errors="coerce"), dtype=float, name=sid)
+    return s[s.index.notna()].sort_index()
 
 
 def fred_many(
@@ -231,9 +238,8 @@ def hicp(
     """
     if not geos:
         return pd.DataFrame()
-    query = (
-        f"?format=JSON&unit=RCH_A&coicop18={item}&lastTimePeriod={periods}"
-        + "".join(f"&geo={g}" for g in geos)
+    query = f"?format=JSON&unit=RCH_A&coicop18={item}&lastTimePeriod={periods}" + "".join(
+        f"&geo={g}" for g in geos
     )
     url = EUROSTAT_URL.format(dataset=HICP_DATASET) + query
     body = _cached(
