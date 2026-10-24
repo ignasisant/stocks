@@ -452,3 +452,69 @@ def test_a_retired_line_stays_out_of_the_bulk_download(monkeypatch):
 def test_only_the_exact_suffix_is_retired():
     assert fetch.retired("WOLF.OLD") and fetch.retired("zzzz.old")
     assert not any(map(fetch.retired, ["WOLF.NEW", "FOO-OLD", "XX.OLD2", "OLD"]))
+
+
+# ---------------------------------------------- a blank answer is not an answer
+class _BlankYahoo:
+    """yfinance on a refusal it does not raise for (a 401 crumb, an empty
+    body): it logs, and hands back no bars at all."""
+
+    asked: list[str] = []
+
+    def __init__(self, symbol):
+        self.symbol = symbol
+
+    def history(self, **kwargs):
+        _BlankYahoo.asked.append(self.symbol)
+        return pd.DataFrame()
+
+
+@pytest.fixture
+def blank_yahoo(monkeypatch):
+    _BlankYahoo.asked = []
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch.yf, "Ticker", _BlankYahoo)
+    monkeypatch.setattr(fetch, "_splits_memo", {})
+    monkeypatch.setattr(fetch, "_close_memo", {})
+    return _BlankYahoo.asked
+
+
+def test_a_blank_split_answer_is_asked_again_and_counted(blank_yahoo):
+    """ERR-05 (triage 2026-10-24): a listed name always has bars, so none at
+    all is Yahoo not answering. Memoized as "no splits", it hid BYND's 1:30
+    from the warm's sweep, which then stamped the book for a week."""
+    before = fetch.unanswered()
+    assert fetch.splits("BYND") == []
+    assert fetch.splits("BYND") == []
+    assert blank_yahoo == ["BYND", "BYND"]
+    assert fetch.unanswered() == before + 2
+
+
+def test_a_blank_close_is_asked_again_and_counted(blank_yahoo):
+    before = fetch.unanswered()
+    assert fetch.close_on("BYND", "2026-08-04") is None
+    assert fetch.close_on("BYND", "2026-08-04") is None
+    assert blank_yahoo == ["BYND", "BYND"]
+    assert fetch.unanswered() == before + 2
+
+
+def test_splits_are_read_off_the_bars(monkeypatch):
+    idx = pd.to_datetime(["2026-08-13", "2026-08-14", "2026-08-15"])
+    bars = pd.DataFrame(
+        {"Close": [0.41, 13.47, 14.0], "Stock Splits": [0.0, 1 / 30, 0.0]},
+        index=idx,
+    )
+
+    class _Yahoo:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kwargs):
+            return bars
+
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch.yf, "Ticker", _Yahoo)
+    monkeypatch.setattr(fetch, "_splits_memo", {})
+    before = fetch.unanswered()
+    assert fetch.splits("BYND") == [("2026-08-14", pytest.approx(1 / 30))]
+    assert fetch.unanswered() == before

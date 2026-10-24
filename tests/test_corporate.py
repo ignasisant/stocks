@@ -383,3 +383,21 @@ def test_a_transfer_leg_never_becomes_a_purchase_marker():
 
 def test_a_name_with_no_trades_is_empty_not_an_error():
     assert own_fills([], "AAPL") == []
+
+
+def test_a_held_split_with_no_evidence_says_why(caplog):
+    """ERR-05 (triage 2026-10-24): a scan that wrote nothing for a held
+    name's split left no trace of which rule stopped it."""
+    import logging
+
+    rows = [_buy("2026-08-04", 600, 0.6, ticker="BYND")]
+    with caplog.at_level(logging.INFO):
+        found = missing_splits(
+            rows,
+            splits=lambda t: [("2026-08-14", 1 / 30)],
+            close_on=lambda t, d: None,
+            source="sweep",
+        )
+    assert found == []
+    [said] = [r for r in caplog.records if r.getMessage() == "portfolio.split_unproven"]
+    assert (said.ticker, said.split, said.why) == ("BYND", "2026-08-14", "no_close")
