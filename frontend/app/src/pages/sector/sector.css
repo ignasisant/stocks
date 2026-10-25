@@ -255,9 +255,19 @@
   border-radius: var(--ag-radius-xs);
 }
 
+/* Under the map's legend: the buys carried to Sell or add (`SectorMap`). */
+.ag-sec-map-next {
+  margin: 0.5rem 0 0;
+}
+
 @media (pointer: coarse) {
   .ag-sec-controls > summary,
   .ag-sec-help > summary {
+    min-height: 44px;
+  }
+  .ag-sec-map-next a {
+    display: inline-flex;
+    align-items: center;
     min-height: 44px;
   }
 }

@@ -1714,6 +1714,42 @@
   gap: 4px;
 }
 
+/* Above the grid: the Review page's verdict on the name as a new buy. */
+.tk-judged {
+  margin-bottom: 12px;
+}
+
+.tk-judged-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.tk-judged-scores {
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-judged-link {
+  margin-left: auto;
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-judged-why {
+  margin: 6px 0 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+@media (pointer: coarse) {
+  .tk-judged-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* ---------------------------------------------------------------------- dcf */
 
 .tk-dcf-head {

@@ -1765,6 +1765,47 @@ img.ag-search-logo {
   margin-right: auto;
 }
 
+/* The tour and what's new page through a list, so the dialog keeps one size
+   and Next one place: every page sits in the same grid cell (the hidden ones
+   are only there to be measured), the pages scroll inside the card when the
+   tallest outgrows the screen, and the footer is one row — Back, then the
+   filled action at the right edge. "Take me there" belongs to the page. */
+.ag-tour-paged {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ag-tour-pages {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ag-tour-page {
+  grid-area: 1 / 1;
+}
+
+.ag-tour-page[aria-hidden] {
+  visibility: hidden;
+}
+
+.ag-tour-held {
+  visibility: hidden;
+}
+
+.ag-tour-go {
+  margin: 0 0 18px;
+}
+
+.ag-tour-paged .ag-tour-foot {
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
 @media (pointer: coarse) {
   .ag-tour-btn,
   .ag-tour-cta,

@@ -9,6 +9,8 @@
  * figure.
  */
 
+import type { Verdict } from "../review/types";
+
 export type Bars = {
   ticker: string;
   range: string;
@@ -296,6 +298,15 @@ type MetricTile = {
   help_key: string | null;
 };
 
+/** `review.judge_candidate` on this company, as the Review page's outside rows. */
+export type TickerJudged = {
+  verdict: Verdict;
+  /** Codes; print `review.reason_<code>`. */
+  reasons: string[];
+  quality: number | null;
+  cheapness: number | null;
+};
+
 export type Metrics = {
   ticker: string;
   currency: string | null;
@@ -310,8 +321,12 @@ export type Metrics = {
   peers: { kind: "industry" | "sector"; name: string; count: number } | null;
   /** Trailing P/E on a normal year's margin, when this one is a peak. */
   normal_pe: number | null;
+  /** Reported trailing P/E when `pe_ttm` drops one-offs; older servers omit it. */
+  reported_pe?: number | null;
   /** The review's warning codes; print `review.reason_<code>`. */
   cautions: string[];
+  /** The Review page's read as a new buy; null for a fund, absent on older servers. */
+  judged?: TickerJudged | null;
   /** Market cap in the reader's own money; only computed with `?base=`. */
   market_cap_base: number | null;
   /** …formatted by the server, so the client never rounds it. */

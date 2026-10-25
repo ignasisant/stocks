@@ -45,6 +45,7 @@
 
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -246,13 +247,24 @@ export function QualityMap({
   candidates,
   taxCurrency,
   onAdd,
+  help,
+  outsideLegend,
+  footer,
+  ruleOf,
 }: {
   held: ReviewRow[];
   candidates: ReviewRow[];
   /** The plan's, for the sale's tax in a held name's details. */
-  taxCurrency: string;
+  taxCurrency?: string;
   /** Weighs a ticker from outside the page; the search offers the market. */
   onAdd?: (ticker: string) => void;
+  /** Another page's map (the sector's) says what it is in its own words. */
+  help?: string;
+  outsideLegend?: string;
+  /** Under the legend: what the page that drew the map offers next. */
+  footer?: ReactNode;
+  /** A name's rule in its details, when that page judged it otherwise. */
+  ruleOf?: (row: ReviewRow) => ReactNode | undefined;
 }) {
   const t = useT();
   const [ref, width] = useWidth(640);
@@ -485,7 +497,7 @@ export function QualityMap({
       <div className="ag-rev-map-head">
         <div>
           <h2 className="ag-rev-h2">{t("review.map_title")}</h2>
-          <p className="ag-rev-caption">{t("review.map_help")}</p>
+          <p className="ag-rev-caption">{help ?? t("review.map_help")}</p>
         </div>
         {searchable ? (
           <MapFind
@@ -773,6 +785,7 @@ export function QualityMap({
           row={detail}
           label={t("review.details_label", { ticker: detail.symbol || detail.ticker })}
           taxCurrency={taxCurrency}
+          rule={ruleOf?.(detail)}
           onClose={() => setDetail(null)}
         />
       ) : null}
@@ -785,7 +798,7 @@ export function QualityMap({
         </li>
         <li>
           <span className="ag-rev-key ag-rev-key-out" aria-hidden="true" />
-          {t("review.legend_outside")}
+          {outsideLegend ?? t("review.legend_outside")}
         </li>
         {trails.length > 0 ? (
           <li>
@@ -799,6 +812,7 @@ export function QualityMap({
         <li>{t("review.map_tap")}</li>
         {missing > 0 ? <li>{t("review.map_missing", { count: missing })}</li> : null}
       </ul>
+      {footer}
     </section>
   );
 }

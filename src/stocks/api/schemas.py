@@ -825,6 +825,20 @@ class Kpi(BaseModel):
     )
 
 
+class TickerJudged(BaseModel):
+    """The Review page's verdict on a company read as a new buy: the same
+    scores and reasons as its outside rows, so a name reads alike on both
+    pages. A held name's verdict depends on its weight, which is the Review
+    page's to draw."""
+
+    verdict: str = Field(description="buy | watch | pass | bet | unrated")
+    reasons: list[str] = Field(
+        default_factory=list, description="Codes; print `review.reason_<code>`."
+    )
+    quality: float | None = Field(default=None, description="0-100; null unscored.")
+    cheapness: float | None = Field(default=None, description="0-100; null unscored.")
+
+
 class MetricTile(BaseModel):
     """One tile of the company grid: which KPI, and what to call it.
 
@@ -881,11 +895,26 @@ class Metrics(BaseModel):
             "a cycle's peak (`review.peak_pe`). Null otherwise."
         ),
     )
+    reported_pe: float | None = Field(
+        default=None,
+        description=(
+            "Trailing P/E on reported earnings, one-offs and all, when `pe_ttm` is "
+            "on normalized income instead (`fundamentals.ONE_OFF_SHARE`). Null "
+            "otherwise."
+        ),
+    )
     cautions: list[str] = Field(
         default_factory=list,
         description=(
             "The review's warning codes on this company (`review.cautions`); a "
             "client prints `review.reason_<code>`."
+        ),
+    )
+    judged: TickerJudged | None = Field(
+        default=None,
+        description=(
+            "The Review page's read of this company as a new buy "
+            "(`review.judge_candidate`). Null for a fund."
         ),
     )
     market_cap_base: float | None = Field(
@@ -2399,6 +2428,20 @@ class Sectors(BaseModel):
     sectors: list[SectorSummary] = Field(default_factory=list)
 
 
+class CohortJudged(BaseModel):
+    """Where the Review page would put a cohort name: the outside-name read
+    (`review.judge_candidate`), the same scores and bars as its map, so a
+    company sits on one spot on both pages."""
+
+    verdict: str = Field(description="buy | watch | pass | bet | unrated")
+    reasons: list[str] = Field(default_factory=list)
+    quality: float | None = Field(default=None, description="0-100; null unscored.")
+    cheapness: float | None = Field(default=None, description="0-100; null unscored.")
+    metrics: dict[str, float | None] = Field(
+        default_factory=dict, description="The KPIs the Review page shows, by key."
+    )
+
+
 class CohortRow(BaseModel):
     ticker: str
     currency: str | None = Field(
@@ -2414,6 +2457,13 @@ class CohortRow(BaseModel):
     metrics: dict[str, float | None] = Field(
         default_factory=dict,
         description="Raw numbers, keyed as `metric_keys`. A missing one is null.",
+    )
+    judged: CohortJudged | None = Field(
+        default=None,
+        description=(
+            "The Review page's read of the name as a new buy, for the quality "
+            "against price map. Fundamentals rows only; null on `tech_rows`."
+        ),
     )
 
 

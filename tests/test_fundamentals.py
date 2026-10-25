@@ -719,3 +719,30 @@ def test_no_history_without_statements_or_a_rate_for_them(monkeypatch):
     assert filed_history(RawFundamentals("EMPTY")) == []
     monkeypatch.setattr(fundamentals, "_statement_fx", lambda info: None)
     assert filed_history(sample_raw()) == []
+
+
+def test_trailing_pe_drops_one_offs():
+    # Alphabet 2026: revalued private stakes were 149B of the 244B earned.
+    raw = sample_raw()
+    quarters = pd.to_datetime(["2026-06-30", "2026-03-31", "2025-12-31", "2025-09-30"])
+    raw.income_q = pd.DataFrame(
+        {
+            "Net Income": [112.19e9, 62.58e9, 34.45e9, 34.98e9],
+            "Normalized Income": [32.23e9, 32.71e9, 32.44e9, 26.46e9],
+        },
+        index=quarters,
+    ).T
+    m = compute_metrics(raw)
+    assert m["pe_ttm"] == pytest.approx(3.8e12 / 123.84e9)
+    assert m["one_off_share"] == pytest.approx((244.2e9 - 123.84e9) / 123.84e9)
+    assert m["pe_ttm_reported"] == 38.0
+    # Within the band, Yahoo's figure stands.
+    raw.income_q.loc["Net Income"] = [34e9, 33e9, 33e9, 27e9]
+    m = compute_metrics(raw)
+    assert m["pe_ttm"] == 38.0
+    assert "pe_ttm_reported" not in m
+    # A missing quarter is no year: nothing is replaced.
+    raw.income_q.loc["Net Income"] = [112.19e9, 62.58e9, None, 34.98e9]
+    m = compute_metrics(raw)
+    assert m["pe_ttm"] == 38.0
+    assert m["one_off_share"] is None

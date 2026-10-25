@@ -95,6 +95,7 @@ from stocks.api.schemas import (
     Quote,
     SourceCheck,
     SourcedFigure,
+    TickerJudged,
     TickerPosition,
     TickerSplit,
     TickerSplitPick,
@@ -750,7 +751,9 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
         lens=view,
         peers=scope,
         normal_pe=normal,
+        reported_pe=_num(computed.get("pe_ttm_reported")),
         cautions=review.cautions(computed) if equity else [],
+        judged=_judged(computed) if equity else None,
         market_cap_base=cap,
         market_cap_base_formatted=(
             format_value("market_cap", cap) if cap is not None else None
@@ -758,6 +761,18 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
         fx_rate=rate,
         fx_as_of=as_of,
         base=ccy,
+    )
+
+
+def _judged(computed: dict) -> TickerJudged:
+    """`review.judge_candidate` on the grid's own metrics: no request of its
+    own, and the verdict the Review page gives the name as an outside row."""
+    verdict = review.judge_candidate(computed, kind="stock")
+    return TickerJudged(
+        verdict=verdict.verdict,
+        reasons=list(verdict.reasons),
+        quality=_num(verdict.quality),
+        cheapness=_num(verdict.cheapness),
     )
 
 

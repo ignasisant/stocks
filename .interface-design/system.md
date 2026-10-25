@@ -380,6 +380,11 @@ no Tailwind.
   leading edge. A multi-step dialog shows its way out ("Skip") in the header,
   not only behind Escape or the scrim. A step change re-keys the content in
   `.ag-redraw` and says "n of m: heading" through an `.ag-sr` live region.
+  A paged dialog (`.ag-tour-paged`) keeps one height and Next one place: all
+  pages stack in one grid cell (others `visibility: hidden`), so the card is
+  as tall as its tallest page and the reader taps Next without re-aiming. In
+  a paged dialog the side door lives in the page (`.ag-tour-go`), the footer
+  is only Back + CTA, and "Skip" keeps its slot hidden on the last page.
 - **Locked for guests:** an action a guest cannot take becomes a `SignIn`
   link, never a disabled button that answers a press with nothing.
 - **"Don't show again"** either offers Undo for a few seconds in place of what

@@ -286,105 +286,118 @@ export function Tour() {
     );
   }
 
+  // "Take me there": a way off the dialog to the step's page, or into the
+  // drawer for the assistant (not a page), or, for a guest on a step that
+  // reads somebody's own data, an account. Null when there is nowhere to go.
+  const leadLabel = (s: Step | undefined): string | null => {
+    if (!s) return null;
+    if (s.gated && guest) return t("common.cta_sign_in");
+    if (s.path !== null || (s.session?.chat_panel_open && !guest)) {
+      return s.cta_key ? t(s.cta_key) : t("tour.goto");
+    }
+    return null;
+  };
+  const lead = (s: Step | undefined): React.ReactNode => {
+    const label = leadLabel(s);
+    if (!s || label === null) return null;
+    if (s.gated && guest) {
+      return (
+        <SignIn
+          label="common.cta_sign_in"
+          className="ag-tour-btn ag-tour-lead"
+          wall="tour"
+        />
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="ag-tour-btn ag-tour-lead"
+        onClick={() => {
+          act("goto", place);
+          if (s.path !== null) go(canonical(s.path ?? ""), landing(s));
+          else openAssistant();
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+  const back =
+    at > 0 ? (
+      <button type="button" className="ag-tour-quiet" onClick={() => move(at - 1)}>
+        {t("tour.back")}
+      </button>
+    ) : null;
+
   if (place.mode === "news") {
-    const card = state.news[at]!;
-    const step = state.steps.find((s) => s.id === card.step);
+    const stepOf = (card: Card) => state.steps.find((s) => s.id === card.step);
     const last = at === state.news.length - 1;
-    const locked = !!step?.gated && guest;
     return (
       <Modal
         title={t("tour.news_title")}
         intro={t("tour.news_intro")}
-        icon={card.icon}
-        heading={t(card.title_key)}
-        body={t(card.body_key)}
+        at={at}
+        pages={state.news.map((card) => {
+          const step = stepOf(card);
+          return {
+            icon: card.icon,
+            heading: t(card.title_key),
+            body: t(card.body_key),
+            note: step?.gated && guest ? t("tour.locked") : null,
+            lead: leadLabel(step),
+          };
+        })}
+        lead={lead(stepOf(state.news[at]!))}
         progress={t("tour.news_progress", { n: at + 1, total: state.news.length })}
         onClose={() => act("dismiss", place)}
-        note={locked ? t("tour.locked") : null}
+        // Like the tour's skip: the way out of the list sits in the header,
+        // so the footer is the same two buttons on every card.
+        skip={{
+          label: t("tour.news_skip"),
+          onSkip: last ? null : () => act("news_done", place),
+        }}
         actions={
           <>
-            {locked ? (
-              <SignIn
-                label="common.cta_sign_in"
-                className="ag-tour-btn ag-tour-lead"
-                wall="tour"
-              />
-            ) : step && step.path !== null ? (
-              <button
-                type="button"
-                className="ag-tour-btn ag-tour-lead"
-                onClick={() => {
-                  act("goto", place);
-                  go(canonical(step.path ?? ""), landing(step));
-                }}
-              >
-                {step.cta_key ? t(step.cta_key) : t("tour.goto")}
-              </button>
-            ) : null}
-            {at > 0 ? (
-              <button
-                type="button"
-                className="ag-tour-quiet"
-                onClick={() => move(at - 1)}
-              >
-                {t("tour.back")}
-              </button>
-            ) : null}
-            {last ? (
-              <button
-                type="button"
-                className="ag-tour-cta"
-                onClick={() => act("news_done", place)}
-              >
-                {t("tour.news_dismiss")}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="ag-tour-quiet"
-                  onClick={() => act("news_done", place)}
-                >
-                  {t("tour.news_skip")}
-                </button>
-                <button
-                  type="button"
-                  className="ag-tour-cta"
-                  onClick={() => move(at + 1)}
-                >
-                  {t("tour.next")}
-                </button>
-              </>
-            )}
+            {back}
+            <button
+              type="button"
+              className="ag-tour-cta"
+              onClick={() => (last ? act("news_done", place) : move(at + 1))}
+            >
+              {last ? t("tour.news_dismiss") : t("tour.next")}
+            </button>
           </>
         }
       />
     );
   }
 
-  const step = state.steps[at]!;
   const last = at === state.steps.length - 1;
-  const locked = step.gated && guest;
-  const cta = step.cta_key ? t(step.cta_key) : t("tour.goto");
   return (
     <Modal
       title={t("tour.launch")}
-      icon={step.icon}
-      heading={t(step.title_key)}
-      body={t(step.body_key)}
+      at={at}
+      pages={state.steps.map((s) => ({
+        icon: s.icon,
+        heading: t(s.title_key),
+        body: t(s.body_key),
+        // A capability the account has switched on, or has not. Null means
+        // the step is a place rather than a switch, and says nothing at all —
+        // and a guest has switched nothing on, so the tick would be about the
+        // demo.
+        badge:
+          s.done === null || guest
+            ? null
+            : s.done
+              ? t("tour.active")
+              : t("tour.pending"),
+        badgeOn: s.done === true,
+        note: s.gated && guest ? t("tour.locked") : null,
+        lead: leadLabel(s),
+      }))}
+      lead={lead(state.steps[at])}
       progress={t("tour.progress", { n: at + 1, total: state.steps.length })}
-      // A capability the account has switched on, or has not. Null means the
-      // step is a place rather than a switch, and says nothing at all — and a
-      // guest has switched nothing on, so the tick would be about the demo.
-      badge={
-        step.done === null || guest
-          ? null
-          : step.done
-            ? t("tour.active")
-            : t("tour.pending")
-      }
-      badgeOn={step.done === true}
-      note={locked ? t("tour.locked") : null}
       // Parks rather than ends: the tour is what the reader came for, and the
       // strip above the page is how they get back into it.
       onClose={() => act("dismiss", place)}
@@ -392,56 +405,12 @@ export function Tour() {
       // same thing). Escape and the scrim only park the tour, and neither is a
       // control anybody can see — on a phone, step one of twenty offered Next
       // and nothing else.
-      skip={last ? null : { label: t("tour.skip"), onSkip: () => act("finish", place) }}
+      skip={{ label: t("tour.skip"), onSkip: last ? null : () => act("finish", place) }}
       actions={
         <>
-          {locked ? (
-            /* A guest's way into a step that reads somebody's own data is an
-               account, so that is what the button offers — not a disabled
-               "open" that answers a press with nothing. */
-            <SignIn
-              label="common.cta_sign_in"
-              className="ag-tour-btn ag-tour-lead"
-              wall="tour"
-            />
-          ) : step.path !== null ? (
-            <button
-              type="button"
-              className="ag-tour-btn ag-tour-lead"
-              onClick={() => {
-                act("goto", place);
-                go(canonical(step.path ?? ""), landing(step));
-              }}
-            >
-              {cta}
-            </button>
-          ) : step.session?.chat_panel_open && !guest ? (
-            /* The assistant is not a page: its step lands nowhere and opens
-               the drawer instead. Without this the one stop on the tour that
-               explains the assistant was the one stop with no way in. A guest
-               has no drawer to open. */
-            <button
-              type="button"
-              className="ag-tour-btn ag-tour-lead"
-              onClick={() => {
-                act("goto", place);
-                openAssistant();
-              }}
-            >
-              {cta}
-            </button>
-          ) : null}
-          {at > 0 ? (
-            <button
-              type="button"
-              className="ag-tour-quiet"
-              onClick={() => move(at - 1)}
-            >
-              {t("tour.back")}
-            </button>
-          ) : null}
+          {back}
           {/* Moving on is the tour's own action, so it is the filled one and
-              sits last; "take me there" leads the row as a way off it. */}
+              sits last. */}
           <button
             type="button"
             className="ag-tour-cta"
@@ -513,32 +482,64 @@ function Strip({
   );
 }
 
+/** One page of the dialog: a step or a card, as words. */
+type Page = {
+  icon: string;
+  heading: string;
+  body: string;
+  badge?: string | null;
+  badgeOn?: boolean;
+  /** A line under the body — why the way in is an account. */
+  note?: string | null;
+  /** The label of "take me there", so a hidden page is as tall as its button. */
+  lead?: string | null;
+};
+
+function PageBody({ page, id }: { page: Page; id?: string }) {
+  return (
+    <>
+      <h2 className="ag-tour-h" id={id ? `${id}-h` : undefined}>
+        {/* The registry names a Material Symbols ligature; this shell draws
+            the handful it has as inline SVG and simply omits the rest. An
+            icon is decoration on a heading that already says the thing. */}
+        <Icon name={page.icon} />
+        {page.heading}
+      </h2>
+      {page.badge ? (
+        <span className={page.badgeOn ? "ag-tour-badge ag-tour-on" : "ag-tour-badge"}>
+          {page.badge}
+        </span>
+      ) : null}
+      <p className="ag-tour-body" id={id ? `${id}-b` : undefined}>
+        <Rich text={page.body} />
+      </p>
+      {page.note ? <p className="ag-tour-note">{page.note}</p> : null}
+    </>
+  );
+}
+
 function Modal({
   title,
   intro,
-  icon,
-  heading,
-  body,
+  pages,
+  at,
+  lead,
   progress,
-  badge,
-  badgeOn,
-  note,
   skip,
   actions,
   onClose,
 }: {
   title: string;
   intro?: string;
-  icon: string;
-  heading: string;
-  body: string;
+  /** Every page of the list, so the dialog is as tall as the tallest. */
+  pages: Page[];
+  at: number;
+  /** The current page's "take me there", live. */
+  lead: React.ReactNode;
   progress: string;
-  badge?: string | null;
-  badgeOn?: boolean;
-  /** A line under the body — why the button beside it is disabled. */
-  note?: string | null;
   /** A visible way out of the whole list, in the header. */
-  skip?: { label: string; onSkip: () => void } | null;
+  /** Without `onSkip` (the last page) its room is kept, so nothing moves. */
+  skip?: { label: string; onSkip: (() => void) | null } | null;
   actions: React.ReactNode;
   onClose: () => void;
 }) {
@@ -554,13 +555,14 @@ function Modal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  const page = pages[at]!;
 
   return (
     <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onClose}>
       <div
         ref={card}
         tabIndex={-1}
-        className="ag-tour"
+        className="ag-tour ag-tour-paged"
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${id}-t ${id}-h`}
@@ -575,7 +577,7 @@ function Modal({
             <span className="ag-tour-progress">
               <Rich text={progress} />
             </span>
-            {skip ? (
+            {skip?.onSkip ? (
               <button
                 type="button"
                 className="ag-tour-quiet ag-tour-skip"
@@ -583,6 +585,15 @@ function Modal({
               >
                 {skip.label}
               </button>
+            ) : skip ? (
+              /* The last page has no way out but its own button; the header
+                 keeps the skip's room so the footer does not move. */
+              <span
+                className="ag-tour-quiet ag-tour-skip ag-tour-held"
+                aria-hidden="true"
+              >
+                {skip.label}
+              </span>
             ) : null}
           </span>
         </header>
@@ -591,28 +602,31 @@ function Modal({
             reader now is. Filled from the first render, so only a change is
             announced, never the opening (the dialog's name covers that). */}
         <span className="ag-sr" aria-live="polite">
-          {`${progress.replaceAll("**", "")}: ${heading}`}
+          {`${progress.replaceAll("**", "")}: ${page.heading}`}
         </span>
         {intro ? <p className="ag-tour-intro">{intro}</p> : null}
-        {/* Keyed on the step, so moving on cross-fades the page instead of
-            swapping the words under a still frame. */}
-        <div key={heading} className="ag-redraw">
-          <h2 className="ag-tour-h" id={`${id}-h`}>
-            {/* The registry names a Material Symbols ligature; this shell draws
-                the handful it has as inline SVG and simply omits the rest. An
-                icon is decoration on a heading that already says the thing. */}
-            <Icon name={icon} />
-            {heading}
-          </h2>
-          {badge ? (
-            <span className={badgeOn ? "ag-tour-badge ag-tour-on" : "ag-tour-badge"}>
-              {badge}
-            </span>
-          ) : null}
-          <p className="ag-tour-body" id={`${id}-b`}>
-            <Rich text={body} />
-          </p>
-          {note ? <p className="ag-tour-note">{note}</p> : null}
+        {/* Every page is laid in the same cell and only the current one is
+            visible, so the dialog is as tall as its tallest page and Next
+            stays under the finger from the first page to the last. The
+            current page is keyed on its place, so moving on cross-fades it. */}
+        <div className="ag-tour-pages">
+          {pages.map((p, i) =>
+            i === at ? (
+              <div key={`at-${i}`} className="ag-tour-page ag-redraw">
+                <PageBody page={p} id={id} />
+                {lead ? <div className="ag-tour-go">{lead}</div> : null}
+              </div>
+            ) : (
+              <div key={i} className="ag-tour-page" aria-hidden="true">
+                <PageBody page={p} />
+                {p.lead ? (
+                  <div className="ag-tour-go">
+                    <span className="ag-tour-btn">{p.lead}</span>
+                  </div>
+                ) : null}
+              </div>
+            ),
+          )}
         </div>
         <footer className="ag-tour-foot">{actions}</footer>
       </div>

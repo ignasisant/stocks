@@ -34,5 +34,9 @@
   "sector.fb_headline": "{top} encabeza el cribado de {sector} entre {cohort} empresas.",
   "sector.held_badge": "En cartera",
   "sector.fb_held": "Ya en tu cartera: {tickers}.",
-  "sector.fb_empty": "No hay datos comparables suficientes en {sector} para elegir los tres mejores."
+  "sector.fb_empty": "No hay datos comparables suficientes en {sector} para elegir los tres mejores.",
+  "sector.map_help": "Arriba, mejor negocio; a la derecha, más barato. Mismas notas que Vender o reforzar: el podio compara entre ellas, el mapa contra un listón fijo.",
+  "sector.map_outside": "resto del sector (color = veredicto como compra nueva)",
+  "sector.map_to_review": "Llevar las compras ({count}) a Vender o reforzar",
+  "sector.map_held_rule": "Ya la tienes; aquí se lee como compra nueva. Su veredicto con tu peso (mantener, reforzar, recortar) está en Vender o reforzar."
 }

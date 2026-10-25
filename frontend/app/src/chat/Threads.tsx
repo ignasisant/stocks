@@ -140,7 +140,7 @@ function Row({
               aria-hidden="true"
             />
           )}
-          {label(conv, t, 26)}
+          {label(conv, t)}
         </span>
         <span className="ag-chat-card-meta">
           {status ? (

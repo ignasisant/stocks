@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from stocks import accounts
+from stocks.analysis import review as engine
 from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
@@ -33,6 +34,7 @@ from stocks.api import loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
+    CohortJudged,
     CohortRow,
     SectorCohort,
     Sectors,
@@ -44,6 +46,25 @@ router = APIRouter(tags=["sector"])
 # The page's own default: rank on return on invested capital, best first. A
 # cohort ordered by nothing in particular reads as a list of tickers.
 _DEFAULT_SORT = "roic"
+
+
+def _judged(metrics: dict) -> CohortJudged:
+    """The Review page's outside-name read of one stored row.
+
+    Pure arithmetic over the scan's own `compute_metrics` row, so the map costs
+    no request: the page still reads tonight's scan and nothing else. Judged as
+    a new buy whether or not the reader holds it — the cohort is the same for
+    every reader, and a held name's verdict depends on its weight, which is the
+    Review page's to draw.
+    """
+    verdict = engine.judge_candidate(metrics, kind="stock")
+    return CohortJudged(
+        verdict=verdict.verdict,
+        reasons=list(verdict.reasons),
+        quality=_num(verdict.quality),
+        cheapness=_num(verdict.cheapness),
+        metrics={key: _num(value) for key, value in verdict.metrics.items()},
+    )
 
 
 def _resolve(name: str) -> str:
@@ -179,6 +200,7 @@ def cohort(
             currency=str(metrics.get("currency") or "").upper() or None,
             score=_num(scan.scores.get(str(metrics.get("ticker") or "").upper())),
             metrics={key: _num(metrics.get(key)) for key in METRIC_ORDER},
+            judged=_judged(metrics),
         )
         for metrics in scan.metrics
     ]

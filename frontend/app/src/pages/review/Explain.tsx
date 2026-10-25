@@ -93,7 +93,16 @@ export function PnlChip({ row }: { row: ReviewRow }) {
  * stands and where the verdict takes it, then every number. `taxCurrency` is
  * the plan's; without it the sale's tax is left out rather than mislabelled.
  */
-function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string }) {
+function Details({
+  row,
+  taxCurrency,
+  rule,
+}: {
+  row: ReviewRow;
+  taxCurrency?: string;
+  /** Said in place of the verdict's rule, by a page that judged it otherwise. */
+  rule?: ReactNode;
+}) {
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
@@ -103,7 +112,7 @@ function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string })
     <div className="ag-rev-details">
       <p className="ag-rev-details-rule">
         <VerdictChip row={row} />
-        <span>{help(`review.verdict_${row.verdict}_help`)}</span>
+        <span>{rule ?? help(`review.verdict_${row.verdict}_help`)}</span>
       </p>
       {row.reasons.length > 0 ? (
         <div className="ag-rev-details-group">
@@ -290,11 +299,13 @@ export function DetailsDialog({
   row,
   label,
   taxCurrency,
+  rule,
   onClose,
 }: {
   row: ReviewRow;
   label: string;
   taxCurrency?: string;
+  rule?: ReactNode;
   onClose: () => void;
 }) {
   const t = useT();
@@ -339,7 +350,7 @@ export function DetailsDialog({
             {t("review.close")}
           </button>
         </div>
-        <Details row={row} taxCurrency={taxCurrency} />
+        <Details row={row} taxCurrency={taxCurrency} rule={rule} />
       </div>
     </div>,
     document.body,
