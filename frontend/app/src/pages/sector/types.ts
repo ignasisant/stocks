@@ -22,7 +22,7 @@ export type SectorSummary = {
 export type Sectors = { sectors: SectorSummary[] };
 
 /** Where the Review page would put the name, read as a new buy. */
-export type CohortJudged = {
+type CohortJudged = {
   verdict: "buy" | "watch" | "pass" | "bet" | "unrated";
   reasons: string[];
   quality: number | null;

@@ -718,6 +718,8 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     if (
         m["one_off_share"] is not None
         and abs(m["one_off_share"]) > ONE_OFF_SHARE
+        and reported is not None
+        and normal is not None
         and reported > 0
         and cap
         and rate

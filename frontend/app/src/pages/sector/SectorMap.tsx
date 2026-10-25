@@ -40,7 +40,7 @@ type Held = {
 };
 
 /** A cohort row as the map's row type, with the reader's position if any. */
-export function asReviewRow(row: CohortRow, held: Held | undefined): ReviewRow | null {
+function asReviewRow(row: CohortRow, held: Held | undefined): ReviewRow | null {
   const judged = row.judged;
   if (!judged) return null;
   return {
