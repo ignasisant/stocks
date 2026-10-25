@@ -1,0 +1,1 @@
+import{$t as e,on as t,qt as n}from"./app-DFVJfROy.js";var r=t();function i({className:t=`ag-btn`}){let i=e();return(0,r.jsx)(`button`,{className:t,onClick:()=>n(i(`import.type_prompt`)),type:`button`,children:i(`import.type_button`)})}export{i as t};

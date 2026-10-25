@@ -75,10 +75,7 @@ export function asReviewRow(row: CohortRow, held: Held | undefined): ReviewRow |
 
 export function SectorMap({ rows }: { rows: CohortRow[] }) {
   const t = useT();
-  const book = useApi(
-    () => get<{ positions: Held[] }>("/portfolio/positions"),
-    [],
-  );
+  const book = useApi(() => get<{ positions: Held[] }>("/portfolio/positions"), []);
   const owned = new Map(
     book.state === "loaded"
       ? book.data.positions.map((p) => [p.ticker.toUpperCase(), p] as const)
