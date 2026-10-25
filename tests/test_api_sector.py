@@ -175,3 +175,22 @@ def test_a_kpi_says_how_it_reads(client, scanned):
     assert units["pe_ttm"] == "x"
     assert units["market_cap"] == "money"
     assert all(row["unit"] for row in rows), "a KPI with no unit cannot be printed"
+
+
+def test_every_row_carries_the_review_pages_read_of_it(client, scanned):
+    """The map puts a company where Sell or add would: the same outside-name
+    verdict and scores, worked out from the scan's own row, not a second
+    scorer that could drift from the first."""
+    from stocks.analysis import review
+
+    payload = client.get(f"/v1/sectors/{TECH}", headers=AUTH).json()
+    for row in payload["rows"]:
+        metrics = next(m for m in scan().metrics if m["ticker"] == row["ticker"])
+        expected = review.judge_candidate(metrics, kind="stock")
+        judged = row["judged"]
+        assert judged["verdict"] == expected.verdict
+        assert judged["reasons"] == list(expected.reasons)
+        assert judged["quality"] == expected.quality
+        assert judged["cheapness"] == expected.cheapness
+        assert set(judged["metrics"]) == set(expected.metrics)
+    assert all(row.get("judged") is None for row in payload["tech_rows"])

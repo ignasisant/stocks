@@ -74,6 +74,8 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "fact",
         "yfinance info.trailingPE",
         "EDGAR EPS (10-K/10-Q) + spot price",
+        "on normalized income when one-offs move the four quarters' profit by "
+        "over a quarter",
         desc="Price / earnings per share over the trailing twelve months. Lower = "
         "cheaper per unit of current profit.",
     ),
@@ -386,6 +388,11 @@ def cagr(start: float | None, end: float | None, years: float) -> float | None:
     return (end / start) ** (1 / years) - 1
 
 
+# One-offs (gains on securities, write-downs) moving the four quarters' profit
+# by more than this share of the normalized one: the trailing P/E reads that.
+ONE_OFF_SHARE = 0.25
+
+
 def _row(df: pd.DataFrame, label: str) -> pd.Series | None:
     if df is None or df.empty or label not in df.index:
         return None
@@ -397,6 +404,15 @@ def _latest(df: pd.DataFrame, label: str) -> float | None:
     """Most recent annual value (yfinance columns are newest-first)."""
     row = _row(df, label)
     return float(row.iloc[0]) if row is not None else None
+
+
+def _ttm(df: pd.DataFrame, label: str) -> float | None:
+    """The last four quarters' sum, or None when any of them is missing: a
+    gap would reach back to a fifth quarter and sum another year."""
+    if df is None or df.empty or label not in df.index or df.shape[1] < 4:
+        return None
+    row = pd.to_numeric(df.loc[label].iloc[:4], errors="coerce")
+    return float(row.sum()) if row.notna().all() else None
 
 
 def _series_cagr(df: pd.DataFrame, label: str) -> float | None:
@@ -688,6 +704,27 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     ttm_net = info.get("netIncomeToCommon")
     if m["pe_ttm"] is None and ttm_net and cap and rate:
         m["pe_ttm"] = cap / (ttm_net * rate)
+    # Yahoo's trailing P/E counts one-offs as earnings: Alphabet's revalued
+    # private stakes (149B of its 244B over four quarters) read it at 16x,
+    # the business alone at 32x, and the review then saw earnings falling.
+    # Past `ONE_OFF_SHARE` of the profit, the P/E is on normalized income.
+    reported = _ttm(raw.income_q, "Net Income")
+    normal = _ttm(raw.income_q, "Normalized Income")
+    m["one_off_share"] = (
+        (reported - normal) / normal
+        if reported is not None and normal is not None and normal > 0
+        else None
+    )
+    if (
+        m["one_off_share"] is not None
+        and abs(m["one_off_share"]) > ONE_OFF_SHARE
+        and reported > 0
+        and cap
+        and rate
+    ):
+        # Not a KPI: the reported one, for the page to show beside it.
+        m["pe_ttm_reported"] = m["pe_ttm"]
+        m["pe_ttm"] = cap / (normal * rate)
     m["fcf_yield"] = fcf * rate / cap if fcf and cap and rate else None
     # Yahoo's FCF adds share-based pay back as if it cost nothing; for a
     # software house it can be most of the figure (HubSpot: 528M of 577M).

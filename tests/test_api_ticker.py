@@ -1109,3 +1109,34 @@ def test_a_bank_gets_the_bank_grid_with_its_rivals_middle(client, monkeypatch):
     assert by["pe_ttm"]["peer_band"][1] == pytest.approx(12.0)
     assert by["ptbv"]["peer_band"] is None, "no rival reports it"
     assert body["cautions"] == [] and body["normal_pe"] is None
+
+
+def test_the_grid_carries_the_reviews_verdict_and_the_reported_pe(client, monkeypatch):
+    """The ticker page reads the company as the Review page's outside rows do,
+    and a P/E taken off normalized income keeps the reported one beside it."""
+    from types import SimpleNamespace
+
+    from stocks.analysis import review
+
+    alphabet = {"currency": "USD", "quote_type": "EQUITY",
+                "industry": "Internet Content & Information", "pe_ttm": 31.6,
+                "pe_ttm_reported": 16.1, "pe_fwd": 20.8, "roic": 0.3,
+                "op_margin": 0.33, "fcf_yield": 0.02, "moat": 80.0}
+    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: alphabet)
+    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
+    monkeypatch.setattr(
+        loaders, "fundamentals",
+        lambda ticker: SimpleNamespace(info={"sector": "Communication Services"}),
+    )
+    body = client.get("/v1/ticker/GOOGL/metrics", headers=AUTH).json()
+
+    want = review.judge_candidate(alphabet, kind="stock")
+    assert body["judged"]["verdict"] == want.verdict
+    assert body["judged"]["reasons"] == list(want.reasons)
+    assert body["judged"]["quality"] == pytest.approx(want.quality)
+    assert body["reported_pe"] == pytest.approx(16.1)
+
+    fund = {"currency": "USD", "quote_type": "ETF", "pe_ttm": 25.0}
+    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: fund)
+    body = client.get("/v1/ticker/SPY/metrics", headers=AUTH).json()
+    assert body["judged"] is None and body["reported_pe"] is None

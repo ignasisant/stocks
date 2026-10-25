@@ -24,6 +24,7 @@ import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Cohort } from "./Cohort";
+import { SectorMap } from "./SectorMap";
 import { FUNDAMENTAL_WHY, Podium, TECHNICAL_WHY } from "./Podium";
 import { RescanButton, useRescan } from "./Rescan";
 import { Verdict } from "./Verdict";
@@ -142,6 +143,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
                 podium={data.tech_podium}
                 rows={data.tech_rows}
               />
+              <SectorMap key={`map-${data.sector}`} rows={data.rows} />
               <Cohort key={data.sector} data={data} />
             </>
           )

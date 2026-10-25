@@ -21,6 +21,16 @@ export type SectorSummary = {
 
 export type Sectors = { sectors: SectorSummary[] };
 
+/** Where the Review page would put the name, read as a new buy. */
+export type CohortJudged = {
+  verdict: "buy" | "watch" | "pass" | "bet" | "unrated";
+  reasons: string[];
+  quality: number | null;
+  cheapness: number | null;
+  /** The KPIs the Review page shows, keyed as its `metrics`. */
+  metrics: Record<string, number | null>;
+};
+
 export type CohortRow = {
   ticker: string;
   /** Listing currency of the money metrics; null when the scan has none. */
@@ -29,6 +39,8 @@ export type CohortRow = {
   score: number | null;
   rank: number | null;
   metrics: Record<string, number | null>;
+  /** On fundamentals rows only; an older server leaves it out. */
+  judged?: CohortJudged | null;
 };
 
 export type SectorCohort = {

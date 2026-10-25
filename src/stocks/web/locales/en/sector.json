@@ -34,5 +34,9 @@
   "sector.fb_headline": "{top} leads the {sector} screen of {cohort} companies.",
   "sector.held_badge": "In your book",
   "sector.fb_held": "Already in your book: {tickers}.",
-  "sector.fb_empty": "Not enough comparable data in {sector} to pick the top three."
+  "sector.fb_empty": "Not enough comparable data in {sector} to pick the top three.",
+  "sector.map_help": "Up is a better business, right is cheaper. Same scores as Sell or add: the podium ranks them against each other, the map against a fixed bar.",
+  "sector.map_outside": "rest of the sector (colour = verdict as a new buy)",
+  "sector.map_to_review": "Weigh the buys ({count}) in Sell or add",
+  "sector.map_held_rule": "You hold it; here it reads as a new buy. Its verdict at your weight (hold, add, trim) is on Sell or add."
 }

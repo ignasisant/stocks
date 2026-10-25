@@ -40,8 +40,12 @@ import type {
   MoatPillar,
   SourceCheck,
   SourcedFigure,
+  TickerJudged,
 } from "./types";
 import { num } from "../../shell/numbers";
+import { Link } from "../../shell/router";
+import { score, verdictTone } from "../review/format";
+import { useHelp } from "../review/lines";
 import { calendarDay } from "../../shell/dates";
 
 // ------------------------------------------------------------------ KPI grid
@@ -51,12 +55,23 @@ import { calendarDay } from "../../shell/dates";
  * at a normal year's margin when this one is a cycle's peak. The P25–P75
  * rides the title; the median is what a glance needs.
  */
-function KpiNote({ kpi, normalPe }: { kpi: KpiRow; normalPe: number | null }) {
+function KpiNote({
+  kpi,
+  normalPe,
+  reportedPe,
+}: {
+  kpi: KpiRow;
+  normalPe: number | null;
+  reportedPe: number | null;
+}) {
   const t = useT();
+  const pe = kpi.key === "pe_ttm";
   const normal =
-    kpi.key === "pe_ttm" && normalPe !== null
+    pe && normalPe !== null
       ? t("ticker.kpi_normal_pe", { value: kpiText(normalPe, "x") })
-      : null;
+      : pe && reportedPe !== null
+        ? t("ticker.kpi_pe_one_offs", { value: kpiText(reportedPe, "x") })
+        : null;
   const band = kpi.peer_band;
   const peers = band
     ? t("ticker.kpi_peer_median", { value: kpiText(band[1], kpi.unit) })
@@ -99,6 +114,58 @@ function Cautions({ codes }: { codes: string[] }) {
   );
 }
 
+/**
+ * The Review page's verdict on this company read as a new buy: the same
+ * chip, scores and reasons as its outside rows. A held name's own verdict
+ * hangs on its weight, which only the Review page draws, so the link goes
+ * there. The warnings are left to `Cautions` below, not said twice.
+ */
+function Judged({
+  ticker,
+  judged,
+  cautions,
+}: {
+  ticker: string;
+  judged: TickerJudged;
+  cautions: string[];
+}) {
+  const t = useT();
+  const help = useHelp();
+  const quality = score(judged.quality);
+  const cheapness = score(judged.cheapness);
+  const shown = new Set(cautions);
+  const reasons = judged.reasons.filter((code) => !shown.has(code)).slice(0, 3);
+  return (
+    <div className="tk-judged" role="group" aria-label={t("ticker.judged_title")}>
+      <div className="tk-judged-head">
+        <span className="tk-watch-title">{t("ticker.judged_title")}</span>
+        <span className="tk-watch-item">
+          <Chip
+            chip={{
+              text: t(`review.verdict_${judged.verdict}`),
+              tone: verdictTone(judged.verdict),
+            }}
+          />
+          <Help text={help(`review.verdict_${judged.verdict}_help`)} />
+        </span>
+        {quality !== null && cheapness !== null ? (
+          <span className="tk-judged-scores">
+            {t("ticker.judged_scores", { quality, cheapness })}
+          </span>
+        ) : null}
+        <Link className="tk-judged-link" page="review" params={{ add: ticker }}>
+          {t("ticker.judged_link")}
+        </Link>
+      </div>
+      {reasons.length > 0 ? (
+        <p className="tk-judged-why">
+          {reasons.map((code) => t(`review.reason_${code}`)).join(" · ")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function MetricsSection({ metrics }: { metrics: Metrics }) {
   const t = useT();
   const byKey = new Map(metrics.kpis.map((kpi) => [kpi.key, kpi]));
@@ -126,6 +193,13 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
 
   return (
     <Card title={t("ticker.fundamentals")}>
+      {metrics.judged && metrics.judged.verdict !== "unrated" ? (
+        <Judged
+          ticker={metrics.ticker}
+          judged={metrics.judged}
+          cautions={metrics.cautions}
+        />
+      ) : null}
       <KpiGrid>
         {/* The tiles the server says this grid has, in its order, and every one
             of them drawn: a missing figure prints "n/a" rather than vanishing,
@@ -145,7 +219,13 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
               label={label}
               help={help || undefined}
               value={kpiText(kpi.value, kpi.unit)}
-              note={<KpiNote kpi={kpi} normalPe={metrics.normal_pe} />}
+              note={
+                <KpiNote
+                  kpi={kpi}
+                  normalPe={metrics.normal_pe}
+                  reportedPe={metrics.reported_pe ?? null}
+                />
+              }
               // Coloured by the tone the domain's band carries, never by the
               // label: the labels grow ("net cash", "heavy dilution") and a
               // client matching on them shows each new one as neutral.
