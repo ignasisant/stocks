@@ -175,7 +175,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
   // look like nine separate gaps rather than one failed fetch.
   if (metrics.grid.length === 0 || metrics.kpis.every((kpi) => kpi.value === null)) {
     return (
-      <Card title={t("ticker.fundamentals")}>
+      <Card fold="fundamentals" title={t("ticker.fundamentals")}>
         <Note>{t("ticker.fundamentals_failed")}</Note>
       </Card>
     );
@@ -192,7 +192,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
     metrics.market_cap_base === null;
 
   return (
-    <Card title={t("ticker.fundamentals")}>
+    <Card fold="fundamentals" title={t("ticker.fundamentals")}>
       {metrics.judged && metrics.judged.verdict !== "unrated" ? (
         <Judged
           ticker={metrics.ticker}
@@ -288,13 +288,14 @@ export function MoatSection({ moat }: { moat: Moat }) {
   // finding, and a section that vanishes reads as one that failed to load.
   if (moat.score === null || moat.pillars.length === 0) {
     return (
-      <Card title={t("ticker.moat")}>
+      <Card fold="moat" title={t("ticker.moat")}>
         <Note>{t("ticker.moat_insufficient")}</Note>
       </Card>
     );
   }
   return (
     <Card
+      fold="moat"
       title={t("ticker.moat")}
       note={t("ticker.moat_caption", { years: moat.years })}
     >
@@ -400,7 +401,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
   // nothing would read as neither.
   if (!insiders.source) {
     return (
-      <Card title={t("ticker.insider_activity")}>
+      <Card fold="insiders" title={t("ticker.insider_activity")}>
         <Note>
           {t(
             insiders.sec_filer === false ? "ticker.no_form4_non_us" : "ticker.no_form4",
@@ -415,6 +416,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
 
   return (
     <Card
+      fold="insiders"
       title={t("ticker.insider_activity")}
       note={t(
         insiders.source === "BaFin"
@@ -965,7 +967,7 @@ export function ComparablesSection({
     .filter(Boolean)
     .join(" ");
   return (
-    <Card title={t("ticker.comparables")} note={note || undefined}>
+    <Card fold="comparables" title={t("ticker.comparables")} note={note || undefined}>
       {children}
       {!comps ? <Note>{t("ticker.pick_peers")}</Note> : null}
       {comps ? (

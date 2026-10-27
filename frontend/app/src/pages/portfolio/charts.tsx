@@ -834,6 +834,14 @@ type HeatFocus = { row: string; column: string; rect: DOMRect };
 
 /** Up to this many names the squares are big enough to print their figure. */
 const HEAT_PRINTED = 10;
+/**
+ * Past this many names a narrow matrix lists one name's row at a time: 47
+ * columns on a phone are 7px cells nobody can read or tap.
+ */
+const HEAT_ROWS_FROM = 6;
+const HEAT_FALLBACK = 720;
+/** A long row opens on its strongest links; the rest wait behind a button. */
+const HEAT_ROWS_SHOWN = 10;
 
 /**
  * Pairwise return correlation as a grid of squares.
@@ -876,6 +884,10 @@ export function Heatmap({
   // The one cell in the tab order; arrows move it.
   const [cursor, setCursor] = useState<[number, number]>([0, 0]);
   const grid = useRef<HTMLDivElement>(null);
+  const [frame, width] = useWidth(HEAT_FALLBACK);
+  // The name whose row the narrow rendering lists.
+  const [pick, setPick] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
   // A tapped cell stays read until the page scrolls under it.
   useEffect(() => {
     if (!focus) return;
@@ -903,6 +915,63 @@ export function Heatmap({
     (best, one) => (best === null || one.value < best.value ? one : best),
     null,
   );
+  if (width < NARROW && names.length > HEAT_ROWS_FROM) {
+    const row = pick && names.includes(pick) ? pick : (top?.row ?? names[0]!);
+    const others = names
+      .filter((name) => name !== row)
+      .map((name) => ({ name, value: matrix[row]?.[name] }))
+      .sort((x, y) => (y.value ?? -2) - (x.value ?? -2));
+    const half = (value: number) => `${(Math.abs(value) / 2) * 100}%`;
+    return (
+      <div className="pf-heat-rows" ref={frame}>
+        <label className="pf-heat-pick">
+          <span>{t("portfolio.heat_row_pick")}</span>
+          <select value={row} onChange={(event) => setPick(event.target.value)}>
+            {names.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <ol aria-label={t("portfolio.heat_row_label", { name: row })}>
+          {(all ? others : others.slice(0, HEAT_ROWS_SHOWN)).map(({ name, value }) => (
+            <li
+              key={name}
+              className="ag-row-reach"
+              aria-label={describe ? describe(row, name, value) : undefined}
+            >
+              <TickerCell ticker={name} name={false} className="pf-ticker" />
+              <span className="pf-heat-track" aria-hidden="true">
+                {value === undefined ? null : (
+                  <i
+                    style={{
+                      [value < 0 ? "right" : "left"]: "50%",
+                      width: half(value),
+                      background: correlationColor(value),
+                    }}
+                  />
+                )}
+              </span>
+              <span className="pf-heat-value">
+                {value === undefined ? "·" : format(value)}
+              </span>
+            </li>
+          ))}
+        </ol>
+        {!all && others.length > HEAT_ROWS_SHOWN ? (
+          <button
+            type="button"
+            className="ag-btn pf-heat-all"
+            onClick={() => setAll(true)}
+          >
+            {t("portfolio.heat_row_all", { n: others.length })}
+          </button>
+        ) : null}
+        <HeatLegend format={format} scale={scale} />
+      </div>
+    );
+  }
   const open = (row: string, column: string, target: Element) =>
     setFocus({ row, column, rect: target.getBoundingClientRect() });
   const lit = (name: string) => focus?.row === name || focus?.column === name;
@@ -938,7 +1007,7 @@ export function Heatmap({
     go(next[0], next[1]);
   };
   return (
-    <div className="pf-scroll">
+    <div className="pf-scroll" ref={frame}>
       <div
         ref={grid}
         className={focus ? "pf-heat pf-heat-focus" : "pf-heat"}
@@ -1486,6 +1555,11 @@ export type WaterfallBar = {
  * accent (it is not a result), and every other step green or red by sign.
  * A pointer or a finger on a slot reads that bar in a hover box, as the other
  * Portfolio charts do; arrow keys walk the bars.
+ *
+ * Narrow, the bars lie down: seven category names under seven 40px slots
+ * overprint each other, so a phone gets one row per bar (name, floating span,
+ * figure) on the same scale — the design system's "category labels never
+ * squeeze" rule.
  */
 export function Waterfall({
   bars,
@@ -1577,6 +1651,45 @@ function WaterfallPlot({
   };
   const at = hover === null ? null : bars[hover];
   const spoken = at ? `${at.label} ${money(at.amount, at.kind === "step")}` : "";
+
+  if (narrow && bars.length > LIE_DOWN_FROM) {
+    const share = (value: number) => `${((value - low) / range) * 100}%`;
+    return (
+      <div className="pf-chart pf-waterfall" ref={frame}>
+        <ol className="pf-fall-rows" aria-label={summary}>
+          {bars.map((b, index) => {
+            const span = spans[index]!;
+            const from = Math.min(span.from, span.to);
+            return (
+              <li
+                key={b.key}
+                className={b.kind === "total" ? "pf-fall-total" : undefined}
+                title={b.help}
+              >
+                <span className="pf-fall-label">{b.label}</span>
+                <span className="pf-fall-track" aria-hidden="true">
+                  {low < 0 ? (
+                    <i className="pf-fall-zero" style={{ left: share(0) }} />
+                  ) : null}
+                  <i
+                    className="pf-fall-bar"
+                    style={{
+                      left: share(from),
+                      width: share(low + Math.abs(span.to - span.from)),
+                      background: colour(b),
+                    }}
+                  />
+                </span>
+                <span className="pf-fall-value">
+                  {b.kind === "step" ? money(b.amount, true) : money(b.amount)}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    );
+  }
 
   return (
     <div className="pf-chart pf-waterfall">
@@ -1774,6 +1887,8 @@ const PLOT = { height: 300, top: 8, right: 8, bottom: 24, left: 64 };
 
 /** The margin of a narrow plot, whose value labels sit inside it. */
 const NARROW_PAD = 8;
+/** Past this many bars a narrow waterfall draws rows instead of columns. */
+const LIE_DOWN_FROM = 4;
 
 /** The realized-result bars: the width a render without layout sees, and
     their desktop height. */

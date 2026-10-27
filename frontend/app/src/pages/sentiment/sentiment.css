@@ -839,6 +839,14 @@
   white-space: nowrap;
 }
 
+@media (pointer: coarse) {
+  .sn-jump a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 .sn-jump a:first-child {
   background: var(--ag-purple-900);
   border-color: var(--ag-purple-800);

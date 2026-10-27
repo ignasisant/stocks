@@ -35,6 +35,7 @@ import {
 } from "./format";
 import type { TrendBlock, TrendRow, TrendTables } from "./types";
 import { num } from "../../shell/numbers";
+import { Fold } from "../../ui/Fold";
 
 /** Who to name when a block cannot be drawn. Not translated: they are names. */
 const FRED = "FRED";
@@ -606,46 +607,54 @@ export function Detail({
 
   return (
     <>
-      <div className="sn-sec-head">
-        <h2 className="sn-sec-t" id="ag-detail">
-          {t("sentiment.detail_title")}
-        </h2>
-        <span className="sn-mono">{t("sentiment.detail_hint")}</span>
-      </div>
-      {/* A tab is not a navigation the back button should walk through. */}
-      <Tabs
-        label={t("sentiment.detail_title")}
-        items={SPECS.map((entry) => {
-          // The badge is the block's configured size, known before any fetch: a
-          // tab whose count vanished while Yahoo was throttling reads as a
-          // block with nothing in it, which is the claim a down block must
-          // never make. Counted from the drawn rows only for a server too old
-          // to send `expected` — and then the financial-conditions index is
-          // left out, because the rates table lifts it into a sentence and it
-          // is not one of the rates.
-          const found = tables.blocks.find((b) => b.block === entry.key);
-          const rows =
-            found?.expected ??
-            found?.rows.filter((row) => !(entry.key === "rates" && row.key === "NFCI"))
-              .length;
-          return { id: entry.key, label: t(entry.title), count: rows };
-        })}
-        active={active}
-        onPick={(key) => setParams({ tab: key })}
-      />
-      {/* A block with no rows is a block whose source died, whether or not the
+      <Fold
+        id="pulse-detail"
+        opened={wanted !== ""}
+        head={
+          <div className="sn-sec-head">
+            <h2 className="sn-sec-t" id="ag-detail">
+              {t("sentiment.detail_title")}
+            </h2>
+            <span className="sn-mono">{t("sentiment.detail_hint")}</span>
+          </div>
+        }
+      >
+        {/* A tab is not a navigation the back button should walk through. */}
+        <Tabs
+          label={t("sentiment.detail_title")}
+          items={SPECS.map((entry) => {
+            // The badge is the block's configured size, known before any fetch: a
+            // tab whose count vanished while Yahoo was throttling reads as a
+            // block with nothing in it, which is the claim a down block must
+            // never make. Counted from the drawn rows only for a server too old
+            // to send `expected` — and then the financial-conditions index is
+            // left out, because the rates table lifts it into a sentence and it
+            // is not one of the rates.
+            const found = tables.blocks.find((b) => b.block === entry.key);
+            const rows =
+              found?.expected ??
+              found?.rows.filter(
+                (row) => !(entry.key === "rates" && row.key === "NFCI"),
+              ).length;
+            return { id: entry.key, label: t(entry.title), count: rows };
+          })}
+          active={active}
+          onPick={(key) => setParams({ tab: key })}
+        />
+        {/* A block with no rows is a block whose source died, whether or not the
           API named a reason for it. */}
-      <div role="tabpanel" className="sn-tabpanel">
-        {block && block.rows.length > 0 ? (
-          <Table spec={spec} block={block} capture={capture} />
-        ) : (
-          <Down
-            spec={spec}
-            reason={block?.unavailable ?? "no_data"}
-            onRetry={onRetry}
-          />
-        )}
-      </div>
+        <div role="tabpanel" className="sn-tabpanel">
+          {block && block.rows.length > 0 ? (
+            <Table spec={spec} block={block} capture={capture} />
+          ) : (
+            <Down
+              spec={spec}
+              reason={block?.unavailable ?? "no_data"}
+              onRetry={onRetry}
+            />
+          )}
+        </div>
+      </Fold>
     </>
   );
 }

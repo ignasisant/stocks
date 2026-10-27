@@ -131,7 +131,11 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const picks = selected.filter((name) => !offeredNames.has(name));
 
   return (
-    <Card title={t("ticker.compare")} note={t("ticker.compare_note", { base })}>
+    <Card
+      fold="compare"
+      title={t("ticker.compare")}
+      note={t("ticker.compare_note", { base })}
+    >
       <div className="tk-compare-controls">
         <Segmented
           label={t("ticker.period")}

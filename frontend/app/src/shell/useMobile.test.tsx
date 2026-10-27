@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { phoneNow } from "./ui";
+import { phoneNow } from "./useMobile";
 
 const shell = (width: number) =>
   vi.stubGlobal("document", {

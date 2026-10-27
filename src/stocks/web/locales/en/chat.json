@@ -279,6 +279,7 @@
   "chat.depth_hint_kept": "Reads more sources and takes up to 2 min. With your own key it stays on.",
   "chat.depth_cost": "Uses {n} free messages.",
   "chat.steps_n": "{n} steps · {took}",
+  "chat.steps_one": "1 step · {took}",
   "chat.no_tools": "no tools · {took}",
   "chat.sources_n": "{n} sources",
   "chat.app_guide": "TopStocks guide",

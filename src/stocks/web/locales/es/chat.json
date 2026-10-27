@@ -279,6 +279,7 @@
   "chat.depth_hint_kept": "Lee más fuentes y tarda hasta 2 min. Con tu clave se queda puesto.",
   "chat.depth_cost": "Gasta {n} usos gratis.",
   "chat.steps_n": "{n} pasos · {took}",
+  "chat.steps_one": "1 paso · {took}",
   "chat.no_tools": "sin herramientas · {took}",
   "chat.sources_n": "{n} fuentes",
   "chat.app_guide": "Guía de TopStocks",

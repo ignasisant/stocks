@@ -30,7 +30,7 @@ export function DcfSection({ dcf }: { dcf: Dcf }) {
 
   if (dcf.reason || dcf.fcf === null || dcf.net_debt === null || dcf.shares === null) {
     return (
-      <Card title={t("ticker.dcf")}>
+      <Card fold="dcf" title={t("ticker.dcf")}>
         <Note>{t(`ticker.dcf_reason_${dcf.reason ?? "no_data"}`)}</Note>
       </Card>
     );
@@ -68,7 +68,7 @@ export function DcfSection({ dcf }: { dcf: Dcf }) {
   );
 
   return (
-    <Card title={t("ticker.dcf")} note={t("ticker.dcf_help")}>
+    <Card fold="dcf" title={t("ticker.dcf")} note={t("ticker.dcf_help")}>
       <div className="tk-dcf-head">
         <div className="tk-dcf-value">
           <span className="tk-dcf-label">{t("ticker.dcf_value")}</span>

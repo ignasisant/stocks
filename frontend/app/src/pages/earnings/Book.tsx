@@ -18,6 +18,7 @@ import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
 import { DenseRows } from "../../ui/Rows";
+import { Fold } from "../../ui/Fold";
 import { moneyIn, shares as formatShares } from "../portfolio/format";
 import type { CalendarPayment, CalendarTrade, EventPick, MarketHoliday } from "./data";
 import { cash } from "./Dividends";
@@ -178,40 +179,44 @@ export function BookList({
     `${row.kind}-${row.item.ticker}-${row.date}-${row.kind === "trade" ? row.item.side : ""}`;
   return (
     <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.book_title"))}</h2>
-      <DenseRows
-        rows={rows}
-        rowKey={key}
-        spec={{
-          ticker: (row) => row.item.ticker,
-          value: (row) =>
-            row.kind === "trade"
-              ? cash(lang, row.item.amount, row.item.currency)
-              : cash(lang, row.item.net, row.item.currency),
-          delta: (row) =>
-            row.kind === "trade" && row.item.gain !== null ? (
-              <span className={tone(row.item.gain)}>{gainText(lang, row.item)}</span>
-            ) : (
-              longDate(row.date, t)
-            ),
-          sub: (row) =>
-            row.kind === "trade"
-              ? [
-                  t(`earnings.trade_${row.item.side}`),
-                  ...(row.item.gain !== null ? [longDate(row.date, t)] : []),
-                ]
-              : [t(row.item.capital ? "earnings.pay_capital" : "earnings.pay_kind")],
-        }}
-      />
-      {all.length > cap && (
-        <button
-          type="button"
-          className="ag-btn earn-show-more"
-          onClick={() => setCap(cap + BOOK_ROWS)}
-        >
-          {t("earnings.show_more_results")}
-        </button>
-      )}
+      <Fold
+        id="earn-book"
+        head={<h2 className="earn-h2">{plain(t("earnings.book_title"))}</h2>}
+      >
+        <DenseRows
+          rows={rows}
+          rowKey={key}
+          spec={{
+            ticker: (row) => row.item.ticker,
+            value: (row) =>
+              row.kind === "trade"
+                ? cash(lang, row.item.amount, row.item.currency)
+                : cash(lang, row.item.net, row.item.currency),
+            delta: (row) =>
+              row.kind === "trade" && row.item.gain !== null ? (
+                <span className={tone(row.item.gain)}>{gainText(lang, row.item)}</span>
+              ) : (
+                longDate(row.date, t)
+              ),
+            sub: (row) =>
+              row.kind === "trade"
+                ? [
+                    t(`earnings.trade_${row.item.side}`),
+                    ...(row.item.gain !== null ? [longDate(row.date, t)] : []),
+                  ]
+                : [t(row.item.capital ? "earnings.pay_capital" : "earnings.pay_kind")],
+          }}
+        />
+        {all.length > cap && (
+          <button
+            type="button"
+            className="ag-btn earn-show-more"
+            onClick={() => setCap(cap + BOOK_ROWS)}
+          >
+            {t("earnings.show_more_results")}
+          </button>
+        )}
+      </Fold>
     </section>
   );
 }

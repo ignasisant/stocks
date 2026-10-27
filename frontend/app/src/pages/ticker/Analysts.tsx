@@ -51,14 +51,14 @@ export function AnalystsSection({ data }: { data: Analysts }) {
   // one analyst drawn as a 100% "buy" bar reads as a unanimous street.
   if (data.analysts === 0 && !data.targets) {
     return (
-      <Card title={title}>
+      <Card fold="analysts" title={title}>
         <Note>{t("ticker.analysts_none")}</Note>
       </Card>
     );
   }
   if (!data.covered) {
     return (
-      <Card title={title}>
+      <Card fold="analysts" title={title}>
         <Note>
           {t("ticker.analysts_thin", { n: data.analysts, min: data.min_coverage })}
         </Note>
@@ -72,7 +72,7 @@ export function AnalystsSection({ data }: { data: Analysts }) {
   const cutting = trend(data.revisions, -1);
 
   return (
-    <Card title={title} note={t("ticker.analysts_caption")}>
+    <Card fold="analysts" title={title} note={t("ticker.analysts_caption")}>
       <KpiGrid>
         <Kpi
           label={t("ticker.analysts_rating")}

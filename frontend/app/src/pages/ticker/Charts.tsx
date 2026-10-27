@@ -575,6 +575,7 @@ export function FinancialsChart({ data }: { data: Financials }) {
 
   return (
     <Card
+      fold="results"
       title={t(
         showing === "annual"
           ? "ticker.chart_annual_title"
@@ -655,7 +656,7 @@ export function ValuationChart({
   // which would read as a P/E that never moved.
   if (!data.source) {
     return (
-      <Card title={t("ticker.valuation_history")}>
+      <Card fold="valuation" title={t("ticker.valuation_history")}>
         <Empty>{t("ticker.pe_insufficient")}</Empty>
       </Card>
     );
@@ -719,7 +720,7 @@ export function ValuationChart({
   const xOf = (index: number) => box.left + (index + 0.5) * band_;
 
   return (
-    <Card title={t("ticker.valuation_history")}>
+    <Card fold="valuation" title={t("ticker.valuation_history")}>
       <div className="tk-controls">
         <Segmented
           label={t("ticker.pe_range")}

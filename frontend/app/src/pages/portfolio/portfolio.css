@@ -1806,3 +1806,130 @@
     min-height: 44px;
   }
 }
+
+/* A narrow waterfall lies down: one row per bar, name · floating span ·
+   figure, every span on the same scale (charts.tsx WaterfallPlot). */
+.pf-fall-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(3rem, 1fr) max-content;
+  column-gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pf-fall-rows > li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.pf-fall-rows > li + li {
+  border-top: 1px solid var(--ag-border);
+}
+
+.pf-fall-label {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.pf-fall-value {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pf-fall-total .pf-fall-label {
+  color: var(--ag-text-primary);
+}
+
+.pf-fall-total .pf-fall-value {
+  font-weight: 600;
+}
+
+.pf-fall-track {
+  position: relative;
+  height: 0.75rem;
+}
+
+.pf-fall-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+}
+
+.pf-fall-zero {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  width: 1px;
+  background: var(--ag-border);
+}
+
+/* A narrow matrix past six names: pick a name, read its row as a ranked list
+   with a diverging bar from the centre (charts.tsx Heatmap). */
+.pf-heat-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.pf-heat-pick select {
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-heat-rows ol {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(3rem, 1fr) max-content;
+  column-gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.pf-heat-rows li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 2.25rem;
+}
+
+.pf-heat-rows li + li {
+  border-top: 1px solid var(--ag-border);
+}
+
+.pf-heat-track {
+  position: relative;
+  height: 0.75rem;
+  background: linear-gradient(var(--ag-border), var(--ag-border)) center / 1px 100%
+    no-repeat;
+}
+
+.pf-heat-track > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 2px;
+  border-radius: 2px;
+}
+
+.pf-heat-value {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.pf-heat-all {
+  margin-bottom: 0.75rem;
+}

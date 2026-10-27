@@ -366,6 +366,20 @@ no Tailwind.
   on Enter as well as on blur.
 - **44px coarse targets** hold in page stylesheets too, not just shell
   controls; a dense row grows its hit area with padding or `::before`.
+  Text fields, selects and `.ag-btn` get the floor from styles.css
+  (`min-height: 44px !important` under `pointer: coarse`), so a page's own
+  pointer-sized `min-height` cannot undercut it; a checkbox's 44px target is
+  its `<label>` row.
+- **Controls under a finger** (styles.css): `touch-action: manipulation` on
+  buttons, links, summaries, labels, selects, tabs; `user-select: none` on
+  buttons, summaries, tabs (never on links or content). The viewport carries
+  `interactive-widget=resizes-content` (Android's keyboard shrinks the
+  layout, as `useKeyboardFit` makes iOS do for the chat) and `:root` sets
+  `text-size-adjust: 100%`.
+- **Phone first screen:** a row of three KPI tiles that stacks one per line
+  (`.ag-kpis`, ag-main ≤38rem) draws each tile as a list row, label left and
+  figure right; a filter pill row that would wrap to a second line on a phone
+  slides sideways instead (`.earn-kinds`).
 - **No hover-only actions:** what hover reveals on desktop (copy an answer,
   row tools) is visible on touch.
 - **Loading:** skeletons keep their final height from the first frame and
@@ -475,6 +489,47 @@ no Tailwind.
 - Diverging ramps rise in lightness from the neutral outwards; the diagonal and
   "no data" never use the ramp (surface grey / dashed outline).
 - Rank "most linked" by what the book holds, not by raw value.
+
+## Phone adaptations
+
+What a desktop layout draws that a 390px column cannot, and the shape it takes
+instead. "Narrow" is the measured width (`useWidth` < 480 for a plot, `useMobile`
+≤ 640 on `ag-main` for a page), never the viewport: an open chat drawer narrows
+a laptop page the same way.
+
+- **Category labels never squeeze.** A bar chart whose x axis is named
+  categories (not dates) and has more than four of them lies down when narrow:
+  one row per bar — name, the bar on a shared scale, figure — instead of
+  columns whose labels overprint (`Waterfall` → `.pf-fall-rows`). Date axes
+  thin their ticks instead.
+- **A matrix is read one row at a time.** Past six names a narrow heatmap is a
+  name picker plus that name's row as a ranked list with a diverging bar from
+  the centre, ten rows then "Show all N" (`Heatmap` → `.pf-heat-rows`). It
+  opens on the row of the most-linked pair. The grid stays the desktop
+  reading.
+- **Dense scatter: the nearest dot answers.** Dots keep their drawn size; a
+  finger that lands between them opens the nearest within 22px of its edge
+  (`QualityMap` `REACH`). Never grow every dot's hit area to 44px — in a
+  cluster it swallows the neighbours.
+- **A row about one ticker is one target.** Under `pointer: coarse` a list row
+  whose subject is one ticker takes `.ag-row-reach`: the ticker link's
+  `::after` stretches over the row; any other control in it sits above. Not for
+  rows naming two tickers (a correlation pair) or a ticker inside a sentence.
+- **Long pages fold.** Below the first screen a page's secondary cards fold to
+  their heading on a phone (`ui/Fold`, ticker `Card fold="id"`): a list of
+  headings is an index the reader opens where they want. Closed by default;
+  an opened card stays open on the next visit (localStorage, per card).
+  Never fold the hero, the price chart, a holding, or anything the first
+  screen answers with. A folded card renders nothing below its heading, and
+  its heading row shows the title alone (captions, badges, sources wait).
+  A link that lands inside a fold (`#anchor`, a jump bar) opens it; so does
+  `opened` when the URL names part of it (`?tab=`). Adopted on Ticker,
+  Earnings list (book, past dividends, past results) and Sentiment (snapshot,
+  book, detail). Not on Home: its cards are the reader's own pick, and the
+  editor is where a card is put away.
+- **The answer first.** A page leads with what it concludes (Review: the plan,
+  then the book-wide notes), in DOM order, not by CSS `order` — a screen
+  reader and a phone read the same sequence.
 
 ## Cards that share labels say their scope on the page
 

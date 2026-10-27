@@ -2230,7 +2230,8 @@
 @media (pointer: coarse) {
   .im-btn,
   .im-check,
-  .im-input {
+  .im-input,
+  .im-chip {
     min-height: 44px;
   }
   .im-check input,

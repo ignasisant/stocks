@@ -167,7 +167,7 @@ export default function Views({ data }: { data: EarningsCalendar }) {
           </ToggleRow>
         )}
         {present.length > 1 && (
-          <ToggleRow label={t("earnings.kind_label")}>
+          <ToggleRow label={t("earnings.kind_label")} className="earn-kinds">
             {present.map((kind) => (
               <ToggleChip
                 key={kind}

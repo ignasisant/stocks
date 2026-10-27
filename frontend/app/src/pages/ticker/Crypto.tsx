@@ -219,6 +219,7 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
   if (!anything) return null;
   return (
     <Card
+      fold="cycle"
       title={t("ticker.cycle_title")}
       note={
         cycle.scan_date
@@ -342,6 +343,7 @@ export function PositioningSection({ data }: { data: CryptoPositioning }) {
   const week = data.funding_7d_8h;
   return (
     <Card
+      fold="positioning"
       title={t("ticker.positioning_title")}
       note={`${venueName(data.venue)} · ${data.symbol}`}
     >
