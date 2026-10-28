@@ -31,6 +31,11 @@ MIN_OPEN_INTEREST = 100
 # Yahoo's IV for a quoted at-the-money contract sits well inside this band;
 # outside it the figure is a stale quote or a broken solve.
 IV_BAND = (0.03, 5.0)
+# How far from the spot the "at-the-money" strike may sit. Past it the nearest
+# quoted contract is deep in or out of the money, whose IV is mostly spread: a
+# thin chain after a split (BKNG 2026-10: nothing quoted between 110 and a
+# 150 spot, a 38-51.7 market) read as 138 %.
+ATM_BAND = 0.10
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,8 @@ def fetch_chains(ticker: str, today: date | None = None) -> RawOptions | None:
 
 
 def _atm_iv(chain: Chain, spot: float) -> float | None:
-    """Mean IV of the quoted call and put at the strike nearest `spot`."""
+    """Mean IV of the quoted call and put at the strike nearest `spot`,
+    each only when that strike is within ATM_BAND of it."""
     values = []
     for frame in (chain.calls, chain.puts):
         if frame is None or frame.empty or "impliedVolatility" not in frame.columns:
@@ -108,6 +114,8 @@ def _atm_iv(chain: Chain, spot: float) -> float | None:
         if quoted.empty:
             continue
         near = quoted.iloc[(quoted["strike"] - spot).abs().argsort()[:1]]
+        if abs(float(near["strike"].iloc[0]) / spot - 1) > ATM_BAND:
+            continue
         values.append(float(near["impliedVolatility"].iloc[0]))
     return sum(values) / len(values) if values else None
 

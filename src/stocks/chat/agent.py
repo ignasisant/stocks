@@ -60,6 +60,10 @@ GATHER_SYSTEM = (
     "- Use portfolio_snapshot for anything about what the user owns, "
     "get_quotes for what something trades at now, and search_web/read_page "
     "for news, filings and anything newer than your training data.\n"
+    "- A company's valuation, multiples, fair value, consensus or risks "
+    "(\"is it cheap?\") get ticker_data first: they are the figures on the "
+    "app's own page, which the user is reading. Search the web beside it for "
+    "news, never instead of it.\n"
     "- When propose_action is offered and the user asks to be told, to watch "
     "or to track something that needs a figure you found first (\"avísame "
     "si cae ahí\"), draft it last, with that figure. Nothing else gets one.\n"
@@ -74,7 +78,9 @@ GATHER_SYSTEM = (
 # a proposal, said up front so the loop plans the call instead of DONE.
 ALERT_NUDGE = (
     "\n\n---\nThe reader asked to be told at a price. Once the material gives "
-    "you the level, call propose_action (set_alerts) with it, then reply DONE."
+    "you the level, call propose_action (set_alerts) with it — a move in "
+    "percent goes in as the level it makes from the current price. Then fetch "
+    "what the rest of the question needs, or reply DONE."
 )
 
 DEEP_SYSTEM = (

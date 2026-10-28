@@ -79,6 +79,23 @@ def maybe_action(text: str) -> bool:
     return bool(_GATE_RE.search(text))
 
 
+# A question riding on the request: "avísame si NVDA cae un 5% y explícame el
+# ROIC" once got the alert card and nothing about ROIC. Spanish, Catalan and
+# English, like the rest of the gate.
+_ASKS_MORE_RE = re.compile(
+    r"\bexpl[ií]c|\bexplain|\bqu[eéè] (?:es|és|son|són|significa|vol dir)\b"
+    r"|\bwhat(?:'s| is| are| does)\b|\bwhy\b|\bpor ?qu[eé]\b|\bper qu[eè]\b"
+    r"|\bc[oó]mo (?:se )?calcula|\bcom es calcula|\bhow (?:do|does|is)\b",
+    re.IGNORECASE,
+)
+
+
+def asks_more(text: str) -> bool:
+    """Whether the message asks a question beside the action it requests,
+    so a watchlist card alone would leave half of it unanswered."""
+    return bool(_ASKS_MORE_RE.search(text))
+
+
 # A reply that only carries a request on ("sí", "venta de 100 a 26,17") names
 # none of the gate's words. Short is the tell: a new request worth parsing on
 # its own says what it wants, and the gate reads that.
@@ -393,9 +410,11 @@ TOOLS: dict[str, Tool] = {
             "set_alerts",
             'price thresholds. Fill "alerts": [{"type": "above"|"below", '
             '"price": <number>}]. Direction from wording (below/under/drops/'
-            "falls/baja/cae -> below; above/over/rises/hits/sube/llega -> "
-            "above). Two bare prices -> the lower one below, the higher one "
-            "above. One bare price -> above.",
+            "falls/baja/cae/baixa/cau -> below; above/over/rises/hits/sube/"
+            "llega/puja -> above). Two bare prices -> the lower one below, the "
+            "higher one above. One bare price -> above. A move in percent "
+            '("cae un 5 %") -> "price" is that percent itself (5); the app '
+            "turns it into a level from the current price.",
             _parse_alerts, _run_set_alerts, "chat.action_alerts_set",
         ),
         Tool(
@@ -476,6 +495,43 @@ def trade_said(message: str) -> str | None:
     if sell == buy:
         return None
     return "sell" if sell else "buy"
+
+
+# A move in percent, as typed: "cae un 5%", "baixa un 5 %", "drops 5 percent".
+_PERCENT_RE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(?:%|por ?ciento|per ?cent|percent)", re.IGNORECASE)
+
+
+def percent_alerts(act: Action | None, message: str,
+                    price: Callable[[str], float | None]) -> Action | None:
+    """`act` with each alert the reader gave in percent made a price level.
+
+    The router copies the number it reads: "avísame si NVDA cae un 5%" came
+    back as below $5. A level equal to a percent the message names is that
+    move from the current price instead. None when the price is not to be
+    had — the plain answer then says so, never an alert at the wrong level."""
+    if act is None or act.kind != "set_alerts":
+        return act
+    moves = {float(m.replace(",", ".")) for m in _PERCENT_RE.findall(message)}
+    if not moves or not any(a["price"] in moves for a in act.alerts):
+        return act
+    now = price(act.ticker)
+    if not now:
+        return None
+    alerts = [
+        {**a, "price": round(now * (1 + (a["price"] if a["type"] == "above"
+                                         else -a["price"]) / 100), 2)}
+        if a["price"] in moves else a
+        for a in act.alerts
+    ]
+    return Action(act.kind, act.ticker, {**act.args, "alerts": alerts})
+
+
+def price_now(ticker: str) -> float | None:
+    from stocks.chat import market
+
+    got = market.quotes([ticker], limit=1)
+    return got[0].price if got else None
 
 
 def _number(raw) -> float | None:
@@ -751,6 +807,7 @@ def parse_action(raw: str) -> Action | None:
 def detect(
     provider: Provider, api_key: str, message: str, context: str = "",
     *, fallbacks: Sequence[tuple[Provider, str]] = (),
+    price: Callable[[str], float | None] = price_now,
 ) -> Action | None:
     """Parse a message into an Action via the provider's cheapest model.
 
@@ -782,7 +839,7 @@ def detect(
         if (act is not None and act.kind == "add_transaction"
                 and "trade" not in act.args and (side := trade_said(message))):
             act = Action(act.kind, act.ticker, {**act.args, "trade": side})
-        return act
+        return percent_alerts(act, message, price)
     return None
 
 

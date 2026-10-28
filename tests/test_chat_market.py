@@ -20,6 +20,22 @@ def test_stop_list_screens_caps_that_are_not_tickers():
     assert mentioned("is this ETF ok for my IRPF?", lookup=lambda n: "") == []
 
 
+def test_an_ampersand_initialism_is_not_a_ticker():
+    # "S&P" once quoted Sirius XM ("S") under a question about the index.
+    assert mentioned("¿Bato al S&P 500 este año?", lookup=_no_lookup) == ["^GSPC"]
+    assert mentioned("¿bato al S & P?", lookup=_no_lookup) == ["^GSPC"]
+    assert mentioned("compara NVDA con el SP500", lookup=_no_lookup) == [
+        "^GSPC", "NVDA"
+    ]
+    assert mentioned("el R&D y el M&A de MSFT", lookup=_no_lookup) == ["MSFT"]
+
+
+def test_ampersand_names_that_trade_resolve_to_their_symbol():
+    assert mentioned("¿y AT&T?", lookup=_no_lookup) == ["T"]
+    assert mentioned("P&G o J&J", lookup=_no_lookup) == ["PG", "JNJ"]
+    assert named("¿qué tal el S&P 500?") == ["S&P"]
+
+
 def test_watchlist_names_resolve_without_a_lookup():
     known = {"SAN.MC": "SAN.MC", "BANCO SANTANDER": "SAN.MC"}
     assert mentioned("cómo va Banco Santander?", known, lookup=_no_lookup) == [

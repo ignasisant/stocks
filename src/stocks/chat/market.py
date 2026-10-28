@@ -39,7 +39,16 @@ _MAX_LOOKUPS = 1  # company-name searches against Yahoo per message
 
 # Ticker-shaped tokens as the app knows them: plain symbols (NVDA), venue
 # suffixes (MIPS.ST), class shares (BRK.B), crypto pairs (BTC-EUR).
-_TICKER_RE = re.compile(r"\b[A-Z]{1,5}(?:[.\-][A-Z]{1,4})?\b")
+# A token touching "&" is a letter of an initialism ("S&P", "M&A", "R&D"), not
+# a symbol: "¿bato al S&P 500?" once quoted Sirius XM ("S").
+_TICKER_RE = re.compile(r"(?<![&\w])[A-Z]{1,5}(?:[.\-][A-Z]{1,4})?(?![&\w])")
+# The "&" names that do stand for something to quote, as typed in caps.
+_AMPERSAND = (
+    (re.compile(r"\bS ?& ?P(?: ?500)?(?![&\w])|\bSP ?500\b", re.IGNORECASE), "^GSPC"),
+    (re.compile(r"\bAT ?& ?T\b", re.IGNORECASE), "T"),
+    (re.compile(r"\bP ?& ?G\b", re.IGNORECASE), "PG"),
+    (re.compile(r"\bJ ?& ?J\b", re.IGNORECASE), "JNJ"),
+)
 
 # Uppercase words that are not tickers. Without this every "ETF", "USA" or
 # "OK" in a message would cost a quote lookup (and Yahoo does quote some of
@@ -181,6 +190,16 @@ def _lookup(name: str) -> str:
     return symbol if spells(name, company) else ""
 
 
+def _ampersands(message: str, add: Callable[[str], None]) -> str:
+    """`add` the symbol of each "&" name and return `message` without them,
+    so a spaced "S & P" leaves no "S" behind for the token scan."""
+    for pattern, symbol in _AMPERSAND:
+        if pattern.search(message):
+            add(symbol)
+            message = pattern.sub(" ", message)
+    return message
+
+
 def mentioned(
     message: str,
     known: dict[str, str] | None = None,
@@ -208,7 +227,7 @@ def mentioned(
         add(focus)
     # The regex only matches all-caps runs, so a token here is one the user
     # actually typed in caps; the stop-list keeps "ETF"/"USA"/"CEO" out.
-    for tok in _TICKER_RE.findall(message):
+    for tok in _TICKER_RE.findall(_ampersands(message, add)):
         if tok not in NOT_TICKERS:
             add(known.get(tok, tok))
     for name, tk in known.items():
@@ -246,7 +265,7 @@ def named(message: str) -> list[str]:
     are fine for a quote and wrong for a memory.
     """
     out: list[str] = []
-    for tok in _TICKER_RE.findall(message):
+    for tok in _TICKER_RE.findall(_ampersands(message, lambda _symbol: None)):
         # One letter is a word in a memory ("the S of S&P"), whatever it is
         # on an exchange.
         if tok in NOT_TICKERS or len(tok) < 2:

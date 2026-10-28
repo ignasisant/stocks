@@ -79,6 +79,18 @@ def test_atm_iv_reads_the_quoted_strike_nearest_the_spot():
     assert out["iv_expiry"] == "2026-11-20" and out["iv_days"] == 24
 
 
+def test_atm_iv_skips_a_chain_quoted_only_far_from_the_spot():
+    # BKNG after its split: the nearest quoted call was the 110 against a 150
+    # spot, its IV mostly a wide market — no reading beats that one.
+    raw = RawOptions(
+        150.14,
+        [chain("2026-11-20", [(110, 38.0, 51.7, 1.38, 1, 0), (100, 48, 61.5, 1.65, 8, 0)],
+               [(200, 50, 60, 0.9, 5, 3)])],
+    )
+    out = summarize(raw, TODAY)
+    assert out is None or out["iv"] is None
+
+
 def test_put_call_sums_every_expiry_and_hides_a_thin_book():
     raw = RawOptions(
         100.0,

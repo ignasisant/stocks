@@ -1282,6 +1282,23 @@ def _ask_for(signed_in, proposes, act):
     return stream, offer[0]["id"] if offer else None
 
 
+def test_a_question_beside_the_action_gets_an_answer_not_only_a_card(
+    client, account, signed_in, served, proposes, monkeypatch
+):
+    """"avísame si cae un 5% y explícame el ROIC" once got the alert card and
+    nothing about ROIC: a question riding on the request goes to the answer."""
+    from stocks.chat.tools import Action
+
+    _plain_research(monkeypatch)
+    proposes(Action("set_alerts", "AAPL",
+                    {"alerts": [{"type": "below", "price": 190.0}]}))
+    served(FakeProvider(chunks=("ROIC is return on invested capital.",)))
+    ask = "avísame si AAPL cae un 5% y explícame qué es el ROIC"
+    stream = events(signed_in.post("/v1/chat/runs", json=run(ask)).text)
+    assert "ROIC is return on invested capital." in painted(stream)
+    assert _holding(account).alerts == []
+
+
 def test_an_app_action_is_asked_about_and_nothing_changes_until_answered(
     client, account, signed_in, served, proposes
 ):

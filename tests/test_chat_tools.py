@@ -583,3 +583,36 @@ def test_slow_rules_read_in_the_confirmation():
 
         line = tools.reply(act, tr)
         assert "15" in line and "CEO" in line and "{" not in line and "chat." not in line
+
+
+def _alert(price, kind="below"):
+    return ('{"action": "set_alerts", "ticker": "NVDA", '
+            f'"alerts": [{{"type": "{kind}", "price": {price}}}]}}')
+
+
+@pytest.mark.parametrize("message", [
+    "avísame si NVDA cae un 5%",
+    "avisa'm si NVDA baixa un 5 %",
+    "let me know if NVDA drops 5 percent",
+])
+def test_an_alert_in_percent_is_a_level_from_the_current_price(message):
+    # It once saved "below $5" for "cae un 5%".
+    act = detect(_StubProvider(_alert(5)), "key", message, price=lambda t: 200.0)
+    assert act.alerts == [{"type": "below", "price": 190.0}]
+    up = detect(_StubProvider(_alert(5, "above")), "key", message,
+                price=lambda t: 200.0)
+    assert up.alerts == [{"type": "above", "price": 210.0}]
+
+
+def test_a_price_alert_is_left_as_typed():
+    def no_quote(ticker):
+        raise AssertionError("quoted a price alert")
+
+    act = detect(_StubProvider(_alert(150)), "key", "avísame si NVDA cae a 150",
+                 price=no_quote)
+    assert act.alerts == [{"type": "below", "price": 150.0}]
+
+
+def test_an_alert_in_percent_without_a_price_is_no_alert():
+    assert detect(_StubProvider(_alert(5)), "key", "avísame si NVDA cae un 5%",
+                  price=lambda t: None) is None
