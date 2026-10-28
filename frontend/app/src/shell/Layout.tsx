@@ -405,6 +405,10 @@ export function TopActions({ children }: { children: ReactNode }) {
 
 export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
+  // While the next screen's code is still arriving the one on screen stays
+  // (`useRoute` moves in a transition); the column says so, and dims once the
+  // wait is long enough to notice (`styles.css`).
+  const { pending } = useRoute();
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <div className="ag-shell">
@@ -413,7 +417,12 @@ export function Layout({ children }: { children: ReactNode }) {
           turns it off. */}
       <AmbientLight />
       <Nav />
-      <main className="ag-main" id={MAIN_ID} tabIndex={-1}>
+      <main
+        className="ag-main"
+        id={MAIN_ID}
+        tabIndex={-1}
+        aria-busy={pending || undefined}
+      >
         {/* Above the page rather than in a bar of its own: the rail is this
             app's only chrome, and a second horizontal band would cost a phone
             the height the page needs. Both of these are on every screen, which
@@ -490,6 +499,42 @@ function LoadFailed({ error, retry }: { error: unknown; retry: () => void }) {
   );
 }
 
+/** Whether the nearest `<Loaded>` is asking again behind what it shows. */
+const Refreshing = createContext(false);
+
+/**
+ * True while the figures on screen are a reload's last answer and the new
+ * one is out: a page dims or marks what it shows (`aria-busy`) instead of
+ * swapping it for a skeleton.
+ */
+function useRefreshing(): boolean {
+  return useContext(Refreshing);
+}
+
+/**
+ * A block that dims while the query it sits under is asked again — a chart
+ * whose window was changed, a sector just picked — and says so to assistive
+ * tech (`aria-busy`). Its own element rather than a class on the children, so
+ * a page's layout is untouched; a `className` places it where one is needed.
+ */
+export function Refreshable({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const busy = useRefreshing();
+  return (
+    <div
+      className={className ? `ag-refreshing ${className}` : "ag-refreshing"}
+      aria-busy={busy || undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 /**
  * Render a query's four states once, so no page has to.
  *
@@ -522,5 +567,9 @@ export function Loaded<T>({
     );
   if (query.state === "failed")
     return <LoadFailed error={query.error} retry={query.retry} />;
-  return <>{children(query.data, query.reload)}</>;
+  return (
+    <Refreshing.Provider value={query.refreshing === true}>
+      {children(query.data, query.reload)}
+    </Refreshing.Provider>
+  );
 }

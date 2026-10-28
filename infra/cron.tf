@@ -155,9 +155,13 @@ resource "google_cloud_scheduler_job" "today_market" {
 # service rather than a job of its own. Anchored to New York so the ticks
 # after the US open and after each close keep their place across
 # daylight-saving changes: 00:35 before the European open (the one that pays
-# the day's chart rebase, with Yahoo quiet), 09:35 after the US open, 12:35
-# after the European close, 16:35 after the US close. Needs the app's origin
-# and its [api] token, like the warm.yml fallback.
+# the day's chart rebase, with Yahoo quiet), 04:35 as Europe's morning
+# readers arrive (the request log's one slow cluster a day sat four hours
+# after the first tick, with every memo expired and the instance restarted
+# since), 09:35 after the US open, 12:35 after the European close, 16:35
+# after the US close. Saturday too: a weekend reader found the persisted
+# memos past their grace and paid Friday's close over again. Needs the
+# app's origin and its [api] token, like the warm.yml fallback.
 resource "google_cloud_scheduler_job" "warm" {
   count = nonsensitive(var.api_token != "") && var.app_public_url != "" ? 1 : 0
 
@@ -166,7 +170,7 @@ resource "google_cloud_scheduler_job" "warm" {
   name        = "${var.cloud_run_service}-warm"
   description = "Price warm-up: POST /api/v1/warm for the books read lately"
 
-  schedule         = "35 0,9,12,16 * * 1-5"
+  schedule         = "35 0,4,9,12,16 * * 1-6"
   time_zone        = "America/New_York"
   attempt_deadline = "300s"
 

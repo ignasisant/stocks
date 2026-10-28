@@ -20,7 +20,7 @@
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
 import { toast } from "../../ui/toast";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useAccount, useCurrency } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import type { Query } from "../../shell/useApi";
@@ -79,7 +79,7 @@ export function Ledger({
     <Fold id="im-book" summary={summary} title={t("import.book_now")}>
       <Loaded query={book} skeleton={<Skeleton rows={2} />}>
         {(held) => (
-          <>
+          <Refreshable>
             <KpiGrid>
               <Kpi
                 help={t("import.metric_in_ledger")}
@@ -144,7 +144,7 @@ export function Ledger({
                 total={held.total}
               />
             ) : null}
-          </>
+          </Refreshable>
         )}
       </Loaded>
     </Fold>

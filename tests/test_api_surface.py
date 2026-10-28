@@ -167,7 +167,16 @@ def test_the_guest_list_is_not_silently_growing():
     # cached fundamentals like `/valuation`, no account goes into it.
     # 62: `GET /portfolio/attribution` — the Risk tab's waterfall over the
     # demo book, computed from the same history as `/risk`; no write, no spend.
-    assert len(guest.OPEN) == 62
+    # 63: `GET /ticker/{symbol}/options` — the analysts card's implied
+    # volatility and put/call line: market data, no account goes into it.
+    # 64: `GET /ticker/{symbol}/shorts` — the short-selling card: public
+    # registers and Yahoo's short interest, no account goes into it.
+    # 65: `POST /vitals` — a page's timings, a guest's as much as anyone's:
+    # one log line, nothing on disk, metered per address like `/client-error`.
+    # 68: `GET /learn`, `/learn/lessons/{lesson_id}` and `/learn/glossary` —
+    # the Learn page's curriculum, shipped files the same for everyone; a
+    # guest's progress stays in their browser.
+    assert len(guest.OPEN) == 68
 
 
 def test_every_route_a_guest_may_read_is_a_read():

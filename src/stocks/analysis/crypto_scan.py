@@ -15,6 +15,12 @@ What the file holds:
   and its date, market cap and fully diluted value, each in USD, EUR and GBP
   (the pair's own currency, so no FX hop sits between a EUR pair and its
   peak); circulating, total and maximum supply.
+* `dvol` — Deribit's options-implied volatility index for BTC and ETH: today,
+  its percentile over the past year, the range, a week ago.
+* `stablecoins` — DefiLlama's total stablecoin supply and its 30/90-day change.
+* `onchain` — `map`: coin code to the DefiLlama chain or protocol its token
+  stands for (persisted, rebuilt nightly from `/protocols` and `/v2/chains`);
+  `coins`: that entry's TVL, 30-day TVL change and 30-day fees and revenue.
 
 Failure policy, the sector scan's: a part that did not answer tonight keeps
 last night's figures, and the file is never published half-empty.
@@ -23,14 +29,21 @@ last night's figures, and the file is never published half-empty.
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import date
 from urllib.error import HTTPError
 
 from stocks import atomic, obs, storage
+from stocks.analysis import crypto_market as cm
 from stocks.config import DATA_DIR
 from stocks.data import crypto_market as source
-from stocks.data.crypto import GECKO_MARKET_IDS, QUOTE_CURRENCIES
+from stocks.data.crypto import (
+    CRYPTO_NAMES,
+    GECKO_MARKET_IDS,
+    QUOTE_CURRENCIES,
+    STABLECOINS,
+)
 
 SCAN_FILE = DATA_DIR / "crypto_scan.json"
 
@@ -151,6 +164,133 @@ def global_from(data: dict) -> dict:
     }
 
 
+# ------------------------------------------------- options vol and on-chain
+
+# Deribit lists DVOL for these two only.
+DVOL_COINS = ("BTC", "ETH")
+# DefiLlama tracks no TVL worth a line under this (dollars).
+MIN_TVL = 1_000_000.0
+# Pause between DefiLlama calls: ~4 per mapped coin, spread out.
+LLAMA_PAUSE_S = 0.5
+# Protocol categories whose symbol is a bridge, a foundation's wallet or an
+# exchange's reserve, not the coin's own protocol.
+_NOT_A_PROTOCOL = {
+    "Canonical Bridge", "Bridge", "Cross Chain Bridge", "Foundation", "Chain",
+    "CEX", "Bridge Aggregator", "Bridge Aggregators",
+}
+# Coins DefiLlama lists under another name (MKR became Sky), and the parent
+# ids whose API slug is not the id (`parent#maker` answers at `/sky`).
+_PROTOCOL_ALIASES = {"MKR": "maker"}
+_SLUG_FIX = {"maker": "sky"}
+
+
+def _protocol_key(row: dict) -> str:
+    parent = row.get("parentProtocol")
+    return str(parent).removeprefix("parent#") if parent else str(row.get("slug") or "")
+
+
+def map_coins(protocols: list[dict], chains: list[dict]) -> dict[str, dict]:
+    """Coin code -> the DefiLlama chain or protocol its token stands for.
+
+    A chain wins (the gas token IS the chain: ETH, SOL, AVAX), matched on the
+    CoinGecko id the curated map already carries. Otherwise a protocol whose
+    CoinGecko id or token symbol is the coin's, children of one parent
+    summed so Uniswap is one protocol rather than four versions. Anything
+    under `MIN_TVL` is left out: no line beats a line about nothing.
+    Bitcoin is skipped — its "chain TVL" is wrapped coins, not the network.
+    """
+    by_chain = {str(c["gecko_id"]): c for c in chains if c.get("gecko_id")}
+    groups: dict[str, list[dict]] = {}
+    for row in protocols:
+        if row.get("category") in _NOT_A_PROTOCOL:
+            continue
+        groups.setdefault(_protocol_key(row), []).append(row)
+    out: dict[str, dict] = {}
+    for code, gid in GECKO_MARKET_IDS.items():
+        if code == "BTC" or code in STABLECOINS:
+            continue
+        chain = by_chain.get(gid)
+        if chain is not None and (_num(chain.get("tvl")) or 0) >= MIN_TVL:
+            out[code] = {"kind": "chain", "slug": str(chain["name"]),
+                         "name": str(chain["name"])}
+            continue
+        alias = _PROTOCOL_ALIASES.get(code)
+        own = (CRYPTO_NAMES.get(code) or "").lower().replace(" ", "-")
+        best, best_tvl = None, 0.0
+        for key, rows in groups.items():
+            # Never on the symbol alone: "DOT" and "EOS" are also the tickers
+            # of unrelated small protocols.
+            hit = key in (alias, own) or any(r.get("gecko_id") == gid for r in rows)
+            tvl = sum(_num(r.get("tvl")) or 0 for r in rows)
+            if hit and tvl > best_tvl:
+                best, best_tvl = key, tvl
+        if best is not None and best_tvl >= MIN_TVL:
+            first = max(groups[best], key=lambda r: _num(r.get("tvl")) or 0)
+            name = re.sub(r"\s+v\d+(\.\d+)?$", "", str(first.get("name") or best),
+                          flags=re.IGNORECASE)
+            out[code] = {"kind": "protocol", "slug": _SLUG_FIX.get(best, best),
+                         "name": name}
+    return out
+
+
+def dvol_from(series: list[tuple[str, float]]) -> dict | None:
+    """Today's DVOL with its place in the series (percentile, range, week ago)."""
+    if len(series) < 30:
+        return None
+    closes = [v for _, v in series]
+    now = closes[-1]
+    return {
+        "value": now,
+        "percentile": cm.percentile_rank(closes, now),
+        "low": min(closes),
+        "high": max(closes),
+        "week_ago": closes[-8] if len(closes) >= 8 else None,
+        "as_of": series[-1][0],
+    }
+
+
+def stablecoins_from(series: list[tuple[str, float]]) -> dict | None:
+    if len(series) < 31:
+        return None
+    return {
+        "usd": series[-1][1],
+        "change_30d": cm.change_over(series, 30),
+        "change_90d": cm.change_over(series, 90),
+        "as_of": series[-1][0],
+    }
+
+
+def _fees_30d(slug: str, kind: str) -> float | None:
+    try:
+        return _num(source.llama_fees(slug, kind).get("total30d"))
+    except Exception as exc:  # noqa: BLE001 — most slugs have no fee adapter
+        if not isinstance(exc, HTTPError):
+            obs.warn("crypto.scan_failed", part=f"fees_{slug}", error=repr(exc)[:200])
+        return None
+
+
+def onchain_for(entry: dict) -> dict | None:
+    """TVL, its 30-day change and 30-day fees/revenue for one mapped coin."""
+    series = source.llama_tvl_series(entry["kind"], entry["slug"])
+    if not series:
+        return None
+    slug = entry["slug"]
+    if entry["kind"] == "chain":
+        slug = slug.lower().replace(" ", "-")
+    time.sleep(LLAMA_PAUSE_S)
+    fees = _fees_30d(slug, "dailyFees")
+    time.sleep(LLAMA_PAUSE_S)
+    revenue = _fees_30d(slug, "dailyRevenue") if fees is not None else None
+    return {
+        **entry,
+        "tvl": series[-1][1],
+        "tvl_change_30d": cm.change_over(series, 30),
+        "fees_30d": fees,
+        "revenue_30d": revenue,
+        "as_of": series[-1][0],
+    }
+
+
 def run_scan(*, dry_run: bool = False) -> dict[str, str]:
     """Fetch tonight's figures, merge over last night's, write. Status per part."""
     stored = load_scan()
@@ -158,6 +298,9 @@ def run_scan(*, dry_run: bool = False) -> dict[str, str]:
         "global": stored.get("global") or {},
         "fear_greed": stored.get("fear_greed") or [],
         "coins": stored.get("coins") or {},
+        "dvol": stored.get("dvol") or {},
+        "stablecoins": stored.get("stablecoins") or {},
+        "onchain": stored.get("onchain") or {"map": {}, "coins": {}},
     }
     status: dict[str, str] = {}
 
@@ -198,12 +341,61 @@ def run_scan(*, dry_run: bool = False) -> dict[str, str]:
         obs.warn("crypto.scan_failed", part="fear_greed", error=repr(exc)[:200])
         status["fear_greed"] = f"kept ({type(exc).__name__})"
 
+    for code in DVOL_COINS:
+        try:
+            fresh_vol = dvol_from(source.dvol(code))
+            if fresh_vol is not None:
+                payload["dvol"][code] = fresh_vol
+                status[f"dvol_{code.lower()}"] = f"ok ({fresh_vol['value']:.1f})"
+            else:
+                status[f"dvol_{code.lower()}"] = "kept (short)"
+        except Exception as exc:  # noqa: BLE001
+            obs.warn("crypto.scan_failed", part=f"dvol_{code}", error=repr(exc)[:200])
+            status[f"dvol_{code.lower()}"] = f"kept ({type(exc).__name__})"
+
+    try:
+        fresh_stables = stablecoins_from(source.stablecoin_supply())
+        if fresh_stables is not None:
+            payload["stablecoins"] = fresh_stables
+            status["stablecoins"] = "ok"
+        else:
+            status["stablecoins"] = "kept (short)"
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("crypto.scan_failed", part="stablecoins", error=repr(exc)[:200])
+        status["stablecoins"] = f"kept ({type(exc).__name__})"
+
+    try:
+        mapping = map_coins(source.llama_protocols(), source.llama_chains())
+        if mapping:
+            payload["onchain"]["map"] = mapping
+        status["onchain_map"] = f"ok ({len(mapping)} coins)"
+    except Exception as exc:  # noqa: BLE001 — the stored map still serves
+        obs.warn("crypto.scan_failed", part="onchain_map", error=repr(exc)[:200])
+        status["onchain_map"] = f"kept ({type(exc).__name__})"
+    done = 0
+    for code, entry in sorted((payload["onchain"].get("map") or {}).items()):
+        time.sleep(LLAMA_PAUSE_S)
+        try:
+            row = onchain_for(entry)
+        except Exception as exc:  # noqa: BLE001 — this coin keeps last night's
+            obs.warn("crypto.scan_failed", part=f"onchain_{code}", error=repr(exc)[:200])
+            continue
+        if row is not None:
+            payload["onchain"].setdefault("coins", {})[code] = row
+            done += 1
+    status["onchain"] = f"ok ({done}/{len(payload['onchain'].get('map') or {})} coins)"
+
     payload["saved"] = date.today().isoformat()
     if dry_run:
         sample = {
             **payload,
             "fear_greed": payload["fear_greed"][-3:],
             "coins": {k: payload["coins"][k] for k in list(payload["coins"])[:2]},
+            "onchain": {
+                "map": payload["onchain"].get("map"),
+                "coins": {k: v for k, v in list(
+                    (payload["onchain"].get("coins") or {}).items())[:3]},
+            },
         }
         print(json.dumps(sample, indent=1, default=str))
     elif payload["coins"] or payload["global"] or payload["fear_greed"]:

@@ -135,6 +135,7 @@ const TABLE_BLOCKS = [
   "rotation",
   "factors",
   "cross",
+  "positioning",
 ];
 const tablesDown = (reason: string): TrendTables => ({
   blocks: TABLE_BLOCKS.map((block) => ({

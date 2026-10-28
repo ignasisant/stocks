@@ -82,6 +82,11 @@ def _cik_map() -> dict[str, str]:
     return _CIK_MAP or {}
 
 
+def all_ciks() -> set[int]:
+    """Every CIK the SEC ticker map lists (US listings)."""
+    return {int(c) for c in _cik_map().values()}
+
+
 def _display_title(title: str) -> str:
     """SEC titles are often shouty ("MICROSOFT CORP"); title-case all-caps."""
     return title.title() if title.isupper() else title

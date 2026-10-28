@@ -654,6 +654,22 @@ def test_net_debt_over_a_loss_is_no_multiple():
     assert compute_metrics(raw)["net_debt_ebitda"] is None
 
 
+def test_net_cash_reads_as_net_cash_not_an_older_years_debt():
+    # Elastic: Yahoo blanks "Net Debt" in the year cash overtook debt, and the
+    # row's newest value was then a year it still owed more than it held.
+    raw = sample_raw()
+    raw.balance.loc["Net Debt"] = [None, 50e9, 50e9, 50e9, 50e9]
+    raw.balance.loc["Total Debt"] = [60e9] * 5
+    raw.balance.loc["Cash Cash Equivalents And Short Term Investments"] = [138e9] * 5
+    m = compute_metrics(raw)
+    assert m["net_debt_ebitda"] == pytest.approx(-78 / 130)
+    assert verdict("net_debt_ebitda", m["net_debt_ebitda"]) == ("net cash", "green")
+    # No debt line in that column: the quote's own totals, never the old year.
+    raw.balance = raw.balance.drop(index="Total Debt")
+    raw.info.update(totalDebt=10e9, totalCash=75e9)
+    assert compute_metrics(raw)["net_debt_ebitda"] == pytest.approx(-65 / 130)
+
+
 def test_a_dividend_the_feed_got_wrong_is_logged_not_kept(monkeypatch):
     from stocks.analysis import fundamentals
 

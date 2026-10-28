@@ -27,7 +27,7 @@ class Destination:
 
 
 # In the order the design's left menu lists them: Inicio on its own, then the
-# portfolio pages, then the market ones, then the account. The paths are the
+# portfolio pages, then the market ones, then Learn, then the account. The paths are the
 # app's first ones, kept so old links and bookmarks still land; the default
 # page is served at the root.
 DESTINATIONS: tuple[Destination, ...] = (
@@ -47,6 +47,7 @@ DESTINATIONS: tuple[Destination, ...] = (
                 "nav.section_market"),
     Destination("earnings", "nav.earnings", "calendar_month",
                 "nav.section_market"),
+    Destination("learn", "nav.learn", "school", "nav.section_learn"),
     Destination("profile", "nav.profile", "account_circle",
                 "nav.section_account"),
 )

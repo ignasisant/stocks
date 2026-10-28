@@ -27,13 +27,16 @@
   --v-track: var(--v-sunken);
   --v-font: var(--font-sans, var(--ag-font-body));
   --v-mono: var(--font-mono, var(--ag-font-mono));
-  /* The ring's slices, largest first — the Portfolio donut's order. */
-  --v-c1: var(--ag-brand-accent);
-  --v-c2: var(--ag-info);
-  --v-c3: var(--ag-sma-fast);
-  --v-c4: var(--ag-candle-up);
-  --v-c5: var(--ag-warn);
-  --v-c6: var(--ag-candle-down);
+  /* The ring's slices, largest first — the Portfolio donut's order — in the
+     DS's validated series hues, then the folded "Other". They read at 3:1 on
+     the light card as on the dark one, so the light theme keeps them. Never
+     green or red: those say up and down. */
+  --v-c1: var(--ag-series-1);
+  --v-c2: var(--ag-series-2);
+  --v-c3: var(--ag-series-3);
+  --v-c4: var(--ag-series-4);
+  --v-c5: var(--ag-series-5);
+  --v-other: var(--ag-series-other);
 }
 
 :root[data-theme="light"] {
@@ -51,12 +54,6 @@
   --v-up: var(--color-text-success, var(--ag-success-fill));
   --v-down: var(--color-text-danger, var(--ag-critical-fill));
   --v-accent: var(--ag-brand-cta);
-  --v-c1: var(--ag-brand-cta);
-  --v-c2: var(--ag-info-deep);
-  --v-c3: var(--ag-warn-orange);
-  --v-c4: var(--ag-success-fill);
-  --v-c5: var(--ag-warn);
-  --v-c6: var(--ag-critical-fill);
 }
 
 * {

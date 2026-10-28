@@ -2,8 +2,8 @@
 # Cloud Run (see scripts/deploy.sh), a source deploy of this image. Serves the
 # app — landing, React shell and HTTP API — on $PORT (default 8501).
 #
-# Secrets: bind-mount the real .streamlit/secrets.toml (what deploy/ does), or
-# set STREAMLIT_SECRETS_TOML to its full contents and the entrypoint writes it
+# Secrets: bind-mount the real secrets.toml (what deploy/ does), or
+# set STOCKS_SECRETS_TOML to its full contents and the entrypoint writes it
 # to disk at boot. [storage] may alternatively come in as individual
 # STOCKS_STORAGE_* env vars (see src/stocks/storage.py).
 
@@ -78,6 +78,12 @@ COPY --chown=appuser:appuser . .
 # Editable install of the project itself (default): stocks.config.PROJECT_ROOT
 # resolves to /app, so data/ and watchlist.yaml live next to the source.
 RUN uv sync --frozen --no-dev
+
+# Compressed siblings of the hashed bundle files (web/precompress.py): each
+# chunk gzip'd and brotli'd once here, at the highest level, rather than
+# gzip-9'd by the middleware on the one throttled CPU every time a browser
+# asks for it. `brotli` is a build-time extra, not a runtime dependency.
+RUN uv run --frozen --no-dev --with brotli python -m stocks.web.precompress
 
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD \

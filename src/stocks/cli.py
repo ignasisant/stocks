@@ -79,6 +79,18 @@ def cmd_sector_scan(args: argparse.Namespace) -> None:
         print(f"{sector}: {result}")
 
 
+def cmd_holdings_13f(args: argparse.Namespace) -> None:
+    """Keep the SEC 13F holders index current (data/thirteenf.py): the newest
+    quarterly data set when there is one, then CUSIP -> ticker for as many
+    names as the time budget allows. Cheap when nothing is new."""
+    from stocks.data import frames, thirteenf
+
+    print(f"13F index: {thirteenf.build(force=args.force)}")
+    done, left = thirteenf.resolve(budget_s=args.budget_s)
+    print(f"tickers mapped: {done}, still open: {left}")
+    print(f"frames: {frames.ensure().get('fetched') or 'none'}")
+
+
 def cmd_crypto_scan(args: argparse.Namespace) -> None:
     """Tonight's crypto market figures. Market-wide, so no account fan-out."""
     from stocks.analysis.crypto_scan import run_scan
@@ -96,6 +108,14 @@ def cmd_today_market(args: argparse.Namespace) -> None:
     day = date.fromisoformat(args.day) if args.day else None
     langs = tuple(args.lang) if args.lang else ("es", "en")
     for part, result in run(day, langs, dry_run=args.dry_run).items():
+        print(f"{part}: {result}")
+
+
+def cmd_shorts(args: argparse.Namespace) -> None:
+    """Refresh the short-selling registers (AFM, BaFin, FCA) and FINRA volume."""
+    from stocks.data import shorts
+
+    for part, result in shorts.refresh(force=args.force).items():
         print(f"{part}: {result}")
 
 
@@ -466,7 +486,7 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
            # stocks.obs already logs every request, with its latency.
            "--no-access-log"]
     # From the repo root whatever the caller's directory: the secrets file is
-    # looked up as `.streamlit/secrets.toml` relative to the working directory,
+    # looked up as `secrets.toml` relative to the working directory,
     # and a server started from `frontend/app` boots with no sign-in at all.
     from stocks.config import PROJECT_ROOT
 
@@ -1047,6 +1067,12 @@ def cmd_logs(args: argparse.Namespace) -> None:
             # probe and the assets) — the rollup reads both streams.
             entries = fetch(args.limit, http=False)
             entries += fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
+        elif args.logs_command == "connector" and not files:
+            entries = fetch(args.limit, http=False, extra=lq.CONNECTOR_EXTRA)
+        elif args.logs_command == "stats" and getattr(args, "http", False) and not files:
+            # Per-route latency: the access log minus the probe and the assets,
+            # which are not routes anyone sits waiting on.
+            entries = fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
         else:
             entries = fetch(args.limit)
     except lq.LogsError as exc:
@@ -1057,13 +1083,19 @@ def cmd_logs(args: argparse.Namespace) -> None:
         print(f"{len(entries)} entries -> {out}")
         return
     if args.logs_command == "stats":
-        print(lq.render_stats(lq.stats(entries, by=args.by), by=args.by))
+        if getattr(args, "http", False):
+            print(lq.render_http_stats(lq.http_stats(entries)))
+        else:
+            print(lq.render_stats(lq.stats(entries, by=args.by), by=args.by))
         return
     if args.logs_command == "usage":
         print(lq.render_usage(lq.usage(entries)))
         return
     if args.logs_command == "funnel":
         print(lq.render_funnel(lq.funnel(entries)))
+        return
+    if args.logs_command == "connector":
+        print(lq.render_connector(lq.connector(entries)))
         return
     if args.logs_command == "skills":
         from stocks.web import feedback
@@ -1362,6 +1394,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_sector.set_defaults(func=cmd_sector_scan)
 
+    p_13f = sub.add_parser(
+        "holdings-13f",
+        help="refresh the SEC 13F holders index and the XBRL frames (weekly cron)",
+    )
+    p_13f.add_argument(
+        "--force", action="store_true",
+        help="rebuild the index even when the newest data set is already in",
+    )
+    p_13f.add_argument(
+        "--budget-s", type=float, default=600.0,
+        help="seconds to spend mapping CUSIPs to tickers (OpenFIGI, resumable)",
+    )
+    p_13f.set_defaults(func=cmd_holdings_13f)
+
     p_crypto = sub.add_parser(
         "crypto-scan",
         help="fetch coin peaks, supply, market dominance and Fear & Greed (nightly cron)",
@@ -1388,6 +1434,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="build and print the read without writing the stored file",
     )
     p_today.set_defaults(func=cmd_today_market)
+
+    p_shorts = sub.add_parser(
+        "shorts",
+        help="refresh the EU net-short registers and FINRA short volume (daily cron)",
+    )
+    p_shorts.add_argument(
+        "--force", action="store_true",
+        help="download even a register fetched less than a day ago",
+    )
+    p_shorts.set_defaults(func=cmd_shorts)
 
     p_ntest = sub.add_parser(
         "notify-test",
@@ -1691,7 +1747,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_err = logs_sub.add_parser("errors", help="errors only (severity>=ERROR)")
     _common(p_err)
     p_err.set_defaults(since="24h", trace=True)
-    p_stats = logs_sub.add_parser("stats", help="counts + latency per event")
+    p_stats = logs_sub.add_parser(
+        "stats",
+        help="counts + latency per event; with --http, per route from the "
+             "access log (p50/p90/p95/max, and every request over 10s)")
     _common(p_stats, with_output=False)
     p_stats.add_argument("--level", help="minimum severity (INFO/WARNING/ERROR)")
     p_stats.add_argument("--by", default="event",
@@ -1708,6 +1767,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="landing view -> app entry -> signup -> first import, by day and source")
     _common(p_fun, with_output=False)
     p_fun.set_defaults(since="14d", limit=20000)
+    p_con = logs_sub.add_parser(
+        "connector",
+        help="Claude connector: Profile tab seen (by source) -> address copied "
+             "-> approved -> first tool call, in accounts")
+    _common(p_con, with_output=False)
+    p_con.set_defaults(since="30d", limit=20000)
     p_skl = logs_sub.add_parser(
         "skills",
         help="per chat skill: answers, total and mean cost, thumbs up/down "

@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterable
 from datetime import date as _date
 from datetime import timedelta
 
-from stocks import atomic
+from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR
 from stocks.data.http import get_json
 
@@ -102,6 +102,8 @@ def _cache() -> dict[str, float]:
 
 def _load_cache() -> dict[str, float]:
     if not FX_CACHE.exists():
+        _restore()
+    if not FX_CACHE.exists():
         return {}
     try:
         return json.loads(FX_CACHE.read_text())
@@ -111,6 +113,63 @@ def _load_cache() -> dict[str, float]:
 
 def _save_cache(cache: dict[str, float]) -> None:
     atomic.write_json(FX_CACHE, cache, indent=0, sort_keys=True)
+    _mirror()
+
+
+# The file's bucket copy is refreshed at most once per this many seconds: a
+# backfill writes it once per missing date, and every copy is the whole file.
+_MIRROR_EVERY_S = 30.0
+_mirror_lock = threading.Lock()
+_mirrored_at = 0.0
+_mirror_timer: threading.Timer | None = None
+
+
+def _restore() -> None:
+    """The last process's history, when this one starts without the file.
+
+    Once, on the first lookup: a container starts empty, and without the copy
+    every rate ever asked for was asked of the ECB again — one request and one
+    rewrite of the file per date, inside whichever request wanted it.
+    """
+    try:
+        if storage.enabled():
+            storage.restore(FX_CACHE)
+    except Exception as exc:  # noqa: BLE001 — a missing copy is a refetch, not an error
+        obs.warn("fx.restore_failed", error_type=type(exc).__name__, error=str(exc)[:300])
+
+
+def _mirror() -> None:
+    """Copy the file to the bucket: now when the last copy is old enough, else
+    once, when it is. A copy lost to a restart is a refetch, so the timer is a
+    daemon and nothing waits on it."""
+    global _mirrored_at, _mirror_timer
+    if not storage.enabled():
+        return
+    with _mirror_lock:
+        wait = _mirrored_at + _MIRROR_EVERY_S - time.monotonic()
+        if wait > 0:
+            if _mirror_timer is None:
+                _mirror_timer = threading.Timer(wait, _mirror_now)
+                _mirror_timer.daemon = True
+                _mirror_timer.start()
+            return
+        _mirrored_at = time.monotonic()
+    _push()
+
+
+def _mirror_now() -> None:
+    global _mirrored_at, _mirror_timer
+    with _mirror_lock:
+        _mirror_timer = None
+        _mirrored_at = time.monotonic()
+    _push()
+
+
+def _push() -> None:
+    try:
+        storage.persist(FX_CACHE)
+    except Exception as exc:  # noqa: BLE001 — the next save tries again
+        obs.warn("fx.persist_failed", error_type=type(exc).__name__, error=str(exc)[:300])
 
 
 def rate_on(day: str | _date, base: str, quote: str) -> float:

@@ -398,6 +398,7 @@
   "chat.debate_failed": "Esta parte no respondió a tiempo.",
   "chat.debate_arguing": "Argumentando…",
   "chat.connect_cta": "Iniciar sesión con {provider}",
+  "chat.claude_connector_nudge": "¿Usas Claude? Conecta TopStocks y pregunta por tu cartera desde Claude, sin clave.",
   "chat.connect_help": "Entra con {provider} y sus modelos responden con tu cuenta y tus créditos, sin copiar claves. Puedes revocarlo en sus ajustes.",
   "chat.connect_or": "o pega una clave",
   "chat.connect_working": "Conectando {provider}…",

@@ -145,12 +145,16 @@ export type TrendRow = {
   spy_weight: number | null;
   /** Inflation with food and energy taken out: a second level, not a change. */
   core: number | null;
+  /** Positioning rows: net position as a % of open interest. */
+  net_pct?: number | null;
+  /** Positioning rows: net position in standard deviations from its 3-year mean. */
+  zscore?: number | null;
   /** Date of the row's last observation; what a stale gauge's note quotes. */
   as_of?: string | null;
 };
 
 export type TrendBlock = {
-  /** indices | gauges | rates | inflation | rotation | cross */
+  /** indices | gauges | rates | inflation | rotation | cross | positioning */
   block: string;
   /** How to read `changes`: percent (a fraction), basis_points, or points. */
   unit: string;

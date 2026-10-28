@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { ApiError } from "../../shell/api";
+import { ApiError, forgetUnder } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { toast } from "../../ui/toast";
 import { Loaded } from "../../shell/Layout";
@@ -47,6 +47,11 @@ export function Splits({
   // 0 is "not asked yet", and the state the page returns to after writing: the
   // findings were spent, and re-scanning is another round-trip per holding.
   const [asked, setAsked] = useState(0);
+  // Each scan is a fresh look: past the memo, which would answer the last one.
+  const rescan = () => {
+    forgetUnder(["/import/splits"]);
+    setAsked((n) => n + 1);
+  };
   const scan = useApi(async () => (asked === 0 ? null : await scanSplits()), [asked]);
   const scanning = asked > 0 && scan.state === "loading";
   const gaps =
@@ -90,7 +95,7 @@ export function Splits({
                   setAsked(0);
                   onApplied();
                 }}
-                onStale={() => setAsked((n) => n + 1)}
+                onStale={rescan}
               />
             )
           }
@@ -101,9 +106,7 @@ export function Splits({
         <button
           className="im-btn im-btn-outline im-btn-block"
           disabled={scanning}
-          onClick={() => {
-            setAsked((n) => n + 1);
-          }}
+          onClick={rescan}
           type="button"
         >
           {t("import.scan_splits")}

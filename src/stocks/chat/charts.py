@@ -33,7 +33,9 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
+import numpy as np
 import pandas as pd
 
 from stocks import obs
@@ -472,7 +474,8 @@ def book_index(hist: pd.DataFrame | None, twr: pd.Series | None, window: str,
         return None
     returns.index = naive_dates(returns.index)
     if window in _BOOK_DAYS:
-        cut = returns.index.max() - pd.Timedelta(days=_BOOK_DAYS[window])
+        last = cast(pd.Timestamp, returns.index.max())
+        cut = last - pd.Timedelta(days=_BOOK_DAYS[window])
         returns = returns[returns.index >= cut]
     elif window == "ytd":
         year = (today or date.today()).year
@@ -481,7 +484,7 @@ def book_index(hist: pd.DataFrame | None, twr: pd.Series | None, window: str,
         return None
     days = (naive_dates(hist.index) if hist is not None and len(hist)
             else returns.index)
-    earlier = days[days < returns.index[0]]
+    earlier = days[np.asarray(days < returns.index[0])]
     opened = earlier[-1] if len(earlier) else returns.index[0] - pd.Timedelta(days=1)
     levels = 100 * (1 + returns).cumprod()
     return pd.concat([pd.Series([100.0], index=pd.DatetimeIndex([opened])), levels])
@@ -517,7 +520,7 @@ def _to_base(closes: pd.Series, currency: str, base: str) -> pd.Series | None:
 def _since(closes: pd.Series, start: pd.Timestamp) -> pd.Series | None:
     """`closes` from the last one at or before `start`, the book's first day:
     a benchmark shut that day opens on its close before it."""
-    before = closes.index[closes.index <= start]
+    before = closes.index[np.asarray(closes.index <= start)]
     out = closes[closes.index >= (before[-1] if len(before) else start)]
     return out if len(out) >= 2 else None
 

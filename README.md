@@ -13,7 +13,7 @@ hold.
 
 ```bash
 uv sync                                        # 1. install (creates .venv)
-#    2. create .streamlit/secrets.toml with the Google OAuth client
+#    2. create secrets.toml with the Google OAuth client
 #       — see "Login (web app)" below
 uv run stocks dashboard                        # 3. opens the app in the browser
 ```
@@ -73,7 +73,7 @@ Configure:
 1. Create a Google OAuth client (Web application) at
    <https://console.cloud.google.com/apis/credentials> with redirect URI
    `http://localhost:8501/oauth2callback`.
-2. Create `.streamlit/secrets.toml` with an `[auth]` section holding
+2. Create `secrets.toml` with an `[auth]` section holding
    `client_id`, `client_secret`, `redirect_uri` and a random `cookie_secret`
    (`python -c "import secrets; print(secrets.token_hex(32))"`).
 3. `uv run stocks dashboard` — the portfolio pages show the sign-in screen
@@ -104,6 +104,19 @@ with a hand-kept holiday table (NYSE, Xetra, BME, LSE) behind the clock.
 ```toml
 [finnhub]
 api_key = "..."   # or FINNHUB_API_KEY in the environment
+```
+
+### Daily closes when Yahoo fails (`[twelvedata]`)
+
+When Yahoo refuses a download or answers a blank frame, the US names it left
+out can get their daily history from a free [Twelve Data](https://twelvedata.com)
+key (8 requests a minute, 800 a day, US listings only, split-adjusted). Bars
+carry no dividend-adjusted close and are never kept in a book's saved base.
+Optional; unset means Yahoo only.
+
+```toml
+[twelvedata]
+api_key = "..."   # or TWELVEDATA_API_KEY in the environment
 ```
 
 ### Persistent user data (deploys)
@@ -139,7 +152,7 @@ cloud-init live beside it in [`deploy/`](deploy).
 Short version, on the VM:
 
 ```bash
-scp .streamlit/secrets.toml ubuntu@<VM_IP>:/opt/aguait-stocks/deploy/secrets.toml
+scp secrets.toml ubuntu@<VM_IP>:/opt/aguait-stocks/deploy/secrets.toml
 echo "SITE_ADDRESS=<ip-with-dashes>.sslip.io" > deploy/.env
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
@@ -147,7 +160,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 Then add `https://<ip-with-dashes>.sslip.io/oauth2callback` to the Google
 OAuth client and set the same URL as `[auth] redirect_uri` in `secrets.toml`.
 The image also runs unchanged on any other container host; there,
-`STREAMLIT_SECRETS_TOML` (full `secrets.toml` contents) is written to disk by
+`STOCKS_SECRETS_TOML` (full `secrets.toml` contents) is written to disk by
 `scripts/docker-entrypoint.sh` at boot instead of bind-mounting the file.
 
 Local check of the same image:
@@ -155,7 +168,7 @@ Local check of the same image:
 ```bash
 docker build -t topstocks .
 docker run --rm -p 8501:8501 \
-  -e STREAMLIT_SECRETS_TOML="$(cat .streamlit/secrets.toml)" topstocks
+  -e STOCKS_SECRETS_TOML="$(cat secrets.toml)" topstocks
 ```
 
 ## Usage
@@ -813,7 +826,7 @@ in `tests/test_api.py`, so a new one fails there until someone argues for it.
 ### Configuring it
 
 ```toml
-# .streamlit/secrets.toml   (or API_TOKEN in the environment)
+# secrets.toml   (or API_TOKEN in the environment)
 [api]
 token = "a long random string"
 ```
@@ -830,7 +843,7 @@ tokens and its own strings before anyone is signed in.
 ### Calling it
 
 ```bash
-TOKEN=$(grep -A1 '^\[api\]' .streamlit/secrets.toml | sed -n 's/token = "\(.*\)"/\1/p')
+TOKEN=$(grep -A1 '^\[api\]' secrets.toml | sed -n 's/token = "\(.*\)"/\1/p')
 BASE=http://localhost:8501/api/v1
 
 curl -s "$BASE/health"
@@ -1181,7 +1194,7 @@ Setup (one-time):
    `STOCKS_STORAGE_*` values (same creds the app's deploy uses).
 3. `./scripts/setup_notify_secrets.sh` — pushes every GitHub Actions secret
    (harvesting `CHAT_ENC_KEY` and the `FREE_LLM_*` keys from your local
-   `.streamlit/secrets.toml`) and prints the `[telegram]` block to add to
+   `secrets.toml`) and prints the `[telegram]` block to add to
    the deploy's `secrets.toml`. Needs `gh auth login` once.
 4. Deploy the webhook Worker and point the bot at it — see
    `workers/telegram-webhook/README.md`. Rollback any time with

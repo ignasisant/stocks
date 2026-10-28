@@ -118,7 +118,16 @@ def _held(db: str) -> tuple[list, list[str]]:
     Relabelled first (`transfers.relabel`): a book moved between brokers holds
     one position under two spellings, and downloading the other one prices
     nothing.
+
+    Memoized per version of the file: the memos over it miss together (a book
+    just imported, a download just expired), and each of them replayed the
+    ledger for the same answer.
     """
+    return _held_at(db, db_mtime(db))
+
+
+@ttl_cache(_LEDGER_TTL, max_entries=32)
+def _held_at(db: str, mtime: float) -> tuple[list, list[str]]:
     txs = transfers.relabel(all_transactions(Path(db)))
     held = [t for t in txs if t.action in HELD_ACTIONS]
     return txs, sorted({t.ticker for t in held})
@@ -179,6 +188,7 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     # `yahoo.rate_limit_exhausted`, and callers price the book without these
     # frames (`_self_priced_positions`): weather, not a crash to page on.
     asked = [t for t in tickers if t not in settled]
+    fallback: set[str] = set()
     # What the corner banner reads while this runs (`GET /progress`): the step,
     # the names it has done, and how long the same step took last time.
     first = "prices.full" if not base else "prices.rebase" if rebase else "prices.tail"
@@ -207,9 +217,16 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         rec["rebase"] = rebase or not base
         if stale:
             progress.step("prices.full", total=len(stale))
-            frames.update(
-                fetch_many(stale, period=period, auto_adjust=False, currencies=currencies)
+            got = fetch_many(
+                stale, period=period, auto_adjust=False, currencies=currencies
             )
+            frames.update(got)
+            # A keyed fallback's bars (`fetch._eod_fallback`) stand in for
+            # this render only: they carry no dividend-adjusted close, and
+            # laid under the base they would hide Yahoo's answer until the
+            # next rebase. Left out of the base, the next refresh asks Yahoo.
+            fallback = {t for t, f in got.items() if f.attrs.get("source")}
+            rec["fallback"] = len(fallback)
             progress.tick(len(stale))
         rec["full"] = len(stale)
     # Judged here, at the download, and only here: a gutted download memoised
@@ -218,7 +235,12 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     # back from disk after a restart without a download — re-judging those
     # would be asking `fetch.unlisted` about a download this process never made.
     complete_download(_close_series(frames, "Close"), tickers)
-    _keep_base(db, since, frames, time.time() if rebase or not base else rebased_at)
+    _keep_base(
+        db,
+        since,
+        {t: f for t, f in frames.items() if t not in fallback},
+        time.time() if rebase or not base else rebased_at,
+    )
     return frames
 
 
@@ -606,6 +628,7 @@ def _clear_held(expire: bool = True) -> None:
     """Drop the download and both readings of it together — a refresh that
     cleared one would have the other re-derived from the frames it kept."""
     _held_frames.cache_clear(expire)  # ty: ignore[unresolved-attribute]
+    _held_at.cache_clear(expire)  # ty: ignore[unresolved-attribute]
     with _readings_lock:
         _READINGS.clear()
     _clear_adjusted(expire)
@@ -921,7 +944,10 @@ def window_closes(ticker: str, days: str) -> pd.Series:
     return on_axis(df["Close"], pd.DatetimeIndex(days.split(",")))
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=64, persist="earnings")
+# `disk_max` on the per-name memos below: the memo directory is RAM on Cloud
+# Run (`cache.MEMO_DIR`), and eight memos each keeping the default 256 files
+# was tens of MB of the 1 GiB for names nobody had opened in a week.
+@ttl_cache(_EVENTS_TTL, max_entries=64, persist="earnings", disk_max=64)
 def earnings(ticker: str):
     """(all known earnings dates, reported results) — one yfinance pass.
 
@@ -1012,7 +1038,7 @@ def custody(db: str, mtime: float) -> dict[str, dict[str, Custody]]:
     return by_position(all_transactions(Path(db)), to_base=lambda a, c, d: a)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32, persist="fundamentals")
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="fundamentals", disk_max=64)
 def fundamentals(ticker: str):
     """One yfinance fundamentals pull: info, income statements, cash flow.
 
@@ -1020,9 +1046,13 @@ def fundamentals(ticker: str):
     and the moat score — and each used to be its own cached call. One pull,
     one cache entry, three derivations.
     """
+    from stocks.data import esef
     from stocks.data.fundamentals import fetch_fundamentals
 
-    return fetch_fundamentals(ticker)
+    # EU/UK issuers' audited annual statements (ESEF) over Yahoo's. Disk only:
+    # the first sight of a name returns Yahoo's frames and fetches the filing
+    # in the background, so no page waits on it.
+    return esef.overlay(fetch_fundamentals(ticker))
 
 
 # The review page scores a whole book plus its watchlist — fifty names is a
@@ -1049,7 +1079,13 @@ def review_metrics(ticker: str) -> dict:
 # map's "then" point. A filing lands once a quarter at most, so a day is fresh
 # and a week still right; kept apart from `review_metrics` so the API's row
 # metrics stay today's.
-@ttl_cache(24 * 3600.0, max_entries=256, stale_s=7 * 86400.0, persist="review_history")
+@ttl_cache(
+    24 * 3600.0,
+    max_entries=256,
+    stale_s=7 * 86400.0,
+    persist="review_history",
+    disk_max=128,
+)
 def review_history(ticker: str) -> list[dict]:
     """`filed_history` over `fundamentals(ticker)`: [{filed, then, base}]."""
     from stocks.analysis.fundamentals import filed_history
@@ -1058,7 +1094,7 @@ def review_history(ticker: str) -> list[dict]:
         return filed_history(fundamentals(ticker))
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32, persist="estimates")
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="estimates", disk_max=64)
 def estimates(ticker: str):
     """Analyst price targets, EPS/revenue consensus and ratings.
 
@@ -1070,7 +1106,33 @@ def estimates(ticker: str):
     return fetch_estimates(ticker)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32, persist="valuation")
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="rating_changes", disk_max=64)
+def rating_changes(ticker: str) -> list[dict]:
+    """Recent upgrades, downgrades, initiations and target changes, newest first.
+
+    A refusal raises (never memoized as "no changes"); a name Yahoo has no
+    coverage for answers `[]`.
+    """
+    from stocks.data.estimates import fetch_rating_changes
+    from stocks.data.estimates import rating_changes as fold
+
+    return fold(fetch_rating_changes(ticker), date.today())
+
+
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="options", disk_max=64)
+def options_view(ticker: str) -> dict | None:
+    """ATM implied volatility and put/call ratios; None when nothing is listed.
+
+    Cold this is an expiry list plus up to four chains (~3-6 s), which is why
+    it has its own endpoint and slot. A refusal raises, so a throttled minute
+    is never cached as "no options".
+    """
+    from stocks.data.options import fetch_chains, summarize
+
+    return summarize(fetch_chains(ticker), date.today())
+
+
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="valuation", disk_max=64)
 def valuation(ticker: str) -> dict:
     """P/E reconstructed against its own history: {source, pe, stats, current}.
 
@@ -1943,7 +2005,13 @@ def dividend_payments(db: str, mtime: float, base: str = "EUR") -> list:
     return _entitled(db, mtime, base)[2]
 
 
-@ttl_cache(21600.0, max_entries=16, persist="ex_dividends")
+@ttl_cache(
+    21600.0,
+    max_entries=16,
+    stale_s=_HELD_STALE,
+    quiet_s=21600.0,
+    persist="ex_dividends",
+)
 def ex_dividends(tickers: tuple[str, ...]) -> list:
     """The next declared ex-date per name, inside a year — `DividendEvent`s.
 
@@ -2165,7 +2233,21 @@ def today_market() -> dict:
     return today_market.load()
 
 
-@ttl_cache(21600.0, max_entries=16, persist="earnings_calendar")
+# The market-wide and calendar memos below serve stale for as long as the
+# book's own prices do (`_HELD_STALE`), with the refresh in the background:
+# under the default grace (three ttls) every one of them was cold again
+# within the hour on a quiet instance — the request log's Home market card
+# and watchlist rows at twenty seconds on a Sunday — and the figure a
+# weekend reader waited for was Friday's close either way. Past `quiet_s`
+# the response says how old it is (`X-Data-Stale-Since`), and the shell
+# asks again once the refresh lands.
+@ttl_cache(
+    21600.0,
+    max_entries=16,
+    stale_s=_HELD_STALE,
+    quiet_s=21600.0,
+    persist="earnings_calendar",
+)
 def earnings_calendar(tickers: tuple[str, ...]):
     """(upcoming events, past results) for a set of names, in ONE parallel pass.
 
@@ -2190,7 +2272,13 @@ def earnings_calendar(tickers: tuple[str, ...]):
 _PULSE_HISTORY = "2y"
 
 
-@ttl_cache(_PRICES_TTL, max_entries=2, persist="pulse_closes")
+@ttl_cache(
+    _PRICES_TTL,
+    max_entries=2,
+    stale_s=_HELD_STALE,
+    quiet_s=_HELD_QUIET,
+    persist="pulse_closes",
+)
 def pulse_closes() -> dict[str, pd.Series]:
     """Close series for every symbol the pulse reads, in ONE bulk request."""
     from stocks.analysis.sentiment import all_tickers
@@ -2198,7 +2286,9 @@ def pulse_closes() -> dict[str, pd.Series]:
     return load_closes(all_tickers(), period=_PULSE_HISTORY)
 
 
-@ttl_cache(21600.0, max_entries=1, persist="pulse_rates")
+@ttl_cache(
+    21600.0, max_entries=1, stale_s=_HELD_STALE, quiet_s=21600.0, persist="pulse_rates"
+)
 def pulse_rates() -> dict[str, pd.Series]:
     """The FRED series the composite's credit input needs.
 
@@ -2239,7 +2329,13 @@ def benchmark_sectors() -> dict[str, float]:
     return sector_weights("SPY")
 
 
-@ttl_cache(_PRICES_TTL, max_entries=32, persist="watchlist_closes")
+@ttl_cache(
+    _PRICES_TTL,
+    max_entries=32,
+    stale_s=_HELD_STALE,
+    quiet_s=_HELD_QUIET,
+    persist="watchlist_closes",
+)
 def watchlist_closes(tickers: tuple[str, ...]) -> dict[str, pd.Series]:
     """A year of closes for a set of names, in ONE bulk download.
 
@@ -2285,7 +2381,13 @@ def stored_action(path: str, mtime: float) -> dict:
     return out if isinstance(out, dict) else {}
 
 
-@ttl_cache(21600.0, max_entries=1, persist="pulse_rate_rows")
+@ttl_cache(
+    21600.0,
+    max_entries=1,
+    stale_s=_HELD_STALE,
+    quiet_s=21600.0,
+    persist="pulse_rate_rows",
+)
 def pulse_rate_rows() -> dict[str, pd.Series]:
     """Every FRED series the rates block draws, plus the conditions index.
 
@@ -2299,12 +2401,31 @@ def pulse_rate_rows() -> dict[str, pd.Series]:
     return macro.fred_many([*RATE_ROWS, "NFCI"])
 
 
-@ttl_cache(21600.0, max_entries=1, persist="inflation")
+@ttl_cache(
+    21600.0, max_entries=1, stale_s=_HELD_STALE, quiet_s=21600.0, persist="inflation"
+)
 def inflation() -> pd.DataFrame:
     """Annual inflation per area — the slowest source on the page."""
     from stocks.data import macro
 
     return macro.inflation()
+
+
+# CFTC Commitments of Traders: weekly (Tuesday data, out on Friday), so a long
+# memo. Twelve hours keeps a Friday release at most half a day behind, and the
+# warm route (`api.warm`) refreshes it on the cron ticks rather than a page
+# request paying for it.
+@ttl_cache(12 * 3600.0, max_entries=1, persist="cot_positioning", keep_s=21 * 86400.0)
+def positioning() -> dict[str, pd.DataFrame]:
+    """Net speculative positioning per market, ~3 years of weekly reports."""
+    from stocks.data import cot
+
+    frames = cot.fetch()
+    if not frames:
+        # Raising keeps an empty answer from being memoised as the week's
+        # truth: the persisted copy stands in and the next read retries.
+        raise RuntimeError("cot: no data")
+    return frames
 
 
 # Enable Banking's own bank list. Reference data: identical for every account,

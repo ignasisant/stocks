@@ -37,10 +37,13 @@ biotech with four years of cash reads as "quality 0, sell":
 
 * *Mature* — the two scores above.
 * *Growth* — sales growing 25% or more a year while the operating margin is
-  still under 10%. Quality is the rule of 40 (growth plus free-cash-flow
-  margin), gross margin and moat; cheapness is EV/sales per point of growth,
-  the cash it burns against its price, and a forward P/E only once there is
-  one. A forward loss is the stage, not the dear end of a multiple.
+  still under 10%; or growing 15% or more with a cash rule of 40 (growth plus
+  free cash flow before share-based pay) of 30% or more, a margin thin
+  because it is spent on growth (`_scaling`). Quality is the rule of 40
+  (growth plus free-cash-flow margin), gross margin and moat; cheapness is
+  EV/sales per point of growth, the cash it burns against its price, and a
+  forward P/E only once there is one. A forward loss is the stage, not the
+  dear end of a multiple.
 * *Early* — no sales to speak of (none, or a price over 40 times them) and
   cash going out; or sales, but an operating loss bigger than all of them
   (`deep_burn`) — a drug developer living on collaboration fees, a car maker
@@ -204,6 +207,14 @@ SPEC_MAX = 0.03
 # operating margin under which a grower is still judged as one.
 GROWTH_MIN = 0.25
 GROWTH_MARGIN = 0.10
+# A slower grower is judged as one too when its cash says the thin margin is
+# what it spends on growth, not what it earns: sustained growth from
+# `SCALING_MIN` plus free cash flow before share-based pay (the cash rule of
+# 40) at `SCALING_RULE_40` or more. A software house at 15% growth and an 18%
+# cash margin, at break-even only after the shares it pays its staff in,
+# read under the mature lens as "ROIC 0, margin 0, sell".
+SCALING_MIN = 0.15
+SCALING_RULE_40 = 0.30
 # Market cap over sales above which the sales are not what is being priced.
 PRE_REVENUE_PS = 40.0
 # An operating margin this low (losing more than the sales) with cash going
@@ -788,14 +799,24 @@ def stage(metrics: Mapping) -> str:
         return EARLY
     growth = sustained_growth(metrics)
     margin = _num(metrics, "op_margin")
-    if (
-        growth is not None
-        and growth >= GROWTH_MIN
-        and margin is not None
-        and margin < GROWTH_MARGIN
-    ):
+    if growth is None or margin is None or margin >= GROWTH_MARGIN:
+        return MATURE
+    if growth >= GROWTH_MIN or _scaling(metrics, growth):
         return GROWTH
     return MATURE
+
+
+def _scaling(metrics: Mapping, growth: float) -> bool:
+    """A grower under `GROWTH_MIN` whose cash rule of 40 says the thin margin
+    is spent on growth (`SCALING_MIN`, `SCALING_RULE_40`). The cash is the
+    feed's, share-based pay added back: here the question is whether the
+    business throws off cash before it pays its staff in shares, which the
+    growth lens then charges for (its quality reads the owner's margin)."""
+    fcf = _num(metrics, "fcf")
+    revenue = _num(metrics, "revenue")
+    if growth < SCALING_MIN or fcf is None or not revenue or revenue <= 0:
+        return False
+    return growth + fcf / revenue >= SCALING_RULE_40
 
 
 def score(metrics: Mapping) -> Scores:

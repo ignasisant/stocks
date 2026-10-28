@@ -313,9 +313,6 @@
   .ag-back {
     min-height: 44px;
   }
-  .ag-search-row {
-    align-items: center;
-  }
   .ag-search-panel {
     max-height: 40dvh;
     overscroll-behavior: contain;

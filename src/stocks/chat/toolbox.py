@@ -120,6 +120,31 @@ def _get_quotes(args: dict, ctx: Context) -> str:
     return _cap("\n".join(q.line() for q in got))
 
 
+def _market_positioning(args: dict, ctx: Context) -> str:
+    from stocks.api import loaders
+    from stocks.data import cot
+
+    try:
+        found = cot.readings(loaders.positioning())
+    except Exception:  # noqa: BLE001 — the model reads this
+        found = []
+    if not found:
+        return "CFTC positioning is unavailable right now."
+    lines = []
+    for r in found:
+        side = f", crowded {r.crowded}" if r.crowded else ""
+        z = "" if r.zscore is None else f", z {r.zscore:+.1f}"
+        pct = "" if r.net_pct_oi is None else f" ({r.net_pct_oi:+.1f}% of open interest)"
+        lines.append(
+            f"{r.name}: net {r.net:+,.0f} contracts{pct}, week "
+            f"{r.week_change:+,.0f}, {r.percentile:.0f}th percentile of 3y"
+            f"{z}{side} [{r.as_of}]")
+    return _cap(
+        "CFTC Commitments of Traders, speculators' net position (leveraged "
+        "funds + asset managers; non-commercials for gold and crude). Weekly, "
+        "Tuesday data released Friday.\n" + "\n".join(lines))
+
+
 def _recall(args: dict, ctx: Context) -> str:
     from stocks.chat import memory
 
@@ -472,6 +497,21 @@ def asks_criteria(text: str) -> bool:
     return bool(_CRITERIA_ASK_RE.search(text or ""))
 
 
+# Asking to have the rules written, not only naming a line: "ayúdame a
+# escribir reglas de salida", "my exit rules for NVDA", "kill criteria". The
+# journal's button sends the first. Narrower than `asks_criteria` on purpose:
+# "¿vendo NVDA?" wants an answer, not a form under it.
+_RULES_ASK_RE = re.compile(
+    r"\breglas? de (?:salida|venta)\b|\bcriterios? de (?:salida|venta)\b"
+    r"|\bexit (?:rules?|criteri)|\bkill[- ]criteri|\bsell (?:rules?|criteri)",
+    re.IGNORECASE)
+
+
+def asks_rules(text: str) -> bool:
+    """Whether `text` asks for exit rules to be drafted for it."""
+    return bool(_RULES_ASK_RE.search(text or ""))
+
+
 def _base(ticker: str) -> str:
     # "ASML" typed, "ASML.AS" proposed: the same company on its home venue.
     return re.split(r"[.\-]", ticker.strip().upper(), maxsplit=1)[0]
@@ -541,6 +581,14 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                  "description": "Yahoo symbols, e.g. NVDA, ASML.AS, BTC-EUR."}},
              "required": ["tickers"]},
         ), _get_quotes),
+        (ToolSpec(
+            "market_positioning",
+            "How crowded speculators are in S&P 500, Nasdaq-100, 10y Treasury, "
+            "EUR/USD, gold, crude and bitcoin futures: CFTC net position, its "
+            "weekly change and where it sits in the last 3 years. Use for "
+            "positioning, 'crowded trade' or sentiment-extreme questions.",
+            {"type": "object", "properties": {}},
+        ), _market_positioning),
         (ToolSpec(
             "portfolio_snapshot",
             "The user's own positions: holdings, weights, live value and P/L, "

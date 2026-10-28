@@ -133,7 +133,12 @@ export function SetupCard() {
         action: { label: t("home.setup_undo"), onClick: () => keep(false) },
       });
     }
-    void send("PATCH", "/prefs", { setup_card_dismissed: hidden })
+    void send(
+      "PATCH",
+      "/prefs",
+      { setup_card_dismissed: hidden },
+      { touches: ["/prefs"] },
+    )
       .then(reload)
       .catch(() => undefined);
   };

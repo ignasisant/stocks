@@ -40,6 +40,7 @@ import { FinancialsChart, ValuationChart } from "./Charts";
 import { DcfSection } from "./Dcf";
 import {
   getAnalysts,
+  getOptions,
   getBars,
   getComparables,
   getCrypto,
@@ -50,6 +51,7 @@ import {
   getFinancials,
   getFund,
   getInsiders,
+  getShorts,
   getMetrics,
   getDcf,
   getMoat,
@@ -71,6 +73,7 @@ import {
   ComparablesSection,
   FundSection,
   InsidersSection,
+  ShortsSection,
   MetricsSection,
   MoatSection,
 } from "./Sections";
@@ -303,8 +306,20 @@ export default function Page() {
     () => (ticker && company ? getInsiders(ticker) : Promise.resolve(null)),
     [ticker, company],
   );
+  // Beside the insiders, not after them: its own request, painted when it lands.
+  const shorts = useApi(
+    () => (ticker && company ? getShorts(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
   const analysts = useApi(
     () => (ticker && company ? getAnalysts(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+
+  // Its own slot: cold it is a handful of option chains, and the card draws
+  // without it.
+  const options = useApi(
+    () => (ticker && company ? getOptions(ticker) : Promise.resolve(null)),
     [ticker, company],
   );
 
@@ -379,7 +394,7 @@ export default function Page() {
             reads in a side panel, so the page's own figures keep the column. */}
         {ticker && !absent ? (
           <SignedInOnly>
-            <JournalChip ticker={ticker} held={!!held?.held} />
+            <JournalChip ticker={ticker} name={drawn?.name} held={!!held?.held} />
           </SignedInOnly>
         ) : null}
         {/* Drawn for a guest too: it opens the locked assistant
@@ -456,9 +471,11 @@ export default function Page() {
             valuation={valuation.state === "loaded" ? valuation.data : null}
           />
 
-          {/* Right under the price it rebases: "did it beat the index" is the
-              question the chart above cannot answer on its own scale. */}
-          {shape.compare ? (
+          {/* Compare sits one card from the foot of the page, whatever the
+              kind: the figures a reader came for go first, and "did it beat
+              the index" closes the read. A fund and an index have one card
+              under the price, so there it is the card after the price. */}
+          {shape.compare && !shape.sections.company && !crypto ? (
             <CompareSection key={ticker} ticker={ticker} base={base} />
           ) : null}
 
@@ -477,7 +494,10 @@ export default function Page() {
             <CycleSection cycle={cycle.data} coin={coin} />
           ) : null}
           {positioning.state === "loaded" && positioning.data ? (
-            <PositioningSection data={positioning.data} />
+            <PositioningSection data={positioning.data} coin={coin} />
+          ) : null}
+          {shape.compare && crypto ? (
+            <CompareSection key={ticker} ticker={ticker} base={base} />
           ) : null}
           {crypto && stats.state === "loaded" && stats.data ? (
             <AssetStatsSection stats={stats.data} />
@@ -502,12 +522,15 @@ export default function Page() {
           ) : null}
 
           {dcf.state === "loaded" && dcf.data ? (
-            <DcfSection key={ticker} dcf={dcf.data} />
+            <DcfSection key={`dcf:${ticker}`} dcf={dcf.data} />
           ) : null}
 
           {/* What the street makes of it, right after what it is priced at. */}
           {analysts.state === "loaded" && analysts.data ? (
-            <AnalystsSection data={analysts.data} />
+            <AnalystsSection
+              data={analysts.data}
+              options={options.state === "loaded" ? options.data : null}
+            />
           ) : null}
 
           {moat.state === "loaded" && moat.data ? (
@@ -516,6 +539,10 @@ export default function Page() {
 
           {insiders.state === "loaded" && insiders.data ? (
             <InsidersSection insiders={insiders.data} />
+          ) : null}
+
+          {shorts.state === "loaded" && shorts.data ? (
+            <ShortsSection shorts={shorts.data} />
           ) : null}
 
           {company ? (
@@ -527,6 +554,10 @@ export default function Page() {
                 onPeers={setPeers}
               />
             </ComparablesSection>
+          ) : null}
+
+          {shape.compare && shape.sections.company ? (
+            <CompareSection key={ticker} ticker={ticker} base={base} />
           ) : null}
 
           {company ? <KpiSourcesSection /> : null}

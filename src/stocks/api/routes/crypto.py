@@ -34,8 +34,11 @@ from stocks.api.schemas import (
     CoinHarvest,
     CryptoCycle,
     CryptoHolding,
+    CryptoOnchain,
     CryptoPositioning,
     HalvingPhase,
+    ImpliedVol,
+    StablecoinSupply,
 )
 from stocks.data.crypto import STABLECOINS, is_crypto, split_pair
 from stocks.portfolio import platforms
@@ -84,8 +87,21 @@ def cycle(symbol: Symbol) -> CryptoCycle:
         total_mcap=(market.get("total_mcap") or {}).get(quote.lower()),
         scan_date=scan.get("saved"),
     )
+    stables = scan.get("stablecoins") or {}
+    if isinstance(stables.get("usd"), int | float):
+        out.stablecoins = StablecoinSupply(
+            usd=stables["usd"], change_30d=stables.get("change_30d"),
+            change_90d=stables.get("change_90d"),
+        )
     if coin in STABLECOINS:
         return out
+    row = ((scan.get("onchain") or {}).get("coins") or {}).get(coin)
+    if isinstance(row, dict) and isinstance(row.get("tvl"), int | float):
+        out.onchain = CryptoOnchain(
+            kind=str(row.get("kind") or "protocol"), name=str(row.get("name") or coin),
+            tvl=row["tvl"], tvl_change_30d=row.get("tvl_change_30d"),
+            fees_30d=row.get("fees_30d"), revenue_30d=row.get("revenue_30d"),
+        )
 
     close = loaders.daily_closes(ticker)
     mayer = cm.mayer_multiple(close)
@@ -134,7 +150,27 @@ def positioning(symbol: Symbol) -> CryptoPositioning | None:
         annualized=cm.annualized_funding(week_8h),
         oi_usd=got.oi_usd,
         oi_change_7d=got.oi_change_7d,
+        implied_vol=_implied_vol(pair[0]),
         as_of=datetime.now(UTC).isoformat(timespec="minutes"),
+    )
+
+
+def _implied_vol(coin: str) -> ImpliedVol | None:
+    """The coin's DVOL from the nightly scan (no call here); bitcoin's for a
+    coin Deribit has no index for — the options market's read of the sleeve."""
+    table = loaders.crypto_scan().get("dvol") or {}
+    code = coin if coin in table else "BTC"
+    row = table.get(code)
+    if not isinstance(row, dict) or not isinstance(row.get("value"), int | float):
+        return None
+    pct = row.get("percentile")
+    return ImpliedVol(
+        coin=code,
+        value=row["value"],
+        percentile=_banded(pct, cm.dvol_band(pct)),
+        low=row.get("low"),
+        high=row.get("high"),
+        week_ago=row.get("week_ago"),
     )
 
 

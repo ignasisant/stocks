@@ -1,0 +1,35 @@
+# The Learn page's paths, in the order the page lists them. Each path is an
+# ordered list of lesson ids; every id is a file in every language directory
+# (`web/learn/<lang>/<id>.md`). A path's name and blurb are UI copy:
+# `learn.path_<id>_title` / `learn.path_<id>_body` in locales/<lang>/learn.json.
+# `icon` is a name in the shell's inline set (frontend/app/src/shell/Icon.tsx):
+# there is no icon font. Checked by tests/test_learn.py.
+paths:
+  - id: start
+    icon: lightbulb
+    lessons:
+      - what-is-a-stock
+      - funds-and-etfs
+      - brokers-and-exchanges
+      - order-types
+      - costs-of-investing
+      - market-hours
+  - id: returns
+    icon: show_chart
+    lessons:
+      - total-return
+      - twr-vs-irr
+      - volatility-and-drawdown
+      - value-at-risk
+      - beta-and-benchmarks
+      - currency-risk
+  - id: tax-es
+    icon: account_balance
+    lessons:
+      - savings-base
+      - fifo
+      - two-month-rule
+      - offsetting-losses
+      - dividends-and-withholding
+      - forms-720-721
+      - tax-calendar

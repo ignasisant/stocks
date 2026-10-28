@@ -29,6 +29,7 @@ import {
   percent,
   sectorKey,
   share,
+  signed,
   slug,
   tone,
   toneClass,
@@ -40,6 +41,7 @@ import { Fold } from "../../ui/Fold";
 /** Who to name when a block cannot be drawn. Not translated: they are names. */
 const FRED = "FRED";
 const EUROSTAT = "Eurostat";
+const CFTC = "CFTC";
 
 /**
  * The trend label's slow average, in sessions. Mirrors
@@ -154,6 +156,17 @@ const SPECS: Spec[] = [
     family: "prices",
     downSource: "sentiment.src_yahoo",
   },
+  {
+    key: "positioning",
+    title: "sentiment.positioning_title",
+    labelCol: "sentiment.col_market",
+    valueCol: "sentiment.col_net",
+    source: "sentiment.src_positioning",
+    countsRows: true,
+    note: "sentiment.positioning_help",
+    origin: CFTC,
+    family: "macro",
+  },
 ];
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
@@ -165,6 +178,7 @@ function level(block: string, value: number | null): string {
   if (block === "gauges") return fixed(value, 1);
   if (block === "rates") return fixed(value, 2, "%");
   if (block === "inflation") return fixed(value, 1, "%");
+  if (block === "positioning") return grouped(value);
   // A pair's ratio is a small number whose third decimal is the news: 1.043
   // against 1.041 is the week's whole move.
   if (block === "factors") return fixed(value, 3);
@@ -206,6 +220,13 @@ function describe(t: T, block: string, row: TrendRow) {
       label: maybe(t, `sentiment.area_${row.key}`) ?? row.key,
       sub: undefined,
       tip: maybe(t, `sentiment.tip_area_${row.key}`),
+    };
+  }
+  if (block === "positioning") {
+    return {
+      label: maybe(t, `sentiment.mkt_${row.key}`) ?? row.name,
+      sub: row.as_of ? t("sentiment.pos_asof", { date: row.as_of }) : undefined,
+      tip: undefined,
     };
   }
   if (block === "factors") {
@@ -292,6 +313,14 @@ function headers(t: T, block: string): string[] {
       t("sentiment.col_period"),
     ];
   }
+  if (block === "positioning") {
+    return [
+      t("sentiment.col_net_oi"),
+      t("sentiment.col_wk_net"),
+      t("sentiment.col_pctl_3y"),
+      t("sentiment.col_zscore"),
+    ];
+  }
   if (block === "rotation") {
     return [
       t("sentiment.col_excess_quarter"),
@@ -344,6 +373,22 @@ function cells(t: T, block: TrendBlock, row: TrendRow): Cell[] {
         text: tilt === null ? NA : `${tilt >= 0 ? "+" : ""}${num(tilt * 100, 1)}pp`,
         tone: 0,
       },
+    ];
+  }
+
+  if (block.block === "positioning") {
+    // Uncoloured throughout: a crowded long is not good or bad news, it is a
+    // one-sided trade, and the state pill at the row's end says which side.
+    const plain = (label: string, text: string): Cell => ({ label, text, tone: 0 });
+    const week = row.changes.week;
+    return [
+      plain(labels[0] ?? "", row.net_pct == null ? NA : signed(row.net_pct, 1, "%")),
+      plain(labels[1] ?? "", week === undefined ? NA : signed(week, 0)),
+      plain(
+        labels[2] ?? "",
+        row.percentile === null ? NA : `p${num(row.percentile, 0)}`,
+      ),
+      plain(labels[3] ?? "", row.zscore == null ? NA : signed(row.zscore, 1)),
     ];
   }
 

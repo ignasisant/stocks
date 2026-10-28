@@ -12,15 +12,15 @@ import { money, percent } from "./format";
 import { TickerLabel } from "./TickerLabel";
 import type { Overview as Data, Position, Words } from "./types";
 
-/** Slices the ring draws before the rest becomes one "Other". */
-const SLICES = 6;
+/** Slices the ring draws before the rest becomes one "Other": one per series
+ *  hue, so no two slices share a colour and none is cycled. */
+const SLICES = 5;
 
 /** Ring units (of 100) left empty at the end of each slice. */
 const GAP = 0.8;
 
-// `view.css` sets these per theme: the dark tokens, or their deep cousins
-// on a light ground, where the pale ones would not show.
-const PALETTE = ["--v-c1", "--v-c2", "--v-c3", "--v-c4", "--v-c5", "--v-c6"].map(
+// `view.css` maps these to the DS's series hues, which read on both themes.
+const PALETTE = ["--v-c1", "--v-c2", "--v-c3", "--v-c4", "--v-c5"].map(
   (name) => `var(${name})`,
 );
 
@@ -32,13 +32,13 @@ export function slices(positions: Position[], other: string): Slice[] {
   const top = weighted.slice(0, SLICES).map((p, i) => ({
     label: p.ticker,
     weight: p.weight ?? 0,
-    color: PALETTE[i % PALETTE.length] ?? "var(--v-muted)",
+    color: PALETTE[i] ?? "var(--v-other)",
   }));
   const shown = top.reduce((sum, s) => sum + s.weight, 0);
   // The rest of the book, including what the payload did not carry: the
   // weights are of the whole book, so whatever they do not reach is "Other".
   const rest = 1 - shown;
-  if (rest > 0.005) top.push({ label: other, weight: rest, color: "var(--v-faint)" });
+  if (rest > 0.005) top.push({ label: other, weight: rest, color: "var(--v-other)" });
   return top;
 }
 

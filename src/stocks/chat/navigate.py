@@ -38,10 +38,11 @@ PAGES: dict[str, tuple[str, ...]] = {
     "import": (),
     "ticker": (),
     "sentiment": ("indices", "gauges", "rates", "inflation", "rotation",
-                  "factors", "cross"),
+                  "factors", "cross", "positioning"),
     "sector": (),
     "earnings": (),
-    "profile": ("prefs", "iv", "watch", "notify"),
+    "learn": ("paths", "glossary"),
+    "profile": ("prefs", "iv", "watch", "notify", "claude"),
 }
 
 # Each tab's catalog key, by page slug and `?tab=` value: the label the shell
@@ -77,12 +78,18 @@ TAB_LABELS: dict[str, dict[str, str]] = {
         "rotation": "sentiment.rotation_title",
         "factors": "sentiment.factors_title",
         "cross": "sentiment.cross_title",
+        "positioning": "sentiment.positioning_title",
+    },
+    "learn": {
+        "paths": "learn.tab_paths",
+        "glossary": "learn.tab_glossary",
     },
     "profile": {
         "prefs": "profile.preferences",
         "iv": "profile.iv_section",
         "watch": "profile.watchlist",
         "notify": "profile.notifications",
+        "claude": "profile.connector_tab",
     },
 }
 
@@ -120,11 +127,15 @@ _WHAT = {
               "after a slash: ticker/AAPL",
     "sentiment": "market mood. Tabs: indices, gauges (fear and greed), "
                  "rates, inflation, rotation (sector rotation), factors "
-                 "(style ratios), cross (other asset classes)",
+                 "(style ratios), cross (other asset classes), positioning "
+                 "(speculators' futures positions, CFTC)",
     "sector": "sector screen and peers",
     "earnings": "the earnings calendar",
+    "learn": "short lessons on investing and Spanish tax. Tabs: paths "
+             "(lessons), glossary (term definitions)",
     "profile": "account settings. Tabs: prefs (preferences), iv (investor "
-               "profile), watch (watchlist), notify (alerts and Telegram)",
+               "profile), watch (watchlist), notify (alerts and Telegram), claude "
+               "(connect Claude to the account)",
 }
 
 TOOL_NAME = "navigate"

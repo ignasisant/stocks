@@ -1,0 +1,755 @@
+# --- start path
+stock:
+  label: "Acción"
+  aliases: ["stock", "share", "equity"]
+  desc: >-
+    Un trozo pequeño de una empresa. Si la compras, eres propietario de una parte mínima de ella y puedes ganar con la subida del precio y con los dividendos.
+  lesson: what-is-a-stock
+dividend:
+  label: "Dividendo"
+  aliases: ["dividend", "payout"]
+  desc: >-
+    Parte del beneficio que una empresa reparte en efectivo entre sus accionistas, normalmente cada trimestre o cada año. No está garantizado.
+  lesson: what-is-a-stock
+market_cap:
+  label: "Capitalización bursátil"
+  aliases: ["market cap", "capitalización", "valor de mercado"]
+  desc: >-
+    Precio de la acción × acciones en circulación: lo que el mercado dice que valen los fondos propios de la empresa.
+  lesson: what-is-a-stock
+ipo:
+  label: "Salida a bolsa (OPV / IPO)"
+  aliases: ["IPO", "OPV", "oferta pública de venta"]
+  desc: >-
+    Momento en que una empresa vende acciones al público por primera vez y empieza a cotizar en un mercado.
+  lesson: what-is-a-stock
+ticker_symbol:
+  label: "Ticker (símbolo)"
+  aliases: ["ticker", "símbolo bursátil", "código de cotización"]
+  desc: >-
+    Código corto, normalmente de 1 a 5 letras, que identifica una acción en un mercado, como AAPL para Apple. Cambia de un mercado a otro.
+  lesson: what-is-a-stock
+isin:
+  label: "ISIN"
+  aliases: ["código ISIN", "International Securities Identification Number"]
+  desc: >-
+    Código de 12 caracteres que identifica un valor de forma única en todo el mundo. Empieza por el país (ES, US, IE...) y no cambia de mercado.
+  lesson: what-is-a-stock
+etf:
+  label: "ETF (fondo cotizado)"
+  aliases: ["ETF", "exchange-traded fund", "fondo cotizado"]
+  desc: >-
+    Fondo que cotiza en bolsa como una acción y suele replicar un índice. Con una sola compra tienes una cesta de cientos de valores.
+  lesson: funds-and-etfs
+mutual_fund:
+  label: "Fondo de inversión"
+  aliases: ["mutual fund", "fondo", "fondo de inversión tradicional"]
+  desc: >-
+    Fondo que reúne el dinero de muchos inversores y lo gestiona un profesional. Se compra y vende a su valor liquidativo, no cotiza en bolsa durante el día.
+  lesson: funds-and-etfs
+index_fund:
+  label: "Fondo indexado"
+  aliases: ["index fund", "fondo índice", "gestión pasiva"]
+  desc: >-
+    Fondo que copia un índice, como el S&P 500, en lugar de intentar batirlo. Al ser pasivo, sus comisiones son bajas.
+  lesson: funds-and-etfs
+index:
+  label: "Índice bursátil"
+  aliases: ["index", "S&P 500", "IBEX 35", "benchmark index"]
+  desc: >-
+    Cesta de valores que mide la evolución de un mercado o sector, como el S&P 500 o el IBEX 35. No se compra directamente: se replica con fondos o ETF.
+  lesson: funds-and-etfs
+ter:
+  label: "Gastos corrientes (TER)"
+  aliases: ["TER", "total expense ratio", "comisión de gestión", "OCF"]
+  desc: >-
+    Porcentaje anual que cobra un fondo por gestionarse, ya descontado de su valor. Un 0,20 % anual son 20 € al año por cada 10.000 € invertidos.
+  lesson: funds-and-etfs
+ucits:
+  label: "UCITS (fondos armonizados)"
+  aliases: ["UCITS", "IICs armonizadas", "directiva UCITS"]
+  desc: >-
+    Normativa europea que fija reglas de diversificación, liquidez y protección para fondos y ETF. Es lo habitual para que un inversor minorista europeo compre un ETF.
+  lesson: funds-and-etfs
+accumulating_distributing:
+  label: "Acumulación vs. distribución"
+  aliases: ["acc", "dist", "accumulating", "distributing"]
+  desc: >-
+    Un fondo de acumulación reinvierte los dividendos dentro del fondo. Uno de distribución te los paga en efectivo. El total es parecido; cambia cómo y cuándo los recibes.
+  lesson: funds-and-etfs
+broker:
+  label: "Bróker (intermediario)"
+  aliases: ["broker", "bróker", "intermediario", "bróker online"]
+  desc: >-
+    Empresa autorizada que te permite comprar y vender valores en los mercados. Tú das la orden y el bróker la ejecuta y custodia tus activos.
+  lesson: brokers-and-exchanges
+exchange:
+  label: "Bolsa (mercado)"
+  aliases: ["exchange", "bolsa de valores", "mercado bursátil", "NYSE"]
+  desc: >-
+    Mercado organizado donde se compran y venden valores, con horarios y reglas propios, como la Bolsa de Madrid o el NYSE.
+  lesson: brokers-and-exchanges
+custody:
+  label: "Custodia"
+  aliases: ["custody", "depositario", "custodian"]
+  desc: >-
+    Quién guarda tus valores. Normalmente es tu bróker o un depositario, y tus acciones están registradas a tu nombre o en cuentas segregadas, separadas de su dinero.
+  lesson: brokers-and-exchanges
+investor_protection:
+  label: "Protección al inversor"
+  aliases: ["fondo de garantía", "FOGAIN", "investor compensation"]
+  desc: >-
+    Si un bróker quiebra, tus valores deben estar separados de su dinero. Además, un fondo de garantía cubre hasta un límite que depende del país. No cubre pérdidas por mercado.
+  lesson: brokers-and-exchanges
+settlement:
+  label: "Liquidación"
+  aliases: ["settlement", "T+2", "T+1"]
+  desc: >-
+    El intercambio real de valores y dinero tras una compra o venta. Llega unos días hábiles después de la orden, así que el dinero de una venta no siempre está disponible al instante.
+  lesson: brokers-and-exchanges
+fractional_shares:
+  label: "Acciones fraccionadas"
+  aliases: ["fractional shares", "fracciones de acción", "inversión por importe"]
+  desc: >-
+    Permiten comprar solo una parte de una acción, por ejemplo 50 € de una que vale 400 €. No todos los brókers las ofrecen ni para todos los valores.
+  lesson: brokers-and-exchanges
+market_order:
+  label: "Orden de mercado"
+  aliases: ["market order", "orden a mercado"]
+  desc: >-
+    Compra o vende ya, al mejor precio disponible. Se ejecuta casi seguro, pero no sabes el precio exacto, sobre todo en valores poco líquidos.
+  lesson: order-types
+limit_order:
+  label: "Orden limitada"
+  aliases: ["limit order", "orden con límite"]
+  desc: >-
+    Compra o vende solo a tu precio o a uno mejor. Controlas el precio, pero la orden puede no ejecutarse nunca si el mercado no llega a él.
+  lesson: order-types
+stop_order:
+  label: "Orden stop"
+  aliases: ["stop order", "stop loss", "stop-loss", "orden de stop"]
+  desc: >-
+    Orden que se activa cuando el precio toca un nivel que fijas. El stop loss se usa para limitar pérdidas, pero en un salto brusco puede ejecutarse bastante peor de lo previsto.
+  lesson: order-types
+bid_ask_spread:
+  label: "Horquilla (spread) compra-venta"
+  aliases: ["spread", "bid-ask", "horquilla", "diferencial"]
+  desc: >-
+    Diferencia entre el mejor precio al que alguien compra (bid) y el mejor al que alguien vende (ask). Es un coste oculto cada vez que operas.
+  lesson: order-types
+liquidity:
+  label: "Liquidez"
+  aliases: ["liquidity", "volumen", "negociabilidad"]
+  desc: >-
+    Facilidad para comprar o vender un valor rápido y sin mover su precio. Con mucha liquidez, la horquilla es estrecha; con poca, operar sale más caro.
+  lesson: order-types
+commission:
+  label: "Comisión de operación"
+  aliases: ["commission", "comisión de bróker", "trading fee", "fee"]
+  desc: >-
+    Lo que te cobra el bróker por ejecutar una compra o venta. Puede ser fija o un porcentaje, y a veces cero, pero otros costes pueden seguir ahí.
+  lesson: costs-of-investing
+fx_conversion:
+  label: "Comisión de cambio de divisa"
+  aliases: ["FX fee", "conversión de divisa", "tipo de cambio", "currency conversion"]
+  desc: >-
+    Coste de cambiar tus euros a otra divisa para comprar un valor extranjero, y de vuelta al vender. Suele ser un pequeño porcentaje sobre el tipo de cambio.
+  lesson: costs-of-investing
+custody_fee:
+  label: "Comisión de custodia"
+  aliases: ["custody fee", "comisión de mantenimiento", "comisión de administración"]
+  desc: >-
+    Cargo periódico que algunos brókers cobran por guardar y administrar tus valores. Muchos no lo cobran; mira la tarifa de tu bróker.
+  lesson: costs-of-investing
+trading_session:
+  label: "Sesión de mercado"
+  aliases: ["trading session", "horario de mercado", "market hours", "sesión regular"]
+  desc: >-
+    Horario en que una bolsa casa órdenes con normalidad. En EE. UU. va de 15:30 a 22:00 hora de España; en la Bolsa de Madrid, de 9:00 a 17:30.
+  lesson: market-hours
+premarket:
+  label: "Preapertura (premarket)"
+  aliases: ["premarket", "pre-market", "preapertura"]
+  desc: >-
+    Negociación antes de la sesión regular. Hay menos volumen y precios más inestables, así que los movimientos pueden no mantenerse al abrir.
+  lesson: market-hours
+after_hours:
+  label: "Después de cierre (after-hours)"
+  aliases: ["after-hours", "after hours", "extended hours", "postmercado"]
+  desc: >-
+    Negociación tras el cierre de la sesión regular. Es habitual cuando salen resultados, con poca liquidez y horquillas más amplias.
+  lesson: market-hours
+gap:
+  label: "Hueco (gap)"
+  aliases: ["gap", "salto de precio", "gap de apertura"]
+  desc: >-
+    Salto entre el cierre de un día y la apertura del siguiente, sin precios intermedios. Suele deberse a noticias o resultados publicados con el mercado cerrado.
+  lesson: market-hours
+market_holiday:
+  label: "Festivo bursátil"
+  aliases: ["market holiday", "festivo de mercado", "mercado cerrado"]
+  desc: >-
+    Día laborable en que una bolsa está cerrada, como el 4 de julio en EE. UU. Cada mercado tiene su calendario, así que un mercado puede abrir mientras otro cierra.
+  lesson: market-hours
+
+# --- returns path
+total_return:
+  label: "Rentabilidad total"
+  aliases: ["total return", "rentabilidad", "retorno total"]
+  desc: >-
+    Lo que ganas o pierdes en conjunto: cambio de precio más dividendos y otros cobros, como porcentaje de lo invertido. Mirar solo el precio se queda corto.
+  lesson: total-return
+capital_gain:
+  label: "Plusvalía (ganancia de capital)"
+  aliases: ["plusvalía", "capital gain", "minusvalía", "ganancia patrimonial"]
+  desc: >-
+    Lo que ganas al vender por más de lo que pagaste. Si vendes por menos es una minusvalía. Es latente mientras no vendes, y realizada cuando vendes.
+  lesson: total-return
+dividend_yield:
+  label: "Rentabilidad por dividendo"
+  aliases: ["dividend yield", "yield por dividendo", "dividend yield %"]
+  desc: >-
+    Dividendo anual por acción dividido entre el precio actual, en %. Un 3 % significa 3 € al año por cada 100 € invertidos. Ojo: un yield muy alto puede avisar de problemas.
+  lesson: total-return
+compounding:
+  label: "Interés compuesto"
+  aliases: ["compounding", "capitalización compuesta", "efecto bola de nieve"]
+  desc: >-
+    Ganar rentabilidad sobre la rentabilidad ya acumulada. Con el tiempo, el efecto crece: 10.000 € al 7 % anual son unos 19.700 € a los 10 años.
+  lesson: total-return
+annualised_return:
+  label: "Rentabilidad anualizada"
+  aliases: ["annualised return", "annualized return", "rentabilidad anual", "TAE"]
+  desc: >-
+    La rentabilidad expresada por año para poder comparar periodos distintos. Un 21 % en dos años equivale a cerca de un 10 % anual, no a un 10,5 %.
+  lesson: total-return
+cagr:
+  label: "TCAC (CAGR)"
+  aliases: ["CAGR", "tasa de crecimiento anual compuesta", "TCAC", "growth rate"]
+  desc: >-
+    Tasa de crecimiento anual compuesta: el ritmo constante por año que te llevaría del valor inicial al final. Suaviza los altibajos del camino.
+  lesson: total-return
+real_return:
+  label: "Rentabilidad real"
+  aliases: ["real return", "rentabilidad real", "rentabilidad ajustada a inflación"]
+  desc: >-
+    Rentabilidad una vez descontada la inflación: lo que realmente ganas en poder de compra. Si ganas un 5 % y los precios suben un 3 %, tu rentabilidad real ronda el 2 %.
+  lesson: total-return
+inflation:
+  label: "Inflación"
+  aliases: ["inflation", "IPC", "subida de precios"]
+  desc: >-
+    Subida general de los precios con el tiempo, que reduce lo que puedes comprar con el mismo dinero. Se mide con el IPC; el BCE busca un 2 % anual.
+  lesson: total-return
+twr:
+  label: "Rentabilidad ponderada por tiempo (TWR)"
+  aliases: ["TWR", "time-weighted return", "rentabilidad ponderada en el tiempo"]
+  desc: >-
+    Mide cómo lo hicieron tus inversiones sin contar cuándo metiste o sacaste dinero. Es la que se compara con un índice.
+  lesson: twr-vs-irr
+irr:
+  label: "Tasa interna de retorno (TIR)"
+  aliases: ["TIR", "IRR", "internal rate of return", "rentabilidad ponderada por dinero"]
+  desc: >-
+    Rentabilidad anual de tu dinero teniendo en cuenta cuánto y cuándo aportaste o retiraste. Refleja tu resultado personal, incluido el momento de tus aportaciones.
+  lesson: twr-vs-irr
+cash_flow:
+  label: "Flujo de caja (aportaciones y retiradas)"
+  aliases: ["cash flow", "aportación", "retirada", "flujos de efectivo"]
+  desc: >-
+    En tu cartera, el dinero que metes o sacas. Cuando comparas rentabilidades, se separan de la ganancia para no confundir ahorrar más con rendir más.
+  lesson: twr-vs-irr
+benchmark:
+  label: "Índice de referencia (benchmark)"
+  aliases: ["benchmark", "índice de comparación", "referencia"]
+  desc: >-
+    Índice con el que comparas tu cartera para saber si lo haces bien, por ejemplo el S&P 500 o el MSCI World. Debe parecerse a lo que realmente tienes.
+  lesson: beta-and-benchmarks
+volatility:
+  label: "Volatilidad"
+  aliases: ["volatility", "vol", "variabilidad"]
+  desc: >-
+    Cuánto sube y baja un precio. Más volatilidad significa un camino más movido, no necesariamente peor resultado: es la medida habitual del riesgo.
+  lesson: volatility-and-drawdown
+drawdown:
+  label: "Caída máxima (drawdown)"
+  aliases: ["drawdown", "max drawdown", "caída desde máximos", "retroceso máximo"]
+  desc: >-
+    Caída desde un máximo hasta el mínimo posterior, antes de recuperar. Si pasas de 100 a 70, el drawdown es del 30 %. Muestra lo que de verdad llegaste a perder en papel.
+  lesson: volatility-and-drawdown
+standard_deviation:
+  label: "Desviación típica"
+  aliases: ["desviación estándar", "standard deviation", "sigma", "σ"]
+  desc: >-
+    Medida estadística de cuánto se alejan los resultados de su media. En inversión se usa para medir la volatilidad: cuanto mayor, más dispersos los retornos.
+  lesson: volatility-and-drawdown
+var:
+  label: "Valor en riesgo (VaR)"
+  aliases: ["VaR", "value at risk", "pérdida esperada máxima"]
+  desc: >-
+    Pérdida que no deberías superar en un día con cierta confianza, según el pasado. Un VaR 95 % de 500 € indica que en el 95 % de los días perdiste menos de 500 €.
+  lesson: value-at-risk
+confidence_level:
+  label: "Nivel de confianza"
+  aliases: ["confidence level", "95 %", "confianza"]
+  desc: >-
+    Porcentaje de casos que cubre una estimación, como el VaR. Al 95 %, se espera que en 1 de cada 20 días la pérdida sea mayor. No dice cuánto mayor.
+  lesson: value-at-risk
+beta:
+  label: "Beta"
+  aliases: ["beta", "coeficiente beta", "sensibilidad al mercado"]
+  desc: >-
+    Cuánto se mueve un valor respecto al mercado. Beta 1 sube y baja igual; 1,5 se mueve un 50 % más; menos de 1 se mueve menos que el mercado.
+  lesson: beta-and-benchmarks
+correlation:
+  label: "Correlación"
+  aliases: ["correlation", "correlación entre activos"]
+  desc: >-
+    Cuánto se mueven juntos dos activos, de -1 a +1. Cerca de +1 suben y bajan a la vez; cerca de 0 no tienen relación. Baja correlación ayuda a diversificar.
+  lesson: beta-and-benchmarks
+alpha:
+  label: "Alfa"
+  aliases: ["alpha", "exceso de rentabilidad"]
+  desc: >-
+    Rentabilidad que consigue una inversión por encima de lo que explica el riesgo de mercado que asume. Un alfa positivo y sostenido es muy difícil de lograr.
+  lesson: beta-and-benchmarks
+sharpe_ratio:
+  label: "Ratio de Sharpe"
+  aliases: ["Sharpe", "Sharpe ratio", "rentabilidad por unidad de riesgo"]
+  desc: >-
+    Rentabilidad por encima de una inversión sin riesgo, dividida entre la volatilidad. Cuanto mayor, más rentabilidad por cada unidad de riesgo asumido.
+  lesson: beta-and-benchmarks
+currency_risk:
+  label: "Riesgo de divisa"
+  aliases: ["currency risk", "riesgo de tipo de cambio", "FX risk"]
+  desc: >-
+    Si compras un valor en dólares siendo de la zona euro, ganas o pierdes también por lo que el dólar valga frente al euro, aunque el precio de la acción no cambie.
+  lesson: currency-risk
+currency_hedging:
+  label: "Cobertura de divisa"
+  aliases: ["currency hedging", "hedged", "cobertura", "EUR hedged"]
+  desc: >-
+    Técnica, habitual en fondos y ETF «hedged», que reduce el efecto del tipo de cambio sobre tu resultado. Tiene un coste y no elimina el riesgo del activo.
+  lesson: currency-risk
+base_currency:
+  label: "Divisa base"
+  aliases: ["base currency", "moneda base", "divisa de referencia"]
+  desc: >-
+    La divisa en la que mides tu cartera, normalmente la de tu país. Lo que ganas se juzga en esa divisa, aunque inviertas en otras.
+  lesson: currency-risk
+
+# --- tax-es path
+irpf:
+  label: "IRPF"
+  aliases: ["impuesto sobre la renta", "income tax", "declaración de la renta"]
+  desc: >-
+    Impuesto sobre la Renta de las Personas Físicas: el que pagas en España por tus ingresos. Las ganancias de inversión van a la base del ahorro, con tipos propios.
+  lesson: savings-base
+savings_base:
+  label: "Base del ahorro"
+  aliases: ["base imponible del ahorro", "savings base", "rendimientos del ahorro"]
+  desc: >-
+    Parte del IRPF donde tributan intereses, dividendos y plusvalías por venta de valores, con tipos propios, distintos de los del trabajo.
+  lesson: savings-base
+capital_gain_tax:
+  label: "Impuesto sobre plusvalías"
+  aliases: ["capital gains tax", "tributación de plusvalías", "ganancias patrimoniales"]
+  desc: >-
+    Impuesto que pagas por las ganancias al vender. En España solo tributa lo realizado, es decir, cuando vendes, y entra en la base del ahorro.
+  lesson: savings-base
+tax_bracket:
+  label: "Tramo del IRPF"
+  aliases: ["tax bracket", "tramo", "tipo marginal"]
+  desc: >-
+    Cada franja de ganancias tiene su tipo. En la base del ahorro de 2025: 19 % hasta 6.000 €, 21 % hasta 50.000 €, 23 % hasta 200.000 €, 27 % hasta 300.000 € y 30 % por encima.
+  lesson: savings-base
+fifo:
+  label: "FIFO (primeras en entrar, primeras en salir)"
+  aliases: ["FIFO", "first in first out", "primero en entrar primero en salir"]
+  desc: >-
+    Al vender, se entiende que vendes primero las acciones más antiguas que compraste. Es el método que exige Hacienda en España para calcular la ganancia.
+  lesson: fifo
+cost_basis:
+  label: "Coste de adquisición"
+  aliases: ["cost basis", "precio de compra", "coste fiscal", "valor de adquisición"]
+  desc: >-
+    Lo que pagaste por unas acciones, incluidas las comisiones de compra. La ganancia fiscal es el precio de venta menos este coste.
+  lesson: fifo
+lot:
+  label: "Lote de compra"
+  aliases: ["lot", "tax lot", "lote", "paquete de acciones"]
+  desc: >-
+    Cada compra de un valor, con su fecha y precio. Al vender, se consumen lotes por orden (FIFO) y cada uno aporta su propia ganancia o pérdida.
+  lesson: fifo
+two_month_rule:
+  label: "Regla de los dos meses"
+  aliases: ["regla de los 2 meses", "norma antiaplicación", "art. 33.5.f", "two-month rule"]
+  desc: >-
+    Si vendes con pérdida y recompras el mismo valor en los dos meses antes o después, esa pérdida no se puede deducir en ese año. Se aplaza hasta que vendas lo recomprado.
+  lesson: two-month-rule
+wash_sale:
+  label: "Venta con recompra (wash sale)"
+  aliases: ["wash sale", "recompra", "wash-sale rule"]
+  desc: >-
+    Vender con pérdida y volver a comprar casi lo mismo para quedarte con la pérdida fiscal. En EE. UU. se llama «wash sale»; en España lo limita la regla de los dos meses.
+  lesson: two-month-rule
+loss_offset:
+  label: "Compensación de pérdidas"
+  aliases: ["loss offset", "compensar pérdidas", "offsetting losses", "netting"]
+  desc: >-
+    Restar tus minusvalías de tus plusvalías del mismo año, para pagar impuestos solo por el resultado neto. Si sobran pérdidas, quedan pendientes de otros años.
+  lesson: offsetting-losses
+loss_carryforward:
+  label: "Pérdidas pendientes de compensar"
+  aliases: ["loss carryforward", "carry forward", "compensación en 4 años", "saldo negativo"]
+  desc: >-
+    Pérdida neta de un año que puedes restar de ganancias de los siguientes 4 años. Si no la usas en ese plazo, la pierdes.
+  lesson: offsetting-losses
+tax_loss_harvesting:
+  label: "Tax-loss harvesting (realizar pérdidas)"
+  aliases: ["tax-loss harvesting", "realizar pérdidas", "venta fiscal"]
+  desc: >-
+    Vender a propósito algo con pérdidas para compensar ganancias y pagar menos impuestos. Cuidado con la regla de los dos meses si recompras lo mismo.
+  lesson: offsetting-losses
+withholding_tax:
+  label: "Retención en origen"
+  aliases: ["withholding tax", "retención", "retención de dividendos"]
+  desc: >-
+    Impuesto que se descuenta del dividendo antes de que llegue a ti. En España es del 19 %. En dividendos extranjeros lo retiene el país de origen, con un tope por convenio.
+  lesson: dividends-and-withholding
+double_taxation:
+  label: "Doble imposición"
+  aliases: ["double taxation", "deducción por doble imposición", "double tax"]
+  desc: >-
+    Que un mismo dividendo pague impuestos en dos países. En España se corrige deduciendo en la renta lo retenido fuera, hasta un límite.
+  lesson: dividends-and-withholding
+tax_treaty:
+  label: "Convenio de doble imposición"
+  aliases: ["tax treaty", "CDI", "convenio fiscal", "convenio"]
+  desc: >-
+    Acuerdo entre dos países que limita lo que puede retener el país de origen. Para dividendos de EE. UU. a residentes en España suele ser un 15 %.
+  lesson: dividends-and-withholding
+form_720:
+  label: "Modelo 720"
+  aliases: ["modelo 720", "720", "declaración de bienes en el extranjero"]
+  desc: >-
+    Declaración informativa de bienes en el extranjero, como cuentas, valores o inmuebles. Aplica si el total de una categoría supera 50.000 €. Se presenta hasta el 31 de marzo.
+  lesson: forms-720-721
+form_721:
+  label: "Modelo 721"
+  aliases: ["modelo 721", "721", "criptomonedas en el extranjero"]
+  desc: >-
+    Declaración informativa de criptomonedas custodiadas en el extranjero. Aplica si superan 50.000 € a 31 de diciembre. Se presenta hasta el 31 de marzo.
+  lesson: forms-720-721
+fund_transfer:
+  label: "Traspaso entre fondos"
+  aliases: ["fund transfer", "traspaso", "traspaso de fondos"]
+  desc: >-
+    Mover tu inversión de un fondo de inversión a otro sin pagar impuestos en ese momento. La ganancia se aplaza hasta el reembolso. No vale para acciones ni ETF.
+  lesson: savings-base
+tax_return:
+  label: "Declaración de la renta"
+  aliases: ["tax return", "renta", "campaña de la renta", "Renta Web"]
+  desc: >-
+    Declaración anual del IRPF. La campaña va de abril a 30 de junio e incluye tus ventas de valores, dividendos y retenciones del año anterior.
+  lesson: tax-calendar
+tax_year:
+  label: "Ejercicio fiscal"
+  aliases: ["tax year", "año fiscal", "periodo impositivo"]
+  desc: >-
+    Periodo al que se refiere la declaración. En España para el IRPF es el año natural, del 1 de enero al 31 de diciembre.
+  lesson: tax-calendar
+
+# --- valuation (no lessons yet)
+income_statement:
+  label: "Cuenta de resultados"
+  aliases: ["income statement", "P&L", "cuenta de pérdidas y ganancias", "profit and loss"]
+  desc: >-
+    Resume cuánto ingresó una empresa, cuánto gastó y cuánto ganó en un periodo. Va de ingresos al beneficio neto.
+balance_sheet:
+  label: "Balance"
+  aliases: ["balance", "balance sheet", "situación patrimonial"]
+  desc: >-
+    Foto de la empresa en una fecha: lo que tiene (activos), lo que debe (pasivos) y lo que queda para los accionistas (fondos propios).
+cash_flow_statement:
+  label: "Estado de flujos de efectivo"
+  aliases: ["cash flow statement", "flujo de caja", "estado de flujo de caja"]
+  desc: >-
+    Muestra de dónde salió y a dónde fue el dinero real de la empresa: operaciones, inversiones y financiación. Revela si el beneficio se convierte en caja.
+revenue:
+  label: "Ingresos"
+  aliases: ["revenue", "ventas", "sales", "cifra de negocio"]
+  desc: >-
+    Lo que una empresa factura por vender sus productos o servicios, antes de restar costes. Es la primera línea de la cuenta de resultados.
+ebitda:
+  label: "EBITDA"
+  aliases: ["beneficio operativo antes de amortizaciones"]
+  desc: >-
+    Beneficio antes de intereses, impuestos, depreciaciones y amortizaciones. Aproxima lo que genera el negocio, pero ignora inversiones que sí cuestan dinero.
+net_income:
+  label: "Beneficio neto"
+  aliases: ["net income", "net profit", "resultado neto", "beneficio"]
+  desc: >-
+    Lo que queda de los ingresos tras todos los costes, intereses e impuestos. Es el beneficio que, en teoría, pertenece a los accionistas.
+eps:
+  label: "Beneficio por acción (BPA / EPS)"
+  aliases: ["EPS", "BPA", "earnings per share"]
+  desc: >-
+    Beneficio neto dividido entre el número de acciones. Permite comparar resultados de una empresa con el paso del tiempo y entre empresas.
+gross_margin:
+  label: "Margen bruto"
+  aliases: ["gross margin", "margen comercial"]
+  desc: >-
+    Ingresos menos el coste de los bienes vendidos, como % de los ingresos: poder de fijación de precios del propio producto.
+operating_margin:
+  label: "Margen operativo"
+  aliases: ["operating margin", "margen de explotación", "EBIT margin"]
+  desc: >-
+    Beneficio operativo como % de los ingresos: lo que retiene el negocio principal tras los costes operativos.
+net_margin:
+  label: "Margen neto"
+  aliases: ["net margin", "margen de beneficio", "profit margin"]
+  desc: >-
+    Beneficio neto como % de los ingresos: el resultado final tras intereses e impuestos.
+fcf:
+  label: "Flujo de caja libre (FCF)"
+  aliases: ["FCF", "free cash flow", "caja libre"]
+  desc: >-
+    Flujo de caja operativo menos inversiones en capital (capex): la caja que queda para pagar dividendos, recomprar acciones o reinvertir.
+fcf_yield:
+  label: "Rentabilidad por flujo de caja libre"
+  aliases: ["FCF yield", "free cash flow yield", "yield de caja"]
+  desc: >-
+    Flujo de caja libre dividido entre la capitalización: el retorno en caja que compras al precio de hoy (el inverso del múltiplo de FCF).
+cash_conversion:
+  label: "Conversión de caja"
+  aliases: ["cash conversion", "conversión de beneficio en caja"]
+  desc: >-
+    Flujo de caja libre dividido entre el beneficio neto: qué parte del beneficio contable se convierte en caja real.
+pe_ratio:
+  label: "PER (precio / beneficio)"
+  aliases: ["PER", "P/E", "price to earnings", "P/E ratio"]
+  desc: >-
+    Precio de la acción dividido entre el beneficio por acción de los últimos doce meses. Cuanto más bajo, más barato por unidad de beneficio actual.
+forward_pe:
+  label: "PER esperado (forward P/E)"
+  aliases: ["forward P/E", "PER a futuro", "PER estimado", "P/E forward"]
+  desc: >-
+    Precio dividido entre el beneficio por acción de consenso del próximo año. Por debajo del PER actual, los analistas esperan que crezcan los beneficios.
+normalized_pe:
+  label: "PER normalizado"
+  aliases: ["normalized P/E", "PER ajustado", "PER medio", "cyclically adjusted P/E"]
+  desc: >-
+    PER calculado con un beneficio «normal», suavizado a lo largo de varios años. Útil en empresas cíclicas, cuyo beneficio de un año puede engañar.
+peg:
+  label: "PEG"
+  aliases: ["PEG ratio", "P/E to growth", "PER entre crecimiento"]
+  desc: >-
+    PER dividido entre el crecimiento sostenido de ventas por acción (neto de dilución). 1x o menos es barato para su crecimiento; 2,5x, caro.
+pb_ratio:
+  label: "Precio / valor contable (P/B)"
+  aliases: ["P/B", "price to book", "PVC", "precio sobre valor en libros"]
+  desc: >-
+    Precio por acción dividido entre el valor contable (en libros) por acción. Más significativo en bancos y negocios intensivos en activos.
+ptbv:
+  label: "Precio / valor contable tangible (P/TBV)"
+  aliases: ["P/TBV", "price to tangible book", "PTBV"]
+  desc: >-
+    Como el P/B, pero sin contar activos intangibles como fondo de comercio. Es la referencia habitual para valorar bancos.
+ev:
+  label: "Valor de empresa (EV)"
+  aliases: ["EV", "enterprise value", "valor empresa"]
+  desc: >-
+    Capitalización más deuda menos caja: el precio de todo el negocio, no solo de los fondos propios.
+ev_ebitda:
+  label: "EV / EBITDA"
+  aliases: ["EV/EBITDA", "múltiplo de EBITDA", "enterprise value to EBITDA"]
+  desc: >-
+    Valor de empresa dividido entre el EBITDA: un PER que ignora la estructura de capital, comparable entre distintos niveles de endeudamiento.
+ev_sales:
+  label: "EV / ventas"
+  aliases: ["EV/Sales", "EV/ingresos", "EV/ventas", "EV/revenue"]
+  desc: >-
+    Valor de empresa dividido entre los ingresos. Es el múltiplo de recurso para valores de alto crecimiento o aún no rentables, donde el PER deja de ser útil.
+roe:
+  label: "ROE (rentabilidad sobre fondos propios)"
+  aliases: ["ROE", "return on equity", "rentabilidad financiera"]
+  desc: >-
+    Beneficio neto dividido entre fondos propios. Mide la rentabilidad del capital de los accionistas; ojo, el endeudamiento la infla.
+roic:
+  label: "ROIC (rentabilidad sobre capital invertido)"
+  aliases: ["ROIC", "return on invested capital", "rentabilidad del capital empleado"]
+  desc: >-
+    Beneficio operativo tras impuestos dividido entre capital empleado (fondos propios más deuda). Un ROIC sostenido superior al 15 % indica calidad.
+moat:
+  label: "Foso competitivo (moat)"
+  aliases: ["moat", "ventaja competitiva", "ventaja competitiva sostenible"]
+  desc: >-
+    Ventaja duradera que protege a una empresa de sus competidores, como una marca o costes más bajos. Se nota en márgenes y ROIC altos durante años.
+net_debt:
+  label: "Deuda neta"
+  aliases: ["net debt", "deuda financiera neta"]
+  desc: >-
+    Deuda total menos la caja de la empresa. Si es negativa, la empresa tiene más caja que deuda.
+net_debt_ebitda:
+  label: "Deuda neta / EBITDA"
+  aliases: ["net debt/EBITDA", "apalancamiento", "leverage"]
+  desc: >-
+    Deuda menos caja dividida entre el EBITDA: aproximadamente los años de beneficio operativo necesarios para devolver la deuda. Por debajo de 1 es conservador; por encima de 3, elevado.
+dilution:
+  label: "Dilución"
+  aliases: ["dilution", "dilución accionarial", "share dilution"]
+  desc: >-
+    Que aumente el número de acciones, normalmente por retribución en acciones o ampliaciones de capital. Cada acción pasa a ser una parte menor de la empresa.
+buyback:
+  label: "Recompra de acciones (buyback)"
+  aliases: ["buyback", "autocartera", "share repurchase", "recompra"]
+  desc: >-
+    La empresa compra sus propias acciones del mercado. Reduce el número de acciones en circulación, así que el beneficio por acción puede subir.
+payout_ratio:
+  label: "Ratio de reparto (payout)"
+  aliases: ["payout ratio", "pay-out", "ratio de distribución", "tasa de reparto"]
+  desc: >-
+    Porcentaje del beneficio que se paga en dividendos. Un payout muy alto, por encima del 100 %, puede ser insostenible.
+growth_cagr:
+  label: "Crecimiento anual compuesto"
+  aliases: ["growth CAGR", "crecimiento de ingresos", "revenue CAGR", "TCAC de ingresos"]
+  desc: >-
+    Ritmo de crecimiento anual compuesto de ingresos, beneficio o caja en los últimos años, normalmente unos cinco. Suaviza años buenos y malos.
+intrinsic_value:
+  label: "Valor intrínseco"
+  aliases: ["intrinsic value", "valor fundamental", "valor razonable"]
+  desc: >-
+    Estimación de lo que vale de verdad una empresa según el dinero que generará. Es una opinión, no un dato: dos analistas pueden llegar a cifras distintas.
+margin_of_safety:
+  label: "Margen de seguridad"
+  aliases: ["margin of safety", "colchón de seguridad"]
+  desc: >-
+    Comprar con un descuento sobre el valor que estimas, para tener colchón si te equivocas. Si vale 100 € y pagas 70 €, el margen es del 30 %.
+dcf:
+  label: "Flujos de caja descontados (DCF)"
+  aliases: ["DCF", "discounted cash flow", "descuento de flujos"]
+  desc: >-
+    Método que estima el valor de una empresa sumando sus flujos de caja futuros, traídos a valor de hoy. Muy sensible a las hipótesis de crecimiento y de tasa de descuento.
+
+# --- portfolio building, other assets, behaviour (no lessons yet)
+diversification:
+  label: "Diversificación"
+  aliases: ["diversification", "no poner todos los huevos en la misma cesta", "reparto"]
+  desc: >-
+    Repartir tu dinero entre activos distintos para que un fallo concreto no te hunda la cartera. Reduce el riesgo propio de cada empresa, no el de todo el mercado.
+asset_allocation:
+  label: "Asignación de activos"
+  aliases: ["asset allocation", "reparto de cartera", "distribución de activos"]
+  desc: >-
+    Cómo repartes la cartera entre grandes tipos de activo, como renta variable, bonos y efectivo. Suele explicar buena parte del riesgo y del resultado a largo plazo.
+rebalancing:
+  label: "Reequilibrado (rebalanceo)"
+  aliases: ["rebalancing", "rebalanceo", "reequilibrar cartera"]
+  desc: >-
+    Volver a los pesos objetivo de tu cartera tras moverse los precios, vendiendo lo que ha subido y comprando lo que se ha quedado atrás, o con nuevas aportaciones.
+dca:
+  label: "Aportaciones periódicas (DCA)"
+  aliases: ["DCA", "dollar cost averaging", "promedio de costes", "inversión periódica"]
+  desc: >-
+    Invertir una cantidad fija a intervalos regulares, por ejemplo 200 € al mes. Evita tener que acertar el momento y compra más acciones cuando el precio baja.
+risk_profile:
+  label: "Perfil de riesgo"
+  aliases: ["risk profile", "tolerancia al riesgo", "risk tolerance"]
+  desc: >-
+    Cuánta pérdida puedes aguantar, tanto económicamente como emocionalmente, sin vender en el peor momento. Depende de tus objetivos, tu horizonte y tu carácter.
+time_horizon:
+  label: "Horizonte temporal"
+  aliases: ["time horizon", "horizonte de inversión", "plazo de inversión"]
+  desc: >-
+    Tiempo que piensas mantener una inversión antes de necesitar el dinero. Cuanto más largo, más caídas puedes esperar a que se recuperen.
+sector:
+  label: "Sector"
+  aliases: ["sector", "industria", "GICS"]
+  desc: >-
+    Grupo de empresas con negocios parecidos, como tecnología, banca o energía. Las empresas de un mismo sector tienden a moverse juntas.
+bull_market:
+  label: "Mercado alcista (bull market)"
+  aliases: ["bull market", "mercado alcista", "mercado toro"]
+  desc: >-
+    Periodo prolongado en que los precios suben, con optimismo generalizado. Por convención, se habla de mercado alcista tras una subida del 20 % desde mínimos.
+bear_market:
+  label: "Mercado bajista (bear market)"
+  aliases: ["bear market", "mercado bajista", "mercado oso"]
+  desc: >-
+    Periodo prolongado de caídas. Por convención, se habla de mercado bajista cuando el índice cae un 20 % o más desde su máximo.
+correction:
+  label: "Corrección"
+  aliases: ["correction", "corrección de mercado"]
+  desc: >-
+    Caída de entre un 10 % y un 20 % desde máximos. Son habituales, ocurren casi todos los años y no implican por sí solas un mercado bajista.
+bond:
+  label: "Bono (renta fija)"
+  aliases: ["bond", "bono", "renta fija", "obligación"]
+  desc: >-
+    Préstamo que haces a un Estado o empresa a cambio de intereses y de que te devuelvan el dinero al vencimiento. Su precio sube y baja con los tipos de interés.
+yield:
+  label: "Rentabilidad (yield)"
+  aliases: ["yield", "rendimiento", "rentabilidad al vencimiento", "YTM"]
+  desc: >-
+    Rendimiento anual que obtienes de un activo según su precio actual. En un bono, es la rentabilidad si lo mantienes hasta el vencimiento. Si el precio baja, el yield sube.
+policy_rate:
+  label: "Tipo de interés oficial"
+  aliases: ["policy rate", "tipos del BCE", "tipo de referencia", "tipos de interés"]
+  desc: >-
+    Tipo fijado por el banco central, como el BCE o la Reserva Federal. Condiciona el coste del dinero, los intereses de bonos y depósitos y, a menudo, el ánimo del mercado.
+money_market:
+  label: "Fondo monetario"
+  aliases: ["money market", "mercado monetario", "fondo del mercado monetario"]
+  desc: >-
+    Fondo que invierte en deuda a muy corto plazo y bajo riesgo, con una rentabilidad parecida a los tipos oficiales. Se usa para aparcar efectivo, sin garantía de no perder.
+reit:
+  label: "SOCIMI (REIT)"
+  aliases: ["REIT", "SOCIMI", "fondo inmobiliario cotizado"]
+  desc: >-
+    Empresa cotizada que posee inmuebles y reparte la mayor parte de sus beneficios en dividendos. Permite invertir en inmobiliario sin comprar un piso.
+crypto:
+  label: "Criptomoneda"
+  aliases: ["crypto", "bitcoin", "BTC", "criptoactivo"]
+  desc: >-
+    Activo digital registrado en una cadena de bloques, como Bitcoin. Es muy volátil y no está respaldado por una empresa o Estado.
+emerging_markets:
+  label: "Mercados emergentes"
+  aliases: ["emerging markets", "EM", "países emergentes"]
+  desc: >-
+    Economías en desarrollo, como India, Brasil o China. Pueden crecer más rápido que las desarrolladas, pero con más volatilidad, riesgo político y de divisa.
+anchoring:
+  label: "Sesgo de anclaje"
+  aliases: ["anchoring", "anclaje", "anchoring bias"]
+  desc: >-
+    Aferrarte a un número, como el precio al que compraste, y juzgar todo desde él. El mercado no sabe a cuánto compraste: lo que cuenta es lo que esperas ahora.
+loss_aversion:
+  label: "Aversión a las pérdidas"
+  aliases: ["loss aversion", "aversión a perder"]
+  desc: >-
+    Tendencia a sentir una pérdida con más fuerza que una ganancia equivalente. Lleva a vender pronto lo que gana y a aferrarse a lo que pierde.
+fomo:
+  label: "FOMO (miedo a perderse algo)"
+  aliases: ["FOMO", "fear of missing out", "miedo a quedarse fuera"]
+  desc: >-
+    Miedo a quedarte fuera de una subida que ves en otros. Empuja a comprar tarde y caro, sin análisis, solo porque «todos están ganando».
+confirmation_bias:
+  label: "Sesgo de confirmación"
+  aliases: ["confirmation bias", "sesgo confirmatorio"]
+  desc: >-
+    Buscar y creer solo la información que apoya lo que ya piensas e ignorar la contraria. Es peligroso cuando ya has comprado una acción.
+investment_thesis:
+  label: "Tesis de inversión"
+  aliases: ["investment thesis", "tesis", "razón de compra"]
+  desc: >-
+    Por qué compras algo, en pocas frases: qué esperas que pase y qué te haría cambiar de opinión. Escribirla evita justificar después cualquier decisión.
+exit_criteria:
+  label: "Criterios de salida"
+  aliases: ["exit criteria", "kill criteria", "cuándo vender", "reglas de salida"]
+  desc: >-
+    Condiciones que fijas antes de comprar para decidir cuándo vender: un precio, un cambio en el negocio o un hecho que invalide tu tesis.
+decision_journal:
+  label: "Diario de decisiones"
+  aliases: ["decision journal", "diario de inversión", "investment journal"]
+  desc: >-
+    Registro de por qué tomaste cada decisión de inversión y qué esperabas. Al revisarlo, aprendes de tus aciertos y errores sin reescribir la historia.

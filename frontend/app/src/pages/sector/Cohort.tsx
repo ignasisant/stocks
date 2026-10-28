@@ -29,7 +29,7 @@ import { ToggleChip, ToggleRow } from "../../ui/Toggle";
  * table for its dense rows on — read off the main column rather than the
  * viewport, so an open chat drawer narrows this page the way a phone does.
  * Read once, for what the page opens with (the columns a phone starts on,
- * whether the controls start folded); the swap itself is CSS.
+ * whether the controls start folded); the swap itself is `Responsive`.
  */
 function narrowAtOpen(): boolean {
   const main = document.querySelector(".ag-main");

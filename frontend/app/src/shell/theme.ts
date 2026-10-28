@@ -40,3 +40,60 @@ export const chart = () => ({
   textSecondary: token("text-secondary", "#B3AFBD"),
   textMuted: token("text-muted", "#A09DAA"),
 });
+
+/**
+ * Series identity, `ds.py`'s `CATEGORICAL_COLORS` in its order. Fixed, never
+ * cycled: series past the fifth take `seriesOther`, and a chart keeps each
+ * entity on the same slot however the set is filtered.
+ */
+export const series = (): string[] => [
+  token("series-1", "#4C8DFF"),
+  token("series-2", "#E0662A"),
+  token("series-3", "#8B6CF0"),
+  token("series-4", "#C08400"),
+  token("series-5", "#C54EA4"),
+];
+
+/** The folded tail — "Others" in a ring, any line past the fifth. */
+export const seriesOther = () => token("series-other", "#A09DAA");
+
+/** Index lines keep one slot on every chart, so SPY reads as SPY on the Risk
+ *  tab and in a ticker's Compare alike. */
+const INDEX_SLOT: Record<string, number> = { SPY: 0, EEM: 1, QQQ: 3 };
+
+/** The slots any other name takes, the ones no index claims first. */
+const FREE_ORDER = [2, 4, 0, 1, 3];
+
+/**
+ * A series hue per name. An index takes its own slot; any other name keeps
+ * the hue it had in `kept` (the last render's map), else the first free slot.
+ * So dropping one line never repaints the rest, and a sixth name past the
+ * palette is `seriesOther`, not a repeat.
+ */
+export function seriesColors(
+  names: readonly string[],
+  kept: Readonly<Record<string, string>> = {},
+): Record<string, string> {
+  const hues = series();
+  const out: Record<string, string> = {};
+  const taken = new Set<string>();
+  const claim = (name: string, hue: string | undefined) => {
+    if (hue === undefined || !hues.includes(hue) || taken.has(hue)) return;
+    out[name] = hue;
+    taken.add(hue);
+  };
+  for (const name of names) {
+    const slot = INDEX_SLOT[name];
+    if (slot !== undefined) claim(name, hues[slot]);
+  }
+  for (const name of names) if (!(name in out)) claim(name, kept[name]);
+  for (const name of names) {
+    if (name in out) continue;
+    const free = FREE_ORDER.map((slot) => hues[slot]).find(
+      (hue) => hue !== undefined && !taken.has(hue),
+    );
+    if (free === undefined) out[name] = seriesOther();
+    else claim(name, free);
+  }
+  return out;
+}

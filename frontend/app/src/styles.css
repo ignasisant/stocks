@@ -1494,7 +1494,7 @@ body {
 .ag-search-row {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   width: 100%;
   padding: 7px 8px;
   border: 0;
@@ -1540,7 +1540,6 @@ body {
 .ag-search-logo {
   box-sizing: border-box;
   flex: none;
-  align-self: center;
   width: 20px;
   height: 20px;
   padding: 1px;
@@ -1552,10 +1551,15 @@ img.ag-search-logo {
   background: var(--ag-text-primary);
 }
 
+/* A floor wide enough for the usual "109,12 +10,85 %", flushed right, so
+   the pills ahead of it stand in one column instead of following each
+   price's width. */
 .ag-search-quote {
   display: flex;
   flex: none;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 16ch;
   margin-left: auto;
   font-family: var(--ag-font-mono);
   font-size: var(--ag-fs-sm);
@@ -1566,7 +1570,6 @@ img.ag-search-logo {
    and never squeezed — the name is what truncates. */
 .ag-search-kind {
   flex: none;
-  align-self: center;
   margin-left: auto;
   font-size: var(--ag-fs-xs);
 }

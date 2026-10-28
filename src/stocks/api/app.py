@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from urllib.error import URLError
 
+import anyio.to_thread
 import requests
 from curl_cffi.requests import exceptions as curl
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -47,6 +48,7 @@ from stocks.api.routes import (
     i18n,
     import_statement,
     journal,
+    learn,
     market,
     me,
     notify,
@@ -61,6 +63,7 @@ from stocks.api.routes import (
     sector,
     ticker,
     today,
+    vitals,
     watchlist,
     watchlist_edit,
 )
@@ -97,6 +100,12 @@ async def _lifespan(app: FastAPI):
     # At boot: without it every event goes out through logging's last resort —
     # bare text, fields lost, yfinance's misses still at ERROR.
     obs.setup()
+    # Every route here is sync, so each runs on anyio's default threadpool —
+    # forty threads, shared with every sync dependency. On a cold instance a
+    # dozen slow loaders took them all and `/me` or `/prefs`, which cost
+    # nothing, queued behind for half a minute. More threads than that, within
+    # what the instance's memory holds; an env override for a smaller box.
+    anyio.to_thread.current_default_thread_limiter().total_tokens = THREADPOOL_TOKENS
     # Before anything can fetch: the mode swaps every upstream for fakes.
     if loadtest.active():
         loadtest.install()
@@ -107,6 +116,9 @@ async def _lifespan(app: FastAPI):
     warm.start()
     yield
 
+
+#: How many requests may be on the threadpool at once (see `_lifespan`).
+THREADPOOL_TOKENS = int(os.environ.get("STOCKS_THREADPOOL_TOKENS", "64"))
 
 #: The interactive docs and the schema list every route, guest-visible or
 #: not, so a deployment does not publish them unless it opts in. Cloud Run sets
@@ -366,11 +378,13 @@ _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
 _private.include_router(chat_memory.router)
 _private.include_router(journal.router)
+_private.include_router(learn.router)
 _private.include_router(brief.router)
 _private.include_router(onboarding.router)
 _private.include_router(notify.router)
 _private.include_router(feedback.router)
 _private.include_router(client_error.router)
+_private.include_router(vitals.router)
 _private.include_router(account.router)
 _private.include_router(connections.router)
 _private.include_router(bank.router)

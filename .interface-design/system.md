@@ -96,6 +96,45 @@ no Tailwind.
   Anything drawn over it (the reader's fills) stays `textPrimary` and is told
   apart by shape, never by green/red.
 
+## Chart data rules
+
+The dataviz skill's rules, fitted to Aguait. They apply to every chart on
+every page; a chart that breaks one is wrong, not a style choice.
+
+1. **Series palette.** Identity (which ticker, which bucket, which line)
+   comes from `series()` in `shell/theme.ts` = `CATEGORICAL_COLORS` in
+   `ds.py`: blue, orange, purple, amber, magenta, in that order. Fixed order,
+   never cycled (`ramp[i] ?? seriesOther()`, never `i % length`). The tail
+   past the fifth folds into one `seriesOther()` "Others", never a sixth hue.
+   Colour follows the entity: a filter that drops a series does not repaint
+   the survivors.
+2. **Up/down are not identity.** `candleUp`/`candleDown`/`up`/`down` say sign
+   or state only. Never "series 2", never a net-income bar's colour because
+   it is "good".
+3. **One y-axis.** Two magnitudes (revenue in € and EPS in €/share) are two
+   charts sharing the X axis, or one indexed to a common base. No right axis.
+4. **Bars:** ≤24px wide, 4px rounded data end, square on the baseline, 2px
+   surface gap between neighbours and stacked segments.
+5. **Dashed = not reported.** Forecast, hypothesis (backtest), reference
+   (baseline, money in, event rule). Recorded data is solid, whatever its
+   rank on the chart.
+6. **Selective labels.** Name the last point, the extreme or the one the
+   card is about; never a number on every bar or point. Text wears text
+   tokens, never the series colour; the swatch beside it carries identity.
+7. **Table twin.** A chart with ≤40 points offers "Ver datos" (the same
+   numbers as a table); identity is never colour alone (legend for ≥2
+   series, `EndLabels` for ≤4).
+8. **Validated, not eyeballed.** `tests/test_chart_palette.py` re-runs the
+   skill's checks on `CATEGORICAL_COLORS`: OKLCH L 0.48–0.67, chroma ≥ 0.10,
+   adjacent ΔE ≥ 8 under protan/deutan and ≥ 15 for full-colour vision,
+   ≥ 3:1 on card and page. A new hue goes in only when that test passes.
+
+Deliberate deviations: dark only, so no light-mode band; the Epilogue hero
+figure stays (tabular-nums); the price line keeps 2.25px and its 14% area
+fade (`Price chart hierarchy` below). The text-weight hues (`info`,
+`brandAccent`, `warn`, `smaFast`…) stay for overlays and event marks with one
+fixed meaning — they are not a series palette.
+
 ## Component patterns
 
 - **Segmented** (`ui/Segmented.tsx`, the only one): one `--ag-surface-page`
@@ -158,7 +197,8 @@ no Tailwind.
   `--ag-text-secondary` where it crosses a filled area (ticker price). A drag
   (mouse/pen button 0) takes `setPointerCapture`; touch stays free to scroll.
   Lines are named at their ends (`EndLabels` + `spreadLabels`, ≤4, not narrow)
-  instead of colour-only legends; a third line is dashed. Up candles hollow
+  instead of colour-only legends; dashes only for what was not
+  reported (rule 5 above). Up candles hollow
   once the body is ≥4px. Axis digits come from the tick step (`tickDigits`).
   The loading slot reserves the plot's height (`PriceChartWait`, Home spark
   56px, chat `min-height: 160px`).
@@ -196,6 +236,15 @@ no Tailwind.
   "?" inside the `th`, for any column whose number needs a definition. Row
   pills/tags carry their rule as `title` on hover; KPI defs come from the
   catalog (`kpi.<k>.desc`, `*` stripped), never re-written per page.
+- **Figure columns**: a numeric `th` aligns right over its right-aligned,
+  tabular figures (`.hm-table th.hm-num`), never left of them.
+- **Runs inside one table** (Home 52-week extremes): two kinds of row (highs,
+  lows) share one `thead` so the columns line up; each run is its own
+  `tbody` headed by a `th scope="rowgroup"` row in the caption's voice
+  (`--ag-fs-xs` muted, room above, no rule). The heading names the kind, so
+  rows drop the repeated word and keep only the figure; an empty run drops
+  out heading and all. On a phone: caption + `DenseRows` per run, the same
+  split the movers card uses for gains and losses.
 - **Row details dialog** (`DetailsButton` / `Details`, `Explain.tsx`): terse
   row (pill, two reasons, figure) + a way into the full story — a right
   chevron in the table's last column (`aria-haspopup="dialog"`, 44px

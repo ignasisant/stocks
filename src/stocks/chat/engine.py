@@ -1098,10 +1098,14 @@ def system_prompt(profile: dict, context: str,
         "a table, and saves them only after the user presses the import "
         "button. So never say rows were imported, never invent transactions, "
         "prices, dates or quantities, and never describe a book as changed by "
-        "anything you did. A file the user attached is parsed by the app and "
-        "never reaches you as text — if the conversation does not already "
-        "show its parsed result, you have not seen its contents and must say "
-        "so. Asked to import with nothing attached, say what to attach.\n\n"
+        "anything you did: no \"hecho\", \"he eliminado\", \"ya está\" — "
+        "nothing changes until the user approves the app's card. Never "
+        "describe a button, icon or menu of the app that this prompt does not "
+        "name: point to the page instead. A file the user attached is "
+        "parsed by the app and never reaches you as text — if the "
+        "conversation does not already show its parsed result, you have not "
+        "seen its contents and must say so. Asked to import with nothing "
+        "attached, say what to attach.\n\n"
         f"{memories}"
     )
     tail = (
@@ -1741,6 +1745,49 @@ def _proposed(evidence: agent.Evidence) -> dict | None:
             if act is not None:
                 return {**_proposal(act), "by": "agent"}
     return None
+
+
+def _rules_asked(message: str, watchlist: Path, focus: str) -> str:
+    """The ticker a question asks exit rules for, or "" when it asks none.
+
+    The symbol the reader typed wins over the page they typed it on; the
+    journal's button names both the key and the company ("RCF
+    (Teleperformance SE)"), and the key is what a rule is filed under."""
+    from stocks.chat import market
+
+    if not toolbox.asks_rules(message):
+        return ""
+    typed = market.mentioned(message, market.watchlist_names(watchlist),
+                             lookup=lambda _name: "")
+    return (typed[0] if typed else focus).strip().upper()
+
+
+def _drafted_rules(ticker: str, text: str, provider: Provider,
+                   key: str) -> dict | None:
+    """The card for the exit rules an answer wrote out but never proposed.
+
+    The reader asked for rules and the answer drafted them in prose ("copy
+    into your notes"): the research model skipped `propose_action`, which a
+    fallback model often does. Read back with the same router a typed "save
+    these rules" goes through, so the card holds only measures the journal
+    can check; the reader still approves it, so nothing is saved unseen.
+    None when the answer drafted none (it asked a question back instead)."""
+    from stocks.chat import tools
+
+    act = tools.detect(provider, key,
+                       f"Save these exit rules for {ticker}:\n{text[:_DRAFT_CHARS]}")
+    if act is None or act.kind != "set_criteria":
+        return None
+    # Filed under the key that was asked about, whatever the prose called it.
+    act = tools.proposed({**act.args, "action": "set_criteria", "ticker": ticker})
+    if act is None:
+        return None
+    obs.event("chat.rules_drafted", ticker=ticker,
+              rules=len(act.args.get("criteria") or []))
+    return {**_proposal(act), "by": "agent"}
+
+
+_DRAFT_CHARS = 6000  # of the answer handed to the router for its rules
 
 
 def _open_proposal(history: list[dict]) -> int | None:
@@ -2622,6 +2669,10 @@ class Turn:
     #: A change the research put to the reader (`_proposed`), filed as a
     #: pending card under the answer; None when it proposed nothing.
     proposal: dict | None = None
+    #: The ticker the question asked exit rules for, when the research
+    #: proposed none: `_record` drafts the card from the answer's own words
+    #: (`_drafted_rules`). "" otherwise.
+    rules_for: str = ""
 
     @property
     def units(self) -> int:
@@ -3184,6 +3235,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             rebalance.SURFACE_ID,
             rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
+    offered = _proposed(evidence) if confirm_actions else None
     return Turn(
         history=history,
         attempts=atts,
@@ -3201,7 +3253,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         thread=thread,
         profile=profile.name,
         id=turn_id or secrets.token_hex(6),
-        proposal=_proposed(evidence) if confirm_actions else None,
+        proposal=offered,
+        rules_for=(_rules_asked(message, watchlist, focus)
+                   if confirm_actions and offered is None else ""),
     ), None
 
 
@@ -3262,6 +3316,46 @@ _CITE_MARK = re.compile(r" ?【[^】\n]*】")
 
 def strip_cite_marks(text: str) -> str:
     return _CITE_MARK.sub("", text)
+
+
+# A free model handed its research sometimes answers by asking for more, in
+# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]".
+# The writing step has no tools, so that text reached the reader as the whole
+# answer. A call is scrubbed out of what is stored; an answer that was nothing
+# else is no answer, and the next provider is asked.
+_TOOL_NAMES = "|".join(sorted(map(re.escape, toolbox.TOOLS), key=len, reverse=True))
+_WRITTEN_CALL = re.compile(
+    rf"\{{\{{\s*(?:{_TOOL_NAMES})\s*\(.*?\)\s*\}}\}}"
+    r"|<(?:function|tool_call)\b[^>]*>.*?(?:</(?:function|tool_call)>|$)"
+    r"|\[TOOL_CALLS\].*?$"
+    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$",
+    re.S | re.M,
+)
+_CALL_OPENERS = ("{{", "<function", "<tool_call", "[TOOL_CALLS]",
+                 *(f"{name}(" for name in toolbox.TOOLS))
+# How much of an answer's start is held back while it may still be a call.
+CALL_HOLD_CHARS = 600
+
+
+def scrub_written_calls(text: str) -> str:
+    """The answer without the tool calls the model wrote out as text."""
+    if not _WRITTEN_CALL.search(text):
+        return text
+    return re.sub(r"\n{3,}", "\n\n", _WRITTEN_CALL.sub("", text)).strip()
+
+
+def _may_open_call(text: str) -> bool:
+    """Whether an answer's first words could still be a written tool call."""
+    head = text.lstrip()
+    return any(o.startswith(head) or head.startswith(o) for o in _CALL_OPENERS)
+
+
+def _only_calls(text: str, provider: Provider, model: str) -> bool:
+    """A reply that was nothing but written tool calls, logged as such."""
+    if not text or scrub_written_calls(text):
+        return False
+    obs.warn("chat.written_tool_call", provider=provider.id, model=model)
+    return True
 
 
 def close_markdown(text: str) -> str:
@@ -3326,7 +3420,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     turn.learned = [*turn.learned, *_unseen(chat_path)]
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
-    text = strip_cite_marks(text)
+    text = scrub_written_calls(strip_cite_marks(text))
     if guard.leaked(text, system_prompt({}, "")):
         # The fixed instructions, repeated back (`chat/guard.py`). Under
         # `block` the stored and finished answer is the refusal instead; the
@@ -3350,6 +3444,12 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["learned"] = list(turn.learned)
     if turn.recalled:
         entry["recalled"] = list(turn.recalled)
+    if turn.proposal is None and turn.rules_for:
+        try:
+            turn.proposal = _drafted_rules(turn.rules_for, text, provider, key)
+        except Exception as exc:  # a card is extra; the answer still lands
+            obs.warn("chat.rules_draft_failed", error_type=type(exc).__name__,
+                     error=str(exc)[:300])
     if turn.proposal is not None:
         entry["proposal"] = turn.proposal
         obs.event("chat.action_proposed", action=turn.proposal["kind"],
@@ -3495,6 +3595,9 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+        if _only_calls(text, provider, model):
+            _refund(prefs, prefs_path, provider, turn.units)
+            continue
         if text:
             return turn, _record(turn, text, provider, model, key, prefs=prefs,
                                  prefs_path=prefs_path, chat_path=chat_path,
@@ -3651,6 +3754,9 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             checkpoint.charged(provider.id)
         parts: list[str] = []
         cut = False
+        # The opening words, kept back while they may be a written tool call
+        # (`_may_open_call`); None once they are shown.
+        held: str | None = ""
         try:
             for chunk in metering.iterate(
                     provider.stream(key, model, turn.system, turn.messages),
@@ -3660,6 +3766,13 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     continue
                 if not chunk:
                     continue
+                if held is not None:
+                    held += chunk
+                    if _may_open_call(held) and (
+                            len(held) < CALL_HOLD_CHARS
+                            or _WRITTEN_CALL.search(held)):
+                        continue
+                    chunk, held = held, None
                 if not parts:
                     # Held until the first real chunk: a caller that showed
                     # "answering with X" for a provider that then failed over
@@ -3677,6 +3790,21 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     checkpoint.charged("")
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
+        if held:
+            # The whole reply stayed held: a written call and nothing else is
+            # no answer, so it fails over like a provider that said nothing.
+            if _only_calls(held.strip(), provider, model):
+                _refund(prefs, prefs_path, provider, turn.units)
+                if checkpoint is not None:
+                    checkpoint.charged("")
+                continue
+            held = scrub_written_calls(held)
+            if not parts:
+                yield ("meta", {"provider": provider.id, "model": model,
+                                "skills": list(turn.skills),
+                                "sources": list(turn.sources)})
+            parts.append(held)
+            yield ("text", held)
         text = "".join(parts).strip()
         if text and cut:
             closed = close_markdown(text) + "\n\n" + translate(

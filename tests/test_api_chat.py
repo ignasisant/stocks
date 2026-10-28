@@ -1422,6 +1422,64 @@ def _researched(monkeypatch, said=None, **args):
     return seen
 
 
+def _plain_research(monkeypatch):
+    """A gather that proposes nothing, the way a fallback model answers."""
+    from stocks.chat import agent
+
+    monkeypatch.setattr(engine, "gather_evidence",
+                        lambda *a, **kw: agent.Evidence())
+
+
+def test_rules_written_out_in_prose_still_come_with_their_card(
+    client, account, signed_in, served, monkeypatch
+):
+    """Asked for exit rules, the answer drafted them but proposed nothing:
+    the card is read back from the answer, filed under the key asked about
+    (not the symbol the prose used), and nothing is saved until approved."""
+    from stocks.chat import journal, tools
+    from stocks.chat.tools import Action
+
+    _plain_research(monkeypatch)
+    heard = []
+
+    def detect(provider, key, message, *a, **k):
+        heard.append(message)
+        return Action("set_criteria", "TEP.PA", {
+            "criteria": [{"rule": "below", "level": 68}], "thesis": "cheap"})
+
+    monkeypatch.setattr(tools, "detect", detect)
+    served(FakeProvider(chunks=("Stop at 68 €.",)))
+    ask = "Ayúdame a escribir reglas de salida para AAPL (Apple Inc.)"
+    stream = events(signed_in.post("/v1/chat/runs", json=run(ask)).text)
+    assert "Stop at 68 €." in heard[0]
+    (call,) = [c for c in calls(stream) if c["name"] == "confirm_action"]
+    assert call["args"]["kind"] == "set_criteria"
+    assert call["args"]["ticker"] == "AAPL"
+    assert finished(stream)["result"]["proposal"]["by"] == "agent"
+    saved = journal.path_for(account.chat)
+    assert journal.criteria(journal.load(saved)) == []
+
+    _resume(signed_in, call["id"], approved=True)
+    (rule,) = journal.criteria(journal.load(saved))
+    assert (rule.ticker, rule.action) == ("AAPL", "below")
+
+
+def test_a_sell_question_is_not_read_for_rules(
+    client, account, signed_in, served, monkeypatch
+):
+    from stocks.chat import tools
+
+    _plain_research(monkeypatch)
+    heard = []
+    monkeypatch.setattr(tools, "detect", lambda *a, **k: heard.append(a))
+    served(FakeProvider(chunks=("Hold it.",)))
+    stream = events(signed_in.post("/v1/chat/runs",
+                                   json=run("¿vendo AAPL?")).text)
+    assert painted(stream) == "Hold it."
+    assert heard == []
+    assert not [c for c in calls(stream) if c["name"] == "confirm_action"]
+
+
 def test_the_research_may_put_one_change_under_its_answer(
     client, account, signed_in, served, monkeypatch
 ):
@@ -1970,6 +2028,19 @@ def test_the_state_says_whether_a_key_can_be_stored_at_all(
 ):
     monkeypatch.setattr(engine, "secret", lambda *a, **k: "")
     assert signed_in.get("/v1/chat/state").json()["key_storage"] is False
+
+
+def test_the_state_says_whether_the_claude_connector_is_there(
+    client, account, signed_in, monkeypatch
+):
+    """Picking Claude in settings points at the connector, so the drawer has
+    to know whether this deploy serves one (it needs the public origin)."""
+    from stocks.web import server
+
+    monkeypatch.setattr(server, "public_origin", lambda: None)
+    assert signed_in.get("/v1/chat/state").json()["connector"] is False
+    monkeypatch.setattr(server, "public_origin", lambda: "https://topstocks.example")
+    assert signed_in.get("/v1/chat/state").json()["connector"] is True
 
 
 # --------------------------------------------------------------- show key

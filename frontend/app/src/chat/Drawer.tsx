@@ -106,7 +106,12 @@ export function Drawer() {
     // Fire and forget: the panel has already moved, and a preference that
     // failed to save is worth exactly one lost reload — not an error in front
     // of someone who was trying to close a drawer.
-    void send("PATCH", "/prefs", { chat_panel_open: next }).catch(() => {});
+    void send(
+      "PATCH",
+      "/prefs",
+      { chat_panel_open: next },
+      { touches: ["/prefs"] },
+    ).catch(() => {});
   }, []);
 
   // A page asked something (the Ticker header's "Analyse with AI"). Open, then

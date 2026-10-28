@@ -19,18 +19,19 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "sonner": "^2.0.8",
-    "use-stick-to-bottom": "^1.1.6"
+    "use-stick-to-bottom": "^1.1.6",
+    "web-vitals": "^6.2.3"
   },
   "devDependencies": {
     "@ag-ui/core": "^1.0.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "knip": "^6.41.0",
+    "knip": "^6.43.0",
     "preact": "^11.0.1",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5"
   }
 }

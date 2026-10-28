@@ -9,7 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { Connector, command, day, type Connection } from "./ConnectorCard";
+import { Connector, command, day, source, type Connection } from "./ConnectorCard";
 
 const URL = "https://topstocks.example/mcp";
 
@@ -35,6 +35,19 @@ describe("the Claude card", () => {
     expect(html).toContain(URL);
     expect(html).toContain(command(URL));
     expect(html).toContain("profile.connector_none");
+  });
+
+  it("says it is connected once an app is, and names the plans before", () => {
+    expect(draw(URL, [])).not.toContain("profile.connector_ok");
+    expect(draw(URL, [])).toContain("profile.connector_plans");
+    expect(draw(URL, [connection()])).toContain("profile.connector_ok");
+  });
+
+  it("reports only the sources the server accepts", () => {
+    expect(source("chat")).toBe("chat");
+    expect(source("news")).toBe("news");
+    expect(source(null)).toBe("profile");
+    expect(source("elsewhere")).toBe("profile");
   });
 
   it("draws nothing when there is nothing to offer and nothing to revoke", () => {

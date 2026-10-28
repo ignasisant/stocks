@@ -17,6 +17,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { NotSignedIn, get, send } from "../../shell/api";
+
+/** A link made or cut changes the notify state and the `telegram_linked` pref. */
+const NOTIFY = { touches: ["/notify", "/prefs"] };
 import { useSession } from "../../shell/session";
 import { describe } from "./errors";
 
@@ -163,7 +166,7 @@ export function useTelegram(offline: string): Channel {
     setBusy("connect");
     setNote(null);
     setExpired(false);
-    send<Issued>("POST", "/notify/telegram").then(
+    send<Issued>("POST", "/notify/telegram", undefined, NOTIFY).then(
       (issued) => {
         setBusy(null);
         setPending({
@@ -183,7 +186,7 @@ export function useTelegram(offline: string): Channel {
   const test = useCallback(() => {
     setBusy("test");
     setNote(null);
-    send<Telegram>("POST", "/notify/telegram/test").then(
+    send<Telegram>("POST", "/notify/telegram/test", undefined, NOTIFY).then(
       (fresh) => {
         setBusy(null);
         setState(fresh);
@@ -206,7 +209,7 @@ export function useTelegram(offline: string): Channel {
   const unlink = useCallback(() => {
     setBusy("unlink");
     setNote(null);
-    send<Telegram>("DELETE", "/notify/telegram").then(
+    send<Telegram>("DELETE", "/notify/telegram", undefined, NOTIFY).then(
       (fresh) => {
         setBusy(null);
         setState(fresh);

@@ -874,8 +874,10 @@
    place — with its height reserved (`pf-scrub`'s padding) so the day arriving
    or leaving moves nothing. The day still tracks the finger, in the strip's
    figures and the crosshair; the strip is laid edge to edge, one run of
-   "name figure" pairs that wraps to a second line and is cut after it, a
-   label that cannot fit ending in an ellipsis. Left out of it: what needs a
+   "name figure" pairs two to a line, the day sharing the first, a label that
+   cannot fit its half ending in an ellipsis. The chart sets how many lines
+   (`--pf-strip-lines`, from its row count), so every row has a line held for
+   it: a fixed height cut the history's third row and the rates after it. Left out of it: what needs a
    box to itself — the money chart's per-line grid (the legend above already
    prints each line's worth for the day) and a bar's detail body. */
 @media (hover: none) {
@@ -887,13 +889,15 @@
     left: 0 !important;
     right: 0;
     box-sizing: border-box;
-    flex-flow: row wrap;
-    align-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
     align-items: baseline;
     gap: 2px 14px;
     width: auto;
+    min-width: 0;
     max-width: none;
-    height: 3.4rem;
+    height: var(--pf-strip);
     padding: 6px 10px;
     overflow: hidden;
     transform: none;
@@ -902,7 +906,12 @@
   }
 
   .pf-scrub {
-    padding-top: 3.4rem;
+    /* The lines of the box's text, the gaps between them and its padding. */
+    --pf-strip: calc(
+      var(--pf-strip-lines, 2) * 1.45 * var(--ag-fs-xs) +
+        (var(--pf-strip-lines, 2) - 1) * 2px + 12px
+    );
+    padding-top: var(--pf-strip);
   }
 
   .pf-scrub > .pf-tip.pf-tip-x > :not(.ag-tip-title, .ag-tip-row) {
@@ -914,9 +923,16 @@
     font-weight: 600;
   }
 
+  .pf-scrub > .pf-tip.pf-tip-x .ag-tip-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .pf-scrub > .pf-tip.pf-tip-x .ag-tip-row {
     min-width: 0;
     max-width: 100%;
+    gap: 5px;
   }
 
   .pf-scrub > .pf-tip.pf-tip-x .ag-tip-row strong {

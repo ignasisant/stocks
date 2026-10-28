@@ -26,11 +26,13 @@ duplicated.
 The service that does scale to zero — production — is warmed from outside
 instead: a Cloud Scheduler job (infra/cron.tf; `.github/workflows/warm.yml`
 by hand) calls `POST /v1/warm` with the API token before the European open,
-after the US open and after each close. The request is the CPU: the warm runs on its
-thread, one account at a time, every stale memo refreshed in place
-(`cache.SYNC`) rather than handed to a background thread. The first of the
-day is also the one that pays each book's daily chart month
-(`loaders._REBASE_S`), so no reader does.
+as its morning readers arrive, after the US open and after each close —
+Saturday included, for the weekend's readers. The request is the CPU: the
+warm runs on its thread, one account at a time, every stale memo refreshed
+in place (`cache.SYNC`) rather than handed to a background thread. The first
+of the day is also the one that pays each book's daily chart month
+(`loaders._REBASE_S`), so no reader does. Two passes: Home's memos for
+every account (`warm_account`), then the other pages' (`warm_more`).
 """
 
 from __future__ import annotations
@@ -158,19 +160,83 @@ def warm_today(tbl) -> None:
                 )
 
 
+# The backtest's window, as the risk tab and both Pulso cards ask for it
+# (`routes/portfolio.risk`, `routes/pulse`): the one key those pages read.
+BOOK_PERIOD = "2y"
+
+
+def warm_more(db: str, watchlist: str | Path, base: str) -> None:
+    """The second pass over an account: the memos behind the pages the
+    request log showed waiting on a cold instance after Home — the risk
+    tab and the Pulso book card (`basket_report`), the Posiciones spots, the
+    calendar's earnings and dividends. Each on its own: a feed that refuses
+    costs that memo, never the rest of the pass."""
+    from stocks.data.crypto import is_crypto
+    from stocks.data.funds import is_fund
+
+    mtime = loaders.db_mtime(db)
+    entries = load_watchlist(Path(watchlist))
+    # The calendar's own key: the watchlist's reporting names, sorted
+    # (`routes/earnings`). Anything else warms an entry nobody reads.
+    reporting = tuple(
+        sorted(
+            h.ticker
+            for h in entries
+            if not is_crypto(h.ticker) and not is_fund(h.ticker, fetch=False)
+        )
+    )
+    tbl = loaders.positions_table(db, mtime, base)
+    currencies = (
+        tuple(sorted({str(c).upper() for c in tbl["ccy"] if c}))
+        if tbl is not None and not getattr(tbl, "empty", True) and "ccy" in tbl
+        else ()
+    )
+    for name, fill in (
+        ("book", lambda: loaders.basket_report(db, mtime, base, BOOK_PERIOD)),
+        ("spots", lambda: loaders.spot_rates(currencies, base) if currencies else None),
+        ("earnings", lambda: loaders.earnings_calendar(reporting)),
+        ("dividends", lambda: loaders.dividend_payments(db, mtime, base)),
+    ):
+        try:
+            fill()
+        except Exception as exc:  # noqa: BLE001 — see above
+            obs.warn("api.warm_more_failed", memo=name, error_type=type(exc).__name__)
+
+
+def warm_shared() -> None:
+    """The memos every reader shares, once a run: Today's market read, the
+    pulse's prices and rates behind Home's market card and Pulso, and the
+    CFTC's weekly positioning (Friday's release lands here, not in a read)."""
+    for name, fill in (
+        ("today_market", loaders.today_market),
+        ("pulse_closes", loaders.pulse_closes),
+        ("pulse_rate_rows", loaders.pulse_rate_rows),
+        ("market_pulse", loaders.market_pulse),
+        ("positioning", loaders.positioning),
+    ):
+        try:
+            fill()
+        except Exception as exc:  # noqa: BLE001 — see above
+            obs.warn(f"api.warm_{name}_failed", error_type=type(exc).__name__)
+
+
 def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> int:
     """Warm every account seen in the last `RECENT_DAYS`; returns how many.
 
     Most recently seen first, so a `budget_s` that runs out leaves the
-    accounts least likely to be read. Never raises — a throttled Yahoo or an
-    unreadable ledger is logged and skipped, and the next reader simply pays
-    what they would have paid anyway.
+    accounts least likely to be read. Two passes in that order: Home's memos
+    for every account first (`warm_account`), then the rest of the pages'
+    (`warm_more`), so the second pass on one account never costs another
+    its Home. Never raises — a throttled Yahoo or an unreadable ledger is
+    logged and skipped, and the next reader simply pays what they would
+    have paid anyway.
     """
     from stocks.notify.fanout import iter_all_users
 
     today = today or date.today()
     started = time.monotonic()
     warmed = 0
+    more = 0
     try:
         users = iter_all_users()
     except Exception as exc:  # noqa: BLE001 — boot work must not take the app down
@@ -180,27 +246,30 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
             error=str(exc)[:200],
         )
         return 0
-    # Today's market read is one file for every account: read it once, so the
-    # first reader of the day does not pay its restore.
-    try:
-        loaders.today_market()
-    except Exception as exc:  # noqa: BLE001 — see above
-        obs.warn("api.warm_today_market_failed", error_type=type(exc).__name__)
+    # One file and two market-wide downloads for every account: once.
+    warm_shared()
     recent = [u for u in users if seen_recently(u.prefs.get("last_seen"), today)]
     recent.sort(key=lambda u: str(u.prefs.get("last_seen") or ""), reverse=True)
-    for i, user in enumerate(recent):
+
+    def spent(done: int, left: int, stage: str) -> bool:
         if budget_s is not None and time.monotonic() - started > budget_s:
-            obs.warn("api.warm_budget_spent", warmed=warmed, left=len(recent) - i)
-            break
+            obs.warn("api.warm_budget_spent", warmed=done, left=left, stage=stage)
+            return True
+        return False
+
+    def base_of(user) -> str:
         base = str(user.prefs.get("currency") or "EUR").upper()
+        return base if base in CURRENCIES else "EUR"
+
+    homed = []
+    for i, user in enumerate(recent):
+        if spent(warmed, len(recent) - i, "home"):
+            break
         with obs.timed("api.warm", account=user.label) as rec:
             try:
-                warm_account(
-                    str(user.db),
-                    str(user.watchlist),
-                    base if base in CURRENCIES else "EUR",
-                )
+                warm_account(str(user.db), str(user.watchlist), base_of(user))
                 warmed += 1
+                homed.append(user)
             except Exception as exc:  # noqa: BLE001 — see above
                 rec["skipped"] = type(exc).__name__
                 obs.warn(
@@ -209,9 +278,26 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
                     error_type=type(exc).__name__,
                     error=str(exc)[:200],
                 )
+    # Only the accounts whose Home is warm: a ledger that would not price
+    # has nothing for the backtest or the calendar either.
+    for i, user in enumerate(homed):
+        if spent(more, len(homed) - i, "more"):
+            break
+        with obs.timed("api.warm_more", account=user.label) as rec:
+            try:
+                warm_more(str(user.db), str(user.watchlist), base_of(user))
+                more += 1
+            except Exception as exc:  # noqa: BLE001 — see above
+                rec["skipped"] = type(exc).__name__
+                obs.warn(
+                    "api.warm_more_skipped",
+                    account=user.label,
+                    error_type=type(exc).__name__,
+                )
     obs.event(
         "api.warm_run",
         warmed=warmed,
+        more=more,
         accounts=len(recent),
         seconds=round(time.monotonic() - started, 1),
     )

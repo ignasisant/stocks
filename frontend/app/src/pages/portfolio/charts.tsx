@@ -27,7 +27,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../shell/i18n";
-import { token } from "../../shell/theme";
+import { series as seriesHues, seriesOther, token } from "../../shell/theme";
 import { EndLabels } from "../ticker/plot";
 import { TickerCell } from "../../shell/tickers";
 import { useTabStrip } from "../../shell/useTabStrip";
@@ -37,20 +37,6 @@ import { Spoken, useScrub } from "../../ui/chart/useScrub";
 import { BASELINE_DASH, DOT, LINE } from "../../ui/chart/marks";
 import { useWidth } from "../../shell/useWidth";
 import type { TaxPeriod } from "./api";
-
-/**
- * The DS categorical ramp, in `ds.py`'s order (`CATEGORICAL_COLORS`) minus its
- * one unpublished hue: chart magenta is not in `tokens()`.
- */
-const categorical = (): string[] => [
-  token("brand-accent"),
-  token("info"),
-  token("purple-300"),
-  token("warn"),
-  token("warn-orange"),
-  token("info-deep"),
-  token("purple-400"),
-];
 
 /**
  * Three to five round values spanning [low, high] — the value axis's labels.
@@ -266,6 +252,16 @@ function ChartTip({
   );
 }
 
+/**
+ * The touch readout strip's reserved height, in lines (`pf-scrub` in
+ * portfolio.css): the title shares the first line with a row, then two rows
+ * a line. From the chart's row count, not the day's box, so it is set before
+ * a finger lands and nothing moves when it does.
+ */
+function stripLines(rows: number): CSSProperties {
+  return { "--pf-strip-lines": Math.ceil((rows + 1) / 2) } as CSSProperties;
+}
+
 /** Where a pointer sits on an SVG, in its viewBox's x units. */
 function viewX(event: MouseEvent<Element>, svg: SVGSVGElement | null, width: number) {
   const box = svg?.getBoundingClientRect();
@@ -449,22 +445,21 @@ export function Donut({
     if (pinned !== null && focusDetail.current) closeButton.current?.focus();
     focusDetail.current = false;
   }, [pinned]);
-  const colors = categorical();
+  const colors = seriesHues();
   const total = slices.reduce((sum, slice) => sum + slice.weight, 0);
   if (!(total > 0)) return null;
 
   const sorted = [...slices].sort((a, b) => b.weight - a.weight);
+  // Five hues name five slices; the tail folds into one muted "Others", never
+  // a sixth hue and never a repeat of the first.
   const shown =
     sorted.length > colors.length
       ? [
-          ...sorted.slice(0, colors.length - 1),
-          foldSlices(sorted.slice(colors.length - 1), otherLabel),
+          ...sorted.slice(0, colors.length),
+          foldSlices(sorted.slice(colors.length), otherLabel),
         ]
       : sorted;
-  const palette =
-    sorted.length > colors.length
-      ? [...colors.slice(0, colors.length - 1), token("text-muted")]
-      : colors;
+  const palette = [...colors, seriesOther()];
 
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
@@ -538,7 +533,7 @@ export function Donut({
                 cy="50"
                 r={radius}
                 fill="none"
-                stroke={palette[index % palette.length] ?? token("text-muted")}
+                stroke={palette[index] ?? seriesOther()}
                 strokeWidth={on ? 18 : 15}
                 strokeOpacity={active && !on ? 0.35 : 1}
                 strokeDasharray={`${drawn} ${circumference - drawn}`}
@@ -682,7 +677,7 @@ export function Donut({
             >
               <span
                 className="pf-swatch"
-                style={{ background: palette[index % palette.length] }}
+                style={{ background: palette[index] ?? seriesOther() }}
               />
               <span className="pf-legend-name">
                 {slice.label} · {format(slice.weight / total)}
@@ -1358,7 +1353,11 @@ function PeriodBarsPlot({
           </li>
         ))}
       </Legend>
-      <div className="pf-plot pf-scrub" ref={frame}>
+      <div
+        className="pf-plot pf-scrub"
+        ref={frame}
+        style={stripLines(3 + (anyDividends ? 1 : 0) + (anyRecovered ? 1 : 0))}
+      >
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
@@ -1693,7 +1692,7 @@ function WaterfallPlot({
 
   return (
     <div className="pf-chart pf-waterfall">
-      <div className="pf-plot pf-scrub" ref={frame}>
+      <div className="pf-plot pf-scrub" ref={frame} style={stripLines(1)}>
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
@@ -2085,10 +2084,11 @@ export function ReturnLines({
   const x = (index: number) => left + (index / last) * plotW;
   const y = (value: number) => RETURN.top + (1 - (value - low) / span) * plotH;
 
-  const ramp = categorical();
+  // Fixed slots, never cycled: a line past the fifth is muted, not a repeat.
+  const ramp = seriesHues();
   const colored = placed.map((one, index) => ({
     ...one,
-    color: one.color ?? ramp[index % ramp.length]!,
+    color: one.color ?? ramp[index] ?? seriesOther(),
   }));
   const listed = colored.filter((one) => !one.tipOnly);
   const wanted = peek ?? pinned;
@@ -2273,7 +2273,11 @@ export function ReturnLines({
           </li>
         ))}
       </Legend>
-      <div className="pf-plot pf-scrub" ref={frame}>
+      <div
+        className="pf-plot pf-scrub"
+        ref={frame}
+        style={stripLines(money ? 1 : colored.length)}
+      >
         <svg
           ref={svg}
           className="pf-return-plot"
@@ -2849,7 +2853,7 @@ function BookHistoryPlot({
           </button>
         ) : null}
       </div>
-      <div className="pf-plot pf-scrub" ref={frame}>
+      <div className="pf-plot pf-scrub" ref={frame} style={stripLines(3)}>
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
@@ -3234,10 +3238,10 @@ function BookAndRatesPlot({
   const yRate = (value: number) =>
     ratesTop + FLOORS.inset + (1 - (value - rateLow) / rateSpan) * rateH;
 
-  const ramp = categorical();
+  const ramp = seriesHues();
   const colored = drawn.map((one, index) => ({
     ...one,
-    color: one.color ?? ramp[index % ramp.length]!,
+    color: one.color ?? ramp[index] ?? seriesOther(),
   }));
   /** Contiguous runs of a rate line, so a month without a rate breaks it. */
   const runs = (values: (number | null)[]) => {
@@ -3378,7 +3382,11 @@ function BookAndRatesPlot({
           </li>
         ))}
       </Legend>
-      <div className="pf-plot pf-scrub" ref={frame}>
+      <div
+        className="pf-plot pf-scrub"
+        ref={frame}
+        style={stripLines(3 + (barred ? 1 : 0) + colored.length)}
+      >
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}

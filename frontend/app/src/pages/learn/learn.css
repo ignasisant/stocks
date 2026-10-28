@@ -1,0 +1,473 @@
+/*
+ * The Learn page's own rules. Every colour, radius and type size is an
+ * `--ag-*` custom property the document already carries; no hex literals.
+ *
+ * The page runs the full width of the main column. The only caps are on
+ * running text — a lesson's body, the lead, a term's definition — which
+ * reads badly past ~70 characters a line.
+ */
+
+.lr-page-title,
+.lr-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-2xl);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: var(--ag-track-2xl);
+  text-wrap: balance;
+}
+
+.lr-lead {
+  max-width: 68ch;
+  margin: 0 0 1rem;
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.lr-panel {
+  margin-top: 1rem;
+}
+
+/* ------------------------------------------------------------------ paths */
+
+.lr-paths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+@container ag-main (max-width: 60rem) {
+  .lr-paths {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ag-main (max-width: 40rem) {
+  .lr-paths {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A section card, as the DS draws one. */
+.lr-path {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
+}
+
+.lr-path-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.lr-path-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  /* Secondary, not the accent: the view's one accent is the progress. */
+  color: var(--ag-text-secondary);
+}
+
+.lr-path-title {
+  margin: 0;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.lr-path-meta,
+.lr-eyebrow,
+.lr-count,
+.lr-foot {
+  margin: 0;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lr-path-body {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.lr-prog {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lr-prog-track {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  overflow: hidden;
+}
+
+/* Full width, scaled to the share read: a transform moves on the
+   compositor, where a changing width would lay the card out every frame. */
+.lr-prog-fill {
+  height: 100%;
+  background: var(--ag-brand-accent);
+  transform-origin: left center;
+}
+
+.lr-prog-n {
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.lr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lr-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: var(--ag-radius-xs);
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.lr-item-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.lr-item-min {
+  flex: none;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.lr-dot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+}
+
+.lr-item-read .lr-item-title {
+  color: var(--ag-text-secondary);
+}
+
+.lr-dot-done {
+  border-color: transparent;
+  background: var(--ag-brand-accent);
+  color: var(--ag-on-brand);
+}
+
+.lr-go {
+  align-self: flex-start;
+}
+
+/* ----------------------------------------------------------------- lesson */
+
+.lr-back {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0 0 0.75rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+
+.lr-eyebrow {
+  margin-bottom: 0.25rem;
+}
+
+/* The chat renderer's blocks, at reading size and width. */
+.lr-body {
+  max-width: 68ch;
+  font-size: var(--ag-fs-base);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.lr-body .ag-chat-h {
+  text-wrap: balance;
+}
+
+.lr-body .ag-chat-h {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.lr-body .ag-chat-p,
+.lr-body .ag-chat-list {
+  margin-bottom: 0.75rem;
+}
+
+.lr-body .ag-chat-table {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.lr-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.25rem 0;
+}
+
+.lr-mark {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.lr-mark-on {
+  color: var(--ag-brand-accent);
+}
+
+.lr-h2 {
+  margin: 0 0 0.5rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.lr-terms {
+  margin: 0 0 1.25rem;
+}
+
+.lr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lr-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.lr-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+@container ag-main (max-width: 40rem) {
+  .lr-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lr-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.lr-step-next {
+  grid-column: 2;
+  text-align: right;
+  align-items: flex-end;
+}
+
+@container ag-main (max-width: 40rem) {
+  .lr-step-next {
+    grid-column: 1;
+  }
+}
+
+.lr-step-title {
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.lr-step-dir {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.lr-foot {
+  max-width: 68ch;
+}
+
+.lr-empty {
+  max-width: 40rem;
+  color: var(--ag-text-secondary);
+}
+
+.lr-none {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.lr-none .lr-count {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- glossary */
+
+.lr-search {
+  width: 100%;
+  max-width: 28rem;
+  padding: 8px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+}
+
+.lr-count {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.lr-terms-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 2rem;
+  margin: 0;
+}
+
+@container ag-main (max-width: 48rem) {
+  .lr-terms-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lr-term {
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  border-radius: var(--ag-radius-xs);
+  scroll-margin: 5rem;
+}
+
+.lr-term-on {
+  background: var(--ag-surface-sunken);
+  box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+}
+
+.lr-term-label {
+  font-weight: 600;
+}
+
+.lr-term-aka {
+  font-weight: 400;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.lr-term-desc {
+  max-width: 68ch;
+  margin: 0.25rem 0 0;
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.lr-term-lesson {
+  display: block;
+  width: fit-content;
+  margin-top: 0.25rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------ interaction */
+
+@media (hover: hover) {
+  .lr-item:hover,
+  .lr-step:hover,
+  .lr-chip:hover {
+    background: var(--ag-surface-hover);
+  }
+
+  .lr-back:hover,
+  .lr-term-lesson:hover {
+    text-decoration: underline;
+  }
+}
+
+/* A row in a list answers a press by lighting up, as iOS lists do; the
+   standalone targets give a little under the finger, as the shell's buttons
+   do (styles.css). */
+.lr-item:active {
+  background: var(--ag-surface-hover);
+}
+
+.lr-chip,
+.lr-step,
+.lr-back {
+  transition: scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lr-chip:active,
+  .lr-step:active,
+  .lr-back:active {
+    scale: 0.97;
+  }
+
+  .lr-prog-fill {
+    transition: transform var(--ag-dur-move) var(--ag-ease-out);
+  }
+}
+
+/* A fingertip is ~44px: the lesson rows, chips and links grow under one. */
+@media (pointer: coarse) {
+  .lr-item,
+  .lr-back,
+  .lr-chip,
+  .lr-step,
+  .lr-search {
+    min-height: 44px;
+  }
+
+  .lr-chip {
+    display: inline-flex;
+    align-items: center;
+  }
+}

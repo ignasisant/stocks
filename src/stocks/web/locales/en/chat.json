@@ -398,6 +398,7 @@
   "chat.debate_failed": "This side did not answer in time.",
   "chat.debate_arguing": "Arguing…",
   "chat.connect_cta": "Sign in with {provider}",
+  "chat.claude_connector_nudge": "Use Claude? Connect TopStocks and ask about your portfolio from Claude — no key needed.",
   "chat.connect_help": "Sign in with {provider} and its models answer on your own account and credits, no key to copy. Revoke it any time in its settings.",
   "chat.connect_or": "or paste a key",
   "chat.connect_working": "Connecting {provider}…",

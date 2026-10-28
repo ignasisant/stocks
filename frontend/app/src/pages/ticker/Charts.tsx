@@ -9,10 +9,10 @@
  * trade on.
  */
 
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { maybe, sectorKey } from "../sentiment/format";
-import { chart as palette } from "../../shell/theme";
+import { chart as palette, series as seriesHues } from "../../shell/theme";
 import { useWidth } from "../../shell/useWidth";
 import {
   DASH,
@@ -34,16 +34,16 @@ import {
   bounds,
   fitHeight,
   frame,
+  plotHeight,
   plotWidth,
   scale,
   spoken,
   summary,
-  ticks,
   type TipLine,
 } from "./plot";
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
-import { LINE } from "../../ui/chart/marks";
+import { BAR, DOT, LINE, barPath } from "../../ui/chart/marks";
 import type { Financials, Fund, Insiders, Trade, Valuation } from "./types";
 import { placeFills } from "./hover";
 import { num } from "../../shell/numbers";
@@ -71,11 +71,13 @@ const axisCompact = (value: number) => (value === 0 ? "0" : compact(value));
 // ------------------------------------------------------------- results chart
 
 /**
- * Reported years as grouped bars, consensus continuing them, EPS on its own
- * axis over the top.
+ * Reported years as grouped bars, consensus continuing them, and EPS in a
+ * panel of its own underneath on the same years.
  *
- * EPS lives on a second axis because dollars-per-share beside billions would
- * flatline on the bar scale. The forecast bars are hatched and half-opaque, and
+ * EPS has its own panel, not a second axis over the bars: dollars-per-share
+ * beside billions would flatline on the bar scale, and two scales on one plot
+ * let any crossing of the line and a bar look like it means something. The
+ * forecast bars are hatched and half-opaque, and
  * the tooltip names each one "consensus" where analysts were polled and
  * "extrapolated" once the path runs past the last published estimate and is
  * only a growth rate carried forward. Drawing those two alike is the whole
@@ -85,6 +87,8 @@ function Annual({ data }: { data: Financials }) {
   const t = useT();
   const mobile = useMobile();
   const colors = palette();
+  const hues = seriesHues();
+  const epsColor = hues[2] ?? colors.brandAccent;
   const [hover, setHover] = useState<number | null>(null);
   const [node, measured] = useWidth(FALLBACK);
   const narrow = mobile || measured < NARROW;
@@ -125,7 +129,7 @@ function Annual({ data }: { data: Financials }) {
           {
             key: "revenue",
             values: revenue,
-            color: colors.info,
+            color: hues[0] ?? colors.info,
             label: t("ticker.revenue"),
           },
         ]
@@ -135,40 +139,56 @@ function Annual({ data }: { data: Financials }) {
           {
             key: "income",
             values: income,
-            color: colors.candleUp,
+            color: hues[1] ?? colors.info,
             label: t("ticker.net_income"),
           },
         ]
       : []),
   ];
 
-  // Drawn at the real width, one unit a pixel. Narrow, the money axis moves
-  // inside the plot (`YGrid inside`) so the gutter shrinks to nothing; the EPS
-  // axis stays on the right, where its few labels need ~40.
-  const box = frame({
-    width: measured,
-    height: fitHeight(measured, 320, 240),
-    left: narrow ? 8 : 52,
-    right: epsPoints.length ? (narrow ? 40 : 46) : 16,
-    bottom: 30,
-    top: 24,
-  });
   const money_ = bounds(
     bars.map((one) => one.values),
     { zero: true, pad: 0.12 },
   );
-  const epsRange = bounds([eps, epsLow, epsHigh], { zero: true, pad: 0.12 });
-  if (!money_ && !epsRange) return null;
-  const left = money_ ?? { lo: 0, hi: 1 };
-  const y = scale(left.lo, left.hi, box.height - box.bottom, box.top);
-  const yEps = epsRange
-    ? scale(epsRange.lo, epsRange.hi, box.height - box.bottom, box.top)
+  const epsRange = epsPoints.length
+    ? bounds([eps, epsLow, epsHigh], { zero: true, pad: 0.12 })
     : null;
+  if (!money_ && !epsRange) return null;
+
+  // Drawn at the real width, one unit a pixel. Narrow, the axes move inside
+  // the plot (`YGrid inside`) so the gutter shrinks to nothing. With EPS the
+  // card is taller and its bottom third is the EPS panel, the gap above it
+  // holding the panel's name.
+  const box = frame({
+    width: measured,
+    height: epsRange ? fitHeight(measured, 400, 320) : fitHeight(measured, 320, 240),
+    left: narrow ? 8 : 52,
+    right: 16,
+    bottom: 30,
+    top: 24,
+  });
+  const split = 26;
+  const epsHeight = epsRange ? Math.round((plotHeight(box) - split) * 0.36) : 0;
+  const barsBox = epsRange ? { ...box, bottom: box.bottom + epsHeight + split } : box;
+  const epsBox = { ...box, top: box.height - box.bottom - epsHeight };
+  const left = money_ ?? { lo: 0, hi: 1 };
+  const y = scale(left.lo, left.hi, barsBox.height - barsBox.bottom, barsBox.top);
+  const yEps = epsRange
+    ? scale(epsRange.lo, epsRange.hi, epsBox.height - epsBox.bottom, epsBox.top)
+    : null;
+  const epsFormat = (value: number) =>
+    value === 0 ? "0" : num(value, Math.abs(value) >= 10 ? 0 : 1);
 
   const band = plotWidth(box) / Math.max(1, periods.length);
   const xOf = (index: number) => box.left + (index + 0.5) * band;
-  // Capped so a handful of years on a wide card stay bars, not slabs.
-  const width = Math.min(narrow ? 34 : 48, (band * 0.7) / Math.max(1, bars.length));
+  // Capped so a handful of years on a wide card stay bars, not slabs, with
+  // a gap of the card between the two bars of one year.
+  const gaps = BAR.gap * Math.max(0, bars.length - 1);
+  const width = Math.max(
+    1,
+    Math.min(BAR.max, (band * 0.7 - gaps) / Math.max(1, bars.length)),
+  );
+  const group = width * bars.length + gaps;
   const every = stride(
     periods.length,
     band,
@@ -183,9 +203,10 @@ function Annual({ data }: { data: Financials }) {
       : t("ticker.k_consensus");
   };
 
-  // Year-over-year per bar, the label printed above each one. The
-  // first forecast bar is measured against the last *reported* year, and each
-  // later one against the forecast before it — see `barGrowth`.
+  // Year-over-year per bar. The first forecast bar is measured against the
+  // last *reported* year, and each later one against the forecast before it —
+  // see `barGrowth`. Printed over the last filed year and the year under the
+  // pointer only: a figure on every bar is a table drawn badly.
   const growth = bars.map((series) => barGrowth(series.values, years.length));
 
   const lines: TipLine[] = [];
@@ -198,11 +219,17 @@ function Annual({ data }: { data: Financials }) {
     });
     const point = eps[hover];
     if (known(point)) lines.push({ text: `EPS ${num(point, 2)}` });
-    lines.push({ text: kindOf(hover) });
   }
 
+  // Whether the year was filed, polled or extrapolated rides on its title, so
+  // the phone's readout cannot cut it; the three figures under it take two
+  // lines there, which the strip holds room for.
+  const heading =
+    hover !== null && periods[hover] ? `${periods[hover]} · ${kindOf(hover)}` : "";
+  const readoutRoom = { "--tk-readout": "62px" } as CSSProperties;
+
   return (
-    <div className="tk-plot" ref={node}>
+    <div className="tk-plot" ref={node} style={readoutRoom}>
       <Chart
         frame={box}
         label={summary(
@@ -211,11 +238,7 @@ function Annual({ data }: { data: Financials }) {
           periods[periods.length - 1] ?? "",
         )}
         walk={{ at: hover, last: periods.length - 1, set: setHover }}
-        readout={
-          hover !== null && periods[hover]
-            ? spoken(periods[hover] as string, lines)
-            : null
-        }
+        readout={hover !== null && periods[hover] ? spoken(heading, lines) : null}
         onPointer={(x) =>
           setHover(
             Math.max(
@@ -249,13 +272,23 @@ function Annual({ data }: { data: Financials }) {
         </defs>
 
         <YGrid
-          frame={box}
+          frame={barsBox}
           lo={left.lo}
           hi={left.hi}
           format={axisCompact}
           count={narrow ? 3 : 4}
           inside={narrow}
         />
+        {yEps && epsRange ? (
+          <YGrid
+            frame={epsBox}
+            lo={epsRange.lo}
+            hi={epsRange.hi}
+            format={epsFormat}
+            count={2}
+            inside={narrow}
+          />
+        ) : null}
         {/* The zero rule: a loss below the axis has to be visibly below it. */}
         <line
           x1={box.left}
@@ -264,33 +297,40 @@ function Annual({ data }: { data: Financials }) {
           y2={y(0)}
           stroke={colors.border}
         />
+        {yEps && epsRange && epsRange.lo < 0 ? (
+          <line
+            x1={box.left}
+            x2={box.width - box.right}
+            y1={yEps(0)}
+            y2={yEps(0)}
+            stroke={colors.border}
+          />
+        ) : null}
 
         {bars.map((series, slot) =>
           series.values.map((value, index) => {
             if (!known(value)) return null;
             const forecast = index >= years.length;
-            const x = xOf(index) - (width * bars.length) / 2 + slot * width;
-            const label = growthLabel(growth[slot]?.[index] ?? null);
-            // Outside the bar, on the side away from zero, like Plotly's
-            // `textposition="outside"`: a loss's label hangs under it. Not on
-            // a phone: two bars per year at 390px leave ~12px each, and two
-            // "+12%" labels side by side overprint — the tooltip carries it.
+            const x = xOf(index) - group / 2 + slot * (width + BAR.gap);
+            const shown =
+              !narrow &&
+              (index === hover || (hover === null && index === years.length - 1));
+            const label = shown ? growthLabel(growth[slot]?.[index] ?? null) : null;
+            // Outside the bar, on the side away from zero: a loss's label
+            // hangs under it. Not on a phone, where the readout carries it.
             const labelY = value >= 0 ? y(value) - 4 : y(value) + 11;
             return (
               <g key={`${series.key}-${index}`}>
-                <rect
-                  x={x}
-                  y={Math.min(y(value), y(0))}
-                  width={Math.max(1, width - 2)}
-                  height={Math.max(1, Math.abs(y(value) - y(0)))}
+                <path
+                  d={barPath(x, width, y(0), y(value))}
                   fill={forecast ? "url(#tk-forecast)" : series.color}
                   opacity={forecast ? 0.75 : 1}
                   stroke={forecast ? series.color : "none"}
                 />
-                {label && !narrow ? (
+                {label ? (
                   <text
                     className="tk-bar-label"
-                    x={x + Math.max(1, width - 2) / 2}
+                    x={x + width / 2}
                     y={labelY}
                     textAnchor="middle"
                   >
@@ -307,24 +347,52 @@ function Annual({ data }: { data: Financials }) {
         {yEps && epsHigh.some((one) => one !== null) ? (
           <path
             d={bandPath(epsHigh, epsLow, eps, years.length, xOf, yEps)}
-            fill={colors.accentBand}
+            fill={epsColor}
+            fillOpacity={0.15}
           />
         ) : null}
 
+        {/* Solid over the filed years, dashed from the last of them on: a dash
+            says forecast, so only the forecast wears it. */}
         {yEps
-          ? runs(eps).map((run) => (
-              <polyline
-                key={`eps-${run[0]}`}
-                className="tk-line"
-                points={run.map((i) => `${xOf(i)},${yEps(eps[i] as number)}`).join(" ")}
-                stroke={colors.brandAccent}
-                strokeWidth={LINE.primary}
-                strokeDasharray={
-                  (run[run.length - 1] ?? 0) >= years.length ? "5 4" : undefined
-                }
-              />
-            ))
+          ? runs(eps).flatMap((run) => {
+              const filed = run.filter((i) => i < years.length);
+              const ahead = run.filter((i) => i >= years.length - 1);
+              const at = (part: number[]) =>
+                part.map((i) => `${xOf(i)},${yEps(eps[i] as number)}`).join(" ");
+              return [
+                filed.length > 1 ? (
+                  <polyline
+                    key={`eps-${run[0]}`}
+                    className="tk-line"
+                    points={at(filed)}
+                    stroke={epsColor}
+                    strokeWidth={LINE.primary}
+                  />
+                ) : null,
+                ahead.length > 1 ? (
+                  <polyline
+                    key={`eps-ahead-${run[0]}`}
+                    className="tk-line"
+                    points={at(ahead)}
+                    stroke={epsColor}
+                    strokeWidth={LINE.primary}
+                    strokeDasharray="5 4"
+                  />
+                ) : null,
+              ];
+            })
           : null}
+        {yEps && hover !== null && known(eps[hover]) ? (
+          <circle
+            cx={xOf(hover)}
+            cy={yEps(eps[hover] as number)}
+            r={DOT.r}
+            fill={colors.surfaceCard}
+            stroke={epsColor}
+            strokeWidth={LINE.primary}
+          />
+        ) : null}
 
         {/* Where reported stops and consensus starts, said in the picture. */}
         {projection.length ? (
@@ -338,23 +406,10 @@ function Annual({ data }: { data: Financials }) {
           />
         ) : null}
 
-        {/* The EPS scale, on the right and without gridlines of its own: two
-            grids over one plot is two readings of every horizontal line. A
-            second axis that is drawn but never labelled is a line whose level
-            nobody can read, which is the thing Plotly's `yaxis2` was doing. */}
-        {yEps && epsRange ? (
-          <g className="tk-grid tk-grid-right">
-            {ticks(epsRange.lo, epsRange.hi, narrow ? 2 : 3).map((value) => (
-              <text
-                key={`eps-${value}`}
-                x={box.width - box.right + 8}
-                y={yEps(value) + 4}
-                textAnchor="start"
-              >
-                {num(value, value >= 10 || value <= -10 ? 0 : 1)}
-              </text>
-            ))}
-            <text x={box.width - box.right + 8} y={box.top - 2} textAnchor="start">
+        {/* The EPS panel's name, in the gap over it. */}
+        {yEps ? (
+          <g className="tk-grid">
+            <text x={box.left + (narrow ? 2 : 0)} y={epsBox.top - 8} textAnchor="start">
               EPS
             </text>
           </g>
@@ -370,22 +425,27 @@ function Annual({ data }: { data: Financials }) {
           )}
         </g>
         <YLabels
-          frame={box}
+          frame={barsBox}
           lo={left.lo}
           hi={left.hi}
           format={axisCompact}
           count={narrow ? 3 : 4}
           inside={narrow}
         />
+        {yEps && epsRange ? (
+          <YLabels
+            frame={epsBox}
+            lo={epsRange.lo}
+            hi={epsRange.hi}
+            format={epsFormat}
+            count={2}
+            inside={narrow}
+          />
+        ) : null}
       </Chart>
 
       {hover !== null && periods[hover] ? (
-        <Tooltip
-          frame={box}
-          x={xOf(hover)}
-          title={periods[hover] as string}
-          lines={lines}
-        />
+        <Tooltip frame={box} x={xOf(hover)} title={heading} lines={lines} />
       ) : null}
 
       <Legend
@@ -398,13 +458,13 @@ function Annual({ data }: { data: Financials }) {
             color: series.color,
           })),
           ...(epsPoints.length
-            ? [{ label: t("ticker.eps_reported"), color: colors.brandAccent }]
+            ? [{ label: t("ticker.eps_reported"), color: epsColor }]
             : []),
           ...(projection.length
             ? [
                 {
                   label: t("ticker.eps_consensus"),
-                  color: colors.brandAccent,
+                  color: epsColor,
                   dashed: true,
                 },
               ]
@@ -462,6 +522,8 @@ function Quarterly({ data }: { data: Financials }) {
   const t = useT();
   const mobile = useMobile();
   const colors = palette();
+  // EPS in the hue the annual view gives it: the same figure, the same colour.
+  const epsColor = seriesHues()[2] ?? colors.brandAccent;
   const [hover, setHover] = useState<number | null>(null);
   const [node, measured] = useWidth(FALLBACK);
   const narrow = mobile || measured < NARROW;
@@ -521,9 +583,8 @@ function Quarterly({ data }: { data: Financials }) {
             key={`q-${run[0]}`}
             className="tk-line"
             points={run.map((i) => `${xOf(i)},${y(values[i] as number)}`).join(" ")}
-            stroke={colors.brandAccent}
+            stroke={epsColor}
             strokeWidth={LINE.primary}
-            strokeDasharray="3 3"
           />
         ))}
         <g className="tk-xlabels">
@@ -598,6 +659,9 @@ export function FinancialsChart({ data }: { data: Financials }) {
       {showing === "annual" ? <Annual data={data} /> : <Quarterly data={data} />}
       {showing === "annual" && data.projection.length > 0 ? (
         <Note>{t("ticker.annual_caption")}</Note>
+      ) : null}
+      {showing === "annual" && data.source ? (
+        <Note>{t("ticker.annual_source", { source: data.source })}</Note>
       ) : null}
     </Card>
   );
@@ -970,6 +1034,9 @@ export function FundExposure({ fund }: { fund: Fund }) {
  * single trailing-window net cannot show: three months of steady selling and
  * one large purchase net out to roughly nothing.
  *
+ * Mirrored on one zero line: buys rise above it, sells hang below, so a month's
+ * balance reads as which side is longer. The axis prints amounts, unsigned.
+ *
  * Open-market rows only. A grant is not a decision to buy, and counting it as
  * one turns every vesting date into insider conviction.
  */
@@ -987,7 +1054,8 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
       if (!trade.is_open_market || !trade.date || !trade.value) continue;
       const month = trade.date.slice(0, 7);
       const cell = cells.get(month) ?? { buy: 0, sell: 0 };
-      // The value is signed; the two series are magnitudes, drawn side by side.
+      // The value is signed; both sides are kept as magnitudes, and the sell
+      // side is turned below zero only where it is drawn.
       if (trade.value >= 0) cell.buy += trade.value;
       else cell.sell += -trade.value;
       cells.set(month, cell);
@@ -1004,15 +1072,16 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
     bottom: 28,
     top: 14,
   });
-  const range = bounds([months.map(([, cell]) => Math.max(cell.buy, cell.sell))], {
-    zero: true,
-    pad: 0.08,
-  });
+  const range = bounds(
+    [months.map(([, cell]) => cell.buy), months.map(([, cell]) => -cell.sell)],
+    { zero: true, pad: 0.08 },
+  );
   if (!range) return null;
   const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
   const band = plotWidth(box) / months.length;
   const xOf = (index: number) => box.left + (index + 0.5) * band;
-  const width = Math.min(narrow ? 16 : 26, (band * 0.7) / 2);
+  const width = Math.max(1, Math.min(BAR.max, band * 0.7));
+  const unsigned = (value: number) => axisCompact(Math.abs(value));
   const every = stride(months.length, band, 7);
   const row = hover === null ? null : months[hover];
   const tipLines: TipLine[] = row
@@ -1049,28 +1118,33 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
             frame={box}
             lo={range.lo}
             hi={range.hi}
-            format={axisCompact}
-            count={3}
+            format={unsigned}
+            count={4}
             inside={narrow}
           />
           {months.map(([month, cell], index) => (
             <g key={month}>
-              <rect
-                x={xOf(index) - width}
-                y={y(cell.buy)}
-                width={width - 1}
-                height={Math.max(0, y(0) - y(cell.buy))}
-                fill={colors.up}
-              />
-              <rect
-                x={xOf(index) + 1}
-                y={y(cell.sell)}
-                width={width - 1}
-                height={Math.max(0, y(0) - y(cell.sell))}
-                fill={colors.down}
-              />
+              {cell.buy > 0 ? (
+                <path
+                  d={barPath(xOf(index) - width / 2, width, y(0), y(cell.buy))}
+                  fill={colors.candleUp}
+                />
+              ) : null}
+              {cell.sell > 0 ? (
+                <path
+                  d={barPath(xOf(index) - width / 2, width, y(0), y(-cell.sell))}
+                  fill={colors.candleDown}
+                />
+              ) : null}
             </g>
           ))}
+          <line
+            x1={box.left}
+            x2={box.width - box.right}
+            y1={y(0)}
+            y2={y(0)}
+            stroke={colors.border}
+          />
           <g className="tk-xlabels">
             {months.map(([month], index) =>
               index % every === 0 ? (
@@ -1084,8 +1158,8 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
             frame={box}
             lo={range.lo}
             hi={range.hi}
-            format={axisCompact}
-            count={3}
+            format={unsigned}
+            count={4}
             inside={narrow}
           />
         </Chart>
@@ -1099,8 +1173,8 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
         ) : null}
         <Legend
           items={[
-            { label: t("ticker.buy"), color: colors.up },
-            { label: t("ticker.sell"), color: colors.down },
+            { label: t("ticker.buy"), color: colors.candleUp },
+            { label: t("ticker.sell"), color: colors.candleDown },
           ]}
         />
       </div>

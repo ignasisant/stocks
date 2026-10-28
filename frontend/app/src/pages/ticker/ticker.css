@@ -806,7 +806,8 @@
 
 .tk-targets,
 .tk-ratings,
-.tk-revisions {
+.tk-revisions,
+.tk-changes {
   margin-top: 16px;
 }
 

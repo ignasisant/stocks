@@ -11,9 +11,9 @@
  * back button work for free.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useTransition, type ReactNode } from "react";
 
-import { canonical } from "./pages";
+import { canonical, preload } from "./pages";
 
 /**
  * Where the app is mounted: the root. Kept here so nothing else hardcodes it.
@@ -105,8 +105,9 @@ export function depth(): number {
  */
 const scrolls = new Map<string, number>();
 let here = typeof window === "undefined" ? "" : place();
-// Set by a `popstate` that moved to another address, taken by the page once it
-// has rendered (`takeRestore`). A `push` is a fresh page and starts at the top.
+// Set by a `popstate` that moved to another address, or to the top by a
+// `push`, and taken by the page once it has rendered (`takeRestore`): the
+// scroll waits for the page, because the one on screen stays until then.
 let restore: number | null = null;
 
 function place(): string {
@@ -128,8 +129,9 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * The scroll a back/forward step should return to, once; null after a push or
- * when the address was never left scrolled.
+ * The scroll the page just rendered should land at, once: where a
+ * back/forward step left this address, the top after a push, or null when
+ * nothing asked for one (a tab switched in place).
  */
 export function takeRestore(): number | null {
   const y = restore;
@@ -137,31 +139,58 @@ export function takeRestore(): number | null {
   return y;
 }
 
-/** `pushState` to `href`, one step deeper than here. */
+/** `pushState` to `href`, one step deeper than here. A fresh page starts at the top. */
 export function push(href: string): void {
   scrolls.set(here, window.scrollY);
-  restore = null;
+  restore = 0;
   window.history.pushState({ depth: depth() + 1 }, "", href);
   here = place();
+}
+
+/** What the address bar means now, as the page column keys its render. */
+function at(): string {
+  const route = routeFor(pagePath(window.location.pathname), window.location.search);
+  return `${route.page}?${route.params}`;
+}
+
+/**
+ * Push `href` and tell every `useRoute`. The next page scrolls to the top
+ * itself once it has rendered (`takeRestore`), not here: the move is a
+ * transition, so the page on screen stays until the next one's code is ready,
+ * and scrolling it now would be a jump the reader did not ask for. The same
+ * address again renders nothing new, so that one scrolls now.
+ */
+export function navigate(href: string): void {
+  const from = at();
+  push(href);
+  announce();
+  if (at() === from) {
+    restore = null;
+    window.scrollTo(0, 0);
+  }
 }
 
 export function useRoute(): Route & {
   go: (page: string, params?: Record<string, string>) => void;
   setParams: (params: Record<string, string | undefined>) => void;
+  /** A move is under way and the screen on show is still the last one. */
+  pending: boolean;
 } {
   const [route, setRoute] = useState<Route>(read);
+  // A transition: the page on screen stays, interactive, until the next one
+  // can render — its code arrived — instead of giving way to a skeleton
+  // for the wait. `pending` is how the shell says the move is under way.
+  const [pending, start] = useTransition();
 
   useEffect(() => {
-    const onPop = () => setRoute(read());
+    const onPop = () => start(() => setRoute(read()));
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const go = useCallback((page: string, params?: Record<string, string>) => {
     const query = params ? `?${new URLSearchParams(params)}` : "";
-    push(`${BASE}/${page}${query}`);
-    announce();
-    window.scrollTo(0, 0);
+    navigate(`${BASE}/${page}${query}`);
   }, []);
 
   /**
@@ -187,7 +216,7 @@ export function useRoute(): Route & {
     announce();
   }, []);
 
-  return { ...route, go, setParams };
+  return { ...route, go, setParams, pending };
 }
 
 /** A link that navigates in-app but is still a real href a reader can copy. */
@@ -213,6 +242,10 @@ export function Link({
 }) {
   const query = params ? `?${new URLSearchParams(params)}` : "";
   const href = `${BASE}/${page}${query}`;
+  // The page's code is fetched on the first sign the reader may want it — the
+  // pointer arriving, a press starting, focus landing — so the click itself
+  // opens from the module cache. Idempotent and cheap once it has been.
+  const warm = () => preload(page);
   return (
     <a
       className={className}
@@ -220,6 +253,9 @@ export function Link({
       title={title}
       aria-current={current ? "page" : undefined}
       aria-label={label}
+      onPointerEnter={warm}
+      onPointerDown={warm}
+      onFocus={warm}
       onClick={(event) => {
         // Let the browser handle anything that is not a plain left click: a
         // middle click or ctrl-click means "open elsewhere", and swallowing it
@@ -228,9 +264,7 @@ export function Link({
           return;
         if (event.button !== 0) return;
         event.preventDefault();
-        push(href);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-        window.scrollTo(0, 0);
+        navigate(href);
       }}
     >
       {children}

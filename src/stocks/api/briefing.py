@@ -49,7 +49,7 @@ from stocks.analysis.portfolio import (
     money_change,
     us_market_open,
 )
-from stocks.api import home, loaders
+from stocks.api import holds, home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
 from stocks.chat import (
@@ -1018,8 +1018,9 @@ def start(
             obs.warn("chat.memory_review.start_failed",
                      error_type=type(exc).__name__)
 
-    thread = threading.Thread(target=work, name="daily-action", daemon=True)
-    thread.start()
+    # Under a CPU hold: the build outlives the grace this request waits for
+    # it, and a thread no request is waiting on crawls between requests.
+    thread = holds.spawn("daily-action", work)
     thread.join(GRACE_S)
     return job
 
@@ -1264,6 +1265,4 @@ def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, boo
 def _market_start(kind: str, lang: str) -> None:
     """Start the build; it releases `_market_lock` when it ends. A seam: the
     test suite swaps it for one that fetches nothing."""
-    threading.Thread(
-        target=_market_build, args=(kind, lang), name="today-market", daemon=True
-    ).start()
+    holds.spawn("today-market", lambda: _market_build(kind, lang))

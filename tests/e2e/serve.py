@@ -32,7 +32,7 @@ What is sealed, and why each one:
 * **the chat** answers from a script: no provider, no key, no daily cap, and
   the same words every time.
 * **the secrets file** is one that does not exist: a developer machine's
-  `.streamlit/secrets.toml` carries the free model chain's keys, and with them
+  `secrets.toml` carries the free model chain's keys, and with them
   every statement preview asked a model first — refused at the socket, then
   retried after `llm_map`'s pause — and took longer than the import test
   waits, on that machine only. CI has no file; now neither does anyone else.
@@ -173,7 +173,7 @@ def main() -> None:
     # `session.sign_in_configured()` also needs these three before a guest gets
     # a real "Sign in with Google" link instead of "not set up yet" — sealed
     # here like every other secret, so the suite reads the same whether or not
-    # the machine running it has a real .streamlit/secrets.toml on its cwd.
+    # the machine running it has a real secrets.toml on its cwd.
     # Never dialed: `_seal_network()` refuses anything past loopback before a
     # click could reach Google with these.
     os.environ.setdefault("AUTH_CLIENT_ID", "e2e-client-id")

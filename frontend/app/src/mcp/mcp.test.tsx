@@ -239,9 +239,12 @@ describe("the ring", () => {
       position({ ticker: `T${i}`, weight: 0.1 }),
     );
     const parts = slices(many, "Other");
-    expect(parts).toHaveLength(7);
+    expect(parts).toHaveLength(6);
     expect(parts.at(-1)).toMatchObject({ label: "Other" });
-    expect(parts.at(-1)?.weight).toBeCloseTo(0.4);
+    expect(parts.at(-1)?.weight).toBeCloseTo(0.5);
+    // One hue a slice, none repeated, and the rest in the folded grey.
+    expect(new Set(parts.map((p) => p.color)).size).toBe(6);
+    expect(parts.at(-1)?.color).toBe("var(--v-other)");
   });
 
   it("has no slice for an unpriced holding, and no rest when nothing is left", () => {

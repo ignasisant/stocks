@@ -166,6 +166,14 @@ def test_system_prompt_never_says_the_book_cannot_be_edited():
     assert "never say the book cannot be edited" in out
 
 
+def test_system_prompt_never_claims_a_change_or_invents_a_control():
+    # Prod rating 2026-10-28: "Hecho. He eliminado ese euro residual" with no
+    # card, then a trash icon the ticker page does not have.
+    out = engine.system_prompt({"set": False}, "CONTEXT-BLOCK")
+    assert "nothing changes until the user approves the app's card" in out
+    assert "button, icon or menu of the app that this prompt does not name" in out
+
+
 # --------------------------------------------------------------- attempts
 
 
@@ -545,6 +553,57 @@ def test_answer_byok_first_then_free_on_failure(providers, enc, paths):
     assert reply.provider_id == "free"
     assert providers["anthropic"].calls  # attempted first, with default model
     assert providers["anthropic"].calls[0][1] == "default-model"
+
+
+WRITTEN_CALL = '{{search_web(query: "Adyen ADYYF latest earnings vs consensus")}}'
+
+
+@dataclass
+class Streamer(FakeProvider):
+    def stream(self, api_key, model, system, messages):
+        self.calls.append((api_key, model, system, messages))
+        for i in range(0, len(self.reply), 7):
+            yield self.reply[i:i + 7]
+
+
+def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths):
+    # Prod 2026-10-28: the free chain's whole answer was a search_web call
+    # written as text; the writing step has no tools, so the reader got it.
+    providers["anthropic"].reply = WRITTEN_CALL
+    reply = engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                          message="ADYYF earnings vs consensus?", **paths)
+    assert (reply.provider_id, reply.text) == ("free", "Free answer.")
+
+
+def test_a_streamed_written_tool_call_never_reaches_the_reader(
+        providers, enc, paths, monkeypatch):
+    from stocks.web import llm
+
+    streamers = {
+        "anthropic": Streamer("anthropic", reply=WRITTEN_CALL),
+        "free": Streamer("free", reply="Adyen beat consensus."),
+    }
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, **streamers})
+    seen = list(engine.answer_stream(prefs={**BASE_PREFS, **enc("anthropic")},
+                                     message="ADYYF earnings vs consensus?",
+                                     **paths))
+    shown = "".join(v for k, v in seen if k == "text")
+    metas = [v["provider"] for k, v in seen if k == "meta"]
+    done = next(v for k, v in seen if k == "done")
+    assert shown == "Adyen beat consensus." and metas == ["free"]
+    assert done.provider_id == "free" and done.text == shown
+
+
+def test_a_tool_call_inside_an_answer_is_scrubbed_from_it(providers, paths):
+    providers["free"].reply = f"Adyen beat consensus.\n\n{WRITTEN_CALL}"
+    reply = engine.answer(prefs=dict(BASE_PREFS), message="ADYYF?", **paths)
+    assert reply.text == "Adyen beat consensus."
+    assert auth.load_chat(paths["chat_path"])[-1]["content"] == reply.text
+
+
+def test_prose_that_names_a_tool_is_not_a_call():
+    for text in ("Uso {{ en plantillas.", "Llama a search_web(…) en una frase."):
+        assert engine.scrub_written_calls(text) == text
 
 
 def test_answer_leaves_the_key_clock_alone(providers, enc, paths):

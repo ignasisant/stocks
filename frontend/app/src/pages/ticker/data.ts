@@ -17,6 +17,7 @@ import type {
   AlertForm,
   AlertRule,
   Analysts,
+  OptionsView,
   AssetStats,
   Bars,
   Comparables,
@@ -28,6 +29,7 @@ import type {
   Financials,
   Fund,
   Insiders,
+  Shorts,
   Metrics,
   Dcf,
   Moat,
@@ -103,10 +105,14 @@ export const getDcf = (ticker: string) => get<Dcf>(`${at(ticker)}/dcf`);
 
 export const getMoat = (ticker: string) => get<Moat>(`${at(ticker)}/moat`);
 
+export const getShorts = (ticker: string) => get<Shorts>(`${at(ticker)}/shorts`);
 export const getInsiders = (ticker: string) => get<Insiders>(`${at(ticker)}/insiders`);
 
 /** Rating split, price targets and EPS revisions — all of it consensus. */
 export const getAnalysts = (ticker: string) => get<Analysts>(`${at(ticker)}/analysts`);
+
+/** Implied volatility and the put/call mix; `listed: false` for most non-US names. */
+export const getOptions = (ticker: string) => get<OptionsView>(`${at(ticker)}/options`);
 
 export const getFund = (ticker: string) => get<Fund>(`${at(ticker)}/fund`);
 

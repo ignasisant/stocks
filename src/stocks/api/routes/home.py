@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 from fastapi import APIRouter
@@ -29,6 +30,7 @@ from pydantic import BaseModel, Field
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import market_active
 from stocks.api import briefing, home, loaders
+from stocks.api.cache import carried
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.pulse import _reason
@@ -243,8 +245,16 @@ def market() -> MarketGlance:
     costs the chip — and only a dead price burst empties the card, with the
     reason set so it can say which source it was.
     """
+    # Three reads that need nothing from each other, side by side: the card
+    # costs the slowest of them rather than their sum. Each still fails on its
+    # own — a pull's error surfaces where its result is read.
+    pool = ThreadPoolExecutor(max_workers=3)
+    closing = pool.submit(carried(loaders.pulse_closes))
+    rating = pool.submit(carried(loaders.pulse_rate_rows))
+    pulsing = pool.submit(carried(loaders.market_pulse))
+    pool.shutdown(wait=False)
     try:
-        closes = loaders.pulse_closes()
+        closes = closing.result()
     except Exception as exc:  # noqa: BLE001 — answered as a reason, not a 500
         return MarketGlance(unavailable=_reason(exc))
 
@@ -256,7 +266,7 @@ def market() -> MarketGlance:
         tiles.append(_price_tile(key, symbol, group, welcome, series))
         if group == "risk":
             try:
-                rate = _rate_tile(loaders.pulse_rate_rows().get(MARKET_RATE[1]))
+                rate = _rate_tile(rating.result().get(MARKET_RATE[1]))
             except Exception:  # noqa: BLE001 — FRED down costs one tile
                 rate = None
             if rate is not None:
@@ -273,7 +283,7 @@ def market() -> MarketGlance:
         as_of=max((t.as_of for t in tiles if t.as_of), default=None),
     )
     try:
-        built = loaders.market_pulse()
+        built = pulsing.result()
     except Exception:  # noqa: BLE001 — the tiles stand without the chip
         return out
     history = built.history.dropna()

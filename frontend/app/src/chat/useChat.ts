@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang } from "../shell/i18n";
-import type { Brief } from "../shell/assistant";
+import { announceChange, type Brief } from "../shell/assistant";
 import { useRoute } from "../shell/router";
 import {
   asBase64,
@@ -741,6 +741,7 @@ export function useChat(live: boolean) {
         );
         if (done.error || !done.proposal) return done.error ?? "chat.api_error";
         const offer = done.proposal;
+        if (offer.state === "done") announceChange(offer.kind);
         setTurns((list) =>
           list.map((turn) =>
             turn.tool_calls?.some((call) => call.id === id)

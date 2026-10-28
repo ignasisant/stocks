@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
+import { useAssistantChanges } from "../../shell/assistant";
 import { useApi } from "../../shell/useApi";
 import {
   type JournalEntry,
@@ -35,7 +36,8 @@ function bare(ticker: string): string {
 
 export function Journal() {
   const t = useT();
-  const query = useApi(() => getJournal(), []);
+  const saved = useAssistantChanges("set_criteria");
+  const query = useApi(() => getJournal(), [saved]);
   return (
     <Card title={t("journal.title")}>
       <div className="pr-cardbody">

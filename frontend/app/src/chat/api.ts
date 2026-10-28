@@ -93,13 +93,21 @@ export const readThreads = () =>
 export const readThread = (cid: string) =>
   get<Thread>(`/chat/conversations/${id(cid)}`);
 
-export const startThread = () => send<Conversation>("POST", "/chat/conversations", {});
+/**
+ * What a write to the chat's own state changes: the chat's answers, and no
+ * screen's figures. A write that reaches the ledger (an attachment committed,
+ * a proposal undone) names nothing and so forgets everything.
+ */
+const CHAT = { touches: ["/chat"] };
+
+export const startThread = () =>
+  send<Conversation>("POST", "/chat/conversations", {}, CHAT);
 
 export const editThread = (cid: string, body: { title?: string; active?: boolean }) =>
-  send<Conversation>("PATCH", `/chat/conversations/${id(cid)}`, body);
+  send<Conversation>("PATCH", `/chat/conversations/${id(cid)}`, body, CHAT);
 
 export const dropThread = (cid: string) =>
-  send<void>("DELETE", `/chat/conversations/${id(cid)}`);
+  send<void>("DELETE", `/chat/conversations/${id(cid)}`, undefined, CHAT);
 
 export const saveSettings = (body: SettingsPatch) =>
   keyed<ChatState>("PATCH", "/chat/settings", body);
@@ -182,7 +190,7 @@ export function asBase64(blob: Blob): Promise<string> {
  * says so and does not retry.
  */
 export const storeKey = (provider: string, key: string) =>
-  send<ChatState>("PUT", `/chat/keys/${id(provider)}`, { key });
+  send<ChatState>("PUT", `/chat/keys/${id(provider)}`, { key }, CHAT);
 
 /**
  * The stored key, in full — what "Show key" reveals.
@@ -198,6 +206,7 @@ export const revealKey = (provider: string) =>
     "POST",
     `/chat/keys/${id(provider)}/reveal`,
     {},
+    { touches: [] },
   ).then((body) => body.key);
 
 /**
@@ -206,9 +215,12 @@ export const revealKey = (provider: string) =>
  * back as its new figures. No model is asked, and nothing is stored.
  */
 export const pressSurface = (action: A2uiAction, lang?: string) =>
-  send<{ messages: A2uiMessage[] }>("POST", "/chat/actions", { action, lang }).then(
-    (body) => body.messages,
-  );
+  send<{ messages: A2uiMessage[] }>(
+    "POST",
+    "/chat/actions",
+    { action, lang },
+    { touches: [] },
+  ).then((body) => body.messages);
 
 /**
  * Take back a ledger edit the chat made. 409 when it is not one, or its rows
@@ -228,11 +240,11 @@ export const undoProposal = (pid: string, lang?: string) =>
 export const rateTurn = (
   tid: string,
   body: { vote: Rating | null; reason?: RatingReason; note?: string; lang?: string },
-) => send<{ vote: Rating | null }>("PUT", `/chat/turns/${id(tid)}/rating`, body);
+) => send<{ vote: Rating | null }>("PUT", `/chat/turns/${id(tid)}/rating`, body, CHAT);
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>
-  send<ChatState>("DELETE", `/chat/keys/${id(provider)}`);
+  send<ChatState>("DELETE", `/chat/keys/${id(provider)}`, undefined, CHAT);
 
 // ------------------------------------------------------------ the memories
 
@@ -241,16 +253,16 @@ export const readMemories = () => get<Memories>("/chat/memories");
 
 /** Save one memory. 409 when the list is full: one has to go first. */
 export const addMemory = (body: { text: string; kind?: string }) =>
-  send<Memory>("POST", "/chat/memories", body);
+  send<Memory>("POST", "/chat/memories", body, CHAT);
 
 export const editMemory = (
   lid: string,
   body: { text?: string; kind?: string; until?: string | null },
-) => send<Memory>("PATCH", `/chat/memories/${id(lid)}`, body);
+) => send<Memory>("PATCH", `/chat/memories/${id(lid)}`, body, CHAT);
 
 /** Memory `lid` takes the place of `old`, which is deleted. 404 when either is gone. */
 export const replaceMemory = (lid: string, old: string) =>
-  send<Memory>("POST", `/chat/memories/${id(lid)}/replace`, { old });
+  send<Memory>("POST", `/chat/memories/${id(lid)}/replace`, { old }, CHAT);
 
 /** Apply or dismiss one tidy-up proposal. 404 when it is no longer open. */
 export const settleSuggestion = (sid: string, action: "apply" | "dismiss") =>
@@ -258,14 +270,16 @@ export const settleSuggestion = (sid: string, action: "apply" | "dismiss") =>
     "POST",
     `/chat/memories/suggestions/${id(sid)}`,
     { action },
+    CHAT,
   );
 
 /** Forget one. 404 when it is already gone — an undo that removed nothing. */
 export const dropMemory = (lid: string) =>
-  send<void>("DELETE", `/chat/memories/${id(lid)}`);
+  send<void>("DELETE", `/chat/memories/${id(lid)}`, undefined, CHAT);
 
 /** Forget every memory. Conversations are not touched. */
-export const clearMemories = () => send<void>("DELETE", "/chat/memories");
+export const clearMemories = () =>
+  send<void>("DELETE", "/chat/memories", undefined, CHAT);
 
 // --------------------------------------------------------------- the stream
 
@@ -541,7 +555,7 @@ export async function rejoin(
  * on the server whether anyone reads it — so Stop has to say so.
  */
 export const stopRun = (runId: string) =>
-  send<void>("POST", `/chat/runs/${id(runId)}/stop`, {});
+  send<void>("POST", `/chat/runs/${id(runId)}/stop`, {}, CHAT);
 
 async function follow(
   response: Response,

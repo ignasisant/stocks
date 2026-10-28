@@ -20,7 +20,7 @@ import { useState } from "react";
 
 import { get } from "../../shell/api";
 import { useApi, type Query } from "../../shell/useApi";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
@@ -151,9 +151,11 @@ function MonthlyCard() {
   const axisMoney = compactMoneyIn(lang, base);
   const [span, setSpan] = useState<MonthlyWindow>("inception");
 
+  // A window picked keeps the last chart up, dimmed, until the new one lands.
   const monthly = useApi(
     () => get<Monthly>("/portfolio/monthly", { base, window: span }),
     [base, span],
+    { keep: true },
   );
 
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
@@ -272,7 +274,7 @@ function MonthlyCard() {
             index === 0 ? null : index === bridge.length - 1 ? "=" : "+";
 
           return (
-            <>
+            <Refreshable>
               <KpiGrid>
                 {bridge.map((item, index) => (
                   <Kpi
@@ -316,7 +318,6 @@ function MonthlyCard() {
                   {
                     label: picksLabel,
                     points: data.months.map((row) => row.time_weighted),
-                    dashed: true,
                     tipNote: reading,
                   },
                 ]}
@@ -343,7 +344,7 @@ function MonthlyCard() {
                 {t("portfolio.overview_monthly_note")} {t("portfolio.span_hint")}
               </Caption>
               <MissingPrices tickers={data.missing} />
-            </>
+            </Refreshable>
           );
         }}
       </Loaded>

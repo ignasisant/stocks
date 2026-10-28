@@ -429,3 +429,23 @@ def test_the_fees_bars_are_the_books_download_not_a_second_one(
     assert len(y.asked) == 1
     assert bars["AAPL"].attrs["currency"] == "USD"
     assert "currency" not in loaders._held_frames(db, 1.0)["AAPL"].attrs
+
+
+def test_a_fallback_frame_serves_the_render_but_never_the_base(
+    book, yahoo, monkeypatch
+):
+    """A keyed fallback's bars (no dividend-adjusted close) must not be laid
+    under later refreshes: the next one asks Yahoo for that name again."""
+    db = book(("2024-01-02", "AAPL"), ("2024-01-02", "MSFT"))
+    y = yahoo({"AAPL": _bars(100.0), "MSFT": _bars(200.0)})
+
+    def with_fallback(tickers, **kw):
+        out = y(tickers, **kw)
+        out["MSFT"].attrs["source"] = "twelvedata"
+        return out
+
+    monkeypatch.setattr(fetch, "fetch_many", with_fallback)
+    first = loaders._held_frames(db, 1.0)
+    assert set(first) == {"AAPL", "MSFT"}
+    base = loaders._frames_base(db, "2024-01-02")
+    assert base is not None and set(base[0]) == {"AAPL"}

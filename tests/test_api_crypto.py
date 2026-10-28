@@ -31,6 +31,19 @@ SCAN = {
     "saved": "2026-10-04",
     "global": {"btc_dominance": 59.1, "total_mcap": {"eur": 2.5e12, "usd": 2.9e12}},
     "fear_greed": [[f"2026-09-{d:02d}", 40 + d] for d in range(1, 31)],
+    "dvol": {
+        "BTC": {"value": 38.56, "percentile": 12.0, "low": 36.0, "high": 70.0,
+                "week_ago": 41.0, "as_of": "2026-10-27"},
+        "ETH": {"value": 71.0, "percentile": 95.0, "low": 50.0, "high": 90.0,
+                "week_ago": 66.0, "as_of": "2026-10-27"},
+    },
+    "stablecoins": {"usd": 3.1e11, "change_30d": 0.021, "change_90d": 0.06,
+                    "as_of": "2026-10-27"},
+    "onchain": {"map": {}, "coins": {
+        "SOL": {"kind": "chain", "slug": "Solana", "name": "Solana", "tvl": 5.67e9,
+                "tvl_change_30d": -0.04, "fees_30d": 3_010_067.0,
+                "revenue_30d": None},
+    }},
     "coins": {
         "BTC": {
             "ath": {"eur": 107_000.0}, "ath_date": {"eur": "2025-10-06"},
@@ -124,6 +137,10 @@ def test_cycle_reads_sentiment_from_the_scan_and_stretch_from_the_closes(
     assert body["mayer"]["value"] > 1 and body["ratio_200w"]["band"] is not None
     assert body["vs_btc_90d"] is not None and body["vs_nasdaq_90d"] is None
     assert body["halving"]["last"] == "2024-04-20"
+    assert body["stablecoins"]["usd"] == 3.1e11
+    assert body["onchain"]["name"] == "Solana"
+    assert body["onchain"]["fees_30d"] == 3_010_067.0
+    assert body["onchain"]["revenue_30d"] is None
 
 
 def test_bitcoin_is_measured_against_the_nasdaq_in_dollars(client, monkeypatch):
@@ -144,6 +161,7 @@ def test_a_stablecoin_gets_the_market_and_nothing_of_its_own(client, monkeypatch
                         lambda *a, **k: pytest.fail("a peg has no cycle"))
     body = client.get("/v1/ticker/USDT-EUR/crypto/cycle", headers=AUTH).json()
     assert body["fear_greed"]["value"] == 70 and body["mayer"] is None
+    assert body["stablecoins"]["change_30d"] == 0.021 and body["onchain"] is None
 
 
 def test_a_share_asking_for_a_cycle_is_empty(client):
@@ -163,6 +181,34 @@ def test_positioning_restates_funding_per_eight_hours(client, monkeypatch):
     assert body["funding_7d_8h"]["band"] == "hot"
     assert body["annualized"] == pytest.approx(0.0004 * 3 * 365)
     assert body["venue"] == "bybit"
+
+
+def _perp(monkeypatch):
+    monkeypatch.setattr(loaders, "crypto_positioning", lambda coin: Positioning(
+        venue="bybit", symbol=f"{coin}USDT", funding=0.0001, funding_7d=0.0001,
+        interval_h=8.0, oi_usd=1e9, oi_change_7d=None))
+
+
+def test_positioning_carries_the_coins_own_implied_vol(client, monkeypatch):
+    _perp(monkeypatch)
+    body = client.get("/v1/ticker/ETH-USD/crypto/positioning", headers=AUTH).json()
+    iv = body["implied_vol"]
+    assert iv["coin"] == "ETH" and iv["value"] == 71.0
+    assert iv["percentile"]["band"] == "extreme" and iv["percentile"]["tone"] == "red"
+
+
+def test_a_coin_without_an_index_reads_bitcoins(client, monkeypatch):
+    _perp(monkeypatch)
+    body = client.get("/v1/ticker/SOL-USD/crypto/positioning", headers=AUTH).json()
+    assert body["implied_vol"]["coin"] == "BTC"
+    assert body["implied_vol"]["percentile"]["band"] == "low"
+
+
+def test_no_scan_yet_means_no_implied_vol_line(client, monkeypatch):
+    _perp(monkeypatch)
+    monkeypatch.setattr(loaders, "crypto_scan", lambda: {})
+    body = client.get("/v1/ticker/BTC-USD/crypto/positioning", headers=AUTH).json()
+    assert body["implied_vol"] is None and body["funding_8h"] is not None
 
 
 def test_every_venue_down_hides_the_card(client, monkeypatch):

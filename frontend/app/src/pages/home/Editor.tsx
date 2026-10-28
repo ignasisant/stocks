@@ -17,6 +17,9 @@
  *
  * Nothing is written until "Done". A layout identical to the default is saved
  * as null, so a reader who resets keeps following the default as it changes.
+ * "Done" closes the editor at once with the new order on the page; the save
+ * runs behind it, and a refusal is said in a toast — the order on screen is
+ * still the reader's, and the stored one comes back on the next visit.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -41,6 +44,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Icon } from "../../shell/Icon";
+import { toast } from "../../ui/toast";
 import {
   HOME_CARDS,
   defaultLayout,
@@ -89,8 +93,6 @@ export default function Editor({
 }) {
   const t = useT();
   const [draft, setDraft] = useState<Slot[]>(() => split(layout));
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
   // What a screen reader hears after an arrow, a hide or an add.
   const [said, setSaid] = useState("");
   // The control to focus once the row it lives in has re-rendered.
@@ -169,14 +171,9 @@ export default function Editor({
       return;
     }
     const value = sameLayout(split(defaultLayout()), draft) ? null : draft;
-    setSaving(true);
-    setFailed(false);
-    send("PATCH", "/prefs", { home_layout: value }).then(
-      () => onClose(value),
-      () => {
-        setSaving(false);
-        setFailed(true);
-      },
+    onClose(value);
+    void send("PATCH", "/prefs", { home_layout: value }, { touches: ["/prefs"] }).catch(
+      () => toast.bad(t("home.edit_failed")),
     );
   };
 
@@ -247,12 +244,10 @@ export default function Editor({
         <p className="ag-sr" aria-live="polite">
           {said}
         </p>
-        <div role="alert">{failed ? <Note>{t("home.edit_failed")}</Note> : null}</div>
         <div className="hm-edit-actions">
           <button
             type="button"
             className="ag-btn"
-            disabled={saving}
             onClick={() => {
               setDraft(split(defaultLayout()));
               setSaid(t("home.edit_reset_done"));
@@ -261,21 +256,10 @@ export default function Editor({
             {t("home.edit_reset")}
           </button>
           <span className="hm-edit-spacer" />
-          <button
-            type="button"
-            className="ag-btn"
-            disabled={saving}
-            onClick={() => onClose(undefined)}
-          >
+          <button type="button" className="ag-btn" onClick={() => onClose(undefined)}>
             {t("home.edit_cancel")}
           </button>
-          <button
-            type="button"
-            className="ag-btn hm-btn-primary"
-            disabled={saving}
-            aria-busy={saving}
-            onClick={done}
-          >
+          <button type="button" className="ag-btn hm-btn-primary" onClick={done}>
             {t("home.edit_done")}
           </button>
         </div>

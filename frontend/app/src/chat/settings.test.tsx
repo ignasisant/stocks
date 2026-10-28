@@ -13,7 +13,7 @@
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Settings } from "./Settings";
 import type { ChatState, ProviderInfo } from "./types";
@@ -328,5 +328,47 @@ describe("memory", () => {
   it("shows a switch the account turned off as off", () => {
     const out = drawn(state({ memory: false, recall: true }));
     expect(out.match(/checked=""/g)?.length).toBe(1);
+  });
+});
+
+describe("the Claude connector", () => {
+  // The nudge routes to Profile, and the router reads the address bar.
+  const route = () =>
+    vi.stubGlobal("window", {
+      location: { pathname: "/app/home", search: "" },
+      history: { replaceState: () => {} },
+    });
+
+  it("is offered once Claude is picked, before any key is given", () => {
+    route();
+    const out = draw(state({ preferred: "anthropic", connector: true }));
+    expect(out).toContain("chat.claude_connector_nudge");
+    vi.unstubAllGlobals();
+  });
+
+  it("is offered with a key too", () => {
+    route();
+    const base = state({
+      preferred: "anthropic",
+      answering: "anthropic",
+      connector: true,
+    });
+    const out = draw({
+      ...base,
+      providers: base.providers.map((p) =>
+        p.id === "anthropic" ? { ...p, has_key: true } : p,
+      ),
+    });
+    expect(out).toContain("chat.claude_connector_nudge");
+    vi.unstubAllGlobals();
+  });
+
+  it("is not offered for another provider, or where the deploy has no connector", () => {
+    expect(draw(state({ preferred: "free", connector: true }))).not.toContain(
+      "chat.claude_connector_nudge",
+    );
+    expect(draw(state({ preferred: "anthropic" }))).not.toContain(
+      "chat.claude_connector_nudge",
+    );
   });
 });

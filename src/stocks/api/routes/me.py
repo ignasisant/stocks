@@ -17,13 +17,14 @@ signature alone).
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from typing import Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from stocks import accounts, devices, session
-from stocks.api.security import Who
+from stocks.api.security import Caller, Who
 from stocks.bank import access
 from stocks.config import PROJECT_ROOT
 
@@ -86,6 +87,13 @@ class Me(BaseModel):
             "fail."
         ),
     )
+    connector: bool = Field(
+        default=False,
+        description=(
+            "Whether this deployment serves the Claude connector, so Profile "
+            "draws its Claude tab (`GET /connections` for what is in it)."
+        ),
+    )
 
 
 def _claim(claims: dict | None, key: str) -> str | None:
@@ -94,10 +102,21 @@ def _claim(claims: dict | None, key: str) -> str | None:
 
 @router.get("/me", response_model=Me, summary="The caller's own identity")
 def me(who: Who, request: Request) -> Me:
+    return describe(who, request.cookies, request.headers.get("user-agent", ""))
+
+
+def describe(who: Caller, cookies: Mapping[str, str], user_agent: str) -> Me:
+    """`who`, as `/me` answers it.
+
+    Its own function because the document that serves the app writes this
+    answer into itself (`web.server`), so the first paint needs no round trip
+    for it — and the two must not drift: a field the route answers and the
+    document omits would be null until the next reload, and only then.
+    """
     signin = session.LOGIN_PATH if session.sign_in_configured() else None
     if who.kind != "session" or not who.email:
         return Me(kind=who.kind, email=who.email, sign_in=signin)
-    claims = session.claims(request.cookies)
+    claims = session.claims(cookies)
     # Where the account's files are, computed and never created, only to tell
     # the owner's book apart: this is the first call a client makes, and
     # resolving (let alone provisioning) an account belongs to the routes that
@@ -115,7 +134,7 @@ def me(who: Who, request: Request) -> Me:
             devices.touch(
                 paths.devices,
                 who.sid,
-                user_agent=request.headers.get("user-agent", ""),
+                user_agent=user_agent,
                 created=minted,
                 expires=minted + session.MAX_AGE,
             )
@@ -129,4 +148,11 @@ def me(who: Who, request: Request) -> Me:
         picture=_claim(claims, "picture"),
         owner=root == PROJECT_ROOT,
         bank=access.available(who.email),
+        connector=_connector_open(),
     )
+
+
+def _connector_open() -> bool:
+    from stocks.web.server import connector_open
+
+    return connector_open()

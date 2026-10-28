@@ -387,23 +387,12 @@
 /* ------------------------------------------------ a table on a narrow column */
 
 /*
- * `Rows.tsx`: every table with figures ships twice, the column grid and its
- * phone rendering, and the main column's width picks one — 40rem, the 640px
- * the shell's phone layout starts at, measured on `ag-main` so an open chat
- * drawer narrows a table the way a phone does.
+ * `Rows.tsx`: a table with figures has a column grid and a phone rendering,
+ * and `shell/useNarrow` mounts one by the main column's width — 40rem, the
+ * 640px the shell's phone layout starts at, measured on `ag-main` so an open
+ * chat drawer narrows a table the way a phone does. `.ag-resp-wide` and
+ * `.ag-resp-narrow` name which one is up; nothing here hides the other.
  */
-.ag-resp-narrow {
-  display: none;
-}
-
-@container ag-main (max-width: 40rem) {
-  .ag-resp-wide {
-    display: none;
-  }
-  .ag-resp-narrow {
-    display: block;
-  }
-}
 
 /* Revolut-style: a logo, the symbol over a dim line, the figure on the right. */
 .ag-dense-row {
