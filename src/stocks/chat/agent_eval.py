@@ -51,6 +51,12 @@ DEFAULT_FIXTURES: dict[str, str] = {
     "read_page": ("Results release. Revenue 7.5bn (+12% y/y), gross margin "
                   "51.2%, full-year guidance lowered to 28-29bn."),
     "get_quotes": "NVDA 182.40 USD (+1.2% today)",
+    "ticker_data": ("NVDA as the app's ticker page shows it.\n## overview\n"
+                    "Price 182.40 USD; -12.0% from the high\n- P/E (TTM): "
+                    "38.1x [fact] (expensive)\n- P/E (fwd): 27.4x [consensus]"
+                    "\n## dcf\nValue 160.00 USD a share vs price 182.40\n"
+                    "## analysts\nEPS consensus next FY: 6.65; revisions up "
+                    "4 / down 1"),
     "portfolio_snapshot": ("Value 98,400 EUR. Positions: NVDA 24% (+61%), "
                            "ASML 18% (-4%), MELI 12% (+22%), VWCE 30%, "
                            "cash 16%."),

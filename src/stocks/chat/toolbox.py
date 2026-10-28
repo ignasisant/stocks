@@ -120,6 +120,188 @@ def _get_quotes(args: dict, ctx: Context) -> str:
     return _cap("\n".join(q.line() for q in got))
 
 
+# The ticker page's sections `ticker_data` reads, in the order they print.
+PAGE_PARTS = ("overview", "valuation", "dcf", "analysts", "options")
+# Read when the model names none: what "is it cheap?" is answered from.
+PAGE_DEFAULT = ("overview", "valuation", "dcf", "analysts")
+# Rating changes printed, newest first; the page lists more.
+PAGE_CHANGES = 6
+
+
+def _pct(value: float | None, signed: bool = False) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:+.1%}" if signed else f"{value:.1%}"
+
+
+def _figure(value: float | None, digits: int = 2) -> str:
+    return "n/a" if value is None else f"{value:,.{digits}f}"
+
+
+def _page_overview(code: str, ctx: Context) -> str:
+    from stocks.api.routes import ticker as routes
+    from stocks.chat import brief
+
+    quote, metrics = routes.quote(code), routes.metrics(code)
+    cur = quote.currency or metrics.currency or ""
+    today = (f", today {_pct(quote.pct, signed=True)}"
+             if quote.pct is not None else "")
+    lines = [f"Price {_figure(quote.price)} {cur}".rstrip() + today]
+    if quote.price and quote.high_52w:
+        off = _pct(quote.price / quote.high_52w - 1, signed=True)
+        lines.append(f"52-week range {_figure(quote.low_52w)}-"
+                     f"{_figure(quote.high_52w)}; {off} from the high")
+    peers = (f" (peer band = {metrics.peers.kind} '{metrics.peers.name}', "
+             f"{metrics.peers.count} names: P25/median/P75)") if metrics.peers else ""
+    lines.append(f"KPI grid, [fact|consensus|derived]{peers}:")
+    for k in metrics.kpis:
+        if k.formatted == "n/a":
+            continue
+        verdict = f" ({k.verdict})" if k.verdict else ""
+        band = ""
+        if k.peer_band and len(k.peer_band) == 3:
+            fmt = _pct if k.unit == "pct" else (lambda v: _figure(v, 1))
+            band = " | peers " + "/".join(fmt(v) for v in k.peer_band)
+        lines.append(f"- {k.label}: {k.formatted} [{k.level}]{verdict}{band}")
+    if metrics.normal_pe is not None:
+        lines.append(f"- P/E on the median operating margin (today's is a peak): "
+                     f"{metrics.normal_pe:.1f}x")
+    for caution in metrics.cautions or []:
+        lines.append(f"- Caution: {caution}")
+    if metrics.judged is not None:
+        j = metrics.judged
+        lines.append(f"App's screen verdict as a new buy: {j.verdict} "
+                     f"(quality {_figure(j.quality, 0)}, cheapness "
+                     f"{_figure(j.cheapness, 0)} of 100; {', '.join(j.reasons) or '-'})")
+    if ctx.watchlist is not None and ctx.db is not None:
+        lines.append(brief.holding_line(code, ctx.watchlist, ctx.db, ctx.currency))
+    return "\n".join(lines)
+
+
+def _page_valuation(code: str, ctx: Context) -> str:
+    from stocks.api.routes import ticker as routes
+
+    v = routes.valuation(code)
+    if v.current is None:
+        return "No P/E history (no quarterly EPS in the filings)."
+    verdict = f" ({v.current_verdict})" if v.current_verdict else ""
+    lines = [f"Trailing P/E on filed EPS ({v.source or 'source unknown'}): "
+             f"{v.current:.1f}x{verdict}"]
+    for w in v.windows:
+        if w.median is None:
+            continue
+        rank = w.percentile * 100 if w.percentile is not None else None
+        lines.append(f"- {w.window}: median {w.median:.1f}x, today in the "
+                     f"{_figure(rank, 0)}th "
+                     f"percentile, {_pct(w.premium, signed=True)} vs the mean")
+    return "\n".join(lines)
+
+
+def _page_dcf(code: str, ctx: Context) -> str:
+    from stocks.api.routes import ticker as routes
+
+    d = routes.dcf(code)
+    if d.value is None:
+        return f"No DCF value ({d.reason or 'no_data'})."
+    cur = d.currency or ""
+    lines = [
+        f"Value {_figure(d.value)} {cur} a share vs price {_figure(d.price)}: "
+        f"upside {_pct(d.upside, signed=True)} (value/price-1); margin of "
+        f"safety {_pct(1 - d.price / d.value if d.price else None)} "
+        "((value-price)/value)",
+        f"Inputs: base FCF {_figure((d.fcf or 0) / 1e9)}B, five-year growth "
+        f"{_pct(d.growth)} ({d.growth_source}), WACC {_pct(d.wacc)}, terminal "
+        f"{_pct(d.terminal)}, net debt {_figure((d.net_debt or 0) / 1e9)}B, "
+        f"{_figure((d.shares or 0) / 1e6, 0)}M diluted shares",
+        "Sensitivity, value a share (rows WACC, columns terminal "
+        + " / ".join(_pct(t) for t in d.terminals) + "):",
+    ]
+    for wacc, row in zip(d.waccs, d.grid, strict=False):
+        lines.append(f"- WACC {_pct(wacc)}: "
+                     + " / ".join("-" if v is None else _figure(v, 0) for v in row))
+    return "\n".join(lines)
+
+
+def _page_analysts(code: str, ctx: Context) -> str:
+    from stocks.api.routes import ticker as routes
+
+    a = routes.analysts(code)
+    if not a.covered and not a.revisions and not a.changes:
+        return f"Too few analysts cover it ({a.analysts})."
+    lines = []
+    if a.covered:
+        lines.append(f"{a.analysts} analysts, consensus {a.rating or 'n/a'}")
+    if (t := a.targets) is not None:
+        lines.append(f"12-month targets {a.currency or ''}: low {_figure(t.low)}, "
+                     f"median {_figure(t.median)} "
+                     f"({_pct(t.upside_median, signed=True)}), "
+                     f"high {_figure(t.high)}")
+    for r in a.revisions:
+        label = "this FY" if r.period == "0y" else "next FY"
+        lines.append(f"EPS consensus {label}: {_figure(r.current)}; 30 days "
+                     f"{_pct(r.change_30d, signed=True)}, revisions up "
+                     f"{r.up_30d or 0} / down {r.down_30d or 0}")
+    if a.changes:
+        lines.append("Recent rating and target changes, newest first:")
+    for c in a.changes[:PAGE_CHANGES]:
+        grade = (f"{c.from_grade} -> {c.to_grade}" if c.action in ("upgrade", "downgrade")
+                 else c.to_grade or "")
+        target = ""
+        if c.target is not None:
+            target = f", target {_figure(c.target, 0)}"
+            if c.prior_target is not None:
+                target = (f", target {_figure(c.prior_target, 0)} -> "
+                          f"{_figure(c.target, 0)}")
+        lines.append(f"- {c.date} {c.firm}: {c.action} {grade}{target}".rstrip())
+    return "\n".join(lines)
+
+
+def _page_options(code: str, ctx: Context) -> str:
+    from stocks.api.routes import ticker as routes
+
+    o = routes.options(code)
+    if not o.listed:
+        return "No listed options."
+    iv = (f"at-the-money implied volatility {_pct(o.iv)} ({o.iv_days} days, "
+          f"{o.iv_expiry})" if o.iv is not None else "no readable implied volatility")
+    pc = (f"; put/call open interest {o.put_call_oi:.2f}"
+          if o.put_call_oi is not None else "")
+    return iv + pc
+
+
+_PAGE_READERS = {"overview": _page_overview, "valuation": _page_valuation,
+                 "dcf": _page_dcf, "analysts": _page_analysts,
+                 "options": _page_options}
+
+
+def _ticker_data(args: dict, ctx: Context) -> str:
+    """The ticker page's own sections, read in parallel, one block each."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    code = str(args.get("ticker") or ctx.focus or "").strip().upper()
+    if not code:
+        return "No ticker given."
+    raw = args.get("parts") or PAGE_DEFAULT
+    if isinstance(raw, str):
+        raw = [raw]
+    parts = [p for p in PAGE_PARTS if p in {str(x).strip().lower() for x in raw}]
+    if not parts:
+        return f"Unknown parts; pick from {', '.join(PAGE_PARTS)}."
+
+    def one(part: str) -> str:
+        try:
+            body = _PAGE_READERS[part](code, ctx)
+        except Exception as exc:  # noqa: BLE001 — one section down, the rest stand
+            body = f"unavailable ({type(exc).__name__})"
+        return f"## {part}\n{body}"
+
+    with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+        blocks = list(pool.map(one, parts))
+    return _cap(f"{code} as the app's ticker page shows it. Quote these "
+                "figures, labelled as the app's, over a web page's for the "
+                "same measure.\n" + "\n".join(blocks))
+
+
 def _market_positioning(args: dict, ctx: Context) -> str:
     from stocks.api import loaders
     from stocks.data import cot
@@ -419,6 +601,10 @@ def _propose(args: dict, ctx: Context) -> str:
     if not ctx.proposes or ctx.watchlist is None:
         return "Nothing can be proposed here."
     act = tools.proposed(args)
+    if act is not None and ctx.asked:
+        # "avísame si cae un 5%" drafted as a level of 5, as the router once
+        # read it: the same reading turns it into the move from the price.
+        act = tools.percent_alerts(act, ctx.asked[-1], tools.price_now)
     if act is None:
         return ("Not a proposal the app can make: action must be one of "
                 f"{', '.join(tools.PROPOSABLE)} with its fields filled.")
@@ -581,6 +767,29 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                  "description": "Yahoo symbols, e.g. NVDA, ASML.AS, BTC-EUR."}},
              "required": ["tickers"]},
         ), _get_quotes),
+        (ToolSpec(
+            "ticker_data",
+            "The app's own figures for one company, as its ticker page shows "
+            "them. parts: overview (price, distance from the 52-week high, "
+            "P/E trailing and forward, margins, growth, FCF yield, ROIC, each "
+            "against its peers, and whether the user holds it), valuation "
+            "(P/E against its own 1-10 year history), dcf (the app's DCF: "
+            "value a share, inputs and a WACC x terminal grid), analysts "
+            "(consensus EPS and its revisions, targets, recent rating and "
+            "target changes), options (implied volatility, put/call). Use "
+            "first for any question about a company's valuation, multiples, "
+            "fair value, consensus or risks; the web adds news and what this "
+            "lacks.",
+            {"type": "object",
+             "properties": {
+                 "ticker": {"type": "string",
+                            "description": "e.g. BKNG; omit for the one in focus."},
+                 "parts": {"type": "array",
+                           "items": {"type": "string", "enum": list(PAGE_PARTS)},
+                           "description": "Omit for overview, valuation, dcf "
+                                          "and analysts."}},
+             "required": []},
+        ), _ticker_data),
         (ToolSpec(
             "market_positioning",
             "How crowded speculators are in S&P 500, Nasdaq-100, 10y Treasury, "

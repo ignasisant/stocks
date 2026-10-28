@@ -14,7 +14,7 @@ def _run(name, args, ctx=None):
 
 def test_every_tool_is_offered_with_a_schema():
     names = [s.name for s in toolbox.specs(Context())]
-    assert names == ["search_web", "read_page", "get_quotes",
+    assert names == ["search_web", "read_page", "get_quotes", "ticker_data",
                      "market_positioning", "portfolio_snapshot", "lookup_knowledge"]
     for spec in toolbox.specs():
         assert spec.description.strip()
@@ -51,6 +51,59 @@ def test_a_failing_tool_answers_with_the_failure(monkeypatch):
     # The model must be able to route around it ("the price is unavailable"),
     # which it cannot do if the exception ends the loop instead.
     assert _run("get_quotes", {"tickers": ["NVDA"]}) == "get_quotes failed: RuntimeError."
+
+
+# ------------------------------------------------------------- ticker page
+
+
+def _page(monkeypatch, **readers):
+    for part, body in readers.items():
+        monkeypatch.setitem(toolbox._PAGE_READERS, part, body)
+
+
+def test_ticker_data_reads_the_focus_and_the_default_parts(monkeypatch):
+    seen = []
+
+    def reader(part):
+        def read(code, ctx):
+            seen.append((part, code))
+            return f"{part} of {code}"
+        return read
+
+    _page(monkeypatch, **{p: reader(p) for p in toolbox.PAGE_PARTS})
+    got = _run("ticker_data", {}, Context(focus="BKNG"))
+    assert sorted(seen) == sorted((p, "BKNG") for p in toolbox.PAGE_DEFAULT)
+    # Printed in the page's order, whatever order the threads finished in.
+    assert got.index("## overview") < got.index("## dcf") < got.index("## analysts")
+    assert "the app's" in got
+
+
+def test_ticker_data_keeps_the_sections_that_answered(monkeypatch):
+    def boom(code, ctx):
+        raise RuntimeError("yahoo is down")
+
+    _page(monkeypatch, dcf=boom, options=lambda code, ctx: "iv 30%")
+    got = _run("ticker_data", {"ticker": "nvda", "parts": ["dcf", "options"]})
+    assert "## dcf\nunavailable (RuntimeError)" in got
+    assert "iv 30%" in got
+
+
+def test_ticker_data_needs_a_ticker_and_known_parts():
+    assert _run("ticker_data", {}) == "No ticker given."
+    assert "pick from" in _run("ticker_data", {"ticker": "X", "parts": ["moat"]})
+
+
+def test_the_dcf_block_tells_margin_of_safety_from_upside(monkeypatch):
+    from stocks.api.routes import ticker as routes
+    from stocks.api.schemas import Dcf
+
+    monkeypatch.setattr(routes, "dcf", lambda code: Dcf(
+        ticker=code, currency="USD", price=150.0, value=200.0, upside=1 / 3,
+        fcf=1e9, net_debt=0.0, shares=1e8, growth=0.1, growth_source="fcf_cagr",
+        wacc=0.09, terminal=0.025, waccs=[0.09], terminals=[0.025], grid=[[200.0]]))
+    got = toolbox._page_dcf("X", Context())
+    assert "upside +33.3%" in got and "margin of safety 25.0%" in got
+    assert "WACC 9.0%: 200" in got
 
 
 # ------------------------------------------------------------- search / read

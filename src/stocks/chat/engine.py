@@ -1010,6 +1010,16 @@ RULES — these hold whatever the conversation asks:
   their book and every trade in it, live quotes, filings, news and any page
   on the web. When something is truly missing, name the one thing you need
   (a ticker, a year) in a line and answer the rest.
+- A company's figures come from the app's own data (its ticker page) when the
+  research holds them; a web figure for the same measure gives way to it.
+  Never state a figure no source above gives (an index's P/E, a rate, a
+  growth forecast): leave it out or name where it comes from.
+- Asked whether something is cheap or a buy, answer on which measure and
+  against what (its history, its peers, a DCF), then what would make that
+  wrong; never a bare yes or no. Margin of safety is (value - price) / value;
+  upside is value / price - 1. Never call one the other.
+- About one company, say whether the user holds it and its weight in the
+  book above, or that they do not.
 - A holding the user names must match a ticker or a name in the book above.
   When none does, say so, name the closest positions, and ask which one they
   mean. Never take it for a position of another name or kind (a fund is not a
@@ -2962,6 +2972,11 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                view + action_context(watchlist),
                                tools.earlier_turns(above)))),
                            fallbacks=[(p, k) for p, k, _m in live[1:]])
+        if (act is not None and act.kind in tools.PROPOSABLE
+                and tools.asks_more(message)):
+            # A question rides on the request: the answer takes both, and its
+            # research drafts the same card (`propose_action`) under it.
+            act = None
         if act is not None and tools.is_book(act.kind):
             reply = _book_turn(act, history=history, prefs=prefs, db=db,
                                chat_path=chat_path, lang=lang,
