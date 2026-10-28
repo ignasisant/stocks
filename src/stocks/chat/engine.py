@@ -3314,6 +3314,46 @@ def strip_cite_marks(text: str) -> str:
     return _CITE_MARK.sub("", text)
 
 
+# A free model handed its research sometimes answers by asking for more, in
+# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]".
+# The writing step has no tools, so that text reached the reader as the whole
+# answer. A call is scrubbed out of what is stored; an answer that was nothing
+# else is no answer, and the next provider is asked.
+_TOOL_NAMES = "|".join(sorted(map(re.escape, toolbox.TOOLS), key=len, reverse=True))
+_WRITTEN_CALL = re.compile(
+    rf"\{{\{{\s*(?:{_TOOL_NAMES})\s*\(.*?\)\s*\}}\}}"
+    r"|<(?:function|tool_call)\b[^>]*>.*?(?:</(?:function|tool_call)>|$)"
+    r"|\[TOOL_CALLS\].*?$"
+    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$",
+    re.S | re.M,
+)
+_CALL_OPENERS = ("{{", "<function", "<tool_call", "[TOOL_CALLS]",
+                 *(f"{name}(" for name in toolbox.TOOLS))
+# How much of an answer's start is held back while it may still be a call.
+CALL_HOLD_CHARS = 600
+
+
+def scrub_written_calls(text: str) -> str:
+    """The answer without the tool calls the model wrote out as text."""
+    if not _WRITTEN_CALL.search(text):
+        return text
+    return re.sub(r"\n{3,}", "\n\n", _WRITTEN_CALL.sub("", text)).strip()
+
+
+def _may_open_call(text: str) -> bool:
+    """Whether an answer's first words could still be a written tool call."""
+    head = text.lstrip()
+    return any(o.startswith(head) or head.startswith(o) for o in _CALL_OPENERS)
+
+
+def _only_calls(text: str, provider: Provider, model: str) -> bool:
+    """A reply that was nothing but written tool calls, logged as such."""
+    if not text or scrub_written_calls(text):
+        return False
+    obs.warn("chat.written_tool_call", provider=provider.id, model=model)
+    return True
+
+
 def close_markdown(text: str) -> str:
     """A half-written answer made whole enough to render.
 
@@ -3376,7 +3416,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     turn.learned = [*turn.learned, *_unseen(chat_path)]
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
-    text = strip_cite_marks(text)
+    text = scrub_written_calls(strip_cite_marks(text))
     if guard.leaked(text, system_prompt({}, "")):
         # The fixed instructions, repeated back (`chat/guard.py`). Under
         # `block` the stored and finished answer is the refusal instead; the
@@ -3551,6 +3591,9 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+        if _only_calls(text, provider, model):
+            _refund(prefs, prefs_path, provider, turn.units)
+            continue
         if text:
             return turn, _record(turn, text, provider, model, key, prefs=prefs,
                                  prefs_path=prefs_path, chat_path=chat_path,
@@ -3707,6 +3750,9 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             checkpoint.charged(provider.id)
         parts: list[str] = []
         cut = False
+        # The opening words, kept back while they may be a written tool call
+        # (`_may_open_call`); None once they are shown.
+        held: str | None = ""
         try:
             for chunk in metering.iterate(
                     provider.stream(key, model, turn.system, turn.messages),
@@ -3716,6 +3762,13 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     continue
                 if not chunk:
                     continue
+                if held is not None:
+                    held += chunk
+                    if _may_open_call(held) and (
+                            len(held) < CALL_HOLD_CHARS
+                            or _WRITTEN_CALL.search(held)):
+                        continue
+                    chunk, held = held, None
                 if not parts:
                     # Held until the first real chunk: a caller that showed
                     # "answering with X" for a provider that then failed over
@@ -3733,6 +3786,21 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     checkpoint.charged("")
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
+        if held:
+            # The whole reply stayed held: a written call and nothing else is
+            # no answer, so it fails over like a provider that said nothing.
+            if _only_calls(held.strip(), provider, model):
+                _refund(prefs, prefs_path, provider, turn.units)
+                if checkpoint is not None:
+                    checkpoint.charged("")
+                continue
+            held = scrub_written_calls(held)
+            if not parts:
+                yield ("meta", {"provider": provider.id, "model": model,
+                                "skills": list(turn.skills),
+                                "sources": list(turn.sources)})
+            parts.append(held)
+            yield ("text", held)
         text = "".join(parts).strip()
         if text and cut:
             closed = close_markdown(text) + "\n\n" + translate(
