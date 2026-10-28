@@ -122,6 +122,9 @@ describe("results, P/E and insider charts", () => {
 
   it("put the axis inside the plot on a phone", () => {
     dom(380);
+    // A phone folds these cards to their heading; a reader who opened them
+    // once sees them open.
+    vi.stubGlobal("localStorage", { getItem: () => "1" });
     for (const html of render()) expect(html).toContain("tk-grid-in");
   });
 });

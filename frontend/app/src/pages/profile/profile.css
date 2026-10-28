@@ -669,6 +669,11 @@
   color: var(--ag-text-muted);
   overflow-wrap: anywhere;
 }
+.pr-conn-ok {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-up);
+}
 .pr-conn > .pr-btn {
   flex: 0 0 auto;
 }

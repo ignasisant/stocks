@@ -38,8 +38,11 @@ def test_the_market_read_fires_before_the_european_open_tuesday_to_saturday():
     assert re.search(r'time_zone\s*=\s*"Etc/UTC"', CRON_TF)
 
 
-def test_the_warm_up_keeps_its_four_ticks_anchored_to_new_york():
-    assert re.search(r'schedule\s*=\s*"35 0,9,12,16 \* \* 1-5"', CRON_TF)
+def test_the_warm_up_keeps_its_ticks_anchored_to_new_york():
+    # Five ticks, Saturday included: the 04:35 one sits where the request log
+    # showed its daily slow cluster, and a weekend reader used to find every
+    # persisted memo past its grace.
+    assert re.search(r'schedule\s*=\s*"35 0,4,9,12,16 \* \* 1-6"', CRON_TF)
     assert re.search(r'time_zone\s*=\s*"America/New_York"', CRON_TF)
     assert "/api/v1/warm" in CRON_TF
 
@@ -82,7 +85,7 @@ def test_deploy_moves_the_job_to_the_promoted_image_and_secret():
     assert "run jobs update" in script
     after = script.split("run jobs update", 1)[1]
     assert '--image "$IMAGE"' in after
-    assert "STREAMLIT_SECRETS_TOML=$SECRET" in after
+    assert "STOCKS_SECRETS_TOML=$SECRET" in after
 
 
 def test_the_usage_digest_fires_monday_morning_as_the_same_job_with_other_words():

@@ -12,10 +12,12 @@ or a hash, only the row Profile draws.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Path, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
+from stocks import obs
 from stocks.api.deps import Writer
 from stocks.api.security import Authed
 
@@ -59,14 +61,32 @@ def _when(epoch: int) -> datetime:
     return datetime.fromtimestamp(epoch, tz=UTC)
 
 
+#: Where a reader was sent to the Claude tab from. Closed, so a log field is
+#: never whatever a URL said: "profile" is the tab picked by hand.
+Source = Literal["profile", "chat", "news", "tour"]
+
+
 @router.get("/connections", response_model=Connections,
             summary="Apps connected to this account")
-def connections(caller: Authed, _account: Writer) -> Connections:
+def connections(
+    caller: Authed,
+    _account: Writer,
+    seen_from: Annotated[Source | None, Query(
+        alias="from",
+        description=(
+            "Set on the card's first read only, naming what sent the reader "
+            "there; logged as `connector.card`. A refresh leaves it off."
+        ),
+    )] = None,
+) -> Connections:
     from stocks.connector import store
     from stocks.connector.server import door
 
     assert caller.email is not None  # `Writer` let only a session through
     rows = store.ledger().grants_for(caller.email)
+    if seen_from is not None:
+        obs.event("connector.card", src=seen_from, connected=len(rows),
+                  open=door.url is not None)
     return Connections(
         url=door.url,
         connections=[
@@ -104,3 +124,15 @@ def revoke(
     if not store.ledger().revoke(grant, email=caller.email):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="no such connection")
+
+
+class Copied(BaseModel):
+    what: Literal["url", "command"]
+
+
+@router.post("/connections/copied", status_code=status.HTTP_204_NO_CONTENT,
+             summary="Note that the connector address was copied")
+def copied(caller: Authed, _account: Writer, body: Copied) -> None:
+    """The step between seeing the card and Claude registering: nothing else
+    tells a reader who never got as far as Claude from one who never tried."""
+    obs.event("connector.copy", what=body.what)

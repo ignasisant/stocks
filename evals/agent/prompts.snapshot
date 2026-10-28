@@ -77,6 +77,14 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
+  "description": "How crowded speculators are in S&P 500, Nasdaq-100, 10y Treasury, EUR/USD, gold, crude and bitcoin futures: CFTC net position, its weekly change and where it sits in the last 3 years. Use for positioning, 'crowded trade' or sentiment-extreme questions.",
+  "name": "market_positioning",
+  "schema": {
+   "properties": {},
+   "type": "object"
+  }
+ },
+ {
   "description": "The user's own positions: holdings, weights, live value and P/L, plus the watchlist names they follow but do not hold. Use for any question about what they own.",
   "name": "portfolio_snapshot",
   "schema": {

@@ -14,23 +14,26 @@
  *   - `StackCards`, for everything else: one small card per row, one
  *     "label — value" line per column.
  *
- * `Responsive` ships both renderings and a container query on `ag-main` picks
- * one by the room the page actually has — so the chat drawer opening on a
- * laptop narrows a table the same way a phone does, with no resize listener.
+ * `Responsive` mounts one of the two by the room the page actually has
+ * (`shell/useNarrow`, the width of `ag-main`) — so the chat drawer opening
+ * on a laptop narrows a table the same way a phone does. One tree, not both
+ * with one hidden: a page of tables otherwise built every row twice, and
+ * every ticker cell in it asked for its logo twice.
  */
 
 import type { ReactNode } from "react";
 import { Link } from "../shell/router";
 import { initials, useTickerProfile } from "../shell/tickers";
+import { useNarrow } from "../shell/useNarrow";
 import "./ui.css";
 
-/** Both renderings of one table; the width of `ag-main` decides which shows. */
+/** One rendering of a table — the one the width of `ag-main` calls for. */
 export function Responsive({ wide, narrow }: { wide: ReactNode; narrow: ReactNode }) {
-  return (
-    <>
-      <div className="ag-resp-wide">{wide}</div>
-      <div className="ag-resp-narrow">{narrow}</div>
-    </>
+  const dense = useNarrow();
+  return dense ? (
+    <div className="ag-resp-narrow">{narrow}</div>
+  ) : (
+    <div className="ag-resp-wide">{wide}</div>
   );
 }
 
@@ -77,7 +80,13 @@ export function DenseRow<T>({ row, spec }: { row: T; spec: DenseSpec<T> }) {
       title={company || undefined}
     >
       {profile?.logo ? (
-        <img className="ag-dense-logo" src={profile.logo} alt="" loading="lazy" />
+        <img
+          className="ag-dense-logo"
+          src={profile.logo}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
       ) : (
         <span className="ag-dense-logo ag-dense-logo-none" aria-hidden="true">
           {profile ? initials(symbol) : null}

@@ -106,6 +106,51 @@ def _fx_offline():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _crypto_llama_deribit_offline():
+    """Refuse the nightly scan's Deribit and DefiLlama reads as a down network.
+
+    `stocks.data.crypto_market.get_json` is one shared door; a scan test that
+    stubs the source functions never gets here, and one that does not (the
+    older CoinGecko-only tests) must not reach the real hosts. The scan keeps
+    last night's figures on a failure, which is what those tests assert past.
+    """
+    from urllib.error import URLError
+
+    from stocks.data import crypto_market
+
+    real = crypto_market.get_json
+
+    def guarded(url, **kwargs):
+        if url.startswith((crypto_market.DERIBIT, crypto_market.LLAMA,
+                           crypto_market.LLAMA_STABLES)):
+            raise URLError("offline in tests")
+        return real(url, **kwargs)
+
+    crypto_market.get_json = guarded
+    yield
+    crypto_market.get_json = real
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cftc_offline():
+    """CFTC's Socrata endpoint answers as an offline machine would.
+
+    `stocks.data.cot` fetches through urllib, which `_yahoo_offline` does not
+    cover, and `/pulse/tables` reads it for every request. A test that cares
+    about a payload stubs `cot.get_bytes` itself, which wins over this.
+    """
+    from stocks.data import cot
+
+    def offline(url, **kwargs):
+        raise OSError(f"network is off in tests: {url}")
+
+    before = cot.get_bytes
+    cot.get_bytes = offline  # type: ignore[assignment]
+    yield
+    cot.get_bytes = before
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _no_telegram_pause():
     """Send the fan-outs' messages back to back.
 
@@ -193,6 +238,88 @@ def _finnhub_off():
     yield
     finnhub.api_key = before
     finnhub.clear()
+
+
+@pytest.fixture(autouse=True)
+def _twelvedata_off():
+    """Start every test with the Twelve Data daily fallback keyless and reset,
+    for the reason `_finnhub_off` gives. A test about it patches `api_key`."""
+    from stocks.data import twelvedata
+
+    before = twelvedata.api_key
+    twelvedata.api_key = lambda: None
+    twelvedata.clear()
+    yield
+    twelvedata.api_key = before
+    twelvedata.clear()
+
+
+@pytest.fixture(autouse=True)
+def _openfigi_off(_scratch):
+    """Start every test with OpenFIGI offline, keyless and cached nowhere real.
+
+    The importer asks it for each ISIN of a statement; left alone a test would
+    go to the network (and write the checkout's data/openfigi_isins.json). It
+    answers as an unreachable host does, which callers treat as "no answer" and
+    carry on with Yahoo. A test about it patches `openfigi._post` with a stub.
+    """
+    from stocks.data import openfigi
+
+    def offline(jobs, key):
+        raise ConnectionError("network is off in tests: OpenFIGI")
+
+    before = (openfigi._post, openfigi.api_key, openfigi.CACHE)
+    openfigi._post = offline
+    openfigi.api_key = lambda: None
+    openfigi.CACHE = _scratch / "openfigi_isins.json"
+    openfigi.clear()
+    yield
+    openfigi._post, openfigi.api_key, openfigi.CACHE = before
+    openfigi.clear()
+
+
+@pytest.fixture(autouse=True)
+def _esef_off(_scratch):
+    """Keep ESEF (filings.xbrl.org) and GLEIF off the network and off `data/`.
+
+    `loaders.fundamentals` overlays EU/UK issuers' filed statements, which
+    means a lookup and a background download the first time any ".MC" or ".AS"
+    ticker is seen. Tests get no thread, a scratch store and a host that
+    refuses; `tests/test_esef.py` stubs `esef._get` itself. Restored by hand
+    for the reason `_own_free_llm_counter` gives (a `monkeypatch` here would
+    outlive the fixtures that clear loader caches on teardown).
+    """
+    from stocks.data import esef
+
+    def refused(*args, **kwargs):
+        raise ConnectionError("ESEF is off in tests")
+
+    before = (esef.ESEF_DIR, esef.BACKGROUND, esef._get)
+    esef.ESEF_DIR, esef.BACKGROUND, esef._get = _scratch / "esef", False, refused
+    yield
+    esef.ESEF_DIR, esef.BACKGROUND, esef._get = before
+
+
+@pytest.fixture(autouse=True)
+def _shorts_off(_scratch):
+    """Keep the short-selling registers off the network and off `data/`.
+
+    The ticker route asks `shorts.ensure_fresh()`, which would start a thread
+    downloading the AFM, Federal Gazette, FCA and FINRA files; and the stores
+    are files under `data/` shared by the deployment. A test of the registers
+    stubs the downloads and reads the scratch files. Restored by hand for the
+    reason `_own_free_llm_counter` gives.
+    """
+    from stocks.data import shorts
+
+    before = (shorts.ensure_fresh, shorts.REGISTER_FILE, shorts.VOLUME_FILE)
+    shorts.ensure_fresh = lambda: None
+    shorts.REGISTER_FILE = _scratch / "shorts.json"
+    shorts.VOLUME_FILE = _scratch / "short_volume.json"
+    shorts.clear_cache()
+    yield
+    shorts.ensure_fresh, shorts.REGISTER_FILE, shorts.VOLUME_FILE = before
+    shorts.clear_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -321,7 +448,7 @@ def _own_feedback_dir(_scratch):
 def _bucket_off():
     """Start every test with the bucket mirror unconfigured.
 
-    `storage` reads `[storage]` from the checkout's `.streamlit/secrets.toml`,
+    `storage` reads `[storage]` from the checkout's `secrets.toml`,
     and on a machine that deploys, that is the production bucket: a write path
     under the repo root that a test exercised was mirrored there — which is how
     the guest-route suites' test notes reached the operator's inbox. A test
@@ -706,3 +833,36 @@ def _own_today_market(_scratch):
     today_market.FILE, briefing._market_start = before
     briefing._market_tried.clear()
     loaders.today_market.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _sec_bulk_offline(_scratch):
+    """Keep the SEC frames and 13F index off the network and out of data/.
+
+    `data.frames` and `data.thirteenf` each have one function that touches a
+    socket (frames' `_get`; the 13F index page, zip download and OpenFIGI
+    post) and one file under `data/`. Every sector scan calls `frames` and
+    every Yahoo-less holders lookup reads the index, so without this a suite
+    would download frames for real and read whatever index the checkout holds.
+    A test about either module stubs the function itself. Restored by hand
+    for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.data import frames, thirteenf
+
+    def offline(*args, **kwargs):
+        raise ConnectionError("network is off in tests")
+
+    before = (frames._get, frames.FRAMES_FILE, frames._loaded, thirteenf.DB,
+              thirteenf._page, thirteenf._fetch_zip, thirteenf._post,
+              thirteenf._restored)
+    frames._get = offline
+    frames.FRAMES_FILE = _scratch / "edgar_frames.json"
+    frames._loaded = None
+    thirteenf.DB = _scratch / "thirteenf.sqlite"
+    thirteenf._page = offline
+    thirteenf._fetch_zip = offline
+    thirteenf._post = offline
+    yield
+    (frames._get, frames.FRAMES_FILE, frames._loaded, thirteenf.DB,
+     thirteenf._page, thirteenf._fetch_zip, thirteenf._post,
+     thirteenf._restored) = before

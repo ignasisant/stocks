@@ -8,7 +8,7 @@
 #
 # Reads:
 #   .notify_secrets.env      TELEGRAM_* + STOCKS_STORAGE_* (you paste these)
-#   .streamlit/secrets.toml  [chat] enc_key + [free_llm] keys (harvested)
+#   secrets.toml  [chat] enc_key + [free_llm] keys (harvested)
 #
 # Requires: gh CLI authenticated (`gh auth login`), python3.11+ (tomllib).
 
@@ -42,11 +42,11 @@ for var in TELEGRAM_BOT_TOKEN STOCKS_STORAGE_ENDPOINT_URL STOCKS_STORAGE_BUCKET 
     [ -n "${!var:-}" ] || { echo "error: $var is empty in $ENV_FILE" >&2; exit 1; }
 done
 
-# Harvest from .streamlit/secrets.toml so the Actions cron matches the deploy.
+# Harvest from secrets.toml so the Actions cron matches the deploy.
 harvest() { # harvest <section> <key>
     python3 - "$1" "$2" << 'EOF'
 import sys, tomllib
-with open(".streamlit/secrets.toml", "rb") as f:
+with open("secrets.toml", "rb") as f:
     print(tomllib.load(f).get(sys.argv[1], {}).get(sys.argv[2], ""), end="")
 EOF
 }
@@ -81,7 +81,7 @@ set_secret FREE_LLM_OPENROUTER "$FREE_LLM_OPENROUTER"
 cat << EOF
 
 Done. Now add this section to the deploy's secrets.toml — locally
-.streamlit/secrets.toml, on the VM deploy/secrets.toml (keep everything
+secrets.toml, on the VM deploy/secrets.toml (keep everything
 already there):
 
 [telegram]

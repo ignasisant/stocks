@@ -20,6 +20,7 @@ import {
   RulesBlock,
   liveRule,
   ruleText,
+  rulesSubject,
 } from "./Journal";
 
 beforeEach(() => {
@@ -275,5 +276,16 @@ describe("the rules block", () => {
     expect(out).toContain("journal.criteria_empty");
     expect(out).toContain("journal.criteria_propose");
     expect(out).not.toContain("ag-jr-retire");
+  });
+});
+
+describe("what the assistant is asked to write rules for", () => {
+  it("names the company beside a broker code", () => {
+    expect(rulesSubject("RCF", "Teleperformance SE")).toBe("RCF (Teleperformance SE)");
+  });
+
+  it("keeps the bare ticker when there is no other name", () => {
+    expect(rulesSubject("AMD")).toBe("AMD");
+    expect(rulesSubject("BTC-EUR", "btc-eur")).toBe("BTC-EUR");
   });
 });

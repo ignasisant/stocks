@@ -27,12 +27,13 @@ as everyone did before this.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import os
 import secrets
 import threading
 import time
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from dataclasses import dataclass, field
 
 from stocks import obs
@@ -212,6 +213,45 @@ def tail(run: Run) -> Iterator[str]:
             yield PING
 
 
+async def atail(run: Run) -> AsyncIterator[str]:
+    """`tail`, for an async route: the same frames, read on a thread of its
+    own and handed to the event loop as they come.
+
+    A sync iterator under `StreamingResponse` is stepped on the request
+    threadpool, and `tail` blocks inside each step — on `run.cond`, for up to
+    `PING_S` — so a reader following an answer held one of the pool's threads
+    for the minutes it took, and a burst of readers held the pool. This holds
+    none: the wait runs on a thread the pool does not count. A reader who
+    leaves closes this generator; the thread notices at its next frame or
+    ping and stops.
+    """
+    loop = asyncio.get_running_loop()
+    frames: asyncio.Queue[str | None] = asyncio.Queue()
+    gone = threading.Event()
+
+    def hand(frame: str | None) -> None:
+        try:
+            loop.call_soon_threadsafe(frames.put_nowait, frame)
+        except RuntimeError:  # the loop is closed: nobody is reading
+            gone.set()
+
+    def pump() -> None:
+        try:
+            for frame in tail(run):
+                if gone.is_set():
+                    return
+                hand(frame)
+        finally:
+            hand(None)
+
+    threading.Thread(target=pump, name=f"tail-{run.id}", daemon=True).start()
+    try:
+        while (frame := await frames.get()) is not None:
+            yield frame
+    finally:
+        gone.set()
+
+
 def stop(run: Run) -> None:
     """Cut the answer: the worker stops at the next thing the turn says."""
     run.seen = True
@@ -237,6 +277,16 @@ def wait(run: Run, timeout: float = HOLD_S) -> None:
     with run.cond:
         while run.live and (left := deadline - time.monotonic()) > 0:
             run.cond.wait(left)
+
+
+async def wait_async(run: Run, timeout: float = HOLD_S) -> None:
+    """`wait`, for an async route: the hold stays open for minutes, and on
+    the request threadpool it kept a thread for all of them. Polled by the
+    second rather than woken by `run.cond` — a second's lag on a hold that
+    lasts minutes, for a wait that costs the pool nothing."""
+    deadline = time.monotonic() + timeout
+    while run.live and (left := deadline - time.monotonic()) > 0:
+        await asyncio.sleep(min(left, 1.0))
 
 
 def on_cloud_run() -> bool:

@@ -24,6 +24,7 @@ from stocks.analysis.sentiment import Component
 from stocks.analysis.sentiment import Pulse as PulseData
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from stocks.data import cot
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
 
@@ -481,6 +482,17 @@ def sources(monkeypatch):
             ]
         ),
     )
+    weeks = pd.date_range("2023-10-03", periods=100, freq="7D")
+    monkeypatch.setattr(
+        loaders,
+        "positioning",
+        lambda: {
+            "sp500": pd.DataFrame(
+                {"net": [*np.linspace(-50.0, 50.0, 99), 400.0], "oi": 1000.0},
+                index=weeks,
+            )
+        },
+    )
     monkeypatch.setattr(
         loaders, "basket_report", lambda db, mtime, base, period: None
     )
@@ -503,7 +515,45 @@ def test_every_block_comes_back_by_default(client, account, sources):
         "inflation",
         "rotation",
         "cross",
+        "positioning",
     }
+
+
+def test_positioning_rows_carry_percentile_zscore_and_a_crowded_state(
+    client, account, sources
+):
+    payload = client.get(
+        "/v1/pulse/tables",
+        params={"account": EMAIL, "blocks": "positioning"},
+        headers=AUTH,
+    ).json()
+    block = blocks_of(payload)["positioning"]
+    assert block["unit"] == "contracts"
+    assert block["expected"] == len(cot.MARKETS)
+    (row,) = block["rows"]
+    assert row["key"] == "sp500"
+    assert row["value"] == 400.0
+    assert row["percentile"] == 100.0
+    assert row["state"] == "crowded_long"
+    assert row["zscore"] > 2
+    assert row["net_pct"] == 40.0
+    assert "week" in row["changes"]
+
+
+def test_a_dead_cftc_leaves_positioning_down_and_the_rest_up(
+    client, account, sources, monkeypatch
+):
+    def dead():
+        raise RuntimeError("cot: no data")
+
+    monkeypatch.setattr(loaders, "positioning", dead)
+    payload = client.get(
+        "/v1/pulse/tables", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    by = blocks_of(payload)
+    assert by["positioning"]["rows"] == []
+    assert by["positioning"]["unavailable"]
+    assert by["rates"]["rows"]
 
 
 def test_the_sources_download_side_by_side(client, account, sources, monkeypatch):

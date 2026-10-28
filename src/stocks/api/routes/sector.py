@@ -30,7 +30,7 @@ from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_OR
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.analysis.technicals import TECH_METRIC_ORDER
-from stocks.api import loaders
+from stocks.api import holds, loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
@@ -475,7 +475,7 @@ def _rescan(name: str) -> None:
 
 def _spawn(job) -> None:
     """Run `job` off the request thread. A seam, so a test can run it inline."""
-    threading.Thread(target=job, daemon=True, name="sector-rescan").start()
+    holds.spawn("sector-rescan", job)
 
 
 @router.get(

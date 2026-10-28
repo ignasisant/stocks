@@ -52,7 +52,7 @@ the default list **→ Add Ingress Rules**, twice:
 From your Mac, copy the real app secrets up:
 
 ```bash
-scp .streamlit/secrets.toml ubuntu@<VM_IP>:/opt/aguait-stocks/deploy/secrets.toml
+scp secrets.toml ubuntu@<VM_IP>:/opt/aguait-stocks/deploy/secrets.toml
 ```
 
 SSH in and set the env:

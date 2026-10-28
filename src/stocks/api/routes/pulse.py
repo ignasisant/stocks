@@ -39,7 +39,7 @@ from stocks.api.schemas import (
     TrendRow,
     TrendTables,
 )
-from stocks.data import macro
+from stocks.data import cot, macro
 
 router = APIRouter(tags=["pulse"])
 
@@ -336,6 +336,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
 HORIZONS = {"week": 5, "month": 21, "quarter": 63, "year": 252}
 BLOCKS = (
     "indices", "gauges", "rates", "inflation", "rotation", "cross", "factors",
+    "positioning",
 )
 # What each block reads, so a request fetches only the sources its blocks need
 # — and fetches them side by side (`tables`).
@@ -347,6 +348,7 @@ SOURCES = {
     "rotation": ("closes", "book", "bench"),
     "cross": ("closes",),
     "factors": ("closes",),
+    "positioning": ("positioning",),
 }
 # Rows each block is configured to carry — the tab badges. Read off the same
 # registries the blocks iterate, so a series added to one of them moves its
@@ -362,6 +364,7 @@ EXPECTED = {
     "rotation": len(sm.SECTOR_ETFS),
     "factors": len(sm.FACTOR_PAIRS),
     "cross": len(sm.MACRO_ASSETS),
+    "positioning": len(cot.MARKETS),
 }
 # A gauge whose last bar is more than a week behind the freshest bar in its own
 # block has been dropped by its publisher. Measured against the block and not
@@ -648,6 +651,39 @@ def _cross(closes: dict[str, pd.Series]) -> TrendBlock:
     return TrendBlock(block="cross", unit="percent", rows=rows)
 
 
+def _positioning(frames: dict[str, pd.DataFrame]) -> TrendBlock:
+    """Speculators' net position in seven futures markets, against 3 years.
+
+    Weekly CFTC data, so a row carries no day-by-day horizons: `value` is the
+    net contracts, `changes.week` the move since the previous report, and the
+    percentile / z-score place it in the last ~3 years. `state` is
+    `crowded_long` / `crowded_short` past the 90th / 10th percentile and null
+    in between — a middling position is not a signal. A row is stale when its
+    report is more than two weeks behind the block's newest.
+    """
+    rows = []
+    found = cot.readings(frames)
+    newest = max((pd.Timestamp(r.as_of) for r in found), default=None)
+    for r in found:
+        behind = newest is not None and (newest - pd.Timestamp(r.as_of)).days > 14
+        rows.append(
+            TrendRow(
+                key=r.key,
+                name=r.name,
+                value=_num(r.net),
+                changes={} if r.week_change is None else {"week": r.week_change},
+                spark=[float(v) for v in r.spark],
+                state=None if r.crowded is None else f"crowded_{r.crowded}",
+                percentile=_num(r.percentile),
+                zscore=_num(r.zscore),
+                net_pct=_num(r.net_pct_oi),
+                stale=bool(behind),
+                as_of=r.as_of,
+            )
+        )
+    return TrendBlock(block="positioning", unit="contracts", rows=rows)
+
+
 @router.get("/pulse/tables", response_model=TrendTables, summary="The detail blocks")
 def tables(
     account: Account,
@@ -690,6 +726,7 @@ def tables(
         "inflation": loaders.inflation,
         "book": lambda: loaders.basket_report(db, mtime, ccy, "2y"),
         "bench": loaders.benchmark_sectors,
+        "positioning": loaders.positioning,
     }
     needed = list(dict.fromkeys(src for name in wanted for src in SOURCES[name]))
     pool = ThreadPoolExecutor(max_workers=max(len(needed), 1))
@@ -739,6 +776,8 @@ def tables(
                 )
             elif name == "factors":
                 out.append(_factors(fetched["closes"].result()))
+            elif name == "positioning":
+                out.append(_positioning(fetched["positioning"].result()))
             else:
                 out.append(_cross(fetched["closes"].result()))
         except Exception as exc:

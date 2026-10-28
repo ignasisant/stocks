@@ -22,7 +22,7 @@
 
 import { useState } from "react";
 import { get } from "../../shell/api";
-import { chart } from "../../shell/theme";
+import { chart, seriesColors } from "../../shell/theme";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
@@ -102,14 +102,6 @@ export default function Risk() {
     },
   };
   const palette = chart();
-  // In the API's order (SPY, QQQ, EEM), so an index keeps its hue whichever
-  // window is picked. Validated as a set against the card in both themes.
-  const benchmarkColors = [
-    palette.info,
-    palette.warn,
-    palette.warnOrange,
-    palette.brandAccent,
-  ];
 
   /** An index by the name a reader knows it by, the ticker when unnamed. */
   const benchName = (bench: string) =>
@@ -478,8 +470,8 @@ export default function Risk() {
                     series={[
                       // The account in the ink the page's figures wear, as the
                       // system draws every real record; the basket a step back
-                      // in secondary, and the benchmarks in the three hues
-                      // that stay apart for every kind of colour vision.
+                      // in secondary, and the benchmarks in series hues that
+                      // stay apart for every kind of colour vision.
                       {
                         label: t("portfolio.series_portfolio_actual"),
                         points: data.curves.portfolio,
@@ -497,10 +489,15 @@ export default function Risk() {
                           ]
                         : []),
                       ...Object.entries(data.curves.benchmarks).map(
-                        ([bench, points], index) => ({
+                        // Each index on its own series slot, so SPY keeps its
+                        // hue whichever window is picked and reads the same in
+                        // a ticker's Compare.
+                        ([bench, points], _, all) => ({
                           label: benchName(bench),
                           points,
-                          color: benchmarkColors[index] ?? palette.textMuted,
+                          color:
+                            seriesColors(all.map(([name]) => name))[bench] ??
+                            palette.textMuted,
                         }),
                       ),
                     ]}

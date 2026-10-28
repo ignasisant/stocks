@@ -39,6 +39,7 @@ NO_CARD = {
     "picture": None,
     "owner": False,
     "bank": False,
+    "connector": False,
 }
 
 
@@ -68,7 +69,7 @@ def _no_identity_provider(monkeypatch):
 
     `secrets_env.secret` falls back to the secrets file, so on a developer's
     own checkout `sign_in_configured()` reads the real `[auth]` section out of
-    `.streamlit/secrets.toml` and `/me` answers a different `sign_in` here than
+    `secrets.toml` and `/me` answers a different `sign_in` here than
     it does in CI. Pinning it is what stops this file asserting a fact about
     whoever is running it.
     """

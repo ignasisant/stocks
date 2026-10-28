@@ -438,6 +438,10 @@ class State(BaseModel):
     # an account that never touched them.
     memory: bool = True
     recall: bool = True
+    # Whether this deployment serves the Claude connector (`connector/`),
+    # which needs the site's public origin. Picking Claude in settings points
+    # at it: a reader who already pays for Claude can ask from there, keyless.
+    connector: bool = False
 
 
 class Settings(BaseModel):
@@ -890,7 +894,14 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
         key_storage=engine.can_store_keys(),
         memory=engine.memory_on(prefs),
         recall=engine.recall_on(prefs),
+        connector=_connector_open(),
     )
+
+
+def _connector_open() -> bool:
+    from stocks.web.server import connector_open
+
+    return connector_open()
 
 
 @router.get(
@@ -1741,7 +1752,7 @@ def ask(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="this thread is still being answered") from exc
     return StreamingResponse(
-        runs.tail(run),
+        runs.atail(run),
         media_type="text/event-stream",
         headers=_STREAM_HEADERS,
     )
@@ -1845,7 +1856,7 @@ def rejoin(rid: str, paths: Account, request: Request) -> StreamingResponse:
     answer spends nothing more than its asking already did.
     """
     return StreamingResponse(
-        runs.tail(_run(rid, paths, request)),
+        runs.atail(_run(rid, paths, request)),
         media_type="text/event-stream",
         headers=_STREAM_HEADERS,
     )
@@ -1874,13 +1885,16 @@ holds = APIRouter(prefix="/chat", tags=["chat"], include_in_schema=False)
 
 
 @holds.post("/runs/{rid}/hold", name="hold", status_code=status.HTTP_204_NO_CONTENT)
-def hold(rid: str, x_run_hold: str = Header(default="")) -> Response:
+async def hold(rid: str, x_run_hold: str = Header(default="")) -> Response:
     """Stay open until run `rid` is over — Cloud Run's CPU for a reader who
-    left (`api/runs.py`). 404 for anything but this process's own token."""
+    left (`api/runs.py`). 404 for anything but this process's own token.
+
+    Async, like `api/holds.py`: a hold is open for minutes and must not keep
+    one of the request threadpool's threads for them."""
     run = runs.holding(rid, x_run_hold)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    runs.wait(run)
+    await runs.wait_async(run)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

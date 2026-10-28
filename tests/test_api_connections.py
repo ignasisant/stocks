@@ -104,3 +104,35 @@ def test_a_token_can_neither_list_nor_revoke(client, method, path):
 ])
 def test_an_anonymous_caller_is_turned_away(client, method, path):
     assert client.request(method, path).status_code == 401
+
+
+@pytest.fixture
+def events(monkeypatch):
+    from stocks import obs
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **f: seen.append((name, f)))
+    return seen
+
+
+def test_the_first_read_names_where_the_reader_came_from(client, sign_in, events):
+    """`connector.card` is the funnel's first step; a refresh is not a view."""
+    grant()
+    sign_in(client, EMAIL)
+    client.get("/v1/connections", params={"from": "chat"})
+    client.get("/v1/connections")
+    cards = [f for name, f in events if name == "connector.card"]
+    assert cards == [{"src": "chat", "connected": 1, "open": False}]
+
+
+def test_a_source_outside_the_list_is_refused(client, sign_in):
+    sign_in(client, EMAIL)
+    assert client.get("/v1/connections", params={"from": "x"}).status_code == 422
+
+
+def test_copying_the_address_is_noted(client, sign_in, events):
+    sign_in(client, EMAIL)
+    response = client.post("/v1/connections/copied", json={"what": "command"})
+    assert response.status_code == 204
+    assert ("connector.copy", {"what": "command"}) in events
+    assert client.post("/v1/connections/copied", json={"what": "x"}).status_code == 422

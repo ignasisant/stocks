@@ -15,7 +15,7 @@ def _run(name, args, ctx=None):
 def test_every_tool_is_offered_with_a_schema():
     names = [s.name for s in toolbox.specs(Context())]
     assert names == ["search_web", "read_page", "get_quotes",
-                     "portfolio_snapshot", "lookup_knowledge"]
+                     "market_positioning", "portfolio_snapshot", "lookup_knowledge"]
     for spec in toolbox.specs():
         assert spec.description.strip()
         assert spec.schema["type"] == "object"
@@ -64,6 +64,32 @@ def test_search_web_formats_the_hits(monkeypatch):
     ])
     got = _run("search_web", {"query": "ASML bookings"})
     assert "ASML Q3" in got and "https://ex.com/a" in got and "article text" in got
+
+
+def test_market_positioning_reads_the_cftc_block(monkeypatch):
+    import numpy as np
+    import pandas as pd
+
+    from stocks.api import loaders
+
+    weeks = pd.date_range("2023-10-03", periods=100, freq="7D")
+    frame = pd.DataFrame(
+        {"net": [*np.linspace(-50.0, 50.0, 99), 400.0], "oi": 1000.0}, index=weeks
+    )
+    monkeypatch.setattr(loaders, "positioning", lambda: {"sp500": frame})
+    got = _run("market_positioning", {})
+    assert "E-mini S&P 500" in got and "crowded long" in got
+    assert "100th percentile" in got
+
+
+def test_market_positioning_says_so_when_the_cftc_is_down(monkeypatch):
+    from stocks.api import loaders
+
+    def dead():
+        raise RuntimeError("cot: no data")
+
+    monkeypatch.setattr(loaders, "positioning", dead)
+    assert "unavailable" in _run("market_positioning", {})
 
 
 def test_search_web_without_a_query_does_not_search(monkeypatch):
@@ -511,6 +537,17 @@ def test_exit_rules_need_the_reader_to_have_asked_and_a_journal(tmp_path, no_loo
 ])
 def test_asks_criteria(text, asks):
     assert toolbox.asks_criteria(text) is asks
+
+
+@pytest.mark.parametrize("text, asks", [
+    ("Ayúdame a escribir reglas de salida para RCF (Teleperformance SE)", True),
+    ("help me write exit rules for NVDA", True),
+    ("ayúdame con los kill criteria de AMD", True),
+    ("¿cuándo debería vender NVDA?", False),
+    ("pon un stop a ASML", False),
+])
+def test_asks_rules_only_when_they_are_to_be_written(text, asks):
+    assert toolbox.asks_rules(text) is asks
 
 
 def test_the_proposal_schema_offers_exit_rules():

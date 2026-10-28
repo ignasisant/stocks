@@ -32,6 +32,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../shell/i18n";
 import { ApiError } from "../shell/api";
+import { Icon } from "../shell/Icon";
+import { useRoute } from "../shell/router";
 import { Status } from "../ui/Status";
 import {
   forgetKey,
@@ -43,6 +45,7 @@ import {
 } from "./api";
 import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
 import { keyError, providerLabel, providerTag } from "./format";
+import { phone } from "./GuideCard";
 import { Glyph, ProviderMark } from "./icons";
 import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
@@ -475,6 +478,37 @@ function Model({
   );
 }
 
+/**
+ * Picking Claude says the reader uses it, and the connector lets them ask
+ * about the book from Claude itself, with no key here at all. Its own
+ * component because the router reads `window`, which a settings screen that
+ * never shows this has no reason to touch.
+ */
+function ToConnector({
+  provider,
+  onLeave,
+}: {
+  provider: ProviderInfo;
+  onLeave?: () => void;
+}) {
+  const t = useT();
+  const { go } = useRoute();
+  return (
+    <button
+      type="button"
+      className="ag-chat-nudge"
+      onClick={() => {
+        go("profile", { tab: "claude", from: "chat" });
+        if (phone()) onLeave?.();
+      }}
+    >
+      <ProviderMark provider={provider} />
+      <span>{t("chat.claude_connector_nudge")}</span>
+      <Icon name="arrow_forward" size={16} />
+    </button>
+  );
+}
+
 /** What a tile says about itself under its name, or "" when it has nothing. */
 function useTag() {
   const t = useT();
@@ -495,6 +529,7 @@ export function Settings({
   connect = null,
   onConnectTaken,
   onMemory,
+  onLeave,
 }: {
   state: ChatState;
   busy: boolean;
@@ -509,6 +544,8 @@ export function Settings({
   onConnectTaken?: () => void;
   /** Open the saved-memories screen. */
   onMemory?: () => void;
+  /** Get the drawer out of the way of a page it sends the reader to. */
+  onLeave?: () => void;
 }) {
   const t = useT();
   const tag = useTag();
@@ -592,6 +629,11 @@ export function Settings({
             />
           ) : (
             <p className="ag-chat-hint">{picked.model}</p>
+          )}
+
+          {/* With or without a key: neither answers what the connector does. */}
+          {picked.id === "anthropic" && state.connector && (
+            <ToConnector provider={picked} onLeave={onLeave} />
           )}
 
           {picked.needs_key ? (

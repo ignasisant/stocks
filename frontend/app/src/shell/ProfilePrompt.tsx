@@ -158,7 +158,7 @@ function Dialog({
     // press is the decision, and a failed write costs one more ask next
     // session rather than an error in front of somebody saying no.
     onDone();
-    void send("PATCH", "/prefs", { profile_prompt_off: true })
+    void send("PATCH", "/prefs", { profile_prompt_off: true }, { touches: ["/prefs"] })
       .then(reload)
       .catch(() => undefined);
   }

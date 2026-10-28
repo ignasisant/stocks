@@ -43,12 +43,18 @@ const TAB_LABELS: Record<string, Record<string, string>> = {
     rotation: "sentiment.rotation_title",
     factors: "sentiment.factors_title",
     cross: "sentiment.cross_title",
+    positioning: "sentiment.positioning_title",
+  },
+  learn: {
+    paths: "learn.tab_paths",
+    glossary: "learn.tab_glossary",
   },
   profile: {
     prefs: "profile.preferences",
     iv: "profile.iv_section",
     watch: "profile.watchlist",
     notify: "profile.notifications",
+    claude: "profile.connector_tab",
   },
 };
 

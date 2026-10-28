@@ -18,8 +18,8 @@
  */
 
 import { useState } from "react";
-import { get } from "../../shell/api";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { forgetUnder, get } from "../../shell/api";
+import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
@@ -71,11 +71,16 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
   // Bumped when a live rescan lands, so the cohort is asked for again and the
   // server answers from the fresh scan instead of last night's.
   const [fresh, setFresh] = useState(0);
+  // A sector picked keeps the last one's cards up, dimmed, until its own land.
   const cohort = useApi(
     () => get<SectorCohort>(`/sectors/${encodeURIComponent(name)}`),
     [name, fresh],
+    { keep: true },
   );
-  const rescan = useRescan(name, labels.sector(name), () => setFresh((n) => n + 1));
+  const rescan = useRescan(name, labels.sector(name), () => {
+    forgetUnder(["/sectors"]);
+    setFresh((n) => n + 1);
+  });
 
   if (!current) return <p className="ag-note">{t("sector.empty_title")}</p>;
 
@@ -120,7 +125,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
               <RescanButton rescan={rescan} />
             </div>
           ) : (
-            <>
+            <Refreshable>
               <p className="ag-sec-caption">
                 {t("sector.as_of", { date: calendarDay(data.as_of) })}
               </p>
@@ -145,7 +150,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
               />
               <SectorMap key={`map-${data.sector}`} rows={data.rows} />
               <Cohort key={data.sector} data={data} />
-            </>
+            </Refreshable>
           )
         }
       </Loaded>

@@ -1,5 +1,5 @@
 """Write the Enable Banking application id and private key into
-.streamlit/secrets.toml, without either ever passing through a shell
+secrets.toml, without either ever passing through a shell
 argument, the clipboard of another process, or this script's output.
 
     uv run python scripts/eb_credentials.py --id <application-id> --key path/to/key.pem
@@ -22,7 +22,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 
 ROOT = Path(__file__).resolve().parent.parent
-SECRETS = ROOT / ".streamlit" / "secrets.toml"
+SECRETS = ROOT / "secrets.toml"
 BLOCK = re.compile(
     r'(\[enable_banking\]\n)(.*?)(?=\n\[|\Z)', re.DOTALL
 )

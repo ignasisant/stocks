@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { get, send } from "../shell/api";
-import { askAssistant } from "../shell/assistant";
+import { askAssistant, useAssistantChanges } from "../shell/assistant";
 import { useLang, useT } from "../shell/i18n";
 import { Link } from "../shell/router";
 import { useCurrency } from "../shell/session";
@@ -117,7 +117,14 @@ export function getJournal(params: { ticker?: string } = {}): Promise<Journal> {
 
 /** Take down one exit rule; it stays in the journal as retired. */
 function retireRule(id: string): Promise<void> {
-  return send<void>("DELETE", `/journal/criteria/${encodeURIComponent(id)}`);
+  return send<void>(
+    "DELETE",
+    `/journal/criteria/${encodeURIComponent(id)}`,
+    undefined,
+    {
+      touches: ["/journal", "/ticker"],
+    },
+  );
 }
 
 /** Whether `entry` is an exit rule still standing (armed or already met). */
@@ -560,6 +567,8 @@ export function JournalList({
 
 // -------------------------------------------------------- the ticker's chip
 
+const noReload = () => {};
+
 /**
  * "Diario · 3" in a ticker's header, and the side panel it opens. Nothing at
  * all while the journal is loading or failed. With nothing on this name the
@@ -568,17 +577,28 @@ export function JournalList({
  */
 export function JournalChip({
   ticker,
+  name = "",
   held = false,
 }: {
   ticker: string;
+  name?: string;
   held?: boolean;
 }) {
   const t = useT();
-  const query = useApi(() => getJournal({ ticker }), [ticker]);
+  // Rules approved in the chat beside it: read again, past the memo.
+  const saved = useAssistantChanges("set_criteria");
+  const query = useApi(() => getJournal({ ticker }), [ticker, saved]);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const presence = usePresence(open);
-  if (query.state !== "loaded" || (query.data.total === 0 && !held)) return null;
+  // A re-read (a rule retired here, one saved from the chat) goes back to
+  // "loading": the last journal stays drawn meanwhile, so neither the chip
+  // nor an open panel blinks out under the reader.
+  const last = useRef<{ ticker: string; journal: Journal } | null>(null);
+  if (query.state === "loaded") last.current = { ticker, journal: query.data };
+  const journal = last.current?.ticker === ticker ? last.current.journal : null;
+  const reload = query.state === "loaded" ? query.reload : noReload;
+  if (!journal || (journal.total === 0 && !held)) return null;
   return (
     <>
       <button
@@ -588,21 +608,35 @@ export function JournalChip({
         title={t("journal.chip_help", { ticker })}
         onClick={() => setOpen(true)}
       >
-        {query.data.total
-          ? t("journal.chip", { n: query.data.total })
+        {journal.total
+          ? t("journal.chip", { n: journal.total })
           : t("journal.chip_none")}
       </button>
       {presence.mounted ? (
         <JournalPanel
           ticker={ticker}
-          journal={query.data}
+          name={name}
+          journal={journal}
           onClose={close}
-          onChange={query.reload}
+          onChange={reload}
           leaving={presence.leaving}
         />
       ) : null}
     </>
   );
+}
+
+/**
+ * The name the assistant is asked to write rules for: the journal's own key,
+ * which the proposal must come back with, plus the company. A broker code
+ * alone sends the research after whatever else trades under it — Revolut's
+ * RCF is Teleperformance, and the web's RCF is an Indian fertiliser maker.
+ */
+export function rulesSubject(ticker: string, name = ""): string {
+  const company = name.trim();
+  return company && company.toUpperCase() !== ticker.toUpperCase()
+    ? `${ticker} (${company})`
+    : ticker;
 }
 
 /**
@@ -613,39 +647,46 @@ export function JournalChip({
  */
 export function RulesBlock({
   ticker,
+  name = "",
   rules,
   onChange,
   onAsk,
 }: {
   ticker: string;
+  name?: string;
   rules: JournalEntry[];
   onChange: () => void;
   onAsk: () => void;
 }) {
   const t = useT();
   const lang = useLang();
-  const [busy, setBusy] = useState<string | null>(null);
   // Retiring asks twice: the first press turns the button into its
   // confirmation, beside a Cancel, so a stray tap never takes a rule down.
   const [confirming, setConfirming] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // Rules taken down here and not yet gone from `rules`: the row leaves at
+  // the press, the journal is re-read behind it, and a refusal puts it back.
+  const [gone, setGone] = useState<readonly string[]>([]);
   const retire = (id: string) => {
     setConfirming(null);
-    setBusy(id);
     setFailed(false);
+    setGone((ids) => [...ids, id]);
     retireRule(id)
       .then(onChange)
-      .catch(() => setFailed(true))
-      .finally(() => setBusy(null));
+      .catch(() => {
+        setFailed(true);
+        setGone((ids) => ids.filter((held) => held !== id));
+      });
   };
+  const standing = rules.filter((rule) => !gone.includes(rule.id));
   return (
     <section className="ag-jr-rules" aria-labelledby="ag-jr-rules-h">
       <h3 id="ag-jr-rules-h" className="ag-jr-h">
         {t("journal.criteria_title")}
       </h3>
-      {rules.length ? (
+      {standing.length ? (
         <ul className="ag-jr-rule-list">
-          {rules.map((rule) => {
+          {standing.map((rule) => {
             const words = ruleText(t, rule, lang);
             return (
               <li key={rule.id} className="ag-jr-rule">
@@ -656,7 +697,6 @@ export function RulesBlock({
                     <button
                       type="button"
                       className="ag-jr-retire ag-jr-retire-confirm"
-                      disabled={busy !== null}
                       aria-label={`${t("journal.criteria_confirm")}: ${words}`}
                       onClick={() => retire(rule.id)}
                     >
@@ -674,7 +714,6 @@ export function RulesBlock({
                   <button
                     type="button"
                     className="ag-jr-retire"
-                    disabled={busy !== null}
                     aria-label={`${t("journal.criteria_retire")}: ${words}`}
                     onClick={() => setConfirming(rule.id)}
                   >
@@ -697,7 +736,9 @@ export function RulesBlock({
         type="button"
         className="ag-jr-propose"
         onClick={() => {
-          askAssistant(t("journal.criteria_prompt", { ticker }));
+          askAssistant(
+            t("journal.criteria_prompt", { ticker: rulesSubject(ticker, name) }),
+          );
           onAsk();
         }}
       >
@@ -715,12 +756,14 @@ export function RulesBlock({
  */
 function JournalPanel({
   ticker,
+  name,
   journal,
   onClose,
   onChange,
   leaving,
 }: {
   ticker: string;
+  name: string;
   journal: Journal;
   onClose: () => void;
   onChange: () => void;
@@ -788,6 +831,7 @@ function JournalPanel({
         <div className="ag-jr-panel-body">
           <RulesBlock
             ticker={ticker}
+            name={name}
             rules={journal.entries.filter(liveRule)}
             onChange={onChange}
             onAsk={onClose}

@@ -6,7 +6,8 @@ builds a Logging filter, shells out to `gcloud logging read`, and renders the
 entries as one compact line each — plus `stats` (counts and latency
 percentiles per event), `usage` (accounts, visitors and page views per day,
 out of the app's events and the access log together), `funnel` (landing
-view to signup, by day and by campaign source) and `export` (a JSONL
+view to signup, by day and by campaign source), `connector` (Profile's
+Claude tab to the connector's first tool call, in accounts) and `export` (a JSONL
 snapshot on disk, for keeping a bad day past the retention window or
 grinding through it offline).
 
@@ -354,7 +355,7 @@ _NOBODY = frozenset({"", "-", "?", "anon", "guest", "session", "token"})
 # is the page loading cold.
 _SHELL_PAGES = frozenset({
     "home", "today", "portfolio", "review", "import", "ticker", "sentiment",
-    "sector", "earnings", "profile", "bank",
+    "sector", "earnings", "learn", "profile", "bank",
 })
 
 # What each page asks `/api/v1/` for, by prefix; the first match wins, so a
@@ -372,6 +373,7 @@ _PAGE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("pulse", "sentiment"),
     ("sector", "sector"),
     ("earnings", "earnings"),
+    ("learn", "learn"),
     ("profile", "profile"),
     ("bank", "bank"), ("connections", "bank"),
     ("journal", "profile"),  # the decision journal lives on the profile page
@@ -705,6 +707,91 @@ def render_funnel(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# ------------------------------------------------------------------- connector
+
+#: The connector funnel's events, fetched together (`stocks logs connector`).
+CONNECTOR_EXTRA = (
+    'jsonPayload.event=("connector.card" OR "connector.copy" OR "mcp.consent"'
+    ' OR "mcp.grant" OR "mcp.tool")'
+)
+
+_CONNECTOR_STEPS = ("card", "copy", "allow", "used")
+
+
+def connector(entries: Iterable[dict]) -> dict:
+    """Profile's Claude tab -> address copied -> approved -> first tool call.
+
+    Counted in accounts, not events: a reader who opens the tab five times
+    and copies twice is one reader who copied. `card` is split by `src`
+    (what sent them there: the chat's nudge, the "what's new" card, the
+    tour, or the tab picked by hand), which is the question the nudges were
+    built to answer. `allow` is the consent screen's yes, which names the
+    account; `mcp.grant` does not (it happens on the token exchange, in no
+    one's session), so grants are a count beside the funnel, not a step.
+    `used` is an account with any `mcp.tool` call in range — whether or not
+    it saw the card in range, since a connection made last month still
+    counts as a reader the connector kept.
+    """
+    reached: dict[str, set[str]] = {step: set() for step in _CONNECTOR_STEPS}
+    by_src: dict[str, set[str]] = {}
+    grants = denied = 0
+    for entry in entries:
+        body = payload(entry)
+        name = str(body.get("event") or "")
+        user = str(body.get("user") or "")
+        if name == "mcp.grant":
+            grants += 1
+            continue
+        if not user or user in ("-", "anon", "?"):
+            continue
+        if name == "connector.card":
+            reached["card"].add(user)
+            by_src.setdefault(str(body.get("src") or "-"), set()).add(user)
+        elif name == "connector.copy":
+            reached["copy"].add(user)
+        elif name == "mcp.consent" and body.get("step") == "allow":
+            reached["allow"].add(user)
+        elif name == "mcp.consent" and body.get("step") == "deny":
+            denied += 1
+        elif name == "mcp.tool":
+            reached["used"].add(user)
+    return {
+        "steps": {step: len(users) for step, users in reached.items()},
+        "sources": sorted(
+            ({"src": s, "accounts": len(u)} for s, u in by_src.items()),
+            key=lambda r: (r["accounts"], r["src"]),
+            reverse=True,
+        ),
+        "grants": grants,
+        "denied": denied,
+    }
+
+
+def render_connector(summary: dict) -> str:
+    steps = summary["steps"]
+    if not any(steps.values()) and not summary["grants"]:
+        return "(no connector events in range)"
+    labels = {
+        "card": "saw the Claude tab",
+        "copy": "copied the address",
+        "allow": "approved in TopStocks",
+        "used": "called a tool",
+    }
+    lines = [f"{'accounts':<24} {'n':>6} {'of prev':>8}", "-" * 40]
+    prev = None
+    for step in _CONNECTOR_STEPS:
+        n = steps[step]
+        rate = _rate(n, prev) if prev is not None else ""
+        lines.append(f"{labels[step]:<24} {n:>6} {rate:>8}")
+        prev = n
+    lines.append(f"\ngrants issued: {summary['grants']}   denied: {summary['denied']}")
+    if summary["sources"]:
+        lines += ["\nsent to the tab by:", f"{'source':<24} {'accounts':>8}", "-" * 33]
+        for r in summary["sources"]:
+            lines.append(f"{r['src'][:24]:<24} {r['accounts']:>8}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------- skills
 
 #: Row labels for turns that loaded no skill, and for turns logged before
@@ -817,6 +904,118 @@ def render_skills(summary: dict) -> str:
     )
     if summary["unmatched"]:
         lines.append(f"{summary['unmatched']} ratings of answers outside the range")
+    return "\n".join(lines)
+
+
+# One route, not one URL: the access log carries a symbol or an id in the
+# path, and `/ticker/NVDA/compare` is the same code as `/ticker/AAPL/compare`.
+_ROUTE_IDS = (
+    (re.compile(r"/ticker/[^/]+"), "/ticker/{t}"),
+    (re.compile(r"/conversations/[^/]+"), "/conversations/{id}"),
+    (re.compile(r"/threads/[^/]+"), "/threads/{id}"),
+    (re.compile(r"/runs/[^/]+"), "/runs/{id}"),
+    (re.compile(r"/turns/[^/]+"), "/turns/{id}"),
+    (re.compile(r"/memories/[^/]+"), "/memories/{id}"),
+    (re.compile(r"/changes/[^/]+"), "/changes/{id}"),
+    (re.compile(r"/sessions/[^/]+"), "/sessions/{id}"),
+    (re.compile(r"/connections/[^/]+"), "/connections/{id}"),
+    (re.compile(r"/watchlist/[^/]+"), "/watchlist/{t}"),
+    (re.compile(r"/i18n/[^/]+"), "/i18n/{lang}"),
+    (re.compile(r"/lessons/[^/]+"), "/lessons/{id}"),
+)
+
+
+def route_of(url: str) -> str:
+    """The route a request URL belongs to: path only, ids collapsed."""
+    path = urlsplit(url).path if "://" in url else url.split("?", 1)[0]
+    for pattern, placeholder in _ROUTE_IDS:
+        path = pattern.sub(placeholder, path)
+    return path
+
+
+def _latency_ms(entry: dict) -> float | None:
+    """`httpRequest.latency` ("1.234s") in milliseconds, or None."""
+    raw = (entry.get("httpRequest") or {}).get("latency")
+    if not isinstance(raw, str) or not raw.endswith("s"):
+        return None
+    try:
+        return float(raw[:-1]) * 1000.0
+    except ValueError:
+        return None
+
+
+# A request slower than this is listed by itself under the table: the ones a
+# reader actually sat through, with the time they happened.
+SLOW_MS = 10_000.0
+
+
+def http_stats(entries: Iterable[dict], *, slow_ms: float = SLOW_MS) -> dict:
+    """Per-route counts and latency percentiles from the access log.
+
+    Groups on method + route (`route_of`), so one row is one handler. Errors
+    are 5xx answers. `slow` lists every request over `slow_ms`, oldest first,
+    so the daily cold cluster shows up as a cluster.
+    """
+    groups: dict[str, dict] = {}
+    slow: list[dict] = []
+    for entry in entries:
+        r = entry.get("httpRequest")
+        if not r:
+            continue
+        key = f"{r.get('requestMethod') or '?'} {route_of(r.get('requestUrl') or '')}"
+        g = groups.setdefault(key, {"key": key, "count": 0, "errors": 0, "ms": []})
+        g["count"] += 1
+        status = r.get("status")
+        if isinstance(status, int) and status >= 500:
+            g["errors"] += 1
+        ms = _latency_ms(entry)
+        if ms is None:
+            continue
+        g["ms"].append(ms)
+        if ms > slow_ms:
+            slow.append({"at": entry.get("timestamp", ""), "key": key, "ms": round(ms)})
+    rows: list[dict] = []
+    for g in groups.values():
+        ms = g.pop("ms")
+        rows.append({
+            **g,
+            "p50_ms": round(_pct(ms, 0.50)) if ms else None,
+            "p90_ms": round(_pct(ms, 0.90)) if ms else None,
+            "p95_ms": round(_pct(ms, 0.95)) if ms else None,
+            "max_ms": round(max(ms)) if ms else None,
+        })
+    rows.sort(key=lambda g: g["count"], reverse=True)
+    slow.sort(key=lambda s: s["at"])
+    total = sum(g["count"] for g in rows)
+    return {"rows": rows, "slow": slow, "total": total}
+
+
+def render_http_stats(summary: dict, *, top: int = 60) -> str:
+    rows, slow, total = summary["rows"], summary["slow"], summary["total"]
+    if not rows:
+        return "(no requests in range)"
+    head = (
+        f"{'route':<52} {'count':>6} {'5xx':>4} {'p50':>7} {'p90':>7} "
+        f"{'p95':>7} {'max':>7}"
+    )
+    lines = [head, "-" * len(head)]
+
+    def ms(v):
+        return "-" if v is None else f"{v}ms"
+
+    for r in rows[:top]:
+        lines.append(
+            f"{r['key'][:52]:<52} {r['count']:>6} {r['errors']:>4} "
+            f"{ms(r['p50_ms']):>7} {ms(r['p90_ms']):>7} {ms(r['p95_ms']):>7} "
+            f"{ms(r['max_ms']):>7}"
+        )
+    if len(rows) > top:
+        lines.append(f"... {len(rows) - top} more routes")
+    share = f"{100.0 * len(slow) / total:.1f}%" if total else "0%"
+    lines.append("")
+    lines.append(f"requests over {SLOW_MS / 1000:.0f}s: {len(slow)} of {total} ({share})")
+    for s in slow[-40:]:
+        lines.append(f"  {_local_time(s['at'])}  {s['key']:<52} {s['ms']:>7}ms")
     return "\n".join(lines)
 
 

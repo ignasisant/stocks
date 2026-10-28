@@ -979,6 +979,18 @@ class Financials(BaseModel):
         ),
     )
     estimate_currency: str | None = None
+    source: str | None = Field(
+        default=None,
+        description=(
+            "Where the annual rows were audited when a primary source replaced "
+            "Yahoo's: \"ESEF\" (the issuer's own filed annual report, EU/UK). "
+            "Null = Yahoo's figures."
+        ),
+    )
+    source_years: list[str] = Field(
+        default_factory=list,
+        description="Fiscal year ends that primary source covers, newest first.",
+    )
 
 
 class ValuationWindow(BaseModel):
@@ -1165,6 +1177,69 @@ class InsiderTrade(BaseModel):
     currency: str | None = None
 
 
+class ShortHolderRow(BaseModel):
+    name: str
+    pct: float = Field(description="Net short position, percent of issued shares.")
+    date: str | None = Field(default=None, description="Position date, ISO.")
+
+
+class UsShortInterest(BaseModel):
+    pct_float: float | None = Field(
+        default=None,
+        description="Percent of the float sold short.",
+    )
+    shares_short: float | None = None
+    days_to_cover: float | None = Field(
+        default=None,
+        description="Shares short over average daily volume (Yahoo shortRatio).",
+    )
+    change_pct: float | None = Field(
+        default=None,
+        description="Shares short vs the prior reporting period, percent.",
+    )
+    as_of: str | None = Field(
+        default=None,
+        description="Settlement date of the figure, ISO.",
+    )
+    volume_ratio: float | None = Field(
+        default=None,
+        description=(
+            "FINRA Reg SHO: percent of recent trading volume that was a short sale. "
+            "Volume, not a position: market making puts it near 40-50 % for most names."
+        ),
+    )
+    volume_days: int | None = None
+    volume_as_of: str | None = None
+
+
+class EuShortPositions(BaseModel):
+    source: str = Field(description="AFM | BaFin | FCA")
+    issuer: str
+    total_pct: float = Field(
+        description="Sum of the disclosed net short positions, percent.",
+    )
+    as_of: str | None = Field(default=None, description="Latest position date, ISO.")
+    holders: list[ShortHolderRow] = Field(
+        default_factory=list,
+        description="Largest first; empty for the FCA, which gives only the total.",
+    )
+    holders_count: int = 0
+
+
+class Shorts(BaseModel):
+    ticker: str
+    us: UsShortInterest | None = None
+    eu: EuShortPositions | None = Field(
+        default=None,
+        description=(
+            "Positions of 0.5 % or more disclosed under the EU Short Selling Regulation. "
+            "Null when the register does not cover the name or is not loaded yet, "
+            "never a claim "
+            "that nobody is short."
+        ),
+    )
+
+
 class Insiders(BaseModel):
     ticker: str
     source: str | None = Field(
@@ -1239,6 +1314,44 @@ class EpsRevisionRow(BaseModel):
     down_30d: int | None = None
 
 
+class RatingChange(BaseModel):
+    """One firm's move on a share: a new grade or a new price target."""
+
+    date: str
+    firm: str
+    action: Literal["upgrade", "downgrade", "initiated", "reiterated"]
+    from_grade: str | None = None
+    to_grade: str | None = None
+    target: float | None = Field(default=None, description="New price target.")
+    prior_target: float | None = None
+    target_move: Literal["raised", "lowered", "set"] | None = None
+
+
+class OptionsView(BaseModel):
+    """What the listed options say: implied volatility and the put/call mix.
+
+    Market-implied, not a forecast. Null `iv` / ratios when the chain is too
+    thin to read; the route answers an empty body for a name with no options.
+    """
+
+    ticker: str
+    listed: bool = Field(description="False when the name has no listed options.")
+    iv: float | None = Field(
+        default=None,
+        description="Annualised at-the-money implied volatility, 0.32 = 32 %.",
+    )
+    iv_expiry: str | None = Field(default=None, description="The expiry it is read at.")
+    iv_days: int | None = Field(default=None, description="Days to that expiry.")
+    put_call_oi: float | None = Field(
+        default=None, description="Put open interest over call open interest."
+    )
+    put_call_volume: float | None = Field(
+        default=None, description="Put volume over call volume, today's session."
+    )
+    open_interest: int = 0
+    expiries: int = Field(default=0, description="Expiries the ratios sum over.")
+
+
 class Analysts(BaseModel):
     """What the sell side says about a share: verdict, targets, revisions.
 
@@ -1271,6 +1384,13 @@ class Analysts(BaseModel):
     )
     targets: AnalystTargets | None = None
     revisions: list[EpsRevisionRow] = Field(default_factory=list)
+    changes: list[RatingChange] = Field(
+        default_factory=list,
+        description=(
+            "Recent upgrades, downgrades, initiations and price-target changes, "
+            "newest first. Empty when Yahoo lists none, which is most non-US names."
+        ),
+    )
 
 
 class FundHolding(BaseModel):
@@ -1503,6 +1623,40 @@ class HalvingPhase(BaseModel):
     progress: float = Field(description="0..1 of the way to the next halving.")
 
 
+class StablecoinSupply(BaseModel):
+    """All stablecoins' circulating supply: dry powder waiting at the door."""
+
+    usd: float = Field(description="Summed circulating supply, US dollars.")
+    change_30d: float | None = Field(default=None, description="A fraction.")
+    change_90d: float | None = Field(default=None, description="A fraction.")
+
+
+class CryptoOnchain(BaseModel):
+    """What DefiLlama sees on the coin's chain or protocol."""
+
+    kind: str = Field(description="chain | protocol.")
+    name: str
+    tvl: float = Field(description="Total value locked, US dollars.")
+    tvl_change_30d: float | None = Field(default=None, description="A fraction.")
+    fees_30d: float | None = Field(default=None, description="US dollars paid by users.")
+    revenue_30d: float | None = Field(
+        default=None, description="US dollars kept by the protocol or its holders."
+    )
+
+
+class ImpliedVol(BaseModel):
+    """Deribit's DVOL: the volatility the options market prices for 30 days."""
+
+    coin: str = Field(description="BTC | ETH — the index the figure is read from.")
+    value: float = Field(description="Annualised, percent points (52.0 = 52%).")
+    percentile: Banded | None = Field(
+        default=None, description="Where it sits over the past year, 0..100."
+    )
+    low: float | None = None
+    high: float | None = None
+    week_ago: float | None = None
+
+
 class CryptoCycle(BaseModel):
     """Where a coin and the market sit in the cycle — the stand-in for the
     analyst consensus a coin does not have."""
@@ -1541,6 +1695,10 @@ class CryptoCycle(BaseModel):
         default=None, description="Bitcoin's own 90 days against the Nasdaq 100 (QQQ)."
     )
     halving: HalvingPhase | None = None
+    stablecoins: StablecoinSupply | None = None
+    onchain: CryptoOnchain | None = Field(
+        default=None, description="Only for a coin DefiLlama maps to a chain or protocol."
+    )
     scan_date: str | None = Field(
         default=None, description="When the market figures were read."
     )
@@ -1565,6 +1723,10 @@ class CryptoPositioning(BaseModel):
     oi_change_7d: float | None = Field(
         default=None,
         description="In contracts, so a price move does not read as positioning.",
+    )
+    implied_vol: ImpliedVol | None = Field(
+        default=None,
+        description="The coin's own DVOL for BTC and ETH, bitcoin's for the rest.",
     )
     as_of: str
 
@@ -4323,11 +4485,25 @@ class TrendRow(BaseModel):
             "against something rather than against nothing."
         ),
     )
+    net_pct: float | None = Field(
+        default=None,
+        description="Positioning rows only: net position as a % of open interest.",
+    )
+    zscore: float | None = Field(
+        default=None,
+        description=(
+            "Positioning rows only: net position in standard deviations from "
+            "its 3-year mean. `percentile` is the same ranking over those years."
+        ),
+    )
 
 
 class TrendBlock(BaseModel):
     block: str = Field(
-        description="indices | gauges | rates | inflation | rotation | cross."
+        description=(
+            "indices | gauges | rates | inflation | rotation | cross | "
+            "factors | positioning."
+        )
     )
     unit: str = Field(
         description=(

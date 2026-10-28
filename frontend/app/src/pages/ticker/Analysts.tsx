@@ -26,7 +26,13 @@ import {
   type Translate,
 } from "./format";
 import { Banner, Card, Note, Scroll, Subhead, useMobile } from "./ui";
-import type { AnalystMonth, Analysts, EpsRevisionRow } from "./types";
+import type {
+  AnalystMonth,
+  Analysts,
+  EpsRevisionRow,
+  OptionsView,
+  RatingChange,
+} from "./types";
 import { num } from "../../shell/numbers";
 
 /** The five buckets, strongest buy first — the order every bar is drawn in. */
@@ -42,7 +48,14 @@ const REVISION_MOVE = 0.01;
 // the bar's aria-label still carry it.
 const LABELLED_SHARE = 0.1;
 
-export function AnalystsSection({ data }: { data: Analysts }) {
+export function AnalystsSection({
+  data,
+  options = null,
+}: {
+  data: Analysts;
+  /** Implied volatility and the put/call mix; null while loading or unlisted. */
+  options?: OptionsView | null;
+}) {
   const t = useT();
   const title = t("ticker.analysts");
 
@@ -51,14 +64,14 @@ export function AnalystsSection({ data }: { data: Analysts }) {
   // one analyst drawn as a 100% "buy" bar reads as a unanimous street.
   if (data.analysts === 0 && !data.targets) {
     return (
-      <Card title={title}>
+      <Card fold="analysts" title={title}>
         <Note>{t("ticker.analysts_none")}</Note>
       </Card>
     );
   }
   if (!data.covered) {
     return (
-      <Card title={title}>
+      <Card fold="analysts" title={title}>
         <Note>
           {t("ticker.analysts_thin", { n: data.analysts, min: data.min_coverage })}
         </Note>
@@ -72,7 +85,7 @@ export function AnalystsSection({ data }: { data: Analysts }) {
   const cutting = trend(data.revisions, -1);
 
   return (
-    <Card title={title} note={t("ticker.analysts_caption")}>
+    <Card fold="analysts" title={title} note={t("ticker.analysts_caption")}>
       <KpiGrid>
         <Kpi
           label={t("ticker.analysts_rating")}
@@ -110,6 +123,7 @@ export function AnalystsSection({ data }: { data: Analysts }) {
             />
           </>
         ) : null}
+        {options?.listed ? <OptionsKpis options={options} /> : null}
       </KpiGrid>
 
       {targets && known(targets.dispersion) && targets.dispersion >= WIDE_DISPERSION ? (
@@ -123,8 +137,155 @@ export function AnalystsSection({ data }: { data: Analysts }) {
       {data.revisions.length ? (
         <Revisions rows={data.revisions} currency={data.currency} />
       ) : null}
+      {data.changes?.length ? (
+        <Changes rows={data.changes} currency={data.currency} />
+      ) : null}
     </Card>
   );
+}
+
+// ------------------------------------------------------------------ options
+
+/**
+ * What the options market adds to the street's view: how much movement it
+ * prices, and which way the crowd is hedged. Market-implied, not a forecast.
+ */
+function OptionsKpis({ options }: { options: OptionsView }) {
+  const t = useT();
+  const lang = useLang();
+  return (
+    <>
+      {known(options.iv) ? (
+        <Kpi
+          label={t("ticker.options_iv")}
+          help={t("ticker.options_iv_help")}
+          value={percent(options.iv, 0)}
+          note={
+            options.iv_expiry
+              ? t("ticker.options_iv_note", { date: shortDay(options.iv_expiry, lang) })
+              : null
+          }
+        />
+      ) : null}
+      {known(options.put_call_oi) ? (
+        <Kpi
+          label={t("ticker.options_pc_oi")}
+          help={t("ticker.options_pc_oi_help")}
+          value={num(options.put_call_oi, 2)}
+        />
+      ) : null}
+      {known(options.put_call_volume) ? (
+        <Kpi
+          label={t("ticker.options_pc_vol")}
+          help={t("ticker.options_pc_vol_help")}
+          value={num(options.put_call_volume, 2)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ changes
+
+/** Upgrades and downgrades read in colour; a target move reads by its sign. */
+function changeTone(row: RatingChange): string | undefined {
+  if (row.action === "upgrade" || row.target_move === "raised") return "tk-is-green";
+  if (row.action === "downgrade" || row.target_move === "lowered") return "tk-is-red";
+  return undefined;
+}
+
+function changeMove(t: Translate, row: RatingChange): string {
+  if (row.action !== "reiterated") return t(`ticker.analysts_move_${row.action}`);
+  return row.target_move ? t(`ticker.analysts_move_${row.target_move}`) : DASH;
+}
+
+function changeGrade(row: RatingChange): string {
+  if (row.from_grade && row.to_grade && row.from_grade !== row.to_grade) {
+    return `${row.from_grade} → ${row.to_grade}`;
+  }
+  return row.to_grade ?? DASH;
+}
+
+function Changes({
+  rows,
+  currency,
+}: {
+  rows: RatingChange[];
+  currency: string | null;
+}) {
+  const t = useT();
+  const lang = useLang();
+  const mobile = useMobile();
+  const target = (row: RatingChange) => {
+    if (!known(row.target)) return DASH;
+    const now = targetMoney(row.target, currency);
+    return known(row.prior_target) && row.prior_target !== row.target
+      ? `${targetMoney(row.prior_target, currency)} → ${now}`
+      : now;
+  };
+  const key = (row: RatingChange) => `${row.date}-${row.firm}-${row.target}`;
+
+  return (
+    <div className="tk-changes">
+      <Subhead>{t("ticker.analysts_changes")}</Subhead>
+      {mobile ? (
+        <div className="tk-stack">
+          {rows.map((row) => (
+            <div className="tk-stack-card" key={key(row)}>
+              <p className="tk-stack-title">{row.firm}</p>
+              <Line
+                label={t("ticker.analysts_col_date")}
+                value={shortDay(row.date, lang)}
+              />
+              <p className="tk-stack-line">
+                <span>{t("ticker.analysts_col_move")}</span>
+                <span className={changeTone(row)}>{changeMove(t, row)}</span>
+              </p>
+              <Line label={t("ticker.analysts_col_rating")} value={changeGrade(row)} />
+              <Line label={t("ticker.analysts_col_target")} value={target(row)} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <Scroll>
+          <table className="tk-table">
+            <thead>
+              <tr>
+                <th>{t("ticker.analysts_col_date")}</th>
+                <th>{t("ticker.analysts_col_firm")}</th>
+                <th>{t("ticker.analysts_col_move")}</th>
+                <th>{t("ticker.analysts_col_rating")}</th>
+                <th>{t("ticker.analysts_col_target")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={key(row)}>
+                  <td>{shortDay(row.date, lang)}</td>
+                  <td>{row.firm}</td>
+                  <td className={changeTone(row)}>{changeMove(t, row)}</td>
+                  <td>{changeGrade(row)}</td>
+                  <td>{target(row)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+      )}
+      <Note>{t("ticker.analysts_changes_caption")}</Note>
+    </div>
+  );
+}
+
+/** "20 Oct" from an ISO day, in the reader's language; UTC so the day holds. */
+function shortDay(day: string, lang: string): string {
+  const [year, month, date] = day.split("-").map(Number);
+  if (!year || !month || !date) return day;
+  return new Date(Date.UTC(year, month - 1, date)).toLocaleDateString(lang, {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
 }
 
 // ------------------------------------------------------------- rating scale

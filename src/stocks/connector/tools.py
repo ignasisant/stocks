@@ -26,7 +26,7 @@ import time
 import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.error import URLError
 
@@ -45,6 +45,7 @@ from stocks.web import ratelimit
 
 if TYPE_CHECKING:
     from stocks.accounts import UserPaths
+    from stocks.api.schemas import Comparison, Projection, RiskCurves, Valuation
 
 # Per account, on top of the site's per-IP floor: claude.ai calls from shared
 # addresses, so the IP bucket cannot tell one person from another.
@@ -60,6 +61,10 @@ HISTORY_POINTS = 160
 OVERVIEW_POSITIONS = 25
 QUOTES_MAX = 20
 CORRELATION_NAMES = 10
+# The book against each index, a point a month over two years.
+VERSUS_POINTS = 24
+# The subject and its first rivals in one comps table; `comparables` caps at 8.
+PEERS_COMPARED = 6
 
 _SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,31}$")
 
@@ -432,9 +437,86 @@ async def risk_metrics(period: RiskPeriod = "inception",
             a: {b: v for b, v in row.items() if b in top}
             for a, row in report.correlation.items() if a in top
         }
+        if report.curves is not None:
+            data["versus"] = _versus(report.curves)
         return {"kind": "risk", **data}
 
     return await _run("risk_metrics", work)
+
+
+def _versus(curves: RiskCurves) -> dict:
+    """The flow-matched lines (`RiskCurves`) cut to what a reader asks of
+    them: where the book's money ended against the same money in each index,
+    and a few points of the way there. The page's chart keeps every day."""
+    lines = {"portfolio": curves.portfolio, "basket": curves.basket,
+             **curves.benchmarks}
+
+    def last(values: list) -> float | None:
+        return next((v for v in reversed(values) if v is not None), None)
+
+    picked = _thin(list(range(len(curves.dates))), VERSUS_POINTS)
+    return {
+        "note": "Return on money put in; each index fed the book's own flows "
+                "on their dates.",
+        "end": {"date": curves.dates[-1] if curves.dates else None,
+                **{k: last(v) for k, v in lines.items()}},
+        "path": [{"date": curves.dates[i],
+                  **{k: v[i] for k, v in lines.items() if i < len(v)}}
+                 for i in picked],
+    }
+
+
+Breakdown = Literal["attribution", "monthly", "projection", "unbooked_dividends"]
+
+
+async def portfolio_breakdown(
+    section: Breakdown,
+    window: Annotated[
+        Literal["inception", "ytd", "6mo", "1y", "2y", "5y"],
+        Field(description="attribution (no ytd) and monthly (no 6mo) only."),
+    ] = "inception",
+    years: Annotated[int, Field(ge=1, le=30,
+                                description="projection only: how far out.")] = 5,
+    monthly: Annotated[float | None, Field(ge=0, description=(
+        "projection only: contribution per month; default the last 12 "
+        "months' average."))] = None,
+    target: Annotated[float | None, Field(gt=0, description=(
+        "projection only: a value to reach; adds the share of paths that "
+        "end at or above it."))] = None,
+    real: Annotated[bool, Field(description=(
+        "projection only: in today's money (2% inflation)."))] = False,
+    base: Base = None,
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import portfolio
+
+        if section == "attribution":
+            return {"kind": section, **_plain(portfolio.attribution(paths, base, window))}
+        if section == "monthly":
+            return {"kind": section, **_plain(portfolio.monthly(paths, base, window))}
+        if section == "unbooked_dividends":
+            return {"kind": section,
+                    **_plain(portfolio.dividends_unbooked(paths, base=base))}
+        report = portfolio.projection(paths, base, years=years, monthly=monthly,
+                                      real=real, target=target)
+        return {"kind": section, **_projected(report)}
+
+    return await _run("portfolio_breakdown", work)
+
+
+def _projected(report: Projection) -> dict:
+    """The fan at each year end rather than each month; the past year whole."""
+    fan = ("p10", "p25", "p50", "p75", "p90", "contributed")
+    data = _plain(report, dates=True, **dict.fromkeys(fan, True))
+    ends = [i for i in range(len(report.dates)) if i % 12 == 0]
+    if report.dates and ends[-1] != len(report.dates) - 1:
+        ends.append(len(report.dates) - 1)
+    data["path"] = [
+        {"date": report.dates[i],
+         **{k: getattr(report, k)[i] for k in fan if i < len(getattr(report, k))}}
+        for i in ends
+    ]
+    return data
 
 
 async def tax_report() -> CallToolResult:
@@ -475,9 +557,92 @@ async def ticker_details(ticker: Ticker, base: Base = None) -> CallToolResult:
                 "kpis": [_plain(k, desc=True) for k in metrics.kpis],
             },
             "position": _plain(routes.position(code, paths, base)),
+            "skill": _skill_for(code),
+            # Short interest (US) or disclosed net shorts (EU): a field on the
+            # card, from stored registers and the fundamentals already pulled.
+            "shorts": _plain(routes.shorts(code)),
         }
 
     return await _run("ticker_details", work)
+
+
+def _skill_for(code: str) -> str:
+    """The framework the app's chat reads this ticker through, or "".
+
+    `brief.pick_skills`' lens: the wrapper's for a fund or a coin, else the
+    one the company's industry or sector calls for. Off the fundamentals pull
+    `routes.metrics` has just cached, so it costs no second download."""
+    from stocks.api import loaders
+    from stocks.chat.brief import KIND_SKILL
+    from stocks.web import chat_skills
+
+    info = loaders.fundamentals(code).info or {}
+    kind = KIND_SKILL.get(str(info.get("quoteType") or "").upper(), "")
+    return kind or chat_skills.lens_for(str(info.get("sector") or ""),
+                                        str(info.get("industry") or ""))
+
+
+Research = Literal["peers", "valuation", "dcf", "moat", "analysts", "insiders",
+                   "financials", "fund", "crypto", "compare"]
+
+
+async def ticker_research(
+    ticker: Ticker,
+    section: Research,
+    span: Annotated[Literal["1m", "6m", "1y", "2y"],
+                    Field(description="compare only: the window.")] = "1y",
+    against: Annotated[
+        list[str] | None,
+        Field(max_length=6, description=(
+            "compare only: tickers to draw beside it. Omitted: the indices, "
+            "the sector's ETF and a few rivals.")),
+    ] = None,
+    base: Base = None,
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import comparables
+        from stocks.api.routes import ticker as routes
+
+        code = _symbol(ticker)
+        if section == "peers":
+            found = routes.peers(code)
+            picked = [code, *(p.ticker for p in found.related)][:PEERS_COMPARED]
+            return {"kind": "peers", **_plain(found),
+                    "table": _plain(comparables.comparables(",".join(picked)))}
+        if section == "valuation":
+            return {"kind": "valuation", **_valuation(routes.valuation(code))}
+        if section == "compare":
+            others = None if against is None else ",".join(_symbol(t) for t in against)
+            return {"kind": "compare",
+                    **_compared(routes.compare(code, paths, span, others, base))}
+        fetch = {"dcf": routes.dcf, "moat": routes.moat, "analysts": routes.analysts,
+                 "insiders": routes.insiders, "financials": routes.financials,
+                 "fund": routes.fund, "crypto": routes.crypto_stats}[section]
+        return {"kind": section, **_plain(fetch(code))}
+
+    return await _run("ticker_research", work)
+
+
+def _valuation(report: Valuation) -> dict:
+    """The P/E bands whole; the daily line it was read off thinned."""
+    data = _plain(report, dates=True, pe=True)
+    picked = _thin(list(range(len(report.dates))), HISTORY_POINTS)
+    data["path"] = [{"date": report.dates[i], "pe": report.pe[i]}
+                    for i in picked if i < len(report.pe)]
+    return data
+
+
+def _compared(report: Comparison) -> dict:
+    """Every line kept, each cut to the same evenly spaced sessions."""
+    data = _plain(report, dates=True, lines=True)
+    picked = _thin(list(range(len(report.dates))), VERSUS_POINTS)
+    data["dates"] = [report.dates[i] for i in picked]
+    data["lines"] = [
+        {**_plain(line, points=True),
+         "points": [line.points[i] if i < len(line.points) else None for i in picked]}
+        for line in report.lines
+    ]
+    return data
 
 
 async def search_tickers(
@@ -564,6 +729,103 @@ async def decision_journal(
     return await _run("decision_journal", work)
 
 
+# --------------------------------------------------------------- frameworks
+# The analysis frameworks the app's own assistant applies (`web/skills/*.md`,
+# picked per question by `chat_skills`): method, never data — so Claude reads
+# a company through the same lens the chat does.
+
+SkillId = Annotated[str, Field(
+    min_length=1, max_length=40,
+    description="A skill id from list_skills, e.g. earnings-review, "
+                "semiconductors, spain-tax.")]
+
+
+async def list_skills() -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.web import chat_skills
+
+        return {"kind": "skills", "skills": [
+            {"id": s.id, "name": s.name, "description": s.description,
+             "kind": s.kind}
+            for s in chat_skills.catalog()
+        ]}
+
+    return await _run("list_skills", work)
+
+
+async def read_skill(skill: SkillId) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.web import chat_skills
+
+        want = skill.strip().lower()
+        hit = next((s for s in chat_skills.catalog() if s.id == want), None)
+        if hit is None:
+            raise _Refused("No skill by that id; list_skills names every one.")
+        return {"kind": "skill", "id": hit.id, "name": hit.name,
+                "description": hit.description, "framework": hit.body}
+
+    return await _run("read_skill", work)
+
+
+async def app_help(
+    query: Annotated[str, Field(
+        max_length=200,
+        description="What the person wants to know about the app, in their "
+                    "words: how a return is computed, where an import went.")] = "",
+    doc: Annotated[str, Field(
+        max_length=60,
+        description="A document id an earlier answer gave under `doc` or "
+                    "`see_also`; alone, lists its sections.")] = "",
+    section: Annotated[str, Field(
+        max_length=120,
+        description="With doc: one section to read whole, by heading.")] = "",
+) -> CallToolResult:
+    """The documentation the app's chat answers "how does TopStocks…" from
+    (`chat/knowledge.py`): methodology documents and the guided tour's copy,
+    with the screen each passage is about."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import knowledge
+
+        origin = _origin()
+
+        def shown(p: knowledge.Passage) -> dict:
+            page = knowledge.page(p.step) if p.step else ""
+            return {"doc": p.doc, "title": p.title, "section": p.section,
+                    "text": p.text, "as_of": p.as_of or None,
+                    "url": f"{origin}{page}" if origin and page else None}
+
+        name = doc.strip()
+        if name:
+            own = [p for p in knowledge.passages() if p.doc == name]
+            if not own:
+                raise _Refused("No document by that id; search with query first.")
+            if section.strip():
+                whole = knowledge.section(name, section)
+                if whole is None:
+                    raise _Refused("No section by that heading in that document.")
+                return {"kind": "help", "passages": [shown(whole)]}
+            heads = list(dict.fromkeys(p.section for p in own))
+            return {"kind": "help", "doc": name, "title": own[0].title,
+                    "sections": heads}
+        if not query.strip():
+            raise _Refused("Ask with query, or name a doc.")
+        hits = knowledge.lookup(query)
+        titles = {p.doc: p.title for p in knowledge.passages()}
+        found = {p.doc for p in hits}
+        more = dict.fromkeys(d for p in hits for d in p.related
+                             if d not in found and d in titles)
+        return {
+            "kind": "help",
+            "passages": [shown(p) for p in hits],
+            "see_also": [{"doc": d, "title": titles[d]} for d in more],
+            # The chat's own rule: an uncovered question is said to be one.
+            **({} if hits else {"note": "The documentation does not cover "
+                                        "this; say so rather than guess."}),
+        }
+
+    return await _run("app_help", work)
+
+
 # ----------------------------------------------------------- the book, read
 # What the edit tools work from: rows by id, what looks wrong, what was
 # changed and by whom, and what a sale would cost in tax.
@@ -613,6 +875,49 @@ async def simulate_sale(
         return {"kind": "sale", **asdict(sale), "extra_tax": sale.extra_tax}
 
     return await _run("simulate_sale", work)
+
+
+async def harvest_losses() -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from dataclasses import asdict
+
+        from stocks.chat import engine, harvest, whatif
+
+        book = whatif.replay(db=paths.db, prefs_path=paths.prefs)
+        found = harvest.build(book, engine.enriched_frame(paths.db, book.currency)
+                              if book else None)
+        if found is None:
+            raise _Refused("No open positions or tax-year figures to harvest from.")
+        return {"kind": "harvest", **asdict(found), "saving": found.saving,
+                "note": "Estimates from the app's tax engine at today's prices; "
+                        "a loss is worth realising for the position's sake first."}
+
+    return await _run("harvest_losses", work)
+
+
+async def rebalance_position(
+    ticker: Ticker,
+    target_pct: Annotated[float, Field(ge=0, le=95, description=(
+        "Weight to take the holding to, as a percent of the book."))],
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from dataclasses import asdict
+
+        from stocks.chat import engine, rebalance, whatif
+
+        code = _symbol(ticker)
+        book = whatif.replay(db=paths.db, prefs_path=paths.prefs)
+        moved = rebalance.build(
+            book, engine.enriched_frame(paths.db, book.currency) if book else None,
+            code, target_pct)
+        if moved is None:
+            raise _Refused(f"No priced holding of {code} to rebalance.")
+        return {"kind": "rebalance", **asdict(moved), "weight": moved.weight,
+                "extra_tax": moved.extra_tax,
+                "note": "The rest of the book left as it is: a sale leaves for "
+                        "cash, a purchase comes in as new money."}
+
+    return await _run("rebalance_position", work)
 
 
 async def get_preferences() -> CallToolResult:
@@ -1024,6 +1329,66 @@ async def forget(
     return await _run("forget", work, write=True)
 
 
+class ExitRule(BaseModel):
+    """One kill criterion, as `journal.clean_rules` keeps it."""
+
+    rule: Literal["below", "drawdown_cost", "drawdown_high", "weight_above",
+                  "revenue_growth_below", "gross_margin_below",
+                  "operating_margin_below", "ceo_change", "guidance_cut",
+                  "dividend_cut"] = Field(description=(
+        "below: a closing price; drawdown_cost: % loss from their own cost; "
+        "drawdown_high: % fall from the 52-week high; weight_above: % of the "
+        "portfolio; revenue_growth_below / gross_margin_below / "
+        "operating_margin_below: a % the quarter's figure falls under; "
+        "ceo_change / guidance_cut / dividend_cut: an event, no level."))
+    level: float | None = Field(None, description="The price or percent; "
+                                                  "none for an event.")
+    quarters: int | None = Field(None, ge=1, le=4, description=(
+        "Fundamental rules only: quarters running the figure must stay under."))
+
+
+async def set_kill_criteria(
+    ticker: Ticker,
+    rules: Annotated[list[ExitRule], Field(min_length=1, max_length=10)],
+    thesis: Annotated[str, Field(
+        max_length=300,
+        description="Why they hold it, in their words; kept on each rule.")] = "",
+) -> CallToolResult:
+    """The person's exit rules for one holding, into the decision journal the
+    morning card checks them against — the chat's `set_criteria`. A live rule
+    on the same measure is retired and linked to the one replacing it."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import journal
+
+        asked = [r.model_dump(exclude_none=True) for r in rules]
+        written = journal.add_criteria(paths.journal, _symbol(ticker), asked,
+                                       date.today(), thesis)
+        if not written:
+            raise _Refused(
+                "No rule was usable: a price level must be above zero, a "
+                "percent under 100, and an event rule takes no level.")
+        return {"kind": "criteria", "written": [e.as_dict() for e in written],
+                "dropped": len(asked) - len(written)}
+
+    return await _run("set_kill_criteria", work, write=True)
+
+
+async def retire_kill_criterion(
+    criterion_id: Annotated[str, Field(
+        min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$",
+        description="A live rule's id, from decision_journal.")],
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import journal
+
+        done = journal.retire(paths.journal, criterion_id)
+        if done is None:
+            raise _Refused("No live exit rule by that id.")
+        return {"kind": "criterion_retired", **done.as_dict()}
+
+    return await _run("retire_kill_criterion", work, write=True)
+
+
 async def set_preferences(
     currency: Annotated[str | None, Field(description="Base currency, e.g. EUR.")] = None,
     language: Annotated[str | None, Field(description="en or es.")] = None,
@@ -1109,6 +1474,18 @@ TOOLS: tuple[Spec, ...] = (
          "reasons, linked follow-ups, and what became of it (open, followed, "
          "declined, lapsed). The app's proposals, not the person's own "
          "reasons for past trades; never ask them for those."),
+    Spec(list_skills, "Analysis frameworks",
+         "The frameworks the TopStocks assistant analyses with: lenses (value, "
+         "dividend, earnings review, bear case, tax…) and industry playbooks "
+         "(semiconductors, banks, biotech…). Method, not data."),
+    Spec(read_skill, "Read a framework",
+         "One framework's full text by id. Read the one that fits before "
+         "analysing a company or answering a tax or earnings question; "
+         "ticker_details names the company's own under `skill`."),
+    Spec(app_help, "How TopStocks works",
+         "Search the app's own documentation: how returns, tax, imports, "
+         "alerts and each screen work, with a link to the screen. Read it "
+         "before explaining what the app does or why a figure is what it is."),
     Spec(list_positions, "All positions",
          "Every holding: shares, cost, value, profit, weight and day move, "
          "largest first."),
@@ -1125,16 +1502,31 @@ TOOLS: tuple[Spec, ...] = (
          "Dividends received per year (gross, withheld, net) with the forward "
          "estimate, and what brokers charged in commission and spread."),
     Spec(risk_metrics, "Risk",
-         "Volatility, maximum drawdown, betas, concentration, allocation by "
-         "sector/country/currency, and correlation between the largest holdings."),
+         "Volatility, maximum drawdown, one-day VaR, betas, concentration, "
+         "allocation by sector/country/currency, correlation between the "
+         "largest holdings, and `versus`: the book's money against the same "
+         "money put into each benchmark."),
+    Spec(portfolio_breakdown, "Portfolio breakdown",
+         "One deeper cut of the book: attribution (a window's change split "
+         "into contributions, price, currency, dividends and fees), monthly "
+         "(month-end value, invested, returns), projection (a percentile fan "
+         "`years` out with contributions), or unbooked_dividends (payments "
+         "the shares earned that the ledger never recorded)."),
     Spec(tax_report, "Tax report",
          "Realized gains and losses per tax year under the account's own "
          "jurisdiction and share-matching rule, with each sale."),
     Spec(get_quotes, "Quotes",
          f"Current price and day move for up to {QUOTES_MAX} tickers."),
     Spec(ticker_details, "Ticker details",
-         "One ticker: quote, valuation and quality metrics, and the account's "
-         "own position and trades in it."),
+         "One ticker: quote, valuation and quality metrics, short selling (US "
+         "short interest, EU disclosed net shorts), and the account's own "
+         "position and trades in it."),
+    Spec(ticker_research, "Ticker research",
+         "One section of a ticker's research page: peers (rivals plus a "
+         "side-by-side KPI table), valuation (P/E against its own history), "
+         "dcf, moat, analysts, insiders, financials (reported and consensus), "
+         "fund (what an ETF holds), crypto (coin stats), or compare (total "
+         "return against indices or chosen tickers over `span`)."),
     Spec(search_tickers, "Search tickers",
          "Find a ticker by symbol or company name, the account's own first."),
     Spec(get_watchlist, "Watchlist",
@@ -1153,6 +1545,13 @@ TOOLS: tuple[Spec, ...] = (
     Spec(simulate_sale, "Simulate a sale",
          "What selling some or all of a holding today would realize and add "
          "to this tax year's bill, under the account's own tax rules."),
+    Spec(harvest_losses, "Tax-loss harvesting",
+         "The holdings at a loss whose sale today would cut this tax year's "
+         "bill, how much each saves, and the repurchase rule that would defer "
+         "it, under the account's own tax rules. Nothing is sold."),
+    Spec(rebalance_position, "Rebalance a holding",
+         "The trade that takes one holding to a target weight of the book, "
+         "and the tax a sale would add this year. Nothing is traded."),
     Spec(get_preferences, "Preferences",
          "Base currency, language, tax residence and filing details, and "
          "which notifications are on."),
@@ -1210,6 +1609,15 @@ TOOLS: tuple[Spec, ...] = (
     Spec(forget, "Forget",
          "Delete one saved memory by its id from investor_context.",
          write=True, destructive=True),
+    Spec(set_kill_criteria, "Set exit rules",
+         "Write the person's kill criteria for one holding — a price, a "
+         "drawdown, a weight, a quarter's margin or growth, or an event — "
+         "which the morning card then checks. Replaces a live rule on the "
+         "same measure. They are the person's rules, not yours: show the "
+         "draft and write it only once they agree.", write=True),
+    Spec(retire_kill_criterion, "Retire an exit rule",
+         "Take down one live exit rule by its id from decision_journal; the "
+         "journal keeps it as retired.", write=True, destructive=True),
     Spec(set_preferences, "Set preferences",
          "Change base currency, language, tax residence and filing details, "
          "or notifications. Only the fields given change.", write=True),

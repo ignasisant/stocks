@@ -104,6 +104,18 @@ def test_compute_adds_back_after_tax_interest_and_nets_debt():
     assert out.grid[2][2] == pytest.approx(out.value)
 
 
+def test_pence_quote_values_in_pence():
+    # A London line: GBP statements, price in GBp. The value must be pence too.
+    pounds = dcf.compute(_raw(currency="GBP", financialCurrency="GBP"), _metrics())
+    pence = dcf.compute(
+        _raw(currency="GBp", financialCurrency="GBP"),
+        _metrics(currency="GBp", price=5000.0),
+    )
+    assert pence.value == pytest.approx(pounds.value * 100)
+    assert pence.upside == pytest.approx(pounds.upside)
+    assert pence.grid[2][2] == pytest.approx(pence.value)
+
+
 @pytest.mark.parametrize(
     ("over", "reason"),
     [

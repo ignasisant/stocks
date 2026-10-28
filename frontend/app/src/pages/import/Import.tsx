@@ -26,7 +26,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { Link, useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
@@ -212,8 +212,9 @@ function Importer({
   // Before the preview is asked, so the ask finds this statement kept.
   useEffect(() => keep(staged, wipe, platform.key), [staged, wipe, platform.key]);
 
-  const ledger = useApi(() => book(), [writes]);
-  const last = useApi(() => lastImport(), [writes]);
+  // A write re-reads both; the figures on screen stay up, dimmed, meanwhile.
+  const ledger = useApi(() => book(), [writes], { keep: true });
+  const last = useApi(() => lastImport(), [writes], { keep: true });
   // The platform is part of this query's identity and not just its input: it
   // is the parser tried first, and the one whose reading the model is checked
   // against. The wipe is too: with it set, validation runs against an empty ledger, and a
@@ -504,14 +505,16 @@ function Importer({
         <Loaded query={last} skeleton={<Skeleton rows={2} />}>
           {(batch) =>
             batch.filename ? (
-              <LastBatch
-                onDone={() => {
-                  setResult(null);
-                  wrote();
-                }}
-                platforms={platforms}
-                record={batch}
-              />
+              <Refreshable>
+                <LastBatch
+                  onDone={() => {
+                    setResult(null);
+                    wrote();
+                  }}
+                  platforms={platforms}
+                  record={batch}
+                />
+              </Refreshable>
             ) : null
           }
         </Loaded>
@@ -548,14 +551,16 @@ function Committed({
           <Eyebrow n={4}>{t("import.confirm")}</Eyebrow>
           <Loaded query={ledger} skeleton={<Skeleton rows={1} />}>
             {(count) => (
-              <p>
-                <Rich
-                  text={t("import.done_sentence", {
-                    n: vocab.num(result.imported, 0),
-                    total: vocab.num(count.total, 0),
-                  })}
-                />
-              </p>
+              <Refreshable>
+                <p>
+                  <Rich
+                    text={t("import.done_sentence", {
+                      n: vocab.num(result.imported, 0),
+                      total: vocab.num(count.total, 0),
+                    })}
+                  />
+                </p>
+              </Refreshable>
             )}
           </Loaded>
           <p className="im-fine">

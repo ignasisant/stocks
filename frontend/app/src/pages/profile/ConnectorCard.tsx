@@ -13,9 +13,15 @@
  * it gets a 401 on its next call. Signing out of TopStocks does not: those
  * apps never used the browser's session in the first place, and the card says
  * so, because the opposite is what anyone would assume.
+ *
+ * It is also the one place anyone learns how to connect, so it reports how it
+ * is used (`stocks logs connector`): the first read names where the reader
+ * came from (`?from=`), and each copy says which line was copied. Coming back
+ * from Claude refetches, so a connection made there turns into "connected"
+ * here without a reload.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, NotSignedIn, get, send } from "../../shell/api";
 import { useLang, useT } from "../../shell/i18n";
 import { signOut } from "../../shell/keep";
@@ -37,6 +43,23 @@ export type Connection = {
 
 export type Connections = { url: string | null; connections: Connection[] };
 
+/** Where a reader arrived from — `routes.connections.Source`. */
+const SOURCES = ["profile", "chat", "news", "tour"] as const;
+type Source = (typeof SOURCES)[number];
+
+export function source(from: string | null | undefined): Source {
+  return SOURCES.find((s) => s === from) ?? "profile";
+}
+
+/** Which line was copied, told to the server and nothing else. */
+function copied(what: "url" | "command"): void {
+  // A beacon: it changes nothing a screen holds, and a failure is not the
+  // reader's problem.
+  send<void>("POST", "/connections/copied", { what }, { touches: [] }).catch(
+    () => undefined,
+  );
+}
+
 /** The one line Claude Code needs. */
 export function command(url: string): string {
   return `claude mcp add --transport http topstocks ${url}`;
@@ -55,7 +78,15 @@ export function day(iso: string | null, lang: string): string | null {
 }
 
 /** Text onto the clipboard, and two seconds of saying so. */
-function Copy({ text, label }: { text: string; label: string }) {
+function Copy({
+  text,
+  label,
+  onCopied,
+}: {
+  text: string;
+  label: string;
+  onCopied?: () => void;
+}) {
   const t = useT();
   const [done, setDone] = useState(false);
   useEffect(() => {
@@ -72,7 +103,10 @@ function Copy({ text, label }: { text: string; label: string }) {
       // select by hand, so the press simply does nothing there.
       onClick={() =>
         void navigator.clipboard?.writeText(text).then(
-          () => setDone(true),
+          () => {
+            setDone(true);
+            onCopied?.();
+          },
           () => undefined,
         )
       }
@@ -91,28 +125,32 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
   const revoke = () => {
     setBusy(true);
     setRefused(null);
-    send<void>("DELETE", `/connections/${encodeURIComponent(connection.id)}`).then(
-      onGone,
-      (error: unknown) => {
-        setBusy(false);
-        if (error instanceof NotSignedIn) {
-          void signOut();
-          return;
-        }
-        // 404 is a grant that already ended — revoked from another tab, or
-        // spent by a replayed refresh token. Either way it is gone, which is
-        // what the reader asked for.
-        if (error instanceof ApiError && error.status === 404) {
-          onGone();
-          return;
-        }
-        setRefused(
-          error instanceof ApiError
-            ? t("profile.connector_revoke_failed")
-            : t("common.offline"),
-        );
+    send<void>(
+      "DELETE",
+      `/connections/${encodeURIComponent(connection.id)}`,
+      undefined,
+      {
+        touches: ["/connections"],
       },
-    );
+    ).then(onGone, (error: unknown) => {
+      setBusy(false);
+      if (error instanceof NotSignedIn) {
+        void signOut();
+        return;
+      }
+      // 404 is a grant that already ended — revoked from another tab, or
+      // spent by a replayed refresh token. Either way it is gone, which is
+      // what the reader asked for.
+      if (error instanceof ApiError && error.status === 404) {
+        onGone();
+        return;
+      }
+      setRefused(
+        error instanceof ApiError
+          ? t("profile.connector_revoke_failed")
+          : t("common.offline"),
+      );
+    });
   };
 
   const used = day(connection.used, lang);
@@ -151,8 +189,25 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
   );
 }
 
-export function ConnectorCard() {
-  const query = useApi(() => get<Connections>("/connections"), []);
+export function ConnectorCard({ from }: { from?: string | null }) {
+  // Only the first read says where the reader came from; a refetch is the
+  // same visit and must not count as another one.
+  const first = useRef(true);
+  const query = useApi(() => {
+    const params = first.current ? { from: source(from) } : undefined;
+    first.current = false;
+    return get<Connections>("/connections", params);
+  }, []);
+  const reload = query.state === "loaded" ? query.reload : null;
+  // Connecting happens in Claude, in another tab or app: back here, ask again.
+  useEffect(() => {
+    if (!reload) return;
+    const back = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [reload]);
   // Revoked here, gone from the list without a refetch; the next load agrees.
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
 
@@ -177,6 +232,11 @@ export function Connector({
 
   return (
     <Card title={t("profile.connector_title")} sub={t("profile.connector_sub")}>
+      {connections.length > 0 && (
+        <p className="pr-conn-ok" role="status">
+          {t("profile.connector_ok")}
+        </p>
+      )}
       {url && (
         <>
           <Row
@@ -185,15 +245,24 @@ export function Connector({
           >
             <div className="pr-copyline">
               <code className="pr-code">{url}</code>
-              <Copy text={url} label={t("profile.connector_copy_url")} />
+              <Copy
+                text={url}
+                label={t("profile.connector_copy_url")}
+                onCopied={() => copied("url")}
+              />
             </div>
           </Row>
           <Row label={t("profile.connector_how")}>
             <Prose text={t("profile.connector_how_app")} />
+            <span className="pr-hint">{t("profile.connector_plans")}</span>
             <span className="pr-hint">{t("profile.connector_how_code")}</span>
             <div className="pr-copyline">
               <code className="pr-code">{command(url)}</code>
-              <Copy text={command(url)} label={t("profile.connector_copy_command")} />
+              <Copy
+                text={command(url)}
+                label={t("profile.connector_copy_command")}
+                onCopied={() => copied("command")}
+              />
             </div>
           </Row>
         </>

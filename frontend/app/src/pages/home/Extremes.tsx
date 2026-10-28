@@ -7,9 +7,11 @@
  * and the card does not come at all, which is a different state from a scan
  * that found no name at an edge (`home.no_extremes`).
  *
- * `distance: null` means the price is at or beyond the extreme, which is a
- * different fact from being 0% away from it — the two get different words,
- * `home.at_52w_high` against `home.from_52w_high`.
+ * The rows come in two runs, highs then lows, each under its own heading the
+ * way the movers card beside it splits gains from losses. The heading says
+ * which edge, so a row only says how far: `distance: null` is at or beyond
+ * the extreme, which is a different fact from being 0% away from it — a word
+ * (`home.at_high`) against a signed percentage.
  */
 
 import { get } from "../../shell/api";
@@ -22,14 +24,18 @@ import { decimal, money, percent, plain, priceDigits, type Translate } from "./f
 import type { Extreme, Extremes } from "./types";
 import type { Book } from "./Glance";
 
-function where(extreme: Extreme, t: Translate, lang: string): string {
-  const high = extreme.edge === "high";
+function gap(extreme: Extreme, t: Translate, lang: string): string {
   // Within a hundredth of a percent prints as "-0,0%": that is the edge.
   if (extreme.distance === null || Math.abs(extreme.distance) < 0.0005)
-    return t(high ? "home.at_52w_high" : "home.at_52w_low");
-  const gap = percent(extreme.distance, lang, { signed: true, digits: 1 }) ?? "";
-  return t(high ? "home.from_52w_high" : "home.from_52w_low", { pct: gap });
+    return t(extreme.edge === "high" ? "home.at_high" : "home.at_low");
+  return percent(extreme.distance, lang, { signed: true, digits: 1 }) ?? "";
 }
+
+/** The two runs the card draws, highs first; an empty run drops out. */
+const RUNS = [
+  { edge: "high", label: "home.extremes_highs" },
+  { edge: "low", label: "home.extremes_lows" },
+] as const;
 
 /**
  * The scan, read by the page rather than by the card: the movers card beside
@@ -54,6 +60,14 @@ const MOVER_ROWS = { min: 3, max: 7 } as const;
 export function moverRows(query: Query<Extremes | null>): number {
   const count = query.state === "loaded" && query.data ? query.data.extremes.length : 0;
   return Math.min(MOVER_ROWS.max, Math.max(MOVER_ROWS.min, count));
+}
+
+/** The scan's rows split by edge, in `RUNS` order, empty runs left out. */
+function runs(extremes: Extreme[]) {
+  return RUNS.map((run) => ({
+    ...run,
+    rows: extremes.filter((extreme) => extreme.edge === run.edge),
+  })).filter((run) => run.rows.length > 0);
 }
 
 export function ExtremesCard({
@@ -104,35 +118,48 @@ export function ExtremesCard({
                       <tr>
                         <th>{t("home.col_ticker")}</th>
                         <th className="hm-num">{t("home.col_last_close")}</th>
-                        <th>{t("home.col_52week")}</th>
+                        <th className="hm-num">{t("home.col_from_edge")}</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {data.extremes.map((extreme) => (
-                        <tr key={`${extreme.ticker}-${extreme.edge}`}>
-                          {/* The name ellipsises here rather than wrapping the
-                          row onto two lines in a narrow column. */}
-                          <td className="hm-tick-cell">
-                            <TickerCell ticker={extreme.ticker} />
-                          </td>
-                          <td className="hm-num">{price(extreme)}</td>
-                          <td className="hm-muted">{where(extreme, t, lang)}</td>
+                    {runs(data.extremes).map(({ edge, label, rows }) => (
+                      <tbody key={edge}>
+                        <tr className="hm-run-head">
+                          <th scope="rowgroup" colSpan={3}>
+                            {t(label)}
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
+                        {rows.map((extreme) => (
+                          <tr key={extreme.ticker}>
+                            {/* The name ellipsises here rather than wrapping the
+                            row onto two lines in a narrow column. */}
+                            <td className="hm-tick-cell">
+                              <TickerCell ticker={extreme.ticker} />
+                            </td>
+                            <td className="hm-num">{price(extreme)}</td>
+                            <td className="hm-num hm-muted">{gap(extreme, t, lang)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    ))}
                   </table>
                 }
-                narrow={
-                  <DenseRows
-                    rows={data.extremes}
-                    rowKey={(extreme) => `${extreme.ticker}-${extreme.edge}`}
-                    spec={{
-                      ticker: (extreme) => extreme.ticker,
-                      value: price,
-                      sub: (extreme) => [where(extreme, t, lang)],
-                    }}
-                  />
-                }
+                narrow={runs(data.extremes).map(({ edge, label, rows }) => (
+                  <div key={edge} className="hm-run">
+                    <p className="hm-caption">{t(label)}</p>
+                    <DenseRows
+                      rows={rows}
+                      rowKey={(extreme) => extreme.ticker}
+                      spec={{
+                        ticker: (extreme) => extreme.ticker,
+                        names: true,
+                        value: price,
+                        delta: (extreme) => (
+                          <span className="hm-muted">{gap(extreme, t, lang)}</span>
+                        ),
+                      }}
+                    />
+                  </div>
+                ))}
               />
             )}
           </Card>

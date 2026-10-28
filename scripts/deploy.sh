@@ -13,9 +13,10 @@
 # Both services are source deploys of this checkout (same as the manual
 # command in the runbook). Settings the flags below don't mention are
 # preserved from the service's current configuration — including the
-# STREAMLIT_SECRETS_TOML secret binding, which is pinned to a Secret Manager
+# STOCKS_SECRETS_TOML secret binding, which is pinned to a Secret Manager
 # *version*: publishing a new secret version does nothing until a deploy (or
-# --secret here) points at it.
+# --secret here) points at it. --secret also drops the binding's old name,
+# STREAMLIT_SECRETS_TOML, from a service or job that still carries it.
 #
 # The new revision goes up with NO traffic, under the `candidate` tag, and is
 # smoke-tested on its own URL before a single visitor reaches it. A revision
@@ -229,8 +230,18 @@ ARGS=(
     # with nobody waiting; a scale-to-zero service boots for a reader.
     --update-env-vars "STOCKS_COMMIT=$STAMP,STOCKS_BOOT_WARM=$([ "$MIN_INSTANCES" -ge 1 ] && echo 1 || echo 0)"
 )
+# Whether a service or job still binds the secrets file under its old name.
+legacy_secret() {
+    gcloud run "$@" --project "$PROJECT" --region "$REGION" \
+        --format 'value(spec.template.spec.containers[0].env[].name,spec.template.spec.template.spec.containers[0].env[].name)' \
+        2>/dev/null | tr ';\t' '\n\n' | grep -qx STREAMLIT_SECRETS_TOML
+}
+
 if [ -n "$SECRET" ]; then
-    ARGS+=(--update-secrets "STREAMLIT_SECRETS_TOML=$SECRET")
+    ARGS+=(--update-secrets "STOCKS_SECRETS_TOML=$SECRET")
+    if legacy_secret services describe "$SERVICE"; then
+        ARGS+=(--remove-secrets STREAMLIT_SECRETS_TOML)
+    fi
 fi
 if [ "$CANARY" = 1 ]; then
     ARGS+=(--no-traffic --tag candidate)
@@ -368,7 +379,10 @@ if [ "$ENV" = prod ] && gcloud run jobs describe "$JOB" --project "$PROJECT" \
     JOB_ARGS=(run jobs update "$JOB" --project "$PROJECT" --region "$REGION" \
         --image "$IMAGE")
     if [ -n "$SECRET" ]; then
-        JOB_ARGS+=(--update-secrets "STREAMLIT_SECRETS_TOML=$SECRET")
+        JOB_ARGS+=(--update-secrets "STOCKS_SECRETS_TOML=$SECRET")
+        if legacy_secret jobs describe "$JOB"; then
+            JOB_ARGS+=(--remove-secrets STREAMLIT_SECRETS_TOML)
+        fi
     fi
     echo
     echo "Moving job $JOB to the same image"

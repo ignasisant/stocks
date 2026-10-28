@@ -48,7 +48,7 @@ from stocks.analysis.compare import (
 from stocks.analysis.listing import listing_currencies, quote_unit
 from stocks.analysis.portfolio import risk_shares, value_weights
 from stocks.analysis.sentiment import SECTOR_ETFS
-from stocks.api import loaders
+from stocks.api import holds, loaders
 from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
@@ -189,6 +189,9 @@ def _gather(
         return {}, set()
     futures = {_POOL.submit(carried(one), symbol): symbol for symbol in unique}
     done, late = wait(futures, timeout=GATHER_BUDGET_S)
+    # The late pulls finish under a CPU hold: between requests they crawl, and
+    # the row they fill would read unrated for the next reader too.
+    holds.keep_until(late)
     return {futures[f]: f.result() for f in done}, {futures[f] for f in late}
 
 
@@ -569,10 +572,9 @@ def returns(
     filings: dict[str, Future] = {
         name: _POOL.submit(carried(_history), name) for name in kpis
     }
-    wait(
-        [*closes.values(), quoted, *kpis.values(), *filings.values()],
-        timeout=GATHER_BUDGET_S,
-    )
+    asked_for = [*closes.values(), quoted, *kpis.values(), *filings.values()]
+    wait(asked_for, timeout=GATHER_BUDGET_S)
+    holds.keep_until(asked_for)
     currencies = quoted.result() if quoted.done() and not quoted.exception() else {}
     landed = {name: future.result() for name, future in closes.items() if future.done()}
     pending = {name for name in every if name not in landed}

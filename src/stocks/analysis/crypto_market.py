@@ -263,6 +263,53 @@ def funding_band(rate_8h: float | None) -> Band | None:
     return Band("extreme", "red")
 
 
+# ------------------------------------------------- options volatility, on-chain
+
+
+def percentile_rank(history: list[float], value: float | None) -> float | None:
+    """Share of `history` at or under `value`, 0..100; None under 30 points."""
+    value = _finite(value)
+    clean = [v for v in (_finite(h) for h in history) if v is not None]
+    if value is None or len(clean) < 30:
+        return None
+    return 100.0 * sum(1 for v in clean if v <= value) / len(clean)
+
+
+def dvol_band(percentile: float | None) -> Band | None:
+    """Implied volatility against its own year: cheap options read green,
+    a rich premium red — the page's contrarian colouring."""
+    if percentile is None:
+        return None
+    if percentile < 25:
+        return Band("low", "green")
+    if percentile <= 75:
+        return Band("normal", "gray")
+    if percentile <= 90:
+        return Band("high", "orange")
+    return Band("extreme", "red")
+
+
+def change_over(series: list[tuple[str, float]], days: int) -> float | None:
+    """Last value over the value `days` calendar days earlier, minus one.
+
+    Reads the nearest point on or before the target day, and refuses a series
+    that does not reach back that far (a week of slack).
+    """
+    if len(series) < 2:
+        return None
+    last_day, last = date.fromisoformat(series[-1][0]), series[-1][1]
+    target = last_day.toordinal() - days
+    earlier = [(date.fromisoformat(d).toordinal(), v) for d, v in series[:-1]]
+    earlier = [(o, v) for o, v in earlier if o <= target]
+    if not earlier or target - earlier[-1][0] > 7:
+        return None
+    base = _finite(earlier[-1][1])
+    last = _finite(last)
+    if base is None or last is None or base <= 0:
+        return None
+    return last / base - 1.0
+
+
 # ----------------------------------------------------------------- the supply
 
 

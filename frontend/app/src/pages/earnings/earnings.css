@@ -131,6 +131,26 @@
   margin: 0 0 1rem;
 }
 
+/* On a phone the six kind pills wrapped to two rows and pushed the list a
+   screen down; one row that slides sideways keeps them a swipe away, the
+   pill cut at the edge saying there are more. */
+@container ag-main (max-width: 38rem) {
+  .earn-kinds {
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .earn-kinds::-webkit-scrollbar {
+    display: none;
+  }
+  .earn-kinds > * {
+    flex: none;
+  }
+}
+
 /* The kind pills' dot: the colour each kind's chips are drawn in. */
 .earn-swatch {
   flex: none;

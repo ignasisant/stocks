@@ -517,6 +517,7 @@ export default function Panel({
           connect={connect}
           onConnectTaken={onConnectTaken}
           onMemory={() => setView("memory")}
+          onLeave={onPark ?? onClose}
         />
       )}
 

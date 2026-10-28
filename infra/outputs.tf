@@ -27,8 +27,8 @@ output "scheduler_jobs" {
 }
 
 # The app reads secrets from a file on the VM (deploy/secrets.toml, bind-mounted
-# to /app/.streamlit/secrets.toml) — nothing to manage via a provider.
-# This block mirrors what the app needs (see .streamlit/secrets.toml).
+# to /app/secrets.toml) — nothing to manage via a provider.
+# This block mirrors what the app needs (see secrets.toml).
 output "deploy_secrets_reminder" {
   description = "Blocks to paste into the deploy's secrets.toml (deploy/secrets.toml on the VM). Values marked <...> are not managed here."
   sensitive   = true

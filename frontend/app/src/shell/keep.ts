@@ -59,6 +59,12 @@ export type Shelf = {
 let shelf: Shelf | null = open();
 /** Settles to whether the shelf may answer; null until `/me` has spoken. */
 let ready: Promise<boolean> | null = null;
+/** Whether any screen this visit painted from the shelf (`shell/vitals`). */
+let recalled = false;
+
+export function usedKept(): boolean {
+  return recalled;
+}
 
 function open(): Shelf | null {
   try {
@@ -109,7 +115,9 @@ export async function recall(url: string): Promise<Kept | undefined> {
   try {
     if (!(await gate)) return undefined;
     const kept = await s.read(url);
-    return kept && Date.now() - kept.at < MAX_AGE_MS ? kept : undefined;
+    if (!kept || Date.now() - kept.at >= MAX_AGE_MS) return undefined;
+    recalled = true;
+    return kept;
   } catch {
     return undefined;
   }

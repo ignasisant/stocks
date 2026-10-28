@@ -248,7 +248,7 @@ function Waiting({
           const from = row.target_weight ?? row.weight;
           const to = from !== null && book ? from + (row.new_money ?? 0) / book : null;
           return (
-            <li key={row.ticker} className="ag-rev-mv">
+            <li key={row.ticker} className="ag-rev-mv ag-row-reach">
               <div className="ag-rev-mv-who">
                 <TickerCell ticker={row.ticker} />
               </div>

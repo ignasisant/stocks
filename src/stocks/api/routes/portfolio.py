@@ -240,15 +240,23 @@ def positions(
     # One spot per currency, not per position, and read back out of the value
     # the price pass already fetched — a second quote per name to print a share
     # price is how a page gets itself throttled.
-    rates = (
-        loaders.spot_rates(
-            tuple(sorted({str(c).upper() for c in table["ccy"] if c})), ccy
+    # Two network reads that need nothing from each other, side by side: the
+    # table costs the slower of them rather than their sum.
+    pool = ThreadPoolExecutor(max_workers=2)
+    spots = (
+        pool.submit(
+            carried(loaders.spot_rates),
+            tuple(sorted({str(c).upper() for c in table["ccy"] if c})),
+            ccy,
         )
         if priced
-        else {}
+        else None
     )
-    moves = _day_moves(db, ccy, table) if priced else {}
+    day = pool.submit(carried(_day_moves), db, ccy, table) if priced else None
+    pool.shutdown(wait=False)
     held = loaders.custody(db, loaders.db_mtime(db))
+    rates = spots.result() if spots else {}
+    moves = day.result() if day else {}
     rows = [
         Position(
             ticker=str(ticker),

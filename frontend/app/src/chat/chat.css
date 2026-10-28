@@ -657,6 +657,10 @@
     justify-content: center;
   }
 
+  .ag-chat-meta-btn {
+    min-height: 44px;
+  }
+
   .ag-chat-why-chips .ag-chat-chip {
     min-height: 44px;
   }

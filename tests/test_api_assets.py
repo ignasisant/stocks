@@ -97,3 +97,50 @@ def test_a_language_nobody_ships_reads_in_english(client):
 def test_the_catalog_needs_no_credentials(client):
     """The sign-in screen has to be translated before anyone is signed in."""
     assert client.get("/v1/i18n/en").status_code == 200
+
+
+# ------------------------------------------------------------- the caching
+
+
+def test_a_catalog_carries_an_etag_and_answers_304_to_it(client):
+    first = client.get("/v1/i18n/es")
+    tag = first.headers["etag"]
+    assert tag.startswith('"') and first.headers["cache-control"] == "public, no-cache"
+    again = client.get("/v1/i18n/es", headers={"If-None-Match": tag})
+    assert again.status_code == 304
+    assert again.headers["etag"] == tag and not again.content
+    # A weak tag, and a list, both name it.
+    assert (
+        client.get("/v1/i18n/es", headers={"If-None-Match": f"W/{tag}"}).status_code
+        == 304
+    )
+    assert (
+        client.get(
+            "/v1/i18n/es", headers={"If-None-Match": f'"other", {tag}'}
+        ).status_code
+        == 304
+    )
+    assert (
+        client.get("/v1/i18n/es", headers={"If-None-Match": '"other"'}).status_code == 200
+    )
+
+
+def test_a_catalog_under_the_current_stamp_is_immutable(client):
+    from stocks.web.i18n import version
+
+    stamp = version()
+    assert len(stamp) == 12 and stamp == version()
+    current = client.get("/v1/i18n/es", params={"v": stamp})
+    assert current.headers["cache-control"] == "public, max-age=31536000, immutable"
+    stale = client.get("/v1/i18n/es", params={"v": "0" * 12})
+    assert stale.headers["cache-control"] == "public, no-cache"
+    assert stale.json() == current.json()
+
+
+def test_the_etag_tells_languages_and_filters_apart(client):
+    tags = {
+        client.get("/v1/i18n/es").headers["etag"],
+        client.get("/v1/i18n/en").headers["etag"],
+        client.get("/v1/i18n/es", params={"prefix": "ticker"}).headers["etag"],
+    }
+    assert len(tags) == 3

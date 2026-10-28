@@ -17,6 +17,7 @@ translation is missing.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -65,6 +66,19 @@ def _catalog(lang: str) -> dict[str, str]:
                 continue  # a broken fragment falls back to English per-key
     _MEMO[lang] = (key, out)
     return out
+
+
+def version() -> str:
+    """A short stamp that changes whenever any shipped catalog does.
+
+    The front end asks for its catalog under it (`/i18n/{lang}?v=`), so the
+    answer can be cached for a year by the browser and still be replaced on
+    the deploy that edits a string: the stamp is in the URL, and a new stamp
+    is a new URL. Over every language rather than one, so the English layer
+    under a Spanish catalog counts too.
+    """
+    stamps = [f"{lang}:{_mtimes(lang)}" for lang in sorted(LANGUAGES)]
+    return hashlib.blake2b("|".join(stamps).encode(), digest_size=6).hexdigest()
 
 
 def catalog(lang: str) -> dict[str, str]:

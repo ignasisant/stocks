@@ -41,11 +41,14 @@ export type GuideState = {
 
 export const readGuide = () => get<GuideState>("/guide");
 
+/** What a step of the walkthrough changes: its own state, and the tour's. */
+const TOUCHES = { touches: ["/guide", "/onboarding"] };
+
 export const startGuide = (body: { step?: string; auto?: boolean; lang?: string }) =>
-  send<GuideState>("POST", "/guide/start", body);
+  send<GuideState>("POST", "/guide/start", body, TOUCHES);
 
 export const syncGuide = (lang: string) =>
-  send<GuideState>("POST", "/guide/sync", { lang });
+  send<GuideState>("POST", "/guide/sync", { lang }, TOUCHES);
 
 /**
  * Next step. Keyed like a chat turn: the first advance carries the
@@ -56,7 +59,7 @@ export const advanceGuide = (lang: string) =>
   keyed<GuideState>("POST", "/guide/advance", { lang });
 
 export const finishGuide = (reason: string) =>
-  send<GuideState>("POST", "/guide/finish", { reason });
+  send<GuideState>("POST", "/guide/finish", { reason }, TOUCHES);
 
 /**
  * Whether this tab has already evaluated the automatic open.

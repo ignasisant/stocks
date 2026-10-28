@@ -8,7 +8,39 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { depth, push, routeFor } from "./router";
+import { depth, navigate, push, routeFor, takeRestore } from "./router";
+
+/** A window with just enough history and location for `push` and `navigate`. */
+function browser(pathname: string) {
+  const location = { pathname, search: "" };
+  const scrolled: [number, number][] = [];
+  const events: string[] = [];
+  let state: unknown = null;
+  vi.stubGlobal(
+    "PopStateEvent",
+    class {
+      constructor(public type: string) {}
+    },
+  );
+  vi.stubGlobal("window", {
+    location,
+    scrollY: 120,
+    scrollTo: (x: number, y: number) => scrolled.push([x, y]),
+    dispatchEvent: (event: { type: string }) => events.push(event.type),
+    history: {
+      get state() {
+        return state;
+      },
+      pushState: (next: unknown, _title: string, href: string) => {
+        state = next;
+        const [path = "", query = ""] = href.split("?");
+        location.pathname = path;
+        location.search = query ? `?${query}` : "";
+      },
+    },
+  });
+  return { scrolled, events };
+}
 
 describe("routeFor", () => {
   it("opens the page the path names", () => {
@@ -49,6 +81,35 @@ describe("depth", () => {
       expect(depth()).toBe(1);
       state = { other: true };
       expect(depth()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("navigate", () => {
+  it("leaves the scroll to the next page, which starts at the top once drawn", () => {
+    const { scrolled, events } = browser("/");
+    try {
+      takeRestore();
+      navigate("/portfolio");
+      expect(events).toEqual(["popstate"]);
+      // Not now: the page on screen stays until the next one can render.
+      expect(scrolled).toEqual([]);
+      expect(takeRestore()).toBe(0);
+      expect(takeRestore()).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("scrolls now when the address is the one already on screen", () => {
+    const { scrolled } = browser("/portfolio");
+    try {
+      navigate("/portfolio");
+      expect(scrolled).toEqual([[0, 0]]);
+      // Nothing left for the page: a tab switched later must not jump.
+      expect(takeRestore()).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }

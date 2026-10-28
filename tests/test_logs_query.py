@@ -522,3 +522,94 @@ def test_render_skills_is_a_table_with_no_text_of_anyone():
     assert "tech" in text and "0.0400" in text and "100%" in text
     assert "never read" not in text and "a@b.c" not in text
     assert lq.render_skills(lq.skills([])) == "(no chat.cost entries in range)"
+
+
+# ---------------------------------------------------------------- http stats
+
+
+def http_entry(method: str, url: str, latency: str, status: int = 200,
+               timestamp: str = "2026-10-27T08:52:00.000Z") -> dict:
+    return {
+        "timestamp": timestamp,
+        "severity": "INFO",
+        "httpRequest": {
+            "requestMethod": method, "requestUrl": url,
+            "latency": latency, "status": status,
+        },
+    }
+
+
+def test_route_of_collapses_ids_and_drops_the_query():
+    assert lq.route_of("https://h/api/v1/ticker/NVDA/compare?base=EUR") == (
+        "/api/v1/ticker/{t}/compare"
+    )
+    assert lq.route_of("/api/v1/chat/runs/abc123/stop") == "/api/v1/chat/runs/{id}/stop"
+    assert lq.route_of("/api/v1/i18n/es") == "/api/v1/i18n/{lang}"
+
+
+def test_http_stats_groups_by_route_with_percentiles_and_the_slow_ones():
+    summary = lq.http_stats([
+        http_entry("GET", "https://h/api/v1/ticker/NVDA/compare", "1.2s"),
+        http_entry("GET", "https://h/api/v1/ticker/AAPL/compare", "0.8s"),
+        http_entry("GET", "https://h/api/v1/home/market", "28.5s", status=200,
+                   timestamp="2026-10-26T08:52:00.000Z"),
+        http_entry("GET", "https://h/api/v1/home/market", "0.9s", status=503),
+        entry(event="not.http"),
+    ])
+    by_key = {r["key"]: r for r in summary["rows"]}
+    compare = by_key["GET /api/v1/ticker/{t}/compare"]
+    assert compare["count"] == 2
+    assert compare["p50_ms"] == 800 and compare["max_ms"] == 1200
+    market = by_key["GET /api/v1/home/market"]
+    assert market["errors"] == 1
+    assert market["p90_ms"] == 28500
+    assert summary["total"] == 4
+    assert [s["key"] for s in summary["slow"]] == ["GET /api/v1/home/market"]
+    assert summary["slow"][0]["ms"] == 28500
+
+
+def test_render_http_stats_lists_the_slow_requests_under_the_table():
+    out = lq.render_http_stats(lq.http_stats([
+        http_entry("GET", "/api/v1/extremes", "21.0s"),
+        http_entry("GET", "/api/v1/extremes", "0.5s"),
+    ]))
+    assert "GET /api/v1/extremes" in out
+    assert "requests over 10s: 1 of 2" in out
+    assert lq.render_http_stats(lq.http_stats([])) == "(no requests in range)"
+
+
+# ------------------------------------------------------------------- connector
+
+
+def _con(event: str, user: str = "", **fields) -> dict:
+    return {"timestamp": "2026-10-27T10:00:00Z",
+            "jsonPayload": {"event": event, "user": user, **fields}}
+
+
+def test_the_connector_funnel_counts_accounts_not_events():
+    entries = [
+        _con("connector.card", "a", src="chat"),
+        _con("connector.card", "a", src="profile"),
+        _con("connector.card", "b", src="news"),
+        _con("connector.copy", "a", what="url"),
+        _con("connector.copy", "a", what="command"),
+        _con("mcp.consent", "a", step="allow"),
+        _con("mcp.consent", "b", step="deny"),
+        _con("mcp.grant", grant="g_1"),
+        _con("mcp.tool", "a", tool="portfolio"),
+        _con("mcp.tool", "a", tool="positions"),
+        _con("mcp.tool", "c", tool="portfolio"),  # connected before the range
+        _con("connector.card", "anon", src="chat"),  # LOG_USER off: no one
+    ]
+    got = lq.connector(entries)
+    assert got["steps"] == {"card": 2, "copy": 1, "allow": 1, "used": 2}
+    assert got["grants"] == 1 and got["denied"] == 1
+    assert {r["src"]: r["accounts"] for r in got["sources"]} == {
+        "chat": 1, "profile": 1, "news": 1,
+    }
+    out = lq.render_connector(got)
+    assert "saw the Claude tab" in out and "50.0%" in out
+
+
+def test_no_connector_events_says_so():
+    assert lq.render_connector(lq.connector([])) == "(no connector events in range)"

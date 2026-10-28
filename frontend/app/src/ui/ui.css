@@ -57,6 +57,28 @@
 @container ag-main (max-width: 38rem) {
   .ag-kpis:has(> :nth-child(3):last-child) {
     grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  /* Stacked one per line, a tile is a row of a list: label on the left, the
+     figure and its chip on the right. Three tall tiles cost a phone's first
+     screen for three numbers; three rows cost a third of it. A note or a
+     meter under the figure keeps its own line below. */
+  .ag-kpis:has(> :nth-child(3):last-child) > .ag-kpi {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    column-gap: 0.75rem;
+    padding-block: 0.45rem;
+  }
+
+  .ag-kpis:has(> :nth-child(3):last-child) > .ag-kpi > .ag-kpi-row {
+    justify-content: flex-end;
+  }
+
+  .ag-kpis:has(> :nth-child(3):last-child) > .ag-kpi > :not(.ag-kpi-head, .ag-kpi-row) {
+    flex-basis: 100%;
   }
 }
 
@@ -365,23 +387,12 @@
 /* ------------------------------------------------ a table on a narrow column */
 
 /*
- * `Rows.tsx`: every table with figures ships twice, the column grid and its
- * phone rendering, and the main column's width picks one — 40rem, the 640px
- * the shell's phone layout starts at, measured on `ag-main` so an open chat
- * drawer narrows a table the way a phone does.
+ * `Rows.tsx`: a table with figures has a column grid and a phone rendering,
+ * and `shell/useNarrow` mounts one by the main column's width — 40rem, the
+ * 640px the shell's phone layout starts at, measured on `ag-main` so an open
+ * chat drawer narrows a table the way a phone does. `.ag-resp-wide` and
+ * `.ag-resp-narrow` name which one is up; nothing here hides the other.
  */
-.ag-resp-narrow {
-  display: none;
-}
-
-@container ag-main (max-width: 40rem) {
-  .ag-resp-wide {
-    display: none;
-  }
-  .ag-resp-narrow {
-    display: block;
-  }
-}
 
 /* Revolut-style: a logo, the symbol over a dim line, the figure on the right. */
 .ag-dense-row {
@@ -867,6 +878,75 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ag-seg[data-glide] .ag-seg-thumb {
+    transition: none;
+  }
+}
+
+/* ui/Fold: a phone section folded to its heading. The summary is the whole
+   heading row, 44px at least, with a chevron at its end; the open body keeps
+   the card's own gap. */
+.ag-fold {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+/* Where the engine boxes the body (`::details-content`), the box is the one
+   flex item under the heading — its gap goes inside it, and a closed one must
+   not leave the gap behind as an empty strip. */
+.ag-fold::details-content {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+.ag-fold:not([open]) {
+  gap: 0;
+}
+
+.ag-fold-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  margin: -0.25rem 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ag-fold-head::-webkit-details-marker {
+  display: none;
+}
+
+.ag-fold-head > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.ag-fold-head::after {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.25rem;
+  border-right: 2px solid var(--ag-text-muted);
+  border-bottom: 2px solid var(--ag-text-muted);
+  transform: translateY(-25%) rotate(45deg);
+  transition: transform 100ms ease-out;
+}
+
+.ag-fold[open] > .ag-fold-head::after {
+  transform: translateY(25%) rotate(-135deg);
+}
+
+/* Folded, only the heading shows: its caption, badge and source wait with
+   the body. */
+.ag-fold:not([open]) > .ag-fold-head > :not(h1, h2, h3, h4) > :not(h1, h2, h3, h4) {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-fold-head::after {
     transition: none;
   }
 }

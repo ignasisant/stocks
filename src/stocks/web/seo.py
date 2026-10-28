@@ -223,7 +223,7 @@ FONTS_FLIP_JS = (
 )
 
 
-def _font_links() -> str:
+def font_links() -> str:
     """The webfont stylesheet, loaded without blocking the first paint.
 
     A plain `<link rel="stylesheet">` to a second origin sits directly on the
@@ -321,7 +321,7 @@ def head(
         # than when the stylesheet is parsed.
         + '<link rel="preconnect" href="https://fonts.googleapis.com">'
         + '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        + _font_links()
+        + font_links()
         + json_ld(lang, base_url, jur)
         + extra_styles
     )

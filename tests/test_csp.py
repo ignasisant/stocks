@@ -22,6 +22,7 @@ def shell(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_APP_BUILD", build)
     server._app_document.cache_clear()
     server._app_policy.cache_clear()
+    server._manifest.cache_clear()
     yield build
     server._app_document.cache_clear()
     server._app_policy.cache_clear()
@@ -100,3 +101,40 @@ def test_a_hash_covers_exactly_the_block_it_names():
 def test_a_reflected_value_never_reaches_the_policy(client):
     r = client.get("/ticker?ticker=AAPL<script>alert(1)</script>")
     assert csp.source("alert(1)") not in r.headers["content-security-policy"]
+
+
+def test_the_boot_block_is_data_and_changes_nothing_in_the_policy(
+    client, sign_in, monkeypatch, tmp_path
+):
+    """The per-request JSON the shell starts from is written after the policy
+    was hashed from the build-constant document, and is not code: a session's
+    document and a guest's ship the same header, and both are enforced."""
+    import json
+
+    from stocks import accounts
+    from stocks.api import loaders
+
+    email = "reader@example.com"
+    users = tmp_path / "users"
+    paths = accounts.paths_for(email, None, users_dir=users)
+    paths.root.mkdir(parents=True)
+    paths.prefs.write_text(json.dumps({"currency": "EUR", "language": "es"}))
+    monkeypatch.setattr(accounts, "configured_owner", lambda: None)
+    monkeypatch.setattr(
+        accounts, "paths_for", lambda e, owner=None, users_dir=users: paths
+    )
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+
+    guest = client.get("/portfolio")
+    assert 'id="ag-boot"' in guest.text
+    assert_enforced(guest)
+    sign_in(client, email)
+    signed = client.get("/portfolio")
+    assert f'"email":"{email}"' in signed.text
+    assert_enforced(signed)
+    assert (
+        signed.headers["content-security-policy"]
+        == guest.headers["content-security-policy"]
+    )

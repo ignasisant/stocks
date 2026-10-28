@@ -16,6 +16,7 @@ from typing import Annotated, Literal, cast
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
+from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
 from stocks.analysis import crypto_market, review
@@ -75,6 +76,7 @@ from stocks.api.schemas import (
     Dcf,
     EarningsEvent,
     EpsRevisionRow,
+    EuShortPositions,
     Financials,
     Fund,
     FundHolding,
@@ -86,6 +88,7 @@ from stocks.api.schemas import (
     MetricTile,
     Moat,
     MoatPillar,
+    OptionsView,
     Peer,
     Peers,
     PeerScope,
@@ -93,6 +96,9 @@ from stocks.api.schemas import (
     Profile,
     ProjectedRow,
     Quote,
+    RatingChange,
+    ShortHolderRow,
+    Shorts,
     SourceCheck,
     SourcedFigure,
     TickerJudged,
@@ -102,10 +108,12 @@ from stocks.api.schemas import (
     TickerSplits,
     TickerSplitsApplied,
     Trade,
+    UsShortInterest,
     Valuation,
     ValuationWindow,
 )
 from stocks.config import CURRENCIES
+from stocks.data import shorts as short_data
 from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
 from stocks.data.bafin import insider_transactions as bafin_transactions
 from stocks.data.cnmv import insider_transactions as cnmv_transactions
@@ -951,6 +959,8 @@ def financials(symbol: Symbol) -> Financials:
         ] if not quarterly.empty else [],
         projection=projected,
         estimate_currency=estimate_ccy,
+        source=getattr(raw, "source", None),
+        source_years=list(getattr(raw, "source_years", ())),
     )
 
 
@@ -1259,7 +1269,12 @@ def analysts(symbol: Symbol) -> Analysts:
     page says "too few analysts" instead of drawing one opinion as a split.
     """
     ticker = symbol.strip().upper()
-    raw = loaders.estimates(ticker)
+    # Side by side: the rating changes are their own Yahoo call, and queued
+    # behind the estimates they would add a second wait to a cold card.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        moved = pool.submit(carried(_rating_changes_or_none), ticker)
+        raw = loaders.estimates(ticker)
+        changes = moved.result()
     cons = consensus(raw)
     months = rating_trend(raw, date.today())
     latest = months[-1] if months else None
@@ -1319,7 +1334,44 @@ def analysts(symbol: Symbol) -> Analysts:
             )
             for r in eps_revisions(raw)
         ],
+        changes=[RatingChange(**c) for c in changes],
     )
+
+
+def _rating_changes_or_none(ticker: str) -> list[dict]:
+    """The recent rating moves, or [] when Yahoo refuses: the card keeps the
+    consensus it has and just has no moves to list."""
+    try:
+        return loaders.rating_changes(ticker)
+    except Exception as exc:  # noqa: BLE001 — one missing block, not a 500
+        obs.warn(
+            "api.rating_changes_failed", ticker=ticker, error_type=type(exc).__name__
+        )
+        return []
+
+
+@router.get("/{symbol}/options", response_model=OptionsView, summary="Options-implied")
+def options(symbol: Symbol) -> OptionsView:
+    """Implied volatility and the put/call balance from the listed options.
+
+    Its own request because cold it is an expiry list plus a few chains. A
+    name without listed options answers `listed: false`, not an error; a
+    throttled Yahoo is the app-wide 503, which the card reads as "nothing to
+    show" without caching it as a verdict.
+    """
+    ticker = symbol.strip().upper()
+    if is_crypto(ticker):
+        return OptionsView(ticker=ticker, listed=False)
+    try:
+        view = loaders.options_view(ticker)
+    except YFRateLimitError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("api.options_failed", ticker=ticker, error_type=type(exc).__name__)
+        return OptionsView(ticker=ticker, listed=False)
+    if view is None:
+        return OptionsView(ticker=ticker, listed=False)
+    return OptionsView(ticker=ticker, listed=True, **view)
 
 
 def _quote_currency(ticker: str) -> str | None:
@@ -1398,6 +1450,60 @@ def insiders(symbol: Symbol) -> Insiders:
         ],
         sec_filer=filer,
     )
+
+
+@router.get("/{symbol}/shorts", response_model=Shorts, summary="Short selling")
+def shorts(symbol: Symbol) -> Shorts:
+    """What is being bet against the company.
+
+    US names: Yahoo's short interest (already in the fundamentals pull) and
+    FINRA's daily short volume. European names: the net short positions of 0.5 %
+    or more that the AFM, the Federal Gazette (BaFin) and the FCA publish, read
+    from the stored registers. Neither blocks: a register still downloading is
+    answered with what is stored, and a name no register matches is null, not
+    "no short sellers".
+    """
+    ticker = symbol.strip().upper()
+    out = Shorts(ticker=ticker)
+    short_data.ensure_fresh()
+    if short_data.eu_listing(ticker):
+        entry = short_data.net_short(_issuer_name(ticker))
+        if entry is not None:
+            out.eu = EuShortPositions(
+                source=entry.source,
+                issuer=entry.issuer,
+                total_pct=entry.total_pct,
+                as_of=str(entry.as_of) if entry.as_of else None,
+                holders=[
+                    ShortHolderRow(
+                        name=h.name, pct=h.pct, date=str(h.date) if h.date else None
+                    )
+                    for h in entry.holders[: short_data.TOP_HOLDERS]
+                ],
+                holders_count=len(entry.holders),
+            )
+    elif "." not in ticker and not is_crypto(ticker):
+        try:
+            info = loaders.fundamentals(ticker).info or {}
+        except Exception as exc:  # noqa: BLE001 — a missing section is not a failed page
+            obs.warn(
+                "api.shorts_info_failed", ticker=ticker, error_type=type(exc).__name__
+            )
+            info = {}
+        interest = short_data.from_info(info)
+        volume = short_data.short_volume(ticker)
+        if interest is not None or volume is not None:
+            out.us = UsShortInterest(
+                pct_float=interest.pct_float if interest else None,
+                shares_short=_num(interest.shares_short) if interest else None,
+                days_to_cover=_num(interest.days_to_cover) if interest else None,
+                change_pct=interest.change_pct if interest else None,
+                as_of=str(interest.as_of) if interest and interest.as_of else None,
+                volume_ratio=volume.ratio if volume else None,
+                volume_days=volume.days if volume else None,
+                volume_as_of=str(volume.as_of) if volume else None,
+            )
+    return out
 
 
 def _issuer_name(ticker: str) -> str | None:

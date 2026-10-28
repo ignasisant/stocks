@@ -445,3 +445,60 @@ def test_a_finished_run_is_forgotten_after_a_while(monkeypatch):
     r.ended -= runs.KEEP_S + 1
     assert runs.on_thread("o", "t") is None
     assert runs.find("o", "r") is None
+
+
+def test_the_async_tail_hands_over_every_frame_and_lets_its_thread_go():
+    import asyncio
+
+    quiet = threading.Event()
+
+    def events(_run):
+        yield "data: one\n\n"
+        quiet.wait(5)
+        yield "data: two\n\n"
+
+    run_ = runs.start(owner="o", rid="r-async", thread="t", question="q",
+                      events=events, stopped="data: stopped\n\n",
+                      failed=lambda f: False)
+
+    async def read():
+        got = []
+        async for frame in runs.atail(run_):
+            got.append(frame)
+            if len(got) == 1:
+                quiet.set()
+        return got
+
+    assert asyncio.run(read()) == ["data: one\n\n", "data: two\n\n"]
+    assert not [t for t in threading.enumerate() if t.name == "tail-r-async"]
+
+
+def test_a_reader_who_leaves_the_async_tail_frees_its_thread(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(runs, "PING_S", 0.01)
+    quiet = threading.Event()
+
+    def events(_run):
+        yield "data: one\n\n"
+        quiet.wait(5)
+        yield "data: two\n\n"
+
+    run_ = runs.start(owner="o", rid="r-left", thread="t", question="q",
+                      events=events, stopped="data: stopped\n\n",
+                      failed=lambda f: False)
+
+    async def leave_early():
+        reader = runs.atail(run_)
+        assert await reader.__anext__() == "data: one\n\n"
+        await reader.aclose()
+
+    asyncio.run(leave_early())
+    # The pump sees `gone` at its next ping and ends, with the run still live.
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and any(
+        t.name == "tail-r-left" for t in threading.enumerate()
+    ):
+        time.sleep(0.02)
+    assert not [t for t in threading.enumerate() if t.name == "tail-r-left"]
+    quiet.set()

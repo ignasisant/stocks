@@ -1743,6 +1743,49 @@ def _proposed(evidence: agent.Evidence) -> dict | None:
     return None
 
 
+def _rules_asked(message: str, watchlist: Path, focus: str) -> str:
+    """The ticker a question asks exit rules for, or "" when it asks none.
+
+    The symbol the reader typed wins over the page they typed it on; the
+    journal's button names both the key and the company ("RCF
+    (Teleperformance SE)"), and the key is what a rule is filed under."""
+    from stocks.chat import market
+
+    if not toolbox.asks_rules(message):
+        return ""
+    typed = market.mentioned(message, market.watchlist_names(watchlist),
+                             lookup=lambda _name: "")
+    return (typed[0] if typed else focus).strip().upper()
+
+
+def _drafted_rules(ticker: str, text: str, provider: Provider,
+                   key: str) -> dict | None:
+    """The card for the exit rules an answer wrote out but never proposed.
+
+    The reader asked for rules and the answer drafted them in prose ("copy
+    into your notes"): the research model skipped `propose_action`, which a
+    fallback model often does. Read back with the same router a typed "save
+    these rules" goes through, so the card holds only measures the journal
+    can check; the reader still approves it, so nothing is saved unseen.
+    None when the answer drafted none (it asked a question back instead)."""
+    from stocks.chat import tools
+
+    act = tools.detect(provider, key,
+                       f"Save these exit rules for {ticker}:\n{text[:_DRAFT_CHARS]}")
+    if act is None or act.kind != "set_criteria":
+        return None
+    # Filed under the key that was asked about, whatever the prose called it.
+    act = tools.proposed({**act.args, "action": "set_criteria", "ticker": ticker})
+    if act is None:
+        return None
+    obs.event("chat.rules_drafted", ticker=ticker,
+              rules=len(act.args.get("criteria") or []))
+    return {**_proposal(act), "by": "agent"}
+
+
+_DRAFT_CHARS = 6000  # of the answer handed to the router for its rules
+
+
 def _open_proposal(history: list[dict]) -> int | None:
     """Index of the last turn when it is an assistant turn still asking."""
     if not history:
@@ -2622,6 +2665,10 @@ class Turn:
     #: A change the research put to the reader (`_proposed`), filed as a
     #: pending card under the answer; None when it proposed nothing.
     proposal: dict | None = None
+    #: The ticker the question asked exit rules for, when the research
+    #: proposed none: `_record` drafts the card from the answer's own words
+    #: (`_drafted_rules`). "" otherwise.
+    rules_for: str = ""
 
     @property
     def units(self) -> int:
@@ -3184,6 +3231,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             rebalance.SURFACE_ID,
             rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
+    offered = _proposed(evidence) if confirm_actions else None
     return Turn(
         history=history,
         attempts=atts,
@@ -3201,7 +3249,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         thread=thread,
         profile=profile.name,
         id=turn_id or secrets.token_hex(6),
-        proposal=_proposed(evidence) if confirm_actions else None,
+        proposal=offered,
+        rules_for=(_rules_asked(message, watchlist, focus)
+                   if confirm_actions and offered is None else ""),
     ), None
 
 
@@ -3350,6 +3400,12 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["learned"] = list(turn.learned)
     if turn.recalled:
         entry["recalled"] = list(turn.recalled)
+    if turn.proposal is None and turn.rules_for:
+        try:
+            turn.proposal = _drafted_rules(turn.rules_for, text, provider, key)
+        except Exception as exc:  # a card is extra; the answer still lands
+            obs.warn("chat.rules_draft_failed", error_type=type(exc).__name__,
+                     error=str(exc)[:300])
     if turn.proposal is not None:
         entry["proposal"] = turn.proposal
         obs.event("chat.action_proposed", action=turn.proposal["kind"],

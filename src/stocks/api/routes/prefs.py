@@ -24,9 +24,10 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from stocks import accounts
+from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
 from stocks.api.schemas import HomeSlot, Prefs
-from stocks.api.security import Who
+from stocks.api.security import Caller, Who
 from stocks.config import CURRENCIES
 from stocks.portfolio import tax
 
@@ -211,6 +212,16 @@ def _layout(stored: object) -> list[HomeSlot] | None:
 
 @router.get("/prefs", response_model=Prefs, summary="This account's settings")
 def prefs(account: Account, who: Who) -> Prefs:
+    return current(account, who)
+
+
+def current(account: UserPaths, who: Caller) -> Prefs:
+    """The settings `GET /prefs` answers `who` with, reading `account`.
+
+    Its own function because the document that serves the app writes this
+    answer into itself (`web.server`), so the first paint needs no round trip
+    for it; the route and the document must answer the same thing.
+    """
     if who.kind == "guest":
         # The defaults, built here, never read from disk. One prefs.json serves
         # every anonymous visitor on the deployment, so whatever is in it is not

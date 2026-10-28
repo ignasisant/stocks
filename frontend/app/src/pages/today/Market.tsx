@@ -119,7 +119,7 @@ function SectorList({ title, sectors }: { title: string; sectors: MarketSector[]
         {sectors.map((sector) => {
           const month = sector.month ?? 0;
           return (
-            <li key={sector.ticker}>
+            <li key={sector.ticker} className="ag-row-reach">
               <TickerCell ticker={sector.ticker} name={false} />
               <span className="td-sector-name">
                 {t(`sentiment.sector_${sector.name.toLowerCase().replace(/ /g, "_")}`)}

@@ -34,3 +34,25 @@ export const DOT = {
 
 /** Where a line's area fade starts and ends, as opacity. */
 export const AREA = { top: 0.14, bottom: 0 } as const;
+
+/** A bar's widest, the round on its data end, and the card-coloured gap
+ *  between two bars side by side. */
+export const BAR = { max: 24, round: 4, gap: 2 } as const;
+
+/**
+ * A bar from its baseline to its value, as a path: square where it stands on
+ * the baseline, rounded at the data end, either side of zero. A bar too short
+ * for the round takes what height it has.
+ */
+export function barPath(x: number, width: number, base: number, end: number): string {
+  const r = Math.min(BAR.round, width / 2, Math.abs(base - end));
+  const s = end <= base ? 1 : -1;
+  return [
+    `M${x},${base}`,
+    `V${end + s * r}`,
+    `Q${x},${end} ${x + r},${end}`,
+    `H${x + width - r}`,
+    `Q${x + width},${end} ${x + width},${end + s * r}`,
+    `V${base}Z`,
+  ].join("");
+}

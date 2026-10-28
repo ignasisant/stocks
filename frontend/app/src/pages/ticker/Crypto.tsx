@@ -91,6 +91,21 @@ function fundingBand(t: Translate, band: string | null | undefined): string {
   }
 }
 
+function ivBand(t: Translate, band: string | null | undefined): string {
+  switch (band) {
+    case "low":
+      return t("ticker.iv_low");
+    case "normal":
+      return t("ticker.iv_normal");
+    case "high":
+      return t("ticker.iv_high");
+    case "extreme":
+      return t("ticker.iv_extreme");
+    default:
+      return "";
+  }
+}
+
 function sizingLine(t: Translate, sizing: CryptoHolding["sizing"]): string {
   switch (sizing) {
     case "under":
@@ -210,15 +225,19 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
   const halving = cycle.halving;
   const vsBtc = cycle.vs_btc_90d;
   const vsNdx = cycle.vs_nasdaq_90d;
+  const onchain = cycle.onchain;
   const anything =
     present(fg) ||
     cycle.btc_dominance !== null ||
     present(cycle.mayer) ||
     cycle.vol30 !== null ||
+    cycle.stablecoins !== null ||
+    cycle.onchain !== null ||
     halving !== null;
   if (!anything) return null;
   return (
     <Card
+      fold="cycle"
       title={t("ticker.cycle_title")}
       note={
         cycle.scan_date
@@ -302,6 +321,50 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
             noteTone={signTone(vsNdx)}
           />
         ) : null}
+        {cycle.stablecoins ? (
+          <Metric
+            label={t("ticker.stablecoins")}
+            help={t("ticker.stablecoins_help")}
+            value={compactMoney(cycle.stablecoins.usd, "USD")}
+            note={
+              cycle.stablecoins.change_30d !== null
+                ? t("ticker.stablecoins_30d", {
+                    pct: signedPercent(cycle.stablecoins.change_30d, 1),
+                  })
+                : ""
+            }
+            noteTone={signTone(cycle.stablecoins.change_30d)}
+          />
+        ) : null}
+        {onchain ? (
+          <Metric
+            label={t("ticker.onchain_tvl", { name: onchain.name })}
+            help={t("ticker.onchain_tvl_help", { name: onchain.name })}
+            value={compactMoney(onchain.tvl, "USD")}
+            note={
+              onchain.tvl_change_30d !== null
+                ? t("ticker.onchain_tvl_30d", {
+                    pct: signedPercent(onchain.tvl_change_30d, 1),
+                  })
+                : ""
+            }
+            noteTone={signTone(onchain.tvl_change_30d)}
+          />
+        ) : null}
+        {onchain && onchain.fees_30d !== null ? (
+          <Metric
+            label={t("ticker.onchain_fees")}
+            help={t("ticker.onchain_fees_help", { name: onchain.name })}
+            value={compactMoney(onchain.fees_30d, "USD")}
+            note={
+              onchain.revenue_30d !== null
+                ? t("ticker.onchain_revenue", {
+                    value: compactMoney(onchain.revenue_30d, "USD"),
+                  })
+                : ""
+            }
+          />
+        ) : null}
         {halving ? (
           <Kpi
             label={t("ticker.halving")}
@@ -336,12 +399,20 @@ function venueName(venue: string): string {
   }
 }
 
-export function PositioningSection({ data }: { data: CryptoPositioning }) {
+export function PositioningSection({
+  data,
+  coin,
+}: {
+  data: CryptoPositioning;
+  coin: string;
+}) {
   const t = useT();
   const now = data.funding_8h;
   const week = data.funding_7d_8h;
+  const iv = data.implied_vol;
   return (
     <Card
+      fold="positioning"
       title={t("ticker.positioning_title")}
       note={`${venueName(data.venue)} · ${data.symbol}`}
     >
@@ -373,6 +444,24 @@ export function PositioningSection({ data }: { data: CryptoPositioning }) {
               : ""
           }
         />
+        {iv ? (
+          <Metric
+            label={t(
+              iv.coin === coin ? "ticker.implied_vol" : "ticker.implied_vol_btc",
+            )}
+            help={t("ticker.implied_vol_help")}
+            value={`${num(iv.value, 0)}%`}
+            note={[
+              ivBand(t, iv.percentile?.band),
+              iv.percentile?.value != null
+                ? t("ticker.iv_percentile", { n: Math.round(iv.percentile.value) })
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            noteTone={iv.percentile?.tone ?? null}
+          />
+        ) : null}
       </Metrics>
       <Note>{t("ticker.positioning_caption")}</Note>
     </Card>

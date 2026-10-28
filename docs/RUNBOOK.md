@@ -42,7 +42,7 @@ The service isn't answering at all.
 2. Revision unhealthy right after a deploy → roll back (below).
 3. No recent deploy → check quota/billing (budget email?) and Cloud Run
    outages, then `uv run stocks logs tail --since 30m` for boot errors
-   (a bad `STREAMLIT_SECRETS_TOML` version fails the boot).
+   (a bad `STOCKS_SECRETS_TOML` version fails the boot).
 
 ## Alert: ERROR logs
 
@@ -118,7 +118,7 @@ with the account's timeline: `uv run stocks logs tail --user <slug>`.
 
 ## Secrets rotation
 
-Prod reads `STREAMLIT_SECRETS_TOML` from Secret Manager `topstocks-secrets`,
+Prod reads `STOCKS_SECRETS_TOML` from Secret Manager `topstocks-secrets`,
 **pinned to a version number**. Rotating anything (OIDC client, R2 keys,
 LLM keys, `[chat] enc_key`):
 

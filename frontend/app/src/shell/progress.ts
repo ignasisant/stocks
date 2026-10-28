@@ -26,7 +26,7 @@ export type Job = {
   expected_s: number | null;
 };
 
-const POLL_MS = 1000;
+const POLL_MS = 2000;
 
 export function useServerProgress(active: boolean): Job | null {
   const [job, setJob] = useState<Job | null>(null);

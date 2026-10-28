@@ -13,7 +13,7 @@
 # Requires ports 80 + 443 open: Oracle VCN security-list ingress AND host
 # iptables (see deploy/README.md). Caddy needs both for the ACME challenge.
 #
-# Secrets: bind-mount the real .streamlit/secrets.toml (app reads it directly).
+# Secrets: bind-mount the real secrets.toml (app reads it directly).
 # SITE_ADDRESS comes from deploy/.env (see .env.example).
 #
 # Run on the VM:  docker compose -f deploy/docker-compose.yml up -d --build
@@ -28,7 +28,7 @@ services:
     expose:
       - "8501" # compose-network only; Caddy reaches it as app:8501
     volumes:
-      - ./secrets.toml:/app/.streamlit/secrets.toml:ro
+      - ./secrets.toml:/app/secrets.toml:ro
 
   caddy:
     image: caddy:2

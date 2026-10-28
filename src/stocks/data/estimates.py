@@ -460,3 +460,74 @@ def projection(raw: RawEstimates, last_fy: int, years: int = 3) -> pd.DataFrame:
             for c in ("Revenue", "RevenueLow", "RevenueHigh", "EPS", "EPSLow", "EPSHigh")
         }
     )
+
+
+# --------------------------------------------------------- rating changes
+
+# What yfinance's `Ticker.upgrades_downgrades` calls each move. `reit`/`main`
+# with an unchanged target are the street repeating itself, not news.
+_MOVES = {"up": "upgrade", "down": "downgrade", "init": "initiated"}
+_TARGET_MOVES = {"Raises": "raised", "Lowers": "lowered", "Announces": "set"}
+RATING_CHANGES_KEPT = 10
+RATING_CHANGES_DAYS = 365
+
+
+def fetch_rating_changes(ticker: str) -> pd.DataFrame:
+    """`Ticker.upgrades_downgrades` for one name; empty when nobody covers it.
+
+    A refusal (`YFRateLimitError` and kin) raises, so the loader never
+    memoizes a throttled minute as "no rating changes". Yahoo answers a name
+    it has no coverage for (every non-US line, mostly) with an empty frame —
+    or, for a suffixed line, with a 404 that costs seconds on a cold page, so
+    those (IBE.MC, ^GSPC) are not asked.
+    """
+    import yfinance as yf
+
+    from stocks.data.fetch import retired, retry
+
+    if "." in ticker or ticker.startswith("^") or retired(ticker):
+        return pd.DataFrame()
+    frame = retry(lambda: yf.Ticker(ticker).upgrades_downgrades, attempts=2)
+    return pd.DataFrame() if frame is None else frame
+
+
+def rating_changes(frame: pd.DataFrame | None, today: date) -> list[dict]:
+    """Newest-first moves worth reading: a grade change, an initiation, or a
+    price-target change. Pure over the frame yfinance returns.
+
+    Each row: date, firm, from_grade, to_grade, action (upgrade | downgrade |
+    initiated | reiterated), target (new), prior_target, target_move
+    (raised | lowered | set | None).
+    """
+    if frame is None or frame.empty or "Firm" not in frame.columns:
+        return []
+    cutoff = pd.Timestamp(today) - pd.Timedelta(days=RATING_CHANGES_DAYS)
+    rows: list[dict] = []
+    for when, row in frame.sort_index(ascending=False).iterrows():
+        stamp = pd.Timestamp(str(when))
+        if pd.isna(stamp) or stamp < cutoff:
+            continue
+        firm = str(row.get("Firm") or "").strip()
+        if not firm:
+            continue
+        move = _MOVES.get(str(row.get("Action") or "").lower())
+        target_move = _TARGET_MOVES.get(str(row.get("priceTargetAction") or ""))
+        if move is None and target_move is None:
+            continue
+        target = row.get("currentPriceTarget")
+        prior = row.get("priorPriceTarget")
+        rows.append(
+            {
+                "date": stamp.date().isoformat(),
+                "firm": firm,
+                "from_grade": str(row.get("FromGrade") or "").strip() or None,
+                "to_grade": str(row.get("ToGrade") or "").strip() or None,
+                "action": move or "reiterated",
+                "target": float(target) if pd.notna(target) and target else None,
+                "prior_target": float(prior) if pd.notna(prior) and prior else None,
+                "target_move": target_move,
+            }
+        )
+        if len(rows) == RATING_CHANGES_KEPT:
+            break
+    return rows

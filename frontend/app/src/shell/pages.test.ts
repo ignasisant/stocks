@@ -11,9 +11,23 @@
  * side, against `stocks.navigation`. This one checks the resolution itself.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { PAGES, canonical, pageFor, sections } from "./pages";
+import { PAGES, canonical, pageFor, preload, sections, type Page } from "./pages";
+
+/** A registry entry whose chunk is a spy, so a fetch can be counted. */
+function entry(slug: string, load: Page["load"], aliases?: string[]): Page {
+  return {
+    slug,
+    label: `nav.${slug}`,
+    icon: "x",
+    aliases,
+    component: null as unknown as Page["component"],
+    load,
+  };
+}
+
+const chunk = () => Promise.resolve({ default: () => null });
 
 describe("the page registry", () => {
   it("resolves a slug to its own page", () => {
@@ -45,11 +59,12 @@ describe("the page registry", () => {
 
   it("groups the rail the way the navigation table does", () => {
     // `stocks.navigation.sections()`: Home alone with no header, then
-    // Portfolio, Market and Account — in that order, bank left out.
+    // Portfolio, Market, Learn and Account — in that order, bank left out.
     expect(sections().map((group) => group.section)).toEqual([
       undefined,
       "nav.section_portfolio",
       "nav.section_market",
+      "nav.section_learn",
       "nav.section_account",
     ]);
     expect(sections()[2]!.pages.map((page) => page.slug)).toEqual([
@@ -87,5 +102,43 @@ describe("the page registry", () => {
         .flatMap((group) => group.pages)
         .map((page) => page.slug),
     ).not.toContain("bank");
+  });
+});
+
+describe("preload", () => {
+  it("fetches a page's chunk once, however often the reader shows intent", () => {
+    const load = vi.fn(chunk);
+    const pages = [entry("one", load)];
+    preload("one", pages);
+    preload("one", pages);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves an old path to the page it means", () => {
+    const load = vi.fn(chunk);
+    const pages = [entry("two", load, ["old_two"])];
+    preload("old_two", pages);
+    preload("two", pages);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("tries again after a fetch that failed", async () => {
+    let offline = true;
+    const load = vi.fn(() =>
+      offline ? Promise.reject(new Error("offline")) : chunk(),
+    );
+    const pages = [entry("three", load)];
+    preload("three", pages);
+    await new Promise((settle) => setTimeout(settle, 0));
+    offline = false;
+    preload("three", pages);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("warms the first page for a slug it has never heard of, as the router opens it", () => {
+    const load = vi.fn(chunk);
+    const pages = [entry("four", load), entry("five", vi.fn(chunk))];
+    preload("nope", pages);
+    expect(load).toHaveBeenCalledTimes(1);
   });
 });

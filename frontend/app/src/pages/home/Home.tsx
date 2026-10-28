@@ -55,7 +55,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { get, send } from "../../shell/api";
+import { get, invalidate, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { useT } from "../../shell/i18n";
 import { GuestBanner, SignInWall, type GuestHighlight } from "../../shell/guest";
@@ -168,12 +168,13 @@ export default function Page() {
   }, [refocus, editing]);
   // The server's caches go first (`POST /home/refresh`), or asking again would
   // answer from the very entries the reader pressed the button to get past. A
-  // guest may not write, so a guest's press is the re-ask alone — which still
-  // picks up anything whose short TTL has rolled over. A refused or failed
-  // drop is not worth an error: the re-ask happens either way.
+  // guest may not write, so a guest's press drops this page's memo and
+  // re-asks — which still picks up anything whose short TTL has rolled over.
+  // A refused or failed drop is not worth an error: the re-ask happens
+  // either way.
   const refresh = useCallback(() => {
     const drop = guest
-      ? Promise.resolve()
+      ? Promise.resolve(invalidate())
       : send("POST", "/home/refresh").catch(() => undefined);
     void drop.then(() => setNonce((n) => n + 1));
   }, [guest]);

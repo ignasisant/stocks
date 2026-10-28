@@ -1,0 +1,755 @@
+# --- start path
+stock:
+  label: "Stock (share)"
+  aliases: ["acción", "equity", "share"]
+  desc: >-
+    A small slice of ownership in a company. You can earn from the price rising and from dividends the company pays.
+  lesson: what-is-a-stock
+dividend:
+  label: "Dividend"
+  aliases: ["dividendo", "payout"]
+  desc: >-
+    Part of a company's profit paid out in cash to its shareholders, usually every quarter or year. It is never guaranteed.
+  lesson: what-is-a-stock
+market_cap:
+  label: "Market capitalisation (market cap)"
+  aliases: ["capitalización bursátil", "market value"]
+  desc: >-
+    Share price × shares outstanding: what the market says the company's equity is worth.
+  lesson: what-is-a-stock
+ipo:
+  label: "IPO (initial public offering)"
+  aliases: ["salida a bolsa", "OPV", "flotación"]
+  desc: >-
+    The moment a company first sells shares to the public and starts trading on an exchange.
+  lesson: what-is-a-stock
+ticker_symbol:
+  label: "Ticker symbol"
+  aliases: ["ticker", "símbolo", "stock symbol"]
+  desc: >-
+    A short code, usually 1 to 5 letters, that identifies a stock on an exchange, such as AAPL for Apple. The same company can have different tickers on different exchanges.
+  lesson: what-is-a-stock
+isin:
+  label: "ISIN"
+  aliases: ["International Securities Identification Number", "security code"]
+  desc: >-
+    A 12-character code that identifies a security uniquely worldwide. It starts with a country code (ES, US, IE...) and stays the same across exchanges.
+  lesson: what-is-a-stock
+etf:
+  label: "ETF (exchange-traded fund)"
+  aliases: ["fondo cotizado", "fondo indexado cotizado"]
+  desc: >-
+    A fund that trades on an exchange like a stock and usually tracks an index. One purchase gives you a basket of many securities.
+  lesson: funds-and-etfs
+mutual_fund:
+  label: "Mutual fund"
+  aliases: ["fondo de inversión", "investment fund", "open-ended fund"]
+  desc: >-
+    A fund that pools many investors' money under a professional manager. It is bought and sold at its net asset value once a day, not traded on an exchange.
+  lesson: funds-and-etfs
+index_fund:
+  label: "Index fund"
+  aliases: ["fondo indexado", "passive fund"]
+  desc: >-
+    A fund that copies an index such as the S&P 500 instead of trying to beat it. Being passive, it charges low fees.
+  lesson: funds-and-etfs
+index:
+  label: "Stock market index"
+  aliases: ["índice", "S&P 500", "IBEX 35"]
+  desc: >-
+    A basket of securities that measures how a market or sector is doing, like the S&P 500 or IBEX 35. You can't buy it directly; funds and ETFs replicate it.
+  lesson: funds-and-etfs
+ter:
+  label: "Total expense ratio (TER)"
+  aliases: ["TER", "gastos corrientes", "ongoing charges", "expense ratio"]
+  desc: >-
+    The yearly percentage a fund charges to run itself, already taken out of its value. A 0.20 % TER costs €20 a year per €10,000 invested.
+  lesson: funds-and-etfs
+ucits:
+  label: "UCITS"
+  aliases: ["fondo armonizado", "UCITS fund"]
+  desc: >-
+    European rules setting diversification, liquidity and protection standards for funds and ETFs. UCITS is what most European retail investors need in order to buy an ETF.
+  lesson: funds-and-etfs
+accumulating_distributing:
+  label: "Accumulating vs. distributing"
+  aliases: ["acc", "dist", "acumulación", "distribución"]
+  desc: >-
+    An accumulating fund reinvests dividends inside the fund. A distributing one pays them to you in cash. The total return is similar; what changes is how and when you get it.
+  lesson: funds-and-etfs
+broker:
+  label: "Broker"
+  aliases: ["bróker", "intermediary", "brokerage"]
+  desc: >-
+    An authorised firm that lets you buy and sell securities on the markets. You place the order; the broker executes it and holds your assets.
+  lesson: brokers-and-exchanges
+exchange:
+  label: "Stock exchange"
+  aliases: ["bolsa", "exchange", "market", "NYSE"]
+  desc: >-
+    An organised marketplace where securities are bought and sold under set hours and rules, such as the Madrid Stock Exchange or the NYSE.
+  lesson: brokers-and-exchanges
+custody:
+  label: "Custody"
+  aliases: ["custodia", "custodian", "safekeeping"]
+  desc: >-
+    Who holds your securities. Usually your broker or a custodian, with your assets recorded in your name or in segregated accounts, kept apart from the firm's own money.
+  lesson: brokers-and-exchanges
+investor_protection:
+  label: "Investor protection"
+  aliases: ["protección al inversor", "investor compensation scheme", "guarantee fund"]
+  desc: >-
+    If a broker fails, your securities must be kept separate from its own money, and a compensation scheme covers you up to a limit that depends on the country. It never covers market losses.
+  lesson: brokers-and-exchanges
+settlement:
+  label: "Settlement"
+  aliases: ["liquidación", "T+1", "T+2"]
+  desc: >-
+    The actual swap of securities and cash after a trade. It happens a few business days after the order, so sale proceeds may not be available straight away.
+  lesson: brokers-and-exchanges
+fractional_shares:
+  label: "Fractional shares"
+  aliases: ["acciones fraccionadas", "partial shares"]
+  desc: >-
+    Let you buy only part of a share, for example €50 of one that costs €400. Not every broker offers them, and not for every stock.
+  lesson: brokers-and-exchanges
+market_order:
+  label: "Market order"
+  aliases: ["orden de mercado", "orden a mercado"]
+  desc: >-
+    Buys or sells right now at the best available price. It almost always fills, but you don't know the exact price, especially in thinly traded stocks.
+  lesson: order-types
+limit_order:
+  label: "Limit order"
+  aliases: ["orden limitada", "orden con límite"]
+  desc: >-
+    Buys or sells only at your price or better. You control the price, but the order may never fill if the market doesn't reach it.
+  lesson: order-types
+stop_order:
+  label: "Stop order"
+  aliases: ["stop loss", "stop-loss", "orden stop"]
+  desc: >-
+    An order that triggers when the price hits a level you set. A stop loss is used to cap losses, but in a sharp gap it can fill well below your level.
+  lesson: order-types
+bid_ask_spread:
+  label: "Bid-ask spread"
+  aliases: ["spread", "horquilla", "bid ask"]
+  desc: >-
+    The gap between the best price someone will pay (bid) and the best price someone will sell at (ask). It is a hidden cost every time you trade.
+  lesson: order-types
+liquidity:
+  label: "Liquidity"
+  aliases: ["liquidez", "trading volume"]
+  desc: >-
+    How easily you can buy or sell a security quickly without moving its price. High liquidity means a tight spread; low liquidity makes trading costlier.
+  lesson: order-types
+commission:
+  label: "Commission"
+  aliases: ["comisión", "trading fee", "brokerage fee"]
+  desc: >-
+    What your broker charges to execute a buy or sell. It can be a flat amount or a percentage, and is sometimes zero, but other costs may still apply.
+  lesson: costs-of-investing
+fx_conversion:
+  label: "Currency conversion fee"
+  aliases: ["FX fee", "comisión de cambio", "FX conversion"]
+  desc: >-
+    The cost of converting your euros into another currency to buy a foreign security, and back when you sell. Usually a small percentage on top of the exchange rate.
+  lesson: costs-of-investing
+custody_fee:
+  label: "Custody fee"
+  aliases: ["comisión de custodia", "account fee", "safekeeping fee"]
+  desc: >-
+    A periodic charge some brokers make for holding and administering your securities. Many charge none, so check your broker's fee schedule.
+  lesson: costs-of-investing
+trading_session:
+  label: "Trading session"
+  aliases: ["sesión de mercado", "market hours", "regular session"]
+  desc: >-
+    The hours when an exchange matches orders normally. The US regular session is 9:30 to 16:00 New York time; Madrid trades 9:00 to 17:30 local time.
+  lesson: market-hours
+premarket:
+  label: "Pre-market"
+  aliases: ["premarket", "preapertura", "pre-open"]
+  desc: >-
+    Trading before the regular session. Volume is thin and prices jumpier, so moves may not hold once the market opens.
+  lesson: market-hours
+after_hours:
+  label: "After-hours trading"
+  aliases: ["after hours", "extended hours", "postmarket"]
+  desc: >-
+    Trading after the regular session closes. Common when earnings come out, with low liquidity and wider spreads.
+  lesson: market-hours
+gap:
+  label: "Gap"
+  aliases: ["hueco", "price gap", "opening gap"]
+  desc: >-
+    A jump between one day's close and the next day's open with no trades in between. It is usually caused by news or earnings released while the market was shut.
+  lesson: market-hours
+market_holiday:
+  label: "Market holiday"
+  aliases: ["festivo bursátil", "exchange holiday", "market closed"]
+  desc: >-
+    A weekday when an exchange is shut, such as 4 July in the US. Each market has its own calendar, so one can be open while another is closed.
+  lesson: market-hours
+
+# --- returns path
+total_return:
+  label: "Total return"
+  aliases: ["rentabilidad total", "return"]
+  desc: >-
+    What you gain or lose overall: price change plus dividends and other payouts, as a percentage of what you invested. Looking at price alone understates it.
+  lesson: total-return
+capital_gain:
+  label: "Capital gain"
+  aliases: ["plusvalía", "capital loss", "realised gain"]
+  desc: >-
+    What you earn by selling for more than you paid. Selling for less is a capital loss. It is unrealised until you sell, and realised when you do.
+  lesson: total-return
+dividend_yield:
+  label: "Dividend yield"
+  aliases: ["rentabilidad por dividendo", "yield"]
+  desc: >-
+    Annual dividend per share divided by the current price, in %. A 3 % yield means €3 a year per €100 invested. A very high yield can be a warning sign.
+  lesson: total-return
+compounding:
+  label: "Compounding"
+  aliases: ["interés compuesto", "compound interest", "snowball effect"]
+  desc: >-
+    Earning returns on returns you already earned. Over time the effect grows: €10,000 at 7 % a year becomes about €19,700 after 10 years.
+  lesson: total-return
+annualised_return:
+  label: "Annualised return"
+  aliases: ["rentabilidad anualizada", "annualized return", "annual return"]
+  desc: >-
+    A return expressed per year so periods of different length can be compared. A 21 % gain over two years is about 10 % a year, not 10.5 %.
+  lesson: total-return
+cagr:
+  label: "CAGR (compound annual growth rate)"
+  aliases: ["TCAC", "compound annual growth rate"]
+  desc: >-
+    The steady yearly rate that would take you from the starting value to the ending value. It smooths out the ups and downs on the way.
+  lesson: total-return
+real_return:
+  label: "Real return"
+  aliases: ["rentabilidad real", "inflation-adjusted return"]
+  desc: >-
+    Return after taking inflation off: what you actually gain in purchasing power. If you earn 5 % and prices rise 3 %, your real return is about 2 %.
+  lesson: total-return
+inflation:
+  label: "Inflation"
+  aliases: ["inflación", "CPI", "rising prices"]
+  desc: >-
+    The general rise in prices over time, which shrinks what the same money can buy. It is measured by the CPI; the ECB targets 2 % a year.
+  lesson: total-return
+twr:
+  label: "Time-weighted return (TWR)"
+  aliases: ["TWR", "rentabilidad ponderada por tiempo"]
+  desc: >-
+    Measures how your investments performed regardless of when you added or withdrew money. It is the one to compare against an index.
+  lesson: twr-vs-irr
+irr:
+  label: "Internal rate of return (IRR)"
+  aliases: ["IRR", "TIR", "money-weighted return"]
+  desc: >-
+    The annual return on your money taking into account how much you put in or took out, and when. It reflects your personal result, including the timing of your deposits.
+  lesson: twr-vs-irr
+cash_flow:
+  label: "Cash flow (deposits and withdrawals)"
+  aliases: ["flujo de caja", "contribution", "withdrawal"]
+  desc: >-
+    In your portfolio, the money you put in or take out. When measuring returns they are separated from the gains, so saving more isn't mistaken for performing better.
+  lesson: twr-vs-irr
+benchmark:
+  label: "Benchmark"
+  aliases: ["índice de referencia", "reference index"]
+  desc: >-
+    An index you compare your portfolio against to judge how you're doing, such as the S&P 500 or MSCI World. It should resemble what you actually hold.
+  lesson: beta-and-benchmarks
+volatility:
+  label: "Volatility"
+  aliases: ["volatilidad", "price swings"]
+  desc: >-
+    How much a price moves up and down. Higher volatility means a bumpier ride, not necessarily a worse outcome; it is the usual measure of risk.
+  lesson: volatility-and-drawdown
+drawdown:
+  label: "Drawdown"
+  aliases: ["caída máxima", "maximum drawdown", "max drawdown"]
+  desc: >-
+    The fall from a peak to the following low, before recovering. Going from 100 to 70 is a 30 % drawdown. It shows what you really lost on paper.
+  lesson: volatility-and-drawdown
+standard_deviation:
+  label: "Standard deviation"
+  aliases: ["desviación típica", "sigma", "σ"]
+  desc: >-
+    A statistical measure of how far results stray from their average. In investing it measures volatility: the higher it is, the more spread out the returns.
+  lesson: volatility-and-drawdown
+var:
+  label: "Value at risk (VaR)"
+  aliases: ["VaR", "valor en riesgo"]
+  desc: >-
+    A loss you shouldn't exceed on a given day at a stated confidence, based on history. A 95 % VaR of €500 means you lost less than €500 on 95 % of days.
+  lesson: value-at-risk
+confidence_level:
+  label: "Confidence level"
+  aliases: ["nivel de confianza", "95 %"]
+  desc: >-
+    The share of cases an estimate such as VaR covers. At 95 %, you expect the loss to be larger on 1 day in 20. It doesn't say how much larger.
+  lesson: value-at-risk
+beta:
+  label: "Beta"
+  aliases: ["beta coefficient", "market sensitivity"]
+  desc: >-
+    How much a stock moves relative to the market. Beta 1 moves in line; 1.5 moves 50 % more; below 1 moves less than the market.
+  lesson: beta-and-benchmarks
+correlation:
+  label: "Correlation"
+  aliases: ["correlación", "correlation coefficient"]
+  desc: >-
+    How much two assets move together, from -1 to +1. Near +1 they rise and fall together; near 0 they're unrelated. Low correlation helps diversification.
+  lesson: beta-and-benchmarks
+alpha:
+  label: "Alpha"
+  aliases: ["alfa", "excess return"]
+  desc: >-
+    The return an investment earns beyond what its market risk explains. A positive, lasting alpha is very hard to achieve.
+  lesson: beta-and-benchmarks
+sharpe_ratio:
+  label: "Sharpe ratio"
+  aliases: ["Sharpe", "risk-adjusted return"]
+  desc: >-
+    Return above a risk-free investment, divided by volatility. The higher it is, the more return you got for each unit of risk taken.
+  lesson: beta-and-benchmarks
+currency_risk:
+  label: "Currency risk"
+  aliases: ["riesgo de divisa", "FX risk", "exchange rate risk"]
+  desc: >-
+    If you buy a dollar-priced stock from the euro area, you also gain or lose on how the dollar moves against the euro, even if the share price doesn't change.
+  lesson: currency-risk
+currency_hedging:
+  label: "Currency hedging"
+  aliases: ["cobertura de divisa", "hedged", "EUR hedged"]
+  desc: >-
+    A technique, common in "hedged" funds and ETFs, that reduces the effect of exchange rates on your result. It has a cost and doesn't remove the asset's own risk.
+  lesson: currency-risk
+base_currency:
+  label: "Base currency"
+  aliases: ["divisa base", "home currency", "reporting currency"]
+  desc: >-
+    The currency you measure your portfolio in, normally your home currency. Your results are judged in it, even if you invest in others.
+  lesson: currency-risk
+
+# --- tax-es path
+irpf:
+  label: "IRPF (Spanish income tax)"
+  aliases: ["IRPF", "personal income tax", "Spain income tax"]
+  desc: >-
+    Spain's personal income tax. Investment gains go into the savings base, which has its own rates.
+  lesson: savings-base
+savings_base:
+  label: "Savings base (base del ahorro)"
+  aliases: ["base del ahorro", "savings tax base"]
+  desc: >-
+    The part of Spanish income tax where interest, dividends and capital gains on securities are taxed, at their own rates, separate from salary income.
+  lesson: savings-base
+capital_gain_tax:
+  label: "Capital gains tax"
+  aliases: ["impuesto sobre plusvalías", "tax on gains"]
+  desc: >-
+    Tax you pay on profits when you sell. In Spain only realised gains are taxed, meaning when you sell, and they go into the savings base.
+  lesson: savings-base
+tax_bracket:
+  label: "Tax bracket"
+  aliases: ["tramo", "marginal rate", "tax band"]
+  desc: >-
+    Each slice of gains has its own rate. Spain's 2025 savings base: 19 % up to €6,000, 21 % to €50,000, 23 % to €200,000, 27 % to €300,000 and 30 % above.
+  lesson: savings-base
+fifo:
+  label: "FIFO (first in, first out)"
+  aliases: ["FIFO", "primeras en entrar primeras en salir"]
+  desc: >-
+    When you sell, the oldest shares you bought are treated as sold first. It is the method Spanish tax rules require to calculate the gain.
+  lesson: fifo
+cost_basis:
+  label: "Cost basis"
+  aliases: ["coste de adquisición", "purchase cost", "acquisition cost"]
+  desc: >-
+    What you paid for shares, including purchase commissions. The taxable gain is the sale price minus this cost.
+  lesson: fifo
+lot:
+  label: "Lot (purchase lot)"
+  aliases: ["lote", "tax lot", "purchase lot"]
+  desc: >-
+    Each separate purchase of a security, with its own date and price. When you sell, lots are used up in order (FIFO) and each adds its own gain or loss.
+  lesson: fifo
+two_month_rule:
+  label: "Two-month rule"
+  aliases: ["regla de los dos meses", "anti-avoidance rule", "art. 33.5.f"]
+  desc: >-
+    If you sell at a loss and rebuy the same security within two months before or after, that loss can't be deducted that year. It is deferred until you sell the replacement.
+  lesson: two-month-rule
+wash_sale:
+  label: "Wash sale"
+  aliases: ["venta con recompra", "wash-sale rule"]
+  desc: >-
+    Selling at a loss and buying back almost the same asset to bank the tax loss. The US calls it a wash sale; in Spain the two-month rule limits it.
+  lesson: two-month-rule
+loss_offset:
+  label: "Loss offsetting"
+  aliases: ["compensación de pérdidas", "tax loss netting"]
+  desc: >-
+    Subtracting your capital losses from your gains in the same year, so you pay tax only on the net result. Leftover losses carry over to later years.
+  lesson: offsetting-losses
+loss_carryforward:
+  label: "Loss carry-forward"
+  aliases: ["pérdidas pendientes", "carryforward", "carry-over losses"]
+  desc: >-
+    A net loss from one year that you can subtract from gains in the following 4 years in Spain. If you don't use it in that window, it expires.
+  lesson: offsetting-losses
+tax_loss_harvesting:
+  label: "Tax-loss harvesting"
+  aliases: ["realizar pérdidas", "harvesting losses"]
+  desc: >-
+    Deliberately selling a losing position to offset gains and pay less tax. Beware the two-month rule if you rebuy the same security.
+  lesson: offsetting-losses
+withholding_tax:
+  label: "Withholding tax"
+  aliases: ["retención en origen", "retención", "tax withheld"]
+  desc: >-
+    Tax taken from a dividend before it reaches you. In Spain it is 19 %. On foreign dividends the source country withholds it, usually capped by a treaty.
+  lesson: dividends-and-withholding
+double_taxation:
+  label: "Double taxation"
+  aliases: ["doble imposición", "double tax"]
+  desc: >-
+    The same dividend being taxed in two countries. Spain relieves it by letting you deduct tax withheld abroad on your return, up to a limit.
+  lesson: dividends-and-withholding
+tax_treaty:
+  label: "Tax treaty"
+  aliases: ["convenio de doble imposición", "CDI", "double tax treaty"]
+  desc: >-
+    An agreement between two countries that caps what the source country can withhold. On US dividends paid to Spanish residents, the cap is usually 15 %.
+  lesson: dividends-and-withholding
+form_720:
+  label: "Form 720 (foreign assets)"
+  aliases: ["modelo 720", "720", "foreign assets declaration"]
+  desc: >-
+    An information return for assets held abroad, such as accounts, securities or property. It applies if a category exceeds €50,000. Due by 31 March.
+  lesson: forms-720-721
+form_721:
+  label: "Form 721 (crypto abroad)"
+  aliases: ["modelo 721", "721", "foreign crypto declaration"]
+  desc: >-
+    An information return for crypto held with foreign custodians. It applies if the total exceeds €50,000 on 31 December. Due by 31 March.
+  lesson: forms-720-721
+fund_transfer:
+  label: "Fund transfer (traspaso)"
+  aliases: ["traspaso entre fondos", "switching funds"]
+  desc: >-
+    Moving your money from one mutual fund to another in Spain without paying tax at that moment. The gain is deferred until you redeem. It doesn't work for stocks or ETFs.
+  lesson: savings-base
+tax_return:
+  label: "Tax return (declaración de la renta)"
+  aliases: ["declaración de la renta", "renta", "income tax return"]
+  desc: >-
+    The annual Spanish income tax filing. The campaign runs from April to 30 June and covers your previous year's sales, dividends and withholdings.
+  lesson: tax-calendar
+tax_year:
+  label: "Tax year"
+  aliases: ["ejercicio fiscal", "fiscal year"]
+  desc: >-
+    The period a tax return covers. For Spanish income tax it is the calendar year, 1 January to 31 December.
+  lesson: tax-calendar
+
+# --- valuation (no lessons yet)
+income_statement:
+  label: "Income statement"
+  aliases: ["cuenta de resultados", "P&L", "profit and loss"]
+  desc: >-
+    Summarises how much a company earned, spent and kept in a period. It runs from revenue down to net income.
+balance_sheet:
+  label: "Balance sheet"
+  aliases: ["balance", "statement of financial position"]
+  desc: >-
+    A snapshot of a company on one date: what it owns (assets), what it owes (liabilities) and what is left for shareholders (equity).
+cash_flow_statement:
+  label: "Cash flow statement"
+  aliases: ["estado de flujos de efectivo", "statement of cash flows"]
+  desc: >-
+    Shows where a company's actual cash came from and went: operations, investing and financing. It reveals whether profit turns into cash.
+revenue:
+  label: "Revenue"
+  aliases: ["ingresos", "sales", "turnover", "top line"]
+  desc: >-
+    What a company brings in from selling its products or services, before costs. It is the first line of the income statement.
+ebitda:
+  label: "EBITDA"
+  aliases: ["earnings before interest tax depreciation amortisation", "operating cash earnings"]
+  desc: >-
+    Earnings before interest, tax, depreciation and amortisation. It approximates what the business generates, but ignores investment spending that is real money.
+net_income:
+  label: "Net income"
+  aliases: ["beneficio neto", "net profit", "earnings", "bottom line"]
+  desc: >-
+    What is left of revenue after all costs, interest and tax. It is the profit that, in principle, belongs to shareholders.
+eps:
+  label: "Earnings per share (EPS)"
+  aliases: ["EPS", "BPA", "beneficio por acción"]
+  desc: >-
+    Net income divided by the number of shares. It lets you compare a company's results over time and across companies.
+gross_margin:
+  label: "Gross margin"
+  aliases: ["margen bruto", "gross profit margin"]
+  desc: >-
+    Revenue minus cost of goods sold, as % of revenue: pricing power on the product itself.
+operating_margin:
+  label: "Operating margin"
+  aliases: ["margen operativo", "EBIT margin"]
+  desc: >-
+    Operating profit as % of revenue: what the core business keeps after operating costs.
+net_margin:
+  label: "Net margin"
+  aliases: ["margen neto", "profit margin"]
+  desc: >-
+    Net income as % of revenue: the bottom line after interest and tax.
+fcf:
+  label: "Free cash flow (FCF)"
+  aliases: ["FCF", "flujo de caja libre"]
+  desc: >-
+    Operating cash flow minus capital expenditure: the cash left over to pay dividends, buy back shares or reinvest.
+fcf_yield:
+  label: "Free cash flow yield (FCF yield)"
+  aliases: ["FCF yield", "rentabilidad por FCF"]
+  desc: >-
+    Free cash flow divided by market cap: the cash return you buy at today's price (the inverse of the FCF multiple).
+cash_conversion:
+  label: "Cash conversion"
+  aliases: ["conversión de caja", "FCF to net income"]
+  desc: >-
+    Free cash flow divided by net income: how much of accounting profit turns into actual cash.
+pe_ratio:
+  label: "P/E ratio (price / earnings)"
+  aliases: ["P/E", "PER", "price-to-earnings"]
+  desc: >-
+    Share price divided by earnings per share over the last twelve months. Lower means cheaper per unit of current profit.
+forward_pe:
+  label: "Forward P/E"
+  aliases: ["PER esperado", "PER a futuro", "forward PER"]
+  desc: >-
+    Price divided by next year's consensus earnings per share. Below the current P/E, analysts expect earnings to grow.
+normalized_pe:
+  label: "Normalised P/E"
+  aliases: ["normalized P/E", "PER normalizado", "smoothed P/E"]
+  desc: >-
+    A P/E using a smoothed "normal" profit over several years. Useful for cyclical companies, where one year's earnings can mislead.
+peg:
+  label: "PEG ratio"
+  aliases: ["PEG", "P/E to growth"]
+  desc: >-
+    P/E over sustained sales growth per share (net of dilution). 1x or under is cheap for its growth; 2.5x is dear.
+pb_ratio:
+  label: "Price / book (P/B)"
+  aliases: ["P/B", "price-to-book", "book value multiple"]
+  desc: >-
+    Price per share divided by book (accounting) value per share. Most meaningful for banks and asset-heavy businesses.
+ptbv:
+  label: "Price / tangible book (P/TBV)"
+  aliases: ["P/TBV", "PTBV", "price to tangible book value"]
+  desc: >-
+    Like P/B, but excluding intangibles such as goodwill. It is the usual yardstick for valuing banks.
+ev:
+  label: "Enterprise value (EV)"
+  aliases: ["EV", "valor de empresa"]
+  desc: >-
+    Market cap plus debt minus cash: the price of the whole business, not just the equity.
+ev_ebitda:
+  label: "EV / EBITDA"
+  aliases: ["EV/EBITDA", "EBITDA multiple"]
+  desc: >-
+    Enterprise value divided by EBITDA: a P/E that ignores capital structure, comparable across different levels of debt.
+ev_sales:
+  label: "EV / sales"
+  aliases: ["EV/Sales", "EV/revenue"]
+  desc: >-
+    Enterprise value divided by revenue. The fallback multiple for high-growth or not-yet-profitable names where P/E stops being useful.
+roe:
+  label: "Return on equity (ROE)"
+  aliases: ["ROE", "rentabilidad sobre fondos propios"]
+  desc: >-
+    Net income divided by shareholder equity. It measures the return on shareholders' capital; note that debt inflates it.
+roic:
+  label: "Return on invested capital (ROIC)"
+  aliases: ["ROIC", "return on capital employed"]
+  desc: >-
+    After-tax operating profit divided by capital employed (equity plus debt). A sustained ROIC above 15 % is a quality mark.
+moat:
+  label: "Moat (economic moat)"
+  aliases: ["foso competitivo", "competitive advantage"]
+  desc: >-
+    A lasting advantage that shields a company from competitors, such as a brand or lower costs. It shows up as high margins and ROIC held for years.
+net_debt:
+  label: "Net debt"
+  aliases: ["deuda neta", "financial net debt"]
+  desc: >-
+    Total debt minus the company's cash. If negative, the company holds more cash than debt.
+net_debt_ebitda:
+  label: "Net debt / EBITDA"
+  aliases: ["net debt to EBITDA", "leverage ratio"]
+  desc: >-
+    Debt minus cash divided by EBITDA: roughly the years of operating profit needed to repay the debt. Under 1 is conservative; over 3 is heavy.
+dilution:
+  label: "Dilution"
+  aliases: ["dilución", "share dilution"]
+  desc: >-
+    A rise in the number of shares, usually through stock-based pay or capital raises. Each share becomes a smaller slice of the company.
+buyback:
+  label: "Share buyback"
+  aliases: ["recompra de acciones", "share repurchase", "stock repurchase"]
+  desc: >-
+    A company buying its own shares on the market. It shrinks the share count, so earnings per share can rise.
+payout_ratio:
+  label: "Payout ratio"
+  aliases: ["ratio de reparto", "dividend payout ratio"]
+  desc: >-
+    The percentage of profit paid out as dividends. A very high payout, above 100 %, may be unsustainable.
+growth_cagr:
+  label: "Compound growth rate (growth CAGR)"
+  aliases: ["crecimiento anual compuesto", "revenue CAGR"]
+  desc: >-
+    Compound annual growth of revenue, profit or cash over recent years, typically about five. It smooths good and bad years.
+intrinsic_value:
+  label: "Intrinsic value"
+  aliases: ["valor intrínseco", "fair value", "fundamental value"]
+  desc: >-
+    An estimate of what a business is really worth based on the cash it will generate. It is an opinion, not a fact: two analysts can reach different figures.
+margin_of_safety:
+  label: "Margin of safety"
+  aliases: ["margen de seguridad", "safety margin"]
+  desc: >-
+    Buying at a discount to the value you estimate, to give yourself a cushion if you're wrong. If it's worth €100 and you pay €70, the margin is 30 %.
+dcf:
+  label: "Discounted cash flow (DCF)"
+  aliases: ["DCF", "flujos de caja descontados"]
+  desc: >-
+    A method that values a company by adding up its future cash flows, brought back to today's value. Very sensitive to growth and discount-rate assumptions.
+
+# --- portfolio building, other assets, behaviour (no lessons yet)
+diversification:
+  label: "Diversification"
+  aliases: ["diversificación", "spreading risk"]
+  desc: >-
+    Spreading your money across different assets so one failure doesn't sink your portfolio. It reduces company-specific risk, not risk across the whole market.
+asset_allocation:
+  label: "Asset allocation"
+  aliases: ["asignación de activos", "portfolio mix"]
+  desc: >-
+    How you split your portfolio between major asset types such as equities, bonds and cash. It usually explains much of your long-term risk and result.
+rebalancing:
+  label: "Rebalancing"
+  aliases: ["reequilibrado", "rebalanceo"]
+  desc: >-
+    Returning your portfolio to its target weights after prices move, by selling what has risen and buying what has lagged, or by directing new money.
+dca:
+  label: "Dollar-cost averaging (DCA)"
+  aliases: ["DCA", "aportaciones periódicas", "regular investing"]
+  desc: >-
+    Investing a fixed amount at regular intervals, say €200 a month. You don't have to time the market, and you buy more shares when prices are low.
+risk_profile:
+  label: "Risk profile"
+  aliases: ["perfil de riesgo", "risk tolerance"]
+  desc: >-
+    How much loss you can bear, financially and emotionally, without selling at the worst moment. It depends on your goals, time horizon and temperament.
+time_horizon:
+  label: "Time horizon"
+  aliases: ["horizonte temporal", "investment horizon"]
+  desc: >-
+    How long you plan to hold an investment before needing the money. The longer it is, the more time you have to ride out and recover from downturns.
+sector:
+  label: "Sector"
+  aliases: ["sector", "industry", "GICS sector"]
+  desc: >-
+    A group of companies in similar businesses, such as technology, banking or energy. Companies in the same sector tend to move together.
+bull_market:
+  label: "Bull market"
+  aliases: ["mercado alcista", "rising market"]
+  desc: >-
+    A prolonged period of rising prices and general optimism. By convention, a bull market is declared after a 20 % rise from lows.
+bear_market:
+  label: "Bear market"
+  aliases: ["mercado bajista", "falling market"]
+  desc: >-
+    A prolonged stretch of falling prices. By convention, a bear market is declared when an index falls 20 % or more from its peak.
+correction:
+  label: "Market correction"
+  aliases: ["corrección", "pullback"]
+  desc: >-
+    A fall of 10 % to 20 % from a peak. They are common, happen most years, and don't by themselves mean a bear market.
+bond:
+  label: "Bond"
+  aliases: ["bono", "fixed income", "renta fija"]
+  desc: >-
+    A loan you make to a government or company in exchange for interest and repayment at maturity. Its price rises and falls as interest rates move.
+yield:
+  label: "Yield"
+  aliases: ["rentabilidad", "yield to maturity", "YTM"]
+  desc: >-
+    The annual return an asset gives at its current price. For a bond it is the return if held to maturity. If the price falls, the yield rises.
+policy_rate:
+  label: "Policy rate"
+  aliases: ["tipo de interés oficial", "central bank rate", "interest rate"]
+  desc: >-
+    The rate set by a central bank, such as the ECB or the Federal Reserve. It shapes the cost of money, bond and deposit rates and often market sentiment.
+money_market:
+  label: "Money market fund"
+  aliases: ["fondo monetario", "money market"]
+  desc: >-
+    A fund that invests in very short-term, low-risk debt, earning something close to policy rates. Used to park cash, though it isn't guaranteed against loss.
+reit:
+  label: "REIT (real estate investment trust)"
+  aliases: ["SOCIMI", "REIT", "property trust"]
+  desc: >-
+    A listed company that owns property and pays out most of its profits as dividends. It lets you invest in real estate without buying a flat.
+crypto:
+  label: "Cryptocurrency"
+  aliases: ["crypto", "bitcoin", "BTC", "crypto-asset"]
+  desc: >-
+    A digital asset recorded on a blockchain, such as Bitcoin. It is highly volatile and not backed by a company or government.
+emerging_markets:
+  label: "Emerging markets"
+  aliases: ["mercados emergentes", "EM", "developing markets"]
+  desc: >-
+    Developing economies such as India, Brazil or China. They can grow faster than developed ones, but with more volatility, political risk and currency risk.
+anchoring:
+  label: "Anchoring"
+  aliases: ["sesgo de anclaje", "anchoring bias"]
+  desc: >-
+    Clinging to one number, like your purchase price, and judging everything from it. The market doesn't know what you paid; what matters is what you expect now.
+loss_aversion:
+  label: "Loss aversion"
+  aliases: ["aversión a las pérdidas", "loss-averse"]
+  desc: >-
+    The tendency to feel a loss more strongly than an equal gain. It leads people to sell winners too early and hold on to losers.
+fomo:
+  label: "FOMO (fear of missing out)"
+  aliases: ["FOMO", "miedo a perderse algo"]
+  desc: >-
+    Fear of missing a rally you see others riding. It pushes you to buy late and dear, without analysis, just because everyone seems to be winning.
+confirmation_bias:
+  label: "Confirmation bias"
+  aliases: ["sesgo de confirmación"]
+  desc: >-
+    Seeking out and believing only information that supports what you already think while ignoring the contrary. It is especially risky once you own a stock.
+investment_thesis:
+  label: "Investment thesis"
+  aliases: ["tesis de inversión", "reason for buying"]
+  desc: >-
+    Why you're buying something, in a few sentences: what you expect to happen and what would change your mind. Writing it down stops you rationalising any decision later.
+exit_criteria:
+  label: "Exit criteria"
+  aliases: ["criterios de salida", "kill criteria", "sell rules"]
+  desc: >-
+    Conditions you set before buying to decide when to sell: a price, a change in the business, or an event that breaks your thesis.
+decision_journal:
+  label: "Decision journal"
+  aliases: ["diario de decisiones", "investment journal"]
+  desc: >-
+    A record of why you made each investment decision and what you expected. Reviewing it lets you learn from hits and misses without rewriting history.

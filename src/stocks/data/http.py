@@ -59,6 +59,47 @@ def get_json(
     )
 
 
+def post_json(
+    url: str,
+    payload: object,
+    *,
+    user_agent: str = DEFAULT_UA,
+    timeout: float = 30,
+    headers: dict[str, str] | None = None,
+) -> tuple[object, dict[str, str]]:
+    """POST `payload` as JSON; the decoded answer and its (lowercased) headers.
+
+    The headers come back because rate-limited APIs say there how long to wait.
+    """
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={
+            "User-Agent": user_agent,
+            "Content-Type": "application/json",
+            **(headers or {}),
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout, context=_context()) as resp:
+        head = {k.lower(): v for k, v in resp.headers.items()}
+        return json.loads(resp.read()), head
+
+
+def download(
+    url: str, dest, *, user_agent: str = DEFAULT_UA, timeout: float = 60
+) -> int:
+    """Stream `url` into the file `dest` without holding it in memory; the
+    byte count. `timeout` bounds each read, not the whole transfer."""
+    import shutil
+
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    with urllib.request.urlopen(req, timeout=timeout, context=_context()) as resp:
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(resp, out, 1 << 20)
+    return int(dest.stat().st_size) if hasattr(dest, "stat") else 0
+
+
 def get_bytes_and_type(
     url: str, *, user_agent: str = DEFAULT_UA, timeout: float = 30
 ) -> tuple[bytes, str]:

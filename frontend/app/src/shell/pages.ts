@@ -24,11 +24,15 @@
 
 import { lazy, type LazyExoticComponent } from "react";
 
+type Loader = () => Promise<{ default: () => React.ReactNode }>;
+
 export type Page = {
   slug: string;
   label: string;
   icon: string;
   component: LazyExoticComponent<() => React.ReactNode>;
+  /** The page's chunk, for `preload` — the same import `component` is lazy over. */
+  load: Loader;
   /** Paths that also mean this page, so old bookmarks keep landing on it. */
   aliases?: string[];
   /** Hidden from the nav — reachable by URL only (the bank's allowlist). */
@@ -41,12 +45,17 @@ export type Page = {
   section?: string;
 };
 
+/** `component` and `load` from one import, so the two cannot name different chunks. */
+function chunk(load: Loader): Pick<Page, "component" | "load"> {
+  return { component: lazy(load), load };
+}
+
 export const PAGES: Page[] = [
   {
     slug: "home",
     label: "nav.home",
     icon: "home",
-    component: lazy(() => import("../pages/home/Home")),
+    ...chunk(() => import("../pages/home/Home")),
     // The default page is served at the root; `read()` in the router already
     // turns an empty path into this slug, and the alias is here so the parity
     // check can see that "" is covered.
@@ -58,28 +67,28 @@ export const PAGES: Page[] = [
     slug: "today",
     label: "nav.today",
     icon: "wb_sunny",
-    component: lazy(() => import("../pages/today/Today")),
+    ...chunk(() => import("../pages/today/Today")),
   },
   {
     slug: "portfolio",
     label: "nav.portfolio",
     section: "nav.section_portfolio",
     icon: "pie_chart",
-    component: lazy(() => import("../pages/portfolio/Portfolio")),
+    ...chunk(() => import("../pages/portfolio/Portfolio")),
   },
   {
     slug: "review",
     label: "nav.review",
     section: "nav.section_portfolio",
     icon: "swap_vert",
-    component: lazy(() => import("../pages/review/Review")),
+    ...chunk(() => import("../pages/review/Review")),
   },
   {
     slug: "import",
     label: "nav.import",
     section: "nav.section_portfolio",
     icon: "upload_file",
-    component: lazy(() => import("../pages/import/Import")),
+    ...chunk(() => import("../pages/import/Import")),
     aliases: ["import_transactions"],
   },
   {
@@ -87,7 +96,7 @@ export const PAGES: Page[] = [
     label: "nav.ticker",
     section: "nav.section_market",
     icon: "query_stats",
-    component: lazy(() => import("../pages/ticker/Ticker")),
+    ...chunk(() => import("../pages/ticker/Ticker")),
     // In the rail: without a ticker the page opens on its own picker, which
     // is a destination in its own right — and hiding it left a reader with no
     // way to look a symbol up except the search box.
@@ -97,35 +106,44 @@ export const PAGES: Page[] = [
     label: "nav.sentiment",
     section: "nav.section_market",
     icon: "speed",
-    component: lazy(() => import("../pages/sentiment/Sentiment")),
+    ...chunk(() => import("../pages/sentiment/Sentiment")),
   },
   {
     slug: "sector",
     label: "nav.sector",
     section: "nav.section_market",
     icon: "donut_small",
-    component: lazy(() => import("../pages/sector/Sector")),
+    ...chunk(() => import("../pages/sector/Sector")),
   },
   {
     slug: "earnings",
     label: "nav.earnings",
     section: "nav.section_market",
     icon: "calendar_month",
-    component: lazy(() => import("../pages/earnings/Earnings")),
+    ...chunk(() => import("../pages/earnings/Earnings")),
+  },
+  {
+    // Its own group: a course in investing, not a tool over the reader's
+    // book or the market, so it sits apart from both.
+    slug: "learn",
+    label: "nav.learn",
+    section: "nav.section_learn",
+    icon: "school",
+    ...chunk(() => import("../pages/learn/Learn")),
   },
   {
     slug: "profile",
     label: "nav.profile",
     section: "nav.section_account",
     icon: "account_circle",
-    component: lazy(() => import("../pages/profile/Profile")),
+    ...chunk(() => import("../pages/profile/Profile")),
   },
   {
     slug: "bank",
     label: "nav.bank",
     section: "nav.section_account",
     icon: "account_balance",
-    component: lazy(() => import("../pages/bank/Bank")),
+    ...chunk(() => import("../pages/bank/Bank")),
     // Hidden by default rather than hidden full stop: the feature is an
     // allowlist that fails closed, so the rail cannot offer it to everybody —
     // but `/me` says whether this reader is on that list, and `Layout` passes
@@ -178,4 +196,23 @@ export function pageFor(slug: string): Page {
 /** The canonical slug for a path, so an old URL can be rewritten to the new one. */
 export function canonical(slug: string): string {
   return pageFor(slug).slug;
+}
+
+const warmed = new Set<string>();
+
+/**
+ * Fetch a page's chunk before it is opened — on a link's hover or press, or
+ * while the shell is idle — so the open itself draws from the module cache
+ * rather than waiting on the network. Once per page: a chunk is a hashed,
+ * immutable asset, and the browser keeps it. A fetch that fails is forgotten,
+ * so the next intent tries again (the open would anyway).
+ */
+export function preload(slug: string, pages: Page[] = PAGES): void {
+  const page =
+    pages.find(
+      (entry) => entry.slug === slug || (entry.aliases ?? []).includes(slug),
+    ) ?? pages[0];
+  if (!page || warmed.has(page.slug)) return;
+  warmed.add(page.slug);
+  page.load().catch(() => warmed.delete(page.slug));
 }

@@ -1,8 +1,7 @@
 """Env-first secret resolution shared by the web app and headless jobs.
 
-The deploy keeps its secrets in `.streamlit/secrets.toml` (the entrypoint
-writes $STREAMLIT_SECRETS_TOML there; the path is the one the app has always
-read, kept so no deploy has to move its file); cron jobs (GitHub Actions) only
+The deploy keeps its secrets in `secrets.toml` at the project root (the
+entrypoint writes $STOCKS_SECRETS_TOML there); cron jobs (GitHub Actions) only
 have environment variables. `secret()` checks the environment first, then the
 matching section of that file — the same precedence storage.py uses — so one
 code path serves both runtimes. With no file at all (bare CI run), or one that
@@ -23,7 +22,7 @@ log = logging.getLogger(__name__)
 
 #: Relative on purpose: the server, the CLI and the cron jobs all run from the
 #: project root, and a test that `chdir`s somewhere else gets no secrets.
-SECRETS_FILE = Path(".streamlit") / "secrets.toml"
+SECRETS_FILE = Path("secrets.toml")
 
 _parsed: dict[tuple[str, int], dict] = {}
 

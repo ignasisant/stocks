@@ -17,7 +17,8 @@
  */
 
 import { createContext, useContext, type ReactNode } from "react";
-import { get } from "./api";
+import { get, seed } from "./api";
+import { boot } from "./boot";
 import { useApi, type Query } from "./useApi";
 
 /** What `/me` answers. `sign_in` is null on a deployment with no provider. */
@@ -171,6 +172,22 @@ export function sessionFrom(me: Me, prefs: Prefs, reload: () => void): Session {
   };
 }
 
+let seeded = false;
+
+/**
+ * The pair as the document carried it, into the memo — once per page load.
+ * Once: StrictMode runs the fetcher twice, and the second run must read the
+ * same copy, not re-seed over a reload that already forgot it.
+ */
+function seedFromDocument(): void {
+  if (seeded) return;
+  seeded = true;
+  const carried = boot();
+  if (!carried) return;
+  seed("/me", carried.me);
+  seed("/prefs", carried.prefs);
+}
+
 /**
  * Resolve the session, then render the app under it.
  *
@@ -190,10 +207,15 @@ export function WithSession({
   offline: (retry: () => void, error: unknown) => ReactNode;
   pending: ReactNode;
 }) {
-  const query = useApi(
-    async () => ({ me: await get<Me>("/me"), prefs: await get<Prefs>("/prefs") }),
-    [],
-  );
+  // Both at once: neither answer is needed to ask for the other, and the
+  // pair is the one wait the app has before it shows anything. Usually no
+  // wait at all: the document carried both, and the first ask reads them
+  // from the memo. A reload forgets that copy and asks the server.
+  const query = useApi(async () => {
+    seedFromDocument();
+    const [me, prefs] = await Promise.all([get<Me>("/me"), get<Prefs>("/prefs")]);
+    return { me, prefs };
+  }, []);
   const screen = screenFor(query.state);
   if (screen === "pending") return <>{pending}</>;
   if (screen === "wall") return <>{wall}</>;

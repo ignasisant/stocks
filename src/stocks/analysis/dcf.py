@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from stocks.analysis import fundamentals as fnd
 from stocks.analysis import review
+from stocks.analysis.listing import quote_unit
 from stocks.data.fundamentals import RawFundamentals
 
 YEARS = 5
@@ -139,7 +140,11 @@ def compute(raw: RawFundamentals, metrics: dict) -> Dcf:
     if not shares or shares <= 0 or net_debt is None or not rate or not out.price:
         out.reason = "no_data"
         return out
-    # Quote currency throughout, so the value sits against the price.
+    # Quote currency throughout, so the value sits against the price. The
+    # statement rate stops at the major unit (GBP filings against a GBp line
+    # read 1.0), so a pence quote takes the hundredfold here: Tesco's value
+    # per share came out in pounds beside a price in pence, at -99 %.
+    rate /= quote_unit(raw.info.get("currency"))[1]
     out.fcf = _firm_cash_flow(raw, float(fcf)) * rate
     out.net_debt = float(net_debt) * rate
     out.shares = float(shares)

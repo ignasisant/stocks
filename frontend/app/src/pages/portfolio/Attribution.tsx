@@ -69,7 +69,7 @@ function Movers({
       <h3>{title}</h3>
       <ul>
         {rows.map((row) => (
-          <li key={row.ticker}>
+          <li key={row.ticker} className="ag-row-reach">
             <TickerCell ticker={row.ticker} name={false} className="pf-ticker" />
             <strong className={row.amount >= 0 ? "pf-up" : "pf-down"}>
               {money(row.amount)}

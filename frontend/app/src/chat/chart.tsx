@@ -46,7 +46,7 @@ import {
 import "../pages/ticker/ticker.css";
 import { money } from "../pages/home/format";
 import { useLang, useT } from "../shell/i18n";
-import { chart as palette } from "../shell/theme";
+import { chart as palette, seriesColors } from "../shell/theme";
 import { useWidth } from "../shell/useWidth";
 import { DOT, LINE } from "../ui/chart/marks";
 import { num } from "../shell/numbers";
@@ -150,10 +150,6 @@ export function LineChart({
   // Two places being compared (`Chart`'s `onSpan`), in viewBox x, in order.
   const [span, setSpan] = useState<[number, number] | null>(null);
   const colors = palette();
-  const hues = [colors.brandAccent, colors.info, colors.smaFast];
-  // Purple, blue and gold part three lines for most eyes, not for all: the
-  // second and third are dashed too, and each is named at its end.
-  const dashes = [undefined, "6 3", "2 3"];
 
   const lines = useMemo(
     () =>
@@ -174,6 +170,11 @@ export function LineChart({
         .filter((line) => line.raw.length >= 2),
     [series, rebased],
   );
+  // Each line in its series hue, which stays apart for every kind of colour
+  // vision; an index keeps its own slot, so SPY reads as SPY here too. Solid
+  // throughout: a dash says forecast, and every line here is a record.
+  const byName = seriesColors(lines.map((line) => line.symbol));
+  const hue = (line: { symbol: string }) => byName[line.symbol] ?? colors.textMuted;
   const range = useMemo(() => bounds(lines.map((line) => line.ys)), [lines]);
   const first = lines[0];
   if (!first || !range) return null;
@@ -249,7 +250,7 @@ export function LineChart({
     ? lines.flatMap((line, at): TipLine[] => {
         const i = picked[at] as number;
         const value = line.raw[i] as number;
-        const swatch = byTime ? hues[at % hues.length] : undefined;
+        const swatch = byTime ? hue(line) : undefined;
         if (line.money) {
           const put = line.injected?.[i];
           return [
@@ -309,7 +310,7 @@ export function LineChart({
         const [a, b] = measured[at] as [number, number];
         const start = line.raw[a] as number;
         const end = line.raw[b] as number;
-        const swatch = byTime ? hues[at % hues.length] : undefined;
+        const swatch = byTime ? hue(line) : undefined;
         if (line.money) {
           // Made, not moved: the money put in across the span is no gain.
           const put = flows ? (flows[b] ?? 0) - (flows[a] ?? 0) : 0;
@@ -401,9 +402,8 @@ export function LineChart({
               key={line.symbol}
               className="tk-line"
               points={points(at)}
-              stroke={hues[at % hues.length]}
+              stroke={hue(line)}
               strokeWidth={lines.length > 1 ? LINE.secondary : LINE.primary}
-              strokeDasharray={dashes[at % dashes.length]}
             />
           ))}
           {lines.map((line, at) => {
@@ -414,7 +414,7 @@ export function LineChart({
                 cx={(xs[at] as number[])[end]}
                 cy={y(line.ys[end] as number)}
                 r={DOT.r}
-                fill={hues[at % hues.length]}
+                fill={hue(line)}
                 stroke={colors.surfaceCard}
                 strokeWidth={DOT.ring}
               />
@@ -424,10 +424,10 @@ export function LineChart({
         {byTime ? (
           <EndLabels
             frame={box}
-            items={lines.map((line, at) => ({
+            items={lines.map((line) => ({
               y: y(line.ys[line.ys.length - 1] as number),
               text: named(line),
-              color: hues[at % hues.length] as string,
+              color: hue(line),
             }))}
           />
         ) : null}
@@ -473,7 +473,7 @@ export function LineChart({
                   cy={y(line.ys[i] as number)}
                   r={DOT.r}
                   fill={colors.surfacePage}
-                  stroke={hues[at % hues.length]}
+                  stroke={hue(line)}
                   strokeWidth={LINE.primary}
                 />
               );
@@ -517,9 +517,9 @@ export function LineChart({
       ) : null}
       {byTime ? (
         <Legend
-          items={lines.map((line, at) => ({
+          items={lines.map((line) => ({
             label: named(line),
-            color: hues[at % hues.length] as string,
+            color: hue(line),
           }))}
         />
       ) : null}

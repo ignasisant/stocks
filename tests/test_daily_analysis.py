@@ -360,6 +360,17 @@ def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
         lambda t: RawEstimates(t, price_targets={"current": 100.0, "mean": 125.0}),
     )
     monkeypatch.setattr(loaders, "related", lambda t: ("QQQ", "MANH", "DSGX"))
+    monkeypatch.setattr(
+        loaders,
+        "rating_changes",
+        lambda t: [
+            {
+                "date": "2026-10-20", "firm": "Loop Capital", "action": "downgrade",
+                "from_grade": "Buy", "to_grade": "Hold", "target": 90.0,
+                "prior_target": 120.0, "target_move": "lowered",
+            }
+        ],
+    )
     monkeypatch.setattr(briefing, "_card_closes", lambda: series)
     monkeypatch.setattr(ev, "_closes", lambda tickers: {t: series[t] for t in tickers})
     tbl = pd.DataFrame(
@@ -372,6 +383,9 @@ def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
     assert out["subject"]["business"]["pe_fwd"] == 38.2
     assert out["subject"]["consensus"]["target_upside_pct"] == 25.0
     assert out["subject"]["position"]["pnl_pct"] == -31.2
+    moved = out["subject"]["consensus"]["recent_rating_changes"][0]
+    assert moved["firm"] == "Loop Capital" and moved["move"] == "downgrade"
+    assert moved["to"] == "Hold" and moved["prior_target"] == 120.0
     assert [p["ticker"] for p in out["peers"]] == ["MANH"]
     assert out["sector"]["etf"] == "XLK" and out["index"]["etf"] == "SPY"
     assert out["compare"]["vs_peers_y1_pp"] < 0 and out["compare"]["vs_sector_y1_pp"] < 0

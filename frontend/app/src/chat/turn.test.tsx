@@ -740,10 +740,11 @@ describe("memory on a turn", () => {
     await undoMemory(saved);
     await undoMemory(corrected);
     await undoMemory({ ...saved, op: "deleted" });
+    const chat = { touches: ["/chat"] };
     expect(send.mock.calls).toEqual([
-      ["DELETE", "/chat/memories/m1"],
-      ["PATCH", "/chat/memories/m1", { text: "I hold for 5 years" }],
-      ["POST", "/chat/memories", { text: "I hold for 5 years", kind: "goal" }],
+      ["DELETE", "/chat/memories/m1", undefined, chat],
+      ["PATCH", "/chat/memories/m1", { text: "I hold for 5 years" }, chat],
+      ["POST", "/chat/memories", { text: "I hold for 5 years", kind: "goal" }, chat],
     ]);
   });
 
@@ -858,6 +859,7 @@ describe("an answer's thumbs", () => {
         "PUT",
         "/chat/turns/a%2F1/rating",
         { vote: "down", reason: "made_up", note: "" },
+        { touches: ["/chat"] },
       ],
     ]);
   });
