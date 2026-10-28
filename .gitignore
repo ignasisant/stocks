@@ -151,6 +151,13 @@ test-results/
 # mirrored to the bucket.
 /data/edgar_frames.json
 /data/thirteenf.sqlite
+# Short-selling registers + FINRA volume (stocks.data.shorts), ISIN -> listing
+# answers (openfigi) and ESEF annual figures (esef) — runtime caches, refreshed
+# by the app and the registers workflow, mirrored to the bucket.
+/data/shorts.json
+/data/short_volume.json
+/data/openfigi_isins.json
+/data/esef/
 
 
 # Compressed siblings of the bundle, written at image build (web/precompress.py)
