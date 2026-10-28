@@ -8,9 +8,21 @@
  * Not a cache of its own. The API is cached server-side (`stocks.api.cache`),
  * and `shell/api` keeps a one-minute memo of what a screen opened with, so a
  * page revisited draws from what it already had.
- * This hook only decides when that memo may answer: a first fetch reads it, a
- * re-ask — retry, reload, or an input that changed under a mounted component —
- * drops it first, because those are a reader asking for the server's word.
+ * This hook only decides when that memo may answer. A first fetch reads it,
+ * and so does an input changing under a mounted component — a different
+ * ticker, a card scrolled into view — because that is a new question, and
+ * the memo and the shelf answer it as they would a screen opening. A reload
+ * or retry is the reader asking for the server's word on what is on screen:
+ * it forgets what that screen was built from, and no more, and the figures
+ * stay up (`refreshing`) until the new ones land, rather than a skeleton
+ * taking their place.
+ *
+ * A caller may ask for the same with `keep` when its inputs change — a window
+ * picked on a chart, a sector chosen, a language switched: the figures on
+ * screen are the wrong ones for a moment, but a dimmed chart of last month is
+ * a better place to wait than a skeleton, and the page says so
+ * (`Layout.Refreshable`). Off by default, because a symbol page re-asked for
+ * another symbol must not show the first one's figures under the second's name.
  *
  * A first fetch may also be answered by the last visit (`shell/keep`): the
  * figures the reader saw then are drawn at once, and the same fetch runs again
@@ -40,7 +52,6 @@ import {
   NotSignedIn,
   forget,
   fromKept,
-  invalidate,
   isTransient,
   refresh,
   watched,
@@ -141,11 +152,21 @@ export type Query<T> =
   | { state: "loading"; urls?: string[] }
   | { state: "signed-out" }
   | { state: "failed"; error: unknown; retry: () => void }
-  | { state: "loaded"; data: T; reload: () => void };
+  /** `refreshing`: a reload is out, and `data` is the last answer meanwhile. */
+  | { state: "loaded"; data: T; reload: () => void; refreshing?: boolean };
 
 let marks = 0;
 
-export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> {
+export function useApi<T>(
+  fetcher: () => Promise<T>,
+  deps: unknown[],
+  {
+    keep = false,
+  }: {
+    /** Keep the last answer up (`refreshing`) while a changed input is asked. */
+    keep?: boolean;
+  } = {},
+): Query<T> {
   const [query, setQuery] = useState<Query<T>>({ state: "loading" });
   const [nonce, setNonce] = useState(0);
   const again = useCallback(() => setNonce((n) => n + 1), []);
@@ -154,13 +175,27 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
   const run = useCallback(fetcher, deps);
 
   const previous = useRef<typeof run | null>(null);
+  const lastNonce = useRef(nonce);
+  // What the answer on screen was built from: what a reload forgets.
+  const held = useRef<Set<string>>(new Set());
+  // Read when the run starts, not a reason to start one.
+  const keeps = useRef(keep);
+  keeps.current = keep;
 
   useEffect(() => {
     let live = true;
-    const reask = nonce > 0 || (previous.current !== null && previous.current !== run);
-    if (reask) invalidate();
+    const changed = previous.current !== null && previous.current !== run;
+    const bumped = nonce !== lastNonce.current;
     previous.current = run;
-    setQuery({ state: "loading" });
+    lastNonce.current = nonce;
+    if (bumped) forget(held.current);
+    // The figures stay up while the server is asked again — unless the
+    // question changed too, when they would be the wrong figures; a caller
+    // that would rather dim them than lose them says `keep`.
+    const stays = keeps.current || (bumped && !changed);
+    setQuery((q) =>
+      q.state === "loaded" && stays ? { ...q, refreshing: true } : { state: "loading" },
+    );
     const scope = new AbortController();
     // Its own mark in the stale line, for kept figures the live run failed to
     // replace; dropped with the component.
@@ -180,6 +215,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
     let seen = new Set<string>();
     const follow = (urls: Set<string>) => {
       seen = urls;
+      held.current = urls;
       if (live) stop = followStale(urls, ask, loaded, mark);
     };
     // The stale line's "retry": ask again now, in place — the figures stay
@@ -202,9 +238,16 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
       );
       return stale;
     });
-    const waiting = (urls: Set<string>) =>
-      live && urls.size && setQuery({ state: "loading", urls: [...urls] });
-    if (reask) {
+    const waiting = (urls: Set<string>) => {
+      held.current = urls;
+      if (!live || !urls.size) return;
+      setQuery((q) =>
+        q.state === "loaded" && q.refreshing
+          ? q
+          : { state: "loading", urls: [...urls] },
+      );
+    };
+    if (bumped) {
       const asked = ask();
       waiting(asked.urls);
       asked.result.then((data) => {

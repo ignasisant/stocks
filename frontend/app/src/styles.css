@@ -10,6 +10,10 @@
 
 :root {
   color-scheme: dark;
+  /* iOS inflates text when a phone turns sideways; the layout already sizes
+     itself, so the type stays the size the design system set. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 * {
@@ -28,6 +32,15 @@
   select {
     font-size: 16px !important;
   }
+
+  /* The same floor for a finger's target: a field or a select is 44px tall
+     whatever its padding drew, as a native one is. `!important` for the same
+     reason as the font size: a page's own `min-height` for a pointer must not
+     undercut it. */
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  select {
+    min-height: 44px !important;
+  }
 }
 
 /* No grey flash over a pressed control: the system's highlight is a rectangle
@@ -41,8 +54,76 @@ summary,
 [role="tab"] {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* A control answers a tap at once: `manipulation` drops the wait for a second
+   tap of a double-tap zoom (pinch still zooms). A long press on a control's
+   label does not select it either, as no native control does; links stay
+   selectable and keep their callout, since a link is content as well. */
+button,
+a,
+summary,
+label,
+select,
+[role="button"],
+[role="tab"] {
+  touch-action: manipulation;
+}
+button,
+summary,
+[role="button"],
+[role="tab"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
 :is(button:not(:disabled), a[href], summary, [role="button"], [role="tab"]):active {
   opacity: 0.8;
+}
+/* A row about one ticker: under a finger the whole row opens it, not just
+   the 16px symbol. The link's ::after stretches over the row; anything else
+   pressable in the row sits above it. Opt-in, one ticker per row only. */
+@media (pointer: coarse) {
+  .ag-row-reach {
+    position: relative;
+  }
+  .ag-row-reach a.ag-tick {
+    position: static;
+  }
+  .ag-row-reach a.ag-tick::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .ag-row-reach
+    :is(a, button, summary, input, select, [role="button"], [tabindex]):not(.ag-tick) {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* A block whose figures are being asked for again (`Layout.Refreshable`, or
+   a page's own `aria-busy`) dims rather than giving way to a skeleton: the
+   last answer stays readable, and the dim says a newer one is on its way. */
+.ag-refreshing {
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+.ag-refreshing[aria-busy="true"] {
+  opacity: 0.6;
+}
+/* The page column while the next screen's code is still arriving: the one
+   on screen stays, and dims only once the wait is long enough to notice —
+   an instant swap must not flash. */
+.ag-main[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out) 200ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-refreshing {
+    transition: none;
+  }
+  /* No fade, but still the wait: a chunk that lands in under 200ms never dims. */
+  .ag-main[aria-busy="true"] {
+    transition: opacity 0s linear 200ms;
+  }
 }
 
 /* A keyboard user always sees where focus is. The ring is BRAND_ACCENT, the
@@ -716,6 +797,17 @@ body {
   font: inherit;
   cursor: pointer;
   text-decoration: none;
+}
+
+/* 37px drawn is short of a finger; the label stays centred in the taller box.
+   The floor beats a page's own pointer-sized `min-height` (`!important`). */
+@media (pointer: coarse) {
+  .ag-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px !important;
+  }
 }
 
 /* Press: a button gives under the finger, on pointer-down, and comes back as
@@ -1402,7 +1494,7 @@ body {
 .ag-search-row {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   width: 100%;
   padding: 7px 8px;
   border: 0;
@@ -1448,7 +1540,6 @@ body {
 .ag-search-logo {
   box-sizing: border-box;
   flex: none;
-  align-self: center;
   width: 20px;
   height: 20px;
   padding: 1px;
@@ -1460,10 +1551,15 @@ img.ag-search-logo {
   background: var(--ag-text-primary);
 }
 
+/* A floor wide enough for the usual "109,12 +10,85 %", flushed right, so
+   the pills ahead of it stand in one column instead of following each
+   price's width. */
 .ag-search-quote {
   display: flex;
   flex: none;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 16ch;
   margin-left: auto;
   font-family: var(--ag-font-mono);
   font-size: var(--ag-fs-sm);
@@ -1474,7 +1570,6 @@ img.ag-search-logo {
    and never squeezed — the name is what truncates. */
 .ag-search-kind {
   flex: none;
-  align-self: center;
   margin-left: auto;
   font-size: var(--ag-fs-xs);
 }

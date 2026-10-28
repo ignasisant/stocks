@@ -279,9 +279,12 @@ function Screen({
           </div>
         ) : null}
 
-        <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
-
+        {/* The answer first: the plan, then the book-wide notes that sit
+          beside it (concentration, currency), which a phone would otherwise
+          scroll past a screen of before reaching the plan. */}
         {data.held.length > 0 && <Plan data={data} filtered={isFiltered(filter)} />}
+
+        <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
 
         <QualityMap
           held={data.held}
@@ -371,7 +374,7 @@ function Coins({ rows }: { rows: ReviewRow[] }) {
       </p>
       <ul className="ag-rev-coin-list">
         {rows.map((row) => (
-          <li key={row.ticker}>
+          <li key={row.ticker} className="ag-row-reach">
             <TickerCell ticker={row.ticker} name={false} />
             <span className="ag-rev-caption">{percent(row.weight, lang)}</span>
           </li>

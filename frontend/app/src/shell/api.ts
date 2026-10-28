@@ -28,10 +28,12 @@ export const BASE = "/api/v1";
  *
  * Only a screen *opening* reads it: `useApi` wraps its first fetch in
  * `withMemo`, and a `get` made anywhere else — a poll, a search keystroke, a
- * click handler — always reaches the server. Anything that could change an
- * answer drops the whole memo: a write (`send`), and an explicit reload, retry
- * or changed input (`useApi` calls `invalidate` before re-asking). A failure
- * is not an answer and is not kept.
+ * click handler — always reaches the server. What could change an answer
+ * drops it: a write forgets what it names (`send`'s `touches`, or everything
+ * when it names nothing), and a reload or retry forgets what its screen was
+ * built from (`useApi`). A changed input is a new question, not a re-ask, and
+ * reads the memo like a screen opening. A failure is not an answer and is not
+ * kept.
  */
 const MEMO_MS = 60_000;
 const memo = new Map<string, { at: number; flight: Flight<unknown> }>();
@@ -81,6 +83,38 @@ export function invalidate(): void {
 /** Forget the memoized answers for these URLs only. */
 export function forget(urls: Iterable<string>): void {
   for (const url of urls) memo.delete(url);
+}
+
+/**
+ * Forget the memoized answers under these paths: `["/prefs"]` is every
+ * `/api/v1/prefs…` entry, query included. What a write names in `send`'s
+ * `touches`, and what a page drops itself before asking the same URL again.
+ */
+export function forgetUnder(prefixes: readonly string[]): void {
+  const heads = prefixes.map((prefix) => `${BASE}${prefix}`);
+  if (!heads.length) return;
+  for (const url of [...memo.keys()]) {
+    if (heads.some((head) => url.startsWith(head))) memo.delete(url);
+  }
+}
+
+/**
+ * An answer the document itself carried (`shell/boot`), placed as if it had
+ * just been fetched: the first screen to ask reads it from the memo, and the
+ * shelf hears it landed — so `/me` claims the kept answers at the first paint
+ * rather than one round trip later. A reload forgets it like any other entry.
+ */
+export function seed<T>(path: string, body: T): void {
+  const url = `${BASE}${path}`;
+  const flight: Flight<T> = {
+    answer: Promise.resolve(body),
+    abort: new AbortController(),
+    waiting: 0,
+    pinned: true,
+    done: true,
+  };
+  memo.set(url, { at: Date.now(), flight });
+  landed(url, body);
 }
 
 /**
@@ -358,14 +392,30 @@ async function read<T>(url: string, abort: AbortController): Promise<T> {
 
 type Verb = "POST" | "PATCH" | "PUT" | "DELETE";
 
+export type SendOptions = {
+  headers?: Record<string, string>;
+  /**
+   * The memoized answers this write makes wrong, as paths under `/api/v1`:
+   * `["/prefs"]` for a preference, `["/chat"]` for a thread renamed. Left
+   * out, every memoized answer goes — right for a write to the book, whose
+   * figures are on most screens, and the safe default for one nobody has
+   * thought about. `[]` says the write changes nothing a screen opens with
+   * (a transcription, a feedback note), so nothing is forgotten.
+   */
+  touches?: readonly string[];
+};
+
 export async function send<T>(
   verb: Verb,
   path: string,
   body?: unknown,
-  headers?: Record<string, string>,
+  { headers, touches }: SendOptions = {},
 ): Promise<T> {
-  // Whatever this changes, a memoized answer may now be wrong about it.
-  invalidate();
+  // Whatever this changes, a memoized answer may now be wrong about it —
+  // before the write, and again once it has landed, for a screen that opened
+  // meanwhile and memoized the old answer.
+  const drop = () => (touches === undefined ? invalidate() : forgetUnder(touches));
+  drop();
   const response = await fetch(`${BASE}${path}`, {
     method: verb,
     credentials: "same-origin",
@@ -377,6 +427,7 @@ export async function send<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) await fail(response);
+  drop();
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

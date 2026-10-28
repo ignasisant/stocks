@@ -29,6 +29,7 @@ import { signed } from "./format";
 import { quadrant } from "./logic";
 import type { Pulse, TrendTables } from "./types";
 import { num } from "../../shell/numbers";
+import { Fold } from "../../ui/Fold";
 
 export function Snapshot({
   pulse,
@@ -123,44 +124,49 @@ export function Snapshot({
 
   return (
     <>
-      <div className="sn-sec-head">
-        <h2 className="sn-sec-t" id="ag-snapshot">
-          {t("sentiment.snapshot_title")}
-        </h2>
-        <span className="sn-mono">{t("sentiment.snapshot_hint")}</span>
-        <span className="sn-spacer" />
-        {/* Every figure on this page names where it came from, and these are
+      <Fold
+        id="pulse-snapshot"
+        head={
+          <div className="sn-sec-head">
+            <h2 className="sn-sec-t" id="ag-snapshot">
+              {t("sentiment.snapshot_title")}
+            </h2>
+            <span className="sn-mono">{t("sentiment.snapshot_hint")}</span>
+            <span className="sn-spacer" />
+            {/* Every figure on this page names where it came from, and these are
             the only kind that have no source of their own: they are read off
             the numbers above them rather than fetched. */}
-        <span className="sn-mono">{t("sentiment.src_derived")}</span>
-      </div>
-
-      {cards.length === 0 ? (
-        // The block keeps its heading when it has nothing to show. An absent
-        // block reads as "nothing is happening here", which is a different and
-        // wrong claim from "the series this needs did not arrive". Which feed
-        // to blame: Yahoo when the composite's call said so, FRED when only
-        // the rates block is down.
-        pulse.unavailable ? (
-          <DownBody reason={pulse.unavailable} onRetry={onRetry} />
+            <span className="sn-mono">{t("sentiment.src_derived")}</span>
+          </div>
+        }
+      >
+        {cards.length === 0 ? (
+          // The block keeps its heading when it has nothing to show. An absent
+          // block reads as "nothing is happening here", which is a different and
+          // wrong claim from "the series this needs did not arrive". Which feed
+          // to blame: Yahoo when the composite's call said so, FRED when only
+          // the rates block is down.
+          pulse.unavailable ? (
+            <DownBody reason={pulse.unavailable} onRetry={onRetry} />
+          ) : (
+            <DownBody
+              reason={rates?.unavailable ?? "no_data"}
+              family="macro"
+              origin="FRED"
+              onRetry={onRetry}
+            />
+          )
         ) : (
-          <DownBody
-            reason={rates?.unavailable ?? "no_data"}
-            family="macro"
-            origin="FRED"
-            onRetry={onRetry}
-          />
-        )
-      ) : (
-        <>
-          <KpiGrid>{cards}</KpiGrid>
-          {/* The quadrant came from FRED and survived; the breadth counts and
+          <>
+            <KpiGrid>{cards}</KpiGrid>
+            {/* The quadrant came from FRED and survived; the breadth counts and
               the correlation ride on the Yahoo burst and did not. */}
-          {pulse.unavailable && (
-            <DownBody reason={pulse.unavailable} origin={YAHOO} onRetry={onRetry} />
-          )}
-        </>
-      )}
+            {pulse.unavailable && (
+              <DownBody reason={pulse.unavailable} origin={YAHOO} onRetry={onRetry} />
+            )}
+          </>
+        )}
+      </Fold>
     </>
   );
 }

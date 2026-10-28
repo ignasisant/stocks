@@ -16,6 +16,7 @@ import { fixed, maybe, percent, sectorKey, share, signed } from "./format";
 import { topSectors } from "./logic";
 import type { PulseBook, TrendBlock, TrendRow } from "./types";
 import { Badge } from "../../ui/Badge";
+import { Fold } from "../../ui/Fold";
 
 /**
  * The reader's own half needs the rotation block as well as its own endpoint:
@@ -112,76 +113,77 @@ export function Book({
 
   return (
     <>
-      {head}
-      <KpiGrid>
-        <Kpi
-          label={t("sentiment.beta_equity")}
-          value={fixed(book.beta, 2)}
-          note={t("sentiment.beta_equity_help")}
-          chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
-        />
-        {/* Duration, credit and emerging markets: the same regression on the
+      <Fold id="pulse-book" head={head}>
+        <KpiGrid>
+          <Kpi
+            label={t("sentiment.beta_equity")}
+            value={fixed(book.beta, 2)}
+            note={t("sentiment.beta_equity_help")}
+            chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
+          />
+          {/* Duration, credit and emerging markets: the same regression on the
             same EUR-rebased basket, one tile each. The pill is the drift of
             the rolling beta, as on the equity tile — the level alone cannot
             say the book got more rate-sensitive without anyone trading. */}
-        {(book.betas ?? []).map((entry) => (
+          {(book.betas ?? []).map((entry) => (
+            <Kpi
+              key={entry.key}
+              label={t(`sentiment.beta_${entry.key}`)}
+              value={fixed(entry.beta, 2)}
+              note={t(`sentiment.beta_${entry.key}_help`)}
+              chip={driftChip(t, entry.rolling, entry.rolling_then)}
+            />
+          ))}
           <Kpi
-            key={entry.key}
-            label={t(`sentiment.beta_${entry.key}`)}
-            value={fixed(entry.beta, 2)}
-            note={t(`sentiment.beta_${entry.key}_help`)}
-            chip={driftChip(t, entry.rolling, entry.rolling_then)}
+            label={t("sentiment.side_corr")}
+            value={signed(book.bond_correlation, 2)}
+            note={t("sentiment.stock_bond_corr_note")}
+            chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
           />
-        ))}
-        <Kpi
-          label={t("sentiment.side_corr")}
-          value={signed(book.bond_correlation, 2)}
-          note={t("sentiment.stock_bond_corr_note")}
-          chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
-        />
-        <Kpi
-          label={t("sentiment.usd_share")}
-          value={share(book.usd_share)}
-          note={t("sentiment.usd_share_help")}
-          chip={
-            drag === null
-              ? null
-              : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
-          }
-        />
-      </KpiGrid>
+          <Kpi
+            label={t("sentiment.usd_share")}
+            value={share(book.usd_share)}
+            note={t("sentiment.usd_share_help")}
+            chip={
+              drag === null
+                ? null
+                : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
+            }
+          />
+        </KpiGrid>
 
-      {tilts.length > 0 && (
-        <div className="sn-tilt">
-          <span className="sn-mono">{t("sentiment.col_tilt")}</span>
-          <div className="sn-tilt-rows">
-            {tilts.map(([name, weight]) => (
-              <span className="sn-tilt-row" key={name}>
-                <span>{maybe(t, `sentiment.sector_${sectorKey(name)}`) ?? name}</span>
-                {/* Uncoloured: an active weight is a position, not a verdict —
+        {tilts.length > 0 && (
+          <div className="sn-tilt">
+            <span className="sn-mono">{t("sentiment.col_tilt")}</span>
+            <div className="sn-tilt-rows">
+              {tilts.map(([name, weight]) => (
+                <span className="sn-tilt-row" key={name}>
+                  <span>{maybe(t, `sentiment.sector_${sectorKey(name)}`) ?? name}</span>
+                  {/* Uncoloured: an active weight is a position, not a verdict —
                     an underweight in the sector that led is a cost and an
                     underweight in the one that fell is not. */}
-                <b>{signed(weight * 100, 1, "pp")}</b>
+                  <b>{signed(weight * 100, 1, "pp")}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {notes.length > 0 && (
+          <div className="sn-notes">
+            {notes.map((note) => (
+              <span className="sn-note" key={note}>
+                {note}
               </span>
             ))}
           </div>
-        </div>
-      )}
-
-      {notes.length > 0 && (
-        <div className="sn-notes">
-          {notes.map((note) => (
-            <span className="sn-note" key={note}>
-              {note}
-            </span>
-          ))}
-        </div>
-      )}
-      {/* The weights answered and the betas did not: the tiles already say
+        )}
+        {/* The weights answered and the betas did not: the tiles already say
           "n/a", and this says why, with the same stamp as every other block
           on the page. */}
-      {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
-      <p className="sn-caption">{t("sentiment.book_help")}</p>
+        {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
+        <p className="sn-caption">{t("sentiment.book_help")}</p>
+      </Fold>
     </>
   );
 }

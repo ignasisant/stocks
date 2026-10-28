@@ -2,11 +2,20 @@ import { Suspense, useEffect, useRef } from "react";
 import { ApiError } from "./shell/api";
 import { Broken, Crash } from "./shell/Crash";
 import { browserLang, pinnedLang, Translations, useT } from "./shell/i18n";
+import { onIdle } from "./shell/idle";
 import { Layout, MAIN_ID, Skeleton } from "./shell/Layout";
-import { pageFor } from "./shell/pages";
+import { BOTTOM, pageFor, preload } from "./shell/pages";
 import { takeRestore, useRoute } from "./shell/router";
 import { SignIn } from "./shell/guest";
-import { WithSession } from "./shell/session";
+import { WithSession, useGuest } from "./shell/session";
+
+/** Whether the reader asked for less data (`Save-Data`): then nothing is fetched ahead. */
+function sparing(): boolean {
+  const { connection } = navigator as Navigator & {
+    connection?: { saveData?: boolean };
+  };
+  return connection?.saveData === true;
+}
 
 /**
  * The screen for a session that could not be fetched.
@@ -69,12 +78,29 @@ function Current() {
     document.title = `${t(entry.label)} · TopStocks`;
   }, [t, entry.label]);
 
+  // The tab bar's pages and the chat panel, fetched once the shell is idle
+  // after its first paint: the next tap then opens from the module cache
+  // rather than the network. Hashed, immutable assets, so the fetch is paid
+  // once per deploy. Not on a connection the reader asked to spare.
+  const guest = useGuest();
+  useEffect(() => {
+    if (sparing()) return;
+    return onIdle(() => {
+      for (const slug of BOTTOM) preload(slug);
+      if (!guest) void import("./chat/Panel").catch(() => undefined);
+    });
+    // Once: `guest` is settled by the time the shell renders at all.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // A move to another screen is announced to a screen reader by where focus
   // lands, and a keyboard reader would otherwise keep tabbing from a rail link
   // that no longer matches the page. Focus goes to the page column (not past
-  // the first move: loading the app is not a navigation), and a back or
-  // forward step returns to where the reader was scrolled — retried while the
-  // lazy page fills in, because it is rarely tall enough on the first frame.
+  // the first move: loading the app is not a navigation), and the scroll is
+  // set here, once the page has rendered — the top after a push, where the
+  // reader was after a back or forward step — retried while the lazy page
+  // fills in, because it is rarely tall enough on the first frame. Not at the
+  // click: the page on screen stays until this one is ready, and would jump.
   const first = useRef(true);
   const focusKey = `${page}?${params.get("ticker") ?? ""}`;
   useEffect(() => {

@@ -15,10 +15,12 @@ covers every refresh in flight; off Cloud Run there is nothing to hold.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import Future
 from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -90,6 +92,52 @@ def keep(done: threading.Event) -> None:
     threading.Thread(target=_hold, args=(url,), name="cpu-hold", daemon=True).start()
 
 
+def spawn(name: str, target: Callable[[], None]) -> threading.Thread:
+    """Start `target` on a daemon thread, the CPU kept on it until it ends.
+
+    From the request thread: `keep` reads the request's base URL from a
+    contextvar, and the thread itself inherits none of it. Off Cloud Run this
+    is a plain daemon thread.
+    """
+    done = threading.Event()
+
+    def run() -> None:
+        try:
+            target()
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=run, name=name, daemon=True)
+    thread.start()
+    keep(done)
+    return thread
+
+
+def keep_until(futures: Iterable[Future]) -> None:
+    """Hold the CPU until every future still running has finished.
+
+    For the pulls a request stopped waiting on at its budget: between requests
+    they crawl, and the next reader waits on them all over again.
+    """
+    pending = [future for future in futures if not future.done()]
+    if not pending:
+        return
+    done = threading.Event()
+    left = len(pending)
+    lock = threading.Lock()
+
+    def settle(_: Future) -> None:
+        nonlocal left
+        with lock:
+            left -= 1
+            if left == 0:
+                done.set()
+
+    for future in pending:
+        future.add_done_callback(settle)
+    keep(done)
+
+
 def _hold(url: str) -> None:
     global _active
     import httpx
@@ -121,7 +169,13 @@ def _hold(url: str) -> None:
                 return
 
 
+def _waiting() -> bool:
+    with _lock:
+        return any(not e.is_set() for e in _pending)
+
+
 def _wait(timeout: float = HOLD_S) -> None:
+    """Block until nothing is pending, or `timeout` passes."""
     deadline = time.monotonic() + timeout
     while (left := deadline - time.monotonic()) > 0:
         with _lock:
@@ -131,16 +185,24 @@ def _wait(timeout: float = HOLD_S) -> None:
         waiting[0].wait(min(left, 5.0))
 
 
+async def _wait_async(timeout: float = HOLD_S) -> None:
+    """`_wait` for the event loop: polled by the second, so the hold — open
+    for minutes — keeps no thread of the pool every other request runs on."""
+    deadline = time.monotonic() + timeout
+    while _waiting() and (left := deadline - time.monotonic()) > 0:
+        await asyncio.sleep(min(left, 1.0))
+
+
 router = APIRouter(include_in_schema=False)
 
 
 @router.post("/hold", name="cpu_hold", status_code=status.HTTP_204_NO_CONTENT)
-def hold(x_hold: str = Header(default="")) -> Response:
+async def hold(x_hold: str = Header(default="")) -> Response:
     """Stay open while a refresh runs — this process calling itself. 404 for
     anything but its own token."""
     if not secrets.compare_digest(x_hold, _TOKEN):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    _wait()
+    await _wait_async()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

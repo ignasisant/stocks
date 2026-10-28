@@ -52,14 +52,18 @@ export type Settings = {
 
 export function useSettings(offline: string): Settings {
   const session = useSession();
-  // Seeded from the session and replaced by each response. Never patched
-  // locally: the server's copy is the one the rest of the app reads.
+  // Seeded from the session and replaced by each response. A control shows
+  // its new value the moment it is picked, and the server's answer — which
+  // may have changed it — replaces that when it lands; a refusal puts the
+  // old value back, so the form never keeps looking like a save took.
   const [prefs, setPrefs] = useState<Prefs>(session.prefs);
   const [saving, setSaving] = useState<keyof Writable | null>(null);
   const [failure, setFailure] = useState<Settings["failure"]>(null);
 
   const save = useCallback(
     <K extends keyof Writable>(field: K, value: Writable[K]) => {
+      const before = prefs;
+      setPrefs({ ...prefs, [field]: value } as Prefs);
       setSaving(field);
       setFailure(null);
       send<Prefs>("PATCH", "/prefs", { [field]: value }).then(
@@ -71,6 +75,7 @@ export function useSettings(offline: string): Settings {
         },
         (error: unknown) => {
           setSaving(null);
+          setPrefs(before);
           // A session that ended mid-edit is not this page's error to word:
           // reloading it puts the shell's own sign-in wall up.
           if (error instanceof NotSignedIn) {
@@ -81,7 +86,7 @@ export function useSettings(offline: string): Settings {
         },
       );
     },
-    [session, offline],
+    [session, offline, prefs],
   );
 
   return { prefs, saving, failure, save };

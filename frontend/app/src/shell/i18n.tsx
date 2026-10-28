@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiError, get } from "./api";
+import { boot } from "./boot";
 import { setNumberLang } from "./numbers";
 import { useApi } from "./useApi";
 
@@ -119,7 +120,17 @@ export function Translations({
   lang: string;
   children: ReactNode;
 }) {
-  const catalog = useApi(() => get<Catalog>(`/i18n/${lang}`), [lang]);
+  // Under the stamp the document handed out (`shell/boot`), when it did: the
+  // server answers that URL as immutable for a year, the document preloads
+  // it, and a repeat visit reads it from the browser's cache. Without one
+  // the same route answers with an ETag and is revalidated each visit.
+  // A language switched keeps the old strings up until the new ones land,
+  // rather than every label going to a skeleton for the round trip.
+  const catalog = useApi(
+    () => get<Catalog>(`/i18n/${lang}`, { v: boot()?.i18n || undefined }),
+    [lang],
+    { keep: true },
+  );
   // Asked again when it fails, a few times. It is asked once per session, so
   // one refusal — a 429 from a burst of tabs, a dropped connection — otherwise
   // left every label in the app as its dotted key until a reload.

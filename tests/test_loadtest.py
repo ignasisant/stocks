@@ -103,7 +103,7 @@ def test_boots_with_fakes_and_a_demo_book(tmp_path):
         loadtest.SECRET_ENV: "test-secret",
         "STOCKS_DATA_DIR": str(tmp_path / "data"),
     })
-    # cwd outside the checkout: no .streamlit/secrets.toml, so no bucket and
+    # cwd outside the checkout: no secrets.toml, so no bucket and
     # no owner to resolve, whatever the developer's machine carries.
     run = subprocess.run(
         [sys.executable, "-c", _BOOT], cwd=tmp_path, env=env,

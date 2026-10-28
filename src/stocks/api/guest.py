@@ -30,11 +30,13 @@ from __future__ import annotations
 #: browser error is reported from a guest's page too, because a guest's screen
 #: breaks the same way; it writes one log line and nothing on disk. Both are
 #: unauthenticated writes, so each carries an IP rate limit of its own; see
-#: `routes/feedback.py` and `routes/client_error.py`.
+#: `routes/feedback.py` and `routes/client_error.py`. A page's timings
+#: (`routes/vitals.py`) are the same shape: one log line, metered by address.
 OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("/v1/feedback", "POST"),
         ("/v1/client-error", "POST"),
+        ("/v1/vitals", "POST"),
     }
 )
 
@@ -101,7 +103,9 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/ticker/{symbol}/dcf", "GET"),
         ("/v1/ticker/{symbol}/moat", "GET"),
         ("/v1/ticker/{symbol}/analysts", "GET"),
+        ("/v1/ticker/{symbol}/options", "GET"),
         ("/v1/ticker/{symbol}/insiders", "GET"),
+        ("/v1/ticker/{symbol}/shorts", "GET"),
         ("/v1/ticker/{symbol}/fund", "GET"),
         ("/v1/comparables", "GET"),
         ("/v1/market/quotes", "GET"),
@@ -130,6 +134,11 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/nav", "GET"),
         ("/v1/kpi-sources", "GET"),
         ("/v1/jurisdictions", "GET"),
+        # --- Learn: the curriculum is shipped files, the same for everyone -
+        # The reads only; a guest's progress stays in their browser.
+        ("/v1/learn", "GET"),
+        ("/v1/learn/lessons/{lesson_id}", "GET"),
+        ("/v1/learn/glossary", "GET"),
         *OPEN_WRITES,
     }
 )

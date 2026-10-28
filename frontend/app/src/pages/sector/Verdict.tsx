@@ -56,6 +56,8 @@ export function Verdict({ sector }: { sector: string }) {
         const written = await send<Read>(
           "POST",
           `${at}?lang=${encodeURIComponent(lang)}`,
+          undefined,
+          { touches: ["/sectors"] },
         ).catch(() => stored);
         if (alive) setRead(written);
       } catch {

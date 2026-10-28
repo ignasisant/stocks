@@ -791,6 +791,9 @@ WRITES = {
     # A browser error, logged. A guest may report one too, and a token has no
     # browser to report from.
     ("/v1/client-error", "post"),
+    # A page's timings (LCP, INP, CLS…): the same shape as a client error, one
+    # log line and nothing on disk — metered per address for the same reason.
+    ("/v1/vitals", "post"),
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
     ("/v1/account", "delete"),
@@ -820,10 +823,16 @@ WRITES = {
     # what could not be allowed here: the global one is never a grant, and if
     # it could revoke grants it could cut off any account's Claude.
     ("/v1/connections/{grant}", "delete"),
+    # Noting that the Profile's Claude card had its address or command copied:
+    # one log line for the connector funnel, nothing on disk.
+    ("/v1/connections/copied", "post"),
     # Retiring one of the reader's exit rules in the decision journal: the
     # only journal entries that are theirs. Written by the chat (set_criteria,
     # after a confirm), taken down from the ticker page's journal panel.
     ("/v1/journal/criteria/{entry_id}", "delete"),
+    # Ticking a lesson read on the Learn page: a list of ids in prefs.json,
+    # nothing anyone else reads.
+    ("/v1/learn/progress", "post"),
 }
 
 

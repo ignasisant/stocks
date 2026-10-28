@@ -472,9 +472,105 @@ export function PriceChart({
     return bounds([...price, ...overlays, marked, diamonds]);
   }, [bars.series, shown, hidden, candles, close, high, low, from, to, fills, marks]);
 
-  if (!range || n === 0) return null;
+  // What a pointer move never changes, built once per window and size: the
+  // y scale, the price line's runs and the area under them, each average's
+  // runs as point strings, and the candles. A hover re-renders the whole
+  // component (the crosshair and the readout are its state), and rebuilding
+  // every point of three averages on each mouse move was most of the frame
+  // on a long window. Null when there is nothing to draw: a hook has to run
+  // before the early return below.
+  const baseline = box.height - box.bottom;
+  const drawing = useMemo(() => {
+    if (!range) return null;
+    const yAt = scale(range.lo, range.hi, baseline, box.top);
+    const x = (index: number) => box.left + (index - from + 0.5) * band;
+    const point = (series: (number | null)[], index: number) =>
+      `${x(index).toFixed(1)},${yAt(series[index] as number).toFixed(1)}`;
+    const trace = (series: (number | null)[]) =>
+      segments(series, from, to).map((run) => ({
+        head: run[0] ?? from,
+        points: run.map((index) => point(series, index)).join(" "),
+      }));
+    // The area fade runs against an invisible baseline pinned at the window's
+    // low. Filling to zero would drag the axis down and flatten a £200 stock's
+    // whole year into the top inch of the card.
+    const area = segments(close, from, to)
+      .map((run) => {
+        const head = run[0];
+        const tail = run[run.length - 1];
+        if (head === undefined || tail === undefined) return "";
+        const path = run.map((index) => point(close, index)).join(" L ");
+        return `M ${x(head).toFixed(1)},${baseline.toFixed(1)} L ${path} L ${x(tail).toFixed(1)},${baseline.toFixed(1)} Z`;
+      })
+      .join(" ");
+    const averages = new Map<Overlay, { head: number; points: string }[]>();
+    for (const key of shown) {
+      const series = bars.series[key];
+      if (series) averages.set(key, trace(series));
+    }
+    const candleMarks = candles
+      ? Array.from({ length: to - from + 1 }, (_, offset) => {
+          const index = from + offset;
+          const o = open[index];
+          const c = close[index];
+          const h = high[index];
+          const l = low[index];
+          if (o == null || c == null || h == null || l == null) return null;
+          const up = c >= o;
+          const color = up ? colors.candleUp : colors.candleDown;
+          const width = Math.max(1, band * 0.62);
+          const top = yAt(Math.max(o, c));
+          const height = Math.max(1, Math.abs(yAt(o) - yAt(c)));
+          return (
+            <g key={`c-${index}`}>
+              <line
+                x1={x(index)}
+                x2={x(index)}
+                y1={yAt(h)}
+                y2={yAt(l)}
+                stroke={color}
+                strokeWidth={1}
+              />
+              {/* A rising candle is hollow, a falling one solid — the
+                convention that tells them apart without the hue. Too thin
+                to show a hollow, both stay solid. */}
+              <rect
+                x={x(index) - width / 2}
+                y={top}
+                width={width}
+                height={height}
+                fill={up && width >= 4 ? colors.surfaceCard : color}
+                stroke={color}
+                strokeWidth={up && width >= 4 ? 1 : 0}
+              />
+            </g>
+          );
+        })
+      : [];
+    return { y: yAt, traces: trace(close), area, averages, candleMarks };
+  }, [
+    range,
+    baseline,
+    box.top,
+    box.left,
+    band,
+    from,
+    to,
+    close,
+    open,
+    high,
+    low,
+    candles,
+    shown,
+    bars.series,
+    colors.candleUp,
+    colors.candleDown,
+    colors.surfaceCard,
+  ]);
 
-  const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
+  if (!range || n === 0 || !drawing) return null;
+
+  const { y, traces, area, averages: averageRuns, candleMarks } = drawing;
   const dateLabel = labeller(lang, intraday);
   // Three labels over a phone's plot have no room for a day each: the month is
   // what tells them apart, so long as the window is wider than a month.
@@ -521,22 +617,6 @@ export function PriceChart({
     setDrag(null);
     setPick(null);
   };
-
-  // The area fade runs against an invisible baseline pinned at the window's
-  // low. Filling to zero would drag the axis down and flatten a £200 stock's
-  // whole year into the top inch of the card.
-  const line = segments(close, from, to);
-  const area = line
-    .map((run) => {
-      const head = run[0];
-      const tail = run[run.length - 1];
-      if (head === undefined || tail === undefined) return "";
-      const path = run
-        .map((i) => `${xOf(i).toFixed(1)},${y(close[i] as number).toFixed(1)}`)
-        .join(" L ");
-      return `M ${xOf(head).toFixed(1)},${(box.height - box.bottom).toFixed(1)} L ${path} L ${xOf(tail).toFixed(1)},${(box.height - box.bottom).toFixed(1)} Z`;
-    })
-    .join(" ");
 
   // The line takes the sign of the move it shows, first close to last in the
   // window on screen: the range's change, or the zoomed slice's, the same
@@ -756,16 +836,14 @@ export function PriceChart({
    * while the others fade.
    */
   const averages = drawn.map(([key, color]) => {
-    const series = bars.series[key];
-    if (!series) return null;
+    const runs = averageRuns.get(key);
+    if (!runs) return null;
     const state = focus === null ? "" : focus === key ? " tk-avg-on" : " tk-avg-off";
-    return segments(series, from, to).map((run) => (
+    return runs.map(({ head, points }) => (
       <polyline
-        key={`${key}-${run[0]}`}
+        key={`${key}-${head}`}
         className={`tk-line tk-avg${state}`}
-        points={run
-          .map((i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`)
-          .join(" ")}
+        points={points}
         stroke={color}
         strokeWidth={LINE.overlay}
       />
@@ -909,45 +987,7 @@ export function PriceChart({
             })}
 
           {candles ? (
-            <g>
-              {Array.from({ length: to - from + 1 }, (_, offset) => {
-                const index = from + offset;
-                const o = open[index];
-                const c = close[index];
-                const h = high[index];
-                const l = low[index];
-                if (o == null || c == null || h == null || l == null) return null;
-                const up = c >= o;
-                const color = up ? colors.candleUp : colors.candleDown;
-                const width = Math.max(1, band * 0.62);
-                const top = y(Math.max(o, c));
-                const height = Math.max(1, Math.abs(y(o) - y(c)));
-                return (
-                  <g key={`c-${index}`}>
-                    <line
-                      x1={xOf(index)}
-                      x2={xOf(index)}
-                      y1={y(h)}
-                      y2={y(l)}
-                      stroke={color}
-                      strokeWidth={1}
-                    />
-                    {/* A rising candle is hollow, a falling one solid — the
-                      convention that tells them apart without the hue. Too
-                      thin to show a hollow, both stay solid. */}
-                    <rect
-                      x={xOf(index) - width / 2}
-                      y={top}
-                      width={width}
-                      height={height}
-                      fill={up && width >= 4 ? colors.surfaceCard : color}
-                      stroke={color}
-                      strokeWidth={up && width >= 4 ? 1 : 0}
-                    />
-                  </g>
-                );
-              })}
-            </g>
+            <g>{candleMarks}</g>
           ) : (
             <g>
               {/* The area fades from the line's colour at 14% under its
@@ -964,23 +1004,15 @@ export function PriceChart({
               {/* The averages are context for the price, so they go under
                 it: drawn last, they crossed over the line they annotate. */}
               {averages}
-              {line.map((run) => {
-                const head = run[0];
-                return (
-                  <polyline
-                    key={`p-${head}`}
-                    className="tk-line"
-                    points={run
-                      .map(
-                        (i) =>
-                          `${xOf(i).toFixed(1)},${y(close[i] as number).toFixed(1)}`,
-                      )
-                      .join(" ")}
-                    stroke={lineColor}
-                    strokeWidth={LINE.primary}
-                  />
-                );
-              })}
+              {traces.map(({ head, points }) => (
+                <polyline
+                  key={`p-${head}`}
+                  className="tk-line"
+                  points={points}
+                  stroke={lineColor}
+                  strokeWidth={LINE.primary}
+                />
+              ))}
               {/* Where the price is now, the one point the eye looks for. */}
               {lastAt !== null ? (
                 <circle

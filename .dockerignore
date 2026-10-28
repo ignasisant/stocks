@@ -11,9 +11,9 @@ __pycache__
 # Secrets — never bake into an image. The rotate script leaves
 # secrets.toml.bak.<ts> copies beside the live file, each holding the keys
 # it replaced; the deploy/ folder keeps its own env and secrets for compose.
-.streamlit/secrets.toml
-.streamlit/secrets.toml.bak*
-.streamlit/*.bak*
+secrets.toml
+secrets.toml.bak*
+.streamlit/
 **/.env
 **/secrets.toml*
 .notify_secrets.env

@@ -84,7 +84,9 @@ def test_warms_only_the_accounts_seen_lately_and_survives_a_bad_one(monkeypatch)
         ),
     ]
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
+    monkeypatch.setattr(warm, "warm_shared", lambda: None)
     warmed: list[tuple[str, str, str]] = []
+    more: list[str] = []
 
     def account(db, watchlist, base):
         if db == "broken.db":
@@ -92,8 +94,11 @@ def test_warms_only_the_accounts_seen_lately_and_survives_a_bad_one(monkeypatch)
         warmed.append((db, watchlist, base))
 
     monkeypatch.setattr(warm, "warm_account", account)
+    monkeypatch.setattr(warm, "warm_more", lambda db, w, b: more.append(db))
     assert warm.warm_recent(today=TODAY) == 1
     assert warmed == [("fresh.db", "fresh.yaml", "USD")]
+    # The second pass skips the account whose Home would not warm.
+    assert more == ["fresh.db"]
 
 
 def test_warm_account_fills_the_memos_a_page_reads(monkeypatch, tmp_path):
@@ -147,6 +152,8 @@ def test_the_most_recently_seen_are_warmed_first_until_the_budget_runs_out(
         _user("yesterday", "2026-09-26"),
     ]
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
+    monkeypatch.setattr(warm, "warm_shared", lambda: None)
+    monkeypatch.setattr(warm, "warm_more", lambda db, w, b: None)
     warmed: list[str] = []
     # Each account takes 50 "seconds" of a clock the test owns: a real sleep
     # against a real budget failed on a loaded CI runner (1 warmed, not 2).
@@ -289,5 +296,104 @@ def test_warm_recent_reads_the_shared_market_once(monkeypatch):
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: [])
     reads: list[int] = []
     monkeypatch.setattr(loaders, "today_market", lambda: reads.append(1) or {})
+    for memo in ("pulse_closes", "pulse_rate_rows", "market_pulse"):
+        monkeypatch.setattr(loaders, memo, lambda: {})
     warm.warm_recent(today=TODAY)
     assert reads == [1]
+
+
+def test_warm_more_fills_the_memos_the_other_pages_read(monkeypatch, tmp_path):
+    calls: list[str] = []
+    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    monkeypatch.setattr(
+        loaders,
+        "positions_table",
+        lambda db, m, b: pd.DataFrame({"ccy": ["USD", "EUR", "USD"]}),
+    )
+    monkeypatch.setattr(
+        loaders,
+        "basket_report",
+        lambda db, m, b, period: calls.append(f"book:{b}:{period}"),
+    )
+    monkeypatch.setattr(
+        loaders, "spot_rates", lambda ccys, base: calls.append(f"spots:{ccys}:{base}")
+    )
+    monkeypatch.setattr(
+        loaders, "earnings_calendar", lambda tickers: calls.append(f"earnings:{tickers}")
+    )
+    monkeypatch.setattr(
+        loaders, "dividend_payments", lambda db, m, b: calls.append("dividends")
+    )
+    monkeypatch.setattr("stocks.data.funds.is_fund", lambda t, fetch=True: t == "VWCE.DE")
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text(
+        "watchlist:\n  - ticker: MSFT\n  - ticker: AAPL\n  - ticker: BTC-EUR\n"
+        "  - ticker: VWCE.DE\n"
+    )
+    warm.warm_more("book.db", str(watchlist), "EUR")
+    assert calls == [
+        "book:EUR:2y",
+        "spots:('EUR', 'USD'):EUR",
+        "earnings:('AAPL', 'MSFT')",
+        "dividends",
+    ]
+
+
+def test_warm_more_survives_a_feed_that_refuses(monkeypatch, tmp_path):
+    calls: list[str] = []
+    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    monkeypatch.setattr(loaders, "positions_table", lambda db, m, b: pd.DataFrame())
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda *a: (_ for _ in ()).throw(RuntimeError("yahoo"))
+    )
+    monkeypatch.setattr(loaders, "earnings_calendar", lambda t: calls.append("earnings"))
+    monkeypatch.setattr(loaders, "dividend_payments",
+                        lambda *a: calls.append("dividends"))
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist: []\n")
+    warm.warm_more("book.db", str(watchlist), "EUR")
+    # An empty book has no spots to fetch; the refused backtest costs itself.
+    assert calls == ["earnings", "dividends"]
+
+
+def test_warm_recent_runs_the_second_pass_after_every_home(monkeypatch):
+    from types import SimpleNamespace
+
+    users = [_user("today", "2026-09-27"), _user("yesterday", "2026-09-26")]
+    monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
+    monkeypatch.setattr(warm, "warm_shared", lambda: None)
+    order: list[str] = []
+    clock = [0.0]
+    monkeypatch.setattr(warm, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def account(db, watchlist, base):
+        order.append(f"home:{db}")
+        clock[0] += 50
+
+    def more(db, watchlist, base):
+        order.append(f"more:{db}")
+        clock[0] += 50
+
+    monkeypatch.setattr(warm, "warm_account", account)
+    monkeypatch.setattr(warm, "warm_more", more)
+    assert warm.warm_recent(today=TODAY) == 2
+    assert order == [
+        "home:today.db", "home:yesterday.db", "more:today.db", "more:yesterday.db"
+    ]
+    order.clear()
+    # The budget spent on Home leaves the second pass out, never the reverse.
+    assert warm.warm_recent(today=TODAY, budget_s=120) == 2
+    assert order == ["home:today.db", "home:yesterday.db", "more:today.db"]
+
+
+def test_warm_shared_reads_the_market_memos_once_and_survives_one(monkeypatch):
+    reads: list[str] = []
+    monkeypatch.setattr(loaders, "today_market", lambda: reads.append("today") or {})
+    monkeypatch.setattr(
+        loaders, "pulse_closes", lambda: (_ for _ in ()).throw(RuntimeError("yahoo"))
+    )
+    monkeypatch.setattr(loaders, "pulse_rate_rows", lambda: reads.append("rates") or {})
+    monkeypatch.setattr(loaders, "market_pulse", lambda: reads.append("pulse"))
+    monkeypatch.setattr(loaders, "positioning", lambda: reads.append("cot"))
+    warm.warm_shared()
+    assert reads == ["today", "rates", "pulse", "cot"]

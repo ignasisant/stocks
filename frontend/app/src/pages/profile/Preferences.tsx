@@ -116,12 +116,15 @@ export function Preferences({
   failure,
   save,
   owner,
+  connector,
 }: Settings & {
   /**
    * Whether this is the deployment owner's book (`/me` `owner`), or null while
    * that is not known. Only a known non-owner is offered deletion.
    */
   owner: boolean | null;
+  /** `/me` `connector`, or null while that is not known. */
+  connector: boolean | null;
 }) {
   const t = useT();
   const lastImport = useApi(() => get<LastImport>("/import/last"), []);
@@ -416,9 +419,10 @@ export function Preferences({
               a control. */}
           {owner === false && <DeleteAccount />}
         </Card>
-        {/* Draws nothing while the deployment has no connector and nothing is
-            connected — there is nothing to offer and nothing to take back. */}
-        <ConnectorCard />
+        {/* The connector has its own tab where it is served. Where it is not,
+            an app connected before keeps a place to be revoked; the card
+            draws nothing when nothing is connected. */}
+        {connector === false && <ConnectorCard />}
       </div>
 
       <aside className="pr-rail">

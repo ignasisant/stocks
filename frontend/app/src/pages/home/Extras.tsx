@@ -143,7 +143,7 @@ export function DividendsCard() {
             {next.length > 0 ? (
               <ul className="hm-extra-list">
                 {next.map((row) => (
-                  <li key={`${row.ticker}-${row.date}`}>
+                  <li key={`${row.ticker}-${row.date}`} className="ag-row-reach">
                     <TickerCell ticker={row.ticker} name={false} />
                     <span className="hm-muted">
                       {t("home.card_ex_date", { date: shortDate(row.date, lang) })}

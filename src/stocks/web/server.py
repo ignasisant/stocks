@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -50,6 +51,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.gzip import GZipMiddleware
@@ -74,6 +76,7 @@ from stocks.web import (
     landing_static,
     legal,
     oidc,
+    precompress,
     ratelimit,
     seo,
 )
@@ -197,6 +200,13 @@ def public_origin() -> str | None:
     """
     override = secret("APP_PUBLIC_URL", "app", "public_url")
     return override.rstrip("/") if override else None
+
+
+def connector_open() -> bool:
+    """Whether this deploy serves the Claude connector, which names itself to
+    Claude by the public origin (`connector/server.py`) and is off without
+    one. Profile's Claude tab, its tour step and the chat's nudge all ask."""
+    return public_origin() is not None
 
 
 def base_url(request: Request) -> str:
@@ -887,12 +897,14 @@ def _faces() -> str:
     that does not link it declares Instrument Sans in its CSS and paints in
     system-ui — which reads as nothing being wrong.
     """
-    from stocks.web.seo import FONTS_HREF
-
     return (
         '<link rel="preconnect" href="https://fonts.googleapis.com">'
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        f'<link rel="stylesheet" href="{FONTS_HREF}">'
+        # Non-blocking, the landing's way: `media="print"` plus a hashed flip
+        # script, so the first paint does not wait on a second origin. The
+        # script sits in the build-constant document, where `_app_policy`
+        # hashes it.
+        + seo.font_links()
     )
 
 
@@ -938,6 +950,159 @@ def _with_card(request: Request, document: bytes) -> bytes:
     return html.replace("</head>", tags + "</head>", 1).encode("utf-8")
 
 
+def _boot(request: Request) -> dict | None:
+    """What the shell used to fetch before it could draw anything: who is
+    asking (`/me`) and what they have set (`/prefs`), as those routes answer.
+
+    Written into the document (`_boot_tag`) so the first paint waits on no
+    round trip for them — and the kept figures from the last visit, which are
+    keyed on who is asking, can be drawn at once. The same code the routes
+    run, so the two cannot drift; a session's account is provisioned or
+    restored here exactly as its first `/prefs` used to.
+
+    None when anything in it fails: the shell then fetches the pair itself,
+    which is what it did before.
+    """
+    from stocks.api import deps
+    from stocks.api.routes import me as identity
+    from stocks.api.routes import prefs as settings
+    from stocks.web import i18n
+
+    try:
+        who = api_security.visitor(request, request.headers.get("authorization", ""))
+        if who.kind == "token":
+            # A bearer header on a document request names nobody's book; the
+            # routes would 422 it. The page reads as a guest's.
+            who = api_security.Caller(kind="guest")
+        agent = request.headers.get("user-agent", "")
+        me = identity.describe(who, request.cookies, agent)
+        prefs = settings.current(deps.account(who, None), who)
+    except Exception as error:  # noqa: BLE001 — the shell fetches these itself
+        obs.warn("web.boot_failed", error_type=type(error).__name__)
+        return None
+    return {
+        "me": me.model_dump(mode="json"),
+        "prefs": prefs.model_dump(mode="json"),
+        "i18n": i18n.version(),
+    }
+
+
+BOOT_ID = "ag-boot"
+
+
+def _boot_tag(boot: dict) -> str:
+    """`boot` as a data block the shell reads (`shell/boot.ts`).
+
+    JSON in a `type="application/json"` script never runs, so the policy
+    never hashes it (`csp._DATA_SCRIPT`) and it can be written per request.
+    `<`, `>` and `&` are escaped as JSON, not HTML: a value that spelled
+    `</script>` would otherwise end the block early.
+    """
+    text = json.dumps(boot, separators=(",", ":"), ensure_ascii=False)
+    text = text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return f'<script type="application/json" id="{BOOT_ID}">{text}</script>'
+
+
+def _catalog_lang(request: Request, boot: dict) -> str:
+    """The catalog the shell is about to ask for — `App.tsx`'s choice, taken
+    one step earlier so the document can start the request.
+
+    A signed-in account's stored language, else `?lang=` for a guest (the
+    landing's call to action pins it), else the browser's list walked down
+    exactly as `shell/i18n.browserLang` walks it. A wrong guess costs one
+    unused preload and nothing else.
+    """
+    from stocks.web.i18n import LANGUAGES, supported
+
+    guest = boot["me"].get("kind") == "guest"
+    if not guest and (stored := supported(boot["prefs"].get("language"))):
+        return stored
+    if guest and (asked := supported(request.query_params.get("lang"))):
+        return asked
+    codes = [
+        part.split(";")[0].strip().split("-")[0].lower()
+        for part in request.headers.get("accept-language", "").split(",")
+        if part.strip()
+    ]
+    for code in codes:
+        if code in LANGUAGES:
+            return code
+    return "es" if any(code in ("ca", "gl", "eu") for code in codes) else "en"
+
+
+def _catalog_hint(request: Request, boot: dict) -> str:
+    """A preload for the catalog, so it travels beside the bundle rather
+    than after it. `crossorigin` matches the shell's own fetch (same-origin
+    credentials); without it the browser fetches twice."""
+    href = f"{I18N_PATH}{_catalog_lang(request, boot)}?v={boot['i18n']}"
+    return f'<link rel="preload" as="fetch" crossorigin href="{href}">'
+
+
+@lru_cache(maxsize=1)
+def _manifest(mtime: float) -> dict:  # noqa: ARG001 — mtime keys the cache
+    """Vite's build manifest: source module → built file, imports, css."""
+    try:
+        loaded = json.loads((_APP_BUILD / ".vite" / "manifest.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+# The shell's aliases for a page's slug (`pages.ts`), the two the router keeps.
+_SLUG_ALIASES = {"": "home", "import_transactions": "import"}
+
+
+def _page_hints(mtime: float, path: str) -> str:
+    """Preloads for the chunk the page at `path` will lazy-load, so it
+    downloads beside the shell's bundle instead of after it has run.
+
+    The chunk, the chunks it imports that are not the entry (the entry is the
+    document's own module script), and its stylesheet. Nothing for a path
+    that is not a page, or a build without a manifest.
+    """
+    manifest = _manifest(mtime)
+    if not manifest:
+        return ""
+    slug = path.strip("/").split("/")[0]
+    slug = _SLUG_ALIASES.get(slug, slug)
+    if not slug.isalpha():
+        return ""
+    # A page's own entry module, as `shell/pages.ts` lazy-loads it: the
+    # directory is the slug, the file is the page (`pages/home/Home.tsx`). Not
+    # a scan: a page folder holds other lazy modules too (`home/Editor.tsx`).
+    chunk = manifest.get(f"src/pages/{slug}/{slug.capitalize()}.tsx")
+    if not isinstance(chunk, dict) or not chunk.get("file"):
+        return ""
+    files = [chunk["file"]]
+    for dep in chunk.get("imports", ()):
+        entry = manifest.get(dep) or {}
+        if entry.get("file") and not entry.get("isEntry"):
+            files.append(entry["file"])
+    return "".join(
+        f'<link rel="modulepreload" href="{APP_ASSETS}{name}">' for name in files
+    ) + "".join(
+        f'<link rel="preload" as="style" href="{APP_ASSETS}{name}">'
+        for name in chunk.get("css", ())
+    )
+
+
+def _finished(
+    request: Request, document: bytes, boot: dict | None, mtime: float | None
+) -> bytes:
+    """`document` with this request's values written in: the ticker's link
+    card, the boot block, and the preloads for what the page will ask for
+    next. All after `_app_policy` hashed the document, none of it code."""
+    html = _with_card(request, document).decode("utf-8")
+    extra = ""
+    if boot is not None:
+        extra += _boot_tag(boot) + _catalog_hint(request, boot)
+    if mtime is not None:
+        extra += _page_hints(mtime, request.url.path)
+    if extra:
+        html = html.replace("</head>", extra + "</head>", 1)
+    return html.encode("utf-8")
+
+
 async def app_shell(request: Request) -> Response:
     """Every page of the app — the client router reads the path.
 
@@ -946,8 +1111,9 @@ async def app_shell(request: Request) -> Response:
     drawn in the browser.
     """
     if _VITE:
-        return Response(_with_card(request, _dev_document(_VITE)), media_type=_HTML,
-                        headers={"Cache-Control": "no-store"})
+        boot = await run_in_threadpool(_boot, request)
+        return Response(_finished(request, _dev_document(_VITE), boot, None),
+                        media_type=_HTML, headers={"Cache-Control": "no-store"})
     index = _APP_BUILD / "index.html"
     if not index.is_file():
         # A checkout that never ran `npm run build`. CI refuses to merge one
@@ -955,8 +1121,11 @@ async def app_shell(request: Request) -> Response:
         return Response("The app is not built: cd frontend/app && npm run build\n",
                         status_code=503, media_type="text/plain")
     mtime = index.stat().st_mtime
+    # In a thread: a session's first document may restore its account from
+    # the bucket, and this handler shares the event loop with every stream.
+    boot = await run_in_threadpool(_boot, request)
     return Response(
-        _with_card(request, _app_document(mtime)),
+        _finished(request, _app_document(mtime), boot, mtime),
         media_type=_HTML,
         # A shell over somebody's book, with the tokens inlined into it: never
         # a cacheable file.
@@ -981,7 +1150,10 @@ async def static_file(request: Request) -> Response:
     if _STATIC.resolve() not in target.parents or not target.is_file():
         return Response("Not found", status_code=404, media_type="text/plain")
     return FileResponse(target, headers={
-        "Cache-Control": "public, max-age=86400",
+        # A mark changes about never, and a table of forty names asks for
+        # forty of them: a week in the browser's cache, and a day past it the
+        # old one is drawn while the fresh one is fetched behind it.
+        "Cache-Control": "public, max-age=604800, stale-while-revalidate=86400",
         # Mirrored from third-party hosts; an SVG opened directly on our origin
         # must not run script against a signed-in session.
         "Content-Security-Policy": _STATIC_CSP,
@@ -997,9 +1169,27 @@ _STATIC_CSP = (
 # `Home-B3ml_q7a.css`. Such a file never changes under its name — a rebuild
 # that changes it renames it — so it can be cached for as long as a browser
 # will hold it. Anything else under the build dir gets the short lease.
-_HASHED = re.compile(r"-[A-Za-z0-9_-]{8}\.[a-z0-9]+$")
+# The build's content-hashed names, shared with the image step that packs them.
+_HASHED = precompress.HASHED
 _IMMUTABLE = "public, max-age=31536000, immutable"
 _BRIEF = "public, max-age=300"
+# The build writes a `.br` and a `.gz` next to every hashed file
+# (`vite.config.ts`), compressed once at the highest level; a request takes
+# the one its client names rather than having the gzip middleware compress the
+# same bytes again on the one throttled CPU. The middleware leaves a response
+# that already names an encoding alone.
+_PACKED = (("br", ".br"), ("gzip", ".gz"))
+_REFUSED = re.compile(r"q\s*=\s*0(?:\.0*)?\s*$")
+
+
+def _accepted(header: str) -> set[str]:
+    """The codings an `Accept-Encoding` header takes, `q=0` ones left out."""
+    out: set[str] = set()
+    for part in header.split(","):
+        coding, _, params = part.strip().partition(";")
+        if coding and not _REFUSED.search(params):
+            out.add(coding.strip().lower())
+    return out
 
 
 async def app_asset(request: Request) -> Response:
@@ -1014,8 +1204,19 @@ async def app_asset(request: Request) -> Response:
     target = (_APP_BUILD / name).resolve()
     if _APP_BUILD.resolve() not in target.parents or not target.is_file():
         return Response("Not found", status_code=404, media_type="text/plain")
-    lease = _IMMUTABLE if _HASHED.search(target.name) else _BRIEF
-    return FileResponse(target, headers={"Cache-Control": lease})
+    if not _HASHED.search(target.name):
+        return FileResponse(target, headers={"Cache-Control": _BRIEF})
+    headers = {"Cache-Control": _IMMUTABLE, "Vary": "Accept-Encoding"}
+    accepted = _accepted(request.headers.get("accept-encoding", ""))
+    for coding, suffix in _PACKED:
+        packed = target.with_name(target.name + suffix)
+        if coding in accepted and packed.is_file():
+            headers["Content-Encoding"] = coding
+            # The chunk's own type, not the sibling's: a module script must
+            # arrive as JavaScript or the browser refuses to run it.
+            media_type, _ = mimetypes.guess_type(target.name)
+            return FileResponse(packed, media_type=media_type, headers=headers)
+    return FileResponse(target, headers=headers)
 
 
 async def asset(request: Request) -> Response:
@@ -1098,7 +1299,10 @@ app = Starlette(
     middleware=[
         Middleware(ClientThrottle),
         Middleware(SecurityHeaders),
-        Middleware(GZipMiddleware, minimum_size=1024),
+        # Level 6: within a few percent of level 9's size at about half its
+        # CPU, on the one throttled vCPU that also has to answer the request.
+        # The bundle's chunks skip this altogether (`app_asset`).
+        Middleware(GZipMiddleware, minimum_size=1024, compresslevel=6),
         Middleware(LandingGate),
     ],
 )

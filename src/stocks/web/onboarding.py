@@ -161,6 +161,7 @@ STEPS: tuple[Step, ...] = (
     Step(id="pulse", icon="speed", page="sentiment"),
     Step(id="market", icon="query_stats", page="ticker"),
     Step(id="sector", icon="donut_small", page="sector"),
+    Step(id="learn", icon="school", page="learn"),
     Step(
         id="assistant",
         icon="auto_awesome",
@@ -182,6 +183,17 @@ STEPS: tuple[Step, ...] = (
         session={"profile_tab": "notify"},
         gated=True,
         done=lambda prefs, _paths=None: bool(prefs.get("telegram_chat_id")),
+    ),
+    # Its own Profile tab: asking about the book from inside Claude is
+    # somewhere the app could not be reached from at all, and a card at the
+    # foot of Preferences was a place nobody went. Only where the deploy
+    # serves the connector (`visible_steps`).
+    Step(
+        id="claude",
+        icon="hub",
+        page="profile",
+        session={"profile_tab": "claude"},
+        gated=True,
     ),
     Step(
         id="investor",
@@ -220,21 +232,15 @@ class News:
     turns an announcement into somewhere to go; a feature whose step this
     deploy does not carry is not announced at all (see `unseen_news`).
 
-    `carried` is the same rule for a feature that lives inside a step every
-    deploy has but is itself only on some deploys: None for every deploy,
-    otherwise asked each time the cards are dealt.
     """
 
     slug: str
     icon: str
     step: str | None = None
-    carried: Callable[[], bool] | None = None
 
     def announced(self, steps: set[str]) -> bool:
         """Whether this deploy has the feature to send a reader to."""
-        if self.step is not None and self.step not in steps:
-            return False
-        return self.carried is None or self.carried()
+        return self.step is None or self.step in steps
 
 
 @dataclass(frozen=True)
@@ -290,11 +296,9 @@ class NewsCard:
 # itself rather than in a card: the tax step names all twelve jurisdictions,
 # the import step every broker it reads.
 def _connector_open() -> bool:
-    """Whether this deploy serves the Claude connector, which needs the site's
-    public URL to name itself to Claude (`connector/server.py`)."""
-    from stocks.web.server import public_origin
+    from stocks.web.server import connector_open
 
-    return public_origin() is not None
+    return connector_open()
 
 
 RELEASES: tuple[Release, ...] = (
@@ -395,10 +399,10 @@ RELEASES: tuple[Release, ...] = (
             News(slug="routines", icon="tips_and_updates", step="daily"),
             # One card: reading the book from inside Claude is somewhere the
             # app could not be reached from at all. It is set up and revoked
-            # on the Profile card, so the card hands over to that step; the
+            # on Profile's Claude tab, so the card hands over to that step; the
             # tools, the drawn view and the consent screen are the step's
             # body, not cards of their own.
-            News(slug="claude", icon="hub", step="prefs", carried=_connector_open),
+            News(slug="claude", icon="hub", step="claude"),
         ),
     ),
     Release(
@@ -508,6 +512,21 @@ RELEASES: tuple[Release, ...] = (
             News(slug="chatimport", icon="upload_file", step="assistant"),
         ),
     ),
+    Release(
+        version="2026.10.10",
+        date="2026-10",
+        items=(
+            # Somewhere new to go: the Learn page, paths of lessons and a
+            # glossary, open to a guest.
+            News(slug="learn", icon="school", step="learn"),
+            # Something they could not see at all before: who is short a
+            # share (the EU registers' named holders, FINRA short volume,
+            # short interest). The positioning tab, options figures, rating
+            # changes and coin on-chain cards are one more of a kind on pages
+            # that already have a step: sentences in app-features, no cards.
+            News(slug="shorts", icon="trending_down", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version
@@ -578,12 +597,13 @@ def setup_state(prefs: dict, paths, *, signed_in: bool) -> dict[str, bool]:
 def visible_steps() -> tuple[Step, ...]:
     """The steps this deploy serves.
 
-    Every step ships on every deploy today, so this is the whole registry.
-    The indirection stays because the tour indexes through it: a step that
-    only some deploys carry is filtered here, once, rather than at each call
-    site.
+    Every step ships on every deploy but `claude`, which needs the connector
+    (`_connector_open`). Filtered here, once, rather than at each call site —
+    and a "what's new" card pointing at a step this drops is dropped with it.
     """
-    return STEPS
+    if _connector_open():
+        return STEPS
+    return tuple(s for s in STEPS if s.id != "claude")
 
 
 def by_id(step_id: str) -> Step | None:

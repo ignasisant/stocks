@@ -240,6 +240,15 @@ async def _show(request: Request) -> Response:
     return HTMLResponse(body, headers=_headers(_origin_of(redirect)))
 
 
+def _log_user(email: str) -> str:
+    """Who decided, as every other log line names an account: the connector
+    funnel (`stocks logs connector`) follows one account from Profile's card
+    to its first tool call, and this is the step between."""
+    from stocks.connector.tools import _log_user as slug
+
+    return slug(email)
+
+
 async def _decide(request: Request, origin: str) -> Response:
     email = session.signed_in_email(request.cookies)
     lang = _language(request, email)
@@ -274,11 +283,13 @@ async def _decide(request: Request, origin: str) -> Response:
                                scopes=scopes)
         target = construct_redirect_uri(redirect, code=code, state=req.get("state"),
                                         iss=origin)
-        obs.event("mcp.consent", step="allow", client_kind=kind, write=write)
+        obs.event("mcp.consent", step="allow", client_kind=kind, write=write,
+                  user=_log_user(email))
     else:
         target = construct_redirect_uri(redirect, error="access_denied",
                                         state=req.get("state"), iss=origin)
-        obs.event("mcp.consent", step="deny", client_kind=kind)
+        obs.event("mcp.consent", step="deny", client_kind=kind,
+                  user=_log_user(email))
     response = RedirectResponse(target, status_code=303)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"

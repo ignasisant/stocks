@@ -778,6 +778,20 @@
   border: 1px dashed var(--ag-warn-edge);
 }
 
+/* Positioning, not trend: a one-sided trade is a caution on either side, so
+   both crowded labels share the amber and separate on the border like the two
+   turns do — solid for longs, dashed for shorts. */
+.sn-st-crowded_long,
+.sn-st-crowded_short {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+  border: 1px solid var(--ag-warn-edge);
+}
+
+.sn-st-crowded_short {
+  border-style: dashed;
+}
+
 .sn-st-unknown {
   color: var(--ag-text-muted);
 }
@@ -837,6 +851,14 @@
   color: var(--ag-text-secondary);
   text-decoration: none;
   white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .sn-jump a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
 
 .sn-jump a:first-child {

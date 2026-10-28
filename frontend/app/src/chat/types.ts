@@ -339,6 +339,8 @@ export type ChatState = {
   memory?: boolean;
   /** A question that names something brings earlier conversations about it. */
   recall?: boolean;
+  /** Whether this deployment serves the Claude connector (Profile → Claude). */
+  connector?: boolean;
 };
 
 /**

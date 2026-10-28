@@ -42,6 +42,7 @@ from stocks.analysis.technicals import (
     technical_snapshot,
 )
 from stocks.config import DATA_DIR
+from stocks.data import frames
 from stocks.data.fetch import fetch_many
 
 # The 11 sectors, spelled the way `info["sector"]` spells them — so the sector
@@ -323,12 +324,15 @@ def scan_sector(
     cohort = list(dict.fromkeys([*etf_candidates(sector),
                                  *(s.upper() for s in extra)]))
     metrics = fetch_metrics_many(cohort, drop_funds=True) if cohort else []
+    # Gaps in US names' rows read from the SEC's filed figures, one frames
+    # download for the whole scan (data.frames) — never over a Yahoo figure.
+    filled = frames.fill_gaps(metrics) if metrics else 0
     scores = comp_scores(metrics)
     # comp_medals owns the "a 2-horse race has no podium" rule and returns its
     # winners in rank order; reading the keys keeps that rule in one place.
     podium = tuple(comp_medals(metrics))
     tech_metrics, tech_scores, tech_podium = _scan_technicals(cohort)
-    obs.event("sector.scanned", sector=sector, cohort=len(cohort),
+    obs.event("sector.scanned", sector=sector, cohort=len(cohort), filled=filled,
               scored=len(scores), podium=len(podium), tech_podium=len(tech_podium))
     return SectorScan(
         sector=sector,

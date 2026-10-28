@@ -9,10 +9,12 @@ import {
   ApiError,
   Cancelled,
   TIMEOUT_MS,
+  forgetUnder,
   get,
   invalidate,
   isTransient,
   scoped,
+  seed,
   send,
   withMemo,
 } from "./api";
@@ -55,6 +57,17 @@ describe("get memo", () => {
     expect(stub).toHaveBeenCalledTimes(2);
   });
 
+  it("an answer the document carried is read before the server is asked", async () => {
+    const stub = vi.fn(async () => ok({ live: true }));
+    vi.stubGlobal("fetch", stub);
+    seed("/me", { kind: "guest" });
+    expect(await withMemo(() => get("/me"))).toEqual({ kind: "guest" });
+    expect(stub).not.toHaveBeenCalled();
+    // Outside the memo — a reload — the server is asked as ever.
+    expect(await get("/me")).toEqual({ live: true });
+    expect(stub).toHaveBeenCalledTimes(1);
+  });
+
   it("a get outside withMemo always reaches the server", async () => {
     const stub = vi.fn(async () => ok({}));
     vi.stubGlobal("fetch", stub);
@@ -70,6 +83,43 @@ describe("get memo", () => {
     await send("POST", "/y", {});
     await withMemo(() => get("/x"));
     expect(stub).toHaveBeenCalledTimes(3);
+  });
+
+  it("a write that names what it touches drops only that", async () => {
+    const stub = vi.fn(async () => ok({}));
+    vi.stubGlobal("fetch", stub);
+    await withMemo(() => get("/prefs"));
+    await withMemo(() => get("/prefs", { lang: "es" }));
+    await withMemo(() => get("/me"));
+    await send("PATCH", "/prefs", { chat_panel_open: true }, { touches: ["/prefs"] });
+    await withMemo(() => get("/me"));
+    expect(stub).toHaveBeenCalledTimes(4);
+    await withMemo(() => get("/prefs"));
+    await withMemo(() => get("/prefs", { lang: "es" }));
+    expect(stub).toHaveBeenCalledTimes(6);
+  });
+
+  it("a write that touches nothing keeps the memo whole", async () => {
+    const stub = vi.fn(async () => ok({}));
+    vi.stubGlobal("fetch", stub);
+    await withMemo(() => get("/x"));
+    await send("POST", "/feedback", {}, { touches: [] });
+    await withMemo(() => get("/x"));
+    expect(stub).toHaveBeenCalledTimes(2);
+  });
+
+  it("forgetUnder drops every entry under a path, query included", async () => {
+    const stub = vi.fn(async () => ok({}));
+    vi.stubGlobal("fetch", stub);
+    await withMemo(() => get("/sectors/Tech"));
+    await withMemo(() => get("/sectors/Tech", { lens: "value" }));
+    await withMemo(() => get("/sector"));
+    forgetUnder(["/sectors"]);
+    await withMemo(() => get("/sector"));
+    expect(stub).toHaveBeenCalledTimes(3);
+    await withMemo(() => get("/sectors/Tech"));
+    await withMemo(() => get("/sectors/Tech", { lens: "value" }));
+    expect(stub).toHaveBeenCalledTimes(5);
   });
 
   it("records how old the server said the figures are", async () => {

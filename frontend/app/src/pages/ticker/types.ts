@@ -193,6 +193,32 @@ type HalvingPhase = {
   progress: number;
 };
 
+type StablecoinSupply = {
+  usd: number;
+  change_30d: number | null;
+  change_90d: number | null;
+};
+
+type CryptoOnchain = {
+  kind: "chain" | "protocol" | string;
+  name: string;
+  tvl: number;
+  tvl_change_30d: number | null;
+  fees_30d: number | null;
+  revenue_30d: number | null;
+};
+
+type ImpliedVol = {
+  /** The index read: BTC or ETH. */
+  coin: string;
+  /** Annualised percent points (52 = 52%). */
+  value: number;
+  percentile: Banded | null;
+  low: number | null;
+  high: number | null;
+  week_ago: number | null;
+};
+
 export type CryptoCycle = {
   ticker: string;
   quote: string;
@@ -208,6 +234,8 @@ export type CryptoCycle = {
   vs_btc_90d: number | null;
   vs_nasdaq_90d: number | null;
   halving: HalvingPhase | null;
+  stablecoins: StablecoinSupply | null;
+  onchain: CryptoOnchain | null;
   scan_date: string | null;
 };
 
@@ -220,6 +248,7 @@ export type CryptoPositioning = {
   annualized: number | null;
   oi_usd: number | null;
   oi_change_7d: number | null;
+  implied_vol: ImpliedVol | null;
   as_of: string;
 };
 
@@ -369,6 +398,9 @@ export type Financials = {
   /** Consensus, not fact. Drawn apart from the reported years, never merged. */
   projection: ProjectedRow[];
   estimate_currency: string | null;
+  /** "ESEF" when the annual rows are the issuer's filed report, not Yahoo's. */
+  source?: string | null;
+  source_years?: string[];
 };
 
 type ValuationWindow = {
@@ -476,6 +508,41 @@ type InsiderSummary = {
   cluster_buy: boolean;
 };
 
+type ShortHolderRow = { name: string; pct: number; date: string | null };
+
+/** US short interest and FINRA short volume. Every figure may be null. */
+type UsShortInterest = {
+  /** Percent of the float, 6.4 not 0.064. */
+  pct_float: number | null;
+  shares_short: number | null;
+  days_to_cover: number | null;
+  /** Shares short against the prior reporting period, percent. */
+  change_pct: number | null;
+  as_of: string | null;
+  /** Percent of recent volume that was a short sale: volume, not a position. */
+  volume_ratio: number | null;
+  volume_days: number | null;
+  volume_as_of: string | null;
+};
+
+/** EU net shorts of 0.5% or more, as the national authority published them. */
+type EuShortPositions = {
+  source: "AFM" | "BaFin" | "FCA" | string;
+  issuer: string;
+  total_pct: number;
+  as_of: string | null;
+  /** Largest first; empty for the FCA, which publishes only the aggregate. */
+  holders: ShortHolderRow[];
+  holders_count: number;
+};
+
+export type Shorts = {
+  ticker: string;
+  us: UsShortInterest | null;
+  /** null: not covered or not loaded yet, never "nobody is short". */
+  eu: EuShortPositions | null;
+};
+
 export type Insiders = {
   ticker: string;
   /** null means nobody publishes for this name — not that nothing happened. */
@@ -531,6 +598,32 @@ export type EpsRevisionRow = {
   down_30d: number | null;
 };
 
+export type RatingChange = {
+  /** ISO day. */
+  date: string;
+  firm: string;
+  action: "upgrade" | "downgrade" | "initiated" | "reiterated";
+  from_grade: string | null;
+  to_grade: string | null;
+  target: number | null;
+  prior_target: number | null;
+  target_move: "raised" | "lowered" | "set" | null;
+};
+
+/** What the listed options say. `listed` false: nothing is traded on the name. */
+export type OptionsView = {
+  ticker: string;
+  listed: boolean;
+  /** Annualised at-the-money implied volatility; 0.32 is 32 %. */
+  iv: number | null;
+  iv_expiry: string | null;
+  iv_days: number | null;
+  put_call_oi: number | null;
+  put_call_volume: number | null;
+  open_interest: number;
+  expiries: number;
+};
+
 export type Analysts = {
   ticker: string;
   currency: string | null;
@@ -546,6 +639,8 @@ export type Analysts = {
   months: AnalystMonth[];
   targets: AnalystTargets | null;
   revisions: EpsRevisionRow[];
+  /** Newest first; empty when Yahoo lists none (most non-US names). */
+  changes: RatingChange[];
 };
 
 type FundHolding = { symbol: string; name: string; weight: number };

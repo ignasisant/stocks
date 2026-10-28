@@ -20,6 +20,7 @@
 import { useLang, useT } from "../../shell/i18n";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { DenseRows, Responsive } from "../../ui/Rows";
+import { Fold } from "../../ui/Fold";
 import { moneyIn, shares as formatShares } from "../portfolio/format";
 import type { CalendarDividend, EventPick } from "./data";
 import { days, longDate, plain } from "./format";
@@ -110,65 +111,69 @@ export function DividendTable({ dividends }: { dividends: CalendarDividend[] }) 
   const key = (d: CalendarDividend) => `${d.ticker}-${d.date}`;
   return (
     <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.dividends"))}</h2>
-      <Responsive
-        wide={
-          <table className="earn-table">
-            <thead>
-              <tr>
-                <th className="left">{t("earnings.list_col_ticker")}</th>
-                <th className="left">{t("earnings.list_col_ex_date")}</th>
-                <th>{t("earnings.list_col_per_share")}</th>
-                <th>{t("earnings.list_col_amount")}</th>
-                <th>{t("earnings.list_col_days_out")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((d) => (
-                <tr
-                  key={key(d)}
-                  className={
-                    d.projected
-                      ? "earn-div-projected"
-                      : d.days_until >= 0
-                        ? "earn-div-next"
-                        : undefined
-                  }
-                  title={d.projected ? t("earnings.div_projected_row") : undefined}
-                >
-                  <td className="left">
-                    <TickerCell className="earn-ticker" ticker={d.ticker}>
-                      {d.ticker}
-                    </TickerCell>
-                  </td>
-                  <td className="left">
-                    {mark(d, t)}
-                    {longDate(d.date, t)}
-                  </td>
-                  <td>{cash(lang, d.per_share, d.currency)}</td>
-                  <td title={breakdown(d, lang, t)}>
-                    {cash(lang, d.amount, d.currency)}
-                  </td>
-                  {/* Days are a countdown: a date already behind has none. */}
-                  <td>{d.days_until >= 0 ? days(d.days_until) : DASH}</td>
+      <Fold
+        id="earn-dividends"
+        head={<h2 className="earn-h2">{plain(t("earnings.dividends"))}</h2>}
+      >
+        <Responsive
+          wide={
+            <table className="earn-table">
+              <thead>
+                <tr>
+                  <th className="left">{t("earnings.list_col_ticker")}</th>
+                  <th className="left">{t("earnings.list_col_ex_date")}</th>
+                  <th>{t("earnings.list_col_per_share")}</th>
+                  <th>{t("earnings.list_col_amount")}</th>
+                  <th>{t("earnings.list_col_days_out")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        }
-        narrow={
-          <DenseRows
-            rows={rows}
-            rowKey={key}
-            spec={{
-              ticker: (d) => d.ticker,
-              value: (d) => cash(lang, d.amount, d.currency),
-              delta: (d) => `${mark(d, t)}${longDate(d.date, t)}`,
-              sub: (d) => [breakdown(d, lang, t)],
-            }}
-          />
-        }
-      />
+              </thead>
+              <tbody>
+                {rows.map((d) => (
+                  <tr
+                    key={key(d)}
+                    className={
+                      d.projected
+                        ? "earn-div-projected"
+                        : d.days_until >= 0
+                          ? "earn-div-next"
+                          : undefined
+                    }
+                    title={d.projected ? t("earnings.div_projected_row") : undefined}
+                  >
+                    <td className="left">
+                      <TickerCell className="earn-ticker" ticker={d.ticker}>
+                        {d.ticker}
+                      </TickerCell>
+                    </td>
+                    <td className="left">
+                      {mark(d, t)}
+                      {longDate(d.date, t)}
+                    </td>
+                    <td>{cash(lang, d.per_share, d.currency)}</td>
+                    <td title={breakdown(d, lang, t)}>
+                      {cash(lang, d.amount, d.currency)}
+                    </td>
+                    {/* Days are a countdown: a date already behind has none. */}
+                    <td>{d.days_until >= 0 ? days(d.days_until) : DASH}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+          narrow={
+            <DenseRows
+              rows={rows}
+              rowKey={key}
+              spec={{
+                ticker: (d) => d.ticker,
+                value: (d) => cash(lang, d.amount, d.currency),
+                delta: (d) => `${mark(d, t)}${longDate(d.date, t)}`,
+                sub: (d) => [breakdown(d, lang, t)],
+              }}
+            />
+          }
+        />
+      </Fold>
     </section>
   );
 }

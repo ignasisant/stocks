@@ -112,7 +112,9 @@ async function transcribe(clip: Blob, lang: string): Promise<string> {
     lang,
   };
   try {
-    const { text } = await send<{ text: string }>("POST", "/chat/voice", body);
+    const { text } = await send<{ text: string }>("POST", "/chat/voice", body, {
+      touches: [],
+    });
     return text;
   } catch (failure) {
     const detail = failure instanceof ApiError ? failure.detail : "";

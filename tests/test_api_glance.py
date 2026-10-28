@@ -9,7 +9,8 @@ arithmetic. What is tested here is what these three routes decide:
   since closed both stale a card whose date has not moved;
 * a book whose prices do not cover a window reads null, not a flat 0%;
 * being *at* an extreme and being 0% away from one are different facts, and the
-  second one is not how the first is reported.
+  second one is not how the first is reported;
+* the edges come highs first, then lows, each run nearest its edge first.
 
 Nothing here touches the network: every loader is replaced.
 """
@@ -25,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import loaders
+from stocks.api import home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
 from stocks.chat import daily
@@ -479,6 +480,27 @@ def test_a_name_just_under_its_high_carries_how_far(client, account, monkeypatch
     assert by_ticker["AAPL"]["edge"] == "high"
     assert by_ticker["AAPL"]["distance"] == pytest.approx(-0.01)
     assert by_ticker["MSFT"]["edge"] == "low"
+
+
+def test_highs_come_before_lows(client, account, monkeypatch):
+    """AAPL at its low sorts first by name; the highs lead anyway."""
+    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: year(80.0, 250.0))
+    payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
+    assert [(e["ticker"], e["edge"]) for e in payload["extremes"]] == [
+        ("MSFT", "high"),
+        ("AAPL", "low"),
+    ]
+
+
+def test_each_run_starts_nearest_its_edge():
+    """At the edge, then 0.5% off, then 1.5% off — whatever the names sort to."""
+    year = {
+        "AAA": [100.0, 98.5],
+        "BBB": [100.0, 101.0],
+        "CCC": [100.0, 99.5],
+    }
+    rows = home.scan_extremes(("AAA", "BBB", "CCC"), year)
+    assert [ticker for ticker, *_ in rows] == ["BBB", "CCC", "AAA"]
 
 
 def test_a_name_in_the_middle_of_its_range_is_not_reported(

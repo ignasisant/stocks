@@ -96,6 +96,45 @@ no Tailwind.
   Anything drawn over it (the reader's fills) stays `textPrimary` and is told
   apart by shape, never by green/red.
 
+## Chart data rules
+
+The dataviz skill's rules, fitted to Aguait. They apply to every chart on
+every page; a chart that breaks one is wrong, not a style choice.
+
+1. **Series palette.** Identity (which ticker, which bucket, which line)
+   comes from `series()` in `shell/theme.ts` = `CATEGORICAL_COLORS` in
+   `ds.py`: blue, orange, purple, amber, magenta, in that order. Fixed order,
+   never cycled (`ramp[i] ?? seriesOther()`, never `i % length`). The tail
+   past the fifth folds into one `seriesOther()` "Others", never a sixth hue.
+   Colour follows the entity: a filter that drops a series does not repaint
+   the survivors.
+2. **Up/down are not identity.** `candleUp`/`candleDown`/`up`/`down` say sign
+   or state only. Never "series 2", never a net-income bar's colour because
+   it is "good".
+3. **One y-axis.** Two magnitudes (revenue in € and EPS in €/share) are two
+   charts sharing the X axis, or one indexed to a common base. No right axis.
+4. **Bars:** ≤24px wide, 4px rounded data end, square on the baseline, 2px
+   surface gap between neighbours and stacked segments.
+5. **Dashed = not reported.** Forecast, hypothesis (backtest), reference
+   (baseline, money in, event rule). Recorded data is solid, whatever its
+   rank on the chart.
+6. **Selective labels.** Name the last point, the extreme or the one the
+   card is about; never a number on every bar or point. Text wears text
+   tokens, never the series colour; the swatch beside it carries identity.
+7. **Table twin.** A chart with ≤40 points offers "Ver datos" (the same
+   numbers as a table); identity is never colour alone (legend for ≥2
+   series, `EndLabels` for ≤4).
+8. **Validated, not eyeballed.** `tests/test_chart_palette.py` re-runs the
+   skill's checks on `CATEGORICAL_COLORS`: OKLCH L 0.48–0.67, chroma ≥ 0.10,
+   adjacent ΔE ≥ 8 under protan/deutan and ≥ 15 for full-colour vision,
+   ≥ 3:1 on card and page. A new hue goes in only when that test passes.
+
+Deliberate deviations: dark only, so no light-mode band; the Epilogue hero
+figure stays (tabular-nums); the price line keeps 2.25px and its 14% area
+fade (`Price chart hierarchy` below). The text-weight hues (`info`,
+`brandAccent`, `warn`, `smaFast`…) stay for overlays and event marks with one
+fixed meaning — they are not a series palette.
+
 ## Component patterns
 
 - **Segmented** (`ui/Segmented.tsx`, the only one): one `--ag-surface-page`
@@ -158,7 +197,8 @@ no Tailwind.
   `--ag-text-secondary` where it crosses a filled area (ticker price). A drag
   (mouse/pen button 0) takes `setPointerCapture`; touch stays free to scroll.
   Lines are named at their ends (`EndLabels` + `spreadLabels`, ≤4, not narrow)
-  instead of colour-only legends; a third line is dashed. Up candles hollow
+  instead of colour-only legends; dashes only for what was not
+  reported (rule 5 above). Up candles hollow
   once the body is ≥4px. Axis digits come from the tick step (`tickDigits`).
   The loading slot reserves the plot's height (`PriceChartWait`, Home spark
   56px, chat `min-height: 160px`).
@@ -196,6 +236,15 @@ no Tailwind.
   "?" inside the `th`, for any column whose number needs a definition. Row
   pills/tags carry their rule as `title` on hover; KPI defs come from the
   catalog (`kpi.<k>.desc`, `*` stripped), never re-written per page.
+- **Figure columns**: a numeric `th` aligns right over its right-aligned,
+  tabular figures (`.hm-table th.hm-num`), never left of them.
+- **Runs inside one table** (Home 52-week extremes): two kinds of row (highs,
+  lows) share one `thead` so the columns line up; each run is its own
+  `tbody` headed by a `th scope="rowgroup"` row in the caption's voice
+  (`--ag-fs-xs` muted, room above, no rule). The heading names the kind, so
+  rows drop the repeated word and keep only the figure; an empty run drops
+  out heading and all. On a phone: caption + `DenseRows` per run, the same
+  split the movers card uses for gains and losses.
 - **Row details dialog** (`DetailsButton` / `Details`, `Explain.tsx`): terse
   row (pill, two reasons, figure) + a way into the full story — a right
   chevron in the table's last column (`aria-haspopup="dialog"`, 44px
@@ -366,6 +415,20 @@ no Tailwind.
   on Enter as well as on blur.
 - **44px coarse targets** hold in page stylesheets too, not just shell
   controls; a dense row grows its hit area with padding or `::before`.
+  Text fields, selects and `.ag-btn` get the floor from styles.css
+  (`min-height: 44px !important` under `pointer: coarse`), so a page's own
+  pointer-sized `min-height` cannot undercut it; a checkbox's 44px target is
+  its `<label>` row.
+- **Controls under a finger** (styles.css): `touch-action: manipulation` on
+  buttons, links, summaries, labels, selects, tabs; `user-select: none` on
+  buttons, summaries, tabs (never on links or content). The viewport carries
+  `interactive-widget=resizes-content` (Android's keyboard shrinks the
+  layout, as `useKeyboardFit` makes iOS do for the chat) and `:root` sets
+  `text-size-adjust: 100%`.
+- **Phone first screen:** a row of three KPI tiles that stacks one per line
+  (`.ag-kpis`, ag-main ≤38rem) draws each tile as a list row, label left and
+  figure right; a filter pill row that would wrap to a second line on a phone
+  slides sideways instead (`.earn-kinds`).
 - **No hover-only actions:** what hover reveals on desktop (copy an answer,
   row tools) is visible on touch.
 - **Loading:** skeletons keep their final height from the first frame and
@@ -475,6 +538,47 @@ no Tailwind.
 - Diverging ramps rise in lightness from the neutral outwards; the diagonal and
   "no data" never use the ramp (surface grey / dashed outline).
 - Rank "most linked" by what the book holds, not by raw value.
+
+## Phone adaptations
+
+What a desktop layout draws that a 390px column cannot, and the shape it takes
+instead. "Narrow" is the measured width (`useWidth` < 480 for a plot, `useMobile`
+≤ 640 on `ag-main` for a page), never the viewport: an open chat drawer narrows
+a laptop page the same way.
+
+- **Category labels never squeeze.** A bar chart whose x axis is named
+  categories (not dates) and has more than four of them lies down when narrow:
+  one row per bar — name, the bar on a shared scale, figure — instead of
+  columns whose labels overprint (`Waterfall` → `.pf-fall-rows`). Date axes
+  thin their ticks instead.
+- **A matrix is read one row at a time.** Past six names a narrow heatmap is a
+  name picker plus that name's row as a ranked list with a diverging bar from
+  the centre, ten rows then "Show all N" (`Heatmap` → `.pf-heat-rows`). It
+  opens on the row of the most-linked pair. The grid stays the desktop
+  reading.
+- **Dense scatter: the nearest dot answers.** Dots keep their drawn size; a
+  finger that lands between them opens the nearest within 22px of its edge
+  (`QualityMap` `REACH`). Never grow every dot's hit area to 44px — in a
+  cluster it swallows the neighbours.
+- **A row about one ticker is one target.** Under `pointer: coarse` a list row
+  whose subject is one ticker takes `.ag-row-reach`: the ticker link's
+  `::after` stretches over the row; any other control in it sits above. Not for
+  rows naming two tickers (a correlation pair) or a ticker inside a sentence.
+- **Long pages fold.** Below the first screen a page's secondary cards fold to
+  their heading on a phone (`ui/Fold`, ticker `Card fold="id"`): a list of
+  headings is an index the reader opens where they want. Closed by default;
+  an opened card stays open on the next visit (localStorage, per card).
+  Never fold the hero, the price chart, a holding, or anything the first
+  screen answers with. A folded card renders nothing below its heading, and
+  its heading row shows the title alone (captions, badges, sources wait).
+  A link that lands inside a fold (`#anchor`, a jump bar) opens it; so does
+  `opened` when the URL names part of it (`?tab=`). Adopted on Ticker,
+  Earnings list (book, past dividends, past results) and Sentiment (snapshot,
+  book, detail). Not on Home: its cards are the reader's own pick, and the
+  editor is where a card is put away.
+- **The answer first.** A page leads with what it concludes (Review: the plan,
+  then the book-wide notes), in DOM order, not by CSS `order` — a screen
+  reader and a phone read the same sequence.
 
 ## Cards that share labels say their scope on the page
 

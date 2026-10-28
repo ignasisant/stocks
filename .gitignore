@@ -110,6 +110,9 @@ wheels/
 .DS_Store
 
 # App secrets (never commit) — .bak* covers rotate-script backups
+/secrets.toml
+/secrets.toml.bak*
+# Old location (before the rename); backups may still sit there
 .streamlit/secrets.toml
 .streamlit/secrets.toml.bak*
 
@@ -143,3 +146,13 @@ test-results/
 
 # hypothesis example database (tests/test_properties.py)
 .hypothesis/
+
+# SEC frames and 13F index (stocks.data.frames / thirteenf) - regenerable,
+# mirrored to the bucket.
+/data/edgar_frames.json
+/data/thirteenf.sqlite
+
+
+# Compressed siblings of the bundle, written at image build (web/precompress.py)
+src/stocks/web/static/**/*.gz
+src/stocks/web/static/**/*.br

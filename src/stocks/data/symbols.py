@@ -29,6 +29,7 @@ from collections.abc import Callable
 
 from stocks import atomic
 from stocks.config import DATA_DIR
+from stocks.data import openfigi
 from stocks.data.http import get_json
 from stocks.fuzzy import MIN_QUERY
 
@@ -245,6 +246,14 @@ def symbol_for_isin(isin: str) -> str | None:
         return hit
     if key in _isin_misses:
         return None
+
+    # OpenFIGI first: for an ISIN whose country names its primary exchange the
+    # home line is a fact there, where Yahoo's search only ranks venues. A
+    # failure or an unmapped country is a None, and Yahoo answers as before.
+    if figi := openfigi.home(key):
+        cache[key] = figi
+        _save_isin_cache(cache)
+        return figi
 
     # The raw rows, not `search_symbols`: that one collapses an issuer's
     # venues into its best-ranked line, and the line worth having here is
@@ -504,13 +513,28 @@ def _symbol(row: dict) -> str:
     return str(row.get("symbol") or "").strip().upper()
 
 
-def _home_by_isin(isin: str, venues: tuple[str, ...]) -> str | None:
-    """The line Yahoo quotes `isin` under, if it trades on one of `venues`
-    and is not a floor. An ISIN names the security, class included, so the
-    line needs no price to prove it: ES0105025003 is MRL.MC."""
+def _home_by_isin(
+    isin: str,
+    venues: tuple[str, ...],
+    vet: Callable[[str], bool | None] | None = None,
+) -> str | None:
+    """The line the ISIN trades under, if it is on one of `venues` and is not
+    a floor. An ISIN names the security, class included, so the line needs no
+    price to prove it: ES0105025003 is MRL.MC.
+
+    The primary listing (OpenFIGI's, else Yahoo's) is taken as it comes. When
+    that is not on `venues` — an ETF has no primary, a Canadian stock's is on
+    Toronto while the trade was in dollars — OpenFIGI's other lines on the
+    venues are tried, and with a `vet` each must have closed where the fills
+    were: a line that is the same security but not the one that was traded
+    (a floor's, another currency's) is not an answer.
+    """
     found = symbol_for_isin(isin)
     if found and _suffix(found) in venues and not on_floor(found):
         return found
+    for symbol in openfigi.candidates(isin, venues)[:_HOME_TRIES]:
+        if symbol != found and (vet is None or vet(symbol) is True):
+            return symbol
     return None
 
 
@@ -602,7 +626,7 @@ def symbol_for_code(
     if not hit and key in _code_misses:
         return None
 
-    home = _home_by_isin(isin, venues) if homing and is_isin(isin) else None
+    home = _home_by_isin(isin, venues, vet) if homing and is_isin(isin) else None
     sure = True
     symbol = home
     if home is None and hit and vet is None:

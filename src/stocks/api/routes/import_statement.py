@@ -93,7 +93,7 @@ from stocks.api.schemas import (
     Transaction,
 )
 from stocks.api.security import Authed
-from stocks.data import fetch, fx, symbols
+from stocks.data import fetch, fx, openfigi, symbols
 from stocks.portfolio import (
     autodetect,
     corporate,
@@ -868,6 +868,16 @@ def _retag(db: Path, moved: dict[tuple[str, str], str]) -> int:
     )
 
 
+def _place_isins(isins: set[str]) -> None:
+    """Ask OpenFIGI for every ISIN of the statement in one batched request,
+    so the per-code lookups after it (`symbols.symbol_for_code`, run in
+    parallel) find their listings cached instead of each making a request.
+    Bounded like every lookup here; a throttled or offline OpenFIGI leaves the
+    lookups on Yahoo, as they were."""
+    if isins:
+        _within(lambda: openfigi.securities(isins), LOOKUP_BUDGET_S, None)
+
+
 def _validated(account, parsed: ParseResult, *, wipe: bool = False):
     """Validate a read against this account's own ledger and watchlist.
 
@@ -910,6 +920,9 @@ def _validated(account, parsed: ParseResult, *, wipe: bool = False):
         for ticker, currency in currencies.items()
     }
     lookup = _Lookup(currencies, parsed.isins, samples)
+    _place_isins(
+        set(parsed.isins.values()) | {t for t in currencies if symbols.is_isin(t)}
+    )
     lookup.home()
 
     def listed(ticker: str) -> bool | None:

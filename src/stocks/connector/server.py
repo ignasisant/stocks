@@ -22,16 +22,19 @@ those are.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlsplit
 
 from mcp.server.apps import Apps, ResourceCsp
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.prompts import Prompt
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import Icon
+from pydantic import Field
 from starlette.responses import JSONResponse
 from starlette.routing import Router
 
@@ -74,6 +77,12 @@ not data: every figure, price and date comes from the other tools. \
 `decision_journal` is what the app itself already proposed to them (sell, \
 trim, harvest a loss, set an alert) and what became of it: check it before \
 proposing the same move again.
+
+The TopStocks assistant analyses through written frameworks; use the same \
+ones so both give the person one way of reasoning. Before analysing a \
+company, `read_skill` the id `ticker_details` returns under `skill`; for an \
+earnings, tax, valuation or risk question, the lens `list_skills` names for \
+it. They are method — what to check and in what order — never figures.
 
 If the person allowed edits when connecting, tools that change their records \
 are listed too. A position that looks doubled, a gain that never happened or \
@@ -168,6 +177,8 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
     for spec in tools.TOOLS:
         if spec.name not in viewed:
             mcp.add_tool(spec.fn, **spec.kwargs())
+    for prompt in _prompts():
+        mcp.add_prompt(prompt)
 
     mcp_app = mcp.streamable_http_app(
         streamable_http_path=oauth.MCP_PATH,
@@ -180,6 +191,35 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
     )
     auth = Router(routes=[*oauth.routes(provider), *consent.routes(origin)])
     return mcp, mcp_app, auth
+
+
+def _prompts() -> list[Prompt]:
+    """Each lens the chat lets a reader pin, as a prompt the host can offer.
+
+    Claude Desktop and Code list prompts as slash commands; claude.ai reaches
+    the same text through `read_skill`, which is why the tools stay the road
+    the instructions name. Industry playbooks are left to `ticker_details`'
+    `skill`: they are picked by the company, not by the reader."""
+    from stocks.web import chat_skills
+
+    def render(skill: chat_skills.Skill) -> Callable[..., str]:
+        def fn(subject: Annotated[str, Field(
+            max_length=200,
+            description="A ticker or a question to apply it to; optional.")] = "",
+        ) -> str:
+            target = subject.strip() or "the person's TopStocks portfolio"
+            return (
+                f"Apply the {skill.name} framework below to {target}. Take every "
+                "figure from the TopStocks tools (start with investor_context), "
+                f"none from memory.\n\n## {skill.name}\n{skill.body}"
+            )
+        return fn
+
+    return [
+        Prompt.from_function(render(s), name=s.id, title=s.name,
+                             description=s.description)
+        for s in chat_skills.pickable()
+    ]
 
 
 class Door:

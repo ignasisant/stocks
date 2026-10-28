@@ -278,6 +278,62 @@ def test_the_server_tells_claude_to_read_the_memory_first():
     assert "investor_context" in {spec.name for spec in tools.TOOLS}
 
 
+# --------------------------------------------------------------- frameworks
+
+
+def test_claude_reads_the_frameworks_the_assistant_analyses_with(site, token):
+    from stocks.web import chat_skills
+
+    listed_ = ok(call(site, token, "list_skills"))["skills"]
+    assert {s["id"] for s in listed_} == chat_skills.valid_ids()
+    framework = ok(call(site, token, "read_skill", skill=" Earnings-Review "))
+    expected = next(s for s in chat_skills.catalog() if s.id == "earnings-review")
+    assert framework["framework"] == expected.body
+    missing = call(site, token, "read_skill", skill="astrology")
+    assert missing["isError"] is True
+    assert "list_skills" in result_text(missing)
+
+
+def test_every_pinnable_lens_is_a_prompt_that_carries_its_framework(site, token):
+    from stocks.web import chat_skills
+
+    prompts = rpc(site, token, "prompts/list").json()["result"]["prompts"]
+    assert {p["name"] for p in prompts} == {s.id for s in chat_skills.pickable()}
+    r = rpc(site, token, "prompts/get",
+            {"name": "earnings-review", "arguments": {"subject": "NVDA"}})
+    (message,) = r.json()["result"]["messages"]
+    text = message["content"]["text"]
+    assert "NVDA" in text and "investor_context" in text
+    expected = next(s for s in chat_skills.catalog() if s.id == "earnings-review")
+    assert expected.body in text
+
+
+@pytest.mark.parametrize("info, skill", [
+    ({"quoteType": "ETF", "sector": "Technology"}, "etfs"),
+    ({"quoteType": "CRYPTOCURRENCY"}, "crypto"),
+    ({"quoteType": "EQUITY", "sector": "Technology",
+      "industry": "Semiconductors"}, "semiconductors"),
+    ({"quoteType": "EQUITY", "sector": "Utilities", "industry": "?"}, "utilities"),
+    ({}, ""),
+])
+def test_a_ticker_names_the_framework_the_chat_would_read_it_through(
+    monkeypatch, info, skill
+):
+    from types import SimpleNamespace
+
+    from stocks.api import loaders
+
+    monkeypatch.setattr(loaders, "fundamentals", lambda code: SimpleNamespace(info=info))
+    assert tools._skill_for("X") == skill
+
+
+def test_the_server_tells_claude_to_read_the_frameworks():
+    from stocks.connector import server
+
+    assert "read_skill" in server.INSTRUCTIONS
+    assert "`skill`" in server.INSTRUCTIONS
+
+
 def result_text(result: dict) -> str:
     return result["content"][0]["text"]
 
@@ -651,3 +707,166 @@ def test_a_sale_is_simulated_by_the_tax_engine(site, token, monkeypatch):
     assert result["isError"] is True and "No holding of AAPL" in result_text(result)
     assert seen[0]["ticker"] == "AAPL" and seen[0]["shares"] == 3
     assert seen[0]["price"] == (150, "EUR")
+
+
+# ------------------------------------------------- research the chat already had
+
+
+def test_the_apps_own_documentation_answers_how_it_works(site, token):
+    found = ok(call(site, token, "app_help", query="Modelo 720"))
+    assert found["passages"], found
+    first = found["passages"][0]
+    listing = ok(call(site, token, "app_help", doc=first["doc"]))
+    assert first["section"] in listing["sections"]
+    whole = ok(call(site, token, "app_help", doc=first["doc"],
+                    section=first["section"]))
+    assert whole["passages"][0]["doc"] == first["doc"]
+    for args, text in [({}, "Ask with query"), ({"doc": "nonsense"}, "No document"),
+                       ({"doc": first["doc"], "section": "nonsense"}, "No section")]:
+        bad = call(site, token, "app_help", **args)
+        assert bad["isError"] is True and text in result_text(bad)
+
+
+def test_exit_rules_are_written_to_the_journal_and_retired_by_id(site, editor, book):
+    rules = [{"rule": "below", "level": 90.0},
+             {"rule": "revenue_growth_below", "level": 0, "quarters": 2},
+             {"rule": "ceo_change"}]
+    saved = ok(call(site, editor, "set_kill_criteria", ticker="aapl", rules=rules,
+                    thesis="Services keep growing"))
+    assert [e["ticker"] for e in saved["written"]] == ["AAPL"] * 3
+    journal = ok(call(site, editor, "decision_journal"))["entries"]
+    assert {e["id"] for e in saved["written"]} <= {e["id"] for e in journal}
+    gone = ok(call(site, editor, "retire_kill_criterion",
+                   criterion_id=saved["written"][0]["id"]))
+    assert gone["state"] != "open"
+    again = call(site, editor, "retire_kill_criterion",
+                 criterion_id=saved["written"][0]["id"])
+    assert again["isError"] is True and "No live exit rule" in result_text(again)
+
+
+def test_exit_rules_with_no_usable_level_write_nothing(site, editor, book):
+    bad = call(site, editor, "set_kill_criteria", ticker="AAPL",
+               rules=[{"rule": "drawdown_cost", "level": 150}])
+    assert bad["isError"] is True and "No rule was usable" in result_text(bad)
+
+
+def test_a_read_only_token_sets_no_exit_rules(site, token, book):
+    result = call(site, token, "set_kill_criteria", ticker="AAPL",
+                  rules=[{"rule": "below", "level": 90.0}])
+    assert result["isError"] is True and "can only read" in result_text(result)
+    assert not book.journal.exists() or "AAPL" not in book.journal.read_text()
+
+
+@pytest.mark.parametrize("arguments, handler, expected", [
+    ({"section": "dcf"}, "dcf", ("AAPL",)),
+    ({"section": "insiders"}, "insiders", ("AAPL",)),
+    ({"section": "fund"}, "fund", ("AAPL",)),
+    ({"section": "compare", "span": "6m", "against": ["spy", "qqq"], "base": "USD"},
+     "compare", ("AAPL", "<paths>", "6m", "SPY,QQQ", "USD")),
+    ({"section": "compare"}, "compare", ("AAPL", "<paths>", "1y", None, None)),
+])
+def test_ticker_research_asks_the_section_its_route(
+    site, token, book, monkeypatch, arguments, handler, expected
+):
+    from starlette.exceptions import HTTPException
+
+    from stocks.api.routes import ticker as routes
+
+    seen: list[tuple] = []
+
+    def spy(*args):
+        seen.append(tuple("<paths>" if a == book else a for a in args))
+        raise HTTPException(404, "no such thing")
+
+    monkeypatch.setattr(routes, handler, spy)
+    result = call(site, token, "ticker_research", ticker="aapl", **arguments)
+    assert seen == [expected]
+    assert result_text(result) == "no such thing"
+
+
+def test_peers_come_with_their_side_by_side_table(site, token, monkeypatch):
+    from stocks.api.routes import comparables
+    from stocks.api.routes import ticker as routes
+    from stocks.api.schemas import Comparables, Peer, Peers
+
+    asked: list[str] = []
+
+    def table(tickers: str) -> Comparables:
+        asked.append(tickers)
+        return Comparables(tickers=tickers.split(","), labels=["P/E"])
+
+    monkeypatch.setattr(routes, "peers", lambda code: Peers(
+        ticker=code, related=[Peer(ticker=f"P{i}") for i in range(9)]))
+    monkeypatch.setattr(comparables, "comparables", table)
+    data = ok(call(site, token, "ticker_research", ticker="msft", section="peers"))
+    rivals = [f"P{i}" for i in range(tools.PEERS_COMPARED - 1)]
+    assert asked == [",".join(["MSFT", *rivals])]
+    assert len(data["related"]) == 9 and data["table"]["labels"] == ["P/E"]
+
+
+def test_a_long_pe_history_is_thinned_to_its_bands_and_a_path(site, token, monkeypatch):
+    from stocks.api.routes import ticker as routes
+    from stocks.api.schemas import Valuation
+
+    days = [f"2020-01-{i:04d}" for i in range(1000)]
+    monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
+        ticker=code, current=20.0, dates=days, pe=[float(i) for i in range(1000)]))
+    data = ok(call(site, token, "ticker_research", ticker="AAPL", section="valuation"))
+    assert "dates" not in data and "pe" not in data
+    assert len(data["path"]) == tools.HISTORY_POINTS
+    assert data["path"][-1] == {"date": days[-1], "pe": 999.0}
+
+
+@pytest.mark.parametrize("section", ["attribution", "monthly", "projection"])
+def test_the_breakdowns_answer_offline(site, token, section):
+    data = ok(call(site, token, "portfolio_breakdown", section=section))
+    assert data["kind"] == section
+
+
+def test_a_projection_reads_a_point_a_year(site, token):
+    data = ok(call(site, token, "portfolio_breakdown", section="projection", years=3))
+    assert "p50" not in data
+    assert [p["date"] for p in data["path"]] == sorted(p["date"] for p in data["path"])
+    assert len(data["path"]) <= 3 + 2
+
+
+def test_a_window_a_breakdown_does_not_take_says_so(site, token):
+    bad = call(site, token, "portfolio_breakdown", section="monthly", window="6mo")
+    assert bad["isError"] is True and "window must be one of" in result_text(bad)
+
+
+def test_the_book_against_the_index_is_cut_to_its_end_and_a_path():
+    from stocks.api.schemas import RiskCurves
+
+    n = 500
+    curves = RiskCurves(
+        dates=[f"d{i:03d}" for i in range(n)], invested=[1.0] * n,
+        portfolio=[i / 100 for i in range(n)], basket=[0.0] * n,
+        benchmarks={"SPY": [*([0.5] * (n - 1)), None]},
+    )
+    out = tools._versus(curves)
+    assert out["end"] == {"date": "d499", "portfolio": 4.99, "basket": 0.0, "SPY": 0.5}
+    assert len(out["path"]) == tools.VERSUS_POINTS
+    assert out["path"][-1]["date"] == "d499"
+
+
+def test_harvest_and_rebalance_run_the_chats_engines(site, token, monkeypatch):
+    from stocks.chat import engine, rebalance
+    from stocks.chat.rebalance import Reweigh
+
+    monkeypatch.setattr(engine, "enriched_frame", lambda db, base="EUR": pd.DataFrame())
+    none = call(site, token, "harvest_losses")
+    assert none["isError"] is True and "No open positions" in result_text(none)
+
+    asked: list[tuple] = []
+
+    def build(book, tbl, ticker, target):
+        asked.append((ticker, target))
+        return Reweigh("AAPL", 11, 1500.0, 3000.0, 25.0, -5.0, -682.0, 120.0,
+                       10.0, 40.0, "EUR", "es", "2026")
+
+    monkeypatch.setattr(rebalance, "build", build)
+    moved = ok(call(site, token, "rebalance_position", ticker="aapl", target_pct=25))
+    assert asked == [("AAPL", 25)]
+    assert moved["shares"] == -5.0 and moved["extra_tax"] == 30.0
+    assert moved["weight"] == 50.0

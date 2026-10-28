@@ -4,8 +4,9 @@
  * Every edit writes as it is made, through the per-entry routes rather than a
  * whole-list save — `PATCH /watchlist/{ticker}` applies only the fields it is
  * sent, so starring a name cannot overwrite its groups and renaming a group
- * cannot drop a holding outside it. The server's answer is what the list
- * re-renders from.
+ * cannot drop a holding outside it. The list shows each edit the moment it is
+ * made and is re-read behind it: the server's answer is what it settles on,
+ * and a refused write is undone on screen.
  *
  * Shares and average cost are here too: the hand-typed position that weights
  * the fallback analytics by value when no ledger has been imported.
@@ -37,6 +38,17 @@ type Entry = {
 };
 
 export type Listing = { entries: Entry[] };
+
+/** What one `PATCH /watchlist/{ticker}` may change. */
+type Patch = Partial<Pick<Entry, "favorite" | "name" | "tags" | "shares" | "cost">>;
+
+/** The entry as the server will read it back after `body`: 0 is "unset", so null. */
+function patched(entry: Entry, body: Patch): Entry {
+  const next = { ...entry, ...body };
+  return { ...next, shares: next.shares || null, cost: next.cost || null };
+}
+
+const sameTag = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /** What a number field holds, as the text box shows it: empty for unset. */
 const asText = (value: number | null) => (value ? String(value) : "");
@@ -119,14 +131,12 @@ function matches(entry: Entry, needle: string): boolean {
 function EntryRow({
   entry,
   tags,
-  busy,
   onEdit,
   onRemove,
 }: {
   entry: Entry;
   tags: readonly string[];
-  busy: boolean;
-  onEdit: (ticker: string, body: Record<string, unknown>) => void;
+  onEdit: (ticker: string, body: Patch) => void;
   onRemove: (ticker: string) => void;
 }) {
   const t = useT();
@@ -156,7 +166,7 @@ function EntryRow({
       else setCost(asText(entry.cost));
       return;
     }
-    onEdit(entry.ticker, { [field]: value });
+    onEdit(entry.ticker, field === "shares" ? { shares: value } : { cost: value });
   };
 
   const toggleTag = (tag: string) =>
@@ -177,7 +187,6 @@ function EntryRow({
         className={entry.favorite ? "pr-star pr-star-on" : "pr-star"}
         aria-label={t("watchlist.col_favorite")}
         aria-pressed={entry.favorite}
-        disabled={busy}
         onClick={() => onEdit(entry.ticker, { favorite: !entry.favorite })}
       >
         {entry.favorite ? "★" : "☆"}
@@ -192,7 +201,6 @@ function EntryRow({
         autoComplete="off"
         enterKeyHint="done"
         value={name}
-        disabled={busy}
         onChange={(event) => setName(event.target.value)}
         onBlur={() => name !== entry.name && onEdit(entry.ticker, { name })}
         onKeyDown={(event) => {
@@ -211,7 +219,6 @@ function EntryRow({
         autoComplete="off"
         enterKeyHint="done"
         value={shares}
-        disabled={busy}
         onChange={(event) => setShares(event.target.value)}
         onBlur={() => commit("shares", shares)}
         onKeyDown={(event) => {
@@ -227,19 +234,13 @@ function EntryRow({
         autoComplete="off"
         enterKeyHint="done"
         value={cost}
-        disabled={busy}
         onChange={(event) => setCost(event.target.value)}
         onBlur={() => commit("cost", cost)}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
       />
-      <button
-        type="button"
-        className="pr-btn"
-        disabled={busy}
-        onClick={() => onRemove(entry.ticker)}
-      >
+      <button type="button" className="pr-btn" onClick={() => onRemove(entry.ticker)}>
         {t("watchlist.act_remove")}
       </button>
       <details className="pr-wtags">
@@ -255,12 +256,7 @@ function EntryRow({
                 (held) => held.toLowerCase() === tag.toLowerCase(),
               );
               return (
-                <ToggleChip
-                  key={tag}
-                  on={on}
-                  disabled={busy}
-                  onClick={() => toggleTag(tag)}
-                >
+                <ToggleChip key={tag} on={on} onClick={() => toggleTag(tag)}>
                   {tag}
                 </ToggleChip>
               );
@@ -272,7 +268,6 @@ function EntryRow({
               enterKeyHint="done"
               placeholder={t("watchlist.add_groups_ph")}
               value={newGroup}
-              disabled={busy}
               onChange={(event) => setNewGroup(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return;
@@ -292,12 +287,10 @@ function EntryRow({
 /** A section's title and count, plus a tag group's own rename and dissolve. */
 function GroupHead({
   section,
-  busy,
   onRename,
   onDissolve,
 }: {
   section: Section;
-  busy: boolean;
   onRename: (tag: string, name: string) => void;
   onDissolve: (tag: string) => void;
 }) {
@@ -318,7 +311,6 @@ function GroupHead({
               autoComplete="off"
               enterKeyHint="done"
               value={name}
-              disabled={busy}
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter") return;
@@ -329,7 +321,7 @@ function GroupHead({
             <button
               type="button"
               className="pr-btn"
-              disabled={busy || !name.trim() || name.trim() === section.tag}
+              disabled={!name.trim() || name.trim() === section.tag}
               onClick={() => onRename(section.tag!, name.trim())}
             >
               {t("watchlist.group_rename_apply")}
@@ -337,7 +329,6 @@ function GroupHead({
             <button
               type="button"
               className="pr-btn"
-              disabled={busy}
               title={t("watchlist.group_delete_help")}
               onClick={() => onDissolve(section.tag!)}
             >
@@ -352,7 +343,21 @@ function GroupHead({
 
 function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
   const t = useT();
-  const [busy, setBusy] = useState(false);
+  // The list as the reader sees it: the server's, with each write applied
+  // the moment it is made — the star lights, the row leaves, the group takes
+  // its new name at the press. The list is re-read behind every write, and
+  // the server's copy replaces this one when it lands (a tag edit can move a
+  // row between sections, and only the server orders the list). A refusal
+  // puts back the copy from before that write.
+  const [held, setHeld] = useState(entries);
+  const [source, setSource] = useState(entries);
+  if (source !== entries) {
+    setSource(entries);
+    setHeld(entries);
+  }
+  // Only an add holds its control: a second pick while one is on its way
+  // would start another request; the row's own controls never wait.
+  const [adding, setAdding] = useState(false);
   // Where the last refusal happened, so it is shown under the control that
   // caused it rather than twice on the page.
   const [failure, setFailure] = useState<{
@@ -363,18 +368,23 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
   const [keep, setKeep] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>("tags");
 
-  const write = (work: Promise<unknown>, where: "add" | "list" = "list") => {
-    setBusy(true);
+  const write = (
+    work: Promise<unknown>,
+    next: Entry[],
+    where: "add" | "list" = "list",
+  ) => {
+    const before = held;
+    setHeld(next);
     setFailure(null);
+    if (where === "add") setAdding(true);
     work.then(
       () => {
-        setBusy(false);
-        // The server's copy is the truth, and a tag edit can move a row
-        // between sections — so the list is re-read rather than patched here.
+        if (where === "add") setAdding(false);
         reload();
       },
       (error: unknown) => {
-        setBusy(false);
+        if (where === "add") setAdding(false);
+        setHeld(before);
         if (error instanceof NotSignedIn) {
           reload();
           return;
@@ -383,13 +393,21 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
       },
     );
   };
+  const retag = (tag: string, name: string | null) =>
+    held.map((entry) => ({
+      ...entry,
+      tags:
+        name === null
+          ? entry.tags.filter((h) => !sameTag(h, tag))
+          : entry.tags.map((h) => (sameTag(h, tag) ? name : h)),
+    }));
 
-  const tags = [...new Set(entries.flatMap((entry) => entry.tags))].sort((a, b) =>
+  const tags = [...new Set(held.flatMap((entry) => entry.tags))].sort((a, b) =>
     a.toLowerCase().localeCompare(b.toLowerCase()),
   );
-  const listed = new Set(entries.map((entry) => entry.ticker.toUpperCase()));
+  const listed = new Set(held.map((entry) => entry.ticker.toUpperCase()));
   const keeping = new Set(keep.map((tag) => tag.toLowerCase()));
-  const shown = entries.filter(
+  const shown = held.filter(
     (entry) =>
       matches(entry, needle) &&
       (!keeping.size || entry.tags.some((tag) => keeping.has(tag.toLowerCase()))),
@@ -400,12 +418,29 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
       <WatchlistAdd
         listed={listed}
         tags={tags}
-        busy={busy}
+        busy={adding}
         failure={failure?.where === "add" ? failure.message : null}
-        onAdd={(entry) => write(send("POST", "/watchlist", entry), "add")}
+        onAdd={(entry) =>
+          write(
+            send("POST", "/watchlist", entry),
+            [
+              ...held,
+              {
+                ticker: entry.ticker,
+                name: entry.name,
+                favorite: entry.favorite ?? false,
+                tags: entry.tags ?? [],
+                shares: null,
+                cost: null,
+                is_crypto: false,
+              },
+            ],
+            "add",
+          )
+        }
       />
 
-      {entries.length === 0 ? (
+      {held.length === 0 ? (
         <Card title={t("profile.empty_watchlist_title")}>
           <div className="pr-cardbody">
             <p className="pr-hint">{t("profile.empty_watchlist_body")}</p>
@@ -469,17 +504,18 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                 <div key={section.id}>
                   <GroupHead
                     section={section}
-                    busy={busy}
                     onRename={(tag, name) =>
                       write(
                         send("PATCH", `/watchlist/tags/${encodeURIComponent(tag)}`, {
                           name,
                         }),
+                        retag(tag, name),
                       )
                     }
                     onDissolve={(tag) =>
                       write(
                         send("DELETE", `/watchlist/tags/${encodeURIComponent(tag)}`),
+                        retag(tag, null),
                       )
                     }
                   />
@@ -488,7 +524,6 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                       key={`${section.id}_${entry.ticker}`}
                       entry={entry}
                       tags={tags}
-                      busy={busy}
                       onEdit={(ticker, body) =>
                         write(
                           send(
@@ -496,11 +531,13 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                             `/watchlist/${encodeURIComponent(ticker)}`,
                             body,
                           ),
+                          held.map((e) => (e.ticker === ticker ? patched(e, body) : e)),
                         )
                       }
                       onRemove={(ticker) =>
                         write(
                           send("DELETE", `/watchlist/${encodeURIComponent(ticker)}`),
+                          held.filter((e) => e.ticker !== ticker),
                         )
                       }
                     />
@@ -511,7 +548,7 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
 
             <div className="pr-foot">
               <span className="pr-hint">
-                {t("watchlist.count", { n: entries.length })}
+                {t("watchlist.count", { n: held.length })}
               </span>
               <details className="pr-more">
                 <summary>{t("watchlist.how_open")}</summary>

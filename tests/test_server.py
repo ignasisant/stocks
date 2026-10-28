@@ -36,14 +36,15 @@ def shell(tmp_path, monkeypatch):
     (build / "app.js").write_text("console.log(1)")
     monkeypatch.setattr(server, "_APP_BUILD", build)
     server._app_document.cache_clear()
+    server._manifest.cache_clear()
     yield build
     server._app_document.cache_clear()
+    server._manifest.cache_clear()
 
 
 def served(*middleware: type) -> Starlette:
     """server.py's routes behind `middleware`."""
-    return Starlette(routes=server.routes,
-                     middleware=[Middleware(m) for m in middleware])
+    return Starlette(routes=server.routes, middleware=[Middleware(m) for m in middleware])
 
 
 @pytest.fixture
@@ -337,8 +338,17 @@ def test_an_unknown_path_is_a_404_not_the_app_shell(client):
 
 @pytest.mark.parametrize(
     "path",
-    ["/portfolio", "/ticker", "/sector", "/earnings", "/profile",
-     "/import_transactions", "/import", "/home", "/bank"],
+    [
+        "/portfolio",
+        "/ticker",
+        "/sector",
+        "/earnings",
+        "/profile",
+        "/import_transactions",
+        "/import",
+        "/home",
+        "/bank",
+    ],
 )
 def test_everything_that_is_really_served_survives_the_gate(client, path):
     assert client.get(path).status_code == 200
@@ -594,8 +604,7 @@ def test_a_guest_gets_a_smaller_share_of_the_api(metered, monkeypatch):
 def test_a_made_up_bearer_does_not_lift_the_guest_share(metered, monkeypatch):
     monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 4)
     forged = {"Authorization": "Bearer not-the-token"}
-    got = [metered.get("/api/v1/health", headers=forged).status_code
-           for _ in range(5)]
+    got = [metered.get("/api/v1/health", headers=forged).status_code for _ in range(5)]
     assert got[-1] == 429
 
 
@@ -656,9 +665,12 @@ def test_a_deep_link_gets_the_shell_rather_than_a_404(client):
 def test_the_old_next_address_is_redirected_home(client):
     """Linked from the what's-new card and Profile while it was being built,
     and the bank's registered return address: every one must still land."""
-    for old, new in (("/next", "/"), ("/next/", "/"),
-                     ("/next/portfolio?tab=fees", "/portfolio?tab=fees"),
-                     ("/next/bank?code=x&state=y", "/bank?code=x&state=y")):
+    for old, new in (
+        ("/next", "/"),
+        ("/next/", "/"),
+        ("/next/portfolio?tab=fees", "/portfolio?tab=fees"),
+        ("/next/bank?code=x&state=y", "/bank?code=x&state=y"),
+    ):
         response = client.get(old, follow_redirects=False)
         assert response.status_code == 301, old
         assert response.headers["location"] == new, old
@@ -667,9 +679,12 @@ def test_the_old_next_address_is_redirected_home(client):
 def test_the_old_app_address_lands_on_the_same_page_of_the_shell(client):
     """The Streamlit app answered at `/legacy` once the shell replaced it, and
     the what's-new card linked there: a bookmark must reach the page it named."""
-    for old, new in (("/legacy", "/"), ("/legacy/", "/"),
-                     ("/legacy/portfolio?tab=fees", "/portfolio?tab=fees"),
-                     ("/legacy/ticker?ticker=AAPL", "/ticker?ticker=AAPL")):
+    for old, new in (
+        ("/legacy", "/"),
+        ("/legacy/", "/"),
+        ("/legacy/portfolio?tab=fees", "/portfolio?tab=fees"),
+        ("/legacy/ticker?ticker=AAPL", "/ticker?ticker=AAPL"),
+    ):
         response = client.get(old, follow_redirects=False)
         assert response.status_code == 301, old
         assert response.headers["location"] == new, old
@@ -716,6 +731,42 @@ def test_a_content_hashed_chunk_is_immutable_for_a_year(client, shell):
         response = client.get(f"/next-assets/{name}")
         assert response.status_code == 200
         assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_a_packed_sibling_goes_to_a_client_that_takes_it(client, shell):
+    """The image build writes `chunk.js.gz` / `.br` beside each hashed chunk
+    (`web/precompress.py`); a request gets the one its `Accept-Encoding` names,
+    as the chunk's own type, and the plain file when it names neither."""
+    import gzip
+
+    (shell / "Home-B3ml_q7a.js").write_text("export {}")
+    (shell / "Home-B3ml_q7a.js.gz").write_bytes(gzip.compress(b"export {}"))
+    (shell / "Home-B3ml_q7a.js.br").write_bytes(b"not really brotli")
+    url = "/next-assets/Home-B3ml_q7a.js"
+
+    plain = client.get(url, headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers and plain.text == "export {}"
+    assert plain.headers["vary"] == "Accept-Encoding"
+
+    packed = client.get(url, headers={"Accept-Encoding": "gzip, deflate"})
+    assert packed.headers["content-encoding"] == "gzip"
+    assert packed.text == "export {}"  # unpacked by the client: the chunk's own bytes
+    assert "javascript" in packed.headers["content-type"]
+    assert packed.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+    # Brotli first when both are taken — raw here, the test client has no decoder.
+    with client.stream("GET", url, headers={"Accept-Encoding": "gzip, br"}) as best:
+        assert best.headers["content-encoding"] == "br"
+        assert b"".join(best.iter_raw()) == b"not really brotli"
+
+    refused = client.get(url, headers={"Accept-Encoding": "br;q=0, gzip;q=0"})
+    assert "content-encoding" not in refused.headers and refused.text == "export {}"
+
+
+def test_accept_encoding_is_read_with_its_refusals():
+    assert server._accepted("gzip, deflate, BR") == {"gzip", "deflate", "br"}
+    assert server._accepted("br;q=0, gzip;q=0.5, *;q=0.0") == {"gzip"}
+    assert server._accepted("") == set()
 
 
 def test_the_bundle_route_will_not_walk_out_of_its_directory(client):
@@ -817,18 +868,33 @@ def test_booting_the_server_provisions_the_guest_book():
 # through untouched and the throttle must meter them as machines.
 
 
-@pytest.mark.parametrize("path", [
-    "/mcp", "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
-    "/authorize", "/token", "/register", "/revoke", "/oauth/consent",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/mcp",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/authorize",
+        "/token",
+        "/register",
+        "/revoke",
+        "/oauth/consent",
+    ],
+)
 def test_every_connector_path_is_known_to_the_gate(path):
     assert server._is_known_path(path)
 
 
-@pytest.mark.parametrize("path", [
-    "/mcp", "/.well-known/oauth-authorization-server", "/token", "/register",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/mcp",
+        "/.well-known/oauth-authorization-server",
+        "/token",
+        "/register",
+    ],
+)
 def test_a_machine_endpoint_is_never_moved_to_the_canonical_host(pinned_client, path):
     """A client that discovered `/mcp` on one host follows the issuer it was
     given; a 301 to another host is a failed connection, not a redirect."""
@@ -841,11 +907,17 @@ def test_the_connector_never_gets_the_app_cookie(client):
     assert server.APP_COOKIE not in r.cookies
 
 
-@pytest.mark.parametrize("path, kind", [
-    ("/mcp", "mcp"), ("/token", "oauth"), ("/authorize", "oauth"),
-    ("/.well-known/oauth-protected-resource/mcp", "oauth"),
-    ("/api/v1/health", "api"), ("/portfolio", "http"),
-])
+@pytest.mark.parametrize(
+    "path, kind",
+    [
+        ("/mcp", "mcp"),
+        ("/token", "oauth"),
+        ("/authorize", "oauth"),
+        ("/.well-known/oauth-protected-resource/mcp", "oauth"),
+        ("/api/v1/health", "api"),
+        ("/portfolio", "http"),
+    ],
+)
 def test_each_kind_of_caller_has_its_own_budget(path, kind):
     assert server._bucket(path)[0] == kind
 
@@ -885,14 +957,14 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypat
     text = client.get("/ticker?ticker=nvda").text
     assert 'property="og:title" content="NVDA · NVIDIA · TopStocks"' in text
     assert (
-        'property="og:url" content="https://topstocks.example/ticker?ticker=NVDA"'
-        in text
+        'property="og:url" content="https://topstocks.example/ticker?ticker=NVDA"' in text
     )
     assert STUB in text, "the shell itself is untouched"
     # A name the memo has never seen is still a card, of the symbol alone.
-    assert 'property="og:title" content="AMD · TopStocks"' in client.get(
-        "/ticker?ticker=AMD"
-    ).text
+    assert (
+        'property="og:title" content="AMD · TopStocks"'
+        in client.get("/ticker?ticker=AMD").text
+    )
     # In the language the browser asks for, as the client router will resolve.
     spanish = client.get(
         "/ticker?ticker=NVDA", headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.5"}
@@ -905,5 +977,180 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypat
 )
 def test_no_other_page_and_no_nonsense_symbol_gets_a_card(client, path):
     text = client.get(path).text
-    assert "og:title" not in text and "<script>" not in text
+    assert "og:title" not in text
+    # One inline script, the fonts flip the document always carries — and so
+    # nothing of the query string was written out as markup.
+    assert text.count("<script>") == 1 and "&lt;script" not in text
     assert STUB in text
+
+
+# ------------------------------------------------------------ the boot block
+
+EMAIL = "reader@example.com"
+
+
+@pytest.fixture
+def account(monkeypatch, tmp_path):
+    """An account on disk for EMAIL, and nothing that reaches the bucket."""
+    import json
+
+    from stocks import accounts
+    from stocks.api import loaders
+
+    users = tmp_path / "users"
+    paths = accounts.paths_for(EMAIL, None, users_dir=users)
+    paths.root.mkdir(parents=True)
+    paths.prefs.write_text(json.dumps({"currency": "EUR", "language": "es"}))
+    monkeypatch.setattr(accounts, "configured_owner", lambda: None)
+    monkeypatch.setattr(
+        accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
+    )
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    return paths
+
+
+def boot_of(text: str) -> dict:
+    """The JSON the document carries for the shell to start with."""
+    import json
+    import re
+
+    found = re.search(
+        r'<script type="application/json" id="ag-boot">(.*?)</script>', text
+    )
+    assert found, "no boot block"
+    return json.loads(found.group(1))
+
+
+def test_the_document_carries_a_guests_boot(client):
+    r = client.get("/portfolio")
+    boot = boot_of(r.text)
+    assert boot["me"]["kind"] == "guest"
+    assert boot["prefs"]["currency"]
+    assert len(boot["i18n"]) == 12
+    # The catalog the shell will ask for, started by the document.
+    stamp = boot["i18n"]
+    assert (
+        f'<link rel="preload" as="fetch" crossorigin href="/api/v1/i18n/en?v={stamp}">'
+        in r.text
+    )
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_the_document_carries_the_sessions_own_boot(client, sign_in, account):
+    sign_in(client, EMAIL)
+    r = client.get("/portfolio")
+    boot = boot_of(r.text)
+    assert boot["me"]["kind"] == "session"
+    assert boot["me"]["email"] == EMAIL
+    assert boot["prefs"]["language"] == "es"
+    # Their stored language, not the browser's.
+    assert "/api/v1/i18n/es?v=" in r.text
+
+
+def test_a_bearer_header_on_a_document_reads_as_a_guest(client, monkeypatch):
+    monkeypatch.setenv("API_TOKEN", "t0ken-t0ken-t0ken")
+    r = client.get("/portfolio", headers={"Authorization": "Bearer t0ken-t0ken-t0ken"})
+    assert boot_of(r.text)["me"]["kind"] == "guest"
+
+
+@pytest.mark.parametrize(
+    ("accept", "query", "lang"),
+    [
+        ("es-ES,es;q=0.9,en;q=0.5", "", "es"),
+        ("ca-ES,ca;q=0.9", "", "es"),  # Catalan reads the Spanish catalog
+        ("it-IT,it;q=0.9", "", "en"),
+        ("", "", "en"),
+        ("en-GB", "?lang=es", "es"),  # the landing's call to action pins it
+        ("en-GB", "?lang=xx", "en"),
+    ],
+)
+def test_a_guests_catalog_follows_the_link_then_the_browser(client, accept, query, lang):
+    r = client.get(f"/portfolio{query}", headers={"Accept-Language": accept})
+    assert f'href="/api/v1/i18n/{lang}?v=' in r.text
+
+
+def test_the_boot_block_cannot_end_itself_early():
+    tag = server._boot_tag({"name": "</script><script>alert(1)</script> & <b>"})
+    assert tag.count("<script") == 1 and tag.count("</script>") == 1
+    assert "\\u003c/script\\u003e" in tag
+    assert "\\u0026" in tag and "<b>" not in tag
+
+
+def test_a_boot_that_fails_leaves_the_shell_to_fetch(client, monkeypatch):
+    from stocks.api.routes import me as identity
+
+    def broken(*a, **k):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(identity, "describe", broken)
+    r = client.get("/portfolio")
+    assert r.status_code == 200
+    assert STUB in r.text
+    assert "ag-boot" not in r.text and "/api/v1/i18n/" not in r.text
+
+
+# --------------------------------------------------------------- the fonts
+
+
+def test_the_fonts_do_not_block_the_first_paint(client):
+    text = client.get("/portfolio").text
+    assert 'rel="preload" as="style"' in text
+    assert 'media="print" id="ag-fonts"' in text
+    assert '<noscript><link rel="stylesheet"' in text
+    # The flip is a hashed block, never an attribute the policy would refuse.
+    assert "onload=" not in text
+
+
+# ----------------------------------------------------- the page's own chunk
+
+
+MANIFEST = {
+    "index.html": {"file": "app-abc.js", "isEntry": True},
+    "src/pages/portfolio/Portfolio.tsx": {
+        "file": "Portfolio-p1.js",
+        "imports": ["index.html", "_chart-c1.js"],
+        "css": ["Portfolio-p1.css"],
+    },
+    "_chart-c1.js": {"file": "chart-c1.js"},
+    "src/pages/import/Import.tsx": {"file": "Import-i1.js"},
+    "src/pages/home/Home.tsx": {"file": "Home-h1.js"},
+}
+
+
+@pytest.fixture
+def manifest(shell):
+    import json
+
+    (shell / ".vite").mkdir()
+    (shell / ".vite" / "manifest.json").write_text(json.dumps(MANIFEST))
+    server._manifest.cache_clear()
+    return MANIFEST
+
+
+def test_the_pages_chunk_is_preloaded_with_what_it_imports(client, manifest):
+    text = client.get("/portfolio").text
+    assert '<link rel="modulepreload" href="/next-assets/Portfolio-p1.js">' in text
+    assert '<link rel="modulepreload" href="/next-assets/chart-c1.js">' in text
+    assert '<link rel="preload" as="style" href="/next-assets/Portfolio-p1.css">' in text
+    # The entry is the document's own module script, not a preload.
+    assert "app-abc.js" not in text
+
+
+def test_a_pages_alias_and_the_root_find_their_chunk(client, manifest):
+    assert "Import-i1.js" in client.get("/import_transactions").text
+    assert (
+        "Home-h1.js" in client.get("/").text
+        or "Home-h1.js" in client.get("/", params={"app": "1"}).text
+    )
+
+
+def test_a_page_without_a_chunk_and_a_build_without_a_manifest_preload_nothing(
+    client, manifest
+):
+    assert "modulepreload" not in client.get("/ticker").text
+    server._manifest.cache_clear()
+    (server._APP_BUILD / ".vite" / "manifest.json").unlink()
+    server._manifest.cache_clear()
+    assert "modulepreload" not in client.get("/portfolio").text

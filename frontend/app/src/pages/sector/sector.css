@@ -321,6 +321,13 @@
   cursor: pointer;
 }
 
+/* The 16px box is too small for a finger; the label around it is the target. */
+@media (pointer: coarse) {
+  .ag-sec-check {
+    min-height: 44px;
+  }
+}
+
 .ag-sec-check input {
   width: 1rem;
   height: 1rem;

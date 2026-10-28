@@ -147,7 +147,8 @@ def scan_extremes(
     The tuple shape is on purpose: it is what `chat.daily.build_facts` and
     `chat.signals` read, so the daily card is fed the very rows the extremes
     card shows. Distance is None at or beyond the
-    extreme — a different fact from being 0% away.
+    extreme — a different fact from being 0% away. Highs come first, then
+    lows, each run nearest its edge first.
     """
     out: list[tuple[str, float, str, float | None]] = []
     for ticker in tickers:
@@ -159,7 +160,7 @@ def scan_extremes(
             out.append((ticker, last, "high", None if last >= high else last / high - 1))
         elif low and last <= low * (1 + EDGE_BAND):
             out.append((ticker, last, "low", None if last <= low else last / low - 1))
-    return out
+    return sorted(out, key=lambda row: (row[2] != "high", abs(row[3] or 0.0)))
 
 
 def last_closes(

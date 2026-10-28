@@ -7,8 +7,9 @@
 .venv
 __pycache__/
 # belt and braces — these must never reach the build context
-.streamlit/secrets.toml
-.streamlit/secrets.toml.bak*
+secrets.toml
+secrets.toml.bak*
+.streamlit/
 deploy/.env
 deploy/secrets.toml
 

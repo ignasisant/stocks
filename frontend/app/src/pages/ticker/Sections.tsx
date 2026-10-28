@@ -38,6 +38,7 @@ import type {
   Metrics,
   Moat,
   MoatPillar,
+  Shorts,
   SourceCheck,
   SourcedFigure,
   TickerJudged,
@@ -175,7 +176,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
   // look like nine separate gaps rather than one failed fetch.
   if (metrics.grid.length === 0 || metrics.kpis.every((kpi) => kpi.value === null)) {
     return (
-      <Card title={t("ticker.fundamentals")}>
+      <Card fold="fundamentals" title={t("ticker.fundamentals")}>
         <Note>{t("ticker.fundamentals_failed")}</Note>
       </Card>
     );
@@ -192,7 +193,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
     metrics.market_cap_base === null;
 
   return (
-    <Card title={t("ticker.fundamentals")}>
+    <Card fold="fundamentals" title={t("ticker.fundamentals")}>
       {metrics.judged && metrics.judged.verdict !== "unrated" ? (
         <Judged
           ticker={metrics.ticker}
@@ -288,13 +289,14 @@ export function MoatSection({ moat }: { moat: Moat }) {
   // finding, and a section that vanishes reads as one that failed to load.
   if (moat.score === null || moat.pillars.length === 0) {
     return (
-      <Card title={t("ticker.moat")}>
+      <Card fold="moat" title={t("ticker.moat")}>
         <Note>{t("ticker.moat_insufficient")}</Note>
       </Card>
     );
   }
   return (
     <Card
+      fold="moat"
       title={t("ticker.moat")}
       note={t("ticker.moat_caption", { years: moat.years })}
     >
@@ -384,6 +386,102 @@ export function moatDetail(t: Translate, pillar: MoatPillar): string {
   return worded === pillar.detail_key ? pillar.detail : worded;
 }
 
+// -------------------------------------------------------------------- shorts
+
+const pct2 = (value: number | null | undefined) =>
+  typeof value === "number" ? `${num(value, 2)}%` : DASH;
+
+/**
+ * What is being bet against the company: a US name's short interest (and the
+ * share of recent volume that was shorting), or a European name's disclosed net
+ * short positions. Nothing to say, nothing drawn: a name no source covers must
+ * not read as "nobody is short".
+ */
+export function ShortsSection({ shorts }: { shorts: Shorts }) {
+  const t = useT();
+  const { us, eu } = shorts;
+
+  if (us) {
+    return (
+      <Card
+        fold="shorts"
+        title={t("ticker.shorts_title")}
+        note={t("ticker.shorts_us_caption")}
+      >
+        <KpiGrid>
+          <Kpi
+            label={t("ticker.shorts_pct_float")}
+            value={pct2(us.pct_float)}
+            note={us.as_of ? calendarDay(us.as_of) : undefined}
+            help={t("ticker.shorts_pct_float_help")}
+          />
+          <Kpi
+            label={t("ticker.shorts_days_to_cover")}
+            value={us.days_to_cover === null ? DASH : num(us.days_to_cover, 1)}
+            help={t("ticker.shorts_days_to_cover_help")}
+          />
+          <Kpi
+            label={t("ticker.shorts_vs_prior")}
+            value={us.change_pct === null ? DASH : `${signed(us.change_pct, 1)}%`}
+          />
+          {us.volume_ratio !== null ? (
+            <Kpi
+              label={t("ticker.shorts_volume", { days: us.volume_days ?? 0 })}
+              value={`${num(us.volume_ratio, 1)}%`}
+              help={t("ticker.shorts_volume_help")}
+            />
+          ) : null}
+        </KpiGrid>
+      </Card>
+    );
+  }
+
+  if (!eu) return null;
+  return (
+    <Card
+      fold="shorts"
+      title={t("ticker.shorts_title")}
+      note={t("ticker.shorts_eu_caption", { source: eu.source })}
+    >
+      <KpiGrid>
+        <Kpi
+          label={t("ticker.shorts_total")}
+          value={pct2(eu.total_pct)}
+          note={eu.as_of ? calendarDay(eu.as_of) : undefined}
+          help={t("ticker.shorts_total_help")}
+        />
+        {eu.holders_count ? (
+          <Kpi label={t("ticker.shorts_holders")} value={String(eu.holders_count)} />
+        ) : null}
+      </KpiGrid>
+      {eu.holders.length ? (
+        <Scroll>
+          <table className="tk-table">
+            <thead>
+              <tr>
+                <th>{t("ticker.shorts_col_holder")}</th>
+                <th>{t("ticker.shorts_col_pct")}</th>
+                <th>{t("ticker.col_date")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eu.holders.map((holder) => (
+                <tr key={`${holder.name}-${holder.date}`}>
+                  <td>{holder.name}</td>
+                  <td>{pct2(holder.pct)}</td>
+                  <td>{holder.date ? calendarDay(holder.date) : DASH}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Scroll>
+      ) : (
+        <Note>{t("ticker.shorts_no_holders", { source: eu.source })}</Note>
+      )}
+    </Card>
+  );
+}
+
 // ------------------------------------------------------------------ insiders
 
 export function InsidersSection({ insiders }: { insiders: Insiders }) {
@@ -400,7 +498,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
   // nothing would read as neither.
   if (!insiders.source) {
     return (
-      <Card title={t("ticker.insider_activity")}>
+      <Card fold="insiders" title={t("ticker.insider_activity")}>
         <Note>
           {t(
             insiders.sec_filer === false ? "ticker.no_form4_non_us" : "ticker.no_form4",
@@ -415,6 +513,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
 
   return (
     <Card
+      fold="insiders"
       title={t("ticker.insider_activity")}
       note={t(
         insiders.source === "BaFin"
@@ -965,7 +1064,7 @@ export function ComparablesSection({
     .filter(Boolean)
     .join(" ");
   return (
-    <Card title={t("ticker.comparables")} note={note || undefined}>
+    <Card fold="comparables" title={t("ticker.comparables")} note={note || undefined}>
       {children}
       {!comps ? <Note>{t("ticker.pick_peers")}</Note> : null}
       {comps ? (

@@ -430,7 +430,10 @@ def holders_fact(ticker: str, found) -> dict:
         return out
 
     def row(h) -> dict:
-        return {"holder": h.name, "pct_held": h.pct_held, "change_pct": h.change_pct}
+        out = {"holder": h.name, "pct_held": h.pct_held, "change_pct": h.change_pct}
+        if h.status:  # from the 13F filings: the position and what it did
+            out |= {"shares": h.shares, "value": h.value, "status": h.status}
+        return out
 
     out["as_of"] = found.as_of.isoformat() if found.as_of else None
     if found.institutions_pct is not None:
@@ -442,6 +445,10 @@ def holders_fact(ticker: str, found) -> dict:
                      [:HOLDER_ROWS]]
     out["cutting"] = [row(h) for h in sorted(found.cutting, key=lambda h: h.change_pct)
                       [:HOLDER_ROWS]]
+    if found.source == "13f":
+        out["source"] = "13F"
+        out["new"] = [row(h) for h in found.new[:HOLDER_ROWS]]
+        out["sold_out"] = [row(h) for h in found.sold_out[:HOLDER_ROWS]]
     return out
 
 

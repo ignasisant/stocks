@@ -27,6 +27,7 @@ import { DividendTable } from "./Dividends";
 import { eps, longDate, plain, signedPct, tone } from "./format";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { DenseRows, Responsive } from "../../ui/Rows";
+import { Fold } from "../../ui/Fold";
 
 /**
  * Logo, symbol and — under it — the company's name. The name rides the same
@@ -54,67 +55,71 @@ function Past({ all }: { all: CalendarResult[] }) {
   const results = all.slice(0, cap);
   return (
     <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.past_results"))}</h2>
-      <Responsive
-        wide={
-          <table className="earn-table">
-            <thead>
-              <tr>
-                <th className="left">{t("earnings.list_col_ticker")}</th>
-                <th className="left">{t("earnings.list_col_date")}</th>
-                <th>{t("earnings.list_col_eps_est")}</th>
-                <th>{t("earnings.list_col_reported")}</th>
-                <th>{t("earnings.list_col_surprise")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((result) => (
-                <tr key={`${result.ticker}-${result.date}`}>
-                  <td className="left">
-                    <Ticker ticker={result.ticker} />
-                  </td>
-                  <td className="left">{longDate(result.date, t)}</td>
-                  <td>{eps(result.eps_estimate)}</td>
-                  <td>{eps(result.reported_eps)}</td>
-                  {/* Coloured by the surprise itself, not by `beat`: a result with
-                  nothing to compare has no colour to be given. */}
-                  <td className={tone(result.surprise_pct)}>
-                    {signedPct(result.surprise_pct)}
-                  </td>
+      <Fold
+        id="earn-past"
+        head={<h2 className="earn-h2">{plain(t("earnings.past_results"))}</h2>}
+      >
+        <Responsive
+          wide={
+            <table className="earn-table">
+              <thead>
+                <tr>
+                  <th className="left">{t("earnings.list_col_ticker")}</th>
+                  <th className="left">{t("earnings.list_col_date")}</th>
+                  <th>{t("earnings.list_col_eps_est")}</th>
+                  <th>{t("earnings.list_col_reported")}</th>
+                  <th>{t("earnings.list_col_surprise")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        }
-        narrow={
-          <DenseRows
-            rows={results}
-            rowKey={(result) => `${result.ticker}-${result.date}`}
-            spec={{
-              ticker: (result) => result.ticker,
-              value: (result) => eps(result.reported_eps),
-              delta: (result) => (
-                <span className={tone(result.surprise_pct)}>
-                  {signedPct(result.surprise_pct)}
-                </span>
-              ),
-              sub: (result) => [
-                longDate(result.date, t),
-                `${t("earnings.list_col_eps_est")} ${eps(result.eps_estimate)}`,
-              ],
-            }}
-          />
-        }
-      />
-      {all.length > cap && (
-        <button
-          type="button"
-          className="ag-btn earn-show-more"
-          onClick={() => setCap(cap + PAST_ROWS)}
-        >
-          {t("earnings.show_more_results")}
-        </button>
-      )}
+              </thead>
+              <tbody>
+                {results.map((result) => (
+                  <tr key={`${result.ticker}-${result.date}`}>
+                    <td className="left">
+                      <Ticker ticker={result.ticker} />
+                    </td>
+                    <td className="left">{longDate(result.date, t)}</td>
+                    <td>{eps(result.eps_estimate)}</td>
+                    <td>{eps(result.reported_eps)}</td>
+                    {/* Coloured by the surprise itself, not by `beat`: a result with
+                  nothing to compare has no colour to be given. */}
+                    <td className={tone(result.surprise_pct)}>
+                      {signedPct(result.surprise_pct)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+          narrow={
+            <DenseRows
+              rows={results}
+              rowKey={(result) => `${result.ticker}-${result.date}`}
+              spec={{
+                ticker: (result) => result.ticker,
+                value: (result) => eps(result.reported_eps),
+                delta: (result) => (
+                  <span className={tone(result.surprise_pct)}>
+                    {signedPct(result.surprise_pct)}
+                  </span>
+                ),
+                sub: (result) => [
+                  longDate(result.date, t),
+                  `${t("earnings.list_col_eps_est")} ${eps(result.eps_estimate)}`,
+                ],
+              }}
+            />
+          }
+        />
+        {all.length > cap && (
+          <button
+            type="button"
+            className="ag-btn earn-show-more"
+            onClick={() => setCap(cap + PAST_ROWS)}
+          >
+            {t("earnings.show_more_results")}
+          </button>
+        )}
+      </Fold>
     </section>
   );
 }

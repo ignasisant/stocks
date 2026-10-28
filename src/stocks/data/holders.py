@@ -7,6 +7,10 @@ over the quarter. That last figure is the "where is the money going" a reader
 asks about: a holder adding a fifth to its stake is a vote, a holder halving
 it is the opposite.
 
+Two sources, in this order: the SEC's 13F data sets (`data.thirteenf`: shares,
+dollars, and new / added / cut / sold-out per manager, built from the filings
+into a local index) and Yahoo's aggregate for whatever the index lacks.
+
 So the figures are a quarter old by construction, and every summary carries
 the date they were reported as of — a card must never present them as this
 week's flows. Percentages are kept as percent numbers (8.06, not 0.0806):
@@ -29,6 +33,12 @@ class Holder:
     name: str
     pct_held: float | None
     change_pct: float | None
+    # Only from the SEC's own 13F index (`data.thirteenf`): the position, in
+    # shares and dollars, and what it did over the quarter: "new", "added",
+    # "cut", "held" or "sold_out". Yahoo carries percentages alone.
+    shares: int | None = None
+    value: float | None = None
+    status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,12 @@ class Institutions:
     institutions_pct: float | None
     insiders_pct: float | None
     holders: list[Holder] = field(default_factory=list)
+    sold_out: list[Holder] = field(default_factory=list)
+    source: str = "yahoo"
+
+    @property
+    def new(self) -> list[Holder]:
+        return [h for h in self.holders if h.status == "new"]
 
     @property
     def adding(self) -> list[Holder]:
@@ -97,10 +113,34 @@ def parse(table, major) -> Institutions | None:
     )
 
 
+def from_13f(found) -> Institutions:
+    """The SEC 13F index's answer (`thirteenf.Holdings`) as a summary."""
+
+    def holder(p) -> Holder:
+        return Holder(name=p.manager, pct_held=None, change_pct=p.change_pct,
+                      shares=p.shares, value=round(p.value, 2), status=p.status)
+
+    return Institutions(
+        as_of=found.as_of, institutions_pct=None, insiders_pct=None,
+        holders=[holder(p) for p in found.top],
+        sold_out=[holder(p) for p in found.sold_out], source="13f")
+
+
 def institutions(ticker: str) -> Institutions | None:
-    """`ticker`'s institutional holders, or None when Yahoo has none (most
-    non-US listings, every crypto pair). Raises on a network failure."""
+    """`ticker`'s institutional holders: the SEC's 13F filings when the local
+    index knows the name (US listings), else Yahoo's aggregate, else None
+    (most non-US listings, every crypto pair). Raises on a Yahoo network
+    failure; the 13F index is a local file and never does."""
     import yfinance as yf
+
+    from stocks.data import thirteenf
+
+    try:
+        found = thirteenf.holdings(ticker)
+    except Exception:  # noqa: BLE001 - a bad index falls back to Yahoo
+        found = None
+    if found is not None:
+        return from_13f(found)
 
     stock = yf.Ticker(ticker)
     return parse(stock.institutional_holders, stock.major_holders)

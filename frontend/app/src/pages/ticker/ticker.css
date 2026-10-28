@@ -806,7 +806,8 @@
 
 .tk-targets,
 .tk-ratings,
-.tk-revisions {
+.tk-revisions,
+.tk-changes {
   margin-top: 16px;
 }
 
@@ -1434,11 +1435,11 @@
 
   .tk-star,
   .tk-pop-btn {
-    height: 40px;
+    height: 44px;
   }
 
   .tk-star {
-    width: 40px;
+    width: 44px;
   }
 
   /* Anchored to the viewport rather than to a button that may sit at either

@@ -66,36 +66,45 @@ export function seed(profiles: Profile[]): void {
   announce();
 }
 
+/** One batch's round trip; the cells it answers redraw as soon as it lands. */
+async function ask(batch: string[]) {
+  try {
+    const answer = await get<{ profiles: Profile[] }>("/market/profiles", {
+      tickers: batch.join(","),
+    });
+    for (const profile of answer.profiles) {
+      if (profile.logo || profile.name) cache.set(profile.ticker, profile);
+    }
+  } catch {
+    // A logo is decoration on a link that already works, but one failed
+    // batch (a cold logo probe timing out) must not leave the whole page
+    // bare for the session: it is asked once more, a few seconds on. A
+    // second failure is marked answered so the page does not retry it on
+    // every scroll, and the cells stay plain links.
+    const fresh = batch.filter((ticker) => !retried.has(ticker));
+    if (fresh.length) {
+      for (const ticker of fresh) retried.add(ticker);
+      setTimeout(() => fresh.forEach(request), RETRY_MS);
+      for (const ticker of batch) if (!fresh.includes(ticker)) answered.add(ticker);
+      return;
+    }
+  }
+  for (const ticker of batch) answered.add(ticker);
+  announce();
+}
+
 async function flush() {
   scheduled = false;
   const wanted = [...queue];
   queue = new Set();
+  const batches: string[][] = [];
   for (let at = 0; at < wanted.length; at += CHUNK) {
-    const batch = wanted.slice(at, at + CHUNK);
-    try {
-      const answer = await get<{ profiles: Profile[] }>("/market/profiles", {
-        tickers: batch.join(","),
-      });
-      for (const profile of answer.profiles) {
-        if (profile.logo || profile.name) cache.set(profile.ticker, profile);
-      }
-    } catch {
-      // A logo is decoration on a link that already works, but one failed
-      // batch (a cold logo probe timing out) must not leave the whole page
-      // bare for the session: it is asked once more, a few seconds on. A
-      // second failure is marked answered so the page does not retry it on
-      // every scroll, and the cells stay plain links.
-      const fresh = batch.filter((ticker) => !retried.has(ticker));
-      if (fresh.length) {
-        for (const ticker of fresh) retried.add(ticker);
-        setTimeout(() => fresh.forEach(request), RETRY_MS);
-        for (const ticker of batch) if (!fresh.includes(ticker)) answered.add(ticker);
-        continue;
-      }
-    }
-    for (const ticker of batch) answered.add(ticker);
+    batches.push(wanted.slice(at, at + CHUNK));
   }
-  announce();
+  // Side by side, not one after the other: a wide table's three batches used
+  // to wait for each other, so its last rows got their marks three round
+  // trips after its first. `ask` never throws.
+  await Promise.all(batches.map(ask));
 }
 
 function request(ticker: string) {
@@ -184,7 +193,15 @@ export function TickerCell({
       title={company && (!name || children) ? company : undefined}
     >
       {profile?.logo ? (
-        <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
+        <img
+          className="ag-tick-logo"
+          src={profile.logo}
+          alt=""
+          loading="lazy"
+          // Decoded off the main thread: forty marks landing at once must not
+          // hold the frame the table is drawn in.
+          decoding="async"
+        />
       ) : profile ? (
         <span className="ag-tick-logo ag-tick-initials" aria-hidden="true">
           <span>{initials(symbol)}</span>

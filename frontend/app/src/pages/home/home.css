@@ -268,6 +268,12 @@
   white-space: nowrap;
 }
 
+/* A figure's heading sits over its figures: `.hm-table th` would otherwise
+   win over `.hm-num` and leave it hanging left of a right-aligned column. */
+.hm-table th.hm-num {
+  text-align: right;
+}
+
 .hm-table td {
   padding: 5px 6px;
   border-bottom: 1px solid var(--ag-rule-soft);
@@ -475,6 +481,22 @@
 .hm-tick-cell {
   width: 50%;
   max-width: 0;
+}
+
+/* A run heading inside a table — the extremes card's highs, then lows: the
+   caption's voice on a row of its own, set off from the run above it by room
+   rather than a second rule. */
+.hm-table .hm-run-head th {
+  padding: 10px 6px 2px;
+  border-bottom: none;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.hm-run + .hm-run {
+  margin-top: 0.75rem;
 }
 
 /* -------------------------------------------------------------- the groups */

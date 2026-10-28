@@ -45,6 +45,7 @@
 
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   useEffect,
   useLayoutEffect,
@@ -136,6 +137,8 @@ type GainPick = "all" | "better" | "worse";
 
 /** How long the pointer rests on a dot before its tooltip opens, in ms. */
 const TIP_DELAY = 300;
+/** How far past a dot's edge a finger still picks it: half a 44px target. */
+const REACH = 22;
 
 /** Gap between a dot's edge and its tooltip, and the box's margin in the map. */
 const GAP = 8;
@@ -286,6 +289,8 @@ export function QualityMap({
   const thenOf = (row: ReviewRow): ScorePoint | null =>
     returns && since ? returns.thenAt(row.symbol, since) : null;
   const timer = useRef<number | undefined>(undefined);
+  // Whether the press on the map's empty space was a finger's.
+  const fingerDown = useRef(false);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   // A tapped tooltip stays until a tap lands somewhere else.
   useEffect(() => {
@@ -349,6 +354,27 @@ export function QualityMap({
     cy: y(row.quality as number),
     r: radius(row),
   });
+  // A finger that lands between dots opens the nearest within reach: the dots
+  // keep their size (a 44px hit each would swallow a dense cluster's
+  // neighbours) and the reach makes up the rest of a fingertip.
+  const nearest = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (!fingerDown.current) return;
+    if (event.target instanceof Element && event.target.closest(".ag-rev-dot")) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    const px = event.clientX - box.left;
+    const py = event.clientY - box.top;
+    let best: Spot | null = null;
+    let far: number = REACH;
+    for (const row of ordered) {
+      const spot = spotOf(row);
+      const gap = Math.hypot(spot.cx - px, spot.cy - py) - spot.r;
+      if (gap <= far) {
+        far = gap;
+        best = spot;
+      }
+    }
+    if (best) open(best, false);
+  };
   const searchable = placed.length >= FIND_MIN;
   const query = searchable ? needle.trim() : "";
   const symbolOf = (row: ReviewRow) => (row.symbol || row.ticker).toUpperCase();
@@ -627,6 +653,10 @@ export function QualityMap({
           viewBox={`0 0 ${width} ${height}`}
           role="group"
           aria-label={t("review.map_title")}
+          onPointerDown={(event) => {
+            fingerDown.current = event.pointerType === "touch";
+          }}
+          onClick={nearest}
         >
           <rect
             className="ag-rev-map-best"

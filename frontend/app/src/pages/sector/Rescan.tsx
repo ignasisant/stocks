@@ -128,7 +128,7 @@ export function useRescan(sector: string, label: string, onDone: () => void): Re
     const visit = live.current;
     setRunning(true);
     setNote(t("sector.refreshing", { sector: label }));
-    send<Status>("POST", at).then(
+    send<Status>("POST", at, undefined, { touches: ["/sectors"] }).then(
       (status) => {
         if (!visit.alive) return;
         if (status.state === "running") poll(() => visit.alive);

@@ -78,7 +78,7 @@ PROFIT_COLOR, LOSS_COLOR = UP_COLOR, DOWN_COLOR
 CANDLE_UP = "#7ED28C"    # bullish candles — DS success, mid step
 CANDLE_DOWN = "#F0897E"  # bearish candles — DS critical, mid step
 SMA_FAST = "#F2A33C"     # SMA20 overlay — DS chart amber (softer than WARN_ORANGE)
-SMA_SLOW = "#6E8FF0"     # SMA50 overlay + results markers — DS chart blue
+SMA_SLOW = "#6E8FF0"     # SMA50 overlay — DS chart blue
 # The DS chart spec fixes two overlay hues, and the third average needs one the
 # eye reads as slower rather than as a third signal: neutral-400, the same step
 # the secondary text uses, sits under the amber/blue pair without competing
@@ -210,23 +210,37 @@ SEQUENTIAL_SCALE = [
     [1.0, PURPLE_300],
 ]
 
-# DS chart magenta — categorical slot 3, with no other DS role. Named here so
-# the palette below stays hex-free like everything else outside this block.
+# DS chart magenta — categorical slot 5 and the AI rim, with no other DS
+# role. Named here so the palette below reads by name.
 CHART_MAGENTA = "#C54EA4"
 
-# Categorical series palette. Fixed order, never cycled: a chart with more
-# series than this folds the tail into one muted "Others" bucket instead of
-# inventing a 9th hue.
+# Series identity steps. The DS hues people already know (blue, orange, purple,
+# amber, magenta), each taken at the mid step a dark chart needs: OKLCH L
+# 0.48–0.67, chroma ≥ 0.10. The text-weight steps (INFO_COLOR, BRAND_ACCENT,
+# WARN_COLOR at L 0.67–0.84) sit too close to the text ink and to each other —
+# brand purple beside blue 500 was ΔE 1.8 to a protan reader. No green or red:
+# on a market chart those say "up" and "down", never "which one".
+SERIES_BLUE = "#4C8DFF"     # the LANDING_INFO step
+SERIES_ORANGE = "#E0662A"   # WARN_ORANGE, one step down
+SERIES_PURPLE = "#8B6CF0"   # between BRAND_ACCENT and BRAND_CTA
+SERIES_AMBER = "#C08400"    # WARN_COLOR, two steps down
+SERIES_MAGENTA = CHART_MAGENTA
+
+# Categorical series palette. Fixed order, never cycled, and the colour follows
+# the entity, not its rank: a chart with more series than this folds the tail
+# into one muted SERIES_OTHER bucket instead of inventing a 6th hue. The order
+# is the one that passes the dataviz checks on both dark surfaces (adjacent
+# ΔE ≥ 8 under protan/deutan, ≥ 15 for normal vision, ≥ 3:1 contrast);
+# tests/test_chart_palette.py re-runs them, so a reorder or a new step cannot
+# ship a pair nobody can tell apart.
 CATEGORICAL_COLORS = [
-    BRAND_ACCENT,   # purple 500
-    INFO_COLOR,     # blue 500
-    CHART_MAGENTA,
-    WARN_COLOR,     # yellow
-    WARN_ORANGE,
-    INFO_DEEP,      # blue 600
-    PURPLE_300,
-    TEXT_MUTED,
+    SERIES_BLUE,
+    SERIES_ORANGE,
+    SERIES_PURPLE,
+    SERIES_AMBER,
+    SERIES_MAGENTA,
 ]
+SERIES_OTHER = TEXT_MUTED   # the folded tail, and any line past the fifth
 
 # Brand exception, deliberately NOT a DS neutral: Google's sign-in guidelines
 # require the "G" mark on pure white, so auth.py's button tile opts out of the
@@ -257,6 +271,12 @@ def tokens() -> dict[str, str]:
         "candle-up": CANDLE_UP, "candle-down": CANDLE_DOWN,
         "sma-fast": SMA_FAST, "sma-slow": SMA_SLOW, "sma-long": SMA_LONG,
         "chart-magenta": CHART_MAGENTA,
+        # color — series identity, CATEGORICAL_COLORS in order
+        **{
+            f"series-{slot}": hue
+            for slot, hue in enumerate(CATEGORICAL_COLORS, start=1)
+        },
+        "series-other": SERIES_OTHER,
         # color — brand
         "purple-900": PURPLE_900, "purple-800": PURPLE_800,
         "purple-700": PURPLE_700, "brand-cta": BRAND_CTA,

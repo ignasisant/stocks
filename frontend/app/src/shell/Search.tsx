@@ -14,13 +14,15 @@
  * field for six seconds reads as broken.
  */
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { get, send } from "./api";
+import { get, scoped, send } from "./api";
 import { assetLabel } from "./assets";
 import { findTickers } from "./findTickers";
 import { useLang, useT } from "./i18n";
-import { BASE, push } from "./router";
+import { onIdle } from "./idle";
+import { BASE, navigate } from "./router";
+import { useGuest } from "./session";
 import { useTickerProfile } from "./tickers";
 import { Badge } from "../ui/Badge";
 import { formatter } from "./numbers";
@@ -57,6 +59,12 @@ const MARKS: Record<string, string> = { favorite: "★", held: "●" };
 
 /** Long enough that typing a five-letter symbol is one request, not five. */
 const DEBOUNCE_MS = 220;
+/**
+ * `stocks.fuzzy.MIN_QUERY`: under this many characters the server skips the
+ * worldwide tier itself, so the local answer *is* the full one, and a
+ * keystroke asks once rather than twice for the same rows.
+ */
+const MIN_WORLD_QUERY = 3;
 
 /**
  * The same field and panel as a picker: with `onPick`, choosing a row hands
@@ -133,14 +141,18 @@ export function Search({
     }
     setBusy(true);
     let live = true;
+    // The next keystroke cancels what this one asked for and nobody else is
+    // waiting on (`scoped`): a reply for a query the reader has typed past is
+    // not an answer any more — it would overwrite the newer one it raced —
+    // and left alone it would still be parsed, holding a connection the
+    // current query wants.
+    const asking = new AbortController();
     const timer = window.setTimeout(() => {
       let full = false;
       let local: Match[] | null = null;
-      findTickers<Match>(term)
+      scoped(asking.signal, () => findTickers<Match>(term))
         .then((results) => {
           full = true;
-          // A reply for a query the reader has already typed past is not an
-          // answer any more — it would overwrite the newer one it raced.
           if (!live) return;
           setMatches(results.matches);
           setWorldDown(Boolean(results.world_down));
@@ -152,10 +164,11 @@ export function Search({
         .finally(() => {
           if (live) setBusy(false);
         });
+      if (term.length < MIN_WORLD_QUERY) return;
       // Asked second so that a kept full answer lands first and this one is
       // ignored. Without the "analyze" offer: the worldwide rows still on
       // their way may be the very listing it would send the reader past.
-      findTickers<Match>(term, { world: false })
+      scoped(asking.signal, () => findTickers<Match>(term, { world: false }))
         .then((results) => {
           local = results.matches.filter((match) => match.kind !== "analyze");
           if (live && !full) setMatches(local);
@@ -165,6 +178,7 @@ export function Search({
     return () => {
       live = false;
       window.clearTimeout(timer);
+      asking.abort();
     };
   }, [query]);
 
@@ -187,16 +201,33 @@ export function Search({
     };
   }, [open, recentKey]);
 
+  // The recents strip, asked once — and for the top bar, once the shell is
+  // idle rather than at the first focus, so the panel opens with its rows
+  // already there instead of a beat after. Not ahead of time for a guest
+  // (nothing is remembered for one) or a picker's field, which asks at its
+  // first focus, the one time it is wanted.
+  const guest = useGuest();
+  const askedRecents = useRef(false);
+  const loadRecents = useCallback(() => {
+    if (askedRecents.current) return;
+    askedRecents.current = true;
+    get<Recents>("/search/recent")
+      .then((rows) => {
+        setRecent(rows.tickers);
+        setNames(rows.names ?? {});
+      })
+      .catch(() => {
+        askedRecents.current = false; // an empty strip is not an error; the next focus retries
+      });
+  }, []);
+  useEffect(() => {
+    if (guest || onPick) return;
+    return onIdle(loadRecents);
+  }, [guest, onPick, loadRecents]);
+
   function focus() {
     setOpen(true);
-    if (recent.length === 0) {
-      get<Recents>("/search/recent")
-        .then((rows) => {
-          setRecent(rows.tickers);
-          setNames(rows.names ?? {});
-        })
-        .catch(() => undefined); // an empty recents strip is not an error
-    }
+    if (recent.length === 0) loadRecents();
   }
 
   function open_(ticker: string, name = "") {
@@ -210,7 +241,7 @@ export function Search({
     // and a failed write must not hold the navigation or surface an error.
     // The name travels with it: the row knows what the ticker is called, and
     // for a non-US listing nothing cheap on the server can find out later.
-    void send<Recents>("POST", "/search/recent", { ticker, name })
+    void send<Recents>("POST", "/search/recent", { ticker, name }, { touches: [] })
       .then((rows) => {
         setRecent(rows.tickers);
         setNames(rows.names ?? {});
@@ -218,9 +249,7 @@ export function Search({
       .catch(() => undefined);
     setOpen(false);
     setQuery("");
-    push(`${BASE}/ticker?ticker=${encodeURIComponent(ticker)}`);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-    window.scrollTo(0, 0);
+    navigate(`${BASE}/ticker?ticker=${encodeURIComponent(ticker)}`);
   }
 
   const term = query.trim();
@@ -496,7 +525,13 @@ function Row({
         <span className="ag-search-mark">{MARKS[mark]}</span>
       ) : null}
       {profile?.logo ? (
-        <img className="ag-search-logo" src={profile.logo} alt="" loading="lazy" />
+        <img
+          className="ag-search-logo"
+          src={profile.logo}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
       ) : (
         <span className="ag-search-logo" aria-hidden="true" />
       )}

@@ -30,6 +30,11 @@ class RawFundamentals:
     balance: pd.DataFrame = field(default_factory=pd.DataFrame)
     cashflow: pd.DataFrame = field(default_factory=pd.DataFrame)
     income_q: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # Where the annual rows were audited, when a primary source was laid over
+    # Yahoo's ("ESEF" for EU/UK issuers, see stocks.data.esef) and which fiscal
+    # years it covers. None = Yahoo's own figures.
+    source: str | None = None
+    source_years: tuple[str, ...] = ()
 
 
 def fetch_fundamentals(ticker: str) -> RawFundamentals:

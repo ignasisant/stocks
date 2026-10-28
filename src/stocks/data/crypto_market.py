@@ -12,6 +12,10 @@ Two sources, two places they may be called from:
   The venues are tried in order and the first that lists the coin's USDT
   perpetual answers; a coin none of them lists has no positioning card.
 
+* **Deribit and DefiLlama** — keyless, no geo-fence that matters, read by the
+  nightly scan too: the options-implied volatility index (DVOL) and the
+  on-chain figures (TVL, fees, stablecoin supply).
+
 Every function raises on a transport failure; the callers decide what a
 failure costs (the scan keeps last night's figures, the page hides the card).
 """
@@ -21,13 +25,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from stocks import obs
 from stocks.data.http import get_json
 
 GECKO_API = "https://api.coingecko.com/api/v3"
-FNG_URL = "https://api.alternative.me/fng/?limit={days}"
+DERIBIT = "https://www.deribit.com/api/v2/public"
+LLAMA = "https://api.llama.fi"
+LLAMA_STABLES = "https://stablecoins.llama.fi"
+FNG_URL ="https://api.alternative.me/fng/?limit={days}"
 
 # /coins/markets answers up to 250 ids a page; the curated map is a fifth of it.
 GECKO_PAGE = 250
@@ -70,6 +77,91 @@ def fear_greed(days: int = 365) -> list[tuple[str, int]]:
         except (KeyError, TypeError, ValueError):
             continue
     return sorted(out.items())
+
+
+def dvol(currency: str, days: int = 365) -> list[tuple[str, float]]:
+    """Deribit's DVOL (30-day implied volatility, % annualised) as daily closes.
+
+    Oldest first, as (day, close). Deribit lists DVOL for BTC and ETH only.
+    """
+    end = int(datetime.now(UTC).timestamp() * 1000)
+    query = urlencode({
+        "currency": currency.upper(),
+        "start_timestamp": end - (days + 1) * 86_400_000,
+        "end_timestamp": end,
+        "resolution": 86400,
+    })
+    raw = get_json(f"{DERIBIT}/get_volatility_index_data?{query}", timeout=20)
+    rows = ((raw or {}).get("result") or {}).get("data") or []
+    out: dict[str, float] = {}
+    for row in rows:
+        try:
+            day = datetime.fromtimestamp(int(row[0]) / 1000, UTC).date().isoformat()
+            out[day] = float(row[4])
+        except (IndexError, TypeError, ValueError):
+            continue
+    return sorted(out.items())
+
+
+def llama_protocols() -> list[dict]:
+    """`/protocols`: every tracked protocol, with TVL, symbol and CoinGecko id."""
+    raw = get_json(f"{LLAMA}/protocols", timeout=60)
+    return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+
+
+def llama_chains() -> list[dict]:
+    """`/v2/chains`: every tracked chain, with TVL and its gas token's id."""
+    raw = get_json(f"{LLAMA}/v2/chains", timeout=30)
+    return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+
+
+def llama_tvl_series(kind: str, name: str) -> list[tuple[str, float]]:
+    """A protocol's or a chain's TVL in US dollars by day, oldest first."""
+    if kind == "chain":
+        raw = get_json(f"{LLAMA}/v2/historicalChainTvl/{quote(name)}", timeout=30)
+        rows = raw if isinstance(raw, list) else []
+        pairs = [(r.get("date"), r.get("tvl")) for r in rows if isinstance(r, dict)]
+    else:
+        raw = get_json(f"{LLAMA}/protocol/{quote(name)}", timeout=60)
+        rows = (raw or {}).get("tvl") or []
+        pairs = [(r.get("date"), r.get("totalLiquidityUSD"))
+                 for r in rows if isinstance(r, dict)]
+    out: list[tuple[str, float]] = []
+    for ts, value in pairs:
+        try:
+            out.append((datetime.fromtimestamp(int(ts), UTC).date().isoformat(),
+                        float(value)))
+        except (TypeError, ValueError):
+            continue
+    return sorted(out)
+
+
+def llama_fees(slug: str, kind: str = "dailyFees") -> dict:
+    """`/summary/fees/{slug}`: `total24h`, `total30d`, ... for fees or revenue.
+
+    `kind` is DefiLlama's `dataType`: `dailyFees` or `dailyRevenue`. A slug
+    DefiLlama has no figure for answers 4xx, which the caller reads as "none".
+    """
+    query = urlencode({
+        "dataType": kind,
+        "excludeTotalDataChart": "true",
+        "excludeTotalDataChartBreakdown": "true",
+    })
+    raw = get_json(f"{LLAMA}/summary/fees/{quote(slug)}?{query}", timeout=60)
+    return raw if isinstance(raw, dict) else {}
+
+
+def stablecoin_supply(days: int = 400) -> list[tuple[str, float]]:
+    """Every stablecoin's circulating supply summed, in US dollars, by day."""
+    raw = get_json(f"{LLAMA_STABLES}/stablecoincharts/all", timeout=60)
+    out: list[tuple[str, float]] = []
+    for row in (raw if isinstance(raw, list) else [])[-days:]:
+        try:
+            day = datetime.fromtimestamp(int(row["date"]), UTC).date().isoformat()
+            out.append((day, float(row["totalCirculatingUSD"]["peggedUSD"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
 
 
 # --------------------------------------------------------------- derivatives

@@ -127,7 +127,10 @@ function Trace({ steps, spent }: { steps: Step[]; spent: string }) {
       <span className="ag-chat-clock">{t("chat.no_tools", { took: spent })}</span>
     ) : null;
   }
-  const label = t("chat.steps_n", { n: steps.length, took: spent }).replace(/ · $/, "");
+  const label = t(steps.length === 1 ? "chat.steps_one" : "chat.steps_n", {
+    n: steps.length,
+    took: spent,
+  }).replace(/ · $/, "");
   return (
     <>
       <button

@@ -24,9 +24,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { get, send } from "./api";
+
+/** A stamp changes what `/onboarding` answers, and nothing a page shows. */
+const SEEN = { touches: ["/onboarding"] };
 import { openAssistant } from "./assistant";
 import { Icon } from "./Icon";
 import { useT } from "./i18n";
+import { onIdle } from "./idle";
 import { SignIn } from "./guest";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
@@ -94,6 +98,19 @@ export function landing(step: {
   const query = { ...step.params };
   const tab = step.session?.profile_tab;
   if (tab && !query.tab) query.tab = tab;
+  return query;
+}
+
+/**
+ * `landing`, plus where the reader came from for the one page that reports
+ * it: the Claude tab counts how readers reach it (`stocks logs connector`).
+ */
+function arrive(
+  step: { params: Record<string, string>; session?: Record<string, string> },
+  mode: "tour" | "news",
+): Record<string, string> {
+  const query = landing(step);
+  if (query.tab === "claude") query.from = mode;
   return query;
 }
 
@@ -204,46 +221,56 @@ export function Tour() {
     // either, this modal opens only when asked for by URL — and for "what's
     // new", once the onboarding is behind the account. Unreadable (a guest)
     // reads as the modal, which is what a guest has always had.
-    const surface: Promise<Guide> = guest
-      ? Promise.resolve({ surface: "modal", finished: true })
-      : get<Guide>("/guide").catch(() => ({
-          surface: "modal",
-          finished: true,
-        }));
-    Promise.all([get<State>("/onboarding"), surface])
-      .then(([next, guide]) => {
-        if (!alive) return;
-        setState(next);
-        // Asked for by URL (`?tour=1`, `?tour=import`), so a link shared into
-        // the app lands on the step it names. A guest may ask too: the steps
-        // that read somebody's own data are shown locked, not hidden.
-        if (asked) {
-          const index = next.steps.findIndex((s) => s.id === asked);
+    const load = () => {
+      const surface: Promise<Guide> = guest
+        ? Promise.resolve({ surface: "modal", finished: true })
+        : get<Guide>("/guide").catch(() => ({
+            surface: "modal",
+            finished: true,
+          }));
+      Promise.all([get<State>("/onboarding"), surface])
+        .then(([next, guide]) => {
+          if (!alive) return;
+          setState(next);
+          // Asked for by URL (`?tour=1`, `?tour=import`), so a link shared into
+          // the app lands on the step it names. A guest may ask too: the steps
+          // that read somebody's own data are shown locked, not hidden.
+          if (asked) {
+            const index = next.steps.findIndex((s) => s.id === asked);
+            booted.current = true;
+            firstLoadInterrupted(true);
+            setPlace({ mode: "tour", at: index < 0 ? 0 : index, open: true });
+            return;
+          }
+          if (booted.current) return;
           booted.current = true;
-          firstLoadInterrupted(true);
-          setPlace({ mode: "tour", at: index < 0 ? 0 : index, open: true });
-          return;
-        }
-        if (booted.current) return;
-        booted.current = true;
-        const decided = firstLoad(next, guide, guest, readPark());
-        if (decided.forget) writePark(null);
-        if (decided.welcome) {
-          // Stamped on open, not on close: a welcome seen twice is no longer
-          // one, and a reload before closing it must not bring it back.
-          setWelcome(true);
-          void send("POST", "/onboarding/seen", { done: true }).catch(() => undefined);
-        }
-        firstLoadInterrupted(decided.interrupted);
-        setPlace(decided.place);
-      })
-      .catch(() => {
-        // Nothing to draw and nothing to say: the tour is the one thing on
-        // screen whose absence a reader cannot notice.
-        firstLoadInterrupted(false);
-      });
+          const decided = firstLoad(next, guide, guest, readPark());
+          if (decided.forget) writePark(null);
+          if (decided.welcome) {
+            // Stamped on open, not on close: a welcome seen twice is no longer
+            // one, and a reload before closing it must not bring it back.
+            setWelcome(true);
+            void send("POST", "/onboarding/seen", { done: true }, SEEN).catch(
+              () => undefined,
+            );
+          }
+          firstLoadInterrupted(decided.interrupted);
+          setPlace(decided.place);
+        })
+        .catch(() => {
+          // Nothing to draw and nothing to say: the tour is the one thing on
+          // screen whose absence a reader cannot notice.
+          firstLoadInterrupted(false);
+        });
+    };
+    // Asked for by URL, now; otherwise once the browser is idle. Two
+    // requests per page load for a modal that mostly stays shut, and the
+    // page's own figures go first — the strip, when there is one, follows
+    // within the idle timeout.
+    const cancel = asked ? (load(), () => {}) : onIdle(load);
     return () => {
       alive = false;
+      cancel();
     };
   }, [asked, guest]);
 
@@ -259,7 +286,7 @@ export function Tour() {
       // write into the shared guest prefs would be one visitor deciding what
       // the next one has read.
       if (stamp && !guest) {
-        void send("POST", "/onboarding/seen", stamp).catch(() => undefined);
+        void send("POST", "/onboarding/seen", stamp, SEEN).catch(() => undefined);
       }
       setPlace(next);
       if (asked) setParams({ tour: undefined });
@@ -315,7 +342,7 @@ export function Tour() {
         className="ag-tour-btn ag-tour-lead"
         onClick={() => {
           act("goto", place);
-          if (s.path !== null) go(canonical(s.path ?? ""), landing(s));
+          if (s.path !== null) go(canonical(s.path ?? ""), arrive(s, place.mode));
           else openAssistant();
         }}
       >

@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
-import { chart } from "../../shell/theme";
+import { chart, seriesColors } from "../../shell/theme";
 import { ToggleChip } from "../../ui/Toggle";
 import { ReturnLines, type ReturnSeries } from "../portfolio/charts";
 import { maybe, sectorKey } from "../sentiment/format";
@@ -39,33 +39,14 @@ const MAX_OTHERS = 6;
 const DEBOUNCE_MS = 160;
 
 /**
- * A colour per drawn name. The indices keep the hues the risk tab draws them
- * in, so SPY reads as SPY on both pages; everything else takes the next free
- * one in the order it was added.
+ * A colour per drawn name: `seriesColors`, so SPY reads as SPY here and on the
+ * Risk tab, and a name keeps its hue when another is dropped (`kept`).
  */
 export function lineColors(
   selected: readonly string[],
-  palette: ReturnType<typeof chart>,
+  kept: Readonly<Record<string, string>> = {},
 ): Record<string, string> {
-  const fixed: Record<string, string> = {
-    SPY: palette.info,
-    QQQ: palette.warn,
-    EEM: palette.warnOrange,
-  };
-  const rest = [
-    palette.brandAccent,
-    palette.candleUp,
-    palette.candleDown,
-    palette.smaLong,
-    palette.smaFast,
-    palette.smaSlow,
-  ];
-  const out: Record<string, string> = {};
-  let next = 0;
-  for (const name of selected) {
-    out[name] = fixed[name] ?? rest[next++ % rest.length]!;
-  }
-  return out;
+  return seriesColors(selected, kept);
 }
 
 export function CompareSection({ ticker, base }: { ticker: string; base: string }) {
@@ -94,8 +75,10 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
       .filter((line) => line.role !== "subject")
       .map((line) => line.ticker);
 
-  const palette = chart();
-  const colors = lineColors(selected, palette);
+  // The last render's hues, so a dropped chip leaves the others where they were.
+  const hues = useRef<Record<string, string>>({});
+  const colors = lineColors(selected, hues.current);
+  hues.current = colors;
   const full = selected.length >= MAX_OTHERS;
 
   const toggle = (name: string) =>
@@ -131,7 +114,11 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const picks = selected.filter((name) => !offeredNames.has(name));
 
   return (
-    <Card title={t("ticker.compare")} note={t("ticker.compare_note", { base })}>
+    <Card
+      fold="compare"
+      title={t("ticker.compare")}
+      note={t("ticker.compare_note", { base })}
+    >
       <div className="tk-compare-controls">
         <Segmented
           label={t("ticker.period")}

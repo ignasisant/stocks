@@ -423,13 +423,18 @@ export function reportUnreadable(
     name?: unknown;
     message?: unknown;
   };
-  send<void>("POST", "/import/client-failure", {
-    platform,
-    filename: name.slice(0, 255),
-    bytes: blob.size,
-    error: (typeof kind === "string" && kind ? kind : "Error").slice(0, 64),
-    message: String(message ?? error ?? "").slice(0, 500),
-  }).catch(() => undefined);
+  send<void>(
+    "POST",
+    "/import/client-failure",
+    {
+      platform,
+      filename: name.slice(0, 255),
+      bytes: blob.size,
+      error: (typeof kind === "string" && kind ? kind : "Error").slice(0, 64),
+      message: String(message ?? error ?? "").slice(0, 500),
+    },
+    { touches: [] },
+  ).catch(() => undefined);
 }
 
 /** Delete the last-import note and nothing else — the rows stay in the book. */

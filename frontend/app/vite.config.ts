@@ -43,6 +43,11 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: "../../src/stocks/web/static/app",
     emptyOutDir: true,
+    // `.vite/manifest.json`, committed with the bundle: the server reads it
+    // to preload the chunk a page will lazy-load (`web/server.py`,
+    // `_page_hints`), so it travels beside the shell's bundle instead of
+    // after it has run.
+    manifest: true,
     rollupOptions: {
       output: {
         // One chunk per page, so opening Home does not download the tax

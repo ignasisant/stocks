@@ -151,13 +151,24 @@ export function Sessions() {
       onEnd={(id) =>
         run(
           id,
-          send<unknown>("DELETE", `/account/sessions/${encodeURIComponent(id)}`),
+          send<unknown>(
+            "DELETE",
+            `/account/sessions/${encodeURIComponent(id)}`,
+            undefined,
+            {
+              touches: ["/account"],
+            },
+          ),
           (s) => s.add(id),
         )
       }
       onEndOthers={() =>
-        run("others", send<unknown>("DELETE", "/account/sessions/others"), (s) =>
-          rows.filter((r) => !r.current).forEach((r) => s.add(r.id)),
+        run(
+          "others",
+          send<unknown>("DELETE", "/account/sessions/others", undefined, {
+            touches: ["/account"],
+          }),
+          (s) => rows.filter((r) => !r.current).forEach((r) => s.add(r.id)),
         )
       }
     />

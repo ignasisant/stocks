@@ -161,6 +161,22 @@ def consensus(raw) -> dict:
     }
 
 
+def rating_moves(changes: list[dict], limit: int = 5) -> list[dict]:
+    """The newest few upgrades / downgrades / target moves, as the prompt reads them."""
+    return [
+        {
+            "date": c["date"],
+            "firm": c["firm"],
+            "move": c["action"] if c["action"] != "reiterated" else c.get("target_move"),
+            "from": c.get("from_grade"),
+            "to": c.get("to_grade"),
+            "target": c.get("target"),
+            "prior_target": c.get("prior_target"),
+        }
+        for c in changes[:limit]
+    ]
+
+
 def _profile(raw) -> dict:
     info = getattr(raw, "info", None) or {}
     return {
@@ -510,6 +526,7 @@ def _company(pool, action: dict, tbl, market: dict, deadline: float) -> dict:
             {
                 "fund": lambda: loaders.fundamentals(ticker),
                 "est": lambda: loaders.estimates(ticker),
+                "moves": lambda: loaders.rating_changes(ticker),
                 "related": lambda: loaders.related(ticker),
                 **(
                     {"earnings": lambda: loaders.earnings(ticker)}
@@ -549,6 +566,10 @@ def _company(pool, action: dict, tbl, market: dict, deadline: float) -> dict:
         subject["business"] = business(first["fund"])
     if first.get("est") is not None:
         subject["consensus"] = consensus(first["est"])
+    if first.get("moves"):
+        subject.setdefault("consensus", {})["recent_rating_changes"] = rating_moves(
+            first["moves"]
+        )
     if tbl is not None and ticker in tbl.index:
         row = tbl.loc[ticker]
         subject["position"] = {

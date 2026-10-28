@@ -13,7 +13,7 @@
  * would not do.
  */
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { keepDraft } from "../chat/draft";
 
 /**
@@ -120,6 +120,37 @@ export function useAssistantAsks(handler: Listener): void {
       listeners.delete(handler);
     };
   }, [handler]);
+}
+
+const changeListeners = new Set<(kind: string) => void>();
+
+/**
+ * The drawer says an action the reader approved went through (`kind` is the
+ * proposal's: "set_criteria", "favorite"…), so a page already drawing what it
+ * changed can read it again. Without it the exit rules saved from the chat
+ * stayed "none yet" in the open journal panel until a reload.
+ */
+export function announceChange(kind: string): void {
+  for (const listener of changeListeners) listener(kind);
+}
+
+/**
+ * How many `kind` changes have gone through since mount: a count to put in a
+ * `useApi` dependency list, which re-asks the server past the memo when it
+ * moves.
+ */
+export function useAssistantChanges(kind: string): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const listener = (changed: string) => {
+      if (changed === kind) setCount((n) => n + 1);
+    };
+    changeListeners.add(listener);
+    return () => {
+      changeListeners.delete(listener);
+    };
+  }, [kind]);
+  return count;
 }
 
 let working = false;

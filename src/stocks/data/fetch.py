@@ -21,7 +21,7 @@ from yfinance.exceptions import YFRateLimitError
 from stocks import atomic, obs
 from stocks.analysis import naive_dates
 from stocks.config import DATA_DIR, ticker_aliases
-from stocks.data import funds, profiles
+from stocks.data import funds, profiles, twelvedata
 from stocks.data.crypto import COINGECKO_IDS, split_pair
 from stocks.data.fx import rates_range
 from stocks.data.http import get_json
@@ -673,8 +673,7 @@ def close_on(ticker: str, day: str) -> float | None:
     if retired(key[0]):
         return None
     if throttle_remaining():
-        _not_answered()
-        return None  # not cached: a throttle is temporary, an answer is forever
+        return _close_fallback(ticker, key[0], day)
     start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
     end = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
     try:
@@ -685,17 +684,14 @@ def close_on(ticker: str, day: str) -> float | None:
         )
     except YFRateLimitError:
         trip_throttle()
-        _not_answered()
         obs.warn("yahoo.close_on_rate_limited", ticker=key[0])
-        return None
+        return _close_fallback(ticker, key[0], day)
     except Exception as exc:
-        _not_answered()
         obs.warn("yahoo.close_on_failed", ticker=key[0], error=str(exc))
-        return None
+        return _close_fallback(ticker, key[0], day)
     if df is None or df.empty:
-        _not_answered()
         obs.warn("yahoo.close_on_blank", ticker=key[0])
-        return None  # not cached, as above
+        return _close_fallback(ticker, key[0], day)  # not cached, as above
     close = None
     if "Close" in df:
         series = df["Close"].dropna()
@@ -704,6 +700,24 @@ def close_on(ticker: str, day: str) -> float | None:
             close = float(series.iloc[-1])
     with _close_lock:
         _close_memo[key] = close
+    return close
+
+
+def _close_fallback(ticker: str, symbol: str, day: str) -> float | None:
+    """`close_on` when Yahoo could not say: the keyed fallback's split-adjusted
+    close, for a name Yahoo did not disown. Not memoised here (an answer in
+    `_close_memo` is forever; this one is the provider's, with its own memo)
+    and counted as unanswered when it too has nothing."""
+    close = None
+    if ticker not in unlisted([ticker]) and twelvedata.covers(symbol):
+        try:
+            close = twelvedata.close_on(symbol, day)
+        except Exception as exc:  # noqa: BLE001
+            obs.warn("twelvedata.close_on_failed", ticker=symbol, error=str(exc))
+    if close is None:
+        _not_answered()
+    else:
+        obs.event("twelvedata.close_on", ticker=symbol, day=day)
     return close
 
 
@@ -719,7 +733,21 @@ def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.D
     if retired(symbol):
         return pd.DataFrame(index=pd.DatetimeIndex([], name="Date"))
     handle = yf.Ticker(symbol)
-    df = retry(lambda: handle.history(period=period, interval=interval))
+    try:
+        df = retry(lambda: handle.history(period=period, interval=interval))
+    except YFRateLimitError:
+        rescued = _eod_fallback(
+            [ticker], {ticker: symbol}, period, False, None, whole=True
+        ) if interval == "1d" else None
+        if rescued is None:
+            raise
+        return rescued[ticker]
+    if df.empty and interval == "1d":
+        # A blank frame with no error is Yahoo not answering, unless it
+        # disowned the code outright.
+        blank = _eod_fallback([ticker], {ticker: symbol}, period, False, None)
+        if blank and ticker in blank:
+            return blank[ticker]
     df.index.name = "Date"
     first = _first_trade(handle) if not df.empty else None
     if first:
@@ -816,11 +844,24 @@ def fetch_many(
     # way each of the three attempts would get its own 60s and a hung Yahoo
     # would cost three minutes plus the backoff — the budget has to bound the
     # whole thing, sleeps included.
-    data = _budgeted(
-        lambda: retry(download, attempts, trip=trip),
-        budget=budget,
-        symbols=len(symbols),
-    )
+    try:
+        data = _budgeted(
+            lambda: retry(download, attempts, trip=trip),
+            budget=budget,
+            symbols=len(symbols),
+        )
+    except YFRateLimitError:
+        # Yahoo refused the whole set. A keyed daily source answers in its
+        # place only when it can answer EVERY name: a partial book would read
+        # as a complete one, and the callers' degraded paths (held at cost,
+        # last frames kept) are the honest answer to a partial one.
+        rescued = _eod_fallback(
+            tickers, symbol_of, period, auto_adjust, currencies, whole=True
+        )
+        if rescued is None:
+            raise
+        rescued.update(_coingecko_fallback(gecko, period, interval) if gecko else {})
+        return rescued
     out: dict[str, pd.DataFrame] = {}
     for t in tickers:
         try:
@@ -848,8 +889,75 @@ def fetch_many(
     _note_failures(tickers, symbol_of, out, failures)
     if currencies and (placed := _place_codes(missing, currencies)):
         out.update(_errand(placed, period, interval, auto_adjust, "placed_codes"))
+    if interval == "1d":
+        # After `_note_failures`, so a name Yahoo disowned is not papered over.
+        out.update(
+            _eod_fallback(
+                [t for t in tickers if t not in out],
+                symbol_of,
+                period,
+                auto_adjust,
+                currencies,
+            )
+            or {}
+        )
     if gecko:
         out.update(_coingecko_fallback(gecko, period, interval))
+    return out
+
+
+def _period_lookback(period: str) -> int | None:
+    """`period` ("1y", "37mo", "5d") as days; None for "max" or anything else."""
+    m = _PERIOD_RE.match(period)
+    return int(m.group(1)) * _PERIOD_DAYS[m.group(2)] if m else None
+
+
+def _eod_fallback(
+    tickers: list[str],
+    symbol_of: dict[str, str],
+    period: str,
+    auto_adjust: bool,
+    currencies: dict[str, str] | None,
+    *,
+    whole: bool = False,
+) -> dict[str, pd.DataFrame] | None:
+    """Daily bars from the keyed fallback (`data.twelvedata`) for US names
+    Yahoo did not answer; frames carry `attrs["source"]`.
+
+    Only names that are not `unlisted` (a "No data found" is a wrong code, not
+    a throttle) and that the book trades in USD, when it says. With `whole`
+    the answer is all or nothing: None unless every name in `tickers` came
+    back. Concurrent, bounded by the provider's own per-minute allowance, and
+    never raises.
+    """
+    if not tickers or not twelvedata.has_key():
+        return None if whole else {}
+    disowned = unlisted(tickers)
+    ok = [
+        t
+        for t in tickers
+        if t not in disowned
+        and (currencies or {}).get(t, "USD") == "USD"
+        and twelvedata.covers(symbol_of[t])
+    ]
+    if whole and (len(ok) < len(tickers) or len(ok) > twelvedata.room()):
+        return None
+    if not ok:
+        return {}
+    try:
+        got = twelvedata.daily(
+            [symbol_of[t] for t in ok],
+            _period_lookback(period),
+            auto_adjust=auto_adjust,
+        )
+    except Exception as exc:  # noqa: BLE001 — a fallback never fails a download
+        obs.warn("twelvedata.fallback_failed", error=str(exc))
+        return None if whole else {}
+    out = {t: got[symbol_of[t]] for t in ok if symbol_of[t] in got}
+    if out:
+        obs.event("twelvedata.fallback", tickers=sorted(out), asked=len(tickers))
+    if whole:
+        return out if len(out) == len(tickers) else None
     return out
 
 

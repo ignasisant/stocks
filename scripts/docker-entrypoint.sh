@@ -4,21 +4,24 @@
 # of the server: the Cloud Run job behind the Today page's market read
 # (infra/cron.tf) starts this same image with `.venv/bin/stocks today-market`.
 #
-# STREAMLIT_SECRETS_TOML — full contents of .streamlit/secrets.toml ([auth],
-# [app], [storage], [chat], [free_llm], [telegram]). Container hosts inject
-# secrets as env vars, and stocks.secrets_env reads every key that has no env
-# var of its own from that file, so we write it out here. Left unset, the app
-# boots without secrets (no sign-in), or with a mounted .streamlit/secrets.toml
-# when running docker locally.
+# STOCKS_SECRETS_TOML — full contents of secrets.toml ([auth], [app],
+# [storage], [chat], [free_llm], [telegram]). Container hosts inject secrets as
+# env vars, and stocks.secrets_env reads every key that has no env var of its
+# own from that file, so we write it out here. STREAMLIT_SECRETS_TOML is the
+# name the binding had before; a service or job still carrying it boots the
+# same until a deploy with --secret moves it. Left unset, the app boots without
+# secrets (no sign-in), or with a mounted secrets.toml when running docker
+# locally.
 set -eu
 cd "$(dirname "$0")/.."
 
-if [ -n "${STREAMLIT_SECRETS_TOML:-}" ]; then
-    mkdir -p .streamlit
+SECRETS_TOML="${STOCKS_SECRETS_TOML:-${STREAMLIT_SECRETS_TOML:-}}"
+if [ -n "$SECRETS_TOML" ]; then
     umask 077
-    printf '%s\n' "$STREAMLIT_SECRETS_TOML" > .streamlit/secrets.toml
+    printf '%s\n' "$SECRETS_TOML" > secrets.toml
     umask 022
 fi
+unset SECRETS_TOML
 
 # A command of its own, with the secrets file already in place.
 if [ $# -gt 0 ]; then
