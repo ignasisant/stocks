@@ -79,6 +79,7 @@ from stocks.web import (
     precompress,
     ratelimit,
     seo,
+    upstream,
 )
 from stocks.web.landing import (
     ASSET_BASE,
@@ -968,6 +969,9 @@ def _boot(request: Request) -> dict | None:
     from stocks.api.routes import prefs as settings
     from stocks.web import i18n
 
+    if upstream.BASE:
+        # The account is production's (`web/upstream.py`): the shell asks it.
+        return None
     try:
         who = api_security.visitor(request, request.headers.get("authorization", ""))
         if who.kind == "token":
@@ -1297,6 +1301,9 @@ app = Starlette(
     # sits inside them and skips what is already compressed (the landing) and
     # what must not be buffered (the chat's stream).
     middleware=[
+        # A local dashboard on the production account: its paths leave first,
+        # before anything here touches them. Never in a deploy.
+        *([Middleware(upstream.Upstream, base=upstream.BASE)] if upstream.BASE else []),
         Middleware(ClientThrottle),
         Middleware(SecurityHeaders),
         # Level 6: within a few percent of level 9's size at about half its

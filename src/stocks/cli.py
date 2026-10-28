@@ -491,6 +491,10 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     from stocks.config import PROJECT_ROOT
 
     env = dict(os.environ)
+    # Whose account the page shows: production's while the backend here is
+    # the one it runs, else this checkout's copy (web/upstream.py decides, in
+    # the worker, so a --reload after a Python edit decides again).
+    env["STOCKS_API_UPSTREAM"] = args.api
     vite = None
     if args.reload:
         cmd += ["--reload", "--reload-dir", str(Path(__file__).parent)]
@@ -1580,6 +1584,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--bundle", action="store_true",
                         help="with --reload, serve the committed frontend "
                              "bundle instead of the live source")
+    p_dash.add_argument("--api", choices=("auto", "prod", "local"), default="auto",
+                        help="whose account the page shows: production's "
+                             "(prod), this checkout's data/ (local), or "
+                             "production's unless the backend under src/ "
+                             "differs from the commit it runs (auto, default)")
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_etf = sub.add_parser(
