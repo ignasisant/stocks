@@ -558,6 +558,32 @@ def test_closing_a_revolut_leftover_takes_the_fee_coins_off_the_buy(tmp_path):
     assert impact["held"][0]["after"] == 0
 
 
+CHILL = [replace(t, ticker="CHILLGUY-EUR", note="revolut crypto CHILLGUY")
+         for t in DUST]
+
+
+@pytest.mark.parametrize("said", ["CHILL", "CHILL GUY", "chillguy"])
+def test_closing_reads_a_coin_by_the_name_the_reader_says(tmp_path, said):
+    # Prod 2026-10-28: "elimina el euro que queda de chill guy" reached the
+    # tool as CHILL, and the card asked "which one?" with CHILLGUY-EUR the
+    # only candidate. One held symbol starting that way is the one meant.
+    db = tmp_path / "book.db"
+    add_many(CHILL, db)
+    drafted = book.draft(Action("close_position", said.upper(), {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    (op,) = drafted.book["ops"]
+    assert op["op"] == "update" and drafted.book["impact"]["positions"] == [1, 0]
+
+
+def test_closing_still_asks_when_two_held_symbols_start_that_way(tmp_path):
+    db = tmp_path / "book.db"
+    add_many([*CHILL, Transaction("2025-05-10", "CHILLHOUSE-EUR", "buy", 10.0,
+                                  1.0, "EUR", 0.0, "revolut crypto CHILLHOUSE")], db)
+    drafted = book.draft(Action("close_position", "CHILL", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    assert drafted.book is None and "CHILLGUY-EUR" in drafted.text
+
+
 def test_closing_books_the_leftover_as_sold_on_the_emptying_sale(tmp_path):
     db = tmp_path / "book.db"
     add_many([replace(t, note="kraken CAT") for t in DUST], db)

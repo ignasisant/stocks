@@ -100,14 +100,6 @@ class Dcf:
     grid: list[list[float | None]] = field(default_factory=list)
 
 
-def _net_debt(raw: RawFundamentals) -> float | None:
-    net = fnd._latest(raw.balance, "Net Debt")
-    if net is None:
-        debt, cash = raw.info.get("totalDebt"), raw.info.get("totalCash")
-        net = debt - cash if debt is not None and cash is not None else None
-    return net
-
-
 def _firm_cash_flow(raw: RawFundamentals, fcf: float) -> float:
     """Yahoo's FCF is after interest; the firm's is before it, taxed."""
     interest = fnd._latest(raw.income, "Interest Expense")
@@ -135,7 +127,7 @@ def compute(raw: RawFundamentals, metrics: dict) -> Dcf:
         out.reason = "negative_fcf"
         return out
     shares = fnd._latest(raw.income, "Diluted Average Shares")
-    net_debt = _net_debt(raw)
+    net_debt = fnd.latest_net_debt(raw)
     rate = fnd._statement_fx(raw.info)
     if not shares or shares <= 0 or net_debt is None or not rate or not out.price:
         out.reason = "no_data"

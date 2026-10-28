@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 
 import pytest
 
@@ -156,6 +157,40 @@ def test_yfinance_misses_are_warnings_and_its_blank_lines_are_dropped():
     ]
     obs.setup(force=True)
     assert sum(isinstance(f, obs._YahooMissIsNotAnError) for f in yf_log.filters) == 1
+
+
+def test_pandas_removal_notices_from_yfinance_stay_off_the_log():
+    # pandas 3.1 warns on every yfinance history call (inplace=...); in prod
+    # that was 1245 py.warnings lines a day. The app's own warnings still log.
+    from pandas.errors import Pandas4Warning
+
+    seen: list[str] = []
+
+    class Sink(logging.Handler):
+        def emit(self, record):
+            seen.append(record.getMessage())
+
+    py_warnings = logging.getLogger("py.warnings")
+    sink = Sink()
+    py_warnings.addHandler(sink)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("always")
+            # pytest swaps showwarning per test; re-latch logging's capture.
+            logging.captureWarnings(False)
+            obs.setup(force=True)
+            for module in ("yfinance.scrapers.history", "stocks.portfolio"):
+                warnings.warn_explicit(
+                    "The 'inplace' keyword is deprecated",
+                    Pandas4Warning,
+                    f"{module}.py",
+                    1,
+                    module=module,
+                )
+            logging.captureWarnings(False)
+    finally:
+        py_warnings.removeHandler(sink)
+    assert len(seen) == 1 and seen[0].startswith("stocks.portfolio.py")
 
 
 def test_the_api_process_configures_logging_at_boot(monkeypatch):

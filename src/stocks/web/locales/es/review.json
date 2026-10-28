@@ -292,7 +292,7 @@
   "review.reason_patent_risk": "riesgo de patentes",
   "review.reason_patent_risk_help": "Una farmacéutica vive de patentes que caducan: mira cuándo vencen las principales y qué las sustituye. Las fechas de caducidad no están en los datos.",
   "review.reason_growth_stage": "fase de crecimiento",
-  "review.reason_growth_stage_help": "Ventas creciendo un 25 % o más con margen operativo bajo el 10 %: se juzga por crecimiento, margen bruto y regla del 40, no por el beneficio de hoy.",
+  "review.reason_growth_stage_help": "Crece un 25 % o más, o un 15 % con caja que lo lleva al 30 % (regla del 40), con margen operativo bajo el 10 %: se juzga por crecer, no por beneficio.",
   "review.reason_rule_of_40": "regla del 40",
   "review.reason_rule_of_40_help": "Crecimiento de ventas más margen FCF suma 40 % o más: crecimiento que se paga solo.",
   "review.reason_short_runway": "poca caja",

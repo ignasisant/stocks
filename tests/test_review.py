@@ -276,6 +276,39 @@ def test_a_profitable_grower_keeps_the_credit_for_its_growth():
     assert review.R_RULE_40 in v.reasons and review.R_GROWTH in v.reasons
 
 
+# Elastic, 2026-10: 15% growth (18% a year over four), break-even only after
+# 298M of share-based pay; before it, an 18.5% cash margin. Under the mature
+# lens it read "quality 17, cheapness 22, sell".
+SCALING_GROWER = {
+    "revenue": 1.74e9, "market_cap": 1.11e10, "ev": 1.02e10, "fcf": 3.22e8,
+    "revenue_growth": 0.151, "revenue_cagr": 0.176, "op_margin": -0.006,
+    "gross_margin": 0.756, "roic": 0.007, "roic_ex_goodwill": 0.009,
+    "moat": 27.9, "fcf_margin": 0.013, "fcf_yield": 0.029,
+    "owner_fcf_yield": 0.002, "sbc_fcf": 0.93, "pe_fwd": 26.7,
+    "ev_ebitda": -458.0, "ev_sales": 5.67, "share_dilution": 0.028,
+}
+
+
+def test_a_grower_spending_its_margin_on_growth_is_judged_as_one():
+    s = review.score(SCALING_GROWER)
+    assert s.stage == review.GROWTH
+    v = review.judge_held(SCALING_GROWER, weight=0.02)
+    assert v.verdict == review.HOLD
+    assert v.reasons[0] == review.R_GROWTH_STAGE
+    assert review.R_LOW_ROIC not in v.reasons
+    # The shares it pays its staff in still count against it.
+    assert review.R_SHARE_PAY in v.reasons
+
+
+def test_a_thin_margin_without_the_cash_stays_mature():
+    """The same pace with a grocer's cash margin is a thin business, not one
+    spending on growth; nor does a slower pace earn the lens."""
+    thin = {**SCALING_GROWER, "fcf": 0.03 * SCALING_GROWER["revenue"]}
+    assert review.stage(thin) == review.MATURE
+    slow = {**SCALING_GROWER, "revenue_growth": 0.12}
+    assert review.stage(slow) == review.MATURE
+
+
 def test_one_spiky_quarter_is_not_growth():
     """Exxon, 2026-10: +44% on the year-ago quarter, -7% a year over four."""
     oil = {**CHEAP_WEAK, "revenue_growth": 0.44, "revenue_cagr": -0.067,
