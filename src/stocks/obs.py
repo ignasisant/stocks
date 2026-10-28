@@ -41,6 +41,7 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -203,6 +204,19 @@ class PlainFormatter(logging.Formatter):
 # ----------------------------------------------------------------------- setup
 
 
+def _quiet_library_deprecations() -> None:
+    """Drop pandas' future-removal notices raised from inside yfinance.
+
+    They are yfinance's to fix, fire on every history download (×1245 a day
+    after pandas 3.1) and buried the app's own warnings. Ours still log.
+    """
+    try:
+        from pandas.errors import Pandas4Warning
+    except ImportError:  # pandas < 3.1 has no such category
+        return
+    warnings.filterwarnings("ignore", category=Pandas4Warning, module=r"yfinance(\.|$)")
+
+
 def setup(level: str | int | None = None, *, force: bool = False) -> None:
     """Install the root handler. Idempotent — safe to call more than once.
 
@@ -234,6 +248,7 @@ def setup(level: str | int | None = None, *, force: bool = False) -> None:
     if not any(isinstance(f, _YahooMissIsNotAnError) for f in yf_log.filters):
         yf_log.addFilter(_YahooMissIsNotAnError())
     logging.captureWarnings(True)  # DeprecationWarning et al become log records
+    _quiet_library_deprecations()
     _configured = True
     if IN_CLOUD_RUN:
         # One line per cold start — how you tell "the app is slow" from "the app
