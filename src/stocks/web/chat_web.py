@@ -588,9 +588,20 @@ def augment(message: str, results: list[Result]) -> str:
     """The user message with the search hits appended (unchanged when none).
 
     Only the outgoing copy of the turn is augmented — the stored history keeps
-    the user's original text for display and for later context windows."""
+    the user's original text for display and for later context windows.
+
+    The hits ride on the user's own turn, so they carry the same "quoted data"
+    header the research's web tools put on a page (`toolbox.UNTRUSTED`), and
+    a line written for the model is counted the same way."""
     if not results:
         return message
+    from stocks.chat import guard
+    from stocks.chat.toolbox import UNTRUSTED
+
+    for r in results:
+        if hit := guard.injected(f"{r.title}\n{r.body}"):
+            obs.event("chat.injection_seen", tool="web_fallback", pattern=hit)
+            break
     lines = [
         f"{i}. {r.title} — {r.url}" + (f"\n   {r.body}" if r.body else "")
         for i, r in enumerate(results, 1)
@@ -598,7 +609,8 @@ def augment(message: str, results: list[Result]) -> str:
     return (
         message
         + "\n\n---\nWeb search results fetched for this message (ground your "
-        "answer in them where relevant and cite the URLs you use):\n"
+        "answer in them where relevant and cite the URLs you use). "
+        + UNTRUSTED
         + "\n".join(lines)
     )
 
