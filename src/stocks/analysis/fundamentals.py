@@ -406,6 +406,32 @@ def _latest(df: pd.DataFrame, label: str) -> float | None:
     return float(row.iloc[0]) if row is not None else None
 
 
+def latest_net_debt(raw: RawFundamentals) -> float | None:
+    """Debt less cash at the last balance sheet. Yahoo leaves "Net Debt" blank
+    in a year when cash is the larger (Elastic, PDD), so the row's newest value
+    was a year it had debt: net cash read as leverage. Rebuilt from the same
+    column instead, and only past it from the quote's own figures."""
+    bal = raw.balance
+    if bal is not None and not bal.empty:
+        col = pd.to_numeric(bal.iloc[:, 0], errors="coerce")
+
+        def cell(label: str) -> float | None:
+            v = col.get(label)
+            return float(v) if v is not None and pd.notna(v) else None
+
+        net = cell("Net Debt")
+        if net is not None:
+            return net
+        debt = cell("Total Debt")
+        cash = cell("Cash Cash Equivalents And Short Term Investments")
+        if cash is None:
+            cash = cell("Cash And Cash Equivalents")
+        if debt is not None and cash is not None:
+            return debt - cash
+    debt, cash = raw.info.get("totalDebt"), raw.info.get("totalCash")
+    return debt - cash if debt is not None and cash is not None else None
+
+
 def _ttm(df: pd.DataFrame, label: str) -> float | None:
     """The last four quarters' sum, or None when any of them is missing: a
     gap would reach back to a fifth quarter and sum another year."""
@@ -741,10 +767,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["revenue_growth"] = info.get("revenueGrowth")
 
     ebitda = _latest(raw.income, "EBITDA")
-    net_debt = _latest(raw.balance, "Net Debt")
-    if net_debt is None:
-        debt, cash = info.get("totalDebt"), info.get("totalCash")
-        net_debt = debt - cash if debt is not None and cash is not None else None
+    net_debt = latest_net_debt(raw)
     # Over a loss the ratio flips sign: net cash over a negative EBITDA reads as
     # leverage (Revolution Medicines showed 2.5x). No earnings, no multiple.
     has_ebitda = ebitda is not None and ebitda > 0
