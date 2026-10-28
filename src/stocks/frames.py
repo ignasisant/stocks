@@ -2,7 +2,7 @@
 
 pandas types `DataFrame.index` as the plain `Index` base and attaches
 `DatetimeIndex`'s own date fields dynamically, so a checker sees none of
-`.normalize()`, `.dayofweek`, `.tz` or `.strftime` on a frame that plainly has
+`.normalize()`, `.day_of_week`, `.tz` or `.strftime` on a frame that plainly has
 them. Every price history in the web layer is keyed by timestamp; naming that
 once here keeps the suppressions off the call sites.
 """
@@ -21,12 +21,12 @@ def dates(df: pd.DataFrame) -> pd.DatetimeIndex:
 
 def sessions(df: pd.DataFrame) -> pd.DatetimeIndex:
     """Each bar's calendar day at midnight — intraday bars grouped by session."""
-    return dates(df).normalize()  # ty: ignore[unresolved-attribute]
+    return dates(df).normalize()
 
 
 def midnights(index) -> pd.DatetimeIndex:
     """Any timestamp index at midnight — a series keyed by calendar day."""
-    return pd.DatetimeIndex(index).normalize()  # ty: ignore[unresolved-attribute]
+    return pd.DatetimeIndex(index).normalize()
 
 
 def midnight(stamp) -> pd.Timestamp:
@@ -36,4 +36,4 @@ def midnight(stamp) -> pd.Timestamp:
 
 def weekdays(df: pd.DataFrame):
     """Monday=0 .. Sunday=6 for every bar."""
-    return dates(df).dayofweek  # ty: ignore[unresolved-attribute]
+    return dates(df).day_of_week

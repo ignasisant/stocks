@@ -1208,7 +1208,7 @@ def test_sleeve_stats_measures_each_block_on_its_own_calendar():
     days = pd.date_range("2024-01-01", periods=140, freq="D")
     rng = np.random.default_rng(1)
     stock = pd.Series(rng.normal(0, 0.01, len(days)), index=days)
-    stock[days.dayofweek >= 5] = np.nan
+    stock[days.day_of_week >= 5] = np.nan
     coin = pd.Series(rng.normal(0, 0.04, len(days)), index=days)
     returns = pd.DataFrame({"AAPL": stock, "BTC-EUR": coin})
     vols, corr, growth = sleeve_stats(
@@ -1227,7 +1227,7 @@ def test_sleeve_stats_reads_each_blocks_own_compound_growth_over_a_year():
     """A sleeve that doubled over exactly two years compounded at ~41.4% a
     year, whatever its calendar: weekdays for stocks, every day for crypto."""
     days = pd.date_range("2024-01-01", "2026-01-01", freq="D")
-    stock_days = days[days.dayofweek < 5]
+    stock_days = days[days.day_of_week < 5]
     stock = pd.Series(2 ** (1 / (len(stock_days) - 1)) - 1, index=stock_days)
     stock.iloc[0] = 0.0
     coin = pd.Series(0.5 ** (1 / (len(days) - 1)) - 1, index=days)

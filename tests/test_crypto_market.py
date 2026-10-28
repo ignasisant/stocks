@@ -71,7 +71,7 @@ def test_relative_return_refuses_a_short_history():
 def test_relative_return_aligns_mismatched_calendars():
     # Coin trades daily, the index fund on weekdays only: the shared days rule.
     coin = _daily(np.linspace(100, 200, 120))
-    fund = coin[coin.index.dayofweek < 5] * 0 + 50.0
+    fund = coin[coin.index.day_of_week < 5] * 0 + 50.0
     out = cm.relative_return(coin, fund, 90)
     assert out is not None and out > 0
 

@@ -17,8 +17,9 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+import numpy as np
 import pandas as pd
 
 from stocks import obs
@@ -32,8 +33,6 @@ from stocks.portfolio import consistency, transfers
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import numpy as np
 
 TRADING_DAYS = 252
 # Default benchmarks: US large-cap, US tech, emerging markets.
@@ -183,7 +182,7 @@ def drawdown_span(prices: pd.Series) -> tuple[pd.Timestamp, pd.Timestamp] | None
     if not (dd < 0).any():
         return None
     trough = dd.idxmin()
-    return prices[:trough].idxmax(), trough
+    return cast(pd.Timestamp, prices[:trough].idxmax()), cast(pd.Timestamp, trough)
 
 
 def cumulative_returns(returns: pd.Series) -> pd.Series:
@@ -1040,8 +1039,6 @@ def project_sleeves(
     month, row 0 = today; `finals` is every path's last value, for a
     probability of reaching a target.
     """
-    import numpy as np
-
     months = years * 12
     k = len(sleeves)
     rng = np.random.default_rng(seed)
@@ -1850,7 +1847,7 @@ def basket_change(values: pd.DataFrame, days: int) -> tuple[float, float] | None
     if days <= 1:
         start = values.index[-2]
     else:
-        prior = values.index[values.index <= end - pd.Timedelta(days=days)]
+        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
         if prior.empty:
             return None
         start = prior[-1]
@@ -1937,7 +1934,7 @@ def same_money(
     injected = _naive_index(hist["injected"])
     days = value.index
     if start is not None:
-        days = days[days >= pd.Timestamp(start)]
+        days = days[np.asarray(days >= pd.Timestamp(start))]
     if len(days) < 2:
         return None
     price = _naive_index(closes.dropna()).reindex(days, method="ffill")
@@ -1987,7 +1984,7 @@ def ticker_changes(values: pd.DataFrame, days: int) -> pd.Series:
     if days <= 1:
         start = values.index[-2]
     else:
-        prior = values.index[values.index <= end - pd.Timedelta(days=days)]
+        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
         if prior.empty:
             return pd.Series(dtype=float)
         start = prior[-1]
@@ -2062,7 +2059,7 @@ def ticker_money_changes(values: pd.DataFrame, days: int) -> pd.Series:
     if days <= 1:
         start = values.index[-2]
     else:
-        prior = values.index[values.index <= end - pd.Timedelta(days=days)]
+        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
         if prior.empty:
             return pd.Series(dtype=float)
         start = prior[-1]

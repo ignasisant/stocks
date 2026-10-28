@@ -35,7 +35,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import date
+from typing import cast
 
+import numpy as np
 import pandas as pd
 
 from stocks.data.crypto import HALVINGS, NEXT_HALVING_EST
@@ -95,7 +97,7 @@ def realized_vol(close: pd.Series, days: int = 30) -> float | None:
     returns = (series.tail(days + 1).apply(math.log)).diff().dropna()
     if len(returns) < 2:
         return None
-    return float(returns.std(ddof=1) * math.sqrt(YEAR_DAYS))
+    return float(cast(float, returns.std(ddof=1)) * math.sqrt(YEAR_DAYS))
 
 
 def mayer_multiple(close: pd.Series) -> float | None:
@@ -140,9 +142,9 @@ def relative_return(
     shared = a.index.intersection(b.index)
     if len(shared) < 2:
         return None
-    end = shared.max()
+    end = cast(pd.Timestamp, shared.max())
     start = end - pd.Timedelta(days=days)
-    window = shared[shared >= start]
+    window = shared[np.asarray(shared >= start)]
     if len(window) < 2 or (window.min() - start).days > 7:
         return None
     first = window.min()

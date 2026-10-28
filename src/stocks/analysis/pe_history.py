@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from datetime import date, timedelta
+from typing import cast
 
 import pandas as pd
 
@@ -162,7 +163,7 @@ def window_stats(
     if pe is None or pe.empty:
         return pd.DataFrame()
     current = float(pe.iloc[-1]) if current is None else float(current)
-    end = pe.index.max()
+    end = cast(pd.Timestamp, pe.index.max())
     rows = []
     for label, days in windows.items():
         w = pe[pe.index >= end - pd.Timedelta(days=days)]
