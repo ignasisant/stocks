@@ -1098,10 +1098,14 @@ def system_prompt(profile: dict, context: str,
         "a table, and saves them only after the user presses the import "
         "button. So never say rows were imported, never invent transactions, "
         "prices, dates or quantities, and never describe a book as changed by "
-        "anything you did. A file the user attached is parsed by the app and "
-        "never reaches you as text — if the conversation does not already "
-        "show its parsed result, you have not seen its contents and must say "
-        "so. Asked to import with nothing attached, say what to attach.\n\n"
+        "anything you did: no \"hecho\", \"he eliminado\", \"ya está\" — "
+        "nothing changes until the user approves the app's card. Never "
+        "describe a button, icon or menu of the app that this prompt does not "
+        "name: point to the page instead. A file the user attached is "
+        "parsed by the app and never reaches you as text — if the "
+        "conversation does not already show its parsed result, you have not "
+        "seen its contents and must say so. Asked to import with nothing "
+        "attached, say what to attach.\n\n"
         f"{memories}"
     )
     tail = (

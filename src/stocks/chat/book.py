@@ -25,7 +25,7 @@ from __future__ import annotations
 import difflib
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
@@ -394,10 +394,13 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     (`doctor._fee_in_coins`), which corrects the cost too, not a sale that
     never happened.
     """
+    found = edits.select(rows, edits.Selector(ticker=act.ticker), ctx.resolve)
+    if not found and (meant := _held_as(act.ticker, rows)):
+        act = replace(act, ticker=meant)
+        found = edits.select(rows, edits.Selector(ticker=meant), ctx.resolve)
     fee = _fee_in_coins_for(act.ticker, rows, ctx)
     if fee is not None:
         return fee
-    found = edits.select(rows, edits.Selector(ticker=act.ticker), ctx.resolve)
     # A remainder in float noise is no position: 44M coins bought and sold
     # leave 4e-9 behind, which no sale can take without "exceeding" it.
     bought = sum(t.quantity for t in found if t.action in ("buy", "transfer_in"))
@@ -436,6 +439,21 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     summary = ctx.tr("chat.book_summary_close", ticker=_names(found),
                      quantity=_n(sum(s.held for s in held.values())))
     return _planned(ops, summary, ctx)
+
+
+def _held_as(ticker: str, rows: list[Transaction]) -> str:
+    """The one held symbol a name the book has no rows for stands for, or "".
+
+    The reader says a coin's name the way they say it ("chill guy", "CHILL")
+    and the book holds CHILLGUY-EUR; asking "which one?" when only one held
+    symbol starts that way sent them in circles. Two candidates still ask.
+    """
+    want = "".join(ch for ch in ticker.upper() if ch.isalnum())
+    if len(want) < 3:
+        return ""
+    held = {label for (label, _cur), s in edits._replay(rows).items() if s.held > 1e-9}
+    hits = [h for h in held if edits._root(h).replace("-", "").startswith(want)]
+    return hits[0] if len(hits) == 1 else ""
 
 
 def _nearest(ticker: str, rows: list[Transaction], limit: int = 5) -> str:

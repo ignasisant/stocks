@@ -166,6 +166,13 @@ def test_system_prompt_never_says_the_book_cannot_be_edited():
     assert "never say the book cannot be edited" in out
 
 
+def test_system_prompt_never_claims_a_change_or_invents_a_control():
+    # Prod rating 2026-10-28: "Hecho. He eliminado ese euro residual" with no
+    # card, then a trash icon the ticker page does not have.
+    out = engine.system_prompt({"set": False}, "CONTEXT-BLOCK")
+    assert "nothing changes until the user approves the app's card" in out
+    assert "button, icon or menu of the app that this prompt does not name" in out
+
 
 # --------------------------------------------------------------- attempts
 
