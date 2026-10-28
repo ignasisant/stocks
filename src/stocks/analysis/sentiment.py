@@ -33,6 +33,7 @@ sits next to it on the page for exactly that reason.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 import pandas as pd
 
@@ -536,7 +537,7 @@ def pulse(
     # The row `COMPONENT_THEN` sessions before the one being quoted, for each
     # component's "where it was" tick. Positional rather than by date so a
     # holiday cannot shift it.
-    at = frame.index.get_loc(as_of)
+    at = cast(int, frame.index.get_loc(as_of))
     back = frame.index[at - COMPONENT_THEN] if at >= COMPONENT_THEN else None
     components = tuple(
         Component(

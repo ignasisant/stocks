@@ -12,6 +12,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError
 
 import pandas as pd
@@ -1051,8 +1052,8 @@ def _crypto_usd_fallback(
         converted = usd_df.copy()
         converted.index = naive_dates(converted.index)
         converted.index.name = "Date"
-        start = converted.index.min().date().isoformat()
-        end = converted.index.max().date().isoformat()
+        start = cast(pd.Timestamp, converted.index.min()).date().isoformat()
+        end = cast(pd.Timestamp, converted.index.max()).date().isoformat()
         # The rate feed is a second network dependency inside a Yahoo
         # download. When it is down the pair stays unpriced (held at cost
         # downstream, like any other gap) instead of the whole download
@@ -1202,7 +1203,7 @@ def _coingecko_fallback(
             if not prices:
                 continue
             idx = naive_dates(pd.to_datetime([p[0] for p in prices], unit="ms"))
-            close = pd.Series([p[1] for p in prices], index=idx.normalize())  # ty: ignore[unresolved-attribute]
+            close = pd.Series([p[1] for p in prices], index=idx.normalize())
             close = close[~close.index.duplicated(keep="last")].sort_index()
             df = pd.DataFrame(
                 {"Open": close, "High": close, "Low": close, "Close": close}

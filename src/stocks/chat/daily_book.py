@@ -24,6 +24,7 @@ index conversion its market lines already make.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 INDEX_NAME = "S&P 500"
@@ -72,7 +73,7 @@ def _start(index: pd.Index, days: int):
         return None
     if days <= 1:
         return index[-2]
-    prior = index[index <= index[-1] - pd.Timedelta(days=days)]
+    prior = index[np.asarray(index <= index[-1] - pd.Timedelta(days=days))]
     return prior[-1] if len(prior) else None
 
 
