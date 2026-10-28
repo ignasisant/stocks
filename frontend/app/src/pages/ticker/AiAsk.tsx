@@ -13,11 +13,20 @@
  * one press, still briefed by the server.
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { askAssistant, type Brief } from "../../shell/assistant";
 import { useT } from "../../shell/i18n";
 
 const MORE: readonly Exclude<Brief, "full">[] = ["bear", "earnings", "fit"];
+
+/** The page's side gutter the menu keeps clear of (DS phone gutter). */
+const GUTTER = 16;
 
 export function AiAsk({
   ticker,
@@ -39,6 +48,7 @@ export function AiAsk({
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
 
   const ask = (brief: Brief) => {
@@ -56,6 +66,21 @@ export function AiAsk({
     document.addEventListener("pointerdown", away);
     items.current[0]?.focus();
     return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+
+  // The header wraps, so the group can sit anywhere along a phone's row: the
+  // menu hangs from the group's right edge, then slides back inside the
+  // viewport. Measured from the group and the menu's width, not the menu's
+  // own box, which `ag-pop-in` is still scaling on this frame.
+  useLayoutEffect(() => {
+    const el = menu.current;
+    if (!open || !el || !box.current) return;
+    const group = box.current.getBoundingClientRect();
+    const room = document.documentElement.clientWidth;
+    const width = el.offsetWidth;
+    const left = Math.max(GUTTER, Math.min(group.right - width, room - GUTTER - width));
+    el.style.left = `${left - group.left}px`;
+    el.style.right = "auto";
   }, [open]);
 
   const walk = (event: KeyboardEvent) => {
@@ -111,6 +136,7 @@ export function AiAsk({
           </button>
           {open ? (
             <div
+              ref={menu}
               className="tk-pop-panel tk-ai-menu"
               role="menu"
               aria-label={t("ticker.ai_more")}
