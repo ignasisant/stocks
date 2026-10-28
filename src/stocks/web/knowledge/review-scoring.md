@@ -43,7 +43,7 @@ Sell or add reads some industries through their own lens, because cash flow, EBI
 
 ## Growth stage and early-stage bets
 The Sell or add page judges a company on a different yardstick when profits are not the right ruler.
-- Growth stage: sales growing 25% or more a year with operating margin under 10%. Quality is the rule of 40, gross margin (20% to 80%) and the moat score. Price is EV/sales per point of growth (0.1x a point is cheap, 0.6x dear), FCF yield (-5% to 5%) and forward P/E only once positive.
+- Growth stage: operating margin under 10% and sales growing 25% or more a year, or 15% or more when growth plus free cash flow before share-based pay over sales (a cash rule of 40) reaches 30%: the thin margin is spent on growth, as at a software house paying staff in shares. Quality is the rule of 40, gross margin (20% to 80%) and the moat score. Price is EV/sales per point of growth (0.1x a point is cheap, 0.6x dear), FCF yield (-5% to 5%) and forward P/E only once positive.
 - Early stage: no sales to speak of (none, or market cap over 40 times sales) with cash going out, or an operating loss bigger than all its sales. It gets no scores and the verdict Bet: a position sized to be lost, with the cash runway as the one hard number (under 1.5 years is short, 3 or more is long).
 - A held Bet above 3% of the book is marked Trim down to 3%.
 - Drug makers carry a patent-cliff or trial-risk warning, because filings do not price expiry dates or trial outcomes.
@@ -71,6 +71,13 @@ For a stock you hold, the Sell or add page applies these rules in order, using t
 - Crypto: coins are never scored or cut; when they are 25% or more of the book the page says so.
 The Move column is the money from the weight change at today's prices. "The plan", at the top of the page, leads with one figure: the new money the adds need, or the cash the sales free, with the tax on the sales beside it and two bars (To sell, To add) on one scale. The help text on each verdict quotes the lines this book was judged at. Under the plan every move is one row, split into "Sell or trim" and "Add to", biggest first. Hovering a name in the plan, the map or the table highlights it in the other two.
 - Staying put: when nothing clears its line, the plan says to keep the book as it is, names how many holdings are close calls or held for tax, and records it in Decisions as one "stay put" entry. Doing nothing is a recommendation too.
+
+## What the verdict does not read
+A Sell or add verdict comes only from the two scores, the warning flags and the position's size, as above. When explaining one, name those numbers; nothing else moved it.
+- Not your investor profile, risk appetite or horizon: an aggressive and a cautious account get the same verdict on the same book.
+- Not a sector target: there is no "right" weight per sector to close a gap toward. Sectors only cap adds at 40% of the book.
+- Not the price against its 52-week high or low, momentum, the news, the country or a political or regulatory risk (a Chinese ADR's structure, tariffs): a price the market cuts for such a risk reads as cheap.
+- Not your gain or loss on the position. Buying more at a lower price lowers the average shown, but for Spanish tax each sale takes the oldest shares first (FIFO), so the old lots keep their cost; and selling shares at a loss within 2 months of buying the same security defers that loss.
 
 ## Tax on a sale and the repurchase-window date
 Each Sell or Trim row on the Sell or add page shows the extra tax this year's bill would carry if you sold down to the target, replayed on your own lots with your tax jurisdiction and the gains and losses already booked this year. If the sale books a loss or is offset, it says no extra tax.

@@ -292,7 +292,7 @@
   "review.reason_patent_risk": "patent cliff",
   "review.reason_patent_risk_help": "A drug maker lives on patents that expire: check when the main ones run out and what replaces them. Expiry dates are not in the data.",
   "review.reason_growth_stage": "growth stage",
-  "review.reason_growth_stage_help": "Sales growing 25%+ a year with operating margin under 10%: judged on growth, gross margin and the rule of 40, not on today's profits.",
+  "review.reason_growth_stage_help": "Sales growing 25%+, or 15%+ with cash taking it to 30% (rule of 40), and operating margin under 10%: judged on growth, not today's profits.",
   "review.reason_rule_of_40": "rule of 40",
   "review.reason_rule_of_40_help": "Sales growth plus FCF margin is 40% or more: growth that pays for itself.",
   "review.reason_short_runway": "short runway",
