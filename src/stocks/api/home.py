@@ -197,12 +197,16 @@ def last_closes(
 
 
 def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
-    """The positions frame plus weight / day / day_pct / day_asof, by weight.
+    """The positions frame plus weight / day / day_pct / day_asof /
+    day_basis, by weight.
 
     The frame the daily card's facts and signals are written from. The day
     move is the basket's last two bars (FX included), re-read from the quote
     burst for names whose exchange is shut, and dated with the session it
     belongs to so the card never calls a last-completed-session move "today".
+    `day_basis` says which price it runs to ("pre", "post" or "regular",
+    `analysis.portfolio._snapshot`): overnight a report's reaction is in the
+    after-hours print, and the chat says so.
 
     A copy, always: `positions_table` is a cached frame shared by every reader
     of this book, and adding columns to it in place would leak this route's
@@ -214,6 +218,7 @@ def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
     tbl["weight"] = value_weights(tbl)
     vals = loaders.basket_values(db, mtime, base).dropna(how="all")
     tbl["day_asof"] = None
+    tbl["day_basis"] = "regular"
     if len(vals) >= 2:
         last, prev = vals.iloc[-1], vals.iloc[-2]
         tbl["day"] = (last - prev).reindex(tbl.index)
@@ -234,6 +239,7 @@ def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
             pct = float(quote["pct"])
             tbl.at[ticker, "day_pct"] = pct
             tbl.at[ticker, "day_asof"] = quote.get("as_of")
+            tbl.at[ticker, "day_basis"] = quote.get("basis") or "regular"
             value = tbl.at[ticker, "value"]
             tbl.at[ticker, "day"] = (
                 value * pct / (1 + pct) if pd.notna(value) and pct != -1 else float("nan")

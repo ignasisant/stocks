@@ -1006,6 +1006,33 @@ def test_a_premarket_move_belongs_to_today_not_to_the_last_close(monkeypatch):
     )
 
 
+def test_overnight_the_after_hours_print_is_the_move(monkeypatch):
+    """Between the after-hours close and the premarket open Yahoo reads PREPRE.
+    A company that reported after the bell has its reaction only in
+    `postMarketPrice` then; reading the regular session instead told the chat
+    ServiceNow fell 3 % on its guidance when the report had it 18 % lower."""
+    _patch_quote(monkeypatch, {
+        "marketState": "PREPRE",
+        "regularMarketPrice": 150.13,
+        "regularMarketPreviousClose": 154.78,
+        "postMarketPrice": 126.0,
+        "regularMarketTime": 1793217602,
+        "exchangeTimezoneName": "America/New_York",
+    })
+    quote = session_quote("NOW")
+    assert quote["price"] == 126.0 and quote["basis"] == "post"
+    assert quote["pct"] == pytest.approx(126.0 / 154.78 - 1)
+    assert quote["session"] is None and quote["as_of"] == "2026-10-28"
+
+
+def test_the_snapshot_says_which_price_the_move_is_measured_to(monkeypatch):
+    row = {"regularMarketPrice": 100.0, "regularMarketPreviousClose": 98.0}
+    _patch_quote(monkeypatch, {**row, "marketState": "PRE", "preMarketPrice": 90.0})
+    assert session_quote("X")["basis"] == "pre"
+    _patch_quote(monkeypatch, {**row, "marketState": "REGULAR"})
+    assert session_quote("X")["basis"] == "regular"
+
+
 def test_session_quote_none_when_quote_missing(monkeypatch):
     _patch_quote(monkeypatch, {"marketState": "PRE"})
     assert session_quote("AAPL") is None

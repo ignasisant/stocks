@@ -1127,6 +1127,32 @@ def test_the_snapshot_carries_the_sector_line(monkeypatch, tmp_path):
     assert "Sector exposure" in out and "Technology 100.0% / 100.0%" in out
 
 
+def test_the_snapshot_dates_each_day_move_with_its_session(monkeypatch, tmp_path):
+    """"today" on a move from the last completed session is how the chat told
+    a reader ServiceNow fell 3 % on its guidance: that was the session before
+    the report, and the reaction was in the after-hours print."""
+    import pandas as pd
+
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "book_sectors", lambda tbl: pd.Series(dtype=float))
+    tbl = pd.DataFrame(
+        {"shares": [2.0, 1.0, 3.0], "value": [100.0] * 3, "cost": [80.0] * 3,
+         "pnl": [20.0] * 3, "pnl_pct": [0.25] * 3, "weight": [1 / 3] * 3,
+         "day_pct": [-0.186, -0.178, 0.01],
+         "day_asof": ["2026-10-28", "2026-10-29", "2026-10-29"],
+         "day_basis": ["post", "pre", "regular"]},
+        index=["NOW", "MDB", "AAPL"],
+    )
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("tickers: []\n")
+    out = engine.book_snapshot(tbl, watchlist)
+    assert "| today" not in out
+    assert "session 2026-10-28 incl. after-hours -18.6%" in out
+    assert "premarket 2026-10-29 -17.8%" in out
+    assert "session 2026-10-29 +1.0%" in out
+
+
 def test_spains_rules_are_the_engines_not_the_models():
     from datetime import date
 
