@@ -103,7 +103,14 @@ _NOT_NAMES = {
     # Words Yahoo quotes as an alias it knows (see `spells`): "Estoy" is a
     # EURO STOXX ETF to it, "Vale" the miner.
     "Hay", "Estoy", "Vale",
+    # Imperatives and openers a message starts with: "Mira premarket" quoted
+    # Mira Pharmaceuticals, and "Resultados ServiceNow" is no company's name.
+    "Mira", "Mire", "Mirar", "Busca", "Buscar", "Revisa", "Dime", "Echa",
+    "Fíjate", "Fijate", "Muestra", "Muéstrame", "Enséñame", "Quiero",
+    "Resultados", "Noticias", "Look", "Check", "Show", "Find", "Results",
+    "News",
 }
+_NOT_NAME_WORDS = frozenset(w.casefold() for w in _NOT_NAMES)
 
 
 @dataclass(frozen=True)
@@ -270,7 +277,6 @@ def mentioned(
         if tk and tk not in out and len(out) < MAX_TICKERS:
             out.append(tk)
 
-    upper = message.upper()
     if focus:
         # The page the user is on answers "and how does it look today?" with
         # no ticker in the message at all — the strongest signal there is.
@@ -280,12 +286,26 @@ def mentioned(
     for tok in _TICKER_RE.findall(_ampersands(message, add)):
         if tok not in NOT_TICKERS:
             add(known.get(tok, tok))
+    said = f" {' '.join(_words(message))} "
     for name, tk in known.items():
-        if len(name) > 2 and name in upper:
+        # On word boundaries: a held NOW is not in "I know".
+        if len(name) > 2 and f" {' '.join(_words(name))} " in said:
+            add(tk)
+            continue
+        # As it is said: "ServiceNow" for the filed "ServiceNow, Inc.", and
+        # never a short form that is a word of its own.
+        short = _short(name)
+        if (len(short) > 2 and short not in _COMMON
+                and short not in _NOT_NAME_WORDS and f" {short} " in said):
             add(tk)
     if not out:
         for cand in _NAME_RE.findall(message)[:_MAX_LOOKUPS + 2]:
-            if cand in _NOT_NAMES or cand.upper() in NOT_TICKERS:
+            # "Resultados ServiceNow" is a name after an opening word.
+            words = cand.split(" ")
+            while words and words[0] in _NOT_NAMES:
+                words.pop(0)
+            cand = " ".join(words)
+            if not cand or cand in _NOT_NAMES or cand.upper() in NOT_TICKERS:
                 continue
             sym = lookup(cand)
             if sym:

@@ -76,6 +76,38 @@ def test_unknown_company_name_falls_back_to_one_lookup():
     assert seen == ["Nvidia"]
 
 
+def test_an_imperative_that_opens_the_message_is_not_a_company():
+    """"Mira premarket" quoted MIRA: the verb went to Yahoo as a name."""
+    for verb in ("Mira", "Revisa", "Dime", "Busca", "Check", "Look", "Show"):
+        assert mentioned(f"{verb} premarket", lookup=_no_lookup) == [], verb
+
+
+def test_a_name_after_an_opening_word_is_looked_up_on_its_own():
+    seen = []
+
+    def lookup(name):
+        seen.append(name)
+        return "NOW" if name == "ServiceNow" else ""
+
+    assert mentioned("Resultados ServiceNow de hoy.", lookup=lookup) == ["NOW"]
+    assert seen == ["ServiceNow"]
+
+
+def test_a_held_name_matches_as_it_is_said_not_only_as_filed():
+    """The watchlist files "ServiceNow, Inc."; nobody types the suffix."""
+    known = {"NOW": "NOW", "SERVICENOW, INC.": "NOW",
+             "BANCO SANTANDER, S.A.": "SAN.MC", "VALE S.A.": "VALE"}
+    assert mentioned("Resultados ServiceNow de hoy.", known,
+                     lookup=_no_lookup) == ["NOW"]
+    assert mentioned("cómo va banco santander", known,
+                     lookup=_no_lookup) == ["SAN.MC"]
+    # A short form that is also a word of the language stays a word.
+    assert mentioned("vale, gracias", known, lookup=lambda n: "") == []
+    # A word inside another is not the name or the symbol.
+    assert mentioned("servicenowhere", known, lookup=lambda n: "") == []
+    assert mentioned("ya lo sé, i know", known, lookup=lambda n: "") == []
+
+
 def test_a_hit_that_only_starts_like_the_word_is_not_quoted(monkeypatch):
     # "Hay edge en booking?" was quoted as HAYW: Yahoo completes any prefix.
     hits = {
