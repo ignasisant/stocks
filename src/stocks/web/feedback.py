@@ -89,15 +89,17 @@ _HISTORY_CHARS = 600
 def rate(vote: str, turn: dict, question: str, *, reason: str = "",
          note: str = "", sender: str = "guest", lang: str = "",
          thread: str = "", history: list[dict] | None = None) -> Path:
-    """Persist one conversation's rating (disk + bucket) and log it.
+    """Persist one answer's rating (disk + bucket) and log it.
 
     `turn` is the stored answer it was pressed on and `history` the turns
     above it (`auth.rate_turn`) — the last _HISTORY_TURNS of them, each cut,
     since a conversation that went wrong rarely went wrong on its last line.
-    Only a thumbs-down asks why, so `reason` and `note` are kept only on one."""
+    Only a thumbs-down asks what went wrong, so `reason` is kept only on one;
+    `note` is what the reader wrote either way — a thumbs-up's says what was
+    worth keeping."""
     down = vote == "down"
     reason = reason if down and reason in RATING_REASONS else ""
-    note = note.strip()[:MAX_CHARS] if down else ""
+    note = note.strip()[:MAX_CHARS]
     stamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
     path = FEEDBACK_DIR / f"{stamp}-{uuid.uuid4().hex[:6]}.json"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -77,24 +77,24 @@ const FALLBACK = 360;
 const time = (stamp: string) =>
   Date.parse(stamp.length > 10 ? stamp : `${stamp}T00:00`);
 
-/** A close in the account's language: 1,1249, 182,50, 95.120. */
-export function price(value: number): string {
+/** A close in `lang` (the account's by default): 1,1249, 182,50, 95.120. */
+export function price(value: number, lang?: string): string {
   const size = Math.abs(value);
   const digits = size < 10 ? 4 : size < 10_000 ? 2 : 0;
-  return num(value, digits);
+  return num(value, digits, lang);
 }
 
-const change = (value: number, digits = 1) =>
-  `${value >= 0 ? "+" : ""}${num(value * 100, digits)}%`;
+const change = (value: number, digits = 1, lang?: string) =>
+  `${value >= 0 ? "+" : ""}${num(value * 100, digits, lang)}%`;
 
 /** An axis label: as few decimals as the step between gridlines needs. */
-function axis(lo: number, hi: number, rebased: boolean) {
+function axis(lo: number, hi: number, rebased: boolean, lang: string) {
   const [a = 0, b = 1] = ticks(lo, hi, 4);
   const step = Math.abs(b - a) || 1;
   const digits = Math.max(0, Math.ceil(-Math.log10(rebased ? step * 100 : step)));
   return rebased
-    ? (value: number) => change(value, digits)
-    : (value: number) => num(value, digits);
+    ? (value: number) => change(value, digits, lang)
+    : (value: number) => num(value, digits, lang);
 }
 
 function dater(lang: string, first: string, last: string) {
@@ -204,7 +204,7 @@ export function LineChart({
           notation: "compact",
           maximumFractionDigits: 1,
         }).format(value)
-    : axis(range.lo, range.hi, rebased);
+    : axis(range.lo, range.hi, rebased, lang);
   const dates = dater(
     lang,
     first.dates[0] as string,
@@ -266,22 +266,22 @@ export function LineChart({
         if (line.index)
           return [
             {
-              text: `${named(line)}  ${change(swing)}`,
+              text: `${named(line)}  ${change(swing, 1, lang)}`,
               swatch,
               parts: [
                 { text: `${named(line)}  `, tone: "dim" as const },
-                { text: change(swing), bold: true, tone },
+                { text: change(swing, 1, lang), bold: true, tone },
               ],
             },
           ];
         return [
           {
-            text: `${named(line)}  ${price(value)}`,
+            text: `${named(line)}  ${price(value, lang)}`,
             swatch,
             parts: [
               { text: `${named(line)}  `, tone: "dim" as const },
-              { text: price(value), bold: true },
-              { text: `  ${change(swing)}`, tone },
+              { text: price(value, lang), bold: true },
+              { text: `  ${change(swing, 1, lang)}`, tone },
             ],
           },
         ];
@@ -319,14 +319,16 @@ export function LineChart({
         }
         const swing = start ? end / start - 1 : 0;
         const tone = swing >= 0 ? ("up" as const) : ("down" as const);
-        const levels = line.index ? "" : `${price(start)} → ${price(end)}  `;
+        const levels = line.index
+          ? ""
+          : `${price(start, lang)} → ${price(end, lang)}  `;
         return {
-          text: `${named(line)}  ${levels}${change(swing)}`,
+          text: `${named(line)}  ${levels}${change(swing, 1, lang)}`,
           swatch,
           parts: [
             { text: `${named(line)}  `, tone: "dim" as const },
             ...(levels ? [{ text: levels }] : []),
-            { text: change(swing), bold: true, tone },
+            { text: change(swing, 1, lang), bold: true, tone },
           ],
         };
       })
@@ -351,7 +353,7 @@ export function LineChart({
           lines
             .map((line) => {
               const end = line.raw[line.raw.length - 1] as number;
-              return `${named(line)} ${change(end / (line.raw[0] as number) - 1)}`;
+              return `${named(line)} ${change(end / (line.raw[0] as number) - 1, 1, lang)}`;
             })
             .join(", "),
         )}

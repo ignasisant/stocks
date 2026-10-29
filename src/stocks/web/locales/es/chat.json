@@ -580,6 +580,8 @@
   "chat.rate_wrong": "Datos o cifras incorrectos",
   "chat.rate_missed": "No respondió a lo que pregunté",
   "chat.rate_other": "Otra cosa",
+  "chat.rate_why_up": "¿Qué te ha servido?",
+  "chat.rate_note_up": "¿Algo que destacar? (opcional)",
   "chat.rate_note": "¿Algo más? (opcional)",
   "chat.rate_send": "Enviar",
   "chat.rate_thanks": "Gracias — nos ayuda a arreglarlo.",

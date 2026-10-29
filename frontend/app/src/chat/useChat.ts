@@ -938,18 +938,12 @@ export function useChat(live: boolean) {
   }, [busy]);
 
   /**
-   * The conversation's thumbs moved to `tid` (or, with null, came off it).
-   * One per thread, as the server keeps them: any other turn's goes.
+   * The reader's thumbs on `tid` changed (null: taken back). Every answer
+   * keeps its own, as the server does.
    */
   const rated = useCallback((tid: string, vote: Rating | null) => {
     setTurns((list) =>
-      list.map((turn) =>
-        turn.id === tid
-          ? { ...turn, rating: vote }
-          : turn.rating
-            ? { ...turn, rating: null }
-            : turn,
-      ),
+      list.map((turn) => (turn.id === tid ? { ...turn, rating: vote } : turn)),
     );
   }, []);
 

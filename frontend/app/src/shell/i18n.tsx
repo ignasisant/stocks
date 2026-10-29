@@ -52,6 +52,21 @@ export function useT() {
   };
 }
 
+/**
+ * What is drawn inside reads numbers and dates in `lang`, the copy unchanged.
+ * For a chart inside a chat answer: the answer is written in the language of
+ * the question, which need not be the account's, and a figure on the chart
+ * should read like the same figure in the text beside it.
+ */
+export function NumbersIn({ lang, children }: { lang: string; children: ReactNode }) {
+  const catalog = useContext(Strings);
+  return lang === catalog.lang ? (
+    <>{children}</>
+  ) : (
+    <Strings.Provider value={{ ...catalog, lang }}>{children}</Strings.Provider>
+  );
+}
+
 /** The languages the catalogs ship — `stocks.web.i18n.LANGUAGES`. */
 const LANGUAGES = ["en", "es"];
 

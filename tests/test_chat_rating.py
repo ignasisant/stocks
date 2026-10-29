@@ -89,7 +89,9 @@ def test_rate_turn_sets_and_clears_without_touching_updated(tmp_path):
     assert auth.rate_turn("", "up", path) is None
 
 
-def test_a_conversation_keeps_one_rating(tmp_path):
+def test_every_answer_keeps_its_own_rating(tmp_path):
+    # A follow-up is an answer too: the report that prompted this rated the
+    # first answer and found no thumbs on the two after it.
     path = tmp_path / "chat.json"
     book = {"conversations": [
         {"id": "c1", "title": "t", "updated": STAMP, "messages": [
@@ -108,7 +110,7 @@ def test_a_conversation_keeps_one_rating(tmp_path):
     auth.rate_turn("a1", "up", path)
     found = auth.rate_turn("a2", "down", path)
     c1, c2 = auth.load_book(path)["conversations"]
-    assert "rating" not in c1["messages"][1]
+    assert c1["messages"][1]["rating"] == "up"
     assert c1["messages"][3]["rating"] == "down"
     # Another conversation's rating is its own.
     assert c2["messages"][1]["rating"] == "up"
@@ -181,6 +183,20 @@ def test_an_app_action_is_rated_like_an_answer(
     (copy,) = sink.glob("*.json")
     data = json.loads(copy.read_text())
     assert data["action"] == "add_ticker" and data["question"] == "añade AAOI NBIS"
+
+
+def test_a_thumbs_up_keeps_what_the_reader_wrote(
+    client, account, signed_in, served, sink
+):
+    served()
+    _thread, tid = _answered(signed_in)
+    signed_in.put(f"/v1/chat/turns/{tid}/rating",
+                  json={"vote": "up", "reason": "wrong", "note": "  clear table "})
+    (copy,) = sink.glob("*.json")
+    data = json.loads(copy.read_text())
+    assert data["vote"] == "up" and data["text"] == "clear table"
+    # What went wrong is a thumbs-down's question only.
+    assert data["reason"] == ""
 
 
 def test_rating_an_unknown_answer_is_a_404(client, account, signed_in, sink):

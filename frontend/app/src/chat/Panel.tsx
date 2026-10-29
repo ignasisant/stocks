@@ -33,7 +33,7 @@ import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
-import { rateAt, Turn } from "./Turn";
+import { rates, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
 import type { Chat } from "./useChat";
 import {
@@ -621,7 +621,7 @@ export default function Panel({
                       onPress={(activity, action) => chat.press(i, activity, action)}
                       onOpenThread={openThread}
                       onMemory={() => setView("memory")}
-                      askRating={i === rateAt(all)}
+                      askRating={rates(turn)}
                       // The exchange being asked right now: the question and
                       // the answer under it come in; a thread opened onto
                       // history is already there and does not.
