@@ -57,6 +57,7 @@ import type {
   Quote,
   TickerPosition,
   Trade,
+  Trend,
   Valuation,
 } from "./types";
 import { num } from "../../shell/numbers";
@@ -93,6 +94,7 @@ export function PriceSection({
   stats = null,
   cycle = [],
   valuation = null,
+  trend = null,
 }: {
   /**
    * The bars as a query rather than as data, because the controls do not wait
@@ -125,6 +127,8 @@ export function PriceSection({
   cycle?: CycleEvent[];
   /** `/valuation`'s answer, which the page fetches anyway: the P/E cell. */
   valuation?: Valuation | null;
+  /** `/trend`'s answer: the trend cell. */
+  trend?: Trend | null;
 }) {
   const t = useT();
   const mobile = useMobile();
@@ -156,6 +160,7 @@ export function PriceSection({
       stats,
       quote,
       valuation,
+      trend,
       events,
       today,
       t,
@@ -668,6 +673,7 @@ function cell(
     stats,
     quote,
     valuation,
+    trend,
     events,
     today,
     t,
@@ -679,6 +685,7 @@ function cell(
     stats: AssetStats | null;
     quote: Quote | null;
     valuation: Valuation | null;
+    trend: Trend | null;
     events: EarningsEvent[];
     today: string;
     t: Translate;
@@ -711,6 +718,53 @@ function cell(
             : t("ticker.off_high", { pct: signedPercent(offHigh, 1) }),
         tone: null,
         extra: <RangeMeter at={at} />,
+      };
+    }
+    case "trend": {
+      const label = t("ticker.trend");
+      const help = t("ticker.trend_help");
+      // Under ~11 months of bars there is no 200-day average with a slope to
+      // read: the cell says the history is short rather than guess a side.
+      if (!trend?.state) {
+        const short = trend !== null && trend.price !== null;
+        return {
+          id,
+          label,
+          value: DASH,
+          help,
+          note: short ? t("ticker.trend_short") : "",
+          tone: null,
+        };
+      }
+      // The distance from the high is the range cell's; this one adds what
+      // the range cannot say: the year's momentum and the home index.
+      const note = [
+        known(trend.mom_12_1)
+          ? t("ticker.trend_momentum", { pct: signedPercent(trend.mom_12_1, 0) })
+          : "",
+        known(trend.rs_12m) && trend.bench_name
+          ? t("ticker.trend_vs", {
+              pct: signedPercent(trend.rs_12m, 0),
+              index: trend.bench_name,
+            })
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      // The colour lands on the note, so it goes only where the momentum agrees
+      // with the average: a coin back above a rising line after a crash reads
+      // "up" with a -24 % year, and a green -24 % says the opposite of itself.
+      const side = trend.state === "up" ? 1 : trend.state === "down" ? -1 : 0;
+      const agrees = !known(trend.mom_12_1) || side * trend.mom_12_1 >= 0;
+      return {
+        id,
+        label,
+        value: t(`ticker.trend_${trend.state}`),
+        help,
+        note,
+        // Spelled out in the figure as well, so the colour is never the only
+        // carrier of which way it runs.
+        tone: side && agrees ? (side > 0 ? "green" : "red") : null,
       };
     }
     case "pe": {

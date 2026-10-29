@@ -66,7 +66,9 @@ session's: read `as_of` before calling a move today's. Positions the price \
 feed could not value are listed under `unpriced` or `missing` and held at \
 cost — say so rather than presenting a total as complete. Returns come two \
 ways on purpose: TWR measures the selection, IRR what the money actually did; \
-they routinely disagree.
+they routinely disagree. Trend, momentum or entry timing comes from \
+`ticker_trend`: quote its levels rather than inventing support and resistance, \
+and present it as timing on top of the fundamentals, never as the reason to buy.
 
 Before advising, read `investor_context`: the person's investor profile and \
 what they told the TopStocks assistant to remember. Frame answers by their \

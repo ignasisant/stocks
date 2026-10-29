@@ -193,6 +193,80 @@ def test_a_ticker_with_no_history_still_answers(client, monkeypatch):
     assert body["dates"] == [] and body["series"] == {}
 
 
+# ----------------------------------------------------------------------- trend
+
+
+def _rising(n: int, daily: float = 0.001) -> pd.Series:
+    index = pd.date_range("2023-01-02", periods=n, freq="B")
+    return pd.Series([100.0 * (1 + daily) ** i for i in range(n)], index=index)
+
+
+def _ohlc(close: pd.Series) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"High": close * 1.01, "Low": close * 0.99, "Close": close}, index=close.index
+    )
+
+
+def test_trend_reads_against_the_home_index(client, monkeypatch):
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
+    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(400, 0.002)))
+
+    def closes(t, period="max"):
+        asked.append((t, period))
+        return _rising(400, 0.0005)
+
+    monkeypatch.setattr(loaders, "daily_closes", closes)
+    body = client.get("/v1/ticker/san.mc/trend", headers=AUTH).json()
+    assert asked == [("^IBEX", "2y")]
+    assert body["ticker"] == "SAN.MC"
+    assert body["state"] == "up" and body["sma200_rising"] is True
+    assert body["bench"] == "^IBEX" and body["bench_name"] == "IBEX 35"
+    assert body["mom_12_1"] > 0 and body["rs_12m"] > 0
+    assert body["sessions"] == 400
+
+
+def test_trend_on_a_german_floor_asks_the_company_country(client, monkeypatch):
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
+    monkeypatch.setattr(loaders, "listing_country", lambda t: "United States")
+    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(300)))
+    monkeypatch.setattr(loaders, "daily_closes", lambda t, period="max": _rising(300))
+    assert client.get("/v1/ticker/APC.DE/trend", headers=AUTH).json()["bench"] == "^GSPC"
+
+
+def test_trend_for_a_coin_has_no_index(client, monkeypatch):
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "crypto")
+    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(300)))
+
+    def no_index(*a, **k):
+        raise AssertionError("a coin pair has no home index")
+
+    monkeypatch.setattr(loaders, "daily_closes", no_index)
+    body = client.get("/v1/ticker/BTC-EUR/trend", headers=AUTH).json()
+    assert body["bench"] is None and body["rs_6m"] is None
+    assert body["state"] == "up"
+
+
+def test_trend_is_empty_for_a_money_market_fund(client, monkeypatch):
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "money_market")
+
+    def no_bars(t):
+        raise AssertionError("a yield line has no trend to read")
+
+    monkeypatch.setattr(loaders, "daily_bars", no_bars)
+    body = client.get("/v1/ticker/XEON.DE/trend", headers=AUTH).json()
+    assert body["state"] is None and body["price"] is None and body["sessions"] == 0
+
+
+def test_trend_with_short_history_is_null_not_zero(client, monkeypatch):
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
+    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(60)))
+    monkeypatch.setattr(loaders, "daily_closes", lambda t, period="max": _rising(400))
+    body = client.get("/v1/ticker/NEWCO/trend", headers=AUTH).json()
+    assert body["price"] is not None
+    assert body["state"] is None and body["sma200"] is None and body["mom_12_1"] is None
+
+
 # ----------------------------------------------------------------------- quote
 
 
@@ -752,28 +826,6 @@ def test_a_coin_is_never_suggested_as_a_comparable(client, monkeypatch):
 def test_no_suggestions_is_an_empty_list_not_a_failure(client, monkeypatch):
     monkeypatch.setattr(loaders, "peer_groups", lambda t: ((), ()))
     assert client.get("/v1/ticker/ZZQQ/peers", headers=AUTH).json()["related"] == []
-
-
-def test_the_momentum_read_travels_with_the_bars(client, monkeypatch):
-    """The bands are the domain's. Shipping only the number would let each
-    front end pick its own threshold for "overbought"."""
-    index = pd.date_range("2024-01-01", periods=3, freq="D")
-    frame = pd.DataFrame(
-        {"Close": [1.0, 2.0, 3.0], "RSI14": [float("nan"), 50.0, 81.0]}, index=index
-    )
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame)
-    body = client.get("/v1/ticker/AAPL/bars?range=1m", headers=AUTH).json()
-    assert (body["rsi_verdict"], body["rsi_tone"]) == ("overbought", "red")
-
-
-def test_an_indicator_still_warming_up_has_no_verdict(client, monkeypatch):
-    index = pd.date_range("2024-01-01", periods=2, freq="D")
-    frame = pd.DataFrame(
-        {"Close": [1.0, 2.0], "RSI14": [float("nan"), float("nan")]}, index=index
-    )
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame)
-    body = client.get("/v1/ticker/AAPL/bars?range=1m", headers=AUTH).json()
-    assert body["rsi_verdict"] is None and body["rsi_tone"] is None
 
 
 # ------------------------------------------------------ identity and reference

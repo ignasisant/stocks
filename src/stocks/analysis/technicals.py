@@ -12,6 +12,7 @@ import pandas as pd
 
 from stocks.analysis import ranking
 from stocks.analysis.indicators import macd, rsi, sma
+from stocks.analysis.trend import from_high_52w
 
 # Every key `technical_snapshot` can produce, in the order an API/table wants
 # them.
@@ -57,9 +58,10 @@ def technical_snapshot(df: pd.DataFrame) -> dict:
     if pd.notna(hist.iloc[-1]):
         out["macd_hist"] = float(hist.iloc[-1])
 
-    high = close.max()
-    if high:
-        out["pct_from_high"] = float(close.iloc[-1] / high - 1)
+    # The 52-week high, by date: the frame may run longer than a year.
+    off_high = from_high_52w(close)
+    if off_high is not None:
+        out["pct_from_high"] = off_high
 
     if len(close) > _ROC_WINDOW and close.iloc[-_ROC_WINDOW - 1]:
         out["roc_63"] = float(close.iloc[-1] / close.iloc[-_ROC_WINDOW - 1] - 1)

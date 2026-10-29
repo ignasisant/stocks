@@ -363,6 +363,20 @@ def _market_positioning(args: dict, ctx: Context) -> str:
         "Tuesday data released Friday.\n" + "\n".join(lines))
 
 
+def _technicals(args: dict, ctx: Context) -> str:
+    from stocks.analysis.trend import describe
+    from stocks.api.routes.ticker import read_trend
+
+    symbol = _held_symbol(args, ctx)
+    if not symbol:
+        return "No ticker given."
+    read = read_trend(symbol)
+    if read.price is None:
+        return (f"No trend for {symbol}: no daily history, or a money-market "
+                "or bond fund, whose price is a yield accruing, not a trend.")
+    return _cap(describe(symbol, read))
+
+
 def _recall(args: dict, ctx: Context) -> str:
     from stocks.chat import memory
 
@@ -857,6 +871,19 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "positioning, 'crowded trade' or sentiment-extreme questions.",
             {"type": "object", "properties": {}},
         ), _market_positioning),
+        (ToolSpec(
+            "technicals",
+            "One ticker's trend from its daily prices: price against its "
+            "200-day average and whether that average rises, 12-1 momentum, "
+            "distance from the 52-week high and low, and return against its "
+            "home index over 6 and 12 months; RSI and ATR as context. Use for "
+            "trend, momentum, support/resistance, entry or exit timing. Cite "
+            "only the levels it returns.",
+            {"type": "object",
+             "properties": {"ticker": {"type": "string",
+                                       "description": "Yahoo symbol, e.g. SAN.MC."}},
+             "required": ["ticker"]},
+        ), _technicals),
         (ToolSpec(
             "portfolio_snapshot",
             "The user's own positions: holdings, weights, live value and P/L, "

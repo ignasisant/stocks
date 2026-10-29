@@ -8,20 +8,27 @@
  * "Analyse" button for an index nobody can buy. Each row here is what that kind
  * is actually read by:
  *
- * - a **share** is read by where its price sits in the year, what it costs
- *   against its own history and when it next reports; its RSI and averages
- *   stay on the chart as overlays, where they can be read against the line
- *   rather than as two more figures beside the price;
- * - an **equity fund** by the year's range alone — a basket has no P/E of
- *   its own and no results date;
- * - a **coin** by the year's range and its distance from the all-time high,
+ * - a **share** is read by where its price sits in the year, which way its
+ *   trend runs (the 200-day average, 12-1 momentum, its home index), what it
+ *   costs against its own history and when it next reports; its RSI and
+ *   averages stay on the chart as overlays, where they can be read against
+ *   the line rather than as two more figures beside the price;
+ * - an **equity fund** by the year's range and its trend — a basket has no
+ *   P/E of its own and no results date;
+ * - a **coin** by the year's range, its distance from the all-time high and its
+ *   trend (no index: a coin has no home market to beat),
  *   and it gets the cycle, positioning and holding cards a share's company
  *   sections would otherwise fill;
  * - a **bond fund** is read by what it pays and how far a rate move pushes it;
  * - a **money-market fund** by its yield against the central bank's rate and
  *   its cost — its chart is a straight line, so no averages and no candles;
  * - a **closed-end fund** by its premium or discount to NAV and its payout;
- * - an **index** by its level in points; it is followed, not held.
+ * - an **index** by its level in points and its trend; it is followed, not
+ *   held.
+ *
+ * The trend cell is for what has a trend to follow. A bond fund, a
+ * money-market fund and a closed-end fund are read by what they pay: a cash
+ * fund's line climbs a sliver a day, so it would read "up" forever.
  *
  * `null` — a kind the server did not name — is a share, the page as it was.
  */
@@ -30,6 +37,7 @@ import type { AssetKind } from "../../shell/assets";
 
 export type MetricId =
   | "range_52w"
+  | "trend"
   | "pe"
   | "next_results"
   | "distribution"
@@ -82,8 +90,10 @@ export type Shape = {
 
 const ALL_AVERAGES: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const SLOW_AVERAGES: readonly Overlay[] = ["SMA50", "SMA200"];
-/** Where the price sits, what it costs, when it next reports. */
-const MARKET: readonly MetricId[] = ["range_52w", "pe", "next_results"];
+/** Where the price sits, which way it runs, what it costs, when it next reports. */
+const MARKET: readonly MetricId[] = ["range_52w", "trend", "pe", "next_results"];
+/** A basket or an index: the year's range and which way it runs. */
+const FOLLOWED: readonly MetricId[] = ["range_52w", "trend"];
 
 const NO_SECTIONS = {
   company: false,
@@ -112,7 +122,7 @@ const SHAPES: Record<AssetKind, Shape> = {
   },
   equity_fund: {
     kind: "equity_fund",
-    metrics: ["range_52w"],
+    metrics: FOLLOWED,
     overlays: ALL_AVERAGES,
     candles: true,
     markers: ["dividends"],
@@ -168,7 +178,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     // A coin has no earnings to anchor it, so its peak stands in: how far under
     // the all-time high it trades is the line a crypto reader looks at first,
     // beside the year's range. The averages stay on the chart.
-    metrics: ["range_52w", "ath_drawdown"],
+    metrics: ["range_52w", "ath_drawdown", "trend"],
     overlays: ALL_AVERAGES,
     candles: true,
     markers: ["cycle"],
@@ -187,7 +197,7 @@ const SHAPES: Record<AssetKind, Shape> = {
   },
   index: {
     kind: "index",
-    metrics: ["range_52w"],
+    metrics: FOLLOWED,
     overlays: ALL_AVERAGES,
     candles: true,
     markers: [],

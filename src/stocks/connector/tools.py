@@ -650,6 +650,15 @@ def _compared(report: Comparison) -> dict:
     return data
 
 
+async def ticker_trend(ticker: Ticker) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import ticker as routes
+
+        return {"kind": "trend", **_plain(routes.trend(_symbol(ticker)))}
+
+    return await _run("ticker_trend", work)
+
+
 async def search_tickers(
     query: Annotated[str, Field(min_length=1, max_length=80,
                                 description="Symbol or company name.")],
@@ -1532,6 +1541,12 @@ TOOLS: tuple[Spec, ...] = (
          "dcf, moat, analysts, insiders, financials (reported and consensus), "
          "fund (what an ETF holds), crypto (coin stats), or compare (total "
          "return against indices or chosen tickers over `span`)."),
+    Spec(ticker_trend, "Ticker trend",
+         "One ticker's trend from daily prices: price against its 200-day "
+         "average and that average's slope (state up/down/mixed), 12-1 "
+         "momentum, distance from the 52-week high, and return minus its home "
+         "index's over 6 and 12 months. Fractions; null when history is "
+         "short. A timing and risk overlay, never a reason to buy on its own."),
     Spec(search_tickers, "Search tickers",
          "Find a ticker by symbol or company name, the account's own first."),
     Spec(get_watchlist, "Watchlist",

@@ -11,7 +11,15 @@ import { calendarDay } from "../../shell/dates";
 import { money, signedPercent } from "./format";
 import { layout } from "./layout";
 import { PriceSection } from "./Price";
-import type { Bars, EarningsEvent, Quote, TickerPosition, Valuation } from "./types";
+import type { AssetKind } from "../../shell/assets";
+import type {
+  Bars,
+  EarningsEvent,
+  Quote,
+  TickerPosition,
+  Trend,
+  Valuation,
+} from "./types";
 
 // The English strings the row is read through, slots filled as the real
 // hook fills them; every other key renders as itself, as with no catalog.
@@ -31,6 +39,13 @@ vi.mock("../../shell/i18n", async (original) => ({
       "ticker.results_recent_bare": "**Results {date}**  EPS {eps}",
       "ticker.today_chip": "{amt} today",
       "ticker.avg_cost_note": "avg buy {avg}",
+      "ticker.trend": "Trend",
+      "ticker.trend_up": "Uptrend",
+      "ticker.trend_down": "Downtrend",
+      "ticker.trend_mixed": "Mixed",
+      "ticker.trend_momentum": "12-1 {pct}",
+      "ticker.trend_vs": "{pct} vs {index}",
+      "ticker.trend_short": "short history",
     };
     let value = catalog[key] ?? key;
     for (const [name, slot] of Object.entries(slots ?? {})) {
@@ -65,8 +80,6 @@ function bars(days: number, from: number, to: number): Bars {
     dates,
     series: { Close: close, SMA20: close, SMA50: close, SMA200: close, RSI14: close },
     dividends: dates.map(() => null),
-    rsi_verdict: "neutral",
-    rsi_tone: "gray",
     rangebreaks: [],
   };
 }
@@ -265,5 +278,123 @@ describe("the price row for a reader who does not hold the name", () => {
     );
     expect(html).not.toContain("off the high");
     expect(html).not.toContain('class="tk-range"');
+  });
+});
+
+const EMPTY_TREND: Trend = {
+  ticker: "SAN.MC",
+  state: null,
+  price: null,
+  sma50: null,
+  sma200: null,
+  sma200_rising: null,
+  pct_vs_sma200: null,
+  mom_12_1: null,
+  pct_from_high: null,
+  high_52w: null,
+  low_52w: null,
+  rs_6m: null,
+  rs_12m: null,
+  bench: null,
+  bench_name: null,
+  rsi14: null,
+  atr_pct: null,
+  sessions: 0,
+};
+
+const UPTREND: Trend = {
+  ...EMPTY_TREND,
+  state: "up",
+  price: 7.5,
+  sma50: 7.2,
+  sma200: 6.9,
+  sma200_rising: true,
+  pct_vs_sma200: 0.087,
+  mom_12_1: 0.221,
+  pct_from_high: -0.042,
+  rs_6m: 0.063,
+  rs_12m: 0.11,
+  bench: "^IBEX",
+  bench_name: "IBEX 35",
+  sessions: 500,
+};
+
+const withTrend = (trend: Trend | null, kind: AssetKind = "stock") =>
+  renderToStaticMarkup(
+    <PriceSection
+      query={{ state: "loaded", data: bars(260, 560, 697.52), reload: () => {} }}
+      quote={quote}
+      events={events}
+      position={null}
+      range="1y"
+      offered={null}
+      onRange={() => {}}
+      candles={false}
+      onCandles={() => {}}
+      shape={layout(kind)}
+      valuation={valuation}
+      trend={trend}
+    />,
+  );
+
+describe("the trend cell", () => {
+  it("names the side in words and adds the year's momentum and the home index", () => {
+    dom();
+    const html = withTrend(UPTREND);
+    expect(html).toContain("Trend");
+    expect(html).toContain("Uptrend");
+    expect(html).toContain(`12-1 ${signedPercent(0.221, 0)}`);
+    expect(html).toContain(`${signedPercent(0.11, 0)} vs IBEX 35`);
+    // The distance from the high is the range cell's, not said twice.
+    expect(html).not.toContain(signedPercent(-0.042, 1));
+  });
+
+  it("reads a downtrend and a mixed one", () => {
+    dom();
+    const down = withTrend({ ...UPTREND, state: "down", mom_12_1: -0.3, rs_12m: -0.2 });
+    expect(down).toContain("Downtrend");
+    expect(down).toContain(`12-1 ${signedPercent(-0.3, 0)}`);
+    expect(withTrend({ ...UPTREND, state: "mixed" })).toContain("Mixed");
+  });
+
+  it("colours the note only where the momentum agrees with the side", () => {
+    dom();
+    const note = (html: string) =>
+      html.match(/class="ag-kpi-note[^"]*">12-1/)?.[0] ?? "";
+    expect(note(withTrend(UPTREND))).toContain("ag-tone-up");
+    // Back above a rising average after a crash: "up" in words, a falling
+    // year in figures, and no green on a negative number.
+    const rebound = note(withTrend({ ...UPTREND, mom_12_1: -0.24 }));
+    expect(rebound).not.toBe("");
+    expect(rebound).not.toContain("ag-tone-");
+    const falling = withTrend({ ...UPTREND, state: "down", mom_12_1: -0.3 });
+    expect(note(falling)).toContain("ag-tone-down");
+  });
+
+  it("leaves out the index for a coin, which has none", () => {
+    dom();
+    const html = withTrend(
+      { ...UPTREND, rs_6m: null, rs_12m: null, bench: null, bench_name: null },
+      "crypto",
+    );
+    expect(html).toContain("Uptrend");
+    // The note ends at the momentum: no " · … vs" after it.
+    expect(html).toContain(`12-1 ${signedPercent(0.221, 0)}<`);
+  });
+
+  it("says the history is short rather than guess a side", () => {
+    dom();
+    const html = withTrend({ ...EMPTY_TREND, price: 7.5, sessions: 120 });
+    expect(html).toContain("short history");
+    expect(html).not.toContain("Uptrend");
+    // No answer yet: a dash, and no note.
+    expect(withTrend(null)).not.toContain("short history");
+  });
+
+  it("is not drawn for a money-market fund, whose line only climbs", () => {
+    dom();
+    const html = withTrend(UPTREND, "money_market");
+    expect(html).not.toContain("Uptrend");
+    expect(html).not.toContain(">Trend<");
   });
 });

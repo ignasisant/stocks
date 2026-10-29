@@ -66,7 +66,8 @@ PAGES: dict[str, list[str]] = {
         "/v1/portfolio/transactions",
     ],
     "ticker": [
-        "/v1/ticker/{t}/quote", "/v1/ticker/{t}/bars", "/v1/ticker/{t}/profile",
+        "/v1/ticker/{t}/quote", "/v1/ticker/{t}/bars", "/v1/ticker/{t}/trend",
+        "/v1/ticker/{t}/profile",
         "/v1/ticker/{t}/metrics", "/v1/ticker/{t}/valuation",
         "/v1/ticker/{t}/financials", "/v1/ticker/{t}/events",
         "/v1/ticker/{t}/peers", "/v1/ticker/{t}/position",

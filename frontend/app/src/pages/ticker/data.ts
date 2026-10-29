@@ -41,6 +41,7 @@ import type {
   TickerPosition,
   TickerSplits,
   TickerSplitsApplied,
+  Trend,
   Valuation,
   WatchlistEntry,
 } from "./types";
@@ -71,6 +72,9 @@ export const getCompare = (
 /** `base` buys the one converted figure: `price_base`, in the reader's money. */
 export const getQuote = (ticker: string, base: string) =>
   get<Quote>(`${at(ticker)}/quote`, { base });
+
+/** Once per symbol, not per range: it reads its own two years of daily bars. */
+export const getTrend = (ticker: string) => get<Trend>(`${at(ticker)}/trend`);
 
 export const getEvents = (ticker: string) => get<PriceEvents>(`${at(ticker)}/events`);
 
