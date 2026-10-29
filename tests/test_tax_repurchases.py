@@ -214,6 +214,28 @@ def test_ireland_and_canada_defer_the_same_proportion():
     ).disallowed_loss == pytest.approx(200)
 
 
+def test_a_crypto_buy_back_defers_nothing_where_the_rule_names_securities():
+    """Spain's "valores o participaciones" and the US "stock or securities"
+    leave a coin out: sold at a loss and bought straight back, the loss
+    counts. Ireland's rule is not narrowed here and still defers it."""
+    coin = "MOODENG-EUR"
+    txs = [
+        buy("2024-01-02", 100, 50, coin),
+        sell("2025-03-03", 100, 40, coin),
+        buy("2025-03-04", 100, 41, coin),
+    ]
+    ty = es_year(txs, 2025)
+    assert ty.realized_loss == pytest.approx(1000) and ty.disallowed_loss == 0
+    loss = RealizedSale(coin, "2024-01-02", "2025-03-03", 100, 5000, 4000, "USD")
+    buys = {coin: [Acquisition("2024-01-02", 100), Acquisition("2025-03-04", 100)]}
+    assert us.fiscal_period([loss], "2025", buys).short_disallowed == 0
+    assert tax.get("ie").fiscal_year([loss], 2025, buys).disallowed_loss == (
+        pytest.approx(1000)
+    )
+    assert not tax.get("es").window_reaches(coin)
+    assert tax.get("es").window_reaches("MSFT")
+
+
 # ---------------------------------------------------------------- open windows
 # The forward half the calendar draws: which loss sales a buy-back would still
 # block, and the first day it no longer would.
@@ -280,6 +302,14 @@ def test_a_closed_window_a_full_buy_back_and_a_gain_mark_nothing():
     assert es_windows(blocked, "2025-03-20") == []
     gain = [buy("2024-01-02", 10, 50), sell("2025-03-03", 10, 60)]
     assert es_windows(gain, "2025-03-20") == []
+
+
+def test_a_crypto_loss_has_no_window_to_wait_out():
+    coin = "SOL-EUR"
+    assert es_windows(
+        [buy("2024-01-02", 10, 50, coin), sell("2025-03-03", 10, 40, coin)],
+        "2025-03-20",
+    ) == []
 
 
 def test_a_country_without_the_rule_has_no_windows():

@@ -1867,7 +1867,7 @@ def test_the_model_is_told_the_harvest_s_figures(
     signed_in.post("/v1/chat/runs", json=run("which losses would offset my gains?"))
     asked = seen[0][-1]["content"]
     assert "Tax-loss harvesting worked out by the app's own tax engine" in asked
-    assert "TTD: loss -500.00 EUR, this year's tax -95.00 EUR" in asked
+    assert "TTD: loss 500.00 EUR; saves 95.00 EUR sold alone" in asked
 
 
 def test_a_weight_slider_let_go_is_answered_by_the_engine_not_a_model(

@@ -37,11 +37,22 @@
 - id: biggest-position
   message: "¿cuál es mi mayor posición?"
   goals:
-    - Names NVDA as the biggest position
-    - Gives its weight as about 24 %
+    - Names VWCE as the biggest position
+    - Gives its weight as about 30 %
   must: [portfolio_snapshot]
   must_not: [read_page]
   max_calls: 2
+
+- id: do-i-hold
+  message: "¿Tengo BKNG en cartera?"
+  goals:
+    - Says the user does not hold BKNG
+    - Takes it from the current positions, not an earlier conversation
+  must: [portfolio_snapshot]
+  must_not: [read_page]
+  max_calls: 2
+  fixtures:
+    recall: "2026-09-12: you hold 3 BKNG shares at 5,100 USD."
 
 - id: lots-bought
   message: "¿cuándo compré NVDA y a qué precio?"

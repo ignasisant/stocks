@@ -38,6 +38,7 @@ def slept(monkeypatch):
     monkeypatch.setattr(llm, "_sleep", waits.append)
     monkeypatch.setattr(llm, "_free_dead", set())
     monkeypatch.setattr(llm, "_free_resting", {})
+    monkeypatch.setattr(llm, "_free_slow", {})
     return waits
 
 
@@ -193,3 +194,68 @@ def test_tool_results_are_squeezed_to_the_backends_cap():
     llm._squeeze_tool_results(convo, 7000)
     assert tokens.count_messages(convo) <= 7000
     assert convo[3]["content"] == "short" and convo[0]["content"] == "sys"
+
+
+class _Clock:
+    """`llm._clock`, moved forward by hand by the stream."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def _thinking(bid, clock, seconds, then=("late",)):
+    """A backend that sends reasoning frames for `seconds`, then text."""
+
+    def stream(api_key, model, system, messages):
+        for _ in range(int(seconds)):
+            clock.now += 1
+            yield llm.Idle()
+        yield from then
+
+    return _FreeBackend(bid, f"key-{bid}", f"model-{bid}", stream)
+
+
+def test_a_model_still_thinking_past_the_deadline_gives_way(monkeypatch):
+    # prod 2026-10-28: nemotron-3-ultra reasoned 59-242 s before a word while
+    # dots-3 answered in 5 s. Reasoning frames keep httpx's read timeout alive.
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 300), _ok("groq", ["fast"])])
+
+    assert "".join(llm._free_stream("", "", "sys", [])) == "fast"
+    assert clock.now == pytest.approx(llm._FIRST_TEXT_S + 1)
+    # and it sits out the next turns rather than costing each one 20 s
+    assert llm._slow(_FreeBackend("openrouter", "k", "model-openrouter", None))
+
+
+def test_thinking_frames_never_reach_the_reader(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 5, then=("a", "b")), _ok("groq", ["x"])])
+
+    chunks = list(llm._free_stream("", "", "sys", []))
+    assert chunks == ["a", "b"]
+    assert not llm._free_slow
+
+
+def test_the_last_model_left_may_think_as_long_as_it_likes(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 300)])
+
+    assert "".join(llm._free_stream("", "", "sys", [])) == "late"
+
+
+def test_a_model_that_only_thinks_is_no_answer(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 3, then=()), _ok("groq", ["x"])])
+
+    assert "".join(llm._free_stream("", "", "sys", [])) == "x"

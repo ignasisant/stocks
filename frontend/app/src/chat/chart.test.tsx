@@ -11,7 +11,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Surface, type A2uiMessage } from "./a2ui";
+import { NumbersIn } from "../shell/i18n";
 import { LineChart, price } from "./chart";
+import { figuresIn } from "./format";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -116,6 +118,25 @@ describe("the line chart", () => {
     expect(out).toMatch(/>\+\d+%</);
   });
 
+  it("reads its figures like the answer it sits in, not the account", () => {
+    // An English account asked in Spanish: the text says "3.040,11 €".
+    const out = renderToStaticMarkup(
+      <NumbersIn lang={figuresIn("Tu cartera vale 3.040,11 € (+8,37 %).", "en")}>
+        <LineChart
+          series={[
+            eurusd,
+            { ...eurusd, symbol: "GC=F", values: [2400, 2600, 2900, 3100, 3600] },
+          ]}
+          rebased
+          label="Cambio"
+        />
+      </NumbersIn>,
+    );
+    // The legend's change carries a decimal comma, never a point.
+    expect(out).toMatch(/\+\d+,\d%/);
+    expect(out).not.toMatch(/\+\d+\.\d%/);
+  });
+
   it("drops a line too short to draw", () => {
     const out = renderToStaticMarkup(
       <LineChart
@@ -133,5 +154,15 @@ describe("price", () => {
     expect(price(1.12345)).toBe("1.1235");
     expect(price(182.5)).toBe("182.50");
     expect(price(95120.4)).toBe("95,120");
+  });
+});
+
+describe("figuresIn", () => {
+  it("reads the decimal mark, not the thousands group", () => {
+    expect(figuresIn("vale 3.040,11 € y sube un 5,6 %", "en")).toBe("es");
+    expect(figuresIn("worth $3,040.11, up 8.37%", "es")).toBe("en");
+    // Groups alone ("3,040", "95.120") and no figures at all say nothing.
+    expect(figuresIn("3,040 shares, 95.120 units", "es")).toBe("es");
+    expect(figuresIn("¿Bato al S&P?", "en")).toBe("en");
   });
 });

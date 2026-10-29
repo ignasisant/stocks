@@ -610,13 +610,11 @@ def delete_conversation(cid: str, path: Path) -> None:
 
 @_locked
 def rate_turn(tid: str, vote: str | None, path: Path) -> dict | None:
-    """Set (or, with None, clear) the reader's thumbs on a conversation.
+    """Set (or, with None, clear) the reader's thumbs on one answer.
 
-    One rating per conversation, carried by the answer it was pressed on:
-    found by the id `_record` gave it, in whichever thread holds it (the
-    reader may have switched threads since), and any rating an earlier answer
-    of the same thread carried is dropped — the panel asks once per thread,
-    on its latest answer, and a vote pressed later replaces the earlier one.
+    Found by the id `_record` gave it, in whichever thread holds it (the
+    reader may have switched threads since). Every answer keeps its own: a
+    follow-up is an answer too, and a good first one says nothing of it.
 
     Returns {"answer": entry, "question": text, "thread": id, "history":
     the turns above that question}, or None for an id no thread holds. `updated` is left
@@ -631,8 +629,7 @@ def rate_turn(tid: str, vote: str | None, path: Path) -> dict | None:
         for i, m in enumerate(msgs):
             if m.get("role") != "assistant" or m.get("id") != tid:
                 continue
-            for other in msgs:
-                other.pop("rating", None)
+            m.pop("rating", None)
             if vote is not None:
                 m["rating"] = vote
             save_book(book, path)

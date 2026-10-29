@@ -53,6 +53,7 @@ from stocks.portfolio.tax.base import (
     progressive_tax,
     repurchases,
     sales_in,
+    securities_only,
 )
 
 CODE = "US"
@@ -66,6 +67,8 @@ DEFAULT_STATUS = "single"
 # Thirty days either side of the sale (IRC 1091) — a 61-day window.
 WASH_SALE_DAYS = 30
 WINDOW = days_window(WASH_SALE_DAYS)
+# IRC 1091 names "stock or securities": crypto is property and outside it.
+REACHES = securities_only
 
 # Ordinary-income brackets: (upper bound of taxable income, marginal rate).
 ORDINARY_BRACKETS: dict[int, dict[str, list[tuple[float, float]]]] = {
@@ -352,7 +355,7 @@ def fiscal_period(
     """
     cfg = settings or TaxSettings()
     out = open_period(UsTaxPeriod, CODE, CURRENCY, period, settings=cfg)
-    blocks = repurchases(realized, buy_dates, WINDOW)
+    blocks = repurchases(realized, buy_dates, WINDOW, REACHES)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         long = _is_long(s)

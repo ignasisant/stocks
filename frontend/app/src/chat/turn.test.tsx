@@ -22,7 +22,7 @@ vi.mock("../shell/api", async (original) => ({
 
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
-import { rateAt, Turn, undoMemory, wideTable } from "./Turn";
+import { rates, Turn, undoMemory, wideTable } from "./Turn";
 import type { ChatState, Preview, Turn as Stored } from "./types";
 
 beforeEach(() => {
@@ -818,36 +818,19 @@ describe("an answer's thumbs", () => {
     expect(drawTurn(answer(), undefined, false)).not.toContain("chat.rate_up");
   });
 
-  it("asks once per conversation, and only once something was answered", () => {
-    const ask = (content: string): Stored => ({
-      ...answer(),
-      role: "user",
-      content,
-      id: undefined,
-    });
-    expect(rateAt([])).toBe(-1);
-    expect(rateAt([ask("hola")])).toBe(-1);
-    expect(rateAt([ask("hola"), answer({ pending: true })])).toBe(-1);
-    // Until one is rated, the latest finished answer asks.
-    const thread = [ask("a"), answer({ id: "x" }), ask("b"), answer({ id: "y" })];
-    expect(rateAt(thread)).toBe(3);
-    // A failed or still-streaming last turn leaves it on the one before.
-    expect(
-      rateAt([...thread, ask("c"), answer({ id: "z", error: "chat.api_error" })]),
-    ).toBe(3);
-    expect(
-      rateAt([...thread, ask("c"), answer({ id: undefined, pending: true })]),
-    ).toBe(3);
-    // Once rated, that answer keeps it, however long the thread grows.
-    const rated = [
-      ask("a"),
-      answer({ id: "x", rating: "up" }),
-      ask("b"),
-      answer({ id: "y" }),
-    ];
-    expect(rateAt(rated)).toBe(1);
+  it("asks on every finished answer, follow-ups too", () => {
+    const ask: Stored = { ...answer(), role: "user", content: "hola", id: undefined };
+    expect(rates(ask)).toBe(false);
+    expect(rates(answer({ id: "x" }))).toBe(true);
+    // A rated answer keeps its thumbs, and the one after it gets its own.
+    expect(rates(answer({ id: "x", rating: "up" }))).toBe(true);
+    expect(rates(answer({ id: "y" }))).toBe(true);
+    // Not while it streams, not on a refusal, not on one without an id.
+    expect(rates(answer({ id: "z", pending: true }))).toBe(false);
+    expect(rates(answer({ id: "z", error: "chat.api_error" }))).toBe(false);
+    expect(rates(answer({ id: undefined }))).toBe(false);
     // The walkthrough's lines are never asked on.
-    expect(rateAt([answer({ guide: { step: "home" } })])).toBe(-1);
+    expect(rates(answer({ id: "g", guide: { step: "home" } }))).toBe(false);
   });
 
   it("is a PUT on the answer's id", async () => {

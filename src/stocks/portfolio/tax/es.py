@@ -39,6 +39,7 @@ from stocks.portfolio.tax.base import (
     progressive_tax,
     repurchases,
     sales_in,
+    securities_only,
 )
 
 CODE = "ES"
@@ -75,6 +76,9 @@ CROSS_OFFSET = 0.25
 
 # Two calendar months either side of the sale (art. 33.5.f).
 WINDOW = months_window(2)
+# Which assets it reaches: "valores o participaciones homogéneos", so not a
+# crypto coin — sold at a loss, it can be bought straight back.
+REACHES = securities_only
 
 
 def brackets_for(year: int) -> list[tuple[float, float]]:
@@ -166,7 +170,7 @@ def fiscal_period(
     base — IRPF nets the savings base over the whole ejercicio.
     """
     out = open_period(EsTaxPeriod, CODE, CURRENCY, period)
-    blocks = repurchases(realized, buy_dates, WINDOW)
+    blocks = repurchases(realized, buy_dates, WINDOW, REACHES)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         gain = s.gain

@@ -1038,8 +1038,9 @@ def drop(cid: str, paths: Writer) -> None:
 
 
 class Rating(BaseModel):
-    """A thumbs on one answer. `vote` None takes it back; `reason` and `note`
-    say what was wrong, and are kept only on a thumbs-down."""
+    """A thumbs on one answer. `vote` None takes it back; `reason` says what
+    was wrong, kept only on a thumbs-down, and `note` is the reader's words
+    either way."""
 
     model_config = {"extra": "forbid"}
 
@@ -1057,8 +1058,8 @@ class Rated(BaseModel):
     "/turns/{tid}/rating", response_model=Rated, summary="Rate an answer"
 )
 def rate(tid: str, body: Rating, paths: Writer) -> Rated:
-    """Thumbs up or down on a conversation, pressed on (and named by) the id
-    of its latest answer. One per thread: a vote replaces any earlier one.
+    """Thumbs up or down on one answer, named by its id. Each answer keeps
+    its own; a second vote on the same one replaces the first.
 
     Two writes: the vote on the turn itself, so a reload draws the thumb the
     reader pressed, and a copy for the operator with the question, the answer

@@ -345,6 +345,8 @@ class Line:
     along: tuple[tuple[str, float], ...]  # PROMPT_POINTS closes, for the prompt
     index: bool = False  # the book: a growth index from 100, not a price
     converted: str = ""  # the currency it trades in, when drawn in another
+    # Its change over the same days in that currency, beside the drawn one.
+    own_change: float | None = None
 
     @property
     def change(self) -> float:
@@ -391,9 +393,14 @@ class Chart:
                 continue
             fx = (f" (converted from {ln.converted} at each day's rate)"
                   if ln.converted else "")
+            own = ""
+            if ln.converted and ln.own_change is not None:
+                effect = (1 + ln.change) / (1 + ln.own_change) - 1
+                own = (f", {ln.own_change:+.2%} in {ln.converted}: the currency "
+                       f"effect is {effect:+.2%} — quote it, never estimate one")
             rows.append(
                 f"- {ln.symbol}{fx}: {_num(ln.first)}{ccy} on {ln.first_on} -> "
-                f"{_num(ln.last)}{ccy} on {ln.last_on} ({ln.change:+.2%}); high "
+                f"{_num(ln.last)}{ccy} on {ln.last_on} ({ln.change:+.2%}{own}); high "
                 f"{_num(ln.high)} on {ln.high_on}, low {_num(ln.low)} on {ln.low_on}\n"
                 "  closes along the way: "
                 + ", ".join(f"{day} {_num(value)}" for day, value in ln.along)
@@ -526,7 +533,8 @@ def _since(closes: pd.Series, start: pd.Timestamp) -> pd.Series | None:
 
 
 def _line(symbol: str, closes: pd.Series, currency: str, window: str, *,
-          index: bool = False, converted: str = "") -> Line:
+          index: bool = False, converted: str = "",
+          own_change: float | None = None) -> Line:
     intraday = window in ("1d", "1w")
     values = [float(v) for v in closes.to_numpy()]
     days = [_stamp(at, intraday) for at in closes.index]
@@ -542,7 +550,7 @@ def _line(symbol: str, closes: pd.Series, currency: str, window: str, *,
         high=values[hi], high_on=days[hi], low=values[lo], low_on=days[lo],
         sessions=len(values),
         along=tuple((days[i], values[i]) for i in quoted[1:-1]),
-        index=index, converted=converted,
+        index=index, converted=converted, own_change=own_change,
     )
 
 
@@ -611,7 +619,7 @@ def build(symbols: list[str], window: str = DEFAULT, *,
                  None)
     lines = []
     for symbol, series, unit in priced:
-        native = ""
+        native, raw, own = "", series, None
         if start is not None and symbol != BOOK:
             if base and unit and unit.upper() != base and not symbol.endswith("=X"):
                 try:
@@ -625,8 +633,12 @@ def build(symbols: list[str], window: str = DEFAULT, *,
             series = _since(series, start)
             if series is None:
                 continue
+            if native:
+                ends = raw.reindex([series.index[0], series.index[-1]])
+                if ends.notna().all() and ends.iloc[0]:
+                    own = float(ends.iloc[-1] / ends.iloc[0] - 1)
         lines.append(_line(symbol, series, unit, window, index=symbol == BOOK,
-                           converted=native))
+                           converted=native, own_change=own))
     if not lines:
         return None
     obs.event("chat.chart", window=window, series=len(lines))

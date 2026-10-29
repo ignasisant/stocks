@@ -580,6 +580,8 @@
   "chat.rate_wrong": "Wrong facts or figures",
   "chat.rate_missed": "Didn't answer my question",
   "chat.rate_other": "Something else",
+  "chat.rate_why_up": "What made it useful?",
+  "chat.rate_note_up": "Anything worth keeping? (optional)",
   "chat.rate_note": "Anything else? (optional)",
   "chat.rate_send": "Send",
   "chat.rate_thanks": "Thanks — this helps fix it.",

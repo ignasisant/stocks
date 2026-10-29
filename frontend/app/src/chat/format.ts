@@ -141,3 +141,24 @@ export function capMessage(t: T, key: string, cap: number | null): string {
   const plain = t("chat.free_cap", slots);
   return plain.includes("{") ? t("chat.free_exhausted") : plain;
 }
+
+// A decimal comma ("3.040,11 €", "5,6 %") or point ("$3,040.11", "8.37%"):
+// one or two digits after the mark, so a thousands group ("3,040", "95.120")
+// counts for neither.
+const DECIMAL_COMMA = /\d,\d{1,2}(?![\d.,])/g;
+const DECIMAL_POINT = /\d\.\d{1,2}(?![\d.,])/g;
+
+/**
+ * The language an answer writes its figures in, for what is drawn beside it:
+ * "es" for decimal commas, "en" for decimal points, `fallback` (the account's)
+ * when the text has neither or as many of each. The answer follows the
+ * question's language, not the account's, and a chart reading "€3,040" under
+ * "3.040,11 €" reads as two different numbers.
+ */
+export function figuresIn(text: string, fallback: string): string {
+  const comma = text.match(DECIMAL_COMMA)?.length ?? 0;
+  const point = text.match(DECIMAL_POINT)?.length ?? 0;
+  if (comma > point) return "es";
+  if (point > comma) return "en";
+  return fallback;
+}

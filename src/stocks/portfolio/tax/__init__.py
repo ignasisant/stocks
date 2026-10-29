@@ -32,6 +32,7 @@ from stocks.portfolio.tax.base import (
     Note,
     OpenWindow,
     Payment,
+    Reaches,
     ReportingFlag,
     Split,
     TaxPeriod,
@@ -101,6 +102,9 @@ class Jurisdiction:
     # The predicate that label names (each module's WINDOW), for callers that
     # ask about a window rather than replay a year — `open_windows` below.
     _window: Window | None = None
+    # Which tickers that rule reaches, where it is narrower than everything:
+    # Spain's and the US's name securities, so a crypto pair is outside them.
+    _reaches: Reaches | None = None
     # Filing statuses the brackets distinguish; empty when the country's rate
     # scale doesn't care (Spain's savings base doesn't).
     filing_statuses: tuple[str, ...] = ()
@@ -206,7 +210,14 @@ class Jurisdiction:
         if self._window is None or not self.repurchase_window:
             return []
         return open_windows(
-            realized, buy_dates, self._window, self.repurchase_window, today
+            realized, buy_dates, self._window, self.repurchase_window, today,
+            self._reaches,
+        )
+
+    def window_reaches(self, ticker: str) -> bool:
+        """Whether a buy-back of `ticker` around a loss sale defers the loss."""
+        return bool(self.repurchase_window) and (
+            self._reaches is None or self._reaches(ticker)
         )
 
 
@@ -219,6 +230,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         carryforward_years=es.CARRYFORWARD_YEARS,
         repurchase_window="2m",
         _window=es.WINDOW,
+        _reaches=es.REACHES,
         dividends_in_base=True,
     ),
     us.CODE: Jurisdiction(
@@ -232,6 +244,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         _long_term=us.is_long_term,
         repurchase_window="30d",
         _window=us.WINDOW,
+        _reaches=us.REACHES,
     ),
     uk.CODE: Jurisdiction(
         code=uk.CODE,

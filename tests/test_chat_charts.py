@@ -206,6 +206,31 @@ def test_against_the_book_a_benchmark_is_in_its_currency_and_from_its_first_day(
     assert "converted from USD" in text and "price only" in text
 
 
+def test_a_converted_benchmark_carries_its_own_currency_s_change_and_the_fx_effect():
+    """"¿Bato al S&P?" from Spain: the index is drawn in euros, and the
+    currency's part of its move is worked out here, not guessed by the model
+    (it once said 5.3 % for a 5.6 % dollar slide)."""
+    hist, twr = _twr()
+    n = len(hist)
+    rate = pd.Series([1.0 - 0.1 * i / (n - 1) for i in range(n)], index=hist.index)
+
+    chart = charts.build(
+        [charts.BOOK, "^GSPC"], "1m",
+        closes=lambda s, w: pd.Series(range(1, n + 1), index=hist.index, dtype=float),
+        currency=lambda _s: "USD",
+        book=lambda window: charts.book_index(hist, twr, window),
+        base="EUR", convert=lambda closes, unit, base: closes * rate)
+    _book, index = chart.lines
+    assert index.converted == "USD"
+    raw = pd.Series(range(1, n + 1), index=hist.index, dtype=float)
+    first = raw[raw.index >= index.first_on].iloc[0]
+    assert index.own_change == pytest.approx(raw.iloc[-1] / first - 1)
+    effect = (1 + index.change) / (1 + index.own_change) - 1
+    assert effect == pytest.approx(0.9 / rate[raw.index >= index.first_on].iloc[0] - 1)
+    assert f"the currency effect is {effect:+.2%}" in chart.line()
+    assert f"{index.own_change:+.2%} in USD" in chart.line()
+
+
 def test_without_a_ledger_the_book_drops_out_like_a_symbol_without_prices():
     chart = charts.build([charts.BOOK, "AAPL"], "1y", closes=lambda *_: _closes(),
                          currency=lambda _s: "USD")

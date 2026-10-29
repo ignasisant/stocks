@@ -16,6 +16,7 @@ last-write-wins — accepted, the overlap window is a single turn.
 from __future__ import annotations
 
 import contextvars
+import functools
 import json
 import math
 import queue
@@ -487,6 +488,9 @@ def _spend_global_free(units: int = 1) -> bool:
 # gather runs up to `agent.DEEP.max_calls` lookups and several model rounds
 # against the shared free pot, where a quick one runs a handful.
 DEEP_UNITS = 2
+# Words a question about a made-up symbol may run to and still skip the
+# research: "¿qué opinas de ZXQW?", not a paragraph that also asks more.
+UNLISTED_WORDS = 12
 
 
 def spend_free_quota(prefs: dict, units: int = 1) -> bool:
@@ -949,6 +953,9 @@ def tax_rules(prefs: dict, today: date | None = None) -> str:
             "A loss is deferred, not deductible that year, when the same "
             f"security is also bought within {window[:-1]} "
             f"{_WINDOW_UNIT_EN[window[-1]]} of the sale."
+            + ("" if jur.window_reaches("BTC-EUR") else
+               " The rule covers shares and funds, not crypto: a coin sold at "
+               "a loss can be bought straight back.")
         )
     if jur.carryforward_years is None:
         lines.append("Net losses carry forward indefinitely.")
@@ -1019,7 +1026,12 @@ RULES — these hold whatever the conversation asks:
   wrong; never a bare yes or no. Margin of safety is (value - price) / value;
   upside is value / price - 1. Never call one the other.
 - About one company, say whether the user holds it and its weight in the
-  book above, or that they do not.
+  book above, or that they do not. Whether and how much they hold comes from
+  that book alone: an earlier conversation or a note is older than it, so
+  never answer it from one.
+- A position you name to explain the book (its biggest, what drove a
+  result) carries its weight in the book above, under the exact ticker the
+  book lists it as — never "GOOG / GOOGL" or another pair to choose from.
 - A holding the user names must match a ticker or a name in the book above.
   When none does, say so, name the closest positions, and ask which one they
   mean. Never take it for a position of another name or kind (a fund is not a
@@ -2779,6 +2791,12 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
     return steps
 
 
+def _unlisted_step(nowhere: dict, lang: str) -> dict:
+    """The one lookup a made-up symbol gets, as a tool line."""
+    return {"tool": "get_quotes", "arg": ", ".join(nowhere)[:_STEP_ARG_CHARS],
+            "out": _tr("chat.step_quotes", lang, n=0)}
+
+
 def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
                ) -> list[tuple[Provider, str, str]]:
     """The attempts that could still answer today: the free chain drops out
@@ -3086,6 +3104,19 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         profile = agent.FAST
         obs.event("chat.deep_downgraded", left=free_account_left(prefs))
     researched = max(timeout_s, profile.timeout)
+    known = market.watchlist_names(watchlist)
+    # Read once, and before the gather only when a typed symbol needs it.
+    book = functools.cache(
+        lambda: portfolio_context(watchlist, db, reporting_currency(prefs)))
+    # A short question about a symbol nobody lists has nothing to research:
+    # the gather would search for two minutes and find nothing (ZXQW took
+    # 1 m 58 s). One search says so, and the answer goes out on that alone.
+    nowhere = ({} if focus or asked_for is not None
+               or len(message.split()) > UNLISTED_WORDS
+               else market.unlisted(message, known, book))
+    if nowhere:
+        obs.event("chat.unlisted", symbols=",".join(nowhere))
+        told({"id": "tool_unlisted", **_unlisted_step(nowhere, lang), "args": {}})
     try:
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
@@ -3093,13 +3124,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
                      else resolve_skills(prefs, provider, key, history,
                                          context=context + view)),
-            lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
-                                    chat_path, timeout=researched, focus=focus,
-                                    on_tool=watch if on_tool else None,
-                                    profile=profile, model=model,
-                                    prefs_path=prefs_path,
-                                    proposes=confirm_actions, on_plan=on_plan,
-                                    checkpoint=checkpoint),
+            lambda: None if nowhere else gather_evidence(
+                prefs, provider, key, msgs, watchlist, db, chat_path,
+                timeout=researched, focus=focus,
+                on_tool=watch if on_tool else None, profile=profile,
+                model=model, prefs_path=prefs_path, proposes=confirm_actions,
+                on_plan=on_plan, checkpoint=checkpoint),
             lambda: (_simulate_sale(message, watchlist, db, prefs_path, focus,
                                     lang, told) if one else None),
             lambda: (_chart(message, prefs, watchlist, db, focus, lang, told)
@@ -3123,7 +3153,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         skills = skills or []
         evidence = evidence or agent.Evidence(ok=False)
         hits, quotes = [], []
-        if not evidence.ok:
+        if nowhere:
+            pass
+        elif not evidence.ok:
             say("searching")
             # The lookup may have just found the head's key refused: the planner
             # then runs on the next candidate that is not, or it fails the same
@@ -3160,7 +3192,6 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     except guard.Blocked as refused:
         return settled(_refused(refused.refusal, history, chat_path, thread,
                                 turn_id, lang, provider.id))
-    known = market.watchlist_names(watchlist)
     recalled_notes, recalled = earlier(prefs, chat_path, message, known)
     note_used(prefs, chat_path, message, known)
     system = system_prompt(
@@ -3174,8 +3205,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         + criteria_block(chat_path),
         # What they hold and how it is taxed: its own cache part, since it
         # changes when prices do and the view changes when the reader moves.
-        book=portfolio_context(watchlist, db, reporting_currency(prefs))
-        + tax_rules(prefs),
+        book=book() + tax_rules(prefs),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
     # system prompt — the stored history keeps the user's own text.
@@ -3186,6 +3216,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
         msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
+    msgs[-1]["content"] += market.unlisted_block(nowhere)
     if asked_for is not None:
         notes = asked_for.dossier or (
             drafted if isinstance(drafted, ticker_brief.Dossier) else None)
@@ -3217,6 +3248,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
 
     say("writing")
     steps = trace(evidence, hits, quotes, lang)
+    if nowhere:
+        steps.append(_unlisted_step(nowhere, lang))
     activities: list[dict] = []
     if isinstance(sale, whatif.Scenario):
         steps.append(_sale_step(sale, lang))
