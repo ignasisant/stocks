@@ -40,6 +40,7 @@ import pandas as pd
 
 from stocks import obs
 from stocks.chat import a2ui, market
+from stocks.formatting import fmt_num, fmt_pct
 
 SURFACE_ID = "chart"
 ACTION = "rechart"
@@ -648,11 +649,11 @@ def build(symbols: list[str], window: str = DEFAULT, *,
 # ------------------------------------------------------------------- surface
 
 
-def _num(value: float) -> str:
-    """A close as a reader reads it: 1.1249, 182.50, 95,120."""
+def _num(value: float, lang: str = "en") -> str:
+    """A close as a reader reads it: 1.1249, 182.50, 95,120 (95.120 in es)."""
     size = abs(value)
     places = 4 if size < 10 else 2 if size < 10_000 else 0
-    return f"{value:,.{places}f}"
+    return fmt_num(value, places, lang)
 
 
 def _tone(change: float) -> str:
@@ -677,19 +678,20 @@ def _title(c: Chart, translate) -> str:
     )
 
 
-def view(c: Chart, translate) -> dict:
-    """The figures the surface prints, formatted: its `/view` data."""
+def view(c: Chart, translate, lang: str = "en") -> dict:
+    """The figures the surface prints, formatted in the reader's language:
+    its `/view` data."""
     out: dict = {"title": _title(c, translate)}
     for i, ln in enumerate(c.lines):
         ccy = f" {ln.currency}" if ln.currency else ""
         out[f"m{i}"] = {
             "last": (translate("chat.chart_book_hint", currency=ln.currency)
-                     if ln.index else _num(ln.last) + ccy),
+                     if ln.index else _num(ln.last, lang) + ccy),
             "last_hint": ln.last_on[:10],
-            "change": f"{ln.change:+.2%}",
+            "change": fmt_pct(ln.change, 2, lang, signed=True),
             "tone": _tone(ln.change),
-            "change_hint": translate("chat.chart_since", value=_num(ln.first)),
-            "range": f"{_num(ln.low)} – {_num(ln.high)}",
+            "change_hint": translate("chat.chart_since", value=_num(ln.first, lang)),
+            "range": f"{_num(ln.low, lang)} – {_num(ln.high, lang)}",
             "range_hint": translate("chat.chart_range_hint", low=ln.low_on[:10],
                                     high=ln.high_on[:10]),
         }
@@ -711,7 +713,7 @@ def series(c: Chart, translate=None) -> list[dict]:
     return out
 
 
-def surface(c: Chart, translate) -> list[dict]:
+def surface(c: Chart, translate, lang: str = "en") -> list[dict]:
     """The line, the figures over it, and the chips that change its window.
 
     Built for the symbols it was asked about: a press on a chip sends them
@@ -766,12 +768,12 @@ def surface(c: Chart, translate) -> list[dict]:
                        variant="caption"),
     ]
     data = {"window": c.window, "chart": series(c, translate),
-            "view": view(c, translate)}
+            "view": view(c, translate, lang)}
     return a2ui.surface(SURFACE_ID, parts, data)
 
 
-def moved(c: Chart, translate) -> list[dict]:
+def moved(c: Chart, translate, lang: str = "en") -> list[dict]:
     """The same surface over another window: its data, nothing else."""
     return [a2ui.data_update(SURFACE_ID, "/chart", series(c, translate)),
-            a2ui.data_update(SURFACE_ID, "/view", view(c, translate)),
+            a2ui.data_update(SURFACE_ID, "/view", view(c, translate, lang)),
             a2ui.data_update(SURFACE_ID, "/window", c.window)]

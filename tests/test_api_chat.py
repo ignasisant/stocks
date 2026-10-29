@@ -1243,6 +1243,24 @@ def test_a_link_is_held_to_the_page_table(
     assert finished(stream)["result"]["text"] == "Here."
 
 
+def test_the_import_note_opens_the_import_page(client, account, signed_in, served):
+    """Prod eval 2026-10-29: "attach it or use Import" named the page with no
+    way to get there. The note is no model's, so it carries no marker."""
+    served(FakeProvider())
+    stream = events(signed_in.post(
+        "/v1/chat/runs", json=run("importa transacciones", tools=("navigate",))
+    ).text)
+    assert [c["args"] for c in calls(stream)] == [{"page": "import"}]
+    cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
+    stored = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"][-1]
+    assert [c["args"] for c in stored["tool_calls"]] == [{"page": "import"}]
+    # Telegram and bare clients run no navigate: no button, words alone.
+    stream = events(signed_in.post(
+        "/v1/chat/runs", json=run("importa transacciones")
+    ).text)
+    assert calls(stream) == []
+
+
 def test_a_client_that_does_not_run_navigate_is_never_offered_it(
     client, account, signed_in, served
 ):

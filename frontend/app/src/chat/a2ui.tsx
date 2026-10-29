@@ -475,6 +475,7 @@ const CATALOG: Record<string, (draw: Draw) => ReactNode> = {
         slices={slices as { label: string; weight: number }[]}
         label={str(resolve(part.label, data))}
         other={str(resolve(part.other, data))}
+        by={Array.isArray(groups) ? undefined : by}
       />
     ) : null;
   },

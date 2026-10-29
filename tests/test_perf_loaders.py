@@ -319,7 +319,7 @@ def test_the_backtest_answers_from_the_last_process_while_it_downloads(monkeypat
         finally:
             cache.STALE.reset(token)
         assert again == {"run": 1}
-        assert "since" in holder
+        assert "old" in holder and "since" not in holder  # updating, not refused
     finally:
         gate.set()
         loaders.basket_report.cache_clear()

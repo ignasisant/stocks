@@ -47,6 +47,26 @@ def test_an_openrouter_account_out_of_credits_is_told_so():
     assert llm._openrouter_error(refused) == llm._openai_error(refused)
 
 
+def test_a_saturated_claude_or_chatgpt_reads_as_busy_not_broken():
+    # Busy is what lets the chat try the same key's other models
+    # (engine._busy_siblings) instead of leaving for the free chain.
+    import anthropic
+    import httpx
+    import openai
+
+    def response(code):
+        return httpx.Response(code, request=httpx.Request("POST", "https://x"))
+
+    assert llm._anthropic_error(anthropic.OverloadedError(
+        "overloaded", response=response(529), body=None)) == "chat.provider_busy"
+    assert llm._anthropic_error(anthropic.InternalServerError(
+        "boom", response=response(500), body=None)) == "chat.api_error"
+    assert llm._openai_error(openai.InternalServerError(
+        "busy", response=response(503), body=None)) == "chat.provider_busy"
+    assert llm._openai_error(openai.InternalServerError(
+        "boom", response=response(500), body=None)) == "chat.api_error"
+
+
 def test_run_tools_on_a_provider_without_a_loop_is_a_clear_error():
     with pytest.raises(NotImplementedError):
         llm.PROVIDERS["gemini"].run_tools("k", "m", "s", [], _TOOLS, _echo)

@@ -36,14 +36,17 @@
  * what is on screen without a spinner. Without it the stale line promised the
  * figures would update and only the next navigation delivered. The same for
  * an answer the server says it is refreshing behind (`X-Data-Refreshing`):
- * recent figures, newer ones on the way. Each re-ask is announced
+ * recent figures, newer ones on the way. And for old figures the server is
+ * updating behind (`X-Data-Updating-Since`): its refresh lands within the
+ * minute, so a re-ask is what brings today's figures. Each re-ask is announced
  * (`freshness.noteRetry`), so the line counts down to it and says when it is
  * out; once they stop, the line's own button asks again (`retryStale`).
  *
  * And it abandons what it asked for once nobody can see it: the component
  * unmounting (the reader moved to another screen, or closed this one) or its
  * inputs changing aborts the run's scope, and `shell/api` cancels any request
- * that run was the last one waiting on.
+ * that run was the last one waiting on. The marks its answers left go with it
+ * (`freshness.holdUrls`) unless another screen still holds the same URL.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -58,10 +61,13 @@ import {
   withMemo,
 } from "./api";
 import {
+  holdUrls,
+  isOld,
   isRefreshing,
   noteFreshness,
   noteKept,
   noteRetry,
+  noteUpdating,
   onRetryStale,
   retryStale,
   staleAt,
@@ -76,8 +82,8 @@ export const FOLLOW_MS = [15_000, 30_000, 60_000] as const;
 type Asked<T> = { result: Promise<T>; urls: Set<string> };
 
 /**
- * Ask again, on `FOLLOW_MS`, while any of `urls` last came back stale or
- * refreshing, and hand each answer to `landed`. A failed re-ask is dropped:
+ * Ask again, on `FOLLOW_MS`, while any of `urls` last came back stale,
+ * updating or refreshing, and hand each answer to `landed`. A failed re-ask is dropped:
  * what is on screen stays, and so does the stale line. Each try is announced
  * under `id` (`freshness.noteRetry`): when it is due, while it is out, and
  * nothing once the follow ends. Returns the stop.
@@ -92,17 +98,17 @@ export function followStale<T>(
   let stopped = false;
   const announce = (at: number | null) => id && noteRetry(id, at);
   const step = (seen: Set<string>, attempt: number) => {
-    const stale = [...seen].filter((url) => staleAt(url) !== null || isRefreshing(url));
+    const stale = [...seen].filter((url) => isOld(url) || isRefreshing(url));
     if (stopped || !stale.length || attempt >= FOLLOW_MS.length) {
       if (!stopped) announce(null);
       return;
     }
-    // Only a stale answer is worth a countdown; a refreshing one is recent.
+    // Only an old answer is worth a countdown; a refreshing one is recent.
     const wait = FOLLOW_MS[attempt] ?? 0;
-    if (stale.some((url) => staleAt(url) !== null)) announce(Date.now() + wait);
+    if (stale.some(isOld)) announce(Date.now() + wait);
     timer = setTimeout(() => {
       if (stopped) return;
-      if (stale.some((url) => staleAt(url) !== null)) announce(0);
+      if (stale.some(isOld)) announce(0);
       forget(stale);
       const next = ask();
       next.result.then(
@@ -142,7 +148,10 @@ export function retryNow(): void {
   const ask = (url: string) =>
     refresh(url).catch((error) => {
       // A URL that now fails outright will never answer live: drop its mark.
-      if (!isTransient(error)) noteFreshness(url, null);
+      if (!isTransient(error)) {
+        noteFreshness(url, null);
+        noteUpdating(url, null);
+      }
     });
   void Promise.all(rest.map(ask)).then(() => noteRetry(ORPHANS, null));
 }
@@ -213,15 +222,19 @@ export function useApi<T>(
     let stop = () => {};
     // What the last answer was built from, for the stale line's own retry.
     let seen = new Set<string>();
+    let release = () => {};
     const follow = (urls: Set<string>) => {
       seen = urls;
       held.current = urls;
-      if (live) stop = followStale(urls, ask, loaded, mark);
+      if (!live) return;
+      release();
+      release = holdUrls(urls);
+      stop = followStale(urls, ask, loaded, mark);
     };
     // The stale line's "retry": ask again now, in place — the figures stay
     // up while it is out, as with the scheduled re-asks.
     const unhear = onRetryStale(() => {
-      const stale = [...seen].filter((url) => staleAt(url) !== null);
+      const stale = [...seen].filter(isOld);
       if (!live || (!stale.length && staleAt(mark) === null)) return [];
       stop();
       noteRetry(mark, 0);
@@ -286,6 +299,7 @@ export function useApi<T>(
     return () => {
       live = false;
       stop();
+      release();
       unhear();
       scope.abort();
       noteFreshness(mark, null);

@@ -85,3 +85,25 @@ def test_the_surface_is_a_ring_and_chips_bound_to_one_split(tbl):
     assert parts["splits"]["value"] == {"path": "/by"} and "action" not in parts["splits"]
     data = messages[-1]["updateDataModel"]["value"]
     assert data["by"] == "country" and set(data["groups"]) == set(allocation.DIMENSIONS)
+
+
+def test_the_split_is_quoted_in_money_too():
+    """Local review 2026-10-29: "¿cuánto tengo en EE. UU.?" got weights only —
+    the prompt carried no amount for the model to quote."""
+    frame = pd.DataFrame({"weight": [0.5, 0.25, 0.25], "value": [5000.0, 2500.0, 2500.0]},
+                         index=["NVDA", "SAN", "VWCE"])
+    mix = allocation.build(frame, "country", meta=META)
+    assert mix.total == pytest.approx(10_000)
+    assert "United States 65.0% (6,500 EUR)" in mix.line()
+    assert "worth 10,000 EUR" in mix.line()
+
+
+def test_an_unclassified_slice_names_the_holdings_it_comes_from():
+    """The same review: 17.5 % "sin clasificar" with no word of whose it was."""
+    meta = {**META, "VWCE": {**META["VWCE"],
+                             "country_weights": {"United States": 0.6}}}
+    frame = pd.DataFrame({"weight": [0.5, 0.25, 0.25]}, index=["NVDA", "SAN", "VWCE"])
+    mix = allocation.build(frame, "country", meta=meta)
+    assert mix.unknown["country"] == (("VWCE", pytest.approx(0.1)),)
+    assert "Unknown by country" in mix.line() and "VWCE 10.0%" in mix.line()
+    assert "sector" not in mix.unknown

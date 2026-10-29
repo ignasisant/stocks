@@ -190,11 +190,47 @@ def _page_valuation(code: str, ctx: Context) -> str:
     for w in v.windows:
         if w.median is None:
             continue
-        rank = w.percentile * 100 if w.percentile is not None else None
+        # Already 0-100 (`analysis/pe_history.window_stats`).
         lines.append(f"- {w.window}: median {w.median:.1f}x, today in the "
-                     f"{_figure(rank, 0)}th "
+                     f"{_figure(w.percentile, 0)}th "
                      f"percentile, {_pct(w.premium, signed=True)} vs the mean")
+    lines += _earnings_quality(code, v.current)
     return "\n".join(lines)
+
+
+def _earnings_quality(code: str, trailing: float | None) -> list[str]:
+    """What the trailing P/E's earnings carry (`analysis/one_offs.py`), and
+    the forward multiple beside it with what the gap between them means."""
+    from stocks.analysis import one_offs
+    from stocks.api import loaders
+
+    raw = loaders.fundamentals(code)
+    lines = []
+    forward = (raw.info or {}).get("forwardPE")
+    if isinstance(forward, (int, float)) and forward > 0:
+        lines.append(f"Forward P/E on consensus EPS for the next fiscal year: "
+                     f"{forward:.1f}x. Below the trailing one, consensus expects "
+                     "EPS to rise; above it, to fall, or the trailing year holds "
+                     "a one-off gain. Say which when you quote both.")
+    found = one_offs.read(raw.income_q)
+    if found is None:
+        return lines
+    if not found.flags:
+        lines.append("No quarter of the trailing year stands out (tax rate, "
+                     "income outside operations, a year-on-year fall in "
+                     "operating income): its earnings read as recurring.")
+        return lines
+    lines.append("The trailing year carries items that may not recur, so its "
+                 "P/E is not on clean earnings. Name them, and check the filing "
+                 "or the results release before calling one a one-off:")
+    lines += [f"- {f.period}: {f.text}" for f in found.flags]
+    if (pe := found.adjust(trailing)) is not None:
+        lines.append(f"- P/E on operating income at the usual "
+                     f"{_pct(found.usual_tax)} tax rate, without them: {pe:.1f}x")
+    if (pe := found.adjust(trailing, "scale_level")) is not None:
+        lines.append(f"- the same with each fallen quarter at its year-ago "
+                     f"level: {pe:.1f}x")
+    return lines
 
 
 def _page_dcf(code: str, ctx: Context) -> str:
@@ -591,6 +627,29 @@ def _allocation(args: dict, ctx: Context) -> str:
     return _engine_line(mix) if mix else "No priced positions to split."
 
 
+def _income_report(args: dict, ctx: Context) -> str:
+    from stocks.chat import income
+
+    if (ledger := _ledger(ctx)) is None:
+        return _NO_LEDGER
+    found = income.build(*ledger)
+    return _engine_line(found) if found else _NO_LEDGER
+
+
+def _upcoming_earnings(args: dict, ctx: Context) -> str:
+    from stocks.chat import reports
+
+    if ctx.watchlist is None:
+        return "No portfolio available for this account."
+    try:
+        days = int(args.get("days") or reports.DEFAULT_DAYS)
+    except (TypeError, ValueError):
+        days = reports.DEFAULT_DAYS
+    ahead = reports.build(ctx.watchlist, ctx.db or _NO_DB,
+                          max(0, min(days, reports.MAX_DAYS)))
+    return _engine_line(ahead) if ahead else "The user holds and follows nothing."
+
+
 def _propose(args: dict, ctx: Context) -> str:
     """Draft one watchlist change for the reader to approve. Nothing is
     written: the engine reads the call back (`engine._proposed`) and files it
@@ -927,6 +986,24 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
              "required": []},
         ), _allocation),
         (ToolSpec(
+            "upcoming_earnings",
+            "The report dates of the companies the user holds and follows, "
+            "from the app's earnings calendar, inside the next `days`. Use "
+            "for which of their companies report soon.",
+            {"type": "object",
+             "properties": {"days": {"type": "integer", "minimum": 0,
+                                     "maximum": 120}},
+             "required": []},
+        ), _upcoming_earnings),
+        (ToolSpec(
+            "income_report",
+            "The user's dividends this year and last, from their ledger: "
+            "gross, withheld at source, net, the largest payers and, for a "
+            "Spanish filer, the double-taxation credit. Use for any question "
+            "about their dividend income.",
+            {"type": "object", "properties": {}, "required": []},
+        ), _income_report),
+        (ToolSpec(
             "propose_action",
             "Draft one change to what the app watches, shown as a card the "
             "user approves or dismisses under the answer: add_ticker (start "
@@ -1000,7 +1077,8 @@ def _with_reason(spec: ToolSpec) -> ToolSpec:
 # lookup per fund, seconds rather than milliseconds, and their schemas are
 # tokens on every request — on a free backend with an 8k-per-minute cap, the
 # quick gather cannot afford to carry four tools it almost never calls.
-ENGINES = frozenset({"simulate_sale", "harvest_losses", "rebalance", "allocation"})
+ENGINES = frozenset({"simulate_sale", "harvest_losses", "rebalance", "allocation",
+                     "upcoming_earnings", "income_report"})
 
 
 def specs(ctx: Context | None = None, *, engines: bool = False) -> list[ToolSpec]:

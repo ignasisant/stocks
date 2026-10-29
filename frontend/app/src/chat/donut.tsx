@@ -10,22 +10,51 @@
 import { Donut, type Slice } from "../pages/portfolio/charts";
 import { percent } from "../pages/portfolio/format";
 import "../pages/portfolio/portfolio.css";
-import { useLang } from "../shell/i18n";
+import { countryName } from "../pages/review/countries";
+import { maybe, sectorKey } from "../pages/sentiment/format";
+import { useLang, useT } from "../shell/i18n";
+
+/**
+ * A slice's name in the reader's words. The server sums with Yahoo's English
+ * labels and its own "Unknown" / "Crypto" buckets, the ones the Risk tab
+ * already translates; the drawer printed them raw, an English ring under a
+ * Spanish answer.
+ */
+export function sliceName(
+  t: ReturnType<typeof useT>,
+  lang: string,
+  by: string,
+  label: string,
+): string {
+  if (by === "position" || by === "currency") return label;
+  if (label === "Unknown") return t("portfolio.alloc_unknown");
+  if (by === "country") {
+    return label === "Crypto" ? t("portfolio.alloc_crypto") : countryName(label, lang);
+  }
+  return maybe(t, `sentiment.sector_${sectorKey(label)}`) ?? label;
+}
 
 export function AllocationDonut({
   slices,
   label,
   other,
+  by = "position",
 }: {
   slices: Slice[];
   label: string;
   /** What the tail past the palette's hues folds into. */
   other: string;
+  /** The split drawn, which says how its labels translate. */
+  by?: string;
 }) {
   const lang = useLang();
+  const t = useT();
   const shown = slices
     .filter((slice) => typeof slice?.label === "string" && Number(slice.weight) > 0)
-    .map((slice) => ({ label: slice.label, weight: Number(slice.weight) }));
+    .map((slice) => ({
+      label: sliceName(t, lang, by, slice.label),
+      weight: Number(slice.weight),
+    }));
   if (!shown.length) return null;
   return (
     <div className="ag-a2ui-donut">

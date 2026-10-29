@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
@@ -100,6 +100,13 @@ class Mix:
     top5: float
     effective: float  # 1 / HHI: how many equal-sized names it behaves like
     currency: str
+    # The book's market value: "how much do I have in the US" asks for money,
+    # and a weight alone left the model unable to say it. None when unpriced.
+    total: float | None = None
+    # dimension -> the holdings its "Unknown" slice comes from, largest first:
+    # a fifth of the book "unclassified" read as a data error until it named
+    # the fund whose remainder it is.
+    unknown: dict[str, tuple[tuple[str, float], ...]] = field(default_factory=dict)
 
     @property
     def dimensions(self) -> list[str]:
@@ -108,23 +115,39 @@ class Mix:
     def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: the splits and the concentration, quoted."""
         n, p = bound(lang)
+
+        def share(weight: float) -> str:
+            if not self.total:
+                return p(weight, 1)
+            return f"{p(weight, 1)} ({n(weight * self.total, 0)} {self.currency})"
+
         rows = []
         for d in self.dimensions:
             slices = self.groups[d]
-            shown = ", ".join(f"{label} {p(weight, 1)}"
+            shown = ", ".join(f"{label} {share(weight)}"
                               for label, weight in slices[:PROMPT_SLICES])
             rest = sum(weight for _, weight in slices[PROMPT_SLICES:])
             if rest > 0:
-                shown += f", {len(slices) - PROMPT_SLICES} more together {p(rest, 1)}"
+                shown += f", {len(slices) - PROMPT_SLICES} more together {share(rest)}"
             rows.append(f"- by {d}: {shown}")
+            if sources := self.unknown.get(d):
+                rows.append(
+                    f"  (Unknown by {d} is what the data does not classify — a "
+                    "fund's undisclosed remainder, or a holding with no "
+                    f"{d} on file — and comes from "
+                    + ", ".join(f"{t} {p(w, 1)}" for t, w in sources[:5])
+                    + "; say so, and call it unclassified, not an error)")
+        worth = (f"; the book is worth {n(self.total, 0)} {self.currency}"
+                 if self.total else "")
         return (
             "\n\n---\nThe app draws the reader's allocation as a donut under your "
             f"answer, opened on the split by {self.by} (weights of the market value "
-            f"in {self.currency} at today's prices; funds looked through to what "
-            "they hold, so an index fund counts in the sectors and countries inside "
-            "it). Do not draw a chart, pie or diagram yourself — no ASCII art, no "
-            "bars of symbols; refer to the donut shown, and quote these figures "
-            "rather than any of your own:\n" + "\n".join(rows) + "\n"
+            f"in {self.currency} at today's prices{worth}; funds looked through to "
+            "what they hold, so an index fund counts in the sectors and countries "
+            "inside it). Do not draw a chart, pie or diagram yourself — no ASCII "
+            "art, no bars of symbols; refer to the donut shown, and quote these "
+            "figures, amounts included, rather than any of your own:\n"
+            + "\n".join(rows) + "\n"
             f"- concentration: {self.positions} positions; the largest, "
             f"{self.largest}, is {p(self.largest_weight, 1)}; the top five are "
             f"{p(self.top5, 1)}; the book behaves like {n(self.effective, 1)} "
@@ -146,7 +169,11 @@ def build(tbl: pd.DataFrame | None, by: str = "position", currency: str = "EUR",
     """The book's split from the Home page's frame (`engine.enriched_frame`),
     or None when nothing in it is weighted. `meta` is `load_meta`, the
     sector/country/currency per ticker the Risk tab sums with."""
-    from stocks.analysis.portfolio import allocation, effective_positions, top_n_weight
+    from stocks.analysis.portfolio import (
+        allocation_parts,
+        effective_positions,
+        top_n_weight,
+    )
 
     if tbl is None or "weight" not in tbl:
         return None
@@ -156,13 +183,20 @@ def build(tbl: pd.DataFrame | None, by: str = "position", currency: str = "EUR",
     total = sum(weights.values())
     weights = {t: w / total for t, w in weights.items()}
     groups = {"position": _split(pd.Series(weights, dtype=float))}
+    unknown: dict[str, tuple[tuple[str, float], ...]] = {}
     try:
         if meta is None:
             from stocks.analysis.portfolio import load_meta
 
             meta = load_meta(sorted(weights))
         for d in DIMENSIONS[1:]:
-            groups[d] = _split(allocation(weights, meta, d))
+            parts = allocation_parts(weights, meta, d)
+            groups[d] = _split(pd.Series(
+                {label: sum(by.values()) for label, by in parts.items()}, dtype=float))
+            if from_ := parts.get("Unknown"):
+                unknown[d] = tuple(sorted(
+                    ((t, w) for t, w in from_.items() if w > 0.0005),
+                    key=lambda tw: -tw[1]))
     except Exception as exc:  # noqa: BLE001 — the split by position still stands
         obs.warn("chat.allocation_meta_failed", error_type=type(exc).__name__,
                  error=str(exc)[:200])
@@ -172,8 +206,16 @@ def build(tbl: pd.DataFrame | None, by: str = "position", currency: str = "EUR",
         by=by if groups.get(by) else "position", groups=groups,
         positions=len(weights), largest=largest, largest_weight=largest_weight,
         top5=top_n_weight(weights, 5), effective=effective_positions(weights),
-        currency=currency,
+        currency=currency, total=_worth(tbl, weights), unknown=unknown,
     )
+
+
+def _worth(tbl: pd.DataFrame, weights: dict[str, float]) -> float | None:
+    """The weighted rows' market value, or None when the frame has none."""
+    if "value" not in tbl:
+        return None
+    value = pd.to_numeric(tbl["value"], errors="coerce").reindex(list(weights)).sum()
+    return float(value) if value > 0 else None
 
 
 # -------------------------------------------------------------------- surface

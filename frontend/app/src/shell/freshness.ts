@@ -8,32 +8,106 @@
  * A later answer for the same URL without the header clears its mark, so the
  * line goes away by itself once the source is back.
  *
+ * `X-Data-Updating-Since` is the same age said without the blame: the figures
+ * are old — last night's closes on a quiet morning — but nothing refused; the
+ * server is downloading today's behind this answer. Its own line
+ * (`updatingSince`), because "the price source is not answering" on every
+ * first visit of the day, with Yahoo answering, was the line crying wolf.
+ *
  * `X-Data-Refreshing` is the milder word: the figures are recent, but the
  * server is refreshing them behind this answer. No line for it — only
  * `useApi` asking again a little later (`isRefreshing`).
+ *
+ * A URL's marks go with the last screen holding it (`holdUrls`): a page left
+ * while its figures were old must not leave the line on the next page, which
+ * never asked for them.
  */
 
 import { useSyncExternalStore } from "react";
 
 const since = new Map<string, number>();
+const updating = new Map<string, number>();
 const refreshing = new Set<string>();
 const listeners = new Set<() => void>();
 let oldest: number | null = null;
+let oldestUpdating: number | null = null;
+
+function earliest(marks: Map<string, number>): number | null {
+  let next: number | null = null;
+  for (const at of marks.values()) if (next === null || at < next) next = at;
+  return next;
+}
 
 function recompute(): void {
-  let next: number | null = null;
-  for (const at of since.values()) if (next === null || at < next) next = at;
-  if (next === oldest) return;
+  const next = earliest(since);
+  const nextUpdating = earliest(updating);
+  if (next === oldest && nextUpdating === oldestUpdating) return;
   oldest = next;
+  oldestUpdating = nextUpdating;
   listeners.forEach((fn) => fn());
+}
+
+function noteIn(marks: Map<string, number>, key: string, header: string | null): void {
+  const at = header ? Date.parse(header) : Number.NaN;
+  if (Number.isNaN(at)) marks.delete(key);
+  else marks.set(key, at);
+  recompute();
 }
 
 /** Record what one response said (`null` = nothing: the figures are live). */
 export function noteFreshness(url: string, header: string | null): void {
-  const at = header ? Date.parse(header) : Number.NaN;
-  if (Number.isNaN(at)) since.delete(url);
-  else since.set(url, at);
-  recompute();
+  noteIn(since, url, header);
+}
+
+/** Record whether one response said its old figures are being updated. */
+export function noteUpdating(url: string, header: string | null): void {
+  noteIn(updating, url, header);
+}
+
+/** Whether one URL's last answer was old, either way: worth asking again. */
+export function isOld(url: string): boolean {
+  return since.has(url) || updating.has(url);
+}
+
+/** The oldest updating-since across every URL, as epoch ms; `null` when none. */
+export function updatingSince(): number | null {
+  return oldestUpdating;
+}
+
+export function useUpdatingSince(): number | null {
+  return useSyncExternalStore(subscribe, updatingSince);
+}
+
+/*
+ * Which screens hold which URLs. A mark outlives a request but not every
+ * screen that read it: once the last holder lets go, the URL's marks go too —
+ * a moment later, so the next screen asking for the same URL takes it over
+ * instead of the line blinking out and back.
+ */
+const holders = new Map<string, number>();
+
+export function holdUrls(urls: Iterable<string>): () => void {
+  const held = [...urls];
+  for (const url of held) holders.set(url, (holders.get(url) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const url of held) {
+      const left = (holders.get(url) ?? 1) - 1;
+      if (left > 0) holders.set(url, left);
+      else holders.delete(url);
+    }
+    setTimeout(() => {
+      for (const url of held) {
+        if (holders.has(url)) continue;
+        since.delete(url);
+        updating.delete(url);
+        refreshing.delete(url);
+      }
+      recompute();
+    }, 0);
+  };
 }
 
 /** Record whether one response said newer figures are on the way. */
@@ -66,6 +140,8 @@ export function subscribe(fn: () => void): () => void {
 
 export function resetFreshness(): void {
   since.clear();
+  updating.clear();
+  holders.clear();
   refreshing.clear();
   retries.clear();
   kept.clear();
@@ -152,9 +228,10 @@ export function useKeptSince(): number | null {
   return useSyncExternalStore(subscribe, keptSince);
 }
 
-/** Every URL whose last answer was stale. */
+/** Every URL whose last answer was stale or updating. */
 export function staleUrls(): string[] {
-  return [...since.keys()].filter((key) => key.startsWith("/"));
+  const keys = new Set([...since.keys(), ...updating.keys()]);
+  return [...keys].filter((key) => key.startsWith("/"));
 }
 
 /**

@@ -185,6 +185,13 @@ def test_attempts_preferred_byok_then_free(providers, enc):
         ("gemini", "g-pro"), ("anthropic", ""), ("free", "")]
 
 
+def test_attempts_free_picked_over_a_held_key_answers_first(providers, enc):
+    # Local review 2026-10-29: "Probar con TopStocks AI" on a Gemini refusal
+    # saved the pick, and Gemini answered again because a key always led.
+    prefs = {"llm_provider": "free", **enc("gemini")}
+    assert [p.id for p, _, _ in engine.attempts(prefs)] == ["free", "gemini"]
+
+
 def test_attempts_expired_key_skipped(providers, enc):
     prefs = enc("anthropic", saved_ago=engine.BYOK_TTL + 60)
     assert [p.id for p, _, _ in engine.attempts(prefs)] == ["free"]
@@ -594,6 +601,75 @@ def test_a_streamed_written_tool_call_never_reaches_the_reader(
     assert done.provider_id == "free" and done.text == shown
 
 
+@dataclass
+class Crowded(Streamer):
+    """A keyed provider whose `busy` models are saturated; `refuse` turns
+    every failure into a refused key instead."""
+    models: tuple = ("m-latest", "m-pinned", "m-lite")
+    default_model: str = "m-latest"
+    busy: tuple = ()
+    refuse: bool = False
+    needs_key: bool = True
+
+    def error_key(self, exc):
+        return "chat.invalid_key" if self.refuse else "chat.provider_busy"
+
+    def stream(self, api_key, model, system, messages):
+        self.calls.append((api_key, model, system, messages))
+        if self.refuse or model in self.busy:
+            raise RuntimeError("503 UNAVAILABLE high demand")
+        yield self.reply
+
+    def complete(self, api_key, model, system, messages) -> str:
+        return "".join(self.stream(api_key, model, system, messages))
+
+    def asked(self) -> list[str]:
+        return [m for _k, m, _s, _msgs in self.calls if m in self.models]
+
+
+@pytest.fixture
+def crowded(providers, monkeypatch):
+    from stocks.web import llm
+
+    gemini = Crowded("gemini", reply="Gemini answer.")
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "gemini": gemini})
+    monkeypatch.setattr(llm, "_rejected", {})
+    return gemini
+
+
+def test_a_busy_model_hands_the_turn_to_its_sibling_not_the_free_chain(
+        crowded, providers, enc, paths):
+    # Prod 2026-10-29: gemini-flash-latest 503'd while 3.6-flash answered the
+    # same key; the turn went to the free chain and its spent trial instead.
+    crowded.busy = ("m-latest",)
+    seen = list(engine.answer_stream(prefs={**BASE_PREFS, **enc("gemini")},
+                                     message="hola", **paths))
+    metas = [v for k, v in seen if k == "meta"]
+    done = next(v for k, v in seen if k == "done")
+    assert [(m["provider"], m["model"]) for m in metas] == [("gemini", "m-pinned")]
+    assert done.provider_id == "gemini" and done.text == "Gemini answer."
+    assert crowded.asked() == ["m-latest", "m-pinned"]
+    assert providers["free"].calls == []
+
+
+def test_every_sibling_busy_asks_each_once_then_falls_over(
+        crowded, providers, enc, paths):
+    crowded.busy = crowded.models
+    reply = engine.answer(prefs={**BASE_PREFS, **enc("gemini")},
+                          message="hola", **paths)
+    assert reply.provider_id == "free"
+    assert crowded.asked() == ["m-latest", "m-pinned", "m-lite"]
+
+
+def test_a_refused_key_is_not_tried_on_every_model(crowded, providers, enc, paths):
+    crowded.refuse = True
+    reply = engine.answer(prefs={**BASE_PREFS, **enc("gemini")},
+                          message="hola", **paths)
+    assert reply.provider_id == "free"
+    assert "m-pinned" not in crowded.asked()
+    assert "m-lite" not in crowded.asked()
+
+
 def test_a_tool_call_inside_an_answer_is_scrubbed_from_it(providers, paths):
     providers["free"].reply = f"Adyen beat consensus.\n\n{WRITTEN_CALL}"
     reply = engine.answer(prefs=dict(BASE_PREFS), message="ADYYF?", **paths)
@@ -775,6 +851,32 @@ def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
                for s in reply.steps)
 
 
+def test_the_reader_s_own_calendar_goes_without_a_search(providers, paths,
+        monkeypatch):
+    # Local review 2026-10-30: the earnings calendar took 3 m 25 s, a search
+    # for "BKNG ¿Qué empresas de mi cartera…" among them.
+    from stocks.chat import reports
+
+    searched = []
+
+    def searching(*a, **_kw):
+        # Recorded, not raised: `in_parallel` turns a raise into None.
+        searched.append(a)
+        return []
+
+    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    monkeypatch.setattr(engine, "ground_web", searching)
+    monkeypatch.setattr(engine.chat_web, "collect", searching)
+    monkeypatch.setattr(reports, "build", lambda *_a, **_kw: reports.Ahead(
+        days=7, due=(), checked=3, held=1, undated=(), skipped=()))
+    engine.answer(prefs=dict(BASE_PREFS),
+                  message="¿Qué empresas de mi cartera presentan resultados en 7 días?",
+                  **paths)
+    _, _, _, messages = providers["free"].calls[0]
+    assert "The app's earnings calendar" in messages[-1]["content"]
+    assert searched == []
+
+
 def test_the_prompt_closes_with_the_disclosure_rules():
     # Last, after the context and the skills: the free chain runs on small
     # models, and a rule buried mid-paragraph is a rule they drop. The failure
@@ -895,7 +997,9 @@ def test_the_view_sentence_names_the_page_and_the_focus():
     ticker is in focus; nothing at all without a view."""
     assert engine.view_context("Ticker", "NVDA") == (
         "Current view: The user is currently on the Ticker page. "
-        "The ticker in focus is NVDA.\n\n"
+        "The ticker in focus is NVDA. It is what \"this\" and \"it\" mean; "
+        "a question that names other symbols, the user's own portfolio or a "
+        "concept is not about it.\n\n"
     )
     assert engine.view_context("Home", "") == (
         "Current view: The user is currently on the Home page.\n\n"
@@ -1370,3 +1474,30 @@ def test_a_moved_page_or_other_skills_keep_the_first_parts_byte_identical():
 def test_an_empty_part_is_dropped_so_the_breakpoints_stay_within_four():
     got = engine.system_prompt({"set": False}, "x", [])
     assert len(got.blocks) == 2
+
+
+def test_the_drawer_is_told_it_prints_latex_raw():
+    # Local review 2026-10-29: a dividends answer came back as "$\frac{...}$".
+    assert "No LaTeX" in engine.MARKDOWN_CONTEXT
+
+
+def test_a_weighing_question_on_the_fixed_path_carries_the_ticker_pages(
+        monkeypatch, tmp_path):
+    # MSFT vs GOOGL, local review 2026-10-29: Gemini, with no tool loop,
+    # answered from web ranges because no figure of the app reached it.
+    from stocks.chat import market, toolbox
+
+    ran = []
+    monkeypatch.setattr(toolbox, "executor", lambda ctx: lambda name, args: (
+        ran.append((name, args["ticker"])) or f"{args['ticker']} page"))
+    told: list[dict] = []
+    quotes = [market.Quote("MSFT"), market.Quote("GOOGL"), market.Quote("BTC-EUR")]
+    got = engine._pages("¿MSFT o GOOGL, cuál está más barata?", quotes,
+                        tmp_path / "w.yaml", tmp_path / "db", {}, "es",
+                        told.append, 5.0)
+    assert "MSFT page" in got and "GOOGL page" in got
+    assert sorted(ran) == [("ticker_data", "GOOGL"), ("ticker_data", "MSFT")]
+    assert [t["tool"] for t in told] == ["ticker_data"] * 4
+    # Not a weighing question: the quote is enough.
+    assert engine._pages("¿a cuánto cotiza MSFT hoy?", quotes, tmp_path / "w.yaml",
+                         tmp_path / "db", {}, "es", told.append, 5.0) == ""

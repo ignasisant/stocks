@@ -80,6 +80,16 @@ def test_import_gate_skips_questions_and_other_actions():
     assert not tools.wants_import("tengo 112 acciones de InMode a 18,16")
 
 
+def test_import_gate_leaves_how_to_and_undo_to_the_model():
+    """Prod eval 2026-10-29: an undo question got "attach the statement"."""
+    assert not tools.wants_import(
+        "me he equivocado de fichero al importar, ¿cómo lo deshago?")
+    assert not tools.wants_import("¿cómo importo el csv de Revolut?")
+    assert not tools.wants_import("how do I import my trades file?")
+    assert not tools.wants_import("¿qué fichero subo para importar de DEGIRO?")
+    assert not tools.wants_import("undo the last import of that csv")
+
+
 # ------------------------------------------------------------------ parse
 
 

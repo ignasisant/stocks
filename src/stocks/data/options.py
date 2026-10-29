@@ -36,6 +36,12 @@ IV_BAND = (0.03, 5.0)
 # thin chain after a split (BKNG 2026-10: nothing quoted between 110 and a
 # 150 spot, a 38-51.7 market) read as 138 %.
 ATM_BAND = 0.10
+# Outside the US session Yahoo zeroes every bid, ask and open interest and
+# keeps the last session's volume (AAPL, 2026-10-29 pre-market: 1 of 71
+# contracts quoted, open interest 2). A chain quoted that thinly while the
+# market is not open is the closed book, not a reading: IV goes null and the
+# put/call open interest becomes a ratio of leftovers (MSFT read 13.9).
+QUOTED_SHARE = 0.05
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,9 @@ class Chain:
 class RawOptions:
     spot: float | None
     chains: list[Chain]
+    # Yahoo's `marketState` for the underlying: REGULAR in session, PRE,
+    # POST, POSTPOST, PREPRE or CLOSED around it.
+    state: str | None = None
 
 
 def pick_expiries(expiries: tuple[str, ...] | list[str], today: date) -> list[str]:
@@ -99,7 +108,24 @@ def fetch_chains(ticker: str, today: date | None = None) -> RawOptions | None:
     chains = [Chain(e, c.calls, c.puts) for e, c in got]
     underlying = getattr(got[0][1], "underlying", None) or {}
     spot = underlying.get("regularMarketPrice")
-    return RawOptions(float(spot) if spot else None, chains)
+    return RawOptions(
+        float(spot) if spot else None, chains, underlying.get("marketState")
+    )
+
+
+def closed(raw: RawOptions | None) -> bool:
+    """True when the chain is Yahoo's out-of-session snapshot: the market is
+    not open and almost no contract carries a two-sided quote."""
+    if raw is None or not raw.chains or raw.state == "REGULAR":
+        return False
+    rows = quoted = 0
+    for chain in raw.chains:
+        for frame in (chain.calls, chain.puts):
+            if frame is None or frame.empty or not {"bid", "ask"} <= set(frame.columns):
+                continue
+            rows += len(frame)
+            quoted += int(((frame["bid"] > 0) & (frame["ask"] > 0)).sum())
+    return rows > 0 and quoted < QUOTED_SHARE * rows
 
 
 def _atm_iv(chain: Chain, spot: float) -> float | None:

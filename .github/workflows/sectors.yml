@@ -64,7 +64,7 @@ jobs:
         # template expansion inside the script (that would splice its text
         # into the command before bash sees it).
         run: |
-          uv run stocks sector-scan \
+          uv run --no-sync stocks sector-scan \
             ${SCAN_SECTOR:+--sector "$SCAN_SECTOR"} \
             ${{ inputs.no_widen && '--no-widen' || '' }}
         env:

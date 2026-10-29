@@ -15,8 +15,9 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from stocks.data import options as options_data
 from stocks.data.estimates import rating_changes
-from stocks.data.options import Chain, RawOptions, pick_expiries, summarize
+from stocks.data.options import Chain, RawOptions, closed, pick_expiries, summarize
 
 TODAY = date(2026, 10, 27)
 TOKEN = "s3cret-token"
@@ -84,8 +85,13 @@ def test_atm_iv_skips_a_chain_quoted_only_far_from_the_spot():
     # spot, its IV mostly a wide market — no reading beats that one.
     raw = RawOptions(
         150.14,
-        [chain("2026-11-20", [(110, 38.0, 51.7, 1.38, 1, 0), (100, 48, 61.5, 1.65, 8, 0)],
-               [(200, 50, 60, 0.9, 5, 3)])],
+        [
+            chain(
+                "2026-11-20",
+                [(110, 38.0, 51.7, 1.38, 1, 0), (100, 48, 61.5, 1.65, 8, 0)],
+                [(200, 50, 60, 0.9, 5, 3)],
+            )
+        ],
     )
     out = summarize(raw, TODAY)
     assert out is None or out["iv"] is None
@@ -126,6 +132,67 @@ def test_nothing_listed_or_nothing_readable_is_none():
     assert summarize(RawOptions(None, []), TODAY) is None
     empty = RawOptions(100.0, [chain("2026-11-20", [], [])])
     assert summarize(empty, TODAY) is None
+
+
+def session_chain():
+    return chain(
+        "2026-11-20",
+        [(95, 6, 6.2, 0.31, 800, 40), (100, 3, 3.2, 0.30, 900, 20)],
+        [(100, 2.9, 3.1, 0.32, 700, 25), (105, 6, 6.3, 0.33, 400, 10)],
+    )
+
+
+def zeroed_chain():
+    """Yahoo out of session: no bid, no ask, no open interest; the last
+    session's volume and a stale IV stay (AAPL, 2026-10-29 pre-market)."""
+    return chain(
+        "2026-11-20",
+        [(95, 0, 0, 0.31, 0, 40), (100, 0, 0, 0.30, 0, 20)],
+        [(100, 0, 0, 0.32, 0, 25), (105, 0, 0, 0.33, 2, 10)],
+    )
+
+
+def test_a_zeroed_chain_out_of_session_is_closed():
+    assert closed(RawOptions(100.0, [zeroed_chain()], "PRE"))
+    assert closed(RawOptions(100.0, [zeroed_chain()], "CLOSED"))
+    # in session a thin chain is the market, however thin
+    assert not closed(RawOptions(100.0, [zeroed_chain()], "REGULAR"))
+    # out of session but still quoted (the minutes after the bell)
+    assert not closed(RawOptions(100.0, [session_chain()], "POST"))
+    assert not closed(None)
+    assert not closed(RawOptions(100.0, [chain("2026-11-20", [], [])], "PRE"))
+
+
+def test_out_of_session_the_last_session_reading_answers(monkeypatch):
+    loaders.options_view.cache_clear()
+    raw = {"now": RawOptions(100.0, [session_chain()], "REGULAR")}
+    monkeypatch.setattr(options_data, "fetch_chains", lambda t: raw["now"])
+    live = loaders.options_view("AAPL")
+    assert live is not None and live["iv"] == pytest.approx(0.31)
+
+    loaders.options_view.cache_clear()
+    raw["now"] = RawOptions(100.0, [zeroed_chain()], "PRE")
+    assert loaders.options_view("AAPL") == live
+    # a name never read in session has nothing to stand in: no card, no zeros
+    assert loaders.options_view("MSFT") is None
+
+
+def test_a_session_reading_past_its_keep_does_not_answer(monkeypatch):
+    loaders.options_view.cache_clear()
+    monkeypatch.setattr(
+        options_data,
+        "fetch_chains",
+        lambda t: RawOptions(100.0, [session_chain()], "REGULAR"),
+    )
+    loaders.options_view("AAPL")
+    monkeypatch.setattr(loaders, "_SESSION_KEEP_S", 0.0)
+    monkeypatch.setattr(
+        options_data,
+        "fetch_chains",
+        lambda t: RawOptions(100.0, [zeroed_chain()], "PRE"),
+    )
+    loaders.options_view.cache_clear()
+    assert loaders.options_view("AAPL") is None
 
 
 # ---------------------------------------------------------- rating changes

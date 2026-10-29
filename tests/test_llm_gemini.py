@@ -84,3 +84,38 @@ def test_a_hung_gemini_has_a_deadline(monkeypatch):
     monkeypatch.setattr(genai, "Client", Client)
     list(llm._gemini_stream_once("k", "m", "s", [{"role": "user", "content": "x"}]))
     assert seen["timeout"] == llm._GEMINI_TIMEOUT_MS
+
+
+def test_gemini_reads_the_whole_system_prompt(monkeypatch):
+    """Local review 2026-10-29: the SDK made the `Prompt` str subclass an empty
+    Content, so Gemini answered "no tengo acceso a tu cartera" with the book
+    in the prompt it never got."""
+    from google import genai
+
+    seen = {}
+
+    class Client:
+        def __init__(self, api_key, http_options=None):
+            self.models = self
+
+        def generate_content_stream(self, config=None, **_kw):
+            seen["system"] = config.system_instruction
+            return iter(())
+
+    monkeypatch.setattr(genai, "Client", Client)
+    system = llm.Prompt("You are Aguait. ", "Holdings: ASML weight 9%.")
+    list(llm._gemini_stream_once("k", "m", system, [{"role": "user", "content": "x"}]))
+    assert seen["system"] == "You are Aguait. Holdings: ASML weight 9%."
+
+
+def test_an_answer_past_the_deadline_is_said_as_slow_not_unavailable():
+    """Local review 2026-10-30: the earnings calendar, 3 m 25 s in, showed
+    "the assistant is unavailable"; the same question on another model
+    answered."""
+    import httpx
+
+    late = {"error": {"code": 504, "message": "Deadline expired",
+                      "status": "DEADLINE_EXCEEDED"}}
+    assert llm._gemini_error(errors.ServerError(504, late)) == "chat.provider_slow"
+    assert llm._gemini_error(httpx.ReadTimeout("read")) == "chat.provider_slow"
+    assert llm._gemini_error(errors.ServerError(500, late)) == "chat.api_error"

@@ -1119,6 +1119,11 @@ def rating_changes(ticker: str) -> list[dict]:
     return fold(fetch_rating_changes(ticker), date.today())
 
 
+# How long the last in-session options reading answers while the market is
+# shut: a long weekend, Friday's close to Tuesday's open, and a little over.
+_SESSION_KEEP_S = 5 * 86400.0
+
+
 @ttl_cache(_EVENTS_TTL, max_entries=32, persist="options", disk_max=64)
 def options_view(ticker: str) -> dict | None:
     """ATM implied volatility and put/call ratios; None when nothing is listed.
@@ -1127,9 +1132,22 @@ def options_view(ticker: str) -> dict | None:
     it has its own endpoint and slot. A refusal raises, so a throttled minute
     is never cached as "no options".
     """
-    from stocks.data.options import fetch_chains, summarize
+    from stocks.data.options import closed, fetch_chains, summarize
 
-    return summarize(fetch_chains(ticker), date.today())
+    raw = fetch_chains(ticker)
+    path = disk_path("options_session", (ticker,))
+    if closed(raw):
+        # Out of session the chain is zeroed; the last in-session reading is
+        # what the market said, and it is still the latest thing it said.
+        kept = read_entry(path, 0.0)
+        if kept is not None and time.time() - kept[2] < _SESSION_KEEP_S:
+            return kept[1]
+        return None
+    view = summarize(raw, date.today())
+    if view is not None:
+        with obs.swallow("options.keep_session"):
+            write_entry(path, (time.monotonic(), view, time.time()))
+    return view
 
 
 @ttl_cache(_EVENTS_TTL, max_entries=32, persist="valuation", disk_max=64)
@@ -1719,7 +1737,6 @@ def company_name(ticker: str, watchlist: str) -> str | None:
     return (profiles.known(symbol) or {}).get("name") or learned_name(symbol)
 
 
-
 def listing_name(symbol: str) -> str | None:
     """Yahoo's own name for a listing, asked when no local source has one.
 
@@ -2239,7 +2256,7 @@ def today_market() -> dict:
 # within the hour on a quiet instance — the request log's Home market card
 # and watchlist rows at twenty seconds on a Sunday — and the figure a
 # weekend reader waited for was Friday's close either way. Past `quiet_s`
-# the response says how old it is (`X-Data-Stale-Since`), and the shell
+# the response says how old it is (`X-Data-Updating-Since`), and the shell
 # asks again once the refresh lands.
 @ttl_cache(
     21600.0,

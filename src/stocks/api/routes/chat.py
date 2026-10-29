@@ -1472,6 +1472,8 @@ def _events(
                     yield from words(reply.text)
                 if opened:
                     yield _frame(TextMessageEndEvent(message_id=mid))
+                if linked and reply.nav and "nav" not in claimed:
+                    claimed["nav"] = dict(reply.nav)
                 if "goto" in claimed:
                     yield from _call(f"nav_{uuid.uuid4().hex[:12]}", navigate.TOOL_NAME,
                                      {"step": claimed["goto"]}, mid)
@@ -2049,7 +2051,7 @@ def _rechart(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no prices for {' '.join(symbols)} over {window}",
         )
-    return charts.moved(chart, tr)
+    return charts.moved(chart, tr, lang)
 
 
 # ------------------------------------------------------------ provider keys

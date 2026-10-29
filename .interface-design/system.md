@@ -576,6 +576,12 @@ a laptop page the same way.
   Earnings list (book, past dividends, past results) and Sentiment (snapshot,
   book, detail). Not on Home: its cards are the reader's own pick, and the
   editor is where a card is put away.
+- **A field's hint fits the field.** Chromium draws no ellipsis on a
+  textarea's placeholder, so a hint longer than the field is cut mid-word
+  ("Pregunta sobre tu carter"): keep it to two or three words, and below a
+  320px container a field flanked by controls takes a row of its own (the chat
+  composer). A row of small controls under a card wraps (`flex-wrap`) instead
+  of pushing its last one off the screen.
 - **The answer first.** A page leads with what it concludes (Review: the plan,
   then the book-wide notes), in DOM order, not by CSS `order` — a screen
   reader and a phone read the same sequence.

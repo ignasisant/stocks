@@ -66,6 +66,29 @@ NOT_TICKERS = {
     "USA", "USD", "VS", "WACC", "Y", "YES", "YOY",
 }
 
+# Words that point at the page on screen instead of naming a symbol: "¿y esta
+# cómo va?", "is it cheap?", "¿la compro?". A question with none of them is not
+# about the ticker open behind the drawer ("¿qué es el ROIC?", "¿cuánta
+# exposición tengo por país?"), and quoting that ticker anyway pulled every
+# answer towards it. "este año" and "esta semana" are dates, not the page.
+_POINTS_RE = re.compile(
+    r"\b(?:this|it|its|it's|that one|here|the (?:stock|company|share)s?"
+    r"|(?:est|es)[aeo]s?(?!\s+(?:año|mes|semana|trimestre|semestre|ejercicio"
+    r"|lunes|martes|miércoles|jueves|viernes|vez|momento|tipo|tema)\b)"
+    r"|aquí|aquest[ae]?s?|això"
+    r"|la (?:acción|empresa|compañía|ficha)|el (?:valor|ticker|título))\b",
+    re.IGNORECASE,
+)
+# Words that ask about a price without saying whose: on the ticker's own page
+# they mean that ticker, but only when the message names no other symbol
+# ("¿a qué PER cotiza Meta?" is Meta's, wherever it is asked).
+_PRICED_RE = re.compile(
+    r"\b(?:c[oó]mo (?:va|est[aá]|lo ves|la ves)|qu[eé] tal|cotiza|compr[oa]r?"
+    r"|vend[oe]r?|mantengo|mantener|refuerzo|reforzar|barat[ao]s?|car[ao]s?"
+    r"|precio|price|cheap|expensive|buy|sell|hold)\b",
+    re.IGNORECASE,
+)
+
 # Capitalized runs that could be a company name ("Nvidia", "Banco Santander").
 # Only consulted when nothing cheaper resolved — see `mentioned`.
 _WORD = r"[A-ZÁÉÍÓÚÑ][\wÁÉÍÓÚÑáéíóúñ&.]+"
@@ -596,15 +619,25 @@ def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
     )
 
 
+def points_at_screen(message: str, known: dict[str, str] | None = None) -> bool:
+    """Whether `message` is about the ticker on screen without naming it."""
+    if _POINTS_RE.search(message):
+        return True
+    return bool(_PRICED_RE.search(message)) and not mentioned(
+        message, known, lookup=lambda _name: "")
+
+
 def lookup_for(
     message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en"
 ) -> list[Quote]:
     """The whole path in one call: mentions → live quotes.
 
     The convenience entry point both chat surfaces use; every failure inside
-    degrades to []."""
+    degrades to []. `focus` is quoted only when the message points at it
+    (`points_at_screen`); a symbol it names is quoted whatever the page."""
     try:
         known = watchlist_names(watchlist) if watchlist else {}
+        focus = focus if focus and points_at_screen(message, known) else ""
         return _with_crypto(quotes(mentioned(message, known, focus)), _scan, lang)
     except Exception:
         return []

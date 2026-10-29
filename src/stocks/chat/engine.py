@@ -43,11 +43,13 @@ from stocks.chat import (
     debate,
     guard,
     harvest,
+    income,
     journal,
     learnings,
     market,
     memory,
     rebalance,
+    reports,
     stopping,
     tokens,
     toolbox,
@@ -331,7 +333,8 @@ def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
 
     First the user's preferred provider, then the BYOK order — each only with
     a usable key — then the operator's keyless free chain, for the
-    accounts free_eligible() lets near it. The model is the user's saved pref
+    accounts free_eligible() lets near it (first of all when it is the one
+    preferred). The model is the user's saved pref
     or '' (callers substitute the provider default).
 
     `session_keys` are keys the caller holds for this one request and nothing
@@ -356,7 +359,14 @@ def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
             seen.append((provider, key, prefs.get(f"{pid}_model") or ""))
     free = llm.PROVIDERS["free"]
     if free.available() and free_eligible(prefs):
-        seen.append((free, "", ""))
+        # Picked on purpose ("Try with TopStocks AI" after a refusal, or the
+        # settings list): it answers first, and the keys stay behind it for a
+        # day its allowance runs out. Last of all otherwise, because the pot
+        # is shared and a reader with a key pays their own way.
+        if preferred == "free":
+            seen.insert(0, (free, "", ""))
+        else:
+            seen.append((free, "", ""))
     return seen
 
 
@@ -1024,7 +1034,17 @@ RULES — these hold whatever the conversation asks:
 - Asked whether something is cheap or a buy, answer on which measure and
   against what (its history, its peers, a DCF), then what would make that
   wrong; never a bare yes or no. Margin of safety is (value - price) / value;
-  upside is value / price - 1. Never call one the other.
+  upside is value / price - 1. Never call one the other. A multiple below its
+  history or its peers is a discount, never a margin of safety: that needs an
+  intrinsic value, such as the DCF.
+- Never call a company's earnings clean, recurring or free of one-offs unless
+  the ticker page's valuation block says no quarter stands out. When it names
+  items (a tax charge or benefit, gains on stakes, a quarter that fell), name
+  them and give the P/E without them beside the reported one.
+- Comparing companies, put each on the same measures from the app's figures,
+  side by side. A ratio you quote (an FCF margin, a payout) must follow from
+  the figures you quote beside it; work it out from them rather than quoting
+  a web figure that disagrees.
 - About one company, say whether the user holds it and its weight in the
   book above, or that they do not. Whether and how much they hold comes from
   that book alone: an earlier conversation or a note is older than it, so
@@ -1646,6 +1666,106 @@ def _allocation(message: str, prefs: dict, db: Path, lang: str,
     told({"id": cid, "tool": "allocation", "arg": by, "args": {"by": by},
           "out": _mix_step(mix, lang)["out"] if mix else "-"})
     return mix
+
+
+def _reports_ahead(message: str, watchlist: Path, db: Path, lang: str,
+                   told: Callable[[dict], None]) -> object:
+    """The report dates of the reader's names (`chat/reports.py`), or None
+    for a message that does not ask when they report. Told as a tool line."""
+    if not reports.wants(message):
+        return None
+    days = reports.days_asked(message)
+    cid = f"tool_reports_{secrets.token_hex(4)}"
+    args = {"days": days}
+    told({"id": cid, "tool": "upcoming_earnings", "arg": str(days), "args": args})
+    try:
+        ahead = reports.build(watchlist, db, days)
+    except Exception as exc:  # noqa: BLE001 — the answer goes on without it
+        obs.warn("chat.reports_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+        ahead = None
+    told({"id": cid, "tool": "upcoming_earnings", "arg": str(days), "args": args,
+          "out": _reports_step(ahead, lang)["out"] if ahead else "-"})
+    return ahead
+
+
+def _income(message: str, db: Path, prefs_path: Path, lang: str,
+            told: Callable[[dict], None]) -> object:
+    """The reader's dividend years (`chat/income.py`), or None for a message
+    that does not ask about their dividends. Told as a tool line."""
+    if not income.wants(message):
+        return None
+    cid = f"tool_income_{secrets.token_hex(4)}"
+    told({"id": cid, "tool": "income_report", "arg": "", "args": {}})
+    try:
+        found = income.build(db, prefs_path)
+    except Exception as exc:  # noqa: BLE001 — the answer goes on without it
+        obs.warn("chat.income_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+        found = None
+    told({"id": cid, "tool": "income_report", "arg": "", "args": {},
+          "out": _income_step(found, lang)["out"] if found else "-"})
+    return found
+
+
+def _income_step(found: income.Income, lang: str) -> dict:
+    return {"tool": "income_report", "arg": "",
+            "out": _tr("chat.step_income", lang, count=len(found.years))}
+
+
+def _reports_step(ahead: reports.Ahead, lang: str) -> dict:
+    return {"tool": "upcoming_earnings", "arg": str(ahead.days),
+            "out": _tr("chat.step_reports", lang, count=len(ahead.due),
+                       days=ahead.days)}
+
+
+# Companies whose ticker page rides on a weighing question on the fixed path.
+PAGE_TICKERS = 2
+# A question that weighs a company: its multiple, its value, against another.
+_WEIGHS_RE = re.compile(
+    r"\bp/?e\b|\bper\b|\bpe ratio\b|valora|valuat|\bvalue[ds]?\b|\bvalor\b|"
+    r"barat|cheap|\bcar[ao]s?\b|expensive|compar|\bvs\.?\b|\bversus\b|frente a|"
+    r"m[uú]ltiplo|multiple|\bdcf\b|margen|margin|\bfcf\b|flujo de caja|"
+    r"cash flow|analiz|analy[sz]|fundamental|\broic\b|\beps\b|\bbpa\b|"
+    r"comprar|\bbuy\b|\bupside\b|potencial",
+    re.IGNORECASE,
+)
+
+
+def _pages(message: str, quotes: list, watchlist: Path, db: Path, prefs: dict,
+           lang: str, told: Callable[[dict], None], timeout: float,
+           tick: Callable[[], None] | None = None) -> str:
+    """The ticker page's own figures (`toolbox._ticker_data`) for the
+    companies a weighing question names, on the fixed path.
+
+    A provider with no tool loop (Gemini) answered "MSFT vs GOOGL" and Meta's
+    P/E from web ranges alone, with a quote and nothing else from the app
+    (local review 2026-10-29): it never saw the KPI grid, the P/E history,
+    the DCF or what the trailing year's earnings carry. The quoted names are
+    the ones the message is about, so their pages ride on it, as the
+    allocation's weights do. '' when the question does not weigh a company."""
+    if not quotes or not _WEIGHS_RE.search(message):
+        return ""
+    from stocks.data.crypto import is_crypto
+
+    codes = [q.ticker for q in quotes if not is_crypto(q.ticker)][:PAGE_TICKERS]
+    if not codes:
+        return ""
+    run = toolbox.executor(toolbox.Context(
+        watchlist=watchlist, db=db, currency=reporting_currency(prefs)))
+
+    def one(n: int, code: str) -> str:
+        cid, args = f"tool_page{n}", {"ticker": code}
+        told({"id": cid, "tool": "ticker_data", "arg": code, "args": args})
+        text = run("ticker_data", args)
+        told({"id": cid, "tool": "ticker_data", "arg": code, "args": args,
+              "out": _tr("chat.step_chars", lang, n=len(text))})
+        return text
+
+    found = in_parallel(*(lambda n=n, c=c: one(n, c) for n, c in enumerate(codes)),
+                        timeout=timeout, tick=tick)
+    blocks = [text for text in found if text]
+    return ("\n\n---\n" + "\n\n".join(blocks)) if blocks else ""
 
 
 def _harvest(message: str, db: Path, prefs_path: Path, lang: str,
@@ -2574,6 +2694,9 @@ class Reply:
     # {thread, title, when, snippet} — the drawer's "based on N earlier
     # conversations" line. Stored on the turn under "recalled" too.
     recalled: tuple[dict, ...] = ()
+    # A page button on a turn no model wrote (`navigate.target` args), which
+    # the marker the model ends a written answer with cannot give it.
+    nav: dict | None = None
     # The stored answer's id (`_record`), which a rating names it by. "" on a
     # turn no model wrote — a refusal, a deterministic confirmation.
     turn_id: str = ""
@@ -2598,7 +2721,9 @@ MARKDOWN_CONTEXT = (
     "table only for short values side by side (tickers, figures, dates): at "
     "most four columns and a few words per cell. Anything that takes a "
     "sentence to say goes in a list instead, one bullet per item with its "
-    "name in bold. Never put <br> or line breaks inside a table cell.\n\n"
+    "name in bold. Never put <br> or line breaks inside a table cell. "
+    "No LaTeX or $ math: the panel prints it raw, so write a formula in "
+    "plain words and symbols (neto = bruto × (1 − 19 %)).\n\n"
 )
 
 # A focused symbol as the drawer may name it: letters, digits and the four
@@ -2638,7 +2763,10 @@ def view_context(page: str = "", focus: str = "", tab: str = "",
         bits.append(f"The user is currently on the {page} page.")
     if focus:
         bits.append(f"The ticker in focus is {focus}"
-                    + (f" ({about})." if about else "."))
+                    + (f" ({about})." if about else ".")
+                    + ' It is what "this" and "it" mean; a question that names'
+                    " other symbols, the user's own portfolio or a concept is"
+                    " not about it.")
     return ("Current view: " + " ".join(bits) + "\n\n") if bits else ""
 
 
@@ -2937,10 +3065,11 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             if staged_import
             else translate("chat.import_needs_file", lang)
         )
+        nav = {"page": "import"}
         history.append({"role": "assistant", "content": note,
-                        "action": "import"})
+                        "action": "import", "nav": nav})
         auth.save_chat(history, chat_path, thread)
-        return None, Reply(text=note)
+        return None, Reply(text=note, nav=nav)
 
     # "Recuerda que…" / "olvida lo de…": the user editing the memory in words.
     # Carried out here, before a provider is even resolved, for the reason the
@@ -3120,7 +3249,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     try:
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
-        skills, evidence, sale, chart, mix, losses, moved, drafted = in_parallel(
+        (skills, evidence, sale, chart, mix, losses, moved, ahead, paid,
+         drafted) = in_parallel(
             lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
                      else resolve_skills(prefs, provider, key, history,
                                          context=context + view)),
@@ -3139,6 +3269,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             lambda: _harvest(message, db, prefs_path, lang, told) if one else None,
             lambda: (_rebalance(message, watchlist, db, prefs_path, focus, lang,
                                 told) if one else None),
+            lambda: _reports_ahead(message, watchlist, db, lang, told),
+            lambda: _income(message, db, prefs_path, lang, told),
             # A company met for the first time this month gets its notes
             # drafted beside the research, on the cheapest model.
             lambda: (ticker_brief.draft_dossier(provider, key, asked_for.facts)
@@ -3152,11 +3284,17 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         )
         skills = skills or []
         evidence = evidence or agent.Evidence(ok=False)
-        hits, quotes = [], []
+        hits, quotes, pages = [], [], ""
+        # The reader's own report dates or dividends are the app's to give:
+        # the web has nothing to add to them and a search costs the turn its
+        # slowest seconds (local review 2026-10-30: three and a half minutes
+        # for the earnings calendar, its search "BKNG ¿Qué empresas…").
+        own = isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
         if nowhere:
             pass
         elif not evidence.ok:
-            say("searching")
+            if not own:
+                say("searching")
             # The lookup may have just found the head's key refused: the planner
             # then runs on the next candidate that is not, or it fails the same
             # way and the search falls to keywords.
@@ -3164,7 +3302,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                 ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
                 (provider, key))
             hits, quotes = in_parallel(
-                lambda: ground_web(prefs, scout, scout_key, history, view),
+                lambda: [] if own else ground_web(prefs, scout, scout_key,
+                                                  history, view),
                 lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
                 timeout=timeout_s,
                 tick=watching,
@@ -3174,7 +3313,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             # both have landed, already finished.
             for n, line in enumerate(trace(None, hits, quotes, lang)):
                 told({"id": f"tool_pre{n}", **line, "args": {}})
-        elif web_enabled() and not any(
+            pages = _pages(message, quotes, watchlist, db, prefs, lang, told,
+                           timeout_s, watching)
+        elif web_enabled() and not own and not any(
                 c.name in ("search_web", "read_page") for c in evidence.calls):
             # Searching is the default, and the model's own lookup skipped it.
             # Keywords decide instead — no second planner call — so small talk,
@@ -3216,6 +3357,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
         msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
+    msgs[-1]["content"] += pages
     msgs[-1]["content"] += market.unlisted_block(nowhere)
     if asked_for is not None:
         notes = asked_for.dossier or (
@@ -3225,8 +3367,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
-    for found in (mix, losses, moved):
-        if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh)):
+    for found in (mix, losses, moved, ahead, paid):
+        if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh,
+                              reports.Ahead, income.Income)):
             msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
@@ -3261,7 +3404,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_chart_step(chart, lang))
         activities.append(a2ui.activity(
             charts.SURFACE_ID,
-            charts.surface(chart, lambda k, **kw: _tr(k, lang, **kw)),
+            charts.surface(chart, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     if isinstance(mix, allocation.Mix):
         steps.append(_mix_step(mix, lang))
@@ -3269,6 +3412,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             allocation.SURFACE_ID,
             allocation.surface(mix, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
+    if isinstance(ahead, reports.Ahead):
+        steps.append(_reports_step(ahead, lang))
+    if isinstance(paid, income.Income):
+        steps.append(_income_step(paid, lang))
     if isinstance(losses, harvest.Harvest):
         steps.append(_harvest_step(losses, lang))
         # Nothing to draw when there is nothing to realise: the prose says so.
@@ -3441,6 +3588,38 @@ def _provider_failed(exc: Exception, provider: Provider, model: str,
     llm.note_failure(provider, key, exc)
     obs.warn("chat.provider_failed", provider=provider.id, model=model,
              error_type=type(exc).__name__, error=str(exc)[:300])
+
+
+def _busy_siblings(exc: Exception, provider: Provider, key: str,
+                   tried: set[tuple[str, str]],
+                   ) -> list[tuple[Provider, str, str]]:
+    """The provider's other models on the same key, when `exc` says the one
+    asked is saturated (`chat.provider_busy`) — tried before the next provider.
+
+    Prod 2026-10-29: gemini-flash-latest answered 503 "high demand" while
+    gemini-3.6-flash and flash-lite answered the same key at once; the turn
+    went to the free chain instead, another model the reader never picked and
+    a unit of an allowance they may not have left. Only saturation: a refused
+    key or an empty balance is refused by every model alike, and a timeout
+    already spent the turn's patience. `tried` holds the (provider, model)
+    pairs asked or queued this turn, so a sibling that is busy too never
+    queues one twice; the ones returned are added to it.
+    """
+    if not getattr(provider, "needs_key", False) or not key:
+        return []
+    try:
+        busy = provider.error_key(exc) == "chat.provider_busy"
+    except Exception:  # an SDK missing on this host: no verdict, no siblings
+        return []
+    if not busy:
+        return []
+    out = [(provider, key, m) for m in getattr(provider, "models", ())
+           if (provider.id, m) not in tried]
+    tried.update((provider.id, m) for _p, _k, m in out)
+    if out:
+        obs.warn("chat.provider_busy_sibling", provider=provider.id,
+                 models=[m for _p, _k, m in out])
+    return out
 
 
 def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
@@ -3622,8 +3801,12 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         return None, settled
 
     capped = False
-    for provider, key, model in turn.attempts:
+    pending = list(turn.attempts)
+    tried: set[tuple[str, str]] = set()
+    while pending:
+        provider, key, model = pending.pop(0)
         model = model or provider.default_model
+        tried.add((provider.id, model))
         if not _charge(prefs, prefs_path, provider, turn.units):
             capped = True
             continue
@@ -3640,6 +3823,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             # before the call that never answered, so it goes back.
             _provider_failed(exc, provider, model, key)
             _refund(prefs, prefs_path, provider, turn.units)
+            pending[:0] = _busy_siblings(exc, provider, key, tried)
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -3791,8 +3975,12 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     # A run picked up after a restart that had already paid for its answer
     # (`chat/checkpoint.py`) is not charged for it again.
     prepaid = checkpoint.prepaid if checkpoint is not None else ""
-    for provider, key, model in turn.attempts:
+    pending = list(turn.attempts)
+    tried: set[tuple[str, str]] = set()
+    while pending:
+        provider, key, model = pending.pop(0)
         model = model or provider.default_model
+        tried.add((provider.id, model))
         if prepaid and provider.id == prepaid:
             prepaid = ""
         elif not _charge(prefs, prefs_path, provider, turn.units):
@@ -3836,6 +4024,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 _refund(prefs, prefs_path, provider, turn.units)
                 if checkpoint is not None:
                     checkpoint.charged("")
+                pending[:0] = _busy_siblings(exc, provider, key, tried)
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
         if held:

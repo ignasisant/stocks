@@ -182,6 +182,15 @@ _IMPORT_OBJECT = re.compile(
     r"\bexcel\b|\bxlsx\b|fichero|archivo|\bfile\b|cartera|portfolio",
     re.IGNORECASE,
 )
+# Asking how an import works, or how to take one back, is not asking for one:
+# prod eval 2026-10-29, "me he equivocado de fichero al importar, ¿cómo lo
+# deshago?" got "attach the statement" instead of the undo on Import.
+_IMPORT_QUESTION = re.compile(
+    r"\bc[oó]mo\b|\bhow\b|\bd[oó]nde\b|\bwhere\b|\bqu[eé] (?:fichero|archivo|"
+    r"extracto|formato)\b|\bwhich (?:file|statement|format)\b|\bdeshac|"
+    r"\bdeshag|\bundo\b|\brevert|\bequivoc|\bmistake\b|\bwrong\b",
+    re.IGNORECASE,
+)
 
 
 def wants_import(text: str) -> bool:
@@ -190,8 +199,11 @@ def wants_import(text: str) -> bool:
     Deliberately not a Tool: there is nothing to execute here. The surfaces
     use it to answer with the one thing that does work — attach the file —
     instead of spending a model call on a request the model cannot fulfil.
+    A how-to or an undo question is left to the model, which has the app's
+    own guide to answer it from.
     """
-    return bool(_IMPORT_VERB.search(text) and _IMPORT_OBJECT.search(text))
+    return bool(_IMPORT_VERB.search(text) and _IMPORT_OBJECT.search(text)
+                and not _IMPORT_QUESTION.search(text))
 
 
 @dataclass(frozen=True)
