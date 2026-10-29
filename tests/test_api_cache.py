@@ -604,9 +604,13 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     days = pd.bdate_range("2024-01-02", periods=400)
     price = {"AAPL": 100.0, "MSFT": 200.0}
     refuse = [False]
+    # The refusal waits for the first answer to be out: refused at once, it
+    # can land inside that same request and turn its mark before it is read.
+    answered = threading.Event()
 
     def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0, **_):
         if refuse[0]:
+            answered.wait(5)
             raise YFRateLimitError()
         return {
             t: pd.DataFrame({"Close": price[t], "Adj Close": price[t]}, index=days)
@@ -629,6 +633,7 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     assert again.json()["positions"] == priced.json()["positions"]
     assert again.headers["x-data-updating-since"]
     assert "x-data-stale-since" not in again.headers
+    answered.set()
     deadline = time.time() + 5
     while not cache._refused and time.time() < deadline:
         time.sleep(0.02)
