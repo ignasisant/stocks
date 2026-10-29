@@ -150,9 +150,16 @@ errors.install(app)
 # and tells the reader how old the figures are, instead of passing them off
 # as today's.
 STALE_HEADER = "X-Data-Stale-Since"
+# Answered with a figure past its memo's quiet window while the refresh runs:
+# old, but the source has not refused — the shell says "updating", not "down".
+UPDATING_HEADER = "X-Data-Updating-Since"
 # Answered from the grace window while a refresh runs behind it: the figures
 # are not old enough to call stale, but newer ones are on the way.
 REFRESHING_HEADER = "X-Data-Refreshing"
+
+
+def _iso(wall: float) -> str:
+    return datetime.fromtimestamp(wall, tz=UTC).isoformat(timespec="seconds")
 
 
 @app.middleware("http")
@@ -166,11 +173,10 @@ async def _stale_since(request: Request, call_next):
     try:
         response = await call_next(request)
         holder = cache.STALE.get() or {}
-        since = holder.get("since")
-        if since is not None:
-            response.headers[STALE_HEADER] = datetime.fromtimestamp(
-                since, tz=UTC
-            ).isoformat(timespec="seconds")
+        if (since := holder.get("since")) is not None:
+            response.headers[STALE_HEADER] = _iso(since)
+        if (old := holder.get("old")) is not None:
+            response.headers[UPDATING_HEADER] = _iso(old)
         if holder.get("refreshing"):
             response.headers[REFRESHING_HEADER] = "1"
         return response

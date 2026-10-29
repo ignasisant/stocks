@@ -1,6 +1,8 @@
 """toolbox: the read-only tools the gather loop may call."""
 
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -104,6 +106,34 @@ def test_the_dcf_block_tells_margin_of_safety_from_upside(monkeypatch):
     got = toolbox._page_dcf("X", Context())
     assert "upside +33.3%" in got and "margin of safety 25.0%" in got
     assert "WACC 9.0%: 200" in got
+
+
+def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
+    # Meta, local review 2026-10-29: "a clean, recurring 20.9x" on a year
+    # holding an 8 B$ tax benefit, and a forward P/E left unexplained.
+    import pandas as pd
+
+    from stocks.api import loaders
+    from stocks.api.routes import ticker as routes
+    from stocks.api.schemas import Valuation, ValuationWindow
+
+    monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
+        ticker=code, source="SEC EDGAR", current=20.9, windows=[ValuationWindow(
+            window="5y", days=1825, median=26.6, percentile=6.75, premium=-0.15)]))
+    cols = pd.to_datetime(["2026-09-30", "2026-06-30", "2026-03-31",
+                           "2025-12-31", "2025-09-30"])
+    income = pd.DataFrame(
+        [[20e9] * 5, [20e9] * 5, [3e9, 3e9, -5e9, 3e9, 3e9],
+         [17e9, 17e9, 25e9, 17e9, 17e9]],
+        index=["Pretax Income", "Operating Income", "Tax Provision", "Net Income"],
+        columns=cols)
+    monkeypatch.setattr(loaders, "fundamentals", lambda code: SimpleNamespace(
+        info={"forwardPE": 17.2}, income_q=income))
+    got = toolbox._page_valuation("META", Context())
+    assert "today in the 7th percentile" in got
+    assert "Forward P/E on consensus EPS for the next fiscal year: 17.2x" in got
+    assert "2026Q1: tax -25% of pretax income" in got
+    assert "without them: 23.4x" in got
 
 
 # ------------------------------------------------------------- search / read
@@ -368,7 +398,8 @@ def test_trade_history_lists_the_trades_and_the_lots_a_sale_takes_next(tmp_path)
 def test_the_engines_are_offered_only_to_a_deep_gather_with_a_ledger(tmp_path):
     ctx = _book(tmp_path)
     deep = [s.name for s in toolbox.specs(ctx, engines=True)]
-    assert deep[-4:] == ["simulate_sale", "harvest_losses", "rebalance", "allocation"]
+    assert deep[-6:] == ["simulate_sale", "harvest_losses", "rebalance", "allocation",
+                         "upcoming_earnings", "income_report"]
     assert not toolbox.ENGINES & {s.name for s in toolbox.specs(ctx)}
     no_book = Context(db=tmp_path / "missing.db", prefs_path=tmp_path / "p.json")
     assert not toolbox.ENGINES & {
@@ -617,3 +648,17 @@ def test_the_proposal_schema_offers_exit_rules():
     assert item["required"] == ["rule"]
     assert item["properties"]["quarters"] == {"type": "integer", "minimum": 1,
                                               "maximum": 4}
+
+
+def test_the_calendar_and_income_tools_read_the_engines(monkeypatch, tmp_path):
+    from stocks.chat import income, reports
+
+    ctx = replace(_book(tmp_path), watchlist=tmp_path / "watchlist.yaml")
+    monkeypatch.setattr(reports, "build", lambda watchlist, db, days: reports.Ahead(
+        days=days, due=(), checked=3, held=2, undated=(), skipped=()))
+    assert "next 30 days" in _run("upcoming_earnings", {"days": 30}, ctx)
+    assert "next 14 days" in _run("upcoming_earnings", {"days": "x"}, ctx)
+    monkeypatch.setattr(income, "build", lambda db, prefs: income.Income(
+        currency="EUR", spanish=True, years=()))
+    assert "no dividend booked" in _run("income_report", {}, ctx)
+    assert _run("income_report", {}, Context()) == toolbox._NO_LEDGER

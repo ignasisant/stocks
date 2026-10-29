@@ -275,6 +275,16 @@ def test_a_follow_up_searches_for_the_conversation_s_ticker():
     assert queries and queries[0].startswith("SHOP")
 
 
+def test_the_open_page_is_not_the_subject_of_a_question_about_the_book():
+    """Local review 2026-10-30: the search read "BKNG ¿Qué empresas de mi
+    cartera presentan resultados…" with Booking's page open."""
+    queries = chat_web.heuristic_queries(
+        "¿Qué empresas de mi cartera presentan resultados en 7 días?",
+        "Today is 2026-10-30.\nThe ticker in focus is BKNG.",
+    )
+    assert queries and not queries[0].startswith("BKNG")
+
+
 def test_asking_for_the_internet_is_a_reason_to_search():
     ctx = "Today is 2026-10-05.\nThe conversation is about SHOP."
     for ask in ("busca en internet el motivo real",

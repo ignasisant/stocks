@@ -667,7 +667,7 @@ function Why({ rate }: { rate: Rate }) {
       <>
         {rate.thanked && (
           <p className="ag-chat-hint" role="status">
-            {t("chat.rate_thanks")}
+            {t(rate.vote === "up" ? "chat.rate_thanks_up" : "chat.rate_thanks")}
           </p>
         )}
         {rate.failed && <p className="ag-chat-hint">{t("chat.api_error")}</p>}

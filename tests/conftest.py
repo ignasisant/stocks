@@ -646,15 +646,18 @@ def _own_memo_dir(_scratch):
     per-test directory, never in the checkout's data/memo — a test that
     priced a book would otherwise leave its frames for the next run to serve.
     Saved and restored by hand, like the fixtures above, for the same reason.
-    The book frames a refresh extends (`loaders._bases`) go with them."""
+    The book frames a refresh extends (`loaders._bases`) go with them, and so
+    do the refreshes a test left refused (`cache._refused`)."""
     from stocks.api import cache, loaders
 
     before = cache.MEMO_DIR
     cache.MEMO_DIR = _scratch / "memo"
     loaders._bases.clear()
+    cache._refused.clear()
     yield
     cache.MEMO_DIR = before
     loaders._bases.clear()
+    cache._refused.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -47,6 +47,24 @@ def test_focus_ticker_answers_a_message_with_no_ticker_in_it():
     assert mentioned("y hoy cómo va?", focus="ASML", lookup=_no_lookup) == ["ASML"]
 
 
+def test_the_page_in_focus_is_quoted_only_when_the_message_points_at_it(monkeypatch):
+    # "¿qué es el ROIC?" asked on the BKNG page quoted BKNG, and every answer
+    # on that page leaned towards it.
+    asked = []
+    monkeypatch.setattr(market, "quotes", lambda tickers: asked.append(tickers) or [])
+    monkeypatch.setattr(market, "_lookup", lambda _name: "")
+    for message in ("¿qué es el ROIC?",
+                    "¿Cuánta exposición tengo por país? Dame % y euros.",
+                    "¿Cuánto rinde el S&P 500 este año?",
+                    "¿A qué PER cotiza META?"):
+        market.lookup_for(message, focus="BKNG")
+    for message in ("y hoy cómo va?", "is it cheap?", "¿la compro?",
+                    "compara esta con AMD"):
+        market.lookup_for(message, focus="BKNG")
+    assert asked == [[], [], ["^GSPC"], ["META"],
+                     ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"]]
+
+
 def test_unknown_company_name_falls_back_to_one_lookup():
     seen = []
 

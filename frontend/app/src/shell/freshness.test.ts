@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   currentRetry,
+  holdUrls,
+  noteUpdating,
+  updatingSince,
   keptSince,
   noteKept,
   noteRetry,
@@ -25,6 +28,47 @@ describe("freshness", () => {
     expect(staleSince()).toBe(Date.parse("2026-09-27T10:00:00+00:00"));
     noteFreshness("/a", null);
     expect(staleSince()).toBeNull();
+  });
+
+  it("keeps updating marks apart from stale ones", () => {
+    noteUpdating("/a", "2026-09-27T10:00:00+00:00");
+    expect(updatingSince()).toBe(Date.parse("2026-09-27T10:00:00+00:00"));
+    expect(staleSince()).toBeNull();
+    noteUpdating("/a", null);
+    expect(updatingSince()).toBeNull();
+  });
+
+  it("drops a URL's marks once the last screen holding it lets go", () => {
+    vi.useFakeTimers();
+    try {
+      noteFreshness("/a", "2026-09-27T10:00:00+00:00");
+      noteUpdating("/b", "2026-09-27T10:00:00+00:00");
+      const first = holdUrls(["/a", "/b"]);
+      const second = holdUrls(["/a"]);
+      first();
+      vi.runAllTimers();
+      expect(staleSince()).not.toBeNull(); // the second screen still shows /a
+      expect(updatingSince()).toBeNull();
+      second();
+      vi.runAllTimers();
+      expect(staleSince()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands a URL over to the next screen asking for it", () => {
+    vi.useFakeTimers();
+    try {
+      noteFreshness("/a", "2026-09-27T10:00:00+00:00");
+      const left = holdUrls(["/a"]);
+      left();
+      holdUrls(["/a"]); // the next page mounts in the same commit
+      vi.runAllTimers();
+      expect(staleSince()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores a header it cannot read", () => {

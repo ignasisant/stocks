@@ -404,7 +404,7 @@ def test_the_book_answers_from_the_last_process_while_it_downloads(
     finally:
         cache.STALE.reset(token)
     assert float(closes["AAPL"].iloc[-1]) == 100.0
-    assert "since" in holder
+    assert "old" in holder and "since" not in holder  # updating, not refused
     gate.set()
     loaders.held_closes.cache_clear()
 

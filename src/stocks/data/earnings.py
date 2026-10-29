@@ -281,6 +281,61 @@ def _gather(
     return [answers[t] for t in tickers]
 
 
+@dataclass(frozen=True)
+class Consensus:
+    """What the street expects of one upcoming print."""
+
+    eps: float | None
+    revenue: float | None  # in the currency the company reports in
+    hour: str | None = None  # bmo (before the open) / amc (after the close)
+
+
+# Two sources call the same print a day or two apart (time zones, a date
+# Yahoo has not moved yet): within this many days it is the same report.
+CONSENSUS_SLACK_DAYS = 3
+
+
+def consensus(ticker: str, day: date) -> Consensus | None:
+    """The estimates for `ticker`'s print on `day`, or None when no source
+    has them for that date.
+
+    Finnhub's window first: its rows carry EPS and revenue estimates for every
+    US print it lists, already read for the dates, so they cost nothing.
+    Otherwise Yahoo's `calendar`, one request — and only when the date it
+    gives is this one, since outside a season it still shows the last print's
+    figures. The chat asked for these once and filled them from memory with
+    two-year-old quarters (local review 2026-10-30: RDDT 312 M$ of revenue
+    against an 875 M$ consensus).
+    """
+    import yfinance as yf
+
+    def near(d) -> bool:
+        dd = _to_date(d)
+        return dd is not None and abs((dd - day).days) <= CONSENSUS_SLACK_DAYS
+
+    symbol = _window_symbol(ticker)
+    window = finnhub.earnings_window() if symbol else None
+    for row in (window or {}).get(symbol or "", []):
+        if near(row.get("date")):
+            eps = _to_float(row.get("epsEstimate"))
+            revenue = _to_float(row.get("revenueEstimate"))
+            if eps is not None or revenue is not None:
+                return Consensus(eps, revenue, row.get("hour") or None)
+    with obs.swallow("earnings.consensus", ticker=ticker):
+        cal = yf.Ticker(resolve(ticker)).calendar
+        if not isinstance(cal, dict):
+            return None
+        raw = cal.get("Earnings Date")
+        dates = raw if isinstance(raw, (list, tuple)) else [raw]
+        if not any(near(d) for d in dates):
+            return None
+        eps = _to_float(cal.get("Earnings Average"))
+        revenue = _to_float(cal.get("Revenue Average"))
+        if eps is not None or revenue is not None:
+            return Consensus(eps, revenue)
+    return None
+
+
 def price_reaction(ticker: str, event_date: date) -> float | None:
     """% move across the print: last close before the date vs first close after.
 

@@ -428,6 +428,9 @@ def _anthropic_error(exc):
         return "chat.invalid_key"
     if isinstance(exc, anthropic.BadRequestError):
         return "chat.no_credits" if "credit balance" in str(exc) else "chat.api_error"
+    if isinstance(exc, anthropic.OverloadedError | anthropic.ServiceUnavailableError):
+        # 529 overloaded / 503: saturated, not broken (see _gemini_error).
+        return "chat.provider_busy"
     if isinstance(exc, anthropic.APIError):
         return "chat.api_error"
     return None
@@ -608,6 +611,8 @@ def _openai_error(exc):
         code = str(getattr(exc, "code", "") or "")
         no_credit = code == "insufficient_quota" or "quota" in str(exc).lower()
         return "chat.no_credits" if no_credit else "chat.api_error"
+    if getattr(exc, "status_code", None) == 503:
+        return "chat.provider_busy"  # saturated, not broken (see _gemini_error)
     if isinstance(exc, openai.APIError):
         return "chat.api_error"
     return None
@@ -663,7 +668,9 @@ def _gemini_stream_once(api_key, model, system, messages):
     stream = client.models.generate_content_stream(
         model=model,
         contents=cast(Any, contents),
-        config=types.GenerateContentConfig(system_instruction=system),
+        # str(): the SDK turns a str subclass (`Prompt`) into an empty Content,
+        # and the model then answered with no persona, rules or book at all.
+        config=types.GenerateContentConfig(system_instruction=str(system)),
     )
     usage = None
     for chunk in stream:
@@ -690,7 +697,16 @@ def _gemini_error(exc):
         # helps, instead of the generic "assistant is unavailable".
         if getattr(exc, "code", None) == 503:
             return "chat.provider_busy"
+        # 504 DEADLINE_EXCEEDED: the answer outran `_GEMINI_TIMEOUT_MS`, which
+        # rides to Google as the server's deadline. Said as the wait it was,
+        # not "unavailable": the same question on a lighter model answers.
+        if getattr(exc, "code", None) == 504:
+            return "chat.provider_slow"
         return "chat.api_error"
+    import httpx
+
+    if isinstance(exc, httpx.TimeoutException):  # the same deadline, client side
+        return "chat.provider_slow"
     return None
 
 

@@ -54,14 +54,14 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
       - name: Short-selling registers
-        run: uv run stocks shorts
+        run: uv run --no-sync stocks shorts
       - name: 13F holders and XBRL frames
         if: github.event_name == 'schedule' || inputs.holdings
         run: |
           if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$(date -u +%u)" != "7" ]; then
             echo "13F runs on Sundays"; exit 0
           fi
-          uv run stocks holdings-13f
+          uv run --no-sync stocks holdings-13f
         env:
           EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
           OPENFIGI_API_KEY: ${{ secrets.OPENFIGI_API_KEY }}

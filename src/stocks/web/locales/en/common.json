@@ -4,6 +4,7 @@
   "common.cta_sign_in": "Sign in",
   "common.data_unavailable": "Data unavailable right now — retry in a moment.",
   "common.stale_notice": "Data from {when}: the price source is not answering right now.",
+  "common.updating_notice": "Prices from {when}: being updated.",
   "common.failed": "Something went wrong loading this.",
   "common.loading": "Loading…",
   "common.log_out": "Log out",

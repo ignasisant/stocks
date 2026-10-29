@@ -348,3 +348,19 @@ def test_another_window_is_the_same_surface_s_data_again():
 def test_every_window_a_chip_offers_is_one_the_server_fetches():
     assert set(charts.CHIPS) <= set(charts.WINDOWS)
     assert charts.DEFAULT in charts.CHIPS
+
+
+def test_the_figures_over_the_line_read_in_the_reader_s_language():
+    values = pd.Series([6_607.0, 6_923.48],
+                       index=pd.bdate_range("2026-10-01", periods=2))
+    chart = charts.build(["^GSPC"], "1m", closes=lambda *_: values,
+                         currency=lambda _s: "EUR")
+    es = charts.view(chart, _say, "es")["m0"]
+    assert es["last"] == "6.923,48 EUR"
+    assert es["change"] == "+4,79%"
+    assert es["range"] == "6.607,00 – 6.923,48"
+    en = charts.view(chart, _say)["m0"]
+    assert (en["last"], en["change"]) == ("6,923.48 EUR", "+4.79%")
+    moved = charts.moved(chart, _say, "es")
+    view = next(m for m in moved if m["updateDataModel"]["path"] == "/view")
+    assert view["updateDataModel"]["value"]["m0"]["change"] == "+4,79%"

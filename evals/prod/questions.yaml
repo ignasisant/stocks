@@ -1,0 +1,584 @@
+# What the assistant should be able to answer, area by area, asked of the
+# REAL app in production (src/stocks/chat/prod_eval.py, scripts/eval_prod.py).
+#
+#   uv run python scripts/eval_prod.py --dry-run                 # list, no calls
+#   uv run python scripts/eval_prod.py --model free              # what users get
+#   uv run python scripts/eval_prod.py --model free --model anthropic:claude-haiku-4-5 \
+#       --model openrouter:deepseek/deepseek-v4.1-flash --judge anthropic:claude-sonnet-5-5 --save
+#
+# Areas are the app's pages and tabs (`chat/navigate.PAGES`) plus `assistant`
+# (the chat itself), `concept` (finance vocabulary) and `abstain` (what it
+# must not make up). tests/test_prod_eval.py fails when a page has no question.
+#
+# Fields
+#   id        unique slug
+#   area      page or page/tab
+#   kind      howto    how to do something in TopStocks (answer from the KB)
+#             data     a market figure (truth read from the app's own API)
+#             book     the eval account's portfolio (demo book; truth from API)
+#             concept  a definition or general finance knowledge
+#             abstain  unknowable or out of scope: must not invent
+#             action   asks the app to do something (a proposal, never run)
+#   message   the question, as a reader types it
+#   goals     what a useful answer shows (judged); each kind adds its own
+#             defaults (`prod_eval.KIND_GOALS`)
+#   opens     page or page/tab the answer should offer a button to (navigate)
+#   mentions  at least one of these words must appear (accents/case ignored)
+#   forbids   none of these may appear
+#   truth     [{get: /api path, pick: field path, label, tol}] read from prod
+#             before the question; numbers are checked against the answer
+#             within `tol` (relative), and the judge sees them as reference
+#   refs      more /api paths whose figures count as a source. With the truths,
+#             each named ticker's quote + metrics and (book) the portfolio,
+#             they make the pool: a figure the answer gives that none of them
+#             states is "unsourced", and 3 of those = hallucination
+#   view/tab/focus  where the reader is (the drawer's run `state`)
+#   depth     "" | deep
+#   lang      the drawer's language, es (default) or en
+
+# ------------------------------------------------------------------- import
+
+- id: import-revolut
+  area: import
+  kind: howto
+  message: "¿Cómo importo mis acciones de Revolut?"
+  goals:
+    - Says to export the trading statement from Revolut (Stocks, statement) as CSV, PDF also works
+    - Says to upload it on the Import page and press Confirm after the preview
+  opens: import
+  mentions: [csv, extracto, statement]
+
+- id: import-degiro
+  area: import
+  kind: howto
+  message: "tengo las acciones en DEGIRO, ¿qué fichero subo?"
+  goals:
+    - Names Transactions export as CSV (Activity, Transactions, Export)
+    - Warns that Portfolio.csv or Account.csv are refused, and that dividends are not in this file
+  opens: import
+  mentions: [transacciones, transactions]
+
+- id: import-ibkr-semicolon
+  area: import
+  kind: howto
+  message: "He subido el CSV de Interactive Brokers y no lo lee, está separado por punto y coma"
+  goals:
+    - Says the IBKR CSV must be comma-separated and to export it again with commas
+  mentions: [coma, comma]
+
+- id: import-duplicates
+  area: import
+  kind: howto
+  message: "Si vuelvo a subir el mismo extracto, ¿se me duplican las operaciones?"
+  goals:
+    - Says rows already in the portfolio are left out by default (Already in your portfolio group)
+    - Mentions the opt-in to import them anyway for genuine identical fills
+
+- id: import-undo
+  area: import
+  kind: howto
+  message: "me he equivocado de fichero al importar, ¿cómo lo deshago?"
+  goals:
+    - Points to Clear last import, which deletes exactly the rows of the latest import
+  opens: import
+
+- id: import-crypto-binance
+  area: import
+  kind: howto
+  message: "¿Puedo importar mis cripto de Binance?"
+  goals:
+    - Says yes, drop the Binance export in the Import page or attach it in the chat
+    - Says coins are stored as pairs (BTC-EUR)
+
+- id: import-transfer
+  area: import
+  kind: howto
+  message: "Pasé mis acciones de DEGIRO a IBKR y ahora me sale una plusvalía que no he tenido"
+  goals:
+    - Explains a transfer is not a sale and the app can record it as a transfer (Repairs, Record as transfers)
+    - Says the original cost and dates are kept
+
+- id: import-unlisted
+  area: import
+  kind: howto
+  message: "Al importar me dice que SAN se queda a coste sin precio, ¿qué hago?"
+  goals:
+    - Explains Yahoo does not list that code and offers Pick its market on the Import page
+    - Mentions the row still imports, held at cost
+
+# --------------------------------------------------------------- portfolio
+
+- id: portfolio-value
+  area: portfolio/overview
+  kind: book
+  message: "¿Cuánto vale mi cartera ahora mismo?"
+  goals:
+    - Gives the current market value of the book with its currency
+    - Gives the gain or loss against cost
+  truth:
+    - {get: /portfolio/summary, pick: value, label: "Book market value", tol: 0.05}
+
+- id: portfolio-biggest
+  area: portfolio/positions
+  kind: book
+  message: "¿Cuál es mi mayor posición y qué peso tiene?"
+  goals:
+    - Names the largest position by market value, as in the reference
+    - Gives its weight in the book
+  truth:
+    - {get: /portfolio/positions, label: "Open positions"}
+
+- id: portfolio-holds-x
+  area: portfolio/positions
+  kind: book
+  message: "¿Tengo acciones de Amazon?"
+  goals:
+    - Says the book does not hold AMZN (it is not in the positions)
+  truth:
+    - {get: /portfolio/positions, label: "Open positions"}
+  forbids: ["sí, tienes"]
+
+- id: portfolio-holds-nvda
+  area: portfolio/positions
+  kind: book
+  message: "¿cuántas NVDA tengo y a qué precio medio?"
+  goals:
+    - Gives the NVDA share count and average cost from the positions
+  truth:
+    - {get: /portfolio/positions, pick: "positions[ticker=NVDA].shares", label: "NVDA shares", tol: 0.01}
+
+- id: portfolio-twr-vs-irr
+  area: portfolio/overview
+  kind: howto
+  message: "¿Por qué tengo dos rentabilidades distintas en la cartera?"
+  goals:
+    - Explains time-weighted return (picks) vs money-weighted IRR (your money, timing of deposits)
+
+- id: portfolio-risk-concentration
+  area: portfolio/risk
+  kind: book
+  message: "¿Está muy concentrada mi cartera?"
+  goals:
+    - Uses the real weights of the book (top holdings and their share)
+    - Says the book is concentrated in US tech, if the positions show it
+  opens: portfolio/risk
+  truth:
+    - {get: /portfolio/positions, label: "Open positions"}
+
+- id: portfolio-var
+  area: portfolio/risk
+  kind: howto
+  message: "¿Qué significa el VaR que sale en riesgo?"
+  goals:
+    - Explains one-day historical VaR at 95 % as a loss exceeded on about one day in twenty
+  mentions: ["95"]
+
+- id: portfolio-projection
+  area: portfolio/projection
+  kind: howto
+  message: "¿cómo calcula la app la proyección a 5 años?"
+  goals:
+    - Describes scenarios (growth rates, index references or own rate) and contributions
+    - Does not promise a result
+  opens: portfolio/projection
+
+- id: portfolio-tax-year
+  area: portfolio/tax
+  kind: book
+  message: "¿Cuánto tengo que pagar a Hacienda por mis ventas de este año?"
+  goals:
+    - Uses the realized gains of the tax tab, says if there are no sales this year
+    - Does not invent sales the book does not have
+  opens: portfolio/tax
+  truth:
+    - {get: /portfolio/tax, label: "Tax report"}
+
+- id: portfolio-fifo
+  area: portfolio/tax
+  kind: howto
+  message: "¿Qué método usa la app para calcular la plusvalía cuando vendo una parte?"
+  goals:
+    - Says FIFO for Spain (first shares bought are the first sold), and that the method depends on the tax country
+
+- id: portfolio-wash-sale
+  area: portfolio/tax
+  kind: concept
+  message: "Si vendo con pérdidas y recompro a la semana, ¿puedo compensar la pérdida en España?"
+  goals:
+    - Explains the two-month rule (one year for unlisted) that defers the loss
+    - Mentions the app shows the repurchase-window date
+
+- id: portfolio-dividends
+  area: portfolio/dividends
+  kind: book
+  message: "¿Cuántos dividendos he cobrado?"
+  goals:
+    - Gives the dividends booked in the ledger
+  opens: portfolio/dividends
+  truth:
+    - {get: /portfolio/dividends, label: "Dividends"}
+
+- id: portfolio-fees
+  area: portfolio/fees
+  kind: howto
+  message: "¿Dónde veo cuánto me cobra el bróker en comisiones?"
+  goals:
+    - Points to the Fees tab of Portfolio and says it includes commissions and spread
+  opens: portfolio/fees
+
+- id: portfolio-currency
+  area: portfolio/overview
+  kind: howto
+  message: "¿Puedo ver la cartera en dólares en vez de euros?"
+  goals:
+    - Says the reporting currency is set in Preferences (Profile)
+  opens: profile/prefs
+
+# ------------------------------------------------------------------ ticker
+
+- id: ticker-pe-aapl
+  area: ticker
+  kind: data
+  message: "¿Cuál es el PER de Apple?"
+  goals:
+    - Gives the trailing P/E of AAPL matching the reference
+    - Says whether it is trailing or forward
+  truth:
+    - {get: /ticker/AAPL/metrics, pick: "kpis[key=pe_ttm].value", label: "AAPL trailing P/E", tol: 0.1}
+
+- id: ticker-pe-fwd-msft
+  area: ticker
+  kind: data
+  message: "per forward de MSFT"
+  goals:
+    - Gives the forward P/E of MSFT matching the reference
+  truth:
+    - {get: /ticker/MSFT/metrics, pick: "kpis[key=pe_fwd].value", label: "MSFT forward P/E", tol: 0.1}
+
+- id: ticker-price-nvda
+  area: ticker
+  kind: data
+  message: "¿a cuánto cotiza NVDA?"
+  goals:
+    - Gives the NVDA price matching the reference, with currency
+    - Says which session the price belongs to when the market is closed
+  truth:
+    - {get: /ticker/NVDA/quote, pick: price, label: "NVDA price", tol: 0.03}
+
+- id: ticker-price-eu
+  area: ticker
+  kind: data
+  message: "¿A cuánto está Iberdrola?"
+  goals:
+    - Resolves Iberdrola to IBE.MC and gives its price in EUR matching the reference
+  truth:
+    - {get: /ticker/IBE.MC/quote, pick: price, label: "IBE.MC price (EUR)", tol: 0.03}
+
+- id: ticker-cheap
+  area: ticker
+  kind: data
+  message: "¿Está barata Booking?"
+  depth: ""
+  goals:
+    - Uses valuation figures from the app (P/E vs its history or peers) instead of invented ones
+    - Gives a qualified verdict, not a recommendation to buy
+  truth:
+    - {get: /ticker/BKNG/metrics, pick: "kpis[key=pe_ttm].value", label: "BKNG trailing P/E", tol: 0.1}
+
+- id: ticker-analysts
+  area: ticker
+  kind: data
+  message: "¿Qué precio objetivo dan los analistas a Microsoft?"
+  goals:
+    - Gives the analysts' mean target matching the reference and says it is a consensus forecast
+  truth:
+    - {get: /ticker/MSFT/analysts, label: "MSFT analysts"}
+
+- id: ticker-focus
+  area: ticker
+  kind: data
+  view: ticker
+  focus: ASML
+  message: "¿cuál es su margen operativo?"
+  goals:
+    - Understands "su" is ASML (the ticker on screen)
+    - Gives ASML's operating margin from the app's data
+  truth:
+    - {get: /ticker/ASML/metrics, label: "ASML metrics"}
+
+- id: ticker-dcf
+  area: ticker
+  kind: howto
+  message: "¿Cómo funciona el DCF de la ficha de un valor?"
+  goals:
+    - Explains the DCF grid (growth and discount rate scenarios) and its limits
+
+- id: ticker-unknown
+  area: ticker
+  kind: abstain
+  message: "¿Cuál es el PER de ZQXW?"
+  goals:
+    - Says ZQXW is not a known ticker, gives no figure
+  forbids: ["per de zqxw es"]
+
+# ------------------------------------------------------------------ review
+
+- id: review-what-sell
+  area: review
+  kind: book
+  message: "¿Qué debería vender de mi cartera?"
+  goals:
+    - Bases the answer on the Sell or add page verdicts for the real holdings
+    - Names holdings from the book, not others
+    - Not a personal order: frames it as the app's verdict and its reasons
+  opens: review
+  truth:
+    - {get: /portfolio/positions, label: "Open positions"}
+
+- id: review-how-scored
+  area: review
+  kind: howto
+  message: "¿Cómo decide la app si reforzar o vender una acción?"
+  goals:
+    - Explains quality and price scores and the warning flags that block Add/Buy
+
+# ------------------------------------------------------------------- today
+
+- id: today-movers
+  area: today/book
+  kind: book
+  message: "¿Qué tal va hoy mi cartera?"
+  goals:
+    - Gives today's move of the book or of its holdings, with which session
+  truth:
+    - {get: /portfolio/summary, label: "Book summary"}
+
+- id: today-alerts-how
+  area: today/alerts
+  kind: howto
+  message: "¿Cómo pongo una alerta de precio?"
+  goals:
+    - Explains how to set a price alert (on the ticker or by asking the assistant) and where alerts show
+  mentions: [alerta]
+
+- id: today-macro
+  area: today/macro
+  kind: data
+  message: "¿Cuándo es la próxima reunión de la Fed?"
+  goals:
+    - Gives a date or says where to see it (Today, macro), without inventing one
+
+# --------------------------------------------------------------- sentiment
+
+- id: pulse-score
+  area: sentiment/gauges
+  kind: howto
+  message: "¿Qué es el apetito de riesgo que sale en Pulso?"
+  goals:
+    - Explains the risk appetite score built from eight market inputs, and its bands
+  opens: sentiment
+
+- id: pulse-now
+  area: sentiment
+  kind: data
+  message: "¿El mercado está en modo miedo o codicia ahora?"
+  goals:
+    - Gives the current risk appetite reading from the app, not a made-up index value
+
+- id: pulse-cot
+  area: sentiment/positioning
+  kind: howto
+  message: "¿Qué es la pestaña de posicionamiento?"
+  goals:
+    - Explains speculators' futures positions from the CFTC (COT report)
+
+# ------------------------------------------------------------------ sector
+
+- id: sector-peers
+  area: sector
+  kind: howto
+  message: "¿Cómo comparo una empresa con su sector?"
+  goals:
+    - Points to the Sector page (cohort, valuation and quality ranking) or the ticker's Compare card
+  opens: sector
+
+- id: sector-best-semis
+  area: sector
+  kind: data
+  message: "¿Qué semiconductora sale más barata en el sector?"
+  goals:
+    - Uses the Sector page ranking, not a list from memory
+
+# ---------------------------------------------------------------- earnings
+
+- id: earnings-next
+  area: earnings
+  kind: data
+  message: "¿Cuándo presenta resultados NVIDIA?"
+  goals:
+    - Gives the next earnings date from the app's calendar
+  truth:
+    - {get: /ticker/NVDA/events, label: "NVDA events"}
+
+- id: earnings-calendar
+  area: earnings
+  kind: howto
+  message: "¿Dónde veo los resultados que salen esta semana de mis acciones?"
+  goals:
+    - Points to the earnings calendar page
+  opens: earnings
+
+# ------------------------------------------------------------------- learn
+
+- id: learn-start
+  area: learn/paths
+  kind: howto
+  message: "Soy nuevo invirtiendo, ¿por dónde empiezo a aprender?"
+  goals:
+    - Points to the Learn page lessons
+  opens: learn
+
+# ----------------------------------------------------------------- profile
+
+- id: profile-telegram
+  area: profile/notify
+  kind: howto
+  message: "¿Puedo recibir avisos en Telegram?"
+  goals:
+    - Says yes and points to Profile, notifications, to connect Telegram
+  opens: profile/notify
+
+- id: profile-claude
+  area: profile/claude
+  kind: howto
+  message: "¿Puedo usar mi cartera desde Claude?"
+  goals:
+    - Says yes, connect Claude to the account from Profile (MCP connector)
+  opens: profile/claude
+
+- id: profile-investor
+  area: profile/iv
+  kind: howto
+  message: "¿Para qué sirve el perfil de inversor?"
+  goals:
+    - Explains it tunes answers and verdicts to horizon and risk appetite
+
+- id: profile-watchlist
+  area: profile/watch
+  kind: action
+  message: "añade AMD a mi lista de seguimiento"
+  goals:
+    - Proposes adding AMD to the watchlist for the reader to approve, does not claim it is done
+
+- id: profile-language
+  area: profile/prefs
+  kind: howto
+  lang: en
+  message: "how do I change the app language to English?"
+  goals:
+    - Points to Profile, Preferences, in English
+  opens: profile/prefs
+
+# -------------------------------------------------------------------- home
+
+- id: home-briefing
+  area: home
+  kind: howto
+  message: "¿Qué es el resumen diario de la página de inicio?"
+  goals:
+    - Explains the daily AI briefing and that it can be continued as a chat
+
+# --------------------------------------------------------------- assistant
+
+- id: assistant-what-can
+  area: assistant
+  kind: howto
+  message: "¿Qué puedes hacer?"
+  goals:
+    - Lists concrete things in this app (portfolio questions, tickers, import, alerts), briefly
+
+- id: assistant-memory
+  area: assistant
+  kind: howto
+  message: "¿Te acuerdas de lo que te digo entre conversaciones?"
+  goals:
+    - Explains saved memories ("recuerda que...") and that they can be turned off or deleted
+
+- id: assistant-alert-action
+  area: assistant
+  kind: action
+  message: "avísame si NVDA baja de 150"
+  goals:
+    - Proposes a price alert on NVDA at 150 for approval
+
+- id: assistant-journal
+  area: assistant
+  kind: howto
+  message: "¿Qué es el diario de decisiones?"
+  goals:
+    - Explains it logs AI proposals and the kill criteria to review them later
+
+# ----------------------------------------------------------------- concept
+
+- id: concept-pe
+  area: concept
+  kind: concept
+  message: "¿Qué es el PER?"
+  goals:
+    - Explains price divided by earnings per share and how to read it
+
+- id: concept-etf-acc
+  area: concept
+  kind: concept
+  message: "¿Diferencia entre ETF de acumulación y de distribución?"
+  goals:
+    - Accumulating reinvests dividends, distributing pays them out
+    - Mentions the Spanish tax angle (no tax until sale on accumulating)
+
+- id: concept-spain-funds
+  area: concept
+  kind: concept
+  message: "¿Los ETF tienen traspaso sin tributar en España como los fondos?"
+  goals:
+    - Says no, ETFs do not have the fund-transfer tax deferral in Spain
+
+- id: concept-en
+  area: concept
+  kind: concept
+  lang: en
+  message: "what is a stock split and does it change my cost basis?"
+  goals:
+    - Explains a split changes share count and per-share cost, not total cost
+    - Answers in English
+
+# ----------------------------------------------------------------- abstain
+
+- id: abstain-tomorrow
+  area: abstain
+  kind: abstain
+  message: "¿A cuánto estará Tesla mañana?"
+  refs: [/ticker/TSLA/quote]
+  goals:
+    - Says it cannot predict tomorrow's price, gives no target price as a forecast
+
+- id: abstain-offtopic
+  area: abstain
+  kind: abstain
+  message: "¿Cuál es la capital de Australia y una receta de paella?"
+  goals:
+    - Keeps to investing or briefly declines the off-topic part
+
+- id: abstain-feature
+  area: abstain
+  kind: abstain
+  message: "¿Cómo compro acciones directamente desde TopStocks?"
+  goals:
+    - Says TopStocks does not execute trades; buying happens at the broker, then import
+
+- id: abstain-guaranteed
+  area: abstain
+  kind: abstain
+  message: "Dime una acción que suba seguro un 50% este año"
+  goals:
+    - Refuses a guarantee, may offer how to research with the app
+  forbids: ["seguro que sube"]

@@ -32,7 +32,7 @@ import {
 import { useStringsReady, useT } from "./i18n";
 import { kindOf, useActivity } from "./activity";
 import { barShare, useServerProgress } from "./progress";
-import { useKeptSince, useRetry, useStaleSince } from "./freshness";
+import { useKeptSince, useRetry, useStaleSince, useUpdatingSince } from "./freshness";
 import { retryNow } from "./useApi";
 import { usePresence } from "./useSheet";
 import "../ui/ui.css";
@@ -203,7 +203,9 @@ function formatWhen(at: number): string {
  *
  * The API says so per response (`X-Data-Stale-Since`) when the price source
  * refused and the last good data stood in; this reads the oldest such mark and
- * goes away on its own once a live answer replaces it. Here rather than in each
+ * goes away on its own once a live answer replaces it. Figures that are only
+ * old while the server downloads newer ones (`X-Data-Updating-Since`) get the
+ * same line without the blame: "updating", never "not answering". Here rather than in each
  * card because the same download feeds half the cards on a screen, and one
  * sentence beats six badges saying the same thing.
  *
@@ -215,7 +217,9 @@ function formatWhen(at: number): string {
  */
 export function StaleNotice() {
   const t = useT();
-  const since = useStaleSince();
+  const refused = useStaleSince();
+  const updating = useUpdatingSince();
+  const since = refused ?? updating;
   const retry = useRetry();
   const kept = useKeptSince();
   const now = useNow(since !== null && retry.due !== null ? 1000 : null);
@@ -260,8 +264,8 @@ export function StaleNotice() {
   const keptLine = !stale && kept !== null && keptShown;
   const open = stale || keptLine || fresh;
   const { mounted, leaving } = usePresence(open);
-  const last = useRef<"stale" | "kept" | "fresh">("fresh");
-  if (stale) last.current = "stale";
+  const last = useRef<"stale" | "updating" | "kept" | "fresh">("fresh");
+  if (stale) last.current = refused !== null ? "stale" : "updating";
   else if (keptLine) last.current = "kept";
   else if (fresh) last.current = "fresh";
   if (!mounted) return null;
@@ -274,9 +278,13 @@ export function StaleNotice() {
       data-mode={mode}
       data-leaving={leaving || undefined}
     >
-      {mode === "stale" && since !== null ? (
+      {(mode === "stale" || mode === "updating") && since !== null ? (
         <>
-          <span>{t("common.stale_notice", { when: formatWhen(since) })}</span>{" "}
+          <span>
+            {t(mode === "stale" ? "common.stale_notice" : "common.updating_notice", {
+              when: formatWhen(since),
+            })}
+          </span>{" "}
           {retry.asking || pressed ? (
             <span className="ag-stale-next">
               <span className="ag-work-glyph" aria-hidden="true">

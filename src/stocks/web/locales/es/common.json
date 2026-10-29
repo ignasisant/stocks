@@ -4,6 +4,7 @@
   "common.cta_sign_in": "Iniciar sesión",
   "common.data_unavailable": "Datos no disponibles ahora mismo — reintenta en un momento.",
   "common.stale_notice": "Datos del {when}: la fuente de precios no responde ahora mismo.",
+  "common.updating_notice": "Precios del {when}: se están actualizando.",
   "common.failed": "Algo ha fallado al cargar esto.",
   "common.loading": "Cargando…",
   "common.log_out": "Cerrar sesión",

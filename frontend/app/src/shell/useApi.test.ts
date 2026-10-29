@@ -11,6 +11,7 @@ import {
   currentRetry,
   noteFreshness,
   noteRefreshing,
+  noteUpdating,
   onRetryStale,
   resetFreshness,
   staleSince,
@@ -46,6 +47,23 @@ describe("followStale", () => {
     followStale(new Set(["/v1/book"]), api.ask, () => undefined);
     await vi.runAllTimersAsync();
     expect(api.asks()).toBe(0);
+  });
+
+  it("asks again for figures the server is updating, with a countdown", async () => {
+    noteUpdating("/v1/book", OLD);
+    let asks = 0;
+    const ask = () => {
+      asks += 1;
+      noteUpdating("/v1/book", null);
+      return { result: Promise.resolve(asks), urls: new Set(["/v1/book"]) };
+    };
+    const shown: number[] = [];
+    followStale(new Set(["/v1/book"]), ask, (n) => shown.push(n), "f");
+    expect(currentRetry().due).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS[0]);
+    expect(shown).toEqual([1]);
+    await vi.runAllTimersAsync();
+    expect(asks).toBe(1);
   });
 
   it("asks again until the answer comes back live, and shows it", async () => {

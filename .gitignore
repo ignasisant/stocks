@@ -163,3 +163,6 @@ test-results/
 # Compressed siblings of the bundle, written at image build (web/precompress.py)
 src/stocks/web/static/**/*.gz
 src/stocks/web/static/**/*.br
+
+# prod assistant eval reports (scripts/eval_prod.py --save)
+evals/prod/runs/

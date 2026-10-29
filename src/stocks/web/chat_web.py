@@ -222,7 +222,10 @@ def heuristic_queries(question: str, context: str = "") -> list[str]:
     year = _TODAY_RE.search(context)
     parts = [q.strip("¿?¡!. ")[:160]]
     ticker = focus.group(1).upper().rstrip(".") if focus else ""
-    if ticker and ticker not in q.upper():
+    # The page open beside a question about the reader's own book is not its
+    # subject: "BKNG ¿Qué empresas de mi cartera presentan resultados…?"
+    # searched for nothing (local review 2026-10-30).
+    if ticker and ticker not in q.upper() and not _BOOK_RE.search(q):
         parts.insert(0, ticker)
     if year and year.group(1) not in q:
         parts.append(year.group(1))

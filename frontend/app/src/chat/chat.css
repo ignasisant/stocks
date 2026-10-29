@@ -580,6 +580,7 @@
 
 .ag-chat-foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-top: 4px;
@@ -1158,6 +1159,7 @@
 /* -------------------------------------------------------------- composer */
 
 .ag-chat-composer {
+  container-type: inline-size;
   border-top: 1px solid var(--ag-border);
   padding: 8px 12px 12px;
 }
@@ -1166,6 +1168,20 @@
   display: flex;
   gap: 8px;
   align-items: flex-end;
+}
+
+/* A cover screen (a folded phone, ~260px): beside the clip and Send the field
+   kept room for four letters of its hint, so it takes a row of its own. */
+@container (max-width: 320px) {
+  .ag-chat-form {
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .ag-chat-form > .ag-box {
+    flex: 1 0 100%;
+    order: -1;
+  }
 }
 
 .ag-chat-field {

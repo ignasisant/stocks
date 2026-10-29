@@ -210,6 +210,11 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
                 data["stale_since"] = datetime.fromtimestamp(
                     holder["since"], tz=UTC
                 ).isoformat(timespec="seconds")
+            # Old but refreshing behind this answer: the source has not refused.
+            if "old" in holder:
+                data["updating_since"] = datetime.fromtimestamp(
+                    holder["old"], tz=UTC
+                ).isoformat(timespec="seconds")
             data, text = _fit(_compact(data))
             return CallToolResult(
                 content=[TextContent(type="text", text=text)], structured_content=data

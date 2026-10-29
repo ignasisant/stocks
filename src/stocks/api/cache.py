@@ -35,6 +35,14 @@ Three things a plain TTL memo does not solve:
   fetch is still attempted first; only when it *fails* does the old entry
   come back, for up to `keep_s`, and the request is marked (`STALE`) so the
   response can say how old the figure is rather than pass it off as today's.
+
+Two marks, because they ask different things of the reader. `since` is the
+source refusing: the last good figure stood in after a fetch failed. `old` is
+only the memo being slow: a figure from last night answers at once while
+today's downloads behind it (`quiet_s`), and nothing has failed. Both say how
+old the figure is; only the first may say the source is down. A figure from
+last night told the reader "the price source is not answering" every morning
+until a refresh landed — while Yahoo answered every request.
 """
 
 from __future__ import annotations
@@ -57,15 +65,24 @@ from stocks.config import DATA_DIR
 
 F = TypeVar("F", bound=Callable[..., Any])
 
-# `(stamp, value)` or `(stamp, value, wall[, since])`: the stamp is whatever
-# `fresh` reads (a monotonic clock here, an object identity in
-# `loaders._on_download`); the wall time is what a persisted entry's age is
+# `(stamp, value)` or `(stamp, value, wall[, since[, old, settled]])`: the
+# stamp is whatever `fresh` reads (a monotonic clock here, an object identity
+# in `loaders._on_download`); the wall time is what a persisted entry's age is
 # measured by across processes; `since` is set on an entry that was *built
 # from* a salvaged one — a book priced off frames the source refused to
 # refresh — so serving it marks the request just as serving the salvaged
 # frames did. Staleness is a property of the figure, not of the request that
 # first noticed it.
+#
+# `old` is the same for an entry built from one that was merely old (the
+# quiet window, `mark_old`), with `settled` the monotonic time it landed. Such
+# an entry is fresh for `SETTLE_S` only, not for its ttl: the refresh behind
+# the old figure lands within the minute, and an entry that went on calling
+# itself old for fifteen more had the shell's re-asks come back old every time.
 Entry = tuple
+
+# How long an entry built from an old one answers before it is rebuilt.
+SETTLE_S = 20.0
 
 MEMO_DIR = DATA_DIR / "memo"
 # Per memo. On Cloud Run the filesystem is memory — every file here counts
@@ -81,11 +98,18 @@ _ZLEVEL = 1
 KEEP_DEFAULT_S = 3 * 86400.0
 
 # The marker. The API middleware sets a fresh holder per request; a memo that
-# serves a salvaged entry writes its wall time into it, and the response goes
-# out with `X-Data-Stale-Since`. A holder rather than a value because the
+# serves a salvaged entry writes its wall time into it (`since`), and the
+# response goes out with `X-Data-Stale-Since`; one that serves an old entry
+# while its refresh runs writes `old`, and the response says
+# `X-Data-Updating-Since` instead. A holder rather than a value because the
 # sync routes run on a worker thread under a *copy* of the context: the
 # reference is shared, a rebinding would not be.
 STALE: ContextVar[dict[str, float] | None] = ContextVar("stale", default=None)
+
+# Keys whose last background refresh failed, per store, with when: an old entry
+# served while one did says the source is refusing (`since`), not that it is
+# merely on its way (`old`). Cleared by the key's next landing.
+_refused: dict[tuple[int, tuple], float] = {}
 
 # Set by a caller nobody is waiting on — the warm-up route (`api.warm`) — that
 # would rather run a refresh on its own thread than be answered with the entry
@@ -104,6 +128,14 @@ def mark_stale(wall: float) -> None:
     holder = STALE.get()
     if holder is not None:
         holder["since"] = min(holder.get("since", wall), wall)
+
+
+def mark_old(wall: float) -> None:
+    """The request was answered with a figure past its quiet window while the
+    refresh runs: old, but nothing has failed (`X-Data-Updating-Since`)."""
+    holder = STALE.get()
+    if holder is not None:
+        holder["old"] = min(holder.get("old", wall), wall)
 
 
 def mark_refreshing() -> None:
@@ -149,6 +181,7 @@ def coalesced(
     landed: Callable[[Entry], None] | None = None,
     expired: Callable[[Entry], bool] | None = None,
     marked: Callable[[Entry], bool] | None = None,
+    name: str = "",
 ) -> Any:
     """The value for `key`: from `store` while `fresh(entry)`, else computed once.
 
@@ -166,7 +199,8 @@ def coalesced(
     `landed(entry)` is told about every entry that lands. `expired(entry)`
     says an entry can never answer again, and every landing sweeps those out.
     `marked(entry)` says a `usable` entry is old enough that answering with it
-    marks the request stale, the way a salvage does.
+    marks the request old (`mark_old`) — or stale, while the key's last
+    refresh failed. `name` is the memo, for the log.
     """
     if load is not None:
         with lock:
@@ -176,7 +210,7 @@ def coalesced(
                 store.setdefault(key, loaded)
     with lock:
         entry = store.get(key)
-        if entry is not None and fresh(entry):
+        if entry is not None and fresh(entry) and not _unsettled(entry):
             _remark(entry)
             return entry[1]
         flight = flights.get(key)
@@ -192,13 +226,27 @@ def coalesced(
     if stale:
         _remark(entry)
         mark_refreshing()
-        if marked is not None and len(entry) > 2 and marked(entry):
-            mark_stale(entry[2])
+        old = marked is not None and len(entry) > 2 and marked(entry)
+        if old:
+            refused = (id(store), key) in _refused
+            (mark_stale if refused else mark_old)(entry[2])
         if leader:
+            if old:
+                obs.event(
+                    "cache.marked",
+                    memo=name,
+                    age_s=round(time.time() - entry[2]),
+                    refused=refused,
+                )
             threading.Thread(
                 target=_land,
                 args=(store, flights, lock, key, flight, compute, max_entries),
-                kwargs={"background": True, "landed": landed, "expired": expired},
+                kwargs={
+                    "background": True,
+                    "landed": landed,
+                    "expired": expired,
+                    "name": name,
+                },
                 name="cache-refresh",
                 daemon=True,
             ).start()
@@ -210,7 +258,7 @@ def coalesced(
         flight.done.wait()
         if flight.error is None:
             return flight.value
-        return _fallback(entry, salvage, flight.error)
+        return _fallback(entry, salvage, flight.error, name)
     try:
         return _land(
             store,
@@ -222,18 +270,30 @@ def coalesced(
             max_entries,
             landed=landed,
             expired=expired,
+            name=name,
         )
     except Exception as exc:
-        return _fallback(entry, salvage, exc)
+        return _fallback(entry, salvage, exc, name)
 
 
 def _remark(entry: Entry) -> None:
-    """An entry built from a salvaged one marks every request it answers."""
+    """An entry built from a salvaged (or old) one marks every request it
+    answers."""
     if len(entry) > 3 and entry[3] is not None:
         mark_stale(entry[3])
+    if len(entry) > 4 and entry[4] is not None:
+        mark_old(entry[4])
 
 
-def _fallback(entry: Entry | None, salvage, exc: BaseException) -> Any:
+def _unsettled(entry: Entry) -> bool:
+    """Built from an old figure, and past `SETTLE_S`: rebuilt in the
+    background, since what it was built from has likely landed by now."""
+    return len(entry) > 5 and time.monotonic() - entry[5] >= SETTLE_S
+
+
+def _fallback(
+    entry: Entry | None, salvage, exc: BaseException, name: str = ""
+) -> Any:
     """The old entry when the source refused and it may still stand in; else
     the failure, unchanged."""
     if (
@@ -246,6 +306,7 @@ def _fallback(entry: Entry | None, salvage, exc: BaseException) -> Any:
         mark_stale(wall)
         obs.warn(
             "cache.served_stale",
+            memo=name,
             age_s=round(time.time() - wall),
             error_type=type(exc).__name__,
         )
@@ -264,6 +325,7 @@ def _land(
     background: bool = False,
     landed: Callable[[Entry], None] | None = None,
     expired: Callable[[Entry], bool] | None = None,
+    name: str = "",
 ) -> Any:
     """Run a flight to the ground: compute, store, release the waiters.
 
@@ -284,19 +346,31 @@ def _land(
             flights.pop(key, None)
         flight.done.set()
         if background:
+            _refused[(id(store), key)] = time.time()
+            # A key that never lands again stays here; a cap keeps that small.
+            while len(_refused) > 256:
+                _refused.pop(next(iter(_refused)))
             obs.warn(
                 "cache.refresh_failed",
+                memo=name,
                 error_type=type(exc).__name__,
                 error=str(exc)[:200],
             )
             return None
         raise
     finally:
-        since = (STALE.get() or {}).get("since")
+        inner = STALE.get() or {}
+        since, old = inner.get("since"), inner.get("old")
         STALE.reset(token)
-    if since is not None and len(entry) >= 3:
-        entry = (*entry[:3], since)
-        mark_stale(since)
+    if len(entry) >= 3:
+        if old is not None:
+            entry = (*entry[:3], since, old, time.monotonic())
+            mark_old(old)
+        elif since is not None:
+            entry = (*entry[:3], since)
+        if since is not None:
+            mark_stale(since)
+    _refused.pop((id(store), key), None)
     with lock:
         # Re-inserted rather than updated so a refreshed key moves to the
         # young end of the dict: eviction is oldest-inserted-first, and a hot
@@ -482,7 +556,8 @@ def ttl_cache(
     kept there.
 
     `quiet_s` is how far past `ttl_s` a stale answer goes unremarked; past it
-    the request is marked (`STALE`) like a salvaged one. Unset, never: a long
+    the request is marked old (`mark_old`), or stale while the last refresh
+    failed. Unset, never: a long
     `stale_s` is what wants it, so a figure from last night that answers at
     once while today's downloads still says how old it is.
 
@@ -532,6 +607,7 @@ def ttl_cache(
                 marked=(lambda entry: time.monotonic() - entry[0] >= ttl_s + quiet_s)
                 if quiet_s is not None
                 else None,
+                name=getattr(fn, "__qualname__", ""),
             )
 
         def cache_clear(expire: bool = True) -> None:

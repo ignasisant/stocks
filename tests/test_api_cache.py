@@ -191,8 +191,101 @@ def test_a_stale_answer_past_its_quiet_window_says_how_old_it_is(monkeypatch):
     clock[0] = 500.0  # long past ttl + quiet: answered at once, and marked
     landed.clear()
     value, holder = asked()
-    assert value == 20.0 and "since" in holder and holder["refreshing"]
+    # Old, not stale: nothing failed, so nothing may say the source is down.
+    assert value == 20.0 and holder["old"] and holder["refreshing"]
+    assert "since" not in holder
     landed.set()
+
+
+def test_an_old_answer_after_a_failed_refresh_says_the_source_refused(monkeypatch):
+    """Past the quiet window an answer is "updating" — until the refresh behind
+    it fails; then the next one says the source is refusing, and the landing
+    after that clears it."""
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    refuse = [False]
+    tried = threading.Event()
+
+    @cache.ttl_cache(10.0, stale_s=1000.0, quiet_s=30.0)
+    def f(key: str):
+        try:
+            if refuse[0]:
+                raise RuntimeError("throttled")
+            return clock[0]
+        finally:
+            tried.set()
+
+    def asked() -> dict:
+        holder: dict[str, float] = {}
+        token = cache.STALE.set(holder)
+        try:
+            f("x")
+            return holder
+        finally:
+            cache.STALE.reset(token)
+
+    f("x")
+    clock[0] = 500.0
+    refuse[0] = True
+    tried.clear()
+    first = asked()
+    assert "old" in first and "since" not in first
+    assert tried.wait(2)
+    time.sleep(0.05)  # let that flight close
+    second = asked()
+    assert "since" in second and "old" not in second
+    assert tried.wait(2)
+    time.sleep(0.05)
+    refuse[0] = False
+    tried.clear()
+    asked()  # starts the refresh that works
+    assert tried.wait(2)
+    time.sleep(0.05)
+    assert asked() == {}
+
+
+def test_a_figure_built_from_an_old_one_settles_within_seconds(monkeypatch):
+    """A book priced off last night's closes says "updating" on every request
+    it answers — and is rebuilt after `SETTLE_S`, not after its own ttl, so
+    the shell's re-ask a little later meets today's closes."""
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    gate = threading.Event()
+    gate.set()
+
+    @cache.ttl_cache(10.0, stale_s=1000.0, quiet_s=30.0)
+    def closes(key: str):
+        gate.wait(2)
+        return clock[0]
+
+    @cache.ttl_cache(600.0)
+    def book(key: str):
+        return {"from": closes(key)}
+
+    def asked() -> tuple[dict, dict]:
+        holder: dict[str, float] = {}
+        token = cache.STALE.set(holder)
+        try:
+            return book("x"), holder
+        finally:
+            cache.STALE.reset(token)
+
+    closes("x")
+    clock[0] = 500.0
+    gate.clear()  # the closes' refresh is out
+    value, holder = asked()
+    assert value == {"from": 0.0} and "old" in holder
+    clock[0] = 505.0
+    value, holder = asked()  # the book's entry answers, and still says so
+    assert value == {"from": 0.0} and "old" in holder
+    gate.set()  # the closes land
+    time.sleep(0.05)
+    clock[0] = 500.0 + cache.SETTLE_S + 1
+    value, holder = asked()  # past settling: answered, rebuilt behind
+    assert "old" in holder and holder["refreshing"]
+    time.sleep(0.05)
+    value, holder = asked()
+    assert value["from"] > 0.0 and holder == {}
 
 
 def test_an_answer_from_the_grace_window_tells_the_shell_to_ask_again(monkeypatch):
@@ -223,6 +316,15 @@ def test_an_answer_from_the_grace_window_tells_the_shell_to_ask_again(monkeypatc
         assert served.json() == {"value": 0.0}
         assert served.headers[REFRESHING_HEADER] == "1"
         assert "x-data-stale-since" not in served.headers
+        assert "x-data-updating-since" not in served.headers
+        clock[0] = 20.0 + 500.0  # past the quiet window: old, not stale
+        landed.set()
+        time.sleep(0.05)
+        landed.clear()
+        old = client.get("/v1/_test_refreshing")
+        assert old.headers["x-data-updating-since"]
+        assert "x-data-stale-since" not in old.headers
+        clock[0] = 20.0
         landed.set()
         time.sleep(0.05)
         after = client.get("/v1/_test_refreshing")
@@ -495,7 +597,8 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
 ):
     """The book was priced once. A new process meets a throttled Yahoo: the
     positions still carry values, and the response says how old they are —
-    on this request and on the next one, which reads the same figures."""
+    "updating" while the refresh behind it is out, and once that refresh is
+    refused, the next one says the source is not answering."""
     from yfinance.exceptions import YFRateLimitError
 
     days = pd.bdate_range("2024-01-02", periods=400)
@@ -524,10 +627,14 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     again = client.get(f"/v1/portfolio/positions?account={EMAIL}", headers=headers)
     assert again.status_code == 200
     assert again.json()["positions"] == priced.json()["positions"]
-    assert again.headers["x-data-stale-since"]
+    assert again.headers["x-data-updating-since"]
+    assert "x-data-stale-since" not in again.headers
+    deadline = time.time() + 5
+    while not cache._refused and time.time() < deadline:
+        time.sleep(0.02)
     movers = client.get(f"/v1/movers?window=day&account={EMAIL}", headers=headers)
     assert movers.status_code == 200
-    assert movers.headers["x-data-stale-since"] == again.headers["x-data-stale-since"]
+    assert movers.headers["x-data-stale-since"] == again.headers["x-data-updating-since"]
 
 
 # ------------------------------------------------------------- memory bounds
