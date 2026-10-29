@@ -65,6 +65,21 @@ def _yahoo_offline():
     requests.Session.request = before
 
 
+@pytest.fixture(autouse=True)
+def _symbol_search_offline():
+    """The chat's made-up-symbol check (`market.unlisted`) searches Yahoo
+    through urllib, which the curl stub above does not reach: offline, it
+    could not ask, and so calls nothing made up. A test of it passes its own
+    `search`. Set by hand, not through `monkeypatch`: requesting that here
+    would move its undo after every module fixture's teardown."""
+    from stocks.chat import market
+
+    before = market._search_rows
+    market._search_rows = lambda _q: ([], False)
+    yield
+    market._search_rows = before
+
+
 # Units of each currency per euro: made up, fixed, never fetched.
 _FX_PER_EUR = {"EUR": 1.0, "USD": 1.10, "GBP": 0.85, "CHF": 0.95, "JPY": 160.0}
 

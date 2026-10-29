@@ -32,10 +32,19 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import NamedTuple
 
+from stocks.data.crypto import is_crypto
 from stocks.portfolio.positions import MATCH_FIFO, MATCH_LIFO, RealizedSale
 
 # (sell_date, buy_date) -> True when that purchase blocks the sale's loss.
 Window = Callable[[date, date], bool]
+# ticker -> True when the repurchase rule reaches that asset at all.
+Reaches = Callable[[str], bool]
+
+
+def securities_only(ticker: str) -> bool:
+    """Where the rule names securities — Spain's "valores o participaciones",
+    the US "stock or securities" — a crypto pair is outside it."""
+    return not is_crypto(ticker)
 
 
 @dataclass(frozen=True)
@@ -481,7 +490,10 @@ class Repurchases:
 
 
 def repurchases(
-    realized: list[RealizedSale], buy_dates: Acquisitions, within: Window
+    realized: list[RealizedSale],
+    buy_dates: Acquisitions,
+    within: Window,
+    reaches: Reaches | None = None,
 ) -> Repurchases:
     """Match every loss in the book against the buy-backs that block it.
 
@@ -498,12 +510,14 @@ def repurchases(
     replacement share later sold frees one blocked share's loss, pro rata.
 
     Matching is over the whole book, not one period: which shares a December
-    sale may claim depends on what an October sale already took.
+    sale may claim depends on what an October sale already took. A ticker
+    `reaches` rejects is outside the rule and blocks nothing.
     """
     out = Repurchases()
     by_ticker: dict[str, list[RealizedSale]] = defaultdict(list)
     for s in realized:
-        by_ticker[s.ticker].append(s)
+        if reaches is None or reaches(s.ticker):
+            by_ticker[s.ticker].append(s)
     for ticker, sales in by_ticker.items():
         if any(s.gain < 0 for s in sales):
             _match(sales, buy_dates.get(ticker, ()), within, out)
@@ -529,6 +543,7 @@ def open_windows(
     within: Window,
     window: str,
     today: date,
+    reaches: Reaches | None = None,
 ) -> list[OpenWindow]:
     """Every loss sale whose window clears today or later, soonest first.
 
@@ -538,10 +553,10 @@ def open_windows(
     loss now waits on the replacement shares being sold — and one blocked in
     part carries only the part still exposed.
     """
-    blocks = repurchases(realized, buy_dates, within)
+    blocks = repurchases(realized, buy_dates, within, reaches)
     exposed: dict[tuple[str, str], float] = defaultdict(float)
     for s in realized:
-        if s.gain < 0:
+        if s.gain < 0 and (reaches is None or reaches(s.ticker)):
             exposed[s.ticker, s.sell_date[:10]] += -s.gain - blocks.disallowed(s)
     out: list[OpenWindow] = []
     for (ticker, sold), loss in exposed.items():

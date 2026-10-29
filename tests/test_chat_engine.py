@@ -757,6 +757,24 @@ def test_answer_injects_live_quotes(providers, paths, monkeypatch):
     assert auth.load_chat(paths["chat_path"])[0]["content"] == "how is NVDA?"
 
 
+def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
+        monkeypatch):
+    # ZXQW took 1 m 58 s: a deep gather searching for a company that does
+    # not exist. One Yahoo search settles it before the gather starts.
+    def researching(*_a, **_kw):
+        raise AssertionError("researched a symbol nobody lists")
+
+    monkeypatch.setattr(engine, "gather_evidence", researching)
+    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    monkeypatch.setattr(engine.market, "_search_rows", lambda q: ([], True))
+    reply = engine.answer(prefs=dict(BASE_PREFS),
+                          message="Analiza ZXQW a fondo", **paths)
+    _, _, _, messages = providers["free"].calls[0]
+    assert "ZXQW: no security listed under it" in messages[-1]["content"]
+    assert any(s["tool"] == "get_quotes" and s["arg"] == "ZXQW"
+               for s in reply.steps)
+
+
 def test_the_prompt_closes_with_the_disclosure_rules():
     # Last, after the context and the skills: the free chain runs on small
     # models, and a rule buried mid-paragraph is a rule they drop. The failure

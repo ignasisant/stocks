@@ -77,6 +77,7 @@ class Candidate:
     loss: float  # realised by the sale, negative, in the jurisdiction's currency
     saving: float  # this year's bill without the sale minus with it
     blocked: float  # of the loss, deferred by a purchase inside the window
+    free: bool = False  # outside the repurchase rule: buy it back at once
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,7 @@ class Harvest:
     tax: float  # this year's estimate as it stands
     tax_all: float  # with every candidate sold today
     carry: float  # net loss left over for later years, all of them sold
+    offset: float  # of the net loss, what this year's dividends absorb
     carry_years: int | None
     currency: str
     jurisdiction: str
@@ -113,24 +115,40 @@ class Harvest:
             rows.append(f"- no open position is more than {n(HARVEST_MIN, 0)} {c} "
                         "under its cost: there is no loss worth realising")
         else:
-            rows.append("- open losses selling the whole holding today would "
-                        "realise, each on its own:")
+            rows.append(
+                "- each open loss as if it alone were sold today. These savings "
+                "do NOT add up: once the year's gains are used up, a further "
+                "loss saves nothing now. Never sum them, and never work out a "
+                "rate per position from them — the total is the next row:")
             for x in self.candidates:
-                row = (f"  - {x.ticker}: loss {n(x.loss, 2)} {c}, this year's tax "
-                       f"{n(-x.saving, 2, signed=True)} {c}")
+                row = (f"  - {x.ticker}: loss {n(-x.loss, 2)} {c}; saves "
+                       f"{n(max(x.saving, 0.0), 2)} {c} sold alone")
                 if x.blocked > 0:
                     row += (f" ({n(x.blocked, 2)} {c} of the loss is deferred: "
                             "shares of it were bought inside the repurchase window)")
+                if x.free and self.window in _WINDOW_EN:
+                    row += (" (crypto: outside the repurchase rule here, so it "
+                            "can be bought straight back without losing the loss)")
                 rows.append(row)
             years = ("indefinitely" if self.carry_years is None
                      else f"for {self.carry_years} years")
             rows.append(
                 f"- all of them sold together: tax {n(self.tax, 2)} -> "
-                f"{n(self.tax_all, 2)} {c} (saving {n(self.saving, 2)} {c}); "
-                + (f"{n(self.carry, 2)} {c} of net loss left to carry forward {years}"
-                   if self.carry > 0 and self.carry_years != 0
-                   else "no net loss left over")
+                f"{n(self.tax_all, 2)} {c}, a saving of {n(max(self.saving, 0.0), 2)} "
+                f"{c} — the only total saving to give, as a positive amount"
             )
+            net = self.carry + self.offset
+            if net > 0 and self.carry_years != 0:
+                rows.append(
+                    f"- net loss after those sales {n(net, 2)} {c} (losses less "
+                    "gains this year)"
+                    + (f"; {n(self.offset, 2)} {c} of it offsets 25 % of this "
+                       "year's dividends" if self.offset > 0 else "")
+                    + f"; {n(self.carry, 2)} {c} carries forward {years} — quote "
+                    "this figure, do not recompute it"
+                )
+            else:
+                rows.append("- no net loss left over to carry forward")
             if self.gains <= 0:
                 rows.append("- nothing is realised to offset yet this year, so a "
                             "loss now saves nothing this year; it only carries "
@@ -140,6 +158,8 @@ class Harvest:
                 f"- repurchase rule: buying the same security within "
                 f"{_WINDOW_EN[self.window]} of the sale, before or after, defers "
                 f"the loss; sold today, a repurchase is clear from {self.clear}"
+                + ("; it covers shares and funds, not crypto"
+                   if any(x.free for x in self.candidates) else "")
             )
         return (
             "\n\n---\nTax-loss harvesting worked out by the app's own tax engine "
@@ -172,7 +192,8 @@ def build(book: Replay | None, tbl: pd.DataFrame | None) -> Harvest | None:
             continue
         sales.append((held.ticker, held.quantity, price, book.currency))
         out.append(Candidate(held.ticker, held.quantity, sale.gain,
-                             -sale.extra_tax, sale.blocked))
+                             -sale.extra_tax, sale.blocked,
+                             not book.jurisdiction.window_reaches(held.ticker)))
     before = book.before
     after = book.after(sales)[1] if sales else before
     window = book.jurisdiction.repurchase_window or ""
@@ -182,6 +203,7 @@ def build(book: Replay | None, tbl: pd.DataFrame | None) -> Harvest | None:
         candidates=tuple(out), gains=before.realized_gain,
         losses=before.deductible_loss, tax=before.estimated_tax,
         tax_all=after.estimated_tax, carry=after.carryforward_loss,
+        offset=float(getattr(after, "cross_offset", 0.0) or 0.0),
         carry_years=book.jurisdiction.carryforward_years,
         currency=book.currency, jurisdiction=book.code, year=book.year_label,
         window=window, clear=clear.isoformat() if clear else "",

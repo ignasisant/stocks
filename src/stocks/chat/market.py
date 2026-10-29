@@ -244,6 +244,83 @@ def mentioned(
     return out[:MAX_TICKERS]
 
 
+# Shortest typed symbol `unlisted` will call made up: "F" and "GE" are real,
+# and two letters say too little to search on.
+_UNLISTED_MIN = 3
+
+
+def _search_rows(query: str) -> tuple[list[tuple[str, str]], bool]:
+    """Yahoo's (symbol, name) rows for `query`, and whether it was asked at
+    all — an empty answer while it cools down after a refusal means nothing."""
+    from stocks.data.symbols import reachable, search_rows
+
+    rows = [(r[0], r[1]) for r in search_rows(query, limit=3)]
+    return rows, reachable()
+
+
+def _same_symbol(typed: str, symbol: str) -> bool:
+    s = symbol.upper()
+    return typed in (s, s.split(".")[0], s.split("-")[0], s.replace("-", "."))
+
+
+def unlisted(
+    message: str,
+    known: dict[str, str] | None = None,
+    held: str | Callable[[], str] = "",
+    search: Callable[[str], tuple[list[tuple[str, str]], bool]] | None = None,
+) -> dict[str, list[tuple[str, str]]]:
+    """The symbols typed in `message` that Yahoo lists nothing under, each
+    with its nearest matches as (symbol, name) — or {} unless every symbol
+    typed is one.
+
+    Wary by construction, since a "no such company" answer to a real one is
+    worse than a slow answer: a symbol on the watchlist or in the book
+    (`held`, its text — or what reads it, asked only once a symbol is left
+    to search) is real, one too short to search on may be, and a Yahoo that
+    could not be asked (`search`'s second half) settles nothing.
+    """
+    known = known or {}
+    names = {v.upper() for v in known.values()} | {k.upper() for k in known}
+    typed = [t for t in dict.fromkeys(_TICKER_RE.findall(
+        _ampersands(message, lambda _s: None))) if t not in NOT_TICKERS]
+    if not typed or any(len(t) < _UNLISTED_MIN or t in names for t in typed):
+        return {}
+    book = held if isinstance(held, str) else held()
+    search = search or _search_rows
+    out: dict[str, list[tuple[str, str]]] = {}
+    for tok in typed:
+        if re.search(rf"(?<![\w.-]){re.escape(tok)}(?![\w-])", book):
+            return {}
+        try:
+            rows, asked = search(tok)
+        except Exception:
+            return {}
+        if not asked or any(_same_symbol(tok, sym) for sym, _n in rows):
+            return {}
+        out[tok] = rows
+    return out
+
+
+def unlisted_block(missing: dict[str, list[tuple[str, str]]]) -> str:
+    """What the answer is told about symbols nobody lists."""
+    if not missing:
+        return ""
+    rows = []
+    for tok, near in missing.items():
+        close = "; ".join(f"{sym} ({name})" for sym, name in near)
+        rows.append(f"- {tok}: no security listed under it"
+                    + (f"; the nearest Yahoo offers: {close}" if close else ""))
+    return (
+        "\n\n---\nChecked just now on Yahoo Finance, which lists stocks, funds "
+        "and coins on every major exchange:\n" + "\n".join(rows) + "\nIf the "
+        "question is about that symbol, say in a line or two that you could not "
+        "find it, invent nothing about it, name a near match only as a "
+        "possibility, and ask the user to check the spelling or give the "
+        "company's name. If it is not a symbol here (an acronym, a word), "
+        "ignore this note."
+    )
+
+
 # Where a sentence starts: its first word is capitalized by grammar, not
 # because it names anything ("Quiero…", "Explícame…").
 _SENTENCE_START_RE = re.compile(r"(?:^|[.!?¿¡:;\n][\s\"'«(]*)(?=\S)")

@@ -554,7 +554,7 @@ def _harvest_signals(
                 "pnl_pct": _round((finite(row.get("pnl_pct")) or 0) * 100),
                 "currency": currency,
                 "jurisdiction": getattr(jurisdiction, "code", None),
-                "repurchase_window": getattr(jurisdiction, "repurchase_window", ""),
+                "repurchase_window": _window_for(jurisdiction, str(ticker)),
             },
         ))
     return out
@@ -657,6 +657,14 @@ def _window_end(sell: date, window: str) -> date | None:
     from stocks.portfolio.tax.base import window_end
 
     return window_end(sell, window)
+
+
+def _window_for(jurisdiction, ticker: str) -> str:
+    """The repurchase window a loss on `ticker` is under; "" where the rule
+    does not reach it (a crypto pair in Spain or the US)."""
+    window = getattr(jurisdiction, "repurchase_window", "") or ""
+    reaches = getattr(jurisdiction, "window_reaches", None)
+    return window if reaches is None or reaches(ticker) else ""
 
 
 def _year_end(jurisdiction, today: date) -> date:
@@ -775,6 +783,8 @@ def _tax_signals(
         elif sold == mine.sold:
             latest[sale.ticker] = _Loss(sold, mine.loss - sale.gain)
     for ticker, loss in sorted(latest.items()):
+        if not _window_for(jurisdiction, ticker):
+            continue
         clear = _window_end(loss.sold, window)
         if clear is None:
             continue

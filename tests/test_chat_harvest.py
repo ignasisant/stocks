@@ -121,9 +121,46 @@ def test_without_a_ledger_there_is_nothing_to_harvest(tbl):
 def test_the_prompt_line_carries_the_engine_s_figures(book, tbl):
     line = harvest.build(book, tbl).line()
     assert "ES rules, tax year 2026" in line
-    assert "NVO: loss -2,000.00 EUR, this year's tax -190.00 EUR" in line
-    assert "tax 190.00 -> 0.00 EUR (saving 190.00 EUR)" in line
-    assert "1,500.00 EUR of net loss left to carry forward for 4 years" in line
+    # Each alone, as a positive saving, and never to be summed: NVO's 190
+    # and TTD's 95 are not a 285 saving on a 190 bill.
+    assert "NVO: loss 2,000.00 EUR; saves 190.00 EUR sold alone" in line
+    assert "TTD: loss 500.00 EUR; saves 95.00 EUR sold alone" in line
+    assert "do NOT add up" in line and "-190" not in line
+    assert "tax 190.00 -> 0.00 EUR, a saving of 190.00 EUR" in line
+    assert "1,500.00 EUR carries forward for 4 years" in line
+
+
+def test_the_carry_names_what_the_dividends_absorbed(book, tbl):
+    """Spain lets a net capital loss take 25 % of the year's dividends: the
+    carry is the net loss less that, and the line shows both so the two
+    figures reconcile."""
+    found = harvest.build(book, tbl)
+    paid = harvest.Harvest(**{**found.__dict__, "carry": 1250.0, "offset": 250.0})
+    line = paid.line()
+    assert "net loss after those sales 1,500.00 EUR" in line
+    assert "250.00 EUR of it offsets 25 % of this year's dividends" in line
+    assert "1,250.00 EUR carries forward" in line
+
+
+def test_a_coin_is_bought_straight_back_without_losing_the_loss(tmp_path):
+    db = tmp_path / "portfolio.db"
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({"tax_residence": "ES"}))
+    add_many([
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "EUR"),
+        Transaction("2026-03-02", "AAPL", "sell", 10, 200.0, "EUR"),
+        # bought again last week: a share would defer its loss, a coin not
+        Transaction("2025-02-03", "MOODENG-EUR", "buy", 1000, 1.0, "EUR"),
+        Transaction("2026-09-22", "MOODENG-EUR", "buy", 1000, 0.3, "EUR"),
+    ], db)
+    book = whatif.replay(db=db, prefs_path=prefs, today=TODAY)
+    frame = pd.DataFrame({"shares": [2000.0], "value": [400.0], "pnl": [-900.0]},
+                         index=["MOODENG-EUR"])
+    (coin,) = harvest.build(book, frame).candidates
+    assert coin.free and coin.blocked == 0
+    line = harvest.build(book, frame).line()
+    assert "crypto: outside the repurchase rule" in line
+    assert "it covers shares and funds, not crypto" in line
 
 
 def test_a_deferred_part_of_a_loss_is_named(book, tbl):

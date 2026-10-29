@@ -278,3 +278,59 @@ def test_no_coin_means_no_scan_read():
         raise AssertionError("scan read for a share")
 
     assert _with_crypto([Quote("NVDA", price=1.0)], never)[0].context == ""
+
+
+# ------------------------------------------------------------------ unlisted
+
+
+def _yahoo(rows=(), asked=True):
+    seen = []
+
+    def search(q):
+        seen.append(q)
+        return list(rows), asked
+
+    return search, seen
+
+
+def test_a_symbol_yahoo_lists_nothing_under_is_named_with_its_near_matches():
+    search, _ = _yahoo([("ZQ", "Zymeworks Quasi")])
+    got = market.unlisted("¿qué opinas de ZXQW?", search=search)
+    assert got == {"ZXQW": [("ZQ", "Zymeworks Quasi")]}
+    block = market.unlisted_block(got)
+    assert "ZXQW: no security listed under it" in block
+    assert "ZQ (Zymeworks Quasi)" in block
+
+
+@pytest.mark.parametrize(("typed", "listed"), [
+    ("NVDA", "NVDA"),
+    ("SAP.DE", "SAP.DE"),
+    ("BRK.B", "BRK-B"),
+    ("SOL", "SOL-USD"),
+    ("IBE", "IBE.MC"),
+])
+def test_a_symbol_yahoo_lists_is_real(typed, listed):
+    search, _ = _yahoo([(listed, "Some Co")])
+    assert market.unlisted(f"¿qué tal {typed}?", search=search) == {}
+
+
+def test_nothing_is_called_made_up_when_yahoo_could_not_be_asked():
+    search, _ = _yahoo(asked=False)
+    assert market.unlisted("¿qué opinas de ZXQW?", search=search) == {}
+
+
+def test_one_real_symbol_beside_it_keeps_the_research():
+    def search(q):
+        return ([("NVDA", "NVIDIA")] if q == "NVDA" else []), True
+
+    assert market.unlisted("compara ZXQW con NVDA", search=search) == {}
+
+
+def test_a_watched_held_or_short_symbol_is_never_searched():
+    search, seen = _yahoo()
+    assert market.unlisted("¿y QQQX?", {"MI FONDO": "QQQX"}, search=search) == {}
+    assert market.unlisted("¿y XYZW.OLD?", held="- XYZW.OLD: 10 shares",
+                           search=search) == {}
+    assert market.unlisted("¿y GE?", search=search) == {}
+    assert market.unlisted("¿qué tal la bolsa hoy?", search=search) == {}
+    assert seen == []
