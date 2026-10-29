@@ -103,6 +103,15 @@ class Cut(str):
         return super().__new__(cls, "")
 
 
+class Idle(str):
+    """The empty chunk a free backend's stream yields for a frame with no text
+    in it — reasoning, a keep-alive comment, usage. The chain reads it as "still
+    thinking" to time the wait for the first word; it never reaches a reader."""
+
+    def __new__(cls):
+        return super().__new__(cls, "")
+
+
 @dataclass(frozen=True)
 class ToolRun:
     """What one tool-using exchange produced: the model's closing text and
@@ -434,7 +443,8 @@ def _openai_compat_stream(base_url: str | None = None, *, free: bool = False,
 
     `client_opts` reach the OpenAI client as given (the free chain passes
     `_FREE_CLIENT`); `free` marks its usage as costing nothing
-    (`metering`)."""
+    (`metering`) and has every frame without text yield an `Idle`, so the
+    chain sees a model that is thinking rather than writing."""
 
     def _stream(api_key, model, system, messages):
         from openai import OpenAI
@@ -451,15 +461,20 @@ def _openai_compat_stream(base_url: str | None = None, *, free: bool = False,
             stream=True, **extra,
         )
         cut = False
-        for chunk in stream:
-            if getattr(chunk, "usage", None) is not None:
-                metering.note_openai(model, chunk.usage, free=free)
-            # OpenRouter interleaves comment frames with no choices; skip them.
-            if chunk.choices and chunk.choices[0].finish_reason == "length":
-                cut = True
-            delta = chunk.choices[0].delta.content if chunk.choices else None
-            if delta:
-                yield delta
+        try:
+            for chunk in stream:
+                if getattr(chunk, "usage", None) is not None:
+                    metering.note_openai(model, chunk.usage, free=free)
+                # OpenRouter interleaves comment frames with no choices; skip them.
+                if chunk.choices and chunk.choices[0].finish_reason == "length":
+                    cut = True
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    yield delta
+                elif free:
+                    yield Idle()
+        finally:
+            stream.close()  # a caller that stops reading drops the connection
         if cut:
             yield Cut()
 
@@ -607,6 +622,13 @@ def _openai_error(exc):
 # free chain, which answered 2-35 s later and with another model.
 GEMINI_BUSY_RETRY_S = 1.5
 
+# google-genai sends no timeout of its own (httpx's is set to None), so a hung
+# request waits for ever: prod 2026-10-28 13:36, the busy retry held 2.4 min
+# until the caller's own deadline cut it. In milliseconds, as the SDK wants;
+# it also rides to Google as X-Server-Timeout, so it is the whole answer's
+# budget: two minutes, past any wait a reader sits through.
+_GEMINI_TIMEOUT_MS = 120_000
+
 
 def _gemini_stream(api_key, model, system, messages):
     from google.genai import errors
@@ -628,7 +650,8 @@ def _gemini_stream_once(api_key, model, system, messages):
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
+        timeout=_GEMINI_TIMEOUT_MS))
     # Gemini roles are "user"/"model"; map the assistant turns accordingly.
     contents = [
         {
@@ -725,11 +748,11 @@ _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 # Checked live 2026-10-14: openai/gpt-oss-120b:free and
 # meta-llama/llama-3.3-70b-instruct:free went paid-only (404 "unavailable for
 # free"); the google/* and poolside free slugs 429 on the shared upstream pool.
-# Best answers first: the 120B nemotron in ~3 s, dots in ~7 s, the lightning
-# one last (~20 s).
+# Best answers first. 2026-10-29, a 10k-token prompt: nemotron-3-super-120b
+# went paid-only (404) too; dots wrote its first word in 4.5 s; lightning
+# reasoned 7 s and wrote nothing, so it stays last.
 _FREE_FALLBACK_MODELS: dict[str, tuple[str, ...]] = {
-    "openrouter": ("nvidia/nemotron-3-super-120b-a12b:free",
-                   "dots-studio/dots-3-note-preview:free",
+    "openrouter": ("dots-studio/dots-3-note-preview:free",
                    "nvidia/nemotron-3.5-lightning:free"),
 }
 
@@ -877,6 +900,7 @@ _RETRY_IN = re.compile(
     r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
 
 _sleep = time.sleep  # a name of its own so tests need not wait
+_clock = time.perf_counter  # and one tests can move by hand
 
 # Past the short wait, a 429 rests its backend for the wait it named (capped):
 # every turn in that window would otherwise pay the SDK's own retry-after on it
@@ -918,11 +942,40 @@ def _note_rest(b: _FreeBackend, exc: Exception) -> None:
 
 
 def _resting(b: _FreeBackend) -> bool:
+    if _slow(b):
+        return True
     until = _free_resting.get(b.id)
     if until is None:
         return False
     if time.monotonic() >= until:
         _free_resting.pop(b.id, None)
+        return False
+    return True
+
+
+# How long a free model may think before its first word while another one is
+# still behind it in the chain. The 200 arrives at once and reasoning frames
+# keep the per-read timeout alive, so without this nemotron-3-ultra held answers
+# 59-242 s in prod (2026-10-26/28) with dots-3 a 5 s answer away. groq writes in
+# under 2 s and dots in ~5 s on a 10k-token prompt.
+_FIRST_TEXT_S = 20.0
+
+# A model cut for that sits out this long, per backend and model — the shared
+# free pool that made it slow does not clear in a turn. Per process.
+_free_slow: dict[tuple[str, str], float] = {}  # (backend, model) -> lifts at
+_SLOW_REST_S = 600.0
+
+
+class _Slow(TimeoutError):
+    """A free model that wrote nothing within `_FIRST_TEXT_S`."""
+
+
+def _slow(b: _FreeBackend) -> bool:
+    until = _free_slow.get((b.id, b.model))
+    if until is None:
+        return False
+    if time.monotonic() >= until:
+        _free_slow.pop((b.id, b.model), None)
         return False
     return True
 
@@ -1088,10 +1141,24 @@ def _free_stream(api_key, model, system, messages):
         waited = False
         while candidates:
             model = candidates.pop(0)
-            t0 = time.perf_counter()
+            t0 = _clock()
+            # The last one left may think as long as it likes: a slow answer
+            # beats none.
+            late = (t0 + _FIRST_TEXT_S
+                    if candidates or attempt + 1 < len(plan) else None)
+            first_ms = chunks = None
             try:
                 got = False
-                for chunk in b.stream(b.api_key, model, system, thread):
+                chunks = b.stream(b.api_key, model, system, thread)
+                for chunk in chunks:
+                    if isinstance(chunk, Idle):
+                        if not got and late and _clock() > late:
+                            _free_slow[(b.id, model)] = (time.monotonic()
+                                                         + _SLOW_REST_S)
+                            raise _Slow(f"no text after {_FIRST_TEXT_S:.0f} s")
+                        continue
+                    if first_ms is None:
+                        first_ms = round((_clock() - t0) * 1000)
                     started = got = True
                     yield chunk
                 if not got:
@@ -1101,10 +1168,12 @@ def _free_stream(api_key, model, system, messages):
                 if model != b.model and b.primary:
                     _free_live_model[b.id] = model  # proven: skip the dead slug
                 obs.event("llm.free.answered", backend=b.id, model=model,
-                          attempt=attempt,
-                          duration_ms=round((time.perf_counter() - t0) * 1000))
+                          attempt=attempt, first_ms=first_ms,
+                          duration_ms=round((_clock() - t0) * 1000))
                 return
             except Exception as exc:
+                if close := getattr(chunks, "close", None):
+                    close()  # a dropped stream must not hold its connection
                 if started:
                     obs.error("llm.free.mid_answer_failure", exc, backend=b.id,
                               model=model)

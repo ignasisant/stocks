@@ -65,3 +65,22 @@ def test_a_503_mid_answer_is_not_retried(monkeypatch):
         for chunk in llm._gemini_stream("k", "m", "s", []):
             out.append(chunk)
     assert out == ["Hola"]
+
+
+def test_a_hung_gemini_has_a_deadline(monkeypatch):
+    """The SDK sets no timeout of its own: a hung request waited for ever."""
+    from google import genai
+
+    seen = {}
+
+    class Client:
+        def __init__(self, api_key, http_options=None):
+            seen["timeout"] = http_options and http_options.timeout
+            self.models = self
+
+        def generate_content_stream(self, **_kw):
+            return iter(())
+
+    monkeypatch.setattr(genai, "Client", Client)
+    list(llm._gemini_stream_once("k", "m", "s", [{"role": "user", "content": "x"}]))
+    assert seen["timeout"] == llm._GEMINI_TIMEOUT_MS
