@@ -11,6 +11,7 @@ When reviewing an earnings report or preparing for one, the stock trades on the 
 - **Quality of the quarter**: where did the beat come from — demand (volume/price), one-off items, tax rate, buyback-driven EPS? Organic growth, margin bridge and cash flow tell you if the beat is repeatable.
 - **Segment and KPI detail**: the 2–3 metrics this specific company trades on (cloud growth for hyperscalers, data-center revenue for semis, net adds for subscription businesses, book-to-bill for industrials). Compare vs the metric's own trend, not just vs consensus.
 - **Call takeaways**: change in tone on demand, pricing, and margins; any new risk language; analyst focus in Q&A (what everyone asks about is what the market worries about).
+- **When the reaction trades**: a report after the close moves the stock in after-hours and the next premarket; one before the open, in that premarket. Read the reaction off that print. The session before the report is not the reaction, so never explain its move with the report's guidance.
 - **Reaction read**: if the stock moves sharply opposite to the headline numbers, explain the expectations gap rather than calling the market wrong.
 
 Close with: does this quarter change the thesis (accelerate, confirm, crack), and what to watch next quarter.

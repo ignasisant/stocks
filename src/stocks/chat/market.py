@@ -30,6 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from stocks import obs
 from stocks.formatting import bound
 from stocks.portfolio import consistency
 
@@ -102,7 +103,24 @@ _NOT_NAMES = {
     # Words Yahoo quotes as an alias it knows (see `spells`): "Estoy" is a
     # EURO STOXX ETF to it, "Vale" the miner.
     "Hay", "Estoy", "Vale",
+    # Imperatives and openers a message starts with: "Mira premarket" quoted
+    # Mira Pharmaceuticals, and "Resultados ServiceNow" is no company's name.
+    "Mira", "Mire", "Mirar", "Busca", "Buscar", "Revisa", "Dime", "Echa",
+    "Fíjate", "Fijate", "Muestra", "Muéstrame", "Enséñame", "Quiero",
+    "Resultados", "Noticias", "Look", "Check", "Show", "Find", "Results",
+    "News",
 }
+_NOT_NAME_WORDS = frozenset(w.casefold() for w in _NOT_NAMES)
+
+
+def _opened(run: str) -> tuple[str, bool]:
+    """A capitalized run without the openers it starts with ("Resultados
+    ServiceNow" is "ServiceNow"), and whether what is left follows one
+    mid-sentence ("Vale. Entonces" starts a sentence again)."""
+    words, after = run.split(" "), False
+    while words and words[0].rstrip(".,") in _NOT_NAMES:
+        after = not words.pop(0).endswith(".")
+    return " ".join(words), after
 
 
 @dataclass(frozen=True)
@@ -115,6 +133,8 @@ class Quote:
     name: str = ""
     price: float | None = None
     currency: str = ""
+    # The close the move is measured from: the last close for a premarket
+    # price, the one before it otherwise.
     prev_close: float | None = None
     year_high: float | None = None
     year_low: float | None = None
@@ -122,12 +142,20 @@ class Quote:
     # Figures past the quote, already worded: a coin's peak, rank and the
     # market's mood from the nightly scan (`crypto_context`).
     context: str = ""
+    # Which print `price` is — "pre", "post" or "" for the regular session —
+    # and the exchange date its move belongs to (`portfolio._snapshot`). A
+    # report out after the bell trades in after-hours and the next premarket,
+    # and a move with no date reads as today's whatever session it was.
+    session: str = ""
+    as_of: str = ""
+    # The regular session's close, beside an extended-hours price.
+    close: float | None = None
 
     @property
     def day_pct(self) -> float | None:
-        """Today's move, or None without a close — or when the two cannot be
-        one session apart (`consistency.day_move`), so the model is never
-        told a name moved 9,900 % because the feed mixed its units."""
+        """The move to `price`, or None without a close — or when the two
+        cannot be one session apart (`consistency.day_move`), so the model is
+        never told a name moved 9,900 % because the feed mixed its units."""
         return consistency.day_move(self.price, self.prev_close, ticker=self.ticker)
 
     def line(self, lang: str = "en") -> str:
@@ -135,10 +163,26 @@ class Quote:
         n, p = bound(lang)
         head = f"{self.ticker}" + (f" ({self.name})" if self.name else "")
         bits = []
-        if self.price is not None:
-            bits.append(f"last {n(self.price, 2)} {self.currency}".strip())
-        if self.day_pct is not None:
-            bits.append(f"today {p(self.day_pct, 2, signed=True)}")
+        pct = self.day_pct
+        day = f" {self.as_of}" if self.as_of else ""
+        if self.price is not None and self.session == "pre":
+            bits.append(f"premarket {n(self.price, 2)} {self.currency}".strip())
+            if pct is not None and self.prev_close:
+                bits.append(f"{day.strip()} {p(pct, 2, signed=True)} vs the "
+                            f"last close {n(self.prev_close, 2)}".strip())
+        elif self.price is not None and self.session == "post":
+            bits.append(f"after-hours {n(self.price, 2)} {self.currency}".strip())
+            if pct is not None:
+                bits.append(f"session{day} incl. after-hours "
+                            f"{p(pct, 2, signed=True)}")
+            if self.close is not None:
+                bits.append(f"regular close {n(self.close, 2)}")
+        else:
+            if self.price is not None:
+                bits.append(f"last {n(self.price, 2)} {self.currency}".strip())
+            if pct is not None:
+                bits.append(f"session{day} {p(pct, 2, signed=True)}" if day
+                            else f"day {p(pct, 2, signed=True)}")
         if self.year_low is not None and self.year_high is not None:
             bits.append(f"52w range {n(self.year_low, 2)}–{n(self.year_high, 2)}")
         if self.market_cap:
@@ -243,7 +287,6 @@ def mentioned(
         if tk and tk not in out and len(out) < MAX_TICKERS:
             out.append(tk)
 
-    upper = message.upper()
     if focus:
         # The page the user is on answers "and how does it look today?" with
         # no ticker in the message at all — the strongest signal there is.
@@ -253,12 +296,22 @@ def mentioned(
     for tok in _TICKER_RE.findall(_ampersands(message, add)):
         if tok not in NOT_TICKERS:
             add(known.get(tok, tok))
+    said = f" {' '.join(_words(message))} "
     for name, tk in known.items():
-        if len(name) > 2 and name in upper:
+        # On word boundaries: a held NOW is not in "I know".
+        if len(name) > 2 and f" {' '.join(_words(name))} " in said:
+            add(tk)
+            continue
+        # As it is said: "ServiceNow" for the filed "ServiceNow, Inc.", and
+        # never a short form that is a word of its own.
+        short = _short(name)
+        if (len(short) > 2 and short not in _COMMON
+                and short not in _NOT_NAME_WORDS and f" {short} " in said):
             add(tk)
     if not out:
         for cand in _NAME_RE.findall(message)[:_MAX_LOOKUPS + 2]:
-            if cand in _NOT_NAMES or cand.upper() in NOT_TICKERS:
+            cand, _ = _opened(cand)
+            if not cand or cand in _NOT_NAMES or cand.upper() in NOT_TICKERS:
                 continue
             sym = lookup(cand)
             if sym:
@@ -376,8 +429,11 @@ def named(message: str) -> list[str]:
             out.append(base)
     starts = {m.end() for m in _SENTENCE_START_RE.finditer(message)}
     for m in _NAME_RE.finditer(message):
-        cand = m.group(0).rstrip(".")
-        if (m.start() in starts or cand in _NOT_NAMES or cand in _CALENDAR
+        # The rest of a run that opens with "Resultados" or "Mira" does not
+        # start the sentence.
+        cand, opened = _opened(m.group(0).rstrip("."))
+        if (not cand or (m.start() in starts and not opened)
+                or cand in _NOT_NAMES or cand in _CALENDAR
                 or cand.upper() in NOT_TICKERS):
             continue
         out.append(cand)
@@ -445,11 +501,15 @@ def aliases(names: Iterable[str], message: str,
 
 
 def _fetch_quote(ticker: str) -> Quote | None:
-    """One live snapshot via yfinance's fast path (no `.info` scrape).
+    """One live snapshot: the app's session quote first, yfinance's fast
+    path when that has nothing.
 
-    fast_info is a single quote request; `.info` is a much heavier call that
-    Yahoo throttles first, and none of its extra fields are worth adding a
-    second round-trip per message."""
+    The session quote (`data.quotes`, read by `portfolio._snapshot`) is the
+    one the pages show: premarket and after-hours included, and dated. The
+    fast path stays for what the batch quote misses."""
+    with obs.swallow("chat.quote"):
+        if (got := _session_quote(ticker)) is not None:
+            return got
     try:
         import yfinance as yf
 
@@ -482,6 +542,35 @@ def _fetch_quote(ticker: str) -> Quote | None:
         year_high=num("yearHigh"),
         year_low=num("yearLow"),
         market_cap=num("marketCap"),
+    )
+
+
+def _session_quote(ticker: str) -> Quote | None:
+    from stocks.analysis.portfolio import _snapshot
+    from stocks.data.quotes import quote as live_quote
+
+    row = live_quote(ticker)
+    snap = _snapshot(row) if row else None
+    if not snap or snap.get("price") is None:
+        return None
+    basis = snap.get("basis")
+    # The close the move runs from: premarket against the last close,
+    # everything else against the one before (`_snapshot`).
+    since = snap.get("regular") if basis == "pre" else row.get(
+        "regularMarketPreviousClose")
+    cap = row.get("marketCap")
+    return Quote(
+        ticker=ticker.upper(),
+        name=str(row.get("shortName") or row.get("longName") or ""),
+        price=float(snap["price"]),
+        currency=str(snap.get("currency") or ""),
+        prev_close=float(since) if since else None,
+        year_high=snap.get("high_52w"),
+        year_low=snap.get("low_52w"),
+        market_cap=float(cap) if cap else None,
+        session=basis if basis in ("pre", "post") else "",
+        as_of=str(snap.get("as_of") or ""),
+        close=snap.get("regular") if basis in ("pre", "post") else None,
     )
 
 
@@ -614,7 +703,9 @@ def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
         message
         + "\n\n---\nLive market data fetched for this message (these are "
         "current prices — trust them over any figure you remember, and over "
-        "prices quoted in web results):\n"
+        "prices quoted in web results; each move is dated with its session, "
+        "and premarket or after-hours is where a report out of hours trades "
+        "first):\n"
         + "\n".join(q.line(lang) for q in quotes_)
     )
 

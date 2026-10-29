@@ -169,3 +169,12 @@ def test_classify_none_when_both_tries_are_unreadable():
     p = _FakeProvider(reply="no json here")
     assert chat_skills.classify(p, "k", "hello") is None
     assert len(p.calls) == 2
+
+
+def test_an_earnings_review_reads_the_reaction_where_it_trades():
+    """A report after the bell moves the stock in after-hours and the next
+    premarket; the session before it is not the reaction (ServiceNow's -3 %
+    was called the guidance's verdict when the print had it 18 % lower)."""
+    body = {s.id: s.body for s in chat_skills.catalog()}["earnings-review"]
+    assert "after-hours" in body and "premarket" in body
+    assert "before the report" in body

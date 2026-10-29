@@ -76,6 +76,38 @@ def test_unknown_company_name_falls_back_to_one_lookup():
     assert seen == ["Nvidia"]
 
 
+def test_an_imperative_that_opens_the_message_is_not_a_company():
+    """"Mira premarket" quoted MIRA: the verb went to Yahoo as a name."""
+    for verb in ("Mira", "Revisa", "Dime", "Busca", "Check", "Look", "Show"):
+        assert mentioned(f"{verb} premarket", lookup=_no_lookup) == [], verb
+
+
+def test_a_name_after_an_opening_word_is_looked_up_on_its_own():
+    seen = []
+
+    def lookup(name):
+        seen.append(name)
+        return "NOW" if name == "ServiceNow" else ""
+
+    assert mentioned("Resultados ServiceNow de hoy.", lookup=lookup) == ["NOW"]
+    assert seen == ["ServiceNow"]
+
+
+def test_a_held_name_matches_as_it_is_said_not_only_as_filed():
+    """The watchlist files "ServiceNow, Inc."; nobody types the suffix."""
+    known = {"NOW": "NOW", "SERVICENOW, INC.": "NOW",
+             "BANCO SANTANDER, S.A.": "SAN.MC", "VALE S.A.": "VALE"}
+    assert mentioned("Resultados ServiceNow de hoy.", known,
+                     lookup=_no_lookup) == ["NOW"]
+    assert mentioned("cómo va banco santander", known,
+                     lookup=_no_lookup) == ["SAN.MC"]
+    # A short form that is also a word of the language stays a word.
+    assert mentioned("vale, gracias", known, lookup=lambda n: "") == []
+    # A word inside another is not the name or the symbol.
+    assert mentioned("servicenowhere", known, lookup=lambda n: "") == []
+    assert mentioned("ya lo sé, i know", known, lookup=lambda n: "") == []
+
+
 def test_a_hit_that_only_starts_like_the_word_is_not_quoted(monkeypatch):
     # "Hay edge en booking?" was quoted as HAYW: Yahoo completes any prefix.
     hits = {
@@ -122,6 +154,9 @@ def test_named_is_the_tickers_and_the_names_as_typed():
 def test_a_word_capitalized_only_because_it_starts_a_sentence_names_nothing():
     assert named("Quiero vender") == []
     assert named("Vale. Entonces compro") == []
+    # An opener is not the name, and what follows it is not a sentence start.
+    assert named("Resultados ServiceNow de hoy.") == ["ServiceNow"]
+    assert named("Mira premarket") == []
 
 
 def test_a_crypto_pair_also_names_its_coin():
@@ -192,7 +227,7 @@ def test_line_carries_the_figures():
     line = _quote().line()
     assert "NVDA (NVIDIA)" in line
     assert "last 227.98 USD" in line
-    assert "today +0.81%" in line
+    assert "day +0.81%" in line and "today" not in line
     assert "52w range 164.07–236.54" in line
     assert "market cap 5,500.0B" in line
 
@@ -214,6 +249,41 @@ def test_day_pct_drops_a_move_no_session_produces():
     assert pence.day_pct is None
     assert pence.line() == "- VOD.L: last 12.50"
     assert Quote("XYZ", price=6.0, prev_close=3.0).day_pct == pytest.approx(1.0)
+
+
+def test_a_quote_says_which_session_its_move_belongs_to():
+    regular = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
+                    as_of="2026-10-28")
+    assert "last 150.13 USD | session 2026-10-28 -3.00%" in regular.line()
+    pre = Quote("NOW", price=123.42, currency="USD", prev_close=150.13,
+                session="pre", as_of="2026-10-29", close=150.13)
+    line = pre.line()
+    assert "premarket 123.42 USD" in line
+    assert "2026-10-29 -17.79% vs the last close 150.13" in line
+    post = Quote("NOW", price=126.0, currency="USD", prev_close=154.78,
+                 session="post", as_of="2026-10-28", close=150.13)
+    line = post.line()
+    assert "after-hours 126.00 USD" in line
+    assert "session 2026-10-28 incl. after-hours -18.59%" in line
+    assert "regular close 150.13" in line
+
+
+def test_a_quote_is_read_off_the_session_snapshot(monkeypatch):
+    """The chat's quote is the app's: premarket and after-hours included,
+    and dated, where yfinance's fast_info only had the regular session."""
+    from stocks.data import quotes as live
+
+    row = {"symbol": "NOW", "marketState": "PRE", "currency": "USD",
+           "shortName": "ServiceNow, Inc.", "regularMarketPrice": 150.13,
+           "regularMarketPreviousClose": 154.78, "preMarketPrice": 123.42,
+           "fiftyTwoWeekHigh": 239.6, "fiftyTwoWeekLow": 120.1,
+           "marketCap": 1.55e11}
+    monkeypatch.setattr(live, "quote", lambda t, **kw: row)
+    q = market._fetch_quote("NOW")
+    assert (q.price, q.prev_close, q.session, q.close) == (123.42, 150.13, "pre", 150.13)
+    assert q.name == "ServiceNow, Inc." and q.market_cap == 1.55e11
+    assert q.day_pct == pytest.approx(123.42 / 150.13 - 1)
+    assert (q.year_low, q.year_high) == (120.1, 239.6) and q.as_of
 
 
 def test_augment_appends_the_block():

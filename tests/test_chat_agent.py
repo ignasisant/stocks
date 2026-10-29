@@ -484,3 +484,11 @@ def test_finishing_ends_the_loop_and_owns_up_to_the_gap(monkeypatch):
     assert ev.missing == "AMD's 2026 guidance"
     assert "could not find: AMD's 2026 guidance" in ev.augment("q")
     assert ev.tools_used == ["get_quotes"]
+
+
+def test_a_question_about_results_or_a_move_gets_the_quote_too():
+    """"Resultados ServiceNow de hoy" searched the web and nothing else, and
+    the answer read the reaction off the book's stale session move."""
+    rule = agent.GATHER_SYSTEM
+    assert "results" in rule and "get_quotes" in rule
+    assert "premarket and after-hours" in rule

@@ -2323,6 +2323,11 @@ def _snapshot(quote: dict) -> dict | None:
     `pct` is None, the price kept, when the quote and the close it is measured
     from cannot be one session apart (`consistency.day_move`): a feed that
     mixed pence with pounds is a logged contradiction, not a +9,900 % day.
+
+    `basis` is which price the move is measured to — "pre", "post" or
+    "regular" — whether or not that window is still open: overnight
+    (PREPRE, CLOSED) the after-hours print is the latest trade, and for a
+    company that reported after the bell it is the whole reaction.
     """
     with obs.swallow("quote.session"):
         symbol = str(quote.get("symbol") or "")
@@ -2347,15 +2352,18 @@ def _snapshot(quote: dict) -> dict | None:
                 "price": price,
                 "pct": consistency.day_move(price, float(regular), ticker=symbol),
                 "session": "pre",
+                "basis": "pre",
                 "as_of": _quote_date(quote, today=True),
                 **session,
             }
-        if post and prev and not state.startswith("PRE"):
+        # Not in PRE itself, where Yahoo has moved on to today's session.
+        if post and prev and state != "PRE":
             price = float(post)
             return {
                 "price": price,
                 "pct": consistency.day_move(price, float(prev), ticker=symbol),
                 "session": "post" if state.startswith("POST") else None,
+                "basis": "post",
                 "as_of": _quote_date(quote),
                 **session,
             }
@@ -2365,6 +2373,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "price": price,
                 "pct": consistency.day_move(price, float(prev), ticker=symbol),
                 "session": None,
+                "basis": "regular",
                 "as_of": _quote_date(quote),
                 **session,
             }

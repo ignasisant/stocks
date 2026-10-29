@@ -775,6 +775,19 @@ def _known(x) -> bool:
     return x is not None and x == x
 
 
+def _day_move(pct: float, as_of, basis) -> str:
+    """A position's day move as the snapshot words it: the session's date,
+    and the extended-hours print when that is what it runs to. Bare "today"
+    was how the chat read ServiceNow's pre-report session as the reaction to
+    a report that had it 18 % lower after the bell."""
+    day = f" {as_of}" if isinstance(as_of, str) and as_of else ""
+    if basis == "pre":
+        return f"premarket{day} {pct:+.1%}"
+    if basis == "post":
+        return f"session{day} incl. after-hours {pct:+.1%}"
+    return f"session{day} {pct:+.1%}"
+
+
 def book_snapshot(
     tbl: pd.DataFrame | None, watchlist: Path, currency: str = "EUR"
 ) -> str:
@@ -801,7 +814,8 @@ def book_snapshot(
                 + (f" | P/L {pnl_pct:+.1%} ({_fmt_money(r['pnl'], currency)})"
                    if _known(pnl_pct) else "")
                 + (f" | weight {wt:.0%}" if _known(wt) else "")
-                + (f" | today {day_pct:+.1%}" if _known(day_pct) else "")
+                + (f" | {_day_move(day_pct, r.get('day_asof'), r.get('day_basis'))}"
+                   if _known(day_pct) else "")
             )
         _cost, total, unpriced = priced_totals(tbl)
         total_pnl = tbl["pnl"].dropna().sum()
@@ -813,6 +827,8 @@ def book_snapshot(
             # and answers "you are down" about a download, not a market.
             + (f" — {unpriced} of {len(tbl)} positions have no live price and"
                " are excluded from both totals" if unpriced else "")
+            + ". Each day move is dated with the session it belongs to: a "
+            "date before today is the last completed session, not today"
             + ":\n" + "\n".join(lines)
             + sector_exposure(tbl)
         )
@@ -1275,11 +1291,25 @@ def topic_ticker(history: list[dict], window: int = 6) -> str:
     "¿por qué ha subido hoy?" two turns after "¿por qué ha subido Shopify?"
     searched the web for "por qué ha subido hoy" and read four pages about
     nothing.
+
+    Newest first, and a reader's turn that names something is newer than any
+    link above it: its symbol is the topic, and a name no symbol is typed
+    for ends the search with "" rather than reach past it — "Mira premarket"
+    after "Resultados ServiceNow de hoy." searched for the coin a link three
+    turns up was about. No lookup: what was typed, or nothing.
     """
     for m in reversed(history[-window:]):
-        nav = m.get("nav") if m.get("role") == "assistant" else None
-        if isinstance(nav, dict) and nav.get("ticker"):
-            return str(nav["ticker"]).upper()
+        if m.get("role") == "assistant":
+            nav = m.get("nav")
+            if isinstance(nav, dict) and nav.get("ticker"):
+                return str(nav["ticker"]).upper()
+        elif m.get("role") == "user":
+            text = str(m.get("content") or "")
+            said = market.mentioned(text, lookup=lambda _name: "")
+            if said:
+                return said[0]
+            if market.named(text):
+                return ""
     return ""
 
 
