@@ -1,0 +1,1 @@
+import{sn as e}from"./app-DlruJbWp.js";function t(t,n=e()){if(!t)return``;let r=/^(\d{4})-(\d{2})-(\d{2})/.exec(t);if(!r)return t;let i=new Date(Number(r[1]),Number(r[2])-1,Number(r[3]));if(Number.isNaN(i.getTime()))return t;let a=n.toLowerCase().startsWith(`en`)?`en-GB`:n;return new Intl.DateTimeFormat(a,{day:`numeric`,month:`short`,year:`numeric`}).format(i)}export{t};
