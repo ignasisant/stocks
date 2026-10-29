@@ -618,6 +618,10 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
         }
 
     monkeypatch.setattr("stocks.data.fetch.fetch_many", download)
+    # A refresh within the day asks spark for the tail, not chart.
+    monkeypatch.setattr(
+        "stocks.data.fetch.fetch_tail", lambda tickers, **_: download(tickers)
+    )
     monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
     client = TestClient(app)
     headers = {"Authorization": "Bearer t"}
