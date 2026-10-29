@@ -154,6 +154,9 @@ def test_named_is_the_tickers_and_the_names_as_typed():
 def test_a_word_capitalized_only_because_it_starts_a_sentence_names_nothing():
     assert named("Quiero vender") == []
     assert named("Vale. Entonces compro") == []
+    # An opener is not the name, and what follows it is not a sentence start.
+    assert named("Resultados ServiceNow de hoy.") == ["ServiceNow"]
+    assert named("Mira premarket") == []
 
 
 def test_a_crypto_pair_also_names_its_coin():

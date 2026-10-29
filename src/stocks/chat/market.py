@@ -113,6 +113,16 @@ _NOT_NAMES = {
 _NOT_NAME_WORDS = frozenset(w.casefold() for w in _NOT_NAMES)
 
 
+def _opened(run: str) -> tuple[str, bool]:
+    """A capitalized run without the openers it starts with ("Resultados
+    ServiceNow" is "ServiceNow"), and whether what is left follows one
+    mid-sentence ("Vale. Entonces" starts a sentence again)."""
+    words, after = run.split(" "), False
+    while words and words[0].rstrip(".,") in _NOT_NAMES:
+        after = not words.pop(0).endswith(".")
+    return " ".join(words), after
+
+
 @dataclass(frozen=True)
 class Quote:
     """One live snapshot. Every field past `ticker` may be missing — Yahoo
@@ -300,11 +310,7 @@ def mentioned(
             add(tk)
     if not out:
         for cand in _NAME_RE.findall(message)[:_MAX_LOOKUPS + 2]:
-            # "Resultados ServiceNow" is a name after an opening word.
-            words = cand.split(" ")
-            while words and words[0] in _NOT_NAMES:
-                words.pop(0)
-            cand = " ".join(words)
+            cand, _ = _opened(cand)
             if not cand or cand in _NOT_NAMES or cand.upper() in NOT_TICKERS:
                 continue
             sym = lookup(cand)
@@ -423,8 +429,11 @@ def named(message: str) -> list[str]:
             out.append(base)
     starts = {m.end() for m in _SENTENCE_START_RE.finditer(message)}
     for m in _NAME_RE.finditer(message):
-        cand = m.group(0).rstrip(".")
-        if (m.start() in starts or cand in _NOT_NAMES or cand in _CALENDAR
+        # The rest of a run that opens with "Resultados" or "Mira" does not
+        # start the sentence.
+        cand, opened = _opened(m.group(0).rstrip("."))
+        if (not cand or (m.start() in starts and not opened)
+                or cand in _NOT_NAMES or cand in _CALENDAR
                 or cand.upper() in NOT_TICKERS):
             continue
         out.append(cand)

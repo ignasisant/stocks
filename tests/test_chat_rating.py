@@ -267,6 +267,25 @@ def test_topic_ticker_reads_the_last_answer_s_page_link():
     assert engine.topic_ticker(history[2:]) == ""
 
 
+def test_a_newer_subject_ends_the_older_topic():
+    """"Mira premarket" after "Resultados ServiceNow de hoy." searched for
+    CHILLGUY: the only page link in the thread was older than the question
+    that changed the subject, and the topic was read off links alone."""
+    history = [
+        {"role": "user", "content": "¿Cómo borro chillguy?"},
+        {"role": "assistant", "content": "...",
+         "nav": {"page": "ticker", "ticker": "CHILLGUY-EUR"}},
+        {"role": "user", "content": "Resultados ServiceNow de hoy."},
+        {"role": "assistant", "content": "**ServiceNow (NOW)** ..."},
+    ]
+    assert engine.topic_ticker(history) == ""
+    # Named by its symbol, the newer subject is the topic.
+    history[2] = {"role": "user", "content": "Resultados de NOW hoy"}
+    assert engine.topic_ticker(history) == "NOW"
+    ctx = engine.web_context([*history, {"role": "user", "content": "Mira premarket"}])
+    assert "about NOW" in ctx and "CHILLGUY" not in ctx
+
+
 def test_a_follow_up_searches_for_the_conversation_s_ticker():
     queries = chat_web.heuristic_queries(
         "porque ha subido hoy",

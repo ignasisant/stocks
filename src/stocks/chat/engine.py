@@ -1291,11 +1291,25 @@ def topic_ticker(history: list[dict], window: int = 6) -> str:
     "¿por qué ha subido hoy?" two turns after "¿por qué ha subido Shopify?"
     searched the web for "por qué ha subido hoy" and read four pages about
     nothing.
+
+    Newest first, and a reader's turn that names something is newer than any
+    link above it: its symbol is the topic, and a name no symbol is typed
+    for ends the search with "" rather than reach past it — "Mira premarket"
+    after "Resultados ServiceNow de hoy." searched for the coin a link three
+    turns up was about. No lookup: what was typed, or nothing.
     """
     for m in reversed(history[-window:]):
-        nav = m.get("nav") if m.get("role") == "assistant" else None
-        if isinstance(nav, dict) and nav.get("ticker"):
-            return str(nav["ticker"]).upper()
+        if m.get("role") == "assistant":
+            nav = m.get("nav")
+            if isinstance(nav, dict) and nav.get("ticker"):
+                return str(nav["ticker"]).upper()
+        elif m.get("role") == "user":
+            text = str(m.get("content") or "")
+            said = market.mentioned(text, lookup=lambda _name: "")
+            if said:
+                return said[0]
+            if market.named(text):
+                return ""
     return ""
 
 
