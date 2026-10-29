@@ -57,6 +57,12 @@ DEFAULT_FIXTURES: dict[str, str] = {
                     "\n## dcf\nValue 160.00 USD a share vs price 182.40\n"
                     "## analysts\nEPS consensus next FY: 6.65; revisions up "
                     "4 / down 1"),
+    "technicals": ("NVDA trend (daily, 500 bars): above its 200-day average "
+                   "(+14.2%, average rising) — uptrend\n12-1 momentum +38.5% · "
+                   "6.1% below the 52-week high (high 194.20, low 86.60)\n"
+                   "vs S&P 500 (return minus the index's): +9.8% over 6 "
+                   "months, +21.4% over 12 months\ncontext: RSI14 58 · ATR14 "
+                   "3.1% of price · 50-day avg 176.90 · 200-day avg 159.70"),
     "portfolio_snapshot": ("Value 98,400 EUR. Positions: NVDA 24% (+61%), "
                            "ASML 18% (-4%), MELI 12% (+22%), VWCE 30%, "
                            "cash 16%."),

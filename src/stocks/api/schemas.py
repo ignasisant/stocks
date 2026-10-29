@@ -533,15 +533,6 @@ class Bars(BaseModel):
         default_factory=list,
         description="Per-bar dividend amount; empty for a ticker that pays none.",
     )
-    rsi_verdict: str | None = Field(
-        default=None,
-        description=(
-            "oversold | neutral | overbought for the latest RSI(14), or null "
-            "while the indicator is still warming up. Computed here so every "
-            "client reads the same bands."
-        ),
-    )
-    rsi_tone: str | None = Field(default=None, description="green | gray | red.")
     rangebreaks: list[dict] = Field(
         default_factory=list,
         description=(
@@ -564,6 +555,63 @@ class Bars(BaseModel):
             "draw the same bars as `max`. Every label when `listed` is null."
         ),
     )
+
+
+class Trend(BaseModel):
+    """Where the price stands in its own trend and against its home index.
+
+    Fractions, not percentages. Every field is null when the history is too
+    short to say, and the whole read is empty for a money-market or bond
+    fund, whose price is a yield line, not a trend.
+    """
+
+    ticker: str
+    state: Literal["up", "down", "mixed"] | None = Field(
+        default=None,
+        description=(
+            "up: above a rising 200-session average; down: below a falling "
+            "one; mixed: the two disagree. Null under ~11 months of bars."
+        ),
+    )
+    price: float | None = None
+    sma50: float | None = None
+    sma200: float | None = None
+    sma200_rising: bool | None = Field(
+        default=None,
+        description="The 200-session average is above where it was a month ago.",
+    )
+    pct_vs_sma200: float | None = Field(
+        default=None, description="Price over its 200-session average, minus one."
+    )
+    mom_12_1: float | None = Field(
+        default=None,
+        description=(
+            "Return from twelve months ago to one month ago (the last month skipped)."
+        ),
+    )
+    pct_from_high: float | None = Field(
+        default=None, description="Distance below the 52-week closing high (<= 0)."
+    )
+    high_52w: float | None = None
+    low_52w: float | None = None
+    rs_6m: float | None = Field(
+        default=None, description="Return minus the home index's over six months."
+    )
+    rs_12m: float | None = Field(
+        default=None, description="Return minus the home index's over twelve months."
+    )
+    bench: str | None = Field(
+        default=None,
+        description="The home index's symbol (^IBEX for a Madrid line); null for a coin.",
+    )
+    bench_name: str | None = None
+    rsi14: float | None = Field(
+        default=None, description="Context only, never a verdict."
+    )
+    atr_pct: float | None = Field(
+        default=None, description="14-day average true range over the price."
+    )
+    sessions: int = Field(default=0, description="Daily bars the read stands on.")
 
 
 class CompareLine(BaseModel):

@@ -21,9 +21,6 @@ export type Bars = {
   /** Column per series, aligned to `dates`. Null is absent, not zero. */
   series: Record<string, (number | null)[]>;
   dividends: (number | null)[];
-  /** The domain's band on the latest RSI(14); null while it warms up. */
-  rsi_verdict: string | null;
-  rsi_tone: string | null;
   /**
    * Plotly-shaped axis breaks hiding closed-market time. This page plots on a
    * bar INDEX rather than a timestamp, which removes the same gaps without
@@ -37,6 +34,35 @@ export type Bars = {
    * the listing's whole history is left out, since it draws what "max" does.
    */
   ranges?: string[];
+};
+
+/**
+ * `/trend`: where the price sits against its 200-session average, its 12-1
+ * momentum and its return against the listing's home index. Every figure is a
+ * fraction and null until the history reaches it — a listing younger than a
+ * year has no 12-1, and a coin or an index has no home index to beat.
+ */
+export type Trend = {
+  ticker: string;
+  /** up: above a rising 200-day average; down: below a falling one. */
+  state: "up" | "down" | "mixed" | null;
+  price: number | null;
+  sma50: number | null;
+  sma200: number | null;
+  sma200_rising: boolean | null;
+  pct_vs_sma200: number | null;
+  mom_12_1: number | null;
+  pct_from_high: number | null;
+  high_52w: number | null;
+  low_52w: number | null;
+  rs_6m: number | null;
+  rs_12m: number | null;
+  bench: string | null;
+  bench_name: string | null;
+  rsi14: number | null;
+  atr_pct: number | null;
+  /** Daily bars the read stood on; 0 when there was no history at all. */
+  sessions: number;
 };
 
 export type Quote = {

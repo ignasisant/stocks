@@ -58,6 +58,7 @@ import {
   getPosition,
   getProfile,
   getQuote,
+  getTrend,
   getValuation,
   getLastViewed,
   getWatchlist,
@@ -249,6 +250,12 @@ export default function Page() {
   );
   const fund = useApi(
     () => (ticker ? getFund(ticker) : Promise.resolve(null)),
+    [ticker],
+  );
+  // Once per symbol, beside the quote: the range pills redraw the chart, not
+  // the trend. A money-market or bond fund answers empty without a download.
+  const trend = useApi(
+    () => (ticker ? getTrend(ticker) : Promise.resolve(null)),
     [ticker],
   );
 
@@ -469,6 +476,7 @@ export default function Page() {
             stats={stats.state === "loaded" ? stats.data : null}
             cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
             valuation={valuation.state === "loaded" ? valuation.data : null}
+            trend={trend.state === "loaded" ? trend.data : null}
           />
 
           {/* Compare sits one card from the foot of the page, whatever the

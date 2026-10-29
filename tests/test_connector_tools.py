@@ -384,6 +384,7 @@ def test_quotes_are_deduplicated_and_upper_cased(site, token, monkeypatch):
 @pytest.mark.parametrize("tool, arguments, module, handler, expected", [
     ("ticker_details", {"ticker": "aapl", "base": "USD"},
      "ticker", "metrics", ("AAPL", "USD")),
+    ("ticker_trend", {"ticker": "san.mc"}, "ticker", "trend", ("SAN.MC",)),
     ("search_tickers", {"query": " apple ", "limit": 5},
      "search", "find", ("<paths>", "apple", 5)),
     ("upcoming_earnings", {}, "earnings", "earnings", ("<paths>",)),

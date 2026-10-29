@@ -11,6 +11,7 @@ disagreeing about what a number says.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from datetime import date
 from typing import Annotated, Literal, cast
 
@@ -21,6 +22,7 @@ from yfinance.exceptions import YFRateLimitError
 from stocks import obs
 from stocks.analysis import crypto_market, review
 from stocks.analysis import dcf as dcf_model
+from stocks.analysis import trend as trend_model
 from stocks.analysis.compare import (
     INDICES,
     OFFERED_PEERS,
@@ -108,6 +110,7 @@ from stocks.api.schemas import (
     TickerSplits,
     TickerSplitsApplied,
     Trade,
+    Trend,
     UsShortInterest,
     Valuation,
     ValuationWindow,
@@ -195,11 +198,6 @@ def bars(symbol: Symbol, range: Range = "1y") -> Bars:
             dates=[],
             ranges=list(PERIODS),
         )
-    # The momentum read on the newest bar, banded in the domain. The page
-    # prints it under the RSI figure; shipping only the number would make each
-    # front end pick its own thresholds for "overbought".
-    latest_rsi = next((v for v in reversed(_column(df, "RSI14")) if v is not None), None)
-    banded = verdict("rsi", latest_rsi)
     since = listed(df, label)
     size = bar_interval(df, label)
     return Bars(
@@ -209,12 +207,43 @@ def bars(symbol: Symbol, range: Range = "1y") -> Bars:
         dates=[str(ts) for ts in df.index],
         series={name: _column(df, name) for name in _SERIES},
         dividends=_column(df, "Dividends"),
-        rsi_verdict=banded[0] if banded else None,
-        rsi_tone=banded[1] if banded else None,
         rangebreaks=rangebreaks(df, size),
         listed=since,
         ranges=ranges(df, since),
     )
+
+
+@router.get("/{symbol}/trend", response_model=Trend, summary="Trend against its index")
+def trend(symbol: Symbol) -> Trend:
+    """The price against its 200-session average, its 12-1 momentum and 52-week
+    high, and its return against the index of the market it trades on.
+
+    Read off the chart's own 2y daily download (`loaders.daily_bars`), so a
+    page that drew the 1y chart pays nothing more; the index closes are one
+    shared memo entry per market. A money-market or bond fund gets the empty
+    read: its price is a yield accruing, and "below its average" means
+    nothing there.
+    """
+    ticker = symbol.strip().upper()
+    return Trend(ticker=ticker, **asdict(read_trend(ticker)))
+
+
+def read_trend(ticker: str) -> trend_model.TrendRead:
+    """`trend`'s read, for the chat and the connector to share with the page."""
+    if loaders.asset_kind(ticker) in (MONEY_MARKET, BOND_FUND):
+        return trend_model.TrendRead()
+    # The company's country only matters on a German floor, where APC.DE is
+    # Apple and the DAX says nothing about it; elsewhere it is not asked.
+    country = (
+        loaders.listing_country(ticker) if trend_model.on_german_floor(ticker) else None
+    )
+    bench = trend_model.benchmark_for(ticker, country)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        bars = pool.submit(loaders.daily_bars, ticker)
+        index = pool.submit(loaders.daily_closes, bench.ticker, "2y") if bench else None
+        return trend_model.trend_read(
+            bars.result(), index.result() if index else None, bench
+        )
 
 
 @router.get("/{symbol}/compare", response_model=Comparison, summary="Against the index")
