@@ -17,11 +17,14 @@ the whole page.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import importlib.util
 import re
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, cast
 
 from stocks import obs, secrets_env
@@ -168,6 +171,8 @@ class Provider:
     # The listing answers without a key (OpenRouter's catalogue is public), so
     # a reader can browse before pasting one.
     public_models: bool = False
+    # `_stream` takes a `thinking` level (`thinking()`); the others ignore it.
+    _thinking: bool = False
 
     @property
     def default_model(self) -> str:
@@ -212,6 +217,11 @@ class Provider:
     def stream(
         self, api_key: str, model: str, system: str, messages: list[dict]
     ) -> Iterator[str]:
+        # Read here, when the call is made, not in the generator's body: that
+        # runs on whichever thread pulls the first chunk, in its context.
+        level = _THINKING.get()
+        if level and self._thinking:
+            return self._stream(api_key, model, system, messages, thinking=level)
         return self._stream(api_key, model, system, messages)
 
     def complete(
@@ -220,9 +230,14 @@ class Provider:
         """One short non-interactive completion (the skill router's call).
 
         Joins the streaming generator rather than adding a second code path per
-        provider — for the tiny replies involved the cost is identical."""
-        return "".join(self._stream(api_key, model or self.default_model,
-                                    system, messages))
+        provider — for the tiny replies involved the cost is identical. On the
+        cheapest model it thinks as little as it can unless told otherwise:
+        a router's JSON or a title gains nothing from a minute of reasoning."""
+        model = model or self.default_model
+        if model == self.classifier_model and not _THINKING.get():
+            with thinking("minimal"):
+                return "".join(self.stream(api_key, model, system, messages))
+        return "".join(self.stream(api_key, model, system, messages))
 
     def error_key(self, exc: Exception) -> str | None:
         """Locale key for a known SDK error, or None to let the caller re-raise."""
@@ -635,23 +650,62 @@ GEMINI_BUSY_RETRY_S = 1.5
 _GEMINI_TIMEOUT_MS = 120_000
 
 
-def _gemini_stream(api_key, model, system, messages):
+# How long a model thinks before it writes, for the calls made inside
+# `thinking()`. Gemini's flash thinks at its own default when not told, and
+# prod's answers on gemini-flash-latest took 94-164 s against 5-20 s on lite:
+# the reasoning, not the reading. "" = the model's own default.
+_THINKING: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "stocks_llm_thinking", default="")
+# Models that answered a thinking level with a 400 (2.5 takes a budget, not a
+# level): asked again without one, and not told again in this process.
+_NO_THINKING_LEVEL: set[str] = set()
+
+
+@contextlib.contextmanager
+def thinking(level: str) -> Generator[None]:
+    """Think at `level` ("minimal", "low", "medium", "high") in the calls
+    started in the block, on the providers that can be told (Gemini)."""
+    token = _THINKING.set(level)
+    try:
+        yield
+    finally:
+        _THINKING.reset(token)
+
+
+def _gemini_stream(api_key, model, system, messages, thinking=""):
     from google.genai import errors
 
+    if model in _NO_THINKING_LEVEL:
+        thinking = ""
+    first = True
     try:
-        first = True
-        for chunk in _gemini_stream_once(api_key, model, system, messages):
+        for chunk in _gemini_stream_once(api_key, model, system, messages,
+                                         thinking):
             first = False
             yield chunk
+        return
+    except errors.ClientError as exc:
+        if (not first or not thinking or getattr(exc, "code", None) != 400
+                or "think" not in str(exc).lower()):
+            raise
+        _NO_THINKING_LEVEL.add(model)
+        obs.warn("llm.gemini_thinking_refused", model=model, thinking=thinking)
+        thinking = ""
     except errors.APIError as exc:
         if not first or getattr(exc, "code", None) != 503:
             raise
         obs.warn("llm.gemini_busy_retry", model=model)
         time.sleep(GEMINI_BUSY_RETRY_S)
-        yield from _gemini_stream_once(api_key, model, system, messages)
+    yield from _gemini_stream_once(api_key, model, system, messages, thinking)
 
 
-def _gemini_stream_once(api_key, model, system, messages):
+# Usage fields as Gemini streams them: each chunk may carry its own partial
+# count, so the turn's is the largest seen of each, not the last chunk's.
+_GEMINI_USAGE = ("prompt_token_count", "cached_content_token_count",
+                 "candidates_token_count", "thoughts_token_count")
+
+
+def _gemini_stream_once(api_key, model, system, messages, thinking=""):
     from google import genai
     from google.genai import types
 
@@ -670,14 +724,22 @@ def _gemini_stream_once(api_key, model, system, messages):
         contents=cast(Any, contents),
         # str(): the SDK turns a str subclass (`Prompt`) into an empty Content,
         # and the model then answered with no persona, rules or book at all.
-        config=types.GenerateContentConfig(system_instruction=str(system)),
+        config=types.GenerateContentConfig(
+            system_instruction=str(system),
+            thinking_config=(types.ThinkingConfig(
+                thinking_level=cast(Any, thinking.upper()))
+                if thinking else None),
+        ),
     )
-    usage = None
+    usage: dict[str, int] = {}
     for chunk in stream:
-        usage = getattr(chunk, "usage_metadata", None) or usage
+        if (meta := getattr(chunk, "usage_metadata", None)) is not None:
+            for name in _GEMINI_USAGE:
+                usage[name] = max(usage.get(name, 0),
+                                  int(getattr(meta, name, 0) or 0))
         if chunk.text:
             yield chunk.text
-    metering.note_gemini(model, usage)
+    metering.note_gemini(model, SimpleNamespace(**usage) if usage else None)
 
 
 def _gemini_error(exc):
@@ -1428,6 +1490,7 @@ PROVIDERS: dict[str, Provider] = {
             classifier_model="gemini-flash-lite-latest",
             _list_models=_gemini_models,
             domain="gemini.google.com",
+            _thinking=True,
         ),
         Provider(
             "openrouter", "OpenRouter",

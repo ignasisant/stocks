@@ -1913,7 +1913,7 @@ class SkillPickAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("SkillPick")
-        self._properties: typing.Set[str] = set([  "skills",  ])
+        self._properties: typing.Set[str] = set([  "skills",  "hard",  ])
         self._props = SkillPickProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -1944,6 +1944,10 @@ class SkillPickProperties:
     @property
     def skills(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("skills"))
+    
+    @property
+    def hard(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("hard"))
     
     
 

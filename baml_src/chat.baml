@@ -3,6 +3,7 @@
 
 class SkillPick {
   skills string[]? @description("skill ids from the catalog")
+  hard bool? @description("true when answering takes reasoning: a comparison, a valuation, a what-if, several steps")
 }
 
 function PickSkills(instructions: string, input: string) -> SkillPick {

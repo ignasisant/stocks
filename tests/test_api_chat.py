@@ -90,6 +90,15 @@ def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
 
 
+@pytest.fixture(autouse=True)
+def no_documents(monkeypatch):
+    """The fixed path reads the app's help pages; no test here is about them,
+    and a hit would add a step the expected lists do not name."""
+    from stocks.chat import knowledge
+
+    monkeypatch.setattr(knowledge, "lookup", lambda *a, **k: [])
+
+
 @pytest.fixture
 def account(monkeypatch, tmp_path):
     users = tmp_path / "users"

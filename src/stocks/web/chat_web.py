@@ -26,12 +26,16 @@ over, so a dead classifier model costs relevance, not internet access.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import ipaddress
 import re
 import socket
+import threading
+import time
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -253,6 +257,51 @@ def plan(
 # ------------------------------------------------------------- search
 
 
+class _Kept[V]:
+    """What was fetched lately, by key, for `ttl_s` seconds and at most
+    `size` of them (oldest out first). Only what came back is kept: a search
+    DuckDuckGo throttled or a page that timed out is asked again next time."""
+
+    def __init__(self, ttl_s: float, size: int):
+        self.ttl_s, self.size = ttl_s, size
+        self._items: OrderedDict[str, tuple[float, V]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> V | None:
+        with self._lock:
+            hit = self._items.get(key)
+            if hit is None:
+                return None
+            if time.monotonic() - hit[0] >= self.ttl_s:
+                del self._items[key]
+                return None
+            return hit[1]
+
+    def put(self, key: str, value: V) -> None:
+        with self._lock:
+            self._items.pop(key, None)
+            self._items[key] = (time.monotonic(), value)
+            while len(self._items) > self.size:
+                self._items.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+
+
+# A question asked again — by the same reader in another thread, or by the
+# next one about the same company the same morning — searched and read the
+# same pages again: 2-8 s of every turn, and DuckDuckGo's patience with a
+# cloud IP. Hits are news-fresh for a quarter of an hour; an article's text
+# does not change in one.
+_SEARCHED: _Kept[list[dict]] = _Kept(ttl_s=15 * 60, size=256)
+_READ: _Kept[str] = _Kept(ttl_s=60 * 60, size=128)
+
+
+def _query_key(q: str) -> str:
+    return " ".join(q.lower().split())
+
+
 def search(queries: list[str], read_limit: int = READ_PAGES) -> list[Result]:
     """DuckDuckGo hits for the queries, deduped by URL and capped.
 
@@ -267,12 +316,20 @@ def search(queries: list[str], read_limit: int = READ_PAGES) -> list[Result]:
     try:
         from ddgs import DDGS
 
-        with DDGS(timeout=8) as ddg:
+        kept = {q: _SEARCHED.get(_query_key(q)) for q in queries}
+        with contextlib.ExitStack() as stack:
+            ddg = None
             for q in queries:
-                try:
-                    hits = ddg.text(q, max_results=_PER_QUERY)
-                except Exception:
-                    continue
+                hits = kept[q]
+                if hits is None:
+                    if ddg is None:
+                        ddg = stack.enter_context(DDGS(timeout=8))
+                    try:
+                        hits = ddg.text(q, max_results=_PER_QUERY)
+                    except Exception:
+                        continue
+                    if hits:
+                        _SEARCHED.put(_query_key(q), hits)
                 for h in hits or []:
                     url = (h.get("href") or h.get("url") or "").strip()
                     title = " ".join((h.get("title") or "").split())
@@ -510,6 +567,8 @@ def read_page(url: str, timeout: float = _PAGE_TIMEOUT) -> str:
     exception."""
     if not fetchable(url):
         return ""
+    if (kept := _READ.get(url)) is not None:
+        return kept
     try:
         req = urllib.request.Request(url, headers={"User-Agent": _BROWSER_UA})
         with _opener().open(req, timeout=timeout) as resp:
@@ -517,9 +576,12 @@ def read_page(url: str, timeout: float = _PAGE_TIMEOUT) -> str:
             if "html" not in ctype and "xml" not in ctype:
                 return ""
             raw = resp.read(_MAX_PAGE_BYTES)
-        return _extract(raw)
+        text = _extract(raw)
     except Exception:
         return ""
+    if text:
+        _READ.put(url, text)
+    return text
 
 
 def read_pages(results: list[Result], limit: int = READ_PAGES) -> list[Result]:
