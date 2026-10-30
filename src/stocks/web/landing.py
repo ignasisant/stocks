@@ -1830,7 +1830,7 @@ def _bento() -> str:
         inner = "".join(f'<span class="ag-l-pill">{esc(p)}</span>' for p in items)
         return f'<div class="ag-l-pills">{inner}</div>'
 
-    # No AI or Telegram tile: the assistant has its own section upstream, and a
+    # No AI or notifications tile: the assistant has its own section upstream, and a
     # one-paragraph summary of it here read as a second, weaker pitch.
     small = (
         ("landing.f_deep_title", "landing.f_deep_body"),

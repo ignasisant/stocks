@@ -2072,7 +2072,7 @@ def wipe(caller: Authed, account: Writer, body: Wipe) -> LedgerCleared:
 
 
 # ---------------------------------------------------------------- hand edits
-# One path for every edit a person asks for — here, in the chat, on Telegram
+# One path for every edit a person asks for — here, in the chat
 # or through the Claude connector (`stocks.portfolio.edits`). Planning writes
 # nothing and returns what the edit does to holdings and realized gains;
 # committing needs the plan's token back, so what is applied is what was

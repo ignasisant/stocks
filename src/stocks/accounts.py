@@ -10,7 +10,7 @@ It lives here rather than in `web/` because more than one runtime needs it:
   `stocks.web.auth`, which reads and writes the files under it),
 * the internal HTTP API (`stocks.api`), which authenticates with a bearer
   token and is handed an account address,
-* headless jobs — the Telegram digest, the CLI — which have a prefs.json and
+* headless jobs — the digest, the CLI — which have a prefs.json and
   no session at all.
 
 Nothing here talks to a user. `restore_account` raises `StorageUnavailable`
@@ -340,7 +340,7 @@ def stamp_login(
     kind = "login"
     changed = False
     # The address, written into the account's own file so headless jobs can
-    # identify it — the Telegram bot has a prefs.json and no session. The
+    # identify it — a headless job has a prefs.json and no session. The
     # free-chain allowlist (engine.free_eligible) is the caller that needs it.
     if email and prefs.get("email") != email:
         prefs["email"] = email
@@ -386,10 +386,9 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # The signed-in address, for the jobs that have a prefs.json and no
     # session (and for the free-chain allowlist). None until the next login.
     "email": None,
-    # Telegram notifications: chat_id is set by the Profile linking flow; the
-    # toggles only take effect once it is. The cron (notify/fanout.py) reads
-    # these headless straight from prefs.json.
-    "telegram_chat_id": None,
+    # Push notifications: the toggles only take effect once a device has
+    # subscribed (push.json). The cron (notify/fanout.py) reads them headless
+    # straight from prefs.json.
     "notify_digest": True,
     # Absent here for a while, and read as `.get("notify_weekly", True)` by both
     # the Profile toggle and the cron — so the review was delivered while a

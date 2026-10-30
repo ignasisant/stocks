@@ -2,7 +2,8 @@
  * The start card: the whole onboarding, drawn as a map rather than written
  * as instructions.
  *
- * Five nodes on a line — account, import, plan, AI key, Telegram — each an icon and
+ * Five nodes on a line — account, import, plan, AI key, notifications — and a sixth,
+ * the app, where this browser can install it; each an icon and
  * a word, each a door straight into the section that switches it on. The
  * first one still to do is lit, and gets the card's one big button. Under the
  * line, three things that need nothing switched on (look a ticker up, ask the
@@ -16,7 +17,7 @@
  * Every state on screen is the server's. `/onboarding` derives both groups
  * from the registry the guided tour reads (`stocks.web.onboarding`'s
  * `setup_state` / `explore_state`), so the card and the tour cannot disagree
- * about whether this account has Telegram linked. Nothing here re-computes
+ * about whether this account has notifications on. Nothing here re-computes
  * any of it, and nothing here reads prefs. Everything done, the card is gone.
  */
 
@@ -28,11 +29,13 @@ import { Icon } from "../../shell/Icon";
 import { Skeleton } from "../../shell/Layout";
 import { askAssistant, openAssistant } from "../../shell/assistant";
 import { signInHref } from "../../shell/guest";
+import { install, useInstallWay } from "../../shell/install";
+import { isStandalone } from "../../shell/resume";
 import { useRoute } from "../../shell/router";
 import { useSession, useSignIn } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import { toast } from "../../ui/toast";
-import { EXPLORE, SETUP, target, type Row } from "./checks";
+import { EXPLORE, setupLine, target, type Row } from "./checks";
 import type { Onboarding, TourStep } from "./types";
 import { Card } from "./ui";
 
@@ -68,6 +71,7 @@ function Door({
   const t = useT();
   const { go } = useRoute();
   const signIn = signInHref(useSignIn());
+  const way = useInstallWay();
   if (row.key === "login" && guest) {
     // A guest's pending sign-in is the action itself: a link to the login
     // route. A deployment with no identity provider has nowhere to send
@@ -91,6 +95,19 @@ function Door({
       <span className={className} aria-label={label} aria-disabled="true">
         {children}
       </span>
+    );
+  }
+  if (row.device && way === "prompt") {
+    // The browser's own dialog, from this press: the one moment it is allowed.
+    return (
+      <button
+        type="button"
+        className={className}
+        aria-label={label}
+        onClick={() => void install()}
+      >
+        {children}
+      </button>
     );
   }
   const to = target(row, steps);
@@ -126,6 +143,7 @@ export function SetupCard() {
   const { prefs, reload } = session;
   const { setParams } = useRoute();
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
+  const way = useInstallWay();
   // Shown or hidden first, saved after: the press is the decision, and a
   // failed write is worth one card coming back, not an error in front of
   // somebody tidying their screen.
@@ -161,10 +179,11 @@ export function SetupCard() {
   // sign-in from the real caller; the session is the fallback for a deploy
   // whose API predates the field.
   const guest = state.signed_in === undefined ? session.guest : !state.signed_in;
-  const setup: Entry[] = SETUP.map((row) => ({
-    row,
-    on: state.setup[row.key] === true,
-  }));
+  const setup: Entry[] = setupLine(state.setup, {
+    guest,
+    way,
+    installed: isStandalone(),
+  });
   const explore: Entry[] = EXPLORE.map((row) => ({
     row,
     on: state.explore[row.key] === true,

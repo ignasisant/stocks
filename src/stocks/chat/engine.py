@@ -1,7 +1,7 @@
 """Headless chat engine — the web assistant's brain, with no UI in it.
 
-Everything the chat drawer (api/routes/chat.py) and the Telegram bot
-(stocks/chat/bot.py) share lives here: the persona built from the investor
+Everything the chat drawer (api/routes/chat.py) and the headless callers
+share lives here: the persona built from the investor
 profile, the portfolio snapshot for the system prompt, skill routing, the
 BYOK→free provider resolution (also used by notify/narrative.py), the free
 -tier daily quota, and answer() — one complete chat turn against explicit
@@ -100,15 +100,6 @@ MAX_CONTEXT_MSGS = 20
 # ...and the same tail measured in tokens, applied after the web extracts and
 # quotes are appended. The message count is a cheap first cut; chat/tokens.py
 # is the one that knows how big the request actually got.
-
-# Prepended to the system prompt for Telegram turns: Telegram renders no
-# markdown tables/headers, so steer the model at the source.
-TELEGRAM_CONTEXT = (
-    "The user is chatting from Telegram. Answer in plain text: no markdown "
-    "tables, no headers, no code fences; short paragraphs and simple dashes "
-    "for lists.\n\n"
-)
-
 
 # ------------------------------------------------------------ provider keys
 
@@ -299,7 +290,7 @@ def free_eligible(prefs: dict) -> bool:
     """Whether this account may use the operator-funded chain.
 
     Reads the account's own prefs, so it works identically in the panel and in
-    the headless Telegram job — no session, no request, no email lookup.
+    a headless job — no session, no request, no email lookup.
     """
     policy = free_policy()
     if policy in ("open", "trial"):
@@ -434,7 +425,7 @@ _global_free_lock = threading.Lock()
 # every deploy and on idle scale-to-zero, and an in-memory counter hands out a
 # fresh 400 each time — which is exactly the lever an abuser leans on, since
 # the restart is free to provoke. Persisted through the same bucket as
-# everything else, so the web app and the Telegram job share one budget.
+# everything else, so the web app and the headless jobs share one budget.
 GLOBAL_FREE_FILE = DATA_DIR / "free_llm_global.json"
 
 
@@ -509,8 +500,8 @@ UNLISTED_WORDS = 12
 def spend_free_quota(prefs: dict, units: int = 1) -> bool:
     """Consume `units` of today's free allowance; False when they are not left.
 
-    Mutates `prefs` in place — the caller saves, so the web panel and the
-    Telegram bot share one counter ("free_msgs::<date>"). Keys from previous
+    Mutates `prefs` in place — the caller saves, so every caller
+    shares one counter ("free_msgs::<date>"). Keys from previous
     days are dropped on spend so prefs.json never accumulates. The account
     counter is checked first so a capped-out user can't drain the global pot.
 
@@ -1601,7 +1592,7 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
 def action_context(watchlist: Path) -> str:
     """What the action parser needs, headless: the watchlist (resolves
     company names to symbols) and existing groups. No 'current view' — there
-    is none on Telegram."""
+    is none headless."""
     from stocks.config import load_watchlist
     from stocks.web import auth
 
@@ -2301,7 +2292,7 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
     """A ledger request (`chat/book.py`): drafted with the book in hand, and
     put to the reader whenever it would change anything — on every surface.
 
-    `typed` is a surface with no card to press (the Telegram bot), so the
+    `typed` is a surface with no card to press (a headless caller), so the
     question ends by saying how to answer it in words.
     """
     from stocks.chat import book
@@ -2369,7 +2360,7 @@ def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
     """The prompt's saved-memories section, "" when off or empty.
 
     Every surface that writes to the user reads this same block — the chat,
-    the Telegram bot and digests, the daily card and its analyses, the
+    the digests, the daily card and its analyses, the
     walkthrough — so what the user told the assistant once steers all of
     them, not only the conversation it was said in. `routines=False` is the
     daily card's reading: it answers the routines from its own data
@@ -2505,7 +2496,7 @@ def card_block(chat_path: Path, today: date | None = None) -> str:
     none from the last CARD_DAYS days.
 
     The card is this assistant talking too: what it told the user this
-    morning is something a question in the drawer or on Telegram may be
+    morning is something a question in the drawer may be
     about ("why does the card say to sell?"), and a message that names
     nothing would not find it through the index. Its figures are as of the
     session it was written from, so the context below wins on anything
@@ -3098,7 +3089,7 @@ def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
 
 def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             db: Path, message: str, lang: str = "en",
-            context: str = TELEGRAM_CONTEXT,
+            context: str = "",
             timeout_s: float = 90.0,
             staged_import: str = "",
             on_phase: Callable[[str], None] | None = None,
@@ -3149,12 +3140,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     detected action is filed as a pending proposal (`Reply.proposal`) and
     nothing is written to the watchlist until the reader approves it — with
     the drawer's button (`settle_proposal`) or by answering "yes" in words,
-    which this function settles itself. Off for the Telegram bot, whose reader
+    which this function settles itself. Off for a headless caller, whose reader
     has no card to press and already said what they wanted.
 
     `draws` says the caller shows the turn's surfaces, so a message asking for
     a chart gets one drawn under the answer (`chat/charts.py`) and the model is
-    told it is there. Off for the Telegram bot, which has nowhere to draw it.
+    told it is there. Off for a headless caller, which has nowhere to draw it.
 
     `thread` pins the turn to the conversation it was asked in: its history is
     read from there and everything it files is written there, wherever the
@@ -3180,7 +3171,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # button pressed, not a question for a model that would cheerfully reply
     # "done" without having done anything.
     # A ledger proposal is asked on every surface, so it is answered on every
-    # surface too; on the bot ("sí" written) that is the only way to answer.
+    # surface too; on a headless one ("sí" written) that is the only way to answer.
     held = _open_proposal(history[:-1])
     if held is not None and (confirm_actions
                              or isinstance(history[held]["proposal"].get("book"), dict)):
@@ -3190,8 +3181,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                         thread=thread,
                                         chat_path=chat_path,
                                         watchlist=watchlist, lang=lang, db=db,
-                                        source="chat" if confirm_actions
-                                        else "telegram")
+                                        source="chat")
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -4038,7 +4028,7 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
 
 def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
            watchlist: Path, db: Path, message: str, lang: str = "en",
-           context: str = TELEGRAM_CONTEXT, timeout_s: float = 90.0,
+           context: str = "", timeout_s: float = 90.0,
            staged_import: str = "", view: str = "", focus: str = "",
            fence: str = "", session_keys: dict[str, str] | None = None,
            polish: Callable[[dict], None] | None = None,
@@ -4135,7 +4125,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
 
 def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   watchlist: Path, db: Path, message: str, lang: str = "en",
-                  context: str = TELEGRAM_CONTEXT,
+                  context: str = "",
                   timeout_s: float = 90.0,
                   staged_import: str = "", view: str = "", focus: str = "",
                   fence: str = "",

@@ -199,7 +199,7 @@ uv run stocks value MSFT --growth 0.10 --exit-multiple 22   # relative terminal
 uv run stocks screen --sort roic --min roic=0.15 --max pe_ttm=40 --top 15
 uv run stocks earnings --days 30              # upcoming earnings across the book
 uv run stocks portfolio --period 1y           # allocation, concentration, risk, betas
-uv run stocks alerts --deliver --earnings-days 7   # send hits + earnings via Telegram/email
+uv run stocks alerts --deliver --earnings-days 7   # send hits + earnings via email
 
 # --- portfolio: transactions -> FIFO positions, realized gains, Spanish tax ---
 uv run stocks tx add 2024-01-15 AAPL buy --qty 10 --price 185 --currency USD --fee 1
@@ -365,7 +365,7 @@ to stay strictly BYOK.
   The daily digest only reads a key, never slides it, so it can't keep one
   alive on its own.
 - The encryption is at rest, not zero-knowledge: `[chat].enc_key` lives on the
-  server (and in the Actions secrets the digest/Telegram jobs use), so a
+  server (and in the Actions secrets the notification jobs use), so a
   bucket-only leak yields useless ciphertext, while server compromise does
   not. Blast radius is your provider bill — revoke the key at the provider.
 - Key storage is **account-scoped** (prefs `<pid>_key_enc`), so multiple users
@@ -467,8 +467,7 @@ under `frontend/app/src/pages/`) and matching CLI commands:
 - **Upgraded alerts + delivery** (`stocks alerts`): beyond `above`/`below`,
   rules for `pct_move`, `drawdown`, `rsi_below`/`rsi_above`, `sma_cross`, and
   `high_52w`/`low_52w`. `--deliver` pushes hits (and, with `--earnings-days N`,
-  earnings reminders) to any channel configured in `.env` — Telegram and/or
-  email over SMTP; unconfigured channels are skipped, so it degrades to console.
+  earnings reminders) to email over SMTP when `.env` configures it; unconfigured channels are skipped, so it degrades to console.
 
 Pure logic (screening, portfolio math, alert evaluation, earnings-date
 selection) is unit-tested offline; only the fetchers touch the network.
@@ -727,7 +726,7 @@ src/stocks/
   analysis/sectors.py       per-sector cohorts (ETF basket + vetted non-US names)
   notify/alerts.py     evaluate alerts vs price history (price/RSI/drawdown/cross/52w)
   notify/narrative.py  optional LLM lines for the crons (digest highlight, alert note)
-  notify/deliver.py    push alerts to Telegram / email (env-gated, console fallback)
+  notify/deliver.py    send alerts by email (env-gated, console fallback)
   web/server.py        ASGI entry point: static landing at / + the app behind it
   web/landing.py       landing markup (sections, CSS, i18n copy)
   web/landing_static.py  the landing as a standalone HTML document
@@ -814,7 +813,7 @@ there — and 404s the rest.
 `stocks.api` is the HTTP surface over the domain packages —
 `stocks.portfolio`, `stocks.analysis`, `stocks.data`. The React shell reads and
 writes every book through it, and so can something other than a browser: a
-cron job, the Telegram bot, a phone.
+cron job, a script, a phone.
 
 It is mounted at `/api` inside `web/server.py`, so it deploys with the app and
 answers on the same hostname.
@@ -958,8 +957,8 @@ Verbosity is `STOCKS_LOG_LEVEL` (default `INFO`), so a revision can be turned
 up to `DEBUG` without a code change. Locally the same calls print a compact
 human line instead of JSON.
 
-What is instrumented today: sign-in, the free LLM chain (which backend answered, which failed and why), Telegram chat
-replies, and Yahoo rate limiting.
+What is instrumented today: sign-in, the free LLM chain (which backend answered, which failed and why), notification
+fan-outs, and Yahoo rate limiting.
 
 Query side — `stocks logs`, which shells out to `gcloud` (whoever is logged in
 with `gcloud auth login` and can read the project's logs can run it):
@@ -1001,12 +1000,6 @@ page out into several calls, and a reload is not a second visit. Probes,
 crawlers, scripts and the bundle's assets are dropped before counting.
 Offline, pass both snapshots: `--file app.jsonl --file http.jsonl` (the
 second from `export --http`).
-
-The same rollup, with the landing funnel, reaches the owner's Telegram every
-Monday morning: `stocks usage-digest` runs as the Cloud Run job
-(`infra/cron.tf`), reading the logs through the service's own identity since
-GitHub Actions holds no Google credentials. `--dry-run` prints the message;
-`--file` renders it from snapshots.
 
 ### Accounts
 
@@ -1139,89 +1132,70 @@ rollback, restore, secrets rotation.
   state the data handling and the "not investment advice" disclaimer; account
   deletion is self-serve on the Profile page and erases disk + bucket copies.
 
-## Telegram notifications & chat
+## Push notifications
 
-Every account can self-serve two notification streams — and a full two-way
-chat with the app's AI assistant — delivered by one shared Telegram bot
-(create it with @BotFather):
+Every account that turns notifications on from a device (Profile →
+Notifications, which subscribes it to Web Push) gets four streams on that
+device, each a short notification whose tap opens one page:
 
-- **Daily digest** (weekday evenings, after the US close): portfolio value,
-  day/week change, top movers, earnings in the next 7 days, and an optional
-  1-2 sentence LLM highlight — written with the user's own saved (BYOK) chat
-  key when present, falling back to the `[free_llm]` chain, else omitted. The
-  last few delivered highlights are kept in `alerts_state.json` and shown to
-  the model so it doesn't rewrite yesterday's sentence; a reply that echoes
-  one anyway is dropped rather than re-rolled.
-- **Price alerts** (hourly on market days): the per-holding rules from the
-  watchlist (`above`/`below`/`pct_move`/`drawdown`/RSI/SMA/52w), editable in
-  the app from the ticker page's *Alerts* popover. A rule messages once when
-  it fires, then stays quiet until it clears or 24h pass
-  (`data/.../alerts_state.json`). When something is actually going out, one
-  LLM call adds a 1-2 sentence note on what the fired rules have in common —
-  same provider resolution as the digest, and never advice to buy or sell.
+- **Daily digest** (weekday evenings, after the US close; opens *Today*): the
+  book's value and day change in the title, then the best and worst mover,
+  what is on the calendar (a tax deadline, results just out, earnings in the
+  next 7 days, ex-dividend dates, dividends received, a stale import) and an
+  optional one-sentence LLM highlight — written with the user's own saved
+  (BYOK) chat key when present, falling back to the `[free_llm]` chain, else
+  omitted. A quiet day sends nothing. The last few delivered highlights are
+  kept in `alerts_state.json` and shown to the model so it doesn't rewrite
+  yesterday's sentence; a reply that echoes one anyway is dropped.
+- **Weekly review** (Sunday afternoon; opens *Portfolio*): the week, month
+  and year, the best and worst name, concentration and its drift, dividends,
+  the week ahead and the benchmark.
+- **Price alerts** (hourly on market days; one name opens its page, several
+  the book): the per-holding rules from the watchlist
+  (`above`/`below`/`pct_move`/`drawdown`/RSI/SMA/52w), editable from the ticker
+  page's *Alerts* popover. A rule fires once, then stays quiet until it clears
+  or 24h pass (`data/.../alerts_state.json`). One LLM call adds a short note
+  on what the fired rules have in common — never advice to buy or sell.
+- **Reminder**: an account quiet for a week gets one push, another a week
+  later, then nothing until it comes back (`stocks nudge`).
 
-Both lines are optional by construction: no key, an empty free pot, an error
-or a 45 s timeout just ships the computed message. Free-chain calls made by
-these crons are charged to the process-wide daily pot
-(`FREE_LLM_GLOBAL_DAILY_CAP`), never to the account's own counter — the jobs
-never write `prefs.json`, and the shared keys are the operator's cost to bound.
-BYOK calls are the user's own billing and are not charged at all.
+The LLM lines are optional by construction: no key, an empty free pot, an
+error or a 45 s timeout just ships the computed message. Free-chain calls made
+by these crons are charged to the process-wide daily pot
+(`FREE_LLM_GLOBAL_DAILY_CAP`), never to the account's own counter. State
+(highlights, drift baseline, alert edges, reminders) is only remembered once a
+push actually reached a device, so an undelivered one is retried, not lost.
 
-- **Assistant chat**: message the bot and the app's chat assistant answers —
-  same persona (investor profile), live portfolio snapshot, analysis skills,
-  web search and provider resolution (your saved BYOK key first, then the
-  free chain with its shared daily cap) as the in-app side panel, on the same
-  conversation thread (`chat.json`). `/clear` resets the thread, `/help`
-  explains. Replies take ~30-90 s (a GitHub Actions runner cold-starts per
-  burst of messages).
-
-Users link Telegram from the Profile page (deep-link + `/start` code) and can
-toggle each stream or disconnect there. Digest and alerts are two GitHub
-Actions schedules (`.github/workflows/notify.yml`) running
-`stocks digest --all-users` and `stocks alerts --all-users`. Chat is
-event-driven: the bot has a **webhook** pointed at a tiny Cloudflare Worker
-(`workers/telegram-webhook/`) that stores each update in the R2 bucket
-(`data/tg_updates/`) and fires a `repository_dispatch`, which runs
-`stocks telegram-chat` (`.github/workflows/telegram_chat.yml`) to drain and
-answer the queue. In every job, accounts are discovered and restored from the
-`[storage]` bucket, so the ephemeral runner needs no user data in git.
+All four are GitHub Actions schedules (`.github/workflows/notify.yml`) running
+`stocks digest|weekly|alerts --all-users` and `stocks nudge`. Accounts and
+their `push.json` are discovered and restored from the `[storage]` bucket, so
+the ephemeral runner needs no user data in git. Finished chat answers push
+from the app itself (`notify/webpush.py`).
 
 Setup (one-time):
 
-1. @BotFather → `/newbot` → copy the token and the bot's username.
-2. `cp .notify_secrets.env.example .notify_secrets.env`, paste the bot token,
-   username, a random `TELEGRAM_WEBHOOK_SECRET` and the four
+1. `cp .notify_secrets.env.example .notify_secrets.env` and paste the four
    `STOCKS_STORAGE_*` values (same creds the app's deploy uses).
-3. `./scripts/setup_notify_secrets.sh` — pushes every GitHub Actions secret
-   (harvesting `CHAT_ENC_KEY` and the `FREE_LLM_*` keys from your local
-   `secrets.toml`) and prints the `[telegram]` block to add to
-   the deploy's `secrets.toml`. Needs `gh auth login` once.
-4. Deploy the webhook Worker and point the bot at it — see
-   `workers/telegram-webhook/README.md`. Rollback any time with
-   `uv run stocks telegram-chat --delete-webhook` (restores `getUpdates`
-   polling).
-5. Ship the updated `secrets.toml` to the deploy (see "Secrets rotation" in
-   `docs/RUNBOOK.md`), link your account on the Profile page, then
-   Actions → notifications → Run workflow → **test** to confirm delivery
-   (see below).
+2. `./scripts/setup_notify_secrets.sh` — pushes every GitHub Actions secret,
+   harvesting `WEBPUSH_PRIVATE_KEY` (`[webpush] private_key`, the deploy's own
+   — never a new one), `CHAT_ENC_KEY` and the `FREE_LLM_*` keys from your local
+   `secrets.toml`. Needs `gh auth login` once. (`infra/` manages the same
+   secrets with Terraform.)
 
 Testing delivery, cheapest first:
 
-- **In the app**: Profile → Notifications → *Send test message* — one message
-  to the logged-in account, straight from the app deploy's
-  `[telegram] bot_token`.
-- **Locally**: `uv run stocks notify-test` sends through the env-configured
-  channels (`TELEGRAM_CHAT_ID`, `SMTP_*`) — the same path as
-  `alerts --deliver`; `uv run stocks notify-test --all-users` walks the
-  per-account fan-out the crons use (add `--user owner` for one account,
-  `--dry-run` to list recipients without sending).
+- **In the app**: Profile → Notifications → *Send a test* — one push to this
+  device, straight from the app deploy.
+- **Locally**: `uv run stocks notify-test --all-users` walks the per-account
+  fan-out the crons use (add `--user owner` for one account, `--dry-run` to
+  list recipients without sending).
 - **On the real runner**: Actions → notifications → Run workflow → job
   `test`, optionally with `user` and `dry_run`. This is the only check that
   exercises the Actions secrets and the bucket roster together, so run it
   after any secret rotation.
 
-Other local smoke tests: `uv run stocks digest --dry-run`,
-`uv run stocks telegram-chat --ask "how is my book?" --user owner`.
+Other local smoke test: `uv run stocks digest` prints the owner's digest
+(title, body, link) without sending anything.
 
 ## Roadmap
 
@@ -1229,9 +1203,7 @@ Other local smoke tests: `uv run stocks digest --dry-run`,
 - [x] Portfolio analytics (allocation, concentration, beta/vol/drawdown, benchmarks)
 - [x] Sector screen (per-sector cohort, ranked by KPIs, top 3 called out)
 - [x] Earnings calendar + reminders
-- [x] Alert upgrades (%move, drawdown, RSI, SMA cross, 52w) + Telegram/email delivery
-- [x] Per-user Telegram notifications: daily digest + hourly price alerts (GitHub Actions cron)
-- [x] Telegram assistant chat: webhook → Cloudflare Worker → R2 queue → Actions, same engine/thread as the in-app chat
-- [ ] Desktop / push (mobile) notifications on alert hits
+- [x] Alert upgrades (%move, drawdown, RSI, SMA cross, 52w) + email delivery
+- [x] Per-user push notifications: daily digest, weekly review, price alerts, reminder (GitHub Actions cron)
 - [ ] More indicators (MACD, Bollinger)
 - [ ] Backtesting simple strategies

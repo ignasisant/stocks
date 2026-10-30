@@ -9,7 +9,7 @@ daily card is where it gets answered. What is tested here:
 * the cap, apart from the memory's own: the card answers them in one call;
 * the third way in — the same question on ROUTINE_DAYS different days
   (`learnings.notice`) — and that a routine the user deleted stays deleted;
-* the chat's note, the drawer's change and the Telegram line that say so.
+* the chat's note and the drawer's change that say so.
 """
 
 from __future__ import annotations
@@ -298,13 +298,3 @@ def test_a_plain_question_is_logged_without_a_model(tmp_path, monkeypatch):
     assert handed == []
     [entry] = stored(learnings.path_for(chat))["asked"]
     assert entry["day"] == datetime.now(UTC).date().isoformat()
-
-
-def test_telegram_tells_a_routine_as_the_daily_card(monkeypatch):
-    from stocks.chat import bot
-
-    reply = engine.Reply(text="ok", provider_id="groq", learned=(
-        {"op": "added", "id": "m_1", "text": "Cada mañana dime cómo voy",
-         "kind": "routine", "auto": True, "repeated": 3},))
-    note = bot._memory_note(reply, "es")
-    assert "Añadido a tu acción diaria: «Cada mañana dime cómo voy»" in note

@@ -3429,14 +3429,6 @@ class Prefs(BaseModel):
             "means the default layout."
         ),
     )
-    telegram_linked: bool = Field(
-        default=False,
-        description=(
-            "Whether a Telegram chat is linked. The chat id itself stays on the "
-            "server: a caller needs to know that notifications can be sent, not "
-            "where the cron sends them."
-        ),
-    )
     chat_panel_open: bool = False
 
 
@@ -3830,7 +3822,8 @@ class Change(BaseModel):
 
     id: int
     at: str = Field(description="ISO-8601 UTC.")
-    source: str = Field(description="chat, telegram, mcp, api or import.")
+    source: str = Field(
+        description="chat, mcp, api or import (older rows may read 'telegram').")
     summary: str
     changes: list[RowChange]
     undone_at: str | None = None

@@ -15,8 +15,8 @@ github_token = ""
 # R2 — must match the existing bucket when importing
 # r2_bucket_name = "aguait-user-data"
 
-# Telegram — @BotFather /newbot. NEVER set a webhook on this bot.
-telegram_bot_token = ""
+# Web Push — the app secret's [webpush] private_key, copied. NEVER a new one.
+webpush_private_key = ""
 
 # Optional — the app's public origin, so notifications can link back into it
 app_public_url = "" # e.g. https://topstocks.example

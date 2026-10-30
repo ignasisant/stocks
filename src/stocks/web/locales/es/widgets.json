@@ -18,7 +18,7 @@
   "widgets.tags_placeholder": "Elige o escribe una etiqueta nueva…",
   "widgets.tags_help": "Grupos libres, guardados en tu lista de seguimiento a medida que editas. Busca por etiqueta en la lista de valores para filtrar un grupo.",
   "widgets.alerts": "Alertas",
-  "widgets.alerts_caption": "Se comprueban cada hora en días de mercado y se envían por Telegram — conéctalo en tu Perfil.",
+  "widgets.alerts_caption": "Se comprueban cada hora en días de mercado y llegan como notificación — actívala en tu Perfil.",
   "widgets.alert_none": "Aún no hay alertas en {ticker}.",
   "widgets.alert_type": "Condición",
   "widgets.alert_price": "Precio",

@@ -912,7 +912,9 @@
 .hm-steps {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  /* minmax(0, …): a bare 1fr is never narrower than its word, and six words
+     on a phone pushed the line past the card. */
+  grid-auto-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1003,6 +1005,19 @@ a.hm-step {
 .hm-step-item[data-state="next"] .hm-step-label {
   color: var(--ag-text-primary);
   font-weight: 600;
+}
+
+/* Narrow: six words do not fit under six nodes, so only the lit one keeps
+   its word (the big button below names it again). Each node still says its
+   name and state through `aria-label`; the word was aria-hidden already. */
+@container ag-main (max-width: 38rem) {
+  .hm-step-item:not([data-state="next"]) .hm-step-label {
+    display: none;
+  }
+
+  .hm-step-item[data-state="next"] .hm-step-label {
+    white-space: nowrap;
+  }
 }
 
 @media (hover: hover) {

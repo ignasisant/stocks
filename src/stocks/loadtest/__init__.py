@@ -78,7 +78,7 @@ PAGES: dict[str, list[str]] = {
     "sentiment": ["/v1/pulse", "/v1/pulse/book", "/v1/pulse/tables"],
     "profile": [
         "/v1/me", "/v1/profile", "/v1/profile-options", "/v1/jurisdictions",
-        "/v1/onboarding", "/v1/import/last", "/v1/notify/telegram",
+        "/v1/onboarding", "/v1/import/last",
         "/v1/watchlist", "/v1/watchlist/suggestions",
         "/v1/portfolio/transactions",
     ],

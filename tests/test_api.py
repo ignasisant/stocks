@@ -785,11 +785,6 @@ WRITES = {
     # again, and a token that could set it would retire an announcement the
     # account never saw.
     ("/v1/onboarding/seen", "post"),
-    # Linking a Telegram chat, and the two things done with a linked one. A
-    # token could otherwise aim the bot at a chat id it named itself.
-    ("/v1/notify/telegram", "post"),
-    ("/v1/notify/telegram", "delete"),
-    ("/v1/notify/telegram/test", "post"),
     # This device's Web Push subscription, its test, and the on-screen beat
     # that holds a push back. A token has no device, and one that could
     # subscribe would read every finished answer's question.

@@ -3,8 +3,8 @@
 The assistant itself lives in `stocks.chat.engine`: the provider chain, the free
 quota, skill routing, the web grounding, and a turn that ends with a completed
 user+assistant pair on disk. This router is the second binding of that engine
-(the Telegram bot is the first), so a React drawer and a chat window in Telegram
-give the same answer to the same question, and a change to how a turn works is
+(headless callers are the first), so every surface
+gives the same answer to the same question, and a change to how a turn works is
 made once.
 
 Sending is a stream, not a request/response. A chat turn takes ten to forty

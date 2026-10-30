@@ -53,7 +53,7 @@ def account(monkeypatch, tmp_path):
                 "language": "es",
                 "recent_searches": ["NVDA"],
                 "first_seen": "2024-01-01T00:00:00Z",
-                "telegram_chat_id": 12345,
+                "last_seen": "2026-10-01",
             }
         )
     )
@@ -87,11 +87,10 @@ def test_the_view_is_the_settings_and_not_the_stored_file(client, account):
     assert "recent_searches" not in payload
 
 
-def test_the_chat_id_stays_on_the_server(client, account):
-    """A caller needs to know notifications can be sent, not where they go."""
+def test_the_last_visit_stays_on_the_server(client, account):
+    """The reminder's clock: the server stamps it, no client renders it."""
     payload = client.get("/v1/prefs", params=WHO, headers=AUTH).json()
-    assert payload["telegram_linked"] is True
-    assert "telegram_chat_id" not in payload
+    assert "last_seen" not in payload
 
 
 # --------------------------------------------------------------------- writing
@@ -115,7 +114,7 @@ def test_a_session_changes_only_what_it_sent(client, account, signed_in):
     assert stored["currency"] == "USD"
     assert stored["language"] == "es"  # untouched
     assert stored["recent_searches"] == ["NVDA"]  # untouched
-    assert stored["telegram_chat_id"] == 12345  # untouched
+    assert stored["last_seen"] == "2026-10-01"  # untouched
 
 
 def test_a_key_outside_the_allowlist_is_refused_by_name(client, account, signed_in):
@@ -127,12 +126,12 @@ def test_a_key_outside_the_allowlist_is_refused_by_name(client, account, signed_
     assert json.loads(account.prefs.read_text())["first_seen"] == "2024-01-01T00:00:00Z"
 
 
-def test_the_chat_id_is_not_writable(client, account, signed_in):
-    """It is proved by the linking handshake, not asserted by a client: a raw
-    write would point this account's digest at a chat nobody verified."""
-    response = signed_in.patch("/v1/prefs", json={"telegram_chat_id": 999})
+def test_the_last_visit_is_not_writable(client, account, signed_in):
+    """Stamped by sign-in, not asserted by a client: a raw write would hold
+    off — or bring on — the reminder a quiet account gets."""
+    response = signed_in.patch("/v1/prefs", json={"last_seen": "2030-01-01"})
     assert response.status_code == 422
-    assert json.loads(account.prefs.read_text())["telegram_chat_id"] == 12345
+    assert json.loads(account.prefs.read_text())["last_seen"] == "2026-10-01"
 
 
 def test_null_means_auto_and_is_not_the_same_as_omitting(client, account, signed_in):
@@ -372,7 +371,7 @@ def test_saving_it_marks_it_set_and_leaves_the_settings_alone(
     stored = json.loads(account.prefs.read_text())
     assert stored["investor_profile"]["set"] is True
     assert stored["language"] == "es"  # untouched
-    assert stored["telegram_chat_id"] == 12345  # untouched
+    assert stored["last_seen"] == "2026-10-01"  # untouched
 
 
 def test_the_lists_come_back_in_the_order_the_form_offers_them(
@@ -541,7 +540,7 @@ def test_the_plan_is_saved_whole_and_read_back_as_applied(account, signed_in, no
     assert body["limits"]["max_position_pct"] == 10
     stored = json.loads(account.prefs.read_text())
     # A merge, not a rewrite: the settings next door are still there.
-    assert stored["telegram_chat_id"] == 12345
+    assert stored["last_seen"] == "2026-10-01"
     assert stored["investor_plan"]["set"] is True
     assert signed_in.get("/v1/plan").json()["contribution"]["amount"] == 500
 

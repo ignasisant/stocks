@@ -2,8 +2,8 @@
 
 The assistant keeps several threads per account inside a single chat.json.
 What matters here: the v1 single-thread file still loads, load never writes,
-load_chat/save_chat keep acting on the active thread (the Telegram bot and
-the headless engine call them unchanged), and the housekeeping — reuse of an
+load_chat/save_chat keep acting on the active thread (the
+headless engine calls them unchanged), and the housekeeping — reuse of an
 empty thread, deletion fallbacks, the cap — never leaves the book without an
 active conversation.
 """

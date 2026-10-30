@@ -2,8 +2,8 @@
 
 An import writes what a statement says. What a person later finds wrong in it
 — a transfer one broker printed as a sale, a holding two brokers spell two
-ways, a row typed in twice — has to be fixable by asking, from the chat, the
-Telegram bot or Claude through the connector. Freedom to rewrite the book is
+ways, a row typed in twice — has to be fixable by asking, from the chat or
+Claude through the connector. Freedom to rewrite the book is
 only safe with three promises, and this module is where all of them live so no
 surface can skip one:
 
@@ -55,7 +55,7 @@ from stocks.portfolio.ledger import _row_to_tx as _from_sql
 
 FIELDS = ("date", "ticker", "action", "quantity", "price", "currency", "fee", "note")
 OPS = ("add", "update", "delete", "set_action", "relabel", "split_row")
-SOURCES = ("chat", "telegram", "mcp", "api", "import")
+SOURCES = ("chat", "mcp", "api", "import")
 
 # Actions whose quantity is shares (or a split ratio), so zero is meaningless.
 _SHARES = ("buy", "sell", "transfer_in", "transfer_out", "split")

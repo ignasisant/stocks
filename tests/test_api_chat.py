@@ -1263,7 +1263,7 @@ def test_the_import_note_opens_the_import_page(client, account, signed_in, serve
     cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
     stored = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"][-1]
     assert [c["args"] for c in stored["tool_calls"]] == [{"page": "import"}]
-    # Telegram and bare clients run no navigate: no button, words alone.
+    # Bare clients run no navigate: no button, words alone.
     stream = events(signed_in.post(
         "/v1/chat/runs", json=run("importa transacciones")
     ).text)
@@ -1273,7 +1273,7 @@ def test_the_import_note_opens_the_import_page(client, account, signed_in, serve
 def test_a_client_that_does_not_run_navigate_is_never_offered_it(
     client, account, signed_in, served
 ):
-    """A surface with no pages to open — Telegram, a bare AG-UI client — is
+    """A surface with no pages to open — a bare AG-UI client — is
     not told it can link to one."""
     provider = served(Recorder())
     signed_in.post("/v1/chat/runs", json=run("hola"))

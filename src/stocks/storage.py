@@ -264,7 +264,7 @@ def read(path: Path) -> bytes | None:
 def read_key(key: str) -> bytes | None:
     """One object's bytes by bucket key, or None (missing / storage off).
 
-    For bucket-only data with no local mirror (the Telegram update queue);
+    For bucket-only data with no local mirror (feedback and diagnostics records);
     file-backed data goes through restore().
     """
     if not enabled():

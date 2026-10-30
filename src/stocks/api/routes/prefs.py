@@ -3,11 +3,10 @@
 Two rules shape this module, and both are about what is NOT here.
 
 **Not every stored key is writable.** prefs.json also holds things the server
-stamps (when this account was first seen), things a verified flow owns (the
-Telegram chat id, which is proved by the linking handshake, not asserted by a
-client) and things with a route of their own (the recent-search list). A PATCH
-that accepted the whole file would let a client forge its own signup date and
-point another chat at its digest, so the writable set is an explicit allowlist
+stamps (when this account was first and last seen) and things with a route
+of their own (the recent-search list). A PATCH that accepted the whole file
+would let a client forge its own signup date or its last visit, which the
+reminder reads, so the writable set is an explicit allowlist
 and anything outside it is refused by name rather than ignored.
 
 **Not every caller may write.** A bearer token names nobody and any holder can
@@ -163,12 +162,7 @@ class PrefsPatch(BaseModel):
 
 
 def _view(stored: dict) -> Prefs:
-    """The settings a client renders, and nothing else.
-
-    The chat id itself does not cross the wire — a caller needs to know whether
-    Telegram is linked, not what it is linked to, and the id is what the
-    notification cron addresses.
-    """
+    """The settings a client renders, and nothing else."""
     return Prefs(
         currency=str(stored.get("currency") or "EUR"),
         language=stored.get("language"),
@@ -190,7 +184,6 @@ def _view(stored: dict) -> Prefs:
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),
         notify_alerts=bool(stored.get("notify_alerts")),
-        telegram_linked=bool(stored.get("telegram_chat_id")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
         home_layout=_layout(stored.get("home_layout")),
     )

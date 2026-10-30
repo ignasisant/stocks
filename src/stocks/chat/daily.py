@@ -2481,14 +2481,14 @@ def to_store(
 # is something it said. The thread is what the card's "Ask" opens, so a
 # question about a line is asked with the line above it; it joins the list of
 # the reader's conversations once they open or write in it; and it is indexed
-# like them, so the chat and the Telegram bot can recall what a card said when
+# like them, so the chat can recall what a card said when
 # a message names it.
 
 
 def card_path(chat_path: Path) -> Path:
     """The account's stored card, from its chat file: the two sit side by
     side in every account's data dir (`accounts.UserPaths`), and the chat
-    engine and the Telegram bot only ever hold the chat's."""
+    engine only ever holds the chat's."""
     return Path(chat_path).with_name("daily_action.json")
 
 

@@ -45,7 +45,6 @@ export type Prefs = {
   notify_digest: boolean;
   notify_weekly: boolean;
   notify_alerts: boolean;
-  telegram_linked: boolean;
   chat_panel_open: boolean;
   /** What is switched on, put away. */
   setup_card_dismissed: boolean;

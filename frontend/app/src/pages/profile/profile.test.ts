@@ -21,9 +21,9 @@ describe("the identity card's initials", () => {
 
 describe("the tour card's setup progress", () => {
   it("counts what is on, of everything", () => {
-    expect(progress({ login: true, import: true, ai: false, telegram: false })).toEqual(
-      [2, 4],
-    );
+    expect(progress({ login: true, import: true, ai: false, notify: false })).toEqual([
+      2, 4,
+    ]);
   });
 
   it("draws nothing for nothing to count", () => {

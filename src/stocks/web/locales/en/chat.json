@@ -449,7 +449,7 @@
   "chat.mem_switch_note": "Turning these off deletes nothing: the memory is kept and simply not used.",
   "chat.mem_manage": "Manage memory",
   "chat.mem_back": "Back to settings",
-  "chat.mem_explain": "What the assistant remembers about you. The chat, the daily action and the Telegram messages all read it, so the more precise, the better.",
+  "chat.mem_explain": "What the assistant remembers about you. The chat, the daily action and the notifications all read it, so the more precise, the better.",
   "chat.mem_loading": "Reading the memory…",
   "chat.mem_is_off": "Memory is switched off: these memories are kept, but not used in answers.",
   "chat.mem_count": "{n} of {max} memories",

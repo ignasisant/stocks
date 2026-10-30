@@ -288,7 +288,7 @@ def ledger_diff(offer: dict, translate) -> list[dict]:
     Read-only: a book edit is committed exactly as planned (`chat/book.py`),
     so there is no form — only the positions, the shares held and the gain
     per tax year before and after. The same facts are lines in the turn's
-    text for a reader without the drawer (Telegram).
+    text for a reader without the drawer.
     """
     figures = (offer.get("book") or {}).get("impact") or {}
     sid = f"diff_{offer['id']}"

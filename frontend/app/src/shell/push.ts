@@ -1,5 +1,6 @@
 /**
- * Web Push on this device: "your answer is ready" when the app is not on screen.
+ * Web Push on this device: the digest, alerts, reminders and finished answers
+ * as notifications when the app is not on screen.
  *
  * The browser does the subscribing — permission, then `pushManager.subscribe`
  * with the server's key — and the server keeps the result and sends the push
@@ -17,6 +18,8 @@
 
 import { useEffect } from "react";
 import { BASE, get, send } from "./api";
+import { appleMobile } from "./install";
+import { isStandalone } from "./resume";
 
 /** `GET /push` — `routes.push.Push`. */
 export type PushState = {
@@ -26,6 +29,8 @@ export type PushState = {
   key: string | null;
   /** Whether this device's subscription is kept. */
   subscribed: boolean;
+  /** Devices of this account that receive notifications, this one included. */
+  devices: number;
 };
 
 const WORKER = "/sw.js";
@@ -43,11 +48,7 @@ export function supported(): boolean {
 /** An iPhone or iPad in a browser tab: push waits for the Home Screen app. */
 export function needsInstall(): boolean {
   if (typeof window === "undefined") return false;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const standalone =
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return ios && !standalone;
+  return appleMobile() && !isStandalone();
 }
 
 export function permission(): NotificationPermission | "unsupported" {

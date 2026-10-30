@@ -9,10 +9,10 @@ import pytest
 
 from stocks.data.dividends import DividendEvent
 from stocks.data.earnings import EarningsEvent
+from stocks.notify import render
 from stocks.notify import weekly as wk
 
 D = date(2026, 9, 13)  # a Sunday
-ORIGIN = "https://topstocks.example"
 
 
 def full_data(**over) -> wk.WeeklyData:
@@ -41,105 +41,91 @@ def full_data(**over) -> wk.WeeklyData:
 # ---------------------------------------------------------------- rendering
 
 
-def test_render_full_review_en():
-    text = wk.render_weekly(full_data(), "en")
-    assert "<b>🗓 TopStocks — week in review</b> · Sun 13 Sep" in text
-    assert "<b>Portfolio</b> €104,820" in text
-    assert "Week +1,940 € (+1.89%)" in text
-    assert "Month +3,200 € (+3.15%)" in text and "YTD +12,400 € (+13.40%)" in text
-    assert "vs S&amp;P 500 · Week +1.10% · Month +2.40% · YTD +9.80%" in text
-    assert "<b>Best of the week</b>\n▲ NVDA +1,240 € (+8.1%)" in text
-    assert "<b>Worst of the week</b>\n▼ MELI -820 € (-5.2%)" in text
-    assert "€212 received this week, from 3 payments" in text
+def tr(lang: str = "en"):
+    from stocks.web.i18n import translate
+
+    return lambda key, **kw: translate(f"notify.{key}", lang, **kw)
 
 
-def test_render_spanish_labels():
-    text = wk.render_weekly(full_data(), "es")
-    assert "la semana en revisión" in text
-    assert "Mes" in text and "Año" in text
-    assert "Lo mejor de la semana" in text and "Lo peor de la semana" in text
-    assert "dom 13 sep" in text
+def test_the_push_carries_the_week_in_the_title_and_opens_the_portfolio():
+    msg = wk.weekly_message(full_data(highlight="Nvidia made the week."), "en")
+    assert msg["title"] == "Your week +1,940 € (+1.89%) · portfolio €104,820"
+    assert msg["body"].splitlines() == [
+        "Month +3,200 € (+3.15%) · YTD +12,400 € (+13.40%)",
+        "▲ NVDA +1,240 € (+8.1%) · ▼ MELI -820 € (-5.2%)",
+        "Nvidia made the week.",
+    ]
+    assert msg["url"] == "/portfolio" and msg["tag"] == "weekly"
+
+
+def test_the_push_is_translated():
+    msg = wk.weekly_message(full_data(), "es")
+    assert msg["title"] == "Tu semana +1,940 € (+1.89%) · cartera €104,820"
+    assert msg["body"].startswith("Mes +3,200 € (+3.15%) · Año +12,400 € (+13.40%)")
+
+
+def test_without_a_highlight_the_next_lines_move_up():
+    lines = wk.weekly_message(full_data(), "en")["body"].splitlines()
+    assert len(lines) == render.BODY_LINES
+    assert lines[2].startswith("Top 5 = 68% of the book")
+
+
+def test_benchmark_line_reads_the_same_windows_off_the_index():
+    assert wk._benchmark_line(full_data(), tr()) == (
+        "vs S&P 500 · Week +1.10% · Month +2.40% · YTD +9.80%"
+    )
+    assert wk._benchmark_line(full_data(benchmark={}), tr()) is None
+    assert wk._benchmark_line(full_data(benchmark={7: None}), tr()) is None
 
 
 def test_week_ahead_merges_prints_and_ex_dates_soonest_first():
-    text = wk.render_weekly(full_data(), "en")
-    ahead = text.split("<b>Week ahead</b>\n")[1].split("\n\n")[0].splitlines()
-    assert ahead[0].startswith("• KO — ex-date Tue 15 Sep (T-2) · ~€55")
-    assert ahead[1].startswith("• NVDA — reports Thu 17 Sep (T-4)")
-
-
-def test_week_ahead_is_capped():
-    events = [
-        EarningsEvent(f"T{i}", date(2026, 9, 14 + i), i + 1) for i in range(8)
-    ]
-    text = wk.render_weekly(full_data(earnings=events), "en")
-    ahead = text.split("<b>Week ahead</b>\n")[1].split("\n\n")[0].splitlines()
-    assert len(ahead) == wk.AHEAD_SHOWN
+    assert wk._ahead_line(full_data(), "en", tr()) == (
+        "Week ahead: KO ex-date Tue 15 Sep ~€55, NVDA reports Thu 17 Sep"
+    )
+    assert wk._ahead_line(full_data(earnings=[], ex_dividends=[]), "en", tr()) is None
 
 
 def test_concentration_reports_the_drift_and_the_equal_name_equivalent():
-    text = wk.render_weekly(full_data(), "en")
-    assert "Top 5 = 68% of the book (+3 pt this week)" in text
-    assert "behaves like 6.2 equal-sized names" in text
+    assert wk._concentration_line(full_data(), tr()) == (
+        "Top 5 = 68% of the book (+3 pt this week)"
+        " · behaves like 6.2 equal-sized names"
+    )
 
 
 def test_concentration_drops_a_drift_too_small_to_mean_anything():
     """Below the floor the book was re-priced, not rebalanced."""
-    text = wk.render_weekly(full_data(drift=0.004), "en")
-    assert "Top 5 = 68% of the book ·" in text and "pt this week" not in text
+    line = wk._concentration_line(full_data(drift=0.004), tr())
+    assert line.startswith("Top 5 = 68% of the book ·") and "pt this week" not in line
     # The first review of an account has nothing to compare against.
-    assert "pt this week" not in wk.render_weekly(full_data(drift=None), "en")
+    assert "pt this week" not in wk._concentration_line(full_data(drift=None), tr())
+
+
+def test_names_line_takes_the_top_of_each_side():
+    assert wk._names_line(full_data(worst=[])) == "▲ NVDA +1,240 € (+8.1%)"
+    assert wk._names_line(full_data(best=[], worst=[])) is None
+    no_pct = full_data(best=[("A", 10.0, None)], worst=[])
+    assert wk._names_line(no_pct) == "▲ A +10 €"
 
 
 def test_sections_render_alone():
-    bare = wk.WeeklyData(date=D, total=1000.0)
-    text = wk.render_weekly(bare, "en")
-    assert "€1,000" in text
-    for absent in ("Best of the week", "Week ahead", "Concentration", "vs S&amp;P"):
-        assert absent not in text
+    msg = wk.weekly_message(wk.WeeklyData(date=D, total=1000.0), "en")
+    assert msg["title"] == "Your week in review · Sun 13 Sep"  # no week change
+    assert msg["body"] == ""
 
 
 def test_a_watchlist_only_account_renders_a_title_and_nothing_else():
-    text = wk.render_weekly(wk.WeeklyData(date=D), "en")
-    assert text == "<b>🗓 TopStocks — week in review</b> · Sun 13 Sep"
+    msg = wk.weekly_message(wk.WeeklyData(date=D), "en")
+    assert msg["title"] == "Your week in review · Sun 13 Sep"
+    assert msg["body"] == ""
 
 
 def test_dividend_receipt_has_a_singular_form():
-    assert "from one payment" in wk.render_weekly(
-        full_data(dividends_received=(38.0, 1)), "en"
+    one = full_data(dividends_received=(38.0, 1))
+    assert wk._dividends_line(one, tr()) == "€38 received this week, from one payment"
+    assert "de un pago" in wk._dividends_line(one, tr("es"))
+    assert wk._dividends_line(full_data(), tr()) == (
+        "€212 received this week, from 3 payments"
     )
-    assert "de un pago" in wk.render_weekly(
-        full_data(dividends_received=(38.0, 1)), "es"
-    )
-
-
-def test_tickers_link_when_an_origin_is_configured():
-    text = wk.render_weekly(full_data(), "en", ORIGIN)
-    for ticker in ("NVDA", "MELI", "KO"):
-        assert f'<a href="{ORIGIN}/ticker?ticker={ticker}">{ticker}</a>' in text
-    assert wk.render_weekly(full_data(), "en") == wk.render_weekly(
-        full_data(), "en", None
-    )
-
-
-def test_escapes_html_in_dynamic_text():
-    data = full_data(best=[("A&B<X>", 10.0, 0.01)], highlight="risk <on> & rising")
-    text = wk.render_weekly(data, "en")
-    assert "A&amp;B&lt;X&gt;" in text and "risk &lt;on&gt; &amp; rising" in text
-
-
-def test_buttons_follow_the_calendar():
-    assert wk.weekly_buttons(full_data(earnings=[]), "en", ORIGIN) == [
-        ("Portfolio", f"{ORIGIN}/portfolio")
-    ]
-    assert [x for x, _ in wk.weekly_buttons(full_data(), "es", ORIGIN)] == [
-        "Cartera", "Resultados"
-    ]
-
-
-def test_buttons_are_empty_without_an_origin(monkeypatch):
-    monkeypatch.setattr(wk.links, "app_base", lambda: None)
-    assert wk.weekly_buttons(full_data(), "en") == []
 
 
 # ------------------------------------------------------------------ compute
@@ -301,22 +287,4 @@ def test_ytd_is_dropped_when_the_history_starts_after_new_year(tmp_path, monkeyp
 
     data = wk.compute_weekly_data(watchlist, tmp_path / "portfolio.db", today=D)
     assert data.week is not None and data.ytd is None
-    assert "YTD" not in wk.render_weekly(data, "en")
-
-
-def test_body_text_escapes_only_what_telegram_documents():
-    """Python's default escape turns an apostrophe into `&#x27;`, which
-    Telegram is not documented to decode — an LLM sentence would arrive
-    showing the entity. Only & < > are escaped in body text."""
-    data = full_data(highlight="Thursday's print & the <gap> after it")
-    text = wk.render_weekly(data, "en")
-    assert "Thursday's print &amp; the &lt;gap&gt; after it" in text
-    assert "&#x27;" not in text
-
-
-def test_an_href_still_escapes_its_quotes():
-    from stocks.notify.render import ticker_link
-
-    assert ticker_link('A"B', "https://x.example").startswith(
-        '<a href="https://x.example/ticker?ticker=A%22B">'
-    )
+    assert "YTD" not in wk.weekly_message(data, "en")["body"]

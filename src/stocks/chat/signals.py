@@ -49,7 +49,7 @@ not moved past `_MATERIAL`, its phase has not advanced, its cooldown has not
 run out. An alert is an event only on the session it crossed: the close
 before it on one side of the level, the latest close (or the live price) on
 the other. One that has been past its level since before then is not on the
-card at all — it was news the day it crossed, and Telegram's own alerts say
+card at all — it was news the day it crossed, and the push alerts say
 it once on that day too (notify/state.py). `_CAP` and
 `_FAMILY_CAP` still limit how many of one kind can reach the model at once, and
 `decay()` still sinks a standing trigger shown on consecutive days.

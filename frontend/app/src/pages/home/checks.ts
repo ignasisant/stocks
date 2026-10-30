@@ -29,7 +29,7 @@ export type Row = {
   page?: string;
   /**
    * Drawn disabled for a guest, rather than hidden, when its target sits
-   * behind a sign-in — the import page, the assistant, Telegram, the
+   * behind a sign-in — the import page, the assistant, notifications, the
    * watchlist editor: a guest should see what an account gets, and pressing
    * into a wall is worse than a control that says plainly it is not theirs
    * yet. Search is the one that stays live.
@@ -43,11 +43,17 @@ export type Row = {
   ask?: string;
   /**
    * Worth having, not needed: the assistant answers without a key of the
-   * reader's own, and Telegram is a second place to read what Home says. Left
+   * reader's own, and notifications are a second place to read what Home says. Left
    * out of the card's count, so finishing the setup means signing in and
    * importing — not a 2/4 that reads as half a broken app.
    */
   optional?: boolean;
+  /**
+   * Answered by this browser, not by `/onboarding`: whether the app is
+   * installed is a fact about the device, which the server cannot see.
+   * `Setup.tsx` fills it in and drops the row where nothing can be installed.
+   */
+  device?: boolean;
 };
 
 export const SETUP: Row[] = [
@@ -95,14 +101,28 @@ export const SETUP: Row[] = [
     optional: true,
   },
   {
-    key: "telegram",
-    label: "home.start_telegram",
-    icon: "send",
-    cta: "home.start_go_telegram",
+    key: "notify",
+    label: "home.start_notify",
+    icon: "notifications",
+    cta: "home.start_go_notify",
     step: "notify",
     tab: "notify",
     signedIn: true,
     optional: true,
+  },
+  // Last, and only where this browser can install (`shell/install.ts`): a
+  // Chromium press opens the browser's own dialog in place, Safari on iPhone
+  // and iPad lands on Preferences' App card, which says where Share keeps it.
+  {
+    key: "app",
+    label: "home.start_app",
+    icon: "install_mobile",
+    cta: "home.start_go_app",
+    step: "prefs",
+    tab: "prefs",
+    signedIn: true,
+    optional: true,
+    device: true,
   },
 ];
 
@@ -136,6 +156,35 @@ export const EXPLORE: Row[] = [
  * that explains it cannot be a link. It is still a control, which is why it is
  * a case here rather than the `null` it used to collapse into.
  */
+/** What this browser knows about installing, which `/onboarding` cannot. */
+export type Device = {
+  guest: boolean;
+  /** `shell/install.ts`'s `installWay()`: null where nothing can be installed. */
+  way: "prompt" | "ios" | null;
+  installed: boolean;
+};
+
+/**
+ * The start line: each `SETUP` row with whether it is done.
+ *
+ * Server rows read `/onboarding`'s `setup`; the device row reads the browser.
+ * It shows only where there is something to do or done — an installed app,
+ * or a browser that can install — and never to a guest, as the nudge is not
+ * shown to one: the app is for coming back to one's own book.
+ */
+export function setupLine(
+  setup: Record<string, boolean | undefined>,
+  device: Device,
+): { row: Row; on: boolean }[] {
+  return SETUP.filter(
+    (row) =>
+      !row.device || (!device.guest && (device.installed || device.way !== null)),
+  ).map((row) => ({
+    row,
+    on: row.device ? device.installed : setup[row.key] === true,
+  }));
+}
+
 export type Target =
   | { kind: "page"; page: string; params?: Record<string, string> }
   | { kind: "assistant"; ask?: string };

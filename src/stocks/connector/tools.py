@@ -959,7 +959,7 @@ async def missing_splits() -> CallToolResult:
 
 # ---------------------------------------------------------- the book, edited
 # Every edit to the ledger goes through `stocks.portfolio.edits`, the road
-# the app, the chat and Telegram take, in two calls. Without `plan_token` a
+# the app and the chat take, in two calls. Without `plan_token` a
 # tool writes nothing and returns the plan: each row before and after, the
 # holdings and realized gains it moves, and the token. Called again with the
 # same arguments and that token, it applies exactly that plan — or refuses,
@@ -1592,7 +1592,7 @@ TOOLS: tuple[Spec, ...] = (
          "twice, a sale of shares that never arrived. Fix one with apply_fix."),
     Spec(change_history, "Edit history",
          "Hand edits to the ledger, newest first, with where each came from "
-         "(app, chat, telegram, mcp) and the rows it touched. Undoable by id."),
+         "(app, chat, mcp) and the rows it touched. Undoable by id."),
     Spec(simulate_sale, "Simulate a sale",
          "What selling some or all of a holding today would realize and add "
          "to this tax year's bill, under the account's own tax rules."),

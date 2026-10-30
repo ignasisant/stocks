@@ -12,7 +12,6 @@ from stocks.notify import state as state_mod
 from stocks.notify import weekly as weekly_mod
 
 TODAY = date(2026, 10, 21)
-ORIGIN = "https://topstocks.example"
 
 
 def _state(**over) -> dict:
@@ -25,7 +24,7 @@ def _state(**over) -> dict:
 
 
 def test_an_account_never_seen_on_the_web_is_left_alone():
-    assert nudge.due(_state(), {"telegram_chat_id": 1}, TODAY) is None
+    assert nudge.due(_state(), {"currency": "EUR"}, TODAY) is None
 
 
 def test_quiet_for_less_than_a_week_is_not_dormant():
@@ -64,11 +63,11 @@ def test_a_malformed_last_seen_never_raises():
     assert nudge.days_away({"last_seen": "yesterday"}, TODAY) is None
 
 
-def test_every_toggle_off_means_no_messages():
-    assert not nudge.wants_messages({"telegram_chat_id": 1, "notify_digest": False,
-                                     "notify_weekly": False, "notify_alerts": False})
-    assert nudge.wants_messages({"telegram_chat_id": 1, "notify_digest": False})
-    assert not nudge.wants_messages({"notify_digest": True})
+def test_every_toggle_off_or_no_device_means_no_messages():
+    off = {"notify_digest": False, "notify_weekly": False, "notify_alerts": False}
+    assert not nudge.wants_messages(off, devices=1)
+    assert nudge.wants_messages({"notify_digest": False}, devices=1)
+    assert not nudge.wants_messages({"notify_digest": True}, devices=0)
 
 
 # ---------------------------------------------------------------- what
@@ -79,54 +78,64 @@ def test_render_with_a_book_en():
         days=9, number=1, total=104_820.0, week=(1_940.0, 0.0189),
         mover=("NVDA", 1_240.0, 0.081),
     )
-    text = nudge.render(data, "en", ORIGIN)
-    assert text.startswith(
-        "<b>👋 TopStocks — still here</b>\n9 days since your last visit."
-    )
-    assert "Portfolio €104,820 · week +1,940 € (+1.89%)." in text
-    link = '<a href="https://topstocks.example/ticker?ticker=NVDA">NVDA</a>'
-    assert f"Biggest move: {link} +8.1%." in text
-    assert "Last reminder" not in text
-    assert nudge.buttons(data, "en", ORIGIN) == [
-        ("Portfolio", "https://topstocks.example/portfolio")
+    message = nudge.render(data, "en")
+    assert message["title"] == "TopStocks — still here"
+    assert message["body"].splitlines() == [
+        "9 days since your last visit.",
+        "Portfolio €104,820 · week +1,940 € (+1.89%).",
+        "Biggest move: NVDA +8.1%.",
     ]
+    assert message["url"] == "/portfolio"
+    assert message["tag"] == "nudge"
 
 
 def test_render_empty_book_es_and_the_last_reminder_says_so():
-    data = nudge.NudgeData(days=14, number=2)
-    text = nudge.render(data, "es", ORIGIN)
-    assert "14 días desde tu última visita." in text
-    assert "Tu libro sigue vacío" in text
-    assert "Último aviso de este tipo" in text
-    assert nudge.buttons(data, "es", ORIGIN) == [
-        ("Importar extracto", "https://topstocks.example/import_transactions")
-    ]
+    message = nudge.render(nudge.NudgeData(days=14, number=2), "es")
+    lines = message["body"].splitlines()
+    assert lines[0] == "14 días desde tu última visita."
+    # The farewell rides on the last line rather than taking one of its own.
+    assert lines[1].startswith("Tu libro sigue vacío")
+    assert "Último aviso de este tipo" in lines[1]
+    assert message["url"] == "/import_transactions"
 
 
-def test_render_escapes_the_ticker_and_drops_a_mover_without_a_percent():
+def test_render_drops_a_mover_without_a_percent():
     data = nudge.NudgeData(
         days=8, number=1, total=10.0, week=None, mover=("A&B", 1.0, None),
     )
-    text = nudge.render(data, "en", None)
-    assert "Biggest move" not in text
-    assert "week –." in text
+    message = nudge.render(data, "en")
+    assert "Biggest move" not in message["body"]
+    assert "week –." in message["body"]
     data.mover = ("A&B", 1.0, 0.02)
-    assert "A&amp;B +2.0%" in nudge.render(data, "en", None)
-
-
-def test_buttons_are_empty_without_an_origin(monkeypatch):
-    monkeypatch.setattr(nudge.links, "app_base", lambda: None)
-    assert nudge.buttons(nudge.NudgeData(days=8, number=1), "en") == []
+    assert "A&B +2.0%" in nudge.render(data, "en")["body"]
 
 
 # ---------------------------------------------------------------- fan-out
 
 
-def _user(tmp_path, slug, prefs):
+def _user(tmp_path, slug, prefs, devices=1):
     root = tmp_path / "users" / slug
     root.mkdir(parents=True)
     (root / "prefs.json").write_text(json.dumps(prefs))
+    if devices:
+        rows = {f"row{i}": {"endpoint": f"https://push.example/{i}"}
+                for i in range(devices)}
+        (root / "push.json").write_text(json.dumps({"subscriptions": rows}))
     return root
+
+
+@pytest.fixture
+def pushed(monkeypatch):
+    """Record every push instead of sending it; each reaches one device."""
+    sent: list[tuple[str, dict]] = []
+
+    def send_all(path, message, *, topic=""):
+        assert topic == "nudge"
+        sent.append((path.parent.name, message))
+        return 1
+
+    monkeypatch.setattr(nudge.webpush, "send_all", send_all)
+    return sent
 
 
 @pytest.fixture
@@ -147,34 +156,28 @@ def local(monkeypatch, tmp_path):
     return tmp_path
 
 
-def test_fanout_sends_once_and_records_it(local, monkeypatch):
-    _user(local, "jane_ab12cd34", {"telegram_chat_id": 111, "last_seen": "2026-10-01"})
-    _user(local, "bob_ef56ab78", {"telegram_chat_id": 222, "last_seen": "2026-10-20"})
-    _user(local, "eve_12345678", {"last_seen": "2026-10-01"})  # not linked
-    sent = []
-    monkeypatch.setattr(
-        nudge.telegram, "send_message",
-        lambda text, chat_id, parse_mode=None, buttons=None: sent.append((chat_id, text)),
-    )
-    monkeypatch.setattr(nudge.telegram, "pace", lambda: None)
+def test_fanout_sends_once_and_records_it(local, pushed):
+    _user(local, "jane_ab12cd34", {"last_seen": "2026-10-01"})
+    _user(local, "bob_ef56ab78", {"last_seen": "2026-10-20"})
+    _user(local, "eve_12345678", {"last_seen": "2026-10-01"}, devices=0)  # no device
     assert nudge.run_nudge_fanout(today=TODAY) == {
         "jane_ab12cd34": "sent #1", "bob_ef56ab78": "skipped: active",
     }
-    assert [c for c, _ in sent] == [111]
-    assert "20 days since your last visit." in sent[0][1]
+    assert [slug for slug, _ in pushed] == ["jane_ab12cd34"]
+    assert pushed[0][1]["body"].startswith("20 days since your last visit.")
     state = json.loads((local / "users/jane_ab12cd34/alerts_state.json").read_text())
     assert len(state["nudges"]) == 1
 
     # The same day again: nothing new goes out.
     again = nudge.run_nudge_fanout(today=TODAY)
     assert again["jane_ab12cd34"] == "skipped: already nudged"
-    assert len(sent) == 1
+    assert len(pushed) == 1
 
 
 def test_fanout_dry_run_sends_nothing(local, monkeypatch, capsys):
-    _user(local, "jane_ab12cd34", {"telegram_chat_id": 111, "last_seen": "2026-10-01"})
+    _user(local, "jane_ab12cd34", {"last_seen": "2026-10-01"})
     monkeypatch.setattr(
-        nudge.telegram, "send_message",
+        nudge.webpush, "send_all",
         lambda *a, **kw: pytest.fail("dry run must not send"),
     )
     status = nudge.run_nudge_fanout(dry_run=True, today=TODAY)
@@ -183,33 +186,29 @@ def test_fanout_dry_run_sends_nothing(local, monkeypatch, capsys):
     assert not (local / "users/jane_ab12cd34/alerts_state.json").exists()
 
 
-def test_fanout_marks_a_blocked_account(local, monkeypatch):
-    _user(local, "jane_ab12cd34", {"telegram_chat_id": 111, "last_seen": "2026-10-01"})
+def test_an_undelivered_nudge_is_not_counted(local, monkeypatch, pushed):
+    """A reminder no device took was never read: it must not use up one of
+    the two, and tomorrow's run tries again."""
+    _user(local, "jane_ab12cd34", {"last_seen": "2026-10-01"})
+    sent = nudge.webpush.send_all
+    monkeypatch.setattr(nudge.webpush, "send_all", lambda *a, **kw: 0)
+    assert nudge.run_nudge_fanout(today=TODAY) == {"jane_ab12cd34": "not delivered"}
+    state = state_mod.load_state(local / "users/jane_ab12cd34/alerts_state.json")
+    assert state_mod.nudges_sent(state) == []
 
-    def blocked(*a, **kw):
-        raise nudge.telegram.TelegramBlocked("blocked")
-
-    monkeypatch.setattr(nudge.telegram, "send_message", blocked)
-    monkeypatch.setattr(nudge.telegram, "pace", lambda: None)
-    assert nudge.run_nudge_fanout(today=TODAY) == {"jane_ab12cd34": "blocked"}
-    state = json.loads((local / "users/jane_ab12cd34/alerts_state.json").read_text())
-    assert state["delivery"]["blocked"] is True
-    assert "nudges" not in state
-    assert nudge.run_nudge_fanout(today=TODAY) == {"jane_ab12cd34": "skipped: blocked"}
+    monkeypatch.setattr(nudge.webpush, "send_all", sent)
+    assert nudge.run_nudge_fanout(today=TODAY) == {"jane_ab12cd34": "sent #1"}
 
 
-def test_fanout_still_writes_when_the_book_cannot_be_computed(local, monkeypatch):
-    _user(local, "jane_ab12cd34", {"telegram_chat_id": 111, "last_seen": "2026-10-01"})
+def test_fanout_still_writes_when_the_book_cannot_be_computed(
+    local, monkeypatch, pushed
+):
+    _user(local, "jane_ab12cd34", {"last_seen": "2026-10-01"})
 
     def boom(*a, **kw):
         raise RuntimeError("yahoo down")
 
     monkeypatch.setattr(weekly_mod, "compute_weekly_data", boom)
-    sent = []
-    monkeypatch.setattr(
-        nudge.telegram, "send_message",
-        lambda text, chat_id, parse_mode=None, buttons=None: sent.append(text),
-    )
-    monkeypatch.setattr(nudge.telegram, "pace", lambda: None)
     assert nudge.run_nudge_fanout(today=TODAY) == {"jane_ab12cd34": "sent #1"}
-    assert "Your book is still empty" in sent[0]
+    assert "Your book is still empty" in pushed[0][1]["body"]
+    assert pushed[0][1]["url"] == "/import_transactions"

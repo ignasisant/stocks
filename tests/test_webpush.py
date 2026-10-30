@@ -298,10 +298,14 @@ def test_a_hidden_app_or_a_stale_beat_is_nobody_looking():
 def test_the_routes_subscribe_report_and_unsubscribe(client, account, signed_in, vapid):
     browser = Browser()
     state = signed_in.get("/v1/push", params={"endpoint": ENDPOINT}).json()
-    assert state == {"configured": True, "key": webpush.public_key(), "subscribed": False}
+    assert state == {
+        "configured": True, "key": webpush.public_key(),
+        "subscribed": False, "devices": 0,
+    }
 
     kept = signed_in.post("/v1/push/subscription", json=browser.subscription("es"))
     assert kept.status_code == 200 and kept.json()["subscribed"]
+    assert kept.json()["devices"] == 1
     assert webpush._read(account.push)[webpush._row_id(ENDPOINT)]["lang"] == "es"
     assert signed_in.get("/v1/push", params={"endpoint": ENDPOINT}).json()["subscribed"]
 

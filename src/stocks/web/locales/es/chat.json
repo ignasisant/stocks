@@ -449,7 +449,7 @@
   "chat.mem_switch_note": "Desactivar no borra nada: la memoria se guarda y deja de usarse.",
   "chat.mem_manage": "Gestionar memoria",
   "chat.mem_back": "Volver a ajustes",
-  "chat.mem_explain": "Lo que el asistente recuerda de ti. Lo leen el chat, la acción diaria y los mensajes de Telegram, así que cuanto más preciso, mejor.",
+  "chat.mem_explain": "Lo que el asistente recuerda de ti. Lo leen el chat, la acción diaria y las notificaciones, así que cuanto más preciso, mejor.",
   "chat.mem_loading": "Leyendo la memoria…",
   "chat.mem_is_off": "La memoria está desactivada: estos recuerdos se conservan, pero no se usan al responder.",
   "chat.mem_count": "{n} de {max} recuerdos",

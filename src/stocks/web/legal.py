@@ -101,8 +101,10 @@ _PRIVACY = {
                 "the portfolio context needed to answer) is sent to the "
                 "configured model provider for that reply. If you bring your "
                 "own API key it is stored encrypted.",
-                "If you link Telegram, your chat id is stored so notifications "
-                "you enabled can be sent to you.",
+                "If you turn on notifications, each device's push subscription "
+                "(its browser push address and keys) is stored so the "
+                "notifications you enabled can be sent to it; switching them "
+                "off removes it.",
                 "If you connect a bank, the request goes to Enable Banking Oy, "
                 "the authorised account information provider named above; your "
                 "bank data is never shared with anyone else.",
@@ -195,8 +197,10 @@ _PRIVACY = {
                 "contexto de cartera necesario para responder) se envía al "
                 "proveedor de modelo configurado para esa respuesta. Si "
                 "aportas tu propia clave de API, se guarda cifrada.",
-                "Si vinculas Telegram, se guarda tu chat id para poder "
-                "enviarte las notificaciones que actives.",
+                "Si activas las notificaciones, se guarda la suscripción push de "
+                "cada dispositivo (su dirección push del navegador y sus "
+                "claves) para poder enviarte las notificaciones que actives; "
+                "al desactivarlas se elimina.",
                 "Si conectas un banco, la petición va a Enable Banking Oy, "
                 "el proveedor autorizado de información sobre cuentas "
                 "citado arriba; tus datos bancarios no se comparten con nadie más.",

@@ -118,7 +118,7 @@ def test_an_empty_question_searches_nothing():
 
 
 def test_a_search_returns_one_passage_per_piece_of_the_app():
-    hits = knowledge.lookup("Telegram notifications notificaciones digest")
+    hits = knowledge.lookup("push notifications notificaciones digest")
     keys = [(h.doc, "" if h.doc.startswith("tour:") else h.section) for h in hits]
     assert len(keys) == len(set(keys)), "the same tour step twice, en + es"
     assert len(hits) <= knowledge.LOOKUP_LIMIT
@@ -166,8 +166,8 @@ GOLDEN = [
     ("how is the money-weighted return annualised", {"returns-and-risk"}),
     ("what does the five-year projection assume", {"returns-and-risk",
                                                    "tour:projection"}),
-    ("how do I turn on Telegram alerts", {"tour:notify"}),
-    ("¿cómo activo las alertas de Telegram?", {"tour:notify"}),
+    ("how do I turn on notifications", {"tour:notify"}),
+    ("¿cómo activo las notificaciones?", {"tour:notify"}),
     ("how does the daily briefing work", {"tour:daily"}),
     ("can I use my own OpenAI key in the chat", {"tour:assistant"}),
     ("cómo se calcula la TIR", {"returns-and-risk"}),
@@ -248,7 +248,7 @@ CONTROLS = [
     ("what is the tax rate on savings income in Spain", {"tax-spain"}),
     ("what does the quality score of a holding mean", {"review-scoring"}),
     ("how is the pulse score read", {"pulse-risk-appetite", "tour:pulse"}),
-    ("how do I reset my Telegram alerts", {"tour:notify"}),
+    ("how do I reset my notifications", {"tour:notify"}),
     ("¿cómo importo mi extracto de Revolut?", {"importing", "tour:import"}),
     ("does the app support Trading 212 imports", {"importing"}),
 ]

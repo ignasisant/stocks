@@ -1,47 +1,24 @@
 """Formatting primitives shared by the notification messages.
 
-Pure text, no network, no clock: the daily digest and the weekly review print
-the same money, the same dates and the same linked tickers, and a reader who
-gets both should not be able to tell they were written by two modules.
+Pure text, no network, no clock: the daily digest, the weekly review and the
+reminder print the same money and the same dates, and a reader who gets all
+three should not be able to tell they were written by three modules.
 
-Everything here targets Telegram's `parse_mode='HTML'`, which means every
-dynamic string is escaped on the way out — tickers come from a watchlist file
-the account controls, and a `<` in one would otherwise eat the rest of the
-message.
+Everything here is plain text for a Web Push notification (`webpush.send_all`):
+a title and a body the device draws as they are, with no markup to escape and
+no links — the tap opens one page, named by the message's `url`.
 """
 
 from __future__ import annotations
 
-import html
 from datetime import date
 
 from stocks.config import currency_symbol
-from stocks.notify import links
 
-
-def esc(text: str) -> str:
-    """Escape a string for a Telegram message body.
-
-    Only `&`, `<` and `>` — the three characters Telegram's HTML mode
-    documents. Python's default also turns quotes into numeric entities
-    (`&#x27;`), and Telegram is not documented to decode those, so an LLM
-    sentence containing an apostrophe would arrive showing the entity. Quotes
-    are harmless in body text; `href` values still escape them (see
-    `ticker_link`), because there they close the attribute.
-    """
-    return html.escape(text, quote=False)
-
-
-WEEKDAYS = {
-    "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
-    "es": ("lun", "mar", "mié", "jue", "vie", "sáb", "dom"),
-}
-MONTHS = {
-    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
-    "es": ("ene", "feb", "mar", "abr", "may", "jun",
-           "jul", "ago", "sep", "oct", "nov", "dic"),
-}
+# What a notification body shows before the device folds it: two or three
+# lines on Android, fewer on a watch. Past this the reader opens the page.
+BODY_LINES = 3
+LINE_CHARS = 120
 
 
 def money(amount: float, currency: str = "EUR") -> str:
@@ -64,16 +41,38 @@ def date_line(d: date, lang: str) -> str:
     return f"{wd} {d.day} {mo}"
 
 
-def ticker_link(ticker: str, base: str | None) -> str:
-    """A ticker, linked to its page when this deploy has a public origin.
+WEEKDAYS = {
+    "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+    "es": ("lun", "mar", "mié", "jue", "vie", "sáb", "dom"),
+}
+MONTHS = {
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+    "es": ("ene", "feb", "mar", "abr", "may", "jun",
+           "jul", "ago", "sep", "oct", "nov", "dic"),
+}
 
-    Escaped either way: the symbol reaches here from a watchlist file the
-    account controls, and it is going into a parse_mode='HTML' message.
+
+def clip(text: str, limit: int = LINE_CHARS) -> str:
+    """One line, whitespace folded, cut with an ellipsis past `limit`."""
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def body(lines: list[str | None]) -> str:
+    """The notification body: the first BODY_LINES non-empty lines, clipped.
+
+    Callers list lines most important first; whatever does not fit is what the
+    page the tap opens is for.
     """
-    safe = esc(ticker)
-    url = links.ticker_url(ticker, base) if base else None
-    return f'<a href="{html.escape(url, quote=True)}">{safe}</a>' if url else safe
+    kept = [clip(line) for line in lines if line and line.strip()]
+    return "\n".join(kept[:BODY_LINES])
 
 
-def heading(text: str) -> str:
-    return f"<b>{esc(text)}</b>"
+def message(title: str, lines: list[str | None], url: str, tag: str) -> dict:
+    """The service worker's JSON (`assets/sw.js`): what it shows, where it goes.
+
+    `tag` makes a newer notification of the same kind replace the one still
+    on screen — yesterday's digest is not worth a second row.
+    """
+    return {"title": clip(title, 80), "body": body(lines), "url": url, "tag": tag}
