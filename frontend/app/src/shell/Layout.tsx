@@ -29,6 +29,7 @@ import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
 import { openAssistant, useAssistantUnread, useAssistantWorking } from "./assistant";
 import { Search } from "./Search";
+import { InstallNudge } from "./InstallNudge";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
 import { Link, depth, useRoute } from "./router";
@@ -43,6 +44,8 @@ import { ActivityBanner, Skeleton, StaleNotice, WaitingFor } from "./Loading";
 import { AmbientLight } from "./ambient";
 import { Toaster } from "../ui/Toaster";
 import { usePresence, useSwipeDismiss } from "./useSheet";
+import { PullRefresh } from "./PullRefresh";
+import { useReloadOnReturn } from "./resume";
 
 /**
  * Whether the rail is folded to its icons, remembered per browser.
@@ -410,6 +413,9 @@ export function Layout({ children }: { children: ReactNode }) {
   // wait is long enough to notice (`styles.css`).
   const { pending } = useRoute();
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  // A Home Screen app lives in the background for hours: coming back to it
+  // asks for today's figures, and so does its own pull (`shell/resume`).
+  useReloadOnReturn();
   return (
     <div className="ag-shell">
       <SkipLink />
@@ -448,7 +454,9 @@ export function Layout({ children }: { children: ReactNode }) {
           profile nudge is about an account a guest does not have. */}
       {!guest ? <Drawer /> : GUEST_CHROME.chat === "locked" ? <LockedDrawer /> : null}
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
+      {!guest || GUEST_CHROME.installNudge ? <InstallNudge /> : null}
       <ActivityBanner />
+      <PullRefresh />
       <Toaster />
     </div>
   );

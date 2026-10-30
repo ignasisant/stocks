@@ -1,9 +1,12 @@
-"""Web Push: tell a device the assistant's answer is ready, when nobody is looking.
+"""Web Push: the app's one way to reach a person who is not looking at it.
 
-A reader asks something, puts the phone away, and the answer is written on a
-detached run (`api/runs.py`) that finishes whether or not anyone is reading.
-This sends that device a notification — "Your answer is ready" — that opens
-the thread.
+Two kinds of sender share it. A reader asks something, puts the phone away,
+and the answer is written on a detached run (`api/runs.py`) that finishes
+whether or not anyone is reading: `answer_ready` sends "Your answer is ready"
+and the tap opens the thread. And the crons in this package — the evening
+digest, the Sunday review, the price alerts, the dormant reminder — compute
+one short message per account and `send_all` it to every device the account
+switched on; the tap opens the page that tells the rest.
 
 No vendor and no dependency: the browser hands us a push service URL (Google's,
 Mozilla's, Apple's) and two keys, and the protocol is two RFCs on top of
@@ -258,6 +261,11 @@ def row(path: Path, endpoint: str) -> dict | None:
     return _read(path).get(_row_id(endpoint))
 
 
+def devices(path: Path) -> int:
+    """How many devices this account receives pushes on."""
+    return len(_read(path))
+
+
 def _drop(path: Path, endpoint: str) -> None:
     with obs.swallow("push.drop"):
         unsubscribe(path, endpoint)
@@ -332,6 +340,21 @@ def present(owner: str, *, now: float | None = None) -> bool:
 def _snippet(text: str, limit: int = 110) -> str:
     text = " ".join((text or "").split())
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def send_all(path: Path, message: dict, *, topic: str = "") -> int:
+    """Push one message to every device of an account; how many took it.
+
+    For the crons: the message is written once, in the account's language,
+    rather than per device. A device that fails is skipped, not retried.
+    """
+    if not configured():
+        return 0
+    took = 0
+    for row in list(_read(path).values()):
+        with obs.swallow("push.send"):
+            took += 200 <= send(path, row, message, topic=topic) < 300
+    return took
 
 
 def answer_ready(path: Path, owner: str, *, thread: str, question: str) -> int:

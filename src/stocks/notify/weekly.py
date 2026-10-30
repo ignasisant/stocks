@@ -10,9 +10,12 @@ the same analytics and the same one-fetch-per-account discipline:
 * how concentrated the book has become, and — the part a single figure can't
   say — which way that drifted since last Sunday.
 
-`compute_weekly_data` does the network work, `render_weekly` is pure text and
+`compute_weekly_data` does the network work, `weekly_message` is pure text and
 tests offline, and every section fails alone: a throttled earnings lookup
-drops the week-ahead block and the review still sends.
+drops the week-ahead line and the review still sends. It goes out as a Web
+Push notification, so it is a headline: the week in the title, the longer
+horizons and the names behind the week underneath, and the tap opens the
+portfolio for the rest.
 """
 
 from __future__ import annotations
@@ -25,29 +28,20 @@ from stocks import obs
 from stocks.config import load_watchlist
 from stocks.data.dividends import DividendEvent, upcoming_ex_dividends
 from stocks.data.earnings import EarningsEvent, calendar_events
-from stocks.notify import links
+from stocks.notify import links, render
 from stocks.notify.digest import (
     BENCHMARK,
     BENCHMARK_LABEL,
     money_changes,
     recent_dividends,
 )
-from stocks.notify.render import (
-    date_line,
-    delta,
-    esc,
-    heading,
-    money,
-    signed,
-    ticker_link,
-)
+from stocks.notify.render import date_line, delta, money, signed
 from stocks.portfolio.ledger import Transaction, all_transactions
 from stocks.portfolio.positions import build
 
 WEEK = 7
 MONTH = 30
 NAMES_SHOWN = 3
-AHEAD_SHOWN = 5
 TOP_N = 5
 # A concentration move smaller than this is the market re-pricing the book, not
 # the reader changing it — reporting it weekly would be reporting noise.
@@ -189,12 +183,10 @@ def _dividend_cash(
 
 
 def _window_line(data: WeeklyData, tr) -> str | None:
-    """'Week +1,940 € (+1.89%) · Month … · YTD …' — the three horizons."""
+    """'Month +3,100 € (+3.02%) · YTD …' — the horizons the title leaves out."""
     parts = [
-        f"{esc(tr(key))} {delta(*value, data.currency)}"
-        for key, value in (
-            ("week", data.week), ("month", data.month), ("ytd", data.ytd)
-        )
+        f"{tr(key)} {delta(*value, data.currency)}"
+        for key, value in (("month", data.month), ("ytd", data.ytd))
         if value is not None
     ]
     return " · ".join(parts) if parts else None
@@ -204,30 +196,31 @@ def _benchmark_line(data: WeeklyData, tr) -> str | None:
     """'vs S&P 500 · week +1.10% · YTD +9.80%' — the same windows, the index."""
     labels = {WEEK: "week", MONTH: "month", data.ytd_days: "ytd"}
     parts = [
-        f"{esc(tr(labels[days]))} {pct * 100:+.2f}%"
+        f"{tr(labels[days])} {pct * 100:+.2f}%"
         for days, pct in data.benchmark.items()
         if pct is not None and days in labels
     ]
     if not parts:
         return None
-    head = f"{esc(tr('vs'))} {esc(BENCHMARK_LABEL)}"
-    return f"{head} · " + " · ".join(parts)
+    return f"{tr('vs')} {BENCHMARK_LABEL} · " + " · ".join(parts)
 
 
-def _name_rows(
-    rows: list[tuple[str, float, float | None]], marker: str, data: WeeklyData, base
-) -> list[str]:
-    out = []
-    for ticker, amount, pct in rows:
-        line = f"{marker} {ticker_link(ticker, base)} {signed(amount, data.currency)}"
+def _names_line(data: WeeklyData) -> str | None:
+    """'▲ NVDA +300 € (+4.1%) · ▼ TSLA -120 € (-3.0%)': who made the week."""
+    sides = []
+    for rows, marker in ((data.best, "▲"), (data.worst, "▼")):
+        if not rows:
+            continue
+        ticker, amount, pct = rows[0]
+        side = f"{marker} {ticker} {signed(amount, data.currency)}"
         if pct is not None:
-            line += f" ({pct * 100:+.1f}%)"
-        out.append(line)
-    return out
+            side += f" ({pct * 100:+.1f}%)"
+        sides.append(side)
+    return " · ".join(sides) or None
 
 
-def _ahead_rows(data: WeeklyData, lang: str, tr, base) -> list[str]:
-    """Prints and ex-dates in one list, soonest first — it is one week ahead."""
+def _ahead_line(data: WeeklyData, lang: str, tr) -> str | None:
+    """Prints and ex-dates in one line, soonest first — it is one week ahead."""
     entries: list[tuple[int, str]] = []
     for event in data.earnings:
         # An undated event cannot be placed in a week-ahead list; the calendar
@@ -236,112 +229,78 @@ def _ahead_rows(data: WeeklyData, lang: str, tr, base) -> list[str]:
             continue
         entries.append((
             event.days_until or 0,
-            f"• {ticker_link(event.ticker, base)} — {esc(tr('earnings_word'))} "
-            f"{date_line(event.date, lang)} (T-{event.days_until})",
+            f"{event.ticker} {tr('earnings_word')} {date_line(event.date, lang)}",
         ))
     for div in data.ex_dividends:
-        line = (
-            f"• {ticker_link(div.ticker, base)} — {esc(tr('ex_date'))} "
-            f"{date_line(div.ex_date, lang)} (T-{div.days_until})"
-        )
+        line = f"{div.ticker} {tr('ex_date')} {date_line(div.ex_date, lang)}"
         if cash := data.dividend_cash.get(div.ticker):
-            line += f" · ~{money(cash, data.currency)}"
+            line += f" ~{money(cash, data.currency)}"
         entries.append((div.days_until, line))
-    return [line for _, line in sorted(entries, key=lambda e: e[0])][:AHEAD_SHOWN]
+    if not entries:
+        return None
+    ordered = [line for _, line in sorted(entries, key=lambda e: e[0])]
+    return f"{tr('week_ahead')}: " + ", ".join(ordered)
+
+
+def _dividends_line(data: WeeklyData, tr) -> str | None:
+    if not data.dividends_received:
+        return None
+    amount, count = data.dividends_received
+    if count == 1:
+        return tr("div_week_one", amount=money(amount, data.currency))
+    return tr("div_week", amount=money(amount, data.currency), count=count)
 
 
 def _concentration_line(data: WeeklyData, tr) -> str | None:
     """'Top 5 = 68% of the book (+3 pt this week) · like 6.2 equal names'."""
     if data.top_weight is None:
         return None
-    line = esc(
-        tr("concentration", n=TOP_N, pct=f"{data.top_weight * 100:.0f}")
-    )
+    line = tr("concentration", n=TOP_N, pct=f"{data.top_weight * 100:.0f}")
     if data.drift is not None and abs(data.drift) >= DRIFT_FLOOR:
-        line += " " + esc(
-            tr("drift", pts=f"{data.drift * 100:+.0f}")
-        )
+        line += " " + tr("drift", pts=f"{data.drift * 100:+.0f}")
     if data.effective_names is not None and data.effective_names == data.effective_names:
-        line += " · " + esc(
-            tr("effective", n=f"{data.effective_names:.1f}")
-        )
+        line += " · " + tr("effective", n=f"{data.effective_names:.1f}")
     return line
 
 
-def render_weekly(data: WeeklyData, lang: str, base: str | None = None) -> str:
-    """The review as Telegram HTML (parse_mode='HTML'), all dynamic text escaped."""
+def weekly_message(data: WeeklyData, lang: str) -> dict:
+    """The review as a push (`render.message`): the week and the book in the
+    title, then the longer horizons, the names behind the week and the
+    narrated line. The tap opens the portfolio."""
     from stocks.web.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)
 
-    parts: list[str] = [
-        f"{heading('🗓 ' + tr('weekly_title'))} · {date_line(data.date, lang)}"
-    ]
-
-    if data.total is not None:
-        block = f"{heading(tr('portfolio'))} {money(data.total, data.currency)}"
-        if (windows := _window_line(data, tr)) is not None:
-            block += "\n" + windows
-        if (bench := _benchmark_line(data, tr)) is not None:
-            block += "\n" + bench
-        parts.append(block)
-
-    if rows := _name_rows(data.best, "▲", data, base):
-        parts.append(heading(tr("best_week")) + "\n" + "\n".join(rows))
-    if rows := _name_rows(data.worst, "▼", data, base):
-        parts.append(heading(tr("worst_week")) + "\n" + "\n".join(rows))
-
-    if data.dividends_received:
-        amount, count = data.dividends_received
-        key = "div_week_one" if count == 1 else "div_week"
-        line = (
-            tr(key, amount=money(amount, data.currency))
-            if count == 1
-            else tr(key, amount=money(amount, data.currency), count=count)
+    if data.total is not None and data.week is not None:
+        title = tr(
+            "weekly_title_book",
+            change=delta(*data.week, data.currency),
+            value=money(data.total, data.currency),
         )
-        parts.append(heading(tr("dividends")) + "\n• " + esc(line))
-
-    if rows := _ahead_rows(data, lang, tr, base):
-        parts.append(heading(tr("week_ahead")) + "\n" + "\n".join(rows))
-
-    if (line := _concentration_line(data, tr)) is not None:
-        parts.append(heading(tr("concentration_title")) + "\n" + line)
-
-    if data.highlight:
-        parts.append(f"💡 {esc(data.highlight)}")
-
-    return "\n\n".join(parts)
-
-
-def weekly_buttons(data: WeeklyData, lang: str, base: str | None = None) -> list:
-    """Link buttons for the review — Portfolio, plus Earnings when due."""
-    from stocks.web.i18n import translate
-
-    base = base if base is not None else links.app_base()
-    if not base:
-        return []
-    buttons = [
-        (translate("notify.btn_portfolio", lang), links.page_url(links.PORTFOLIO, base))
+    else:
+        title = f"{tr('weekly_title')} · {date_line(data.date, lang)}"
+    lines = [
+        _window_line(data, tr),
+        _names_line(data),
+        data.highlight,
+        _concentration_line(data, tr),
+        _dividends_line(data, tr),
+        _ahead_line(data, lang, tr),
+        _benchmark_line(data, tr),
     ]
-    if data.earnings:
-        buttons.append(
-            (translate("notify.btn_earnings", lang), links.page_url(links.EARNINGS, base))
-        )
-    return [(label, url) for label, url in buttons if url]
+    return render.message(title, lines, links.path(links.PORTFOLIO), "weekly")
 
 
 # ------------------------------------------------------------------ fan-out
 
 
 def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
-    """Compute and send every subscriber's weekly review. {label: status}."""
-    from stocks.notify import narrative, telegram
+    """Compute and push every subscriber's weekly review. {label: status}."""
+    from stocks.notify import narrative, webpush
     from stocks.notify.fanout import iter_notify_users
     from stocks.notify.state import (
-        is_blocked,
         load_state,
-        mark_blocked,
         previous_top_weight,
         remember_top_weight,
         save_state,
@@ -352,9 +311,6 @@ def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
     for user in iter_notify_users("weekly"):
         try:
             state = load_state(user.state_path)
-            if is_blocked(state):
-                status[user.label] = "skipped: blocked"
-                continue
             base = str(user.prefs.get("currency") or "EUR").upper()
             data = compute_weekly_data(user.watchlist, user.db, base)
             if data.total is None:
@@ -367,29 +323,19 @@ def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
                 )
             data.highlight = narrative.weekly_line(data, user.prefs, user.lang,
                                                    memories=user.memories())
-            origin = links.app_base()  # not `base`: that one is the currency
-            text = render_weekly(data, user.lang, origin)
+            message = weekly_message(data, user.lang)
             if dry_run:
-                print(f"── {user.label} ──\n{text}\n")
+                print(f"── {user.label} ──\n{message['title']}\n{message['body']}\n")
                 status[user.label] = "dry-run"
                 continue
-            try:
-                telegram.send_message(
-                    text, user.chat_id, parse_mode="HTML",
-                    buttons=weekly_buttons(data, user.lang, origin),
-                )
-                status[user.label] = "sent"
-                # Only a delivered review moves the concentration baseline: a
-                # send that failed must not make next Sunday's drift measure
-                # from a week the reader never saw.
-                if data.top_weight is not None:
-                    remember_top_weight(state, data.top_weight, now)
-                    save_state(state, user.state_path)
-            except telegram.TelegramBlocked:
-                mark_blocked(state, now)
+            took = webpush.send_all(user.push_path, message, topic="weekly")
+            status[user.label] = f"sent {took}" if took else "not delivered"
+            # Only a delivered review moves the concentration baseline: a push
+            # that reached no device must not make next Sunday's drift measure
+            # from a week the reader never saw.
+            if took and data.top_weight is not None:
+                remember_top_weight(state, data.top_weight, now)
                 save_state(state, user.state_path)
-                status[user.label] = "blocked"
-            telegram.pace()
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

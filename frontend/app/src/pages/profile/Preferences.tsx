@@ -25,6 +25,7 @@ import type { Jurisdictions } from "./data";
 import { ConnectorCard } from "./ConnectorCard";
 import { Sessions } from "./Sessions";
 import { DeleteAccount } from "./DeleteAccount";
+import { InstallCard } from "./InstallCard";
 import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
 import { TourCard } from "./TourCard";
@@ -234,6 +235,7 @@ export function Preferences({
           </Row>
         </Card>
 
+        <InstallCard />
         <Card title={t("profile.tax_section")} note={t("profile.tax_legal_note")}>
           <Row
             label={t("profile.tax_residence")}

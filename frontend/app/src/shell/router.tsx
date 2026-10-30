@@ -45,7 +45,7 @@ export type Route = { page: string; params: URLSearchParams };
  *
  * `?ticker=SYM` on any page opens that ticker's page: the pre-refactor app
  * served every symbol at `/?ticker=`, and those links are in bookmarks, old
- * Telegram digests and shared chats. No other page
+ * digests and shared chats. No other page
  * gives `ticker` a meaning of its own, so there is nothing for the jump to
  * shadow. Pure, so the rule can be tested without a location to read.
  */

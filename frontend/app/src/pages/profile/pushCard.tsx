@@ -1,13 +1,15 @@
 /**
- * The Notifications tab's "This device" card: Web Push for a finished answer.
+ * The Notifications tab's "This device" card: the channel everything arrives
+ * on — digest, weekly review, price alerts, reminders and finished answers.
  *
- * Per device, unlike Telegram: the subscription is this browser's, so the
- * switch reads `pushManager` and the server together (`shell/push.ts`). It is
- * drawn only when the deployment has a key; a device that cannot push says
- * why — an iPhone tab is told to add the app to the Home Screen first.
+ * Per device: the subscription is this browser's, so the switch reads
+ * `pushManager` and the server together (`shell/push.ts`). The tab owns the
+ * state (it also needs the account's device count) and hands it down. A
+ * deployment with no key says so; a device that cannot push says why — an
+ * iPhone tab is told to add the app to the Home Screen first.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import {
   type PushState,
@@ -15,7 +17,6 @@ import {
   enablePush,
   needsInstall,
   permission,
-  readPush,
   supported,
   testPush,
 } from "../../shell/push";
@@ -24,26 +25,30 @@ import { Card, Failure, Row, Toggle } from "./ui";
 
 type Busy = "toggle" | "test" | null;
 
-export function PushCard() {
+export function PushCard({
+  state,
+  onState,
+}: {
+  state: PushState | null;
+  onState: (next: PushState) => void;
+}) {
   const t = useT();
   const lang = useLang();
-  const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    readPush().then(
-      (fresh) => alive && setState(fresh),
-      () => alive && setState(null),
+  if (!state) return null;
+  if (!state.configured || !state.key) {
+    // Said rather than hidden: an empty tab reads as a broken page.
+    return (
+      <Card title={t("profile.push_title")} sub={t("profile.push_sub")}>
+        <div className="pr-cardbody">
+          <p className="pr-hint">{t("profile.push_off")}</p>
+        </div>
+      </Card>
     );
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  if (!state?.configured || !state.key) return null;
+  }
   const key = state.key;
   const blocked = permission() === "denied";
   const usable = supported() && !blocked;
@@ -55,10 +60,18 @@ export function PushCard() {
     try {
       if (on) {
         const granted = await enablePush(key, lang.startsWith("es") ? "es" : "en");
-        setState({ ...state, subscribed: granted });
+        onState({
+          ...state,
+          subscribed: granted,
+          devices: state.devices + (granted && !state.subscribed ? 1 : 0),
+        });
       } else {
         await disablePush();
-        setState({ ...state, subscribed: false });
+        onState({
+          ...state,
+          subscribed: false,
+          devices: Math.max(0, state.devices - (state.subscribed ? 1 : 0)),
+        });
       }
     } catch (failure) {
       setError(describe(failure, t("common.offline")));
@@ -118,7 +131,7 @@ export function PushCard() {
             disabled={busy !== null}
             onClick={() => void test()}
           >
-            {t("profile.tg_test")}
+            {t("profile.push_test")}
           </button>
           {sent && <p className="pr-hint">{t("profile.push_test_sent")}</p>}
         </Row>

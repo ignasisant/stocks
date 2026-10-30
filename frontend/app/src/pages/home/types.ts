@@ -382,7 +382,7 @@ export type Onboarding = {
    * a client talking to an API that predates it falls back to the session.
    */
   signed_in?: boolean;
-  /** login | import | ai | telegram — the four connectable capabilities. */
+  /** login | import | plan | ai | notify — the four connectable capabilities. */
   setup: Record<string, boolean>;
   /** search | ask | watchlist — the three that need no setup at all. */
   explore: Record<string, boolean>;

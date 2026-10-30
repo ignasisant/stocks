@@ -420,3 +420,29 @@
     opacity: 0.08;
   }
 }
+
+/* `PullRefresh.tsx`: the Home Screen app's pull. A pill under the notch that
+   follows the finger down, and stays put saying so while the reload is out.
+   It never takes a touch: the page under it is still the one being pulled. */
+.ag-pull {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 8px 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.ag-pull[data-ready] {
+  opacity: 1;
+}
+
+.ag-pull-glyph {
+  display: inline-block;
+}

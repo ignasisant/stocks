@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EXPLORE, SETUP, target, type Row } from "./checks";
+import { EXPLORE, SETUP, setupLine, target, type Row } from "./checks";
 import type { TourStep } from "./types";
 
 /** A step as `/onboarding` sends it, with only the fields a target reads. */
@@ -33,6 +33,7 @@ const STEPS: TourStep[] = [
   // one row has to exercise that path.
   step("watchlist", "profile"),
   step("positions", "portfolio", { tab: "positions" }),
+  step("prefs", "profile", {}, { profile_tab: "prefs" }),
 ];
 
 function row(key: string): Row {
@@ -67,7 +68,7 @@ describe("target", () => {
 
   it("names the Profile tab the payload leaves out", () => {
     // From the payload's own `session`, which is what the API now carries.
-    expect(target(row("telegram"), STEPS)).toEqual({
+    expect(target(row("notify"), STEPS)).toEqual({
       kind: "page",
       page: "profile",
       params: { tab: "notify" },
@@ -84,7 +85,7 @@ describe("target", () => {
     const moved = [
       step("notify", "profile", { tab: "somewhere" }, { profile_tab: "notify" }),
     ];
-    expect(target(row("telegram"), moved)).toEqual({
+    expect(target(row("notify"), moved)).toEqual({
       kind: "page",
       page: "profile",
       params: { tab: "somewhere" },
@@ -99,13 +100,16 @@ describe("target", () => {
     expect(target(row("login"), [])).toEqual({ kind: "page", page: "profile" });
   });
 
-  it("covers every capability the API reports", () => {
-    expect(SETUP.map((entry) => entry.key)).toEqual([
+  it("covers every capability the API reports, and the device's own", () => {
+    expect(SETUP.filter((entry) => !entry.device).map((entry) => entry.key)).toEqual([
       "login",
       "import",
       "plan",
       "ai",
-      "telegram",
+      "notify",
+    ]);
+    expect(SETUP.filter((entry) => entry.device).map((entry) => entry.key)).toEqual([
+      "app",
     ]);
     expect(EXPLORE.map((entry) => entry.key)).toEqual(["search", "ask", "watchlist"]);
   });
@@ -113,11 +117,65 @@ describe("target", () => {
 
 describe("guests", () => {
   it("disables every row whose target sits behind a sign-in, and only those", () => {
-    // The import, plan, AI, Telegram, ask and watchlist rows are disabled for a
-    // guest; search stays live, and sign-in is the pending action itself.
+    // The import, plan, AI, notifications, app, ask and watchlist rows are disabled
+    // for a guest; search stays live, and sign-in is the pending action itself.
     const gated = [...SETUP, ...EXPLORE]
       .filter((entry) => entry.signedIn)
       .map((entry) => entry.key);
-    expect(gated).toEqual(["import", "plan", "ai", "telegram", "ask", "watchlist"]);
+    expect(gated).toEqual([
+      "import",
+      "plan",
+      "ai",
+      "notify",
+      "app",
+      "ask",
+      "watchlist",
+    ]);
+  });
+});
+
+describe("the app node", () => {
+  const server = { login: true, import: true, plan: true, ai: true, notify: true };
+  const keys = (line: { row: Row }[]) => line.map((entry) => entry.row.key);
+
+  it("is drawn where this browser can install, still to do", () => {
+    for (const way of ["prompt", "ios"] as const) {
+      const line = setupLine(server, { guest: false, way, installed: false });
+      expect(keys(line).at(-1)).toBe("app");
+      expect(line.at(-1)!.on).toBe(false);
+    }
+  });
+
+  it("is ticked once the app runs installed, whatever the server says", () => {
+    // Installed, the browser no longer offers to install: `way` is null.
+    const line = setupLine({}, { guest: false, way: null, installed: true });
+    expect(line.find((entry) => entry.row.key === "app")!.on).toBe(true);
+  });
+
+  it("is left out where nothing can be installed, and for a guest", () => {
+    expect(
+      keys(setupLine(server, { guest: false, way: null, installed: false })),
+    ).not.toContain("app");
+    expect(
+      keys(setupLine(server, { guest: true, way: "prompt", installed: false })),
+    ).not.toContain("app");
+  });
+
+  it("does not count towards the setup, and reads only the browser", () => {
+    expect(row("app").optional).toBe(true);
+    // A key the API might one day send under the same name changes nothing.
+    const line = setupLine(
+      { app: true },
+      { guest: false, way: "prompt", installed: false },
+    );
+    expect(line.find((entry) => entry.row.key === "app")!.on).toBe(false);
+  });
+
+  it("lands on Preferences, where the App card is, when it is not a button", () => {
+    expect(target(row("app"), STEPS)).toEqual({
+      kind: "page",
+      page: "profile",
+      params: { tab: "prefs" },
+    });
   });
 });

@@ -3,8 +3,9 @@
 The cron (GitHub Actions) starts from a bare checkout: no data/users/, no
 watchlist.yaml. Accounts are discovered by listing the bucket
 (data/users/<slug>/prefs.json, plus the owner's root data/prefs.json), each
-account's prefs/watchlist/ledger are restored, and only accounts that linked
-Telegram and left the matching toggle on are yielded. With storage
+account's prefs/watchlist/ledger/push subscriptions are restored, and only
+accounts with a device subscribed to push and the matching toggle left on are
+yielded. With storage
 unconfigured (local dev) the same discovery runs over the local filesystem,
 so `stocks alerts --all-users` is testable without a bucket.
 
@@ -12,17 +13,13 @@ That discovery is the only place accounts are enumerated, so the account
 roster (`stocks users`, via iter_accounts) is served from here too even
 though it has nothing to do with notifications.
 
-Write discipline: the alerts/digest crons write only alerts_state.json;
-prefs.json and watchlist.yaml belong to live app sessions. The telegram-chat
-job (stocks.chat.bot) additionally writes prefs.json (link completion, free
--quota counter) and chat.json — a live web session writing the same files is
-last-write-wins, accepted: the web app hydrates once per session and the
-overlap window is a single turn.
+Write discipline: the crons write only alerts_state.json — and push.json
+when a push service says a subscription is gone (`webpush.send`). prefs.json
+and watchlist.yaml belong to live app sessions.
 """
 
 from __future__ import annotations
 
-import html
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -34,17 +31,9 @@ import pandas as pd
 from stocks import obs, storage
 from stocks.config import DATA_DIR, WATCHLIST_FILE, Holding, load_watchlist
 from stocks.data.fetch import fetch_history
-from stocks.notify import links, telegram
+from stocks.notify import links, render, webpush
 from stocks.notify.alerts import ALERT_PERIOD, check_holdings
-from stocks.notify.render import esc
-from stocks.notify.state import (
-    fingerprint,
-    is_blocked,
-    load_state,
-    mark_blocked,
-    save_state,
-    should_send,
-)
+from stocks.notify.state import fingerprint, load_state, save_state, should_send
 
 USERS_DIR = DATA_DIR / "users"
 
@@ -61,10 +50,6 @@ class NotifyUser:
     state_path: Path  # alerts_state.json, sibling of prefs
 
     @property
-    def chat_id(self) -> int | str:
-        return self.prefs["telegram_chat_id"]
-
-    @property
     def lang(self) -> str:
         return self.prefs.get("language") or "en"
 
@@ -73,6 +58,12 @@ class NotifyUser:
         """last_import.json sibling of prefs — when the account last uploaded
         a statement, which is the only honest measure of a stale book."""
         return self.prefs_path.with_name("last_import.json")
+
+    @property
+    def push_path(self) -> Path:
+        """push.json sibling of prefs — the devices a notification goes to
+        (matches accounts.UserPaths.push)."""
+        return self.prefs_path.with_name("push.json")
 
     @property
     def chat_path(self) -> Path:
@@ -127,11 +118,11 @@ def _restore_user_files(*paths: Path) -> None:
 
 
 def iter_all_users() -> list[NotifyUser]:
-    """Every account, prefs/watchlist/db restored — no telegram/notify filter.
+    """Every account, prefs/watchlist/db/push restored — no notify filter.
 
     The owner (root data/prefs.json + repo-root watchlist.yaml) is just
-    another entry, labelled "owner". chat.json is NOT restored here — the
-    telegram-chat job pulls it lazily, only for accounts that messaged.
+    another entry, labelled "owner". chat.json is NOT restored here — only
+    `NotifyUser.memories` needs what sits beside it, and pulls it lazily.
     """
     users: list[NotifyUser] = []
 
@@ -143,6 +134,7 @@ def iter_all_users() -> list[NotifyUser]:
         _restore_user_files(
             prefs_path, watchlist, db,
             root / "alerts_state.json", root / "last_import.json",
+            root / "push.json",
         )
         users.append(
             NotifyUser(
@@ -159,6 +151,7 @@ def iter_all_users() -> list[NotifyUser]:
     _restore_user_files(
         owner_prefs, WATCHLIST_FILE, DATA_DIR / "portfolio.db",
         DATA_DIR / "alerts_state.json", DATA_DIR / "last_import.json",
+        DATA_DIR / "push.json",
     )
     if owner_prefs.exists():
         users.append(
@@ -182,7 +175,7 @@ def _account_row(label: str, prefs_path: Path) -> dict:
         "first_seen": str(prefs.get("first_seen") or ""),
         "last_seen": str(prefs.get("last_seen") or ""),
         "estimated": bool(prefs.get("first_seen_estimated")),
-        "telegram": bool(prefs.get("telegram_chat_id")),
+        "push": webpush.devices(prefs_path.with_name("push.json")),
     }
 
 
@@ -197,25 +190,26 @@ def iter_accounts() -> list[dict]:
     rows: list[dict] = []
     for slug_name in sorted(_slugs()):
         prefs_path = USERS_DIR / slug_name / "prefs.json"
-        _restore_user_files(prefs_path)
+        _restore_user_files(prefs_path, prefs_path.with_name("push.json"))
         rows.append(_account_row(slug_name, prefs_path))
 
     owner_prefs = DATA_DIR / "prefs.json"
-    _restore_user_files(owner_prefs)
+    _restore_user_files(owner_prefs, DATA_DIR / "push.json")
     if owner_prefs.exists():
         rows.append(_account_row("owner", owner_prefs))
     return rows
 
 
 def iter_notify_users(kind: str) -> list[NotifyUser]:
-    """Accounts with Telegram linked and `notify_<kind>` enabled, restored.
+    """Accounts with a device subscribed to push and `notify_<kind>` enabled,
+    restored.
 
-    kind: "digest" | "alerts".
+    kind: "digest" | "weekly" | "alerts".
     """
     return [
         u
         for u in iter_all_users()
-        if u.prefs.get("telegram_chat_id") and u.prefs.get(f"notify_{kind}", True)
+        if u.prefs.get(f"notify_{kind}", True) and webpush.devices(u.push_path) > 0
     ]
 
 
@@ -242,7 +236,6 @@ def _alert_line(
     hit,
     holdings: list[Holding],
     frames: dict[str, pd.DataFrame],
-    origin: str | None,
     lang: str = "en",
 ) -> str:
     """One fired rule as a line: what happened, and what it happened to.
@@ -254,10 +247,7 @@ def _alert_line(
     ticker's own currency, so the context costs no extra request and no FX
     conversion that could be wrong.
     """
-    safe = esc(hit.ticker)
-    url = links.ticker_url(hit.ticker, origin) if origin else None
-    label = f'<a href="{html.escape(url, quote=True)}">{safe}</a>' if url else safe
-    line = f"{label}: {esc(hit.message)}"
+    line = f"{hit.ticker}: {hit.message}"
 
     holding = next((h for h in holdings if h.ticker == hit.ticker), None)
     if holding is None or not holding.is_position:
@@ -273,14 +263,29 @@ def _alert_line(
     return f"{line} · {' · '.join(context)}"
 
 
+def alerts_message(
+    lines: list[str], tickers: list[str], note: str | None, lang: str
+) -> dict:
+    """The fired rules as a push: one name opens its page, several the book."""
+    from stocks.web.i18n import translate
+
+    names = sorted(set(tickers))
+    url = links.ticker_path(names[0]) if len(names) == 1 else links.path(links.PORTFOLIO)
+    title = translate("notify.alerts_subject", lang)
+    if len(names) == 1:
+        title = f"{title} · {names[0]}"
+    # The narrated line goes second: with several rules firing it is the one
+    # sentence that says what they add up to, and the rest fold behind it.
+    return render.message(title, [lines[0], note, *lines[1:]], url, "alerts")
+
+
 def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
-    """Evaluate every subscriber's watchlist alerts and message the new hits.
+    """Evaluate every subscriber's watchlist alerts and push the new hits.
 
     Returns {label: status} for the job log. Per-user failures are reported,
     never propagated — one broken account must not block the rest.
     """
     from stocks.notify import narrative  # pulls in the chat engine; keep it lazy
-    from stocks.web.i18n import translate
 
     now = now or datetime.now(UTC)
     users = iter_notify_users("alerts")
@@ -298,9 +303,6 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
     for user, holdings in work:
         try:
             state = load_state(user.state_path)
-            if is_blocked(state):
-                status[user.label] = "skipped: blocked"
-                continue
             hits = check_holdings(holdings, frames=frames)
             hit_fps = {fingerprint(h.ticker, h.alert): h for h in hits if h.alert}
             active_fps = {
@@ -315,12 +317,8 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 should_send(state, fp, fired=False, now=now)  # re-arm cleared rules
 
             if to_send:
-                origin = links.app_base()
-                subject = translate("notify.alerts_subject", user.lang)
-                header = f"<b>{esc(subject)}</b>"
                 lines = [
-                    _alert_line(hit, holdings, frames, origin, user.lang)
-                    for hit in to_send
+                    _alert_line(hit, holdings, frames, user.lang) for hit in to_send
                 ]
                 # One LLM call per account per run, and only when something is
                 # actually going out — the rising-edge/cooldown state above is
@@ -328,28 +326,15 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 # key, no quota, timeout) just ships the plain rule lines.
                 note = narrative.alerts_line(to_send, user.prefs, user.lang,
                                              memories=user.memories())
-                if note:
-                    lines.append(f"\n💡 {esc(note)}")
-                # No configured origin means no link: the button is dropped
-                # rather than shipped pointing at nowhere (stocks.notify.links).
-                portfolio = links.page_url(links.PORTFOLIO, origin)
-                buttons: list[telegram.Button] = (
-                    [(translate("notify.btn_portfolio", user.lang), portfolio)]
-                    if portfolio
-                    else []
+                message = alerts_message(
+                    lines, [hit.ticker for hit in to_send], note, user.lang
                 )
-                try:
-                    telegram.send_message(
-                        "\n".join([header, *lines]),
-                        user.chat_id,
-                        parse_mode="HTML",
-                        buttons=buttons,
-                    )
-                    status[user.label] = f"sent {len(to_send)}"
-                except telegram.TelegramBlocked:
-                    mark_blocked(state, now)
-                    status[user.label] = "blocked"
-                telegram.pace()
+                if not webpush.send_all(user.push_path, message, topic="alerts"):
+                    # Nothing reached a device, so nothing was said: leave the
+                    # edges as they were and let the next hour try again.
+                    status[user.label] = "not delivered"
+                    continue
+                status[user.label] = f"sent {len(to_send)}"
             else:
                 status[user.label] = "no hits"
             save_state(state, user.state_path, active_fingerprints=active_fps)

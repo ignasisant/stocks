@@ -1,9 +1,10 @@
-# Telegram notifications — daily portfolio digest + hourly price alerts.
+# Push notifications — daily digest, weekly review, price alerts, reminder.
 #
-# Both jobs are headless fan-outs over every account that linked Telegram on
-# the Profile page: user data is enumerated and restored from the R2 bucket
-# (STOCKS_STORAGE_*), computed with the pure analytics, and delivered through
-# the shared bot (TELEGRAM_BOT_TOKEN). See src/stocks/notify/.
+# Every job is a headless fan-out over the accounts that turned notifications
+# on from a device (Profile → Notifications): user data is enumerated and
+# restored from the R2 bucket (STOCKS_STORAGE_*), computed with the pure
+# analytics, and pushed to each subscribed device with the app's VAPID key
+# (WEBPUSH_PRIVATE_KEY). See src/stocks/notify/.
 #
 # Timing notes:
 # - GitHub cron regularly fires 3-15 min late; nothing here is latency-critical.
@@ -49,11 +50,9 @@ env:
   STOCKS_STORAGE_BUCKET: ${{ secrets.STOCKS_STORAGE_BUCKET }}
   STOCKS_STORAGE_ACCESS_KEY_ID: ${{ secrets.STOCKS_STORAGE_ACCESS_KEY_ID }}
   STOCKS_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STOCKS_STORAGE_SECRET_ACCESS_KEY }}
-  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  # The app's public origin, so the messages can link back into it (tickers,
-  # the Portfolio/Earnings/Import buttons). Unset, every message renders
-  # link-free rather than pointing at a hostname nobody can reach.
-  APP_PUBLIC_URL: ${{ secrets.APP_PUBLIC_URL }}
+  # The app's own VAPID key — the very one the devices subscribed with
+  # (`[webpush] private_key`). Unset, nothing can be pushed.
+  WEBPUSH_PRIVATE_KEY: ${{ secrets.WEBPUSH_PRIVATE_KEY }}
 
 # The token only reads the repo; nothing here pushes, comments or releases.
 permissions:
@@ -111,7 +110,7 @@ jobs:
       - run: uv sync --frozen --no-dev
       - run: uv run --no-sync stocks alerts --all-users
 
-  # Accounts that linked Telegram and have not opened the app for a week get
+  # Accounts with notifications on that have not opened the app for a week get
   # one reminder, and one more a week later; then nothing until they come
   # back (notify/nudge.py). Daily, because the week runs out on any day.
   nudge:
@@ -126,9 +125,9 @@ jobs:
       - run: uv sync --frozen --no-dev
       - run: uv run --no-sync stocks nudge
 
-  # Manual only: proves the secrets, the bucket roster and the bot are wired,
-  # without waiting for a cron or computing anything. Sends one short message
-  # per Telegram-linked account (or just `user`), so it is cheap to re-run.
+  # Manual only: proves the secrets, the bucket roster and the push key are
+  # wired, without waiting for a cron or computing anything. Sends one short
+  # push to every device of each account (or just `user`), cheap to re-run.
   test:
     if: inputs.job == 'test'
     runs-on: ubuntu-latest

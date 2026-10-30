@@ -5,7 +5,7 @@
 # (infra/cron.tf) starts this same image with `.venv/bin/stocks today-market`.
 #
 # STOCKS_SECRETS_TOML — full contents of secrets.toml ([auth], [app],
-# [storage], [chat], [free_llm], [telegram]). Container hosts inject secrets as
+# [storage], [chat], [free_llm], [webpush]). Container hosts inject secrets as
 # env vars, and stocks.secrets_env reads every key that has no env var of its
 # own from that file, so we write it out here. STREAMLIT_SECRETS_TOML is the
 # name the binding had before; a service or job still carrying it boots the

@@ -49,7 +49,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Alert types that only need the latest price (evaluated by Alert.triggered).
 # Reporting currencies the app can reckon in, and how their amounts are
 # prefixed. Here rather than in web/auth.py because the headless senders (the
-# Telegram digest, the CLI) format money too.
+# digest, the CLI) format money too.
 # Frankfurter serves any ECB-quoted base, so adding one is a line here. The
 # Nordic currencies all write "kr", so they take the code-prefix form rather
 # than a symbol nobody could tell apart in a table.

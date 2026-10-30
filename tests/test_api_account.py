@@ -1,15 +1,14 @@
-"""Erasing an account, linking a chat, and filing feedback.
+"""Erasing an account, exporting it, and filing feedback.
 
-Three small routers with one thing in common: each is a write that a bearer
-token must never reach. A token names nobody and any holder can name any
-account, so a token that could call these could erase every book on the
-deployment, aim the bot at a chat it chose, or file text against a stranger.
+Small routers with one thing in common: each is a call that a bearer token
+must never reach. A token names nobody and any holder can name any account,
+so a token that could call these could erase every book on the deployment,
+download a stranger's or file text against one.
 
 What each *does* belongs to the modules underneath — `auth.delete_account`,
-`notify/telegram.py`, `web/feedback.py` — and is tested with them. What is
-tested here is the binding: the confirmation an irreversible action demands,
-the states the linking dance can be in, and that nothing happens on the way to
-a refusal.
+`web/exports.py`, `web/feedback.py` — and is tested with them. What is tested
+here is the binding: the confirmation an irreversible action demands, and that
+nothing happens on the way to a refusal.
 """
 
 from __future__ import annotations
@@ -22,10 +21,8 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts, revocation
+from stocks import accounts
 from stocks.api.app import app as fastapi_app
-from stocks.api.routes import notify as notify_routes
-from stocks.notify import telegram
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -161,7 +158,7 @@ def test_the_export_bundles_what_the_account_holds_without_its_keys(
         "anthropic_key_enc": "gAAAAABn-not-for-export",
         "anthropic_key_saved_at": 1.0,
         "anthropic_key_first_at": 1.0,
-        "telegram_chat_id": "42",
+        "notify_digest": False,
     }))
     account.chat.write_text(json.dumps({"conversations": []}))
     account.learnings.write_text("[]")
@@ -170,7 +167,7 @@ def test_the_export_bundles_what_the_account_holds_without_its_keys(
         "README.txt", "watchlist.yaml", "prefs.json", "chat.json", "chat_learnings.json",
     ]
     assert json.loads(bundle.read("prefs.json")) == {
-        "currency": "EUR", "telegram_chat_id": "42",
+        "currency": "EUR", "notify_digest": False,
     }
     assert bundle.read("watchlist.yaml") == account.watchlist.read_bytes()
     assert bundle.read("chat.json") == account.chat.read_bytes()
@@ -208,234 +205,6 @@ def test_every_user_file_is_bundled_or_deliberately_left_out(account):
     assert set(exports.bundled(account)) | exports.NOT_BUNDLED == set(accounts.USER_FILES)
     assert "devices.json" in exports.bundled(account)
     assert exports.NOT_BUNDLED == {"portfolio.db", memory.FILE, "push.json"}
-
-
-# ----------------------------------------------------------------- telegram
-
-
-@pytest.fixture(autouse=True)
-def _no_bot_updates(monkeypatch):
-    """A pending code makes the polling route read the bot's updates; never
-    from the network here."""
-    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: [])
-
-
-def _start(code: str, chat_id: int = 777, username: str = "ada") -> dict:
-    return {
-        "update_id": 1,
-        "message": {
-            "text": f"/start {code}",
-            "chat": {"id": chat_id, "username": username},
-        },
-    }
-
-
-def test_a_poll_completes_the_link_from_the_bots_updates(
-    client, account, signed_in, monkeypatch
-):
-    """No webhook Worker is deployed, so no job ever reads "/start <code>":
-    the polling route has to find it itself or the spinner never stops."""
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
-    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
-    sent: list[tuple] = []
-    monkeypatch.setattr(
-        telegram, "send_message", lambda text, chat_id, **kw: sent.append((text, chat_id))
-    )
-    code = signed_in.post("/v1/notify/telegram").json()["code"]
-    updates = [_start("someone-else", 1), _start(code)]
-    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: updates)
-    body = signed_in.get("/v1/notify/telegram").json()
-    assert (body["linked"], body["pending"], body["username"]) == (True, False, "ada")
-    stored = prefs_of(account)
-    assert stored["telegram_chat_id"] == 777
-    assert stored.get("tg_link_code") is None
-    # The welcome promises what this road delivers — no chat without the Worker.
-    assert len(sent) == 1 and sent[0][1] == 777
-    assert "/help" not in sent[0][0]
-
-
-def test_a_poll_without_its_start_stays_pending(client, account, signed_in, monkeypatch):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
-    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
-    signed_in.post("/v1/notify/telegram")
-    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: [_start("other")])
-    body = signed_in.get("/v1/notify/telegram").json()
-    assert (body["linked"], body["pending"]) == (False, True)
-
-
-def test_a_failing_update_read_leaves_the_poll_pending(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
-    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
-    signed_in.post("/v1/notify/telegram")
-
-    def down(timeout=0):
-        raise RuntimeError("telegram getUpdates failed")
-
-    monkeypatch.setattr(telegram, "get_updates", down)
-    response = signed_in.get("/v1/notify/telegram")
-    assert response.status_code == 200
-    assert response.json()["pending"] is True
-
-
-def test_the_test_message_goes_to_the_linked_chat(
-    client, account, signed_in, monkeypatch
-):
-    """send_message takes the text first: the chat id went in as the text
-    and the text as the chat id, so every test send failed "chat not found"."""
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(account.prefs, {"telegram_chat_id": 42})
-    sent: list[tuple] = []
-    monkeypatch.setattr(
-        telegram, "send_message", lambda text, chat_id, **kw: sent.append((text, chat_id))
-    )
-    assert signed_in.post("/v1/notify/telegram/test").status_code == 200
-    assert sent == [("✅ TopStocks", "42")]
-
-
-def test_an_unconfigured_deployment_says_so_rather_than_failing(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: False)
-    body = signed_in.get("/v1/notify/telegram").json()
-    assert body["configured"] is False
-    assert (body["linked"], body["pending"]) == (False, False)
-    # And refuses to issue a code for a bot that is not there.
-    assert signed_in.post("/v1/notify/telegram").status_code == 503
-
-
-def test_linking_issues_a_code_and_remembers_it(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
-    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
-    body = signed_in.post("/v1/notify/telegram").json()
-    assert body["deep_link"].endswith(body["code"])
-    assert body["bot"] == "@topstocksbot"
-    # The code lands in prefs because the process that matches it is the chat
-    # job, not this one.
-    assert prefs_of(account)["tg_link_code"] == body["code"]
-    assert signed_in.get("/v1/notify/telegram").json()["pending"] is True
-
-
-def test_a_lapsed_code_is_no_longer_pending(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(
-        account.prefs,
-        {"tg_link_code": "old", "tg_link_ts": 0},  # issued at the epoch
-    )
-    assert signed_in.get("/v1/notify/telegram").json()["pending"] is False
-
-
-def test_a_pending_link_can_be_resumed_after_a_tab_switch(
-    client, account, signed_in, monkeypatch
-):
-    """The state carries the outstanding code and its link. Without them a
-    reader who switched tabs mid-dance can only start over, and the server
-    would hand them a second code for the same attempt."""
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
-    monkeypatch.setattr(
-        telegram, "deep_link", lambda code: f"https://t.me/b?start={code}"
-    )
-    issued = signed_in.post("/v1/notify/telegram").json()
-    resumed = signed_in.get("/v1/notify/telegram").json()
-    assert resumed["code"] == issued["code"]
-    assert resumed["deep_link"] == issued["deep_link"]
-
-
-def test_a_lapsed_code_is_not_offered_again(client, account, signed_in, monkeypatch):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(account.prefs, {"tg_link_code": "old", "tg_link_ts": 0})
-    body = signed_in.get("/v1/notify/telegram").json()
-    assert body["pending"] is False
-    assert body["code"] is None and body["deep_link"] is None
-
-
-def test_testing_a_link_that_does_not_exist_is_a_409(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    assert signed_in.post("/v1/notify/telegram/test").status_code == 409
-
-
-def test_a_provider_that_refuses_the_message_is_not_a_500(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(account.prefs, {"telegram_chat_id": 42})
-
-    def boom(text, chat_id, **kw):
-        raise RuntimeError("chat not found")
-
-    monkeypatch.setattr(telegram, "send_message", boom)
-    response = signed_in.post("/v1/notify/telegram/test")
-    assert response.status_code == 502
-    # The provider's own words, unprefixed: the client frames it with
-    # `profile.tg_test_failed`, and saying it twice read as a stutter.
-    assert response.json()["detail"] == "chat not found"
-
-
-def test_a_linked_chat_names_its_handle(client, account, signed_in, monkeypatch):
-    """The @username the link job recorded, which the Profile page prints
-    beside "connected" — and nothing once the chat is gone, so the next link
-    does not come back wearing the previous chat's name."""
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(
-        account.prefs, {"telegram_chat_id": "42", "telegram_username": "ada"}
-    )
-    assert signed_in.get("/v1/notify/telegram").json()["username"] == "ada"
-    body = signed_in.request("DELETE", "/v1/notify/telegram").json()
-    assert body["username"] is None
-    assert prefs_of(account).get("telegram_username") is None
-
-
-def test_a_chat_without_a_public_username_names_nobody(
-    client, account, signed_in, monkeypatch
-):
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(account.prefs, {"telegram_chat_id": "42"})
-    body = signed_in.get("/v1/notify/telegram").json()
-    assert body["linked"] is True and body["username"] is None
-
-
-def test_unlinking_keeps_the_switches(client, account, signed_in, monkeypatch):
-    """A reader who disconnects and comes back should find the three toggles
-    the way they left them — clearing them here would turn notifications on
-    for everybody who ever unlinked."""
-    monkeypatch.setattr(telegram, "configured", lambda: True)
-    accounts.update_prefs(
-        account.prefs,
-        {"telegram_chat_id": 42, "notify_digest": False, "notify_weekly": False},
-    )
-    body = signed_in.request("DELETE", "/v1/notify/telegram").json()
-    assert body["linked"] is False
-    stored = prefs_of(account)
-    assert stored["telegram_chat_id"] is None
-    assert stored["notify_digest"] is False
-    assert stored["notify_weekly"] is False
-
-
-def test_the_polling_read_looks_in_the_bucket_first(
-    client, account, signed_in, monkeypatch
-):
-    """The chat id is written by another process entirely. A local-only read is
-    a spinner that never stops."""
-    seen: list = []
-    monkeypatch.setattr("stocks.storage.enabled", lambda: True)
-    monkeypatch.setattr(
-        notify_routes.storage, "restore", lambda path: seen.append(path)
-    )
-    signed_in.get("/v1/notify/telegram")
-    # The session check restores its own revocation list on first touch.
-    assert [p for p in seen if p.parent != revocation.DIR] == [account.prefs]
 
 
 # ----------------------------------------------------------------- feedback

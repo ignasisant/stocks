@@ -39,7 +39,7 @@ _attempts = engine.attempts
 
 def _persona(lang: str, task: str, prefs: dict | None = None) -> str:
     """The prompt's opening. With `prefs`, it also says who the user is — the
-    investor profile the chat reads (`engine.persona`): a line in Telegram is
+    investor profile the chat reads (`engine.persona`): a line in a notification is
     the same assistant as the chat, writing to the same person."""
     who = ""
     if prefs is not None:

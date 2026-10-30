@@ -131,21 +131,13 @@ def cmd_digest(args: argparse.Namespace) -> None:
             print(f"{label}: {result}")
         return
 
-    # Single-user smoke path: owner root files, env TELEGRAM_CHAT_ID channel.
-    import os
-
+    # Single-user smoke path: the owner's root files, printed, never sent.
     from stocks.config import DATA_DIR, WATCHLIST_FILE
-    from stocks.notify.digest import compute_digest_data, render_digest
+    from stocks.notify.digest import compute_digest_data, digest_message
 
     data = compute_digest_data(WATCHLIST_FILE, DATA_DIR / "portfolio.db")
-    text = render_digest(data, "en")
-    if args.dry_run or not os.getenv("TELEGRAM_CHAT_ID"):
-        print(text)
-        return
-    from stocks.notify import telegram
-
-    telegram.send_message(text, os.environ["TELEGRAM_CHAT_ID"], parse_mode="HTML")
-    print("digest sent")
+    message = digest_message(data, "en")
+    print(f"{message['title']}\n{message['body']}\n-> {message['url']}")
 
 
 def cmd_weekly(args: argparse.Namespace) -> None:
@@ -160,79 +152,52 @@ def cmd_weekly(args: argparse.Namespace) -> None:
             print(f"{label}: {result}")
         return
 
-    # Single-user smoke path: owner root files, env TELEGRAM_CHAT_ID channel.
-    import os
-
+    # Single-user smoke path: the owner's root files, printed, never sent.
     from stocks.config import DATA_DIR, WATCHLIST_FILE
-    from stocks.notify.weekly import compute_weekly_data, render_weekly
+    from stocks.notify.weekly import compute_weekly_data, weekly_message
 
     data = compute_weekly_data(WATCHLIST_FILE, DATA_DIR / "portfolio.db")
-    text = render_weekly(data, "en")
-    if args.dry_run or not os.getenv("TELEGRAM_CHAT_ID"):
-        print(text)
-        return
-    from stocks.notify import telegram
-
-    telegram.send_message(text, os.environ["TELEGRAM_CHAT_ID"], parse_mode="HTML")
-    print("weekly review sent")
+    message = weekly_message(data, "en")
+    print(f"{message['title']}\n{message['body']}\n-> {message['url']}")
 
 
 def cmd_nudge(args: argparse.Namespace) -> None:
-    """Remind the Telegram-linked accounts that went quiet (notify/nudge.py)."""
+    """Remind the accounts with push on that went quiet (notify/nudge.py)."""
     from stocks.notify.nudge import run_nudge_fanout
 
     status = run_nudge_fanout(dry_run=args.dry_run)
     if not status:
-        print("no Telegram-linked accounts")
+        print("no accounts with push notifications on")
         return
     for label, result in status.items():
         print(f"{label}: {result}")
 
 
-def cmd_usage_digest(args: argparse.Namespace) -> None:
-    """Send the owner the week's usage and funnel (notify/usage_digest.py)."""
-    from stocks import logs_query as lq
-    from stocks.notify import usage_digest
-
-    files = [Path(f) for f in (args.file or [])]
-    entries = [e for f in files for e in lq.read_file(f)] if files else None
-    try:
-        status, text = usage_digest.run(
-            since=args.since, dry_run=args.dry_run, entries=entries,
-            lang=args.lang, project=args.project, service=args.service,
-        )
-    except lq.LogsError as exc:
-        raise SystemExit(f"usage-digest: {exc}") from exc
-    if args.dry_run or status != "sent":
-        print(text)
-    print(f"-- {status}")
-
-
 def cmd_notify_test(args: argparse.Namespace) -> None:
-    """Send a test message down the real notification paths.
+    """Send a test notification down the real delivery paths.
 
     Two paths, because they read different config and fail differently:
 
       no flags        the env-configured channels — exactly what
-                      `alerts --deliver` uses (TELEGRAM_CHAT_ID, SMTP_*).
+                      `alerts --deliver` uses (SMTP_*).
       --all-users     the per-account fan-out the digest/alerts crons use:
-      / --user LABEL  every account that linked Telegram on the Profile page,
-                      messaged at its own chat id in its own language.
+      / --user LABEL  a Web Push to every device each account subscribed on
+                      the Profile page, in its own language.
 
     Nothing is computed and no state is written, so it is safe to run against
-    production data (that is the point — it proves the deploy's secrets and
+    production data (that is the point — it proves the deploy's push key and
     the bucket roster, not the analytics).
     """
     from stocks.web.i18n import DEFAULT_LANG, translate
 
     if args.all_users or args.user:
-        from stocks.notify import telegram
+        from stocks.notify import links, webpush
         from stocks.notify.fanout import iter_all_users
 
-        if not telegram.configured():
+        if not webpush.configured():
             raise SystemExit(
-                "no bot token: set TELEGRAM_BOT_TOKEN (env) or [telegram] "
-                "bot_token (secrets.toml)"
+                "no push key: set WEBPUSH_PRIVATE_KEY (env) or [webpush] "
+                "private_key (secrets.toml)"
             )
         users = iter_all_users()
         if args.user:
@@ -240,12 +205,18 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
             if not users:
                 have = ", ".join(sorted(u.label for u in iter_all_users()))
                 raise SystemExit(f"unknown user {args.user!r}; have: {have}")
-        linked = [u for u in users if u.prefs.get("telegram_chat_id")]
-        if not linked:
-            print("no Telegram-linked accounts (Profile → Notifications → Connect)")
+        reached = [(u, webpush.devices(u.push_path)) for u in users]
+        reached = [(u, n) for u, n in reached if n]
+        if not reached:
+            print("no accounts with push on (Profile → Notifications)")
             return
-        for user in linked:
-            text = translate("notify.test_message", user.lang)
+        for user, devices in reached:
+            message = {
+                "title": "TopStocks",
+                "body": translate("notify.test_message", user.lang),
+                "url": links.path("profile", tab="notify"),
+                "tag": "test",
+            }
             muted = [
                 kind
                 for kind in ("digest", "weekly", "alerts")
@@ -253,15 +224,11 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
             ]
             note = f" (notify_{'/'.join(muted)} off)" if muted else ""
             if args.dry_run:
-                print(f"{user.label} -> chat {user.chat_id} [{user.lang}]{note}: {text}")
+                print(f"{user.label} -> {devices} device(s) [{user.lang}]{note}: "
+                      f"{message['body']}")
                 continue
-            try:
-                telegram.send_message(text, user.chat_id, parse_mode=None)
-                print(f"{user.label}: sent{note}")
-            except telegram.TelegramBlocked:
-                print(f"{user.label}: blocked — the user blocked the bot")
-            except Exception as exc:  # noqa: BLE001 — one bad account, not the run
-                print(f"{user.label}: error: {exc}")
+            took = webpush.send_all(user.push_path, message, topic="test")
+            print(f"{user.label}: {took}/{devices} device(s){note}")
         return
 
     from stocks.notify.deliver import configured_channels, deliver
@@ -273,55 +240,6 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
         return
     status = deliver([text], subject="TopStocks test")
     print("\ndelivery: " + ", ".join(f"{k}={v}" for k, v in status.items()))
-
-
-def cmd_telegram_chat(args: argparse.Namespace) -> None:
-    import os
-
-    if args.set_webhook:
-        from stocks.notify import telegram
-
-        secret_token = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
-        if not secret_token:
-            raise SystemExit("TELEGRAM_WEBHOOK_SECRET must be set (same value "
-                             "as the Worker's WEBHOOK_SECRET)")
-        telegram.set_webhook(args.set_webhook, secret_token)
-        print(f"webhook set: {args.set_webhook}")
-        return
-    if args.delete_webhook:
-        from stocks.notify import telegram
-
-        telegram.delete_webhook()
-        print("webhook deleted (getUpdates polling available again)")
-        return
-    if args.ask:
-        # Local engine smoke test — no Telegram, no queue. --user picks the
-        # account by fanout label ("owner" or a slug).
-        from stocks.chat.engine import answer, free_daily_cap
-        from stocks.notify.fanout import iter_all_users
-
-        users = {u.label: u for u in iter_all_users()}
-        user = users.get(args.user)
-        if user is None:
-            raise SystemExit(
-                f"unknown user {args.user!r}; have: {', '.join(sorted(users))}")
-        reply = answer(prefs=user.prefs, prefs_path=user.prefs_path,
-                       chat_path=user.chat_path, watchlist=user.watchlist,
-                       db=user.db, message=args.ask, lang=user.lang)
-        if reply.error:
-            print(f"error: {reply.error} (cap {free_daily_cap(user.prefs)})")
-        else:
-            print(f"[{reply.provider_id}] {reply.text}")
-        return
-
-    from stocks.chat.bot import drain
-
-    status = drain(dry_run=args.dry_run)
-    if not status:
-        print("queue empty")
-        return
-    for key, result in status.items():
-        print(f"{key}: {result}")
 
 
 def _parse_kv(items: list[str] | None) -> list[tuple[str, float]]:
@@ -1265,14 +1183,14 @@ def cmd_users(args: argparse.Namespace) -> None:
         print(json.dumps(rows, indent=2))
         return
 
-    head = f"{'account':<40} {'first seen':<22} {'last seen':<11} {'telegram':>8}"
+    head = f"{'account':<40} {'first seen':<22} {'last seen':<11} {'push':>5}"
     print(head)
     print("-" * len(head))
     for r in sorted(rows, key=lambda r: r["first_seen"] or "9999"):
         first = (r["first_seen"] or "-") + (" ~" if r["estimated"] else "")
         print(
             f"{r['label'][:40]:<40} {first:<22} {r['last_seen'] or '-':<11} "
-            f"{'yes' if r['telegram'] else '-':>8}"
+            f"{r['push'] or '-':>5}"
         )
 
     print(f"\n{len(rows)} accounts")
@@ -1341,7 +1259,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_alerts = sub.add_parser("alerts", help="check watchlist alerts (price/RSI/etc)")
     p_alerts.add_argument(
         "--deliver", action="store_true",
-        help="send hits via configured channels (Telegram/email)",
+        help="send hits via configured channels (email)",
     )
     p_alerts.add_argument(
         "--earnings-days", type=int, default=0, metavar="N",
@@ -1349,16 +1267,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_alerts.add_argument(
         "--all-users", action="store_true",
-        help="cron mode: evaluate every Telegram-linked account and message each",
+        help="cron mode: evaluate every account with push on and notify each",
     )
     p_alerts.set_defaults(func=cmd_alerts)
 
     p_digest = sub.add_parser(
-        "digest", help="daily portfolio digest (value, moves, earnings) via Telegram"
+        "digest", help="daily portfolio digest (value, moves, earnings) as a push"
     )
     p_digest.add_argument(
         "--all-users", action="store_true",
-        help="cron mode: send every Telegram-linked account its own digest",
+        help="cron mode: push every account with notifications on its own digest",
     )
     p_digest.add_argument(
         "--dry-run", action="store_true",
@@ -1372,7 +1290,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_weekly.add_argument(
         "--all-users", action="store_true",
-        help="cron mode: send every Telegram-linked account its own review",
+        help="cron mode: push every account with notifications on its own review",
     )
     p_weekly.add_argument(
         "--dry-run", action="store_true",
@@ -1455,7 +1373,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ntest.add_argument(
         "--all-users", action="store_true",
-        help="cron path: message every Telegram-linked account, in its language",
+        help="cron path: push every account's devices, in its language",
     )
     p_ntest.add_argument(
         "--user", metavar="LABEL",
@@ -1470,63 +1388,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_nudge = sub.add_parser(
         "nudge",
-        help="remind Telegram-linked accounts quiet for a week (two at most)",
+        help="remind accounts with push on that went quiet for a week (two at most)",
     )
     p_nudge.add_argument(
         "--dry-run", action="store_true",
         help="print the reminder(s) and who is due one; send nothing",
     )
     p_nudge.set_defaults(func=cmd_nudge)
-
-    p_digest = sub.add_parser(
-        "usage-digest",
-        help="Telegram the owner the week's usage and funnel from the prod logs",
-    )
-    p_digest.add_argument(
-        "--since", default="7d", metavar="SPAN",
-        help="how far back to read (30m, 6h, 7d); default 7d",
-    )
-    p_digest.add_argument(
-        "--dry-run", action="store_true",
-        help="print the message; send nothing",
-    )
-    p_digest.add_argument(
-        "--file", action="append", metavar="PATH",
-        help="read an exported snapshot (stocks logs export) instead of the "
-             "logs; repeat for the app log and the access log",
-    )
-    p_digest.add_argument("--lang", choices=("en", "es"),
-                          help="override the owner's language")
-    p_digest.add_argument("--project", default=None, help=argparse.SUPPRESS)
-    p_digest.add_argument("--service", default=None, help=argparse.SUPPRESS)
-    p_digest.set_defaults(func=cmd_usage_digest)
-
-    p_tg = sub.add_parser(
-        "telegram-chat",
-        help="answer queued Telegram chat messages (webhook → R2 queue → here)",
-    )
-    p_tg.add_argument(
-        "--dry-run", action="store_true",
-        help="print what each queued update would get; send and delete nothing",
-    )
-    p_tg.add_argument(
-        "--ask", metavar="TEXT",
-        help="local engine smoke test: answer TEXT for --user, no Telegram",
-    )
-    p_tg.add_argument(
-        "--user", default="owner", metavar="LABEL",
-        help="account label for --ask: 'owner' or a data/users/ slug",
-    )
-    p_tg.add_argument(
-        "--set-webhook", metavar="URL",
-        help="point the bot's webhook at the Worker URL "
-             "(reads TELEGRAM_WEBHOOK_SECRET)",
-    )
-    p_tg.add_argument(
-        "--delete-webhook", action="store_true",
-        help="remove the webhook (rollback to getUpdates polling)",
-    )
-    p_tg.set_defaults(func=cmd_telegram_chat)
 
     p_screen = sub.add_parser("screen", help="rank/filter the whole watchlist by KPIs")
     p_screen.add_argument("--sort", help="metric key to rank by, e.g. roic, pe_ttm")

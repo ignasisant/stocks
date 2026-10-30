@@ -134,7 +134,7 @@ the notify/backup crons start failing.
 
 ## Crons (GitHub Actions)
 
-Digest/alerts (`notify.yml`), Telegram chat (`telegram_chat.yml`), snapshots
+Notifications (`notify.yml`: digest, weekly, alerts, reminder), snapshots
 (`backup.yml`). A red run emails the repo owner. They are stateless: fix the
 cause and `gh workflow run <name>` to re-run; a missed digest is not worth
 backfilling.

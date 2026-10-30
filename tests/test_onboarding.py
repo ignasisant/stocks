@@ -209,19 +209,20 @@ def _paths(tmp_path: Path) -> SimpleNamespace:
         db=tmp_path / "ledger.db",
         watchlist=tmp_path / "watchlist.yaml",
         chat=tmp_path / "chat.json",
+        push=tmp_path / "push.json",
     )
 
 
 def test_setup_state_reads_the_capabilities(monkeypatch, tmp_path):
     monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 1)
     state = onboarding.setup_state(
-        {"anthropic_key_enc": "…", "telegram_chat_id": 42,
-         "investor_plan": {"set": True}},
+        {"anthropic_key_enc": "…", "investor_plan": {"set": True}},
         _paths(tmp_path),
         signed_in=True,
     )
     assert state == {"login": True, "import": True, "plan": True, "ai": True,
-                     "telegram": True}
+                     "notify": True}
 
 
 def test_the_start_cards_plan_is_the_tours_plan_step(tmp_path):
@@ -235,13 +236,24 @@ def test_the_start_cards_plan_is_the_tours_plan_step(tmp_path):
 
 def test_setup_state_for_a_guest_has_nothing_switched_on(monkeypatch, tmp_path):
     monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
-    state = onboarding.setup_state(
-        {"telegram_chat_id": 42}, _paths(tmp_path), signed_in=False
-    )
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 1)
+    state = onboarding.setup_state({}, _paths(tmp_path), signed_in=False)
     # The ledger check is skipped for a guest on purpose — the guest data dir
     # is shared, so its starter ledger is nobody's import.
     assert state["login"] is False and state["import"] is False
-    assert state["plan"] is False
+    assert state["plan"] is False and state["notify"] is False
+
+
+def test_notifications_are_on_with_a_device_and_the_tour_step_agrees(
+    monkeypatch, tmp_path
+):
+    paths = _paths(tmp_path)
+    assert onboarding.setup_state({}, paths, signed_in=True)["notify"] is False
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 2)
+    assert onboarding.setup_state({}, paths, signed_in=True)["notify"] is True
+    assert onboarding.by_id("notify").done({}, paths) is True
+    # No account files to read: nothing is switched on.
+    assert onboarding.by_id("notify").done({}, None) is False
 
 
 def test_setup_state_ignores_the_keyless_free_chain(monkeypatch, tmp_path):
@@ -435,5 +447,5 @@ def test_explore_state_is_kept_apart_from_the_setup_capabilities(account):
     explore = set(onboarding.explore_state({}, account))
     setup = set(onboarding.setup_state({}, account, signed_in=True))
     assert explore == {"search", "ask", "watchlist"}
-    assert setup == {"login", "import", "plan", "ai", "telegram"}
+    assert setup == {"login", "import", "plan", "ai", "notify"}
     assert not explore & setup

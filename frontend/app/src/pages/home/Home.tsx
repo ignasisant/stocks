@@ -106,7 +106,7 @@ const GUEST_PERKS = [
   // visitor before the button: no, the assistant has a free daily allowance.
   "home.guest_perk_free",
   "home.guest_perk_import",
-  "home.guest_perk_telegram",
+  "home.guest_perk_notify",
   "home.guest_perk_watchlist",
 ];
 

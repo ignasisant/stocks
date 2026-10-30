@@ -53,7 +53,7 @@ CHANGES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS changes (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     at        TEXT    NOT NULL,          -- ISO-8601 UTC
-    source    TEXT    NOT NULL,          -- chat | telegram | mcp | api | import
+    source    TEXT    NOT NULL,          -- chat | mcp | api | import
     summary   TEXT    NOT NULL DEFAULT '',
     rows      TEXT    NOT NULL,          -- JSON [{id, before, after}]
     undone_at TEXT

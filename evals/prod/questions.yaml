@@ -440,12 +440,12 @@
 
 # ----------------------------------------------------------------- profile
 
-- id: profile-telegram
+- id: profile-push
   area: profile/notify
   kind: howto
-  message: "¿Puedo recibir avisos en Telegram?"
+  message: "¿Puedo recibir avisos en el móvil?"
   goals:
-    - Says yes and points to Profile, notifications, to connect Telegram
+    - Says yes and points to Profile, notifications, to turn on push notifications
   opens: profile/notify
 
 - id: profile-claude

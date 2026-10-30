@@ -93,16 +93,6 @@ def test_save_prunes_stale_fingerprints(tmp_path, monkeypatch):
     assert persisted == [path]
 
 
-def test_blocked_flag_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setattr(st_mod.storage, "persist", lambda p: None)
-    path = tmp_path / "alerts_state.json"
-    state = st_mod.load_state(path)
-    assert not st_mod.is_blocked(state)
-    st_mod.mark_blocked(state, NOW)
-    st_mod.save_state(state, path)
-    assert st_mod.is_blocked(st_mod.load_state(path))
-
-
 def test_highlight_memory_keeps_the_last_few(tmp_path, monkeypatch):
     monkeypatch.setattr(st_mod.storage, "persist", lambda p: None)
     path = tmp_path / "alerts_state.json"

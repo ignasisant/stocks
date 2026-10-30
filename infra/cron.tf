@@ -14,10 +14,6 @@
 # Credentials: the google provider reads Application Default Credentials, or
 # GOOGLE_OAUTH_ACCESS_TOKEN for a one-off apply — see README.md.
 
-data "google_project" "this" {
-  project_id = var.gcp_project
-}
-
 # The live service. The job runs its image, with its environment (the secrets
 # file, EDGAR_USER_AGENT, the free-chain model) and under its identity, so the
 # bucket, the secret and the free LLM keys reach the job without a second copy
@@ -183,66 +179,4 @@ resource "google_cloud_scheduler_job" "warm" {
   }
 
   depends_on = [google_project_service.cloudscheduler]
-}
-
-# The owner's Monday digest: the week's usage and funnel, rolled up from the
-# logs and sent to the owner's Telegram (`stocks usage-digest`,
-# notify/usage_digest.py). GitHub Actions holds no Google credentials, so it
-# runs as the same job — the service's image, under the service's identity —
-# started with the CLI words overridden for this one run. The identity needs
-# to read the logs; the trigger's run.invoker already carries
-# run.jobs.runWithOverrides. Monday 07:00 UTC, after Saturday's market read
-# and before the week's first readers.
-locals {
-  app_identity = coalesce(
-    data.google_cloud_run_v2_service.app.template[0].service_account,
-    "${data.google_project.this.number}-compute@developer.gserviceaccount.com",
-  )
-}
-
-resource "google_project_iam_member" "app_logs_viewer" {
-  project = var.gcp_project
-  role    = "roles/logging.viewer"
-  member  = "serviceAccount:${local.app_identity}"
-}
-
-resource "google_cloud_scheduler_job" "usage_digest" {
-  project     = var.gcp_project
-  region      = var.gcp_region
-  name        = "${var.cron_job}-usage-digest"
-  description = "Owner's Telegram: the week's usage and funnel (stocks usage-digest)"
-
-  schedule         = "0 7 * * 1"
-  time_zone        = "Etc/UTC"
-  attempt_deadline = "180s"
-
-  retry_config {
-    retry_count          = 1
-    min_backoff_duration = "600s"
-  }
-
-  http_target {
-    http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.gcp_project}/locations/${var.gcp_region}/jobs/${google_cloud_run_v2_job.cron.name}:run"
-    headers = {
-      "Content-Type" = "application/json"
-    }
-    body = base64encode(jsonencode({
-      overrides = {
-        containerOverrides = [{
-          args = ["/app/.venv/bin/stocks", "usage-digest"]
-        }]
-      }
-    }))
-
-    oauth_token {
-      service_account_email = google_service_account.cron.email
-    }
-  }
-
-  depends_on = [
-    google_project_service.cloudscheduler,
-    google_cloud_run_v2_job_iam_member.cron_invoker,
-    google_project_iam_member.app_logs_viewer,
-  ]
 }

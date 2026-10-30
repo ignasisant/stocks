@@ -1,4 +1,4 @@
-"""Headless chat engine (stocks.chat.engine) — shared by web panel + Telegram."""
+"""Headless chat engine (stocks.chat.engine) — shared by the web panel and jobs."""
 
 from __future__ import annotations
 
@@ -504,7 +504,6 @@ def test_answer_free_happy_path(providers, paths):
     _, model, system, _ = providers["free"].calls[0]
     assert model == "default-model"
     assert "no open positions" in system
-    assert "Telegram" in system  # TELEGRAM_CONTEXT rides along
     assert "Tax rules the app applies to this account" in system
     # the brand-new thread was named from the opening question
     assert auth.active_conversation(paths["chat_path"])["title"] == "Free answer"
@@ -527,7 +526,7 @@ class SlowLearner(FakeProvider):
 def test_a_caller_with_time_to_spare_waits_for_what_the_message_teaches(
     providers, paths, monkeypatch,
 ):
-    """The Telegram bot cannot add the memory line to a message once it is
+    """A headless caller cannot add the memory line to a message once it is
     sent, so it waits past the panel's grace for the read to finish."""
     monkeypatch.setattr(engine, "LEARN_GRACE", 0)
     providers["free"] = SlowLearner("free", reply="Free answer.")

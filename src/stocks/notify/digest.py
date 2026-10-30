@@ -1,43 +1,42 @@
-"""Daily portfolio digest — computed headless, rendered as Telegram HTML.
+"""Daily portfolio digest — computed headless, sent as a Web Push notification.
 
 compute_digest_data does the network work (prices, FX, earnings, dividends);
-render_digest is pure text so it tests offline. Every section is individually
+digest_message is pure text so it tests offline. Every section is individually
 fault-tolerant: a failed FX fetch or a throttled earnings lookup drops that
 section, the digest still sends.
 
-Two rules shape what the message says rather than what it can say:
+Three rules shape what the notification says rather than what it can say:
 
 * **Money, not percent.** A name's contribution to the book is its weight times
-  its move. The movers block leads with the currency figure and keeps the
-  percentage as the qualifier, so the line the reader scans first is the one
+  its move. The movers line leads with the currency figure and keeps the
+  percentage as the qualifier, so the figure the reader scans first is the one
   that changed their net worth.
-* **A quiet day is a short message.** A digest that arrives identical and
-  eventless every evening trains the reader to swipe it away, so a flat session
-  with nothing on the calendar renders as one line and skips the LLM call.
+* **A notification is a headline.** Title and three short lines are all a lock
+  screen shows; the tap opens Today, which tells the rest. So the body names
+  the day's best and worst name and the one calendar item most worth knowing.
+* **A quiet day sends nothing.** A digest that arrives identical and eventless
+  every evening trains the reader to swipe it away, so a flat session with
+  nothing on the calendar is skipped, and so is the LLM call.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from stocks import obs
 from stocks.config import currency_symbol, load_watchlist
 from stocks.data.dividends import DividendEvent, upcoming_ex_dividends
 from stocks.data.earnings import EarningsEvent, EarningsResult, calendar_events
-from stocks.notify import links
+from stocks.notify import links, render
 from stocks.notify.render import date_line as _date_line
 from stocks.notify.render import delta as _delta
-from stocks.notify.render import esc
 from stocks.notify.render import money as _money
-from stocks.notify.render import ticker_link as _ticker
 from stocks.portfolio.ledger import Transaction, all_transactions
 from stocks.portfolio.positions import build
 from stocks.portfolio.tax.deadlines import Deadline
 
-MOVERS_SHOWN = 3
-DIVIDENDS_SHOWN = 4
 # Calendar window shared by the earnings and ex-dividend sections, and the
 # lookback for dividends the ledger has already booked.
 WINDOW_DAYS = 7
@@ -54,18 +53,13 @@ BENCHMARK_LABEL = "S&P 500"
 # weekend to be mentioned at all.
 RESULTS_LOOKBACK = 4
 
-# The currency leg is only worth a line when it explains a real part of the
-# day — below this share of the move it is rounding, and naming it would push
-# the reader toward a number that means nothing.
-FX_SHARE_FLOOR = 0.15
-
 # A statement import older than this is probably a book drifting out of date.
 # The nudge rides the Monday digest only: a daily reminder is nagging, and the
 # fix (uploading a statement) is a weekday-morning job either way.
 STALE_IMPORT_DAYS = 45
 NUDGE_WEEKDAY = 0  # Monday
 
-# A session this flat, with an empty calendar, is not worth a full message.
+# A session this flat, with an empty calendar, is not worth a notification.
 QUIET_PCT = 0.003
 
 
@@ -106,7 +100,7 @@ class DigestData:
 
     @property
     def quiet(self) -> bool:
-        """Whether the day carries nothing worth a full message.
+        """Whether the day carries nothing worth a notification.
 
         A flat session is only quiet when the calendar is empty too — an
         ex-date, a print or cash landing in the account is news on a day the
@@ -373,7 +367,7 @@ def _rank_value(row: tuple[str, float | None, float | None], by_money: bool) -> 
 
     Money when the book is priced, but falling back to the percentage for a
     name the value frame never saw — otherwise a holding whose price series is
-    missing reads as a flat 0 and drops out of both lists.
+    missing reads as a flat 0 and drops out of both sides.
     """
     value = row[2] if by_money else row[1]
     if value is None:
@@ -381,14 +375,11 @@ def _rank_value(row: tuple[str, float | None, float | None], by_money: bool) -> 
     return value if value is not None else 0.0
 
 
-def _mover_line(
-    row: tuple[str, float | None, float | None],
-    marker: str,
-    currency: str,
-    base: str | None = None,
+def _mover(
+    row: tuple[str, float | None, float | None], marker: str, currency: str
 ) -> str:
     ticker, pct, money = row
-    parts = [f"{marker} {_ticker(ticker, base)}"]
+    parts = [f"{marker} {ticker}"]
     if money is not None:
         parts.append(f"{money:+,.0f} {currency_symbol(currency)}")
     if pct is not None:
@@ -397,221 +388,123 @@ def _mover_line(
     return " ".join(parts)
 
 
-def _benchmark_line(data: DigestData, tr) -> str | None:
+def movers_line(data: DigestData) -> str | None:
+    """'▲ NVDA +120 € (+3.1%) · ▼ TSLA -80 € (-2.0%)': the day's best and worst."""
+    rows = ranked_movers(data)
+    by_money = bool(data.contrib)
+    best = next((r for r in rows if _rank_value(r, by_money) > 0), None)
+    worst = next((r for r in reversed(rows) if _rank_value(r, by_money) < 0), None)
+    sides = [
+        _mover(row, marker, data.currency)
+        for row, marker in ((best, "▲"), (worst, "▼"))
+        if row is not None
+    ]
+    return " · ".join(sides) or None
+
+
+def benchmark_line(data: DigestData, tr) -> str | None:
     """'vs S&P 500 +1.40% · behind by 0.54 pt', or None when incomparable."""
     if data.benchmark is None or data.day is None:
         return None
     bench_day = data.benchmark[0]
     if bench_day is None:
         return None
-    label = esc(BENCHMARK_LABEL)
-    line = f"{esc(tr('vs'))} {label} {bench_day * 100:+.2f}%"
     gap = (data.day[1] - bench_day) * 100
     verdict = tr("ahead" if gap >= 0 else "behind", gap=f"{abs(gap):.2f}")
-    return f"{line} · {esc(verdict)}"
+    return f"{tr('vs')} {BENCHMARK_LABEL} {bench_day * 100:+.2f}% · {verdict}"
 
 
-def _fx_chip(data: DigestData, tr) -> str | None:
-    """'FX -180 €' — the currency leg of the day, when it explains part of it.
+def calendar_lines(data: DigestData, lang: str) -> list[str]:
+    """One line per kind of calendar news, the most pressing first.
 
-    Suppressed for a single-currency book (always zero) and whenever the
-    exchange rate moved the book by less than FX_SHARE_FLOOR of the day: a
-    reader who sees the line every evening stops reading it on the evening it
-    is the whole story.
-    """
-    if data.fx_effect is None or data.day is None:
-        return None
-    move = abs(data.day[0])
-    if not move or abs(data.fx_effect) < FX_SHARE_FLOOR * move:
-        return None
-    symbol = currency_symbol(data.currency)
-    return f"{esc(tr('fx'))} {data.fx_effect:+,.0f} {symbol}"
-
-
-def _result_rows(data: DigestData, tr, base: str | None = None) -> list[str]:
-    """'• NVDA — beat, EPS 1.24 vs 1.18 · +6.4%' per recent print."""
-    rows = []
-    for result in data.results:
-        parts = [f"• {_ticker(result.ticker, base)}"]
-        verdict = result.beat
-        if verdict is not None:
-            parts.append(esc(tr("beat" if verdict else "miss")))
-        if result.reported_eps is not None and result.eps_estimate is not None:
-            parts.append(
-                f"EPS {result.reported_eps:.2f} "
-                f"{esc(tr('vs'))} {result.eps_estimate:.2f}"
-            )
-        line = parts[0] + (" — " + ", ".join(parts[1:]) if len(parts) > 1 else "")
-        if (move := data.result_moves.get(result.ticker)) is not None:
-            line += f" · {move:+.1f}%"
-        rows.append(line)
-    return rows
-
-
-def _dividend_rows(
-    data: DigestData, lang: str, tr, base: str | None = None
-) -> list[str]:
-    rows = []
-    for event in data.ex_dividends[:DIVIDENDS_SHOWN]:
-        line = (
-            f"• {_ticker(event.ticker, base)} — {esc(tr('ex_date'))} "
-            f"{_date_line(event.ex_date, lang)} (T-{event.days_until})"
-        )
-        cash = data.dividend_cash.get(event.ticker)
-        if cash:
-            line += f" · ~{_money(cash, data.currency)}"
-        rows.append(line)
-    if data.dividends_received:
-        amount, count = data.dividends_received
-        key = "div_received_one" if count == 1 else "div_received"
-        line = (
-            tr(key, amount=_money(amount, data.currency))
-            if count == 1
-            else tr(key, amount=_money(amount, data.currency), count=count)
-        )
-        rows.append("• " + esc(line))
-    return rows
-
-
-def digest_buttons(data: DigestData, lang: str, base: str | None = None) -> list:
-    """Link buttons for the digest — what this particular evening asks for.
-
-    Empty without a configured origin, and never decorative: a button appears
-    because the message above it named something the reader may want to act on.
-    """
-    from stocks.web.i18n import translate
-
-    base = base if base is not None else links.app_base()
-    if not base:
-        return []
-    buttons = [
-        (translate("notify.btn_portfolio", lang), links.page_url(links.PORTFOLIO, base))
-    ]
-    if data.earnings or data.results:
-        buttons.append(
-            (translate("notify.btn_earnings", lang), links.page_url(links.EARNINGS, base))
-        )
-    if data.stale_import_days:
-        buttons.append(
-            (translate("notify.btn_import", lang), links.page_url(links.IMPORT, base))
-        )
-    return [(label, url) for label, url in buttons if url]
-
-
-def render_digest(data: DigestData, lang: str, base: str | None = None) -> str:
-    """The digest as Telegram HTML (parse_mode='HTML'), all dynamic text escaped.
-
-    `base` is the app's public origin: given one, every ticker becomes a link
-    to its page. Omitted, the message renders exactly as it does on a deploy
-    that has not declared where it lives.
+    A deadline the reader can miss outranks a print that already happened,
+    which outranks one coming, which outranks cash; the stale-import reminder
+    is last because it is the only one that is about the app, not the book.
     """
     from stocks.web.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)
 
-    parts: list[str] = [
-        f"<b>📊 {esc(tr('digest_title'))}</b> · {_date_line(data.date, lang)}"
-    ]
-
-    if data.total is not None:
-        line = (
-            f"<b>{esc(tr('portfolio'))}</b> "
-            f"{_money(data.total, data.currency)}"
-        )
-        deltas = []
-        if data.day:
-            deltas.append(f"{esc(tr('day'))} {_delta(*data.day, data.currency)}")
-        if data.week:
-            deltas.append(
-                f"{esc(tr('week'))} {_delta(*data.week, data.currency)}"
-            )
-        if (currency_leg := _fx_chip(data, tr)) is not None:
-            deltas.append(currency_leg)
-        if deltas:
-            line += "\n" + " · ".join(deltas)
-        if (bench := _benchmark_line(data, tr)) is not None:
-            line += "\n" + bench
-        parts.append(line)
-
-    # A flat session with an empty calendar stops here: the numbers above are
-    # the whole story, and padding them with a movers block of ±0.1% names
-    # would only teach the reader to stop opening the message.
-    if data.quiet:
-        parts.append(esc(tr("quiet")))
-        return "\n\n".join(parts)
-
-    rows = ranked_movers(data)
-    if rows:
-        by_money = bool(data.contrib)
-        gainers = [r for r in rows if _rank_value(r, by_money) > 0][:MOVERS_SHOWN]
-        losers = [r for r in reversed(rows) if _rank_value(r, by_money) < 0][
-            :MOVERS_SHOWN
-        ]
-        lines = []
-        if gainers:
-            lines.append(
-                "  ".join(_mover_line(r, "▲", data.currency, base) for r in gainers)
-            )
-        if losers:
-            lines.append(
-                "  ".join(_mover_line(r, "▼", data.currency, base) for r in losers)
-            )
-        if lines:
-            parts.append(f"<b>{esc(tr('movers'))}</b>\n" + "\n".join(lines))
-
-    if dividend_rows := _dividend_rows(data, lang, tr, base):
-        parts.append(
-            f"<b>{esc(tr('dividends'))}</b>\n" + "\n".join(dividend_rows)
-        )
-
-    if result_rows := _result_rows(data, tr, base):
-        parts.append(
-            f"<b>{esc(tr('results'))}</b>\n" + "\n".join(result_rows)
-        )
-
-    if data.earnings:
-        rows_e = [
-            f"• {_ticker(e.ticker, base)} — {_date_line(e.date, lang)} (T-{e.days_until})"
-            for e in data.earnings
-            if e.date is not None
-        ]
-        if rows_e:
-            parts.append(
-                f"<b>{esc(tr('earnings_7d'))}</b>\n" + "\n".join(rows_e)
-            )
-
+    lines: list[str] = []
     if data.tax_deadlines:
-        rows_t = [
-            "• "
-            + esc(translate(f"earnings.tax_{d.key}", lang, year=d.year_label))
-            + f" — {_date_line(d.date, lang)} (T-{d.days_until(data.date)})"
-            for d in data.tax_deadlines
-        ]
-        parts.append(f"<b>🗓 {esc(tr('tax_deadlines'))}</b>\n" + "\n".join(rows_t))
-
-    if data.stale_import_days:
-        parts.append(
-            "📎 " + esc(tr("stale_import", days=data.stale_import_days))
+        d = data.tax_deadlines[0]
+        lines.append(
+            "🗓 " + translate(f"earnings.tax_{d.key}", lang, year=d.year_label)
+            + f" — {_date_line(d.date, lang)}"
         )
+    if data.results:
+        names = []
+        for result in data.results:
+            name = result.ticker
+            if result.beat is not None:
+                name += " " + tr("beat" if result.beat else "miss")
+            if (move := data.result_moves.get(result.ticker)) is not None:
+                name += f" {move:+.1f}%"
+            names.append(name)
+        lines.append(f"{tr('results')}: " + ", ".join(names))
+    dated = [(e.ticker, e.date) for e in data.earnings if e.date is not None]
+    if dated:
+        lines.append(
+            f"{tr('earnings_7d')}: "
+            + ", ".join(f"{ticker} {_date_line(day, lang)}" for ticker, day in dated)
+        )
+    if data.ex_dividends:
+        names = []
+        for event in data.ex_dividends:
+            name = f"{event.ticker} {_date_line(event.ex_date, lang)}"
+            if cash := data.dividend_cash.get(event.ticker):
+                name += f" ~{_money(cash, data.currency)}"
+            names.append(name)
+        lines.append(f"{tr('ex_dividends')}: " + ", ".join(names))
+    if data.dividends_received:
+        amount, count = data.dividends_received
+        lines.append(
+            tr("div_received_one", amount=_money(amount, data.currency))
+            if count == 1
+            else tr("div_received", amount=_money(amount, data.currency), count=count)
+        )
+    if data.stale_import_days:
+        lines.append(tr("stale_import", days=data.stale_import_days))
+    return lines
 
-    if data.highlight:
-        parts.append(f"💡 {esc(data.highlight)}")
 
-    return "\n\n".join(parts)
+def digest_message(data: DigestData, lang: str) -> dict:
+    """The digest as a push (`render.message`): the book in the title, then the
+    movers, the first calendar item and the narrated line. The tap opens Today."""
+    from stocks.web.i18n import translate
+
+    def tr(key: str, **kw) -> str:
+        return translate(f"notify.{key}", lang, **kw)
+
+    if data.total is not None and data.day is not None:
+        title = tr(
+            "digest_title_book",
+            value=_money(data.total, data.currency),
+            change=_delta(*data.day, data.currency),
+        )
+    else:
+        title = f"{tr('digest_title')} · {_date_line(data.date, lang)}"
+    calendar = calendar_lines(data, lang)
+    lines = [
+        movers_line(data),
+        *calendar[:1],
+        data.highlight,
+        *calendar[1:],
+        benchmark_line(data, tr),
+    ]
+    return render.message(title, lines, links.path(links.TODAY), "digest")
 
 
 # ------------------------------------------------------------------ fan-out
 
 
 def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
-    """Compute and send every subscriber's digest. Returns {label: status}."""
-    from stocks.notify import narrative, telegram
+    """Compute and push every subscriber's digest. Returns {label: status}."""
+    from stocks.notify import narrative, webpush
     from stocks.notify.fanout import iter_notify_users
     from stocks.notify.state import (
-        is_blocked,
         load_state,
-        mark_blocked,
         recent_highlights,
         remember_highlight,
         remember_tax_reminders,
@@ -620,14 +513,10 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
     )
     from stocks.portfolio.tax import prefs as tax_prefs
 
-    now = datetime.now(UTC)
     status: dict[str, str] = {}
     for user in iter_notify_users("digest"):
         try:
             state = load_state(user.state_path)
-            if is_blocked(state):
-                status[user.label] = "skipped: blocked"
-                continue
             base = str(user.prefs.get("currency") or "EUR").upper()
             data = compute_digest_data(
                 user.watchlist, user.db, base, import_record=user.import_path
@@ -643,38 +532,29 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
             ):
                 status[user.label] = "skipped: no data"
                 continue
-            # The quiet digest is two numbers and a line saying so — narrating
-            # it would spend a unit of the free pot to say "not much happened".
-            if not data.quiet:
-                data.highlight = narrative.highlight(
-                    data, user.prefs, user.lang, recent=recent_highlights(state),
-                    memories=user.memories(),
-                )
-            origin = links.app_base()  # not `base`: that one is the currency
-            text = render_digest(data, user.lang, origin)
-            buttons = digest_buttons(data, user.lang, origin)
+            if data.quiet:
+                status[user.label] = "skipped: quiet"
+                continue
+            data.highlight = narrative.highlight(
+                data, user.prefs, user.lang, recent=recent_highlights(state),
+                memories=user.memories(),
+            )
+            message = digest_message(data, user.lang)
             if dry_run:
-                print(f"── {user.label} ──\n{text}\n")
+                print(f"── {user.label} ──\n{message['title']}\n{message['body']}\n")
                 status[user.label] = "dry-run"
                 continue
-            try:
-                telegram.send_message(
-                    text, user.chat_id, parse_mode="HTML", buttons=buttons
-                )
-                status[user.label] = "sent"
-                # Only what was actually delivered joins the memory, so a send
-                # that failed does not burn the line it never showed.
+            took = webpush.send_all(user.push_path, message, topic="digest")
+            status[user.label] = f"sent {took}" if took else "not delivered"
+            # Only what was actually delivered joins the memory, so a push that
+            # reached no device does not burn the line it never showed.
+            if took:
                 if data.highlight:
                     remember_highlight(state, data.highlight)
                 if data.tax_deadlines:
                     remember_tax_reminders(state, data.tax_deadlines)
                 if data.highlight or data.tax_deadlines:
                     save_state(state, user.state_path)
-            except telegram.TelegramBlocked:
-                mark_blocked(state, now)
-                save_state(state, user.state_path)
-                status[user.label] = "blocked"
-            telegram.pace()
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

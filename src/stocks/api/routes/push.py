@@ -3,7 +3,9 @@
 The browser does the subscribing (`Notification.requestPermission` +
 `pushManager.subscribe`) with the key `GET /push` hands it; these routes keep
 the result (`notify/webpush.py`). A finished answer pushes to every device
-kept here — unless `POST /push/presence` says the app is on screen somewhere.
+kept here — unless `POST /push/presence` says the app is on screen somewhere —
+and so do the digest, the weekly review, the price alerts and the reminder
+(the crons in `notify/`).
 """
 
 from __future__ import annotations
@@ -29,6 +31,11 @@ class Push(BaseModel):
     )
     subscribed: bool = Field(
         default=False, description="Whether `endpoint` (when given) is kept here."
+    )
+    devices: int = Field(
+        default=0,
+        description="Devices this account has subscribed, this one included: "
+        "where the digest, the alerts and the reminders arrive.",
     )
 
 
@@ -69,6 +76,7 @@ def state(paths: Account, endpoint: str = "") -> Push:
         configured=key is not None,
         key=key,
         subscribed=bool(endpoint) and webpush.subscribed(paths.push, endpoint),
+        devices=webpush.devices(paths.push),
     )
 
 
@@ -83,7 +91,10 @@ def subscribe(body: Subscription, paths: Writer, request: Request) -> Push:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "Not a usable subscription."
         )
-    return Push(configured=True, key=webpush.public_key(), subscribed=True)
+    return Push(
+        configured=True, key=webpush.public_key(), subscribed=True,
+        devices=webpush.devices(paths.push),
+    )
 
 
 @router.post("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)

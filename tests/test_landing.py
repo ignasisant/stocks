@@ -215,7 +215,7 @@ def test_the_lens_strip_names_every_skill_the_assistant_actually_ships(as_lang):
 
 
 def test_the_assistant_is_pitched_once(as_lang):
-    """The bento's AI and Telegram tiles moved into the assistant section.
+    """The bento's AI and notifications tiles moved into the assistant section.
 
     Two pitches for one feature read as two weaker features, and the bento's
     summary was the weaker of the two once the section existed.

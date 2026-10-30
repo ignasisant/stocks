@@ -291,7 +291,7 @@ def profile_is_set(prefs: dict) -> bool:
 # and orphan cleanup for nothing the user can see.
 #
 # load_chat/save_chat keep their original list-of-turns signature and act on
-# the active conversation, so the Telegram bot and the headless engine never
+# the active conversation, so the headless engine never
 # had to learn about threads.
 
 CHAT_VERSION = 2
@@ -502,7 +502,7 @@ def save_chat(history: list[dict], path: Path, cid: str | None = None) -> None:
 
     Indexing rides along here rather than at the two call sites: every turn
     that reaches disk is a turn the assistant may need to recall later, and
-    both surfaces (the panel and the Telegram bot) already come through this
+    every surface already comes through this
     one function. It is idempotent and best-effort — a failed index costs a
     worse search, never a lost message."""
     book = load_book(path)
@@ -664,8 +664,8 @@ def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     A card rewritten the same day (the computed stand-in, then the model's)
     replaces its turn while nobody has answered it, and lands after the
     reader's turns when somebody has — the thread is what the reader was
-    told, in order. Indexed like any turn, which is how the chat and the
-    Telegram bot can recall what a card said."""
+    told, in order. Indexed like any turn, which is how the chat can recall
+    what a card said."""
     book = load_book(path)
     conv = next((c for c in book["conversations"] if c.get("daily") == day), None)
     if conv is None:
