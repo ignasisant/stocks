@@ -271,11 +271,12 @@
   "profile.push_install": "On iPhone and iPad, add TopStocks to the Home Screen first (Share › Add to Home Screen), then open it from there.",
   "profile.push_blocked": "Notifications are blocked for this site. Allow them in the browser's site settings, then come back.",
   "profile.push_unsupported": "This browser cannot receive notifications.",
+  "profile.push_off": "This server has no key to send notifications, so none will arrive.",
   "profile.install_title": "App",
   "profile.install_sub": "TopStocks on this device, in its own window.",
   "profile.install_row": "Install as an app",
   "profile.install_help": "A shortcut that opens without the browser bar.",
   "profile.install_button": "Install",
   "profile.install_ios": "In Safari, tap Share › Add to Home Screen. It opens full screen and can tell you when the assistant finishes.",
-  "profile.notify_no_devices": "No device receives notifications yet. Switch them on below."
+  "profile.notify_no_devices": "No device receives notifications yet. Switch them on above."
 }

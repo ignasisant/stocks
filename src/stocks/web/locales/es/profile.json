@@ -271,11 +271,12 @@
   "profile.push_install": "En iPhone y iPad, añade TopStocks a la pantalla de inicio primero (Compartir › Añadir a pantalla de inicio) y ábrela desde allí.",
   "profile.push_blocked": "Las notificaciones están bloqueadas para este sitio. Permítelas en los ajustes del sitio del navegador y vuelve.",
   "profile.push_unsupported": "Este navegador no puede recibir notificaciones.",
+  "profile.push_off": "Este servidor no tiene clave para enviar notificaciones, así que no llegará ninguna.",
   "profile.install_title": "App",
   "profile.install_sub": "TopStocks en este dispositivo, en su propia ventana.",
   "profile.install_row": "Instalar como app",
   "profile.install_help": "Un acceso directo que abre sin la barra del navegador.",
   "profile.install_button": "Instalar",
   "profile.install_ios": "En Safari, toca Compartir › Añadir a pantalla de inicio. Se abre a pantalla completa y puede avisarte cuando el asistente termina.",
-  "profile.notify_no_devices": "Ningún dispositivo recibe notificaciones todavía. Actívalas más abajo."
+  "profile.notify_no_devices": "Ningún dispositivo recibe notificaciones todavía. Actívalas arriba."
 }

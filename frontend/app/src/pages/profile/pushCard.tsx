@@ -4,8 +4,8 @@
  *
  * Per device: the subscription is this browser's, so the switch reads
  * `pushManager` and the server together (`shell/push.ts`). The tab owns the
- * state (it also needs the account's device count) and hands it down. Drawn
- * only when the deployment has a key; a device that cannot push says why — an
+ * state (it also needs the account's device count) and hands it down. A
+ * deployment with no key says so; a device that cannot push says why — an
  * iPhone tab is told to add the app to the Home Screen first.
  */
 
@@ -38,7 +38,17 @@ export function PushCard({
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
-  if (!state?.configured || !state.key) return null;
+  if (!state) return null;
+  if (!state.configured || !state.key) {
+    // Said rather than hidden: an empty tab reads as a broken page.
+    return (
+      <Card title={t("profile.push_title")} sub={t("profile.push_sub")}>
+        <div className="pr-cardbody">
+          <p className="pr-hint">{t("profile.push_off")}</p>
+        </div>
+      </Card>
+    );
+  }
   const key = state.key;
   const blocked = permission() === "denied";
   const usable = supported() && !blocked;
