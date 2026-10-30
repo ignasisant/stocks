@@ -443,11 +443,11 @@ def calendar_lines(data: DigestData, lang: str) -> list[str]:
                 name += f" {move:+.1f}%"
             names.append(name)
         lines.append(f"{tr('results')}: " + ", ".join(names))
-    dated = [e for e in data.earnings if e.date is not None]
+    dated = [(e.ticker, e.date) for e in data.earnings if e.date is not None]
     if dated:
         lines.append(
             f"{tr('earnings_7d')}: "
-            + ", ".join(f"{e.ticker} {_date_line(e.date, lang)}" for e in dated)
+            + ", ".join(f"{ticker} {_date_line(day, lang)}" for ticker, day in dated)
         )
     if data.ex_dividends:
         names = []
