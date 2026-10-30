@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import hashlib
 import json
 import math
 import queue
@@ -24,6 +25,7 @@ import re
 import secrets
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -1114,7 +1116,7 @@ def language_rule(lang: str | None) -> str:
 def system_prompt(profile: dict, context: str,
                   skill_ids: list[str] | None = None,
                   lang: str | None = None, memories: str = "",
-                  book: str = "") -> llm.Prompt:
+                  book: str = "", rules_first: bool = False) -> llm.Prompt:
     """Persona + the user's saved memories + the book + the caller's context
     block (the view, what the surface draws) + the analysis frameworks chosen
     for this turn + the answer's language.
@@ -1125,7 +1127,16 @@ def system_prompt(profile: dict, context: str,
     `book` (the snapshot, which changes when prices do), then the rest, which
     changes with the page the question was asked on and the skills the router
     picked. A turn that only moved page rereads the first two parts from the
-    provider's cache instead of rewriting the whole prompt."""
+    provider's cache instead of rewriting the whole prompt.
+
+    `rules_first` moves RULES from the end into the first part, before the
+    memories. A provider caches only a prefix it has seen whole, and Gemini's
+    implicit cache only one of 1,024 tokens or more: the fixed paragraphs are
+    about 600, so on their own nothing was ever read back (prod: cached=0 on
+    every Gemini turn); with RULES they are about 1,800. For the large models
+    a reader's own key runs; the keyless chain's small ones drop a rule that
+    is not near the end, so theirs stay last. The language rule is said last
+    either way."""
     head = (
         "You are a concise investing assistant embedded in a personal stock "
         "tracker. " + persona(profile) + "You are not a licensed financial "
@@ -1164,13 +1175,18 @@ def system_prompt(profile: dict, context: str,
         "conversation does not already show its parsed result, you have not "
         "seen its contents and must say so. Asked to import with nothing "
         "attached, say what to attach.\n\n"
-        f"{memories}"
     )
+    if rules_first:
+        head += RULES.lstrip("\n") + "\n\n"
+    head += memories
+    closing = language_rule(lang)
+    if rules_first and closing:
+        closing = "\n\nRULES, continued:" + closing
     tail = (
         context
         + chat_skills.skills_block(skill_ids or [])
-        + RULES
-        + language_rule(lang)
+        + ("" if rules_first else RULES)
+        + closing
     )
     return llm.Prompt(head, book, tail)
 
@@ -1751,13 +1767,18 @@ def _reports_step(ahead: reports.Ahead, lang: str) -> dict:
 
 # Companies whose ticker page rides on a weighing question on the fixed path.
 PAGE_TICKERS = 2
-# A question that weighs a company: its multiple, its value, against another.
+# A question that weighs a company: its multiple, its value, against another,
+# or what the analysts make of it.
 _WEIGHS_RE = re.compile(
     r"\bp/?e\b|\bper\b|\bpe ratio\b|valora|valuat|\bvalue[ds]?\b|\bvalor\b|"
     r"barat|cheap|\bcar[ao]s?\b|expensive|compar|\bvs\.?\b|\bversus\b|frente a|"
     r"m[uú]ltiplo|multiple|\bdcf\b|margen|margin|\bfcf\b|flujo de caja|"
     r"cash flow|analiz|analy[sz]|fundamental|\broic\b|\beps\b|\bbpa\b|"
-    r"comprar|\bbuy\b|\bupside\b|potencial",
+    r"comprar|\bbuy\b|\bupside\b|potencial|"
+    # What the analysts say is on the page too: asked without it, MSFT's
+    # target came out ~580 against a 605 mean (prod eval 2026-10-29).
+    r"precio objetivo|\btargets?\b|analista|analyst|consens|recomendaci|"
+    r"recommendation|\bratings?\b",
     re.IGNORECASE,
 )
 
@@ -1796,6 +1817,35 @@ def _pages(message: str, quotes: list, watchlist: Path, db: Path, prefs: dict,
                         timeout=timeout, tick=tick)
     blocks = [text for text in found if text]
     return ("\n\n---\n" + "\n\n".join(blocks)) if blocks else ""
+
+
+# What this year's sales cost in tax, asked of the reader's own book.
+_OWES_TAX_RE = re.compile(r"\b(?:hacienda|irpf|impuestos?|tributa\w*|tax(?:es)?|cgt)\b",
+                          re.IGNORECASE)
+_OWES_WHEN_RE = re.compile(
+    r"\beste a[nñ]o\b|\bthis (?:tax )?year\b|\bventas?\b|\bvendid|"
+    r"\bplusval|\bganancias\b|\bgains?\b|\bsales?\b|\bsold\b|\bpag|"
+    r"\bdebo\b|\bowe\b|\bpay\b",
+    re.IGNORECASE,
+)
+
+
+def _tax_year(message: str, watchlist: Path, db: Path, prefs: dict,
+              prefs_path: Path) -> ToolCall | None:
+    """This tax year's realised gains and estimated tax, on the fixed path,
+    for a message that asks what the reader owes — the harvest tool's figures
+    without its card, which answers another question.
+
+    Prod eval 2026-10-29: "¿Cuánto tengo que pagar a Hacienda por mis ventas
+    de este año?" came back as the IRPF brackets and "see the tax tab", with
+    the 231 € the tab shows never reaching the model. None when the message
+    does not ask. Told with the search and the quotes, as the lookup it is."""
+    if not (_OWES_TAX_RE.search(message) and _OWES_WHEN_RE.search(message)):
+        return None
+    run = toolbox.executor(toolbox.Context(
+        watchlist=watchlist, db=db, currency=reporting_currency(prefs),
+        prefs_path=prefs_path))
+    return llm.ToolCall("harvest_losses", {}, run("harvest_losses", {}))
 
 
 def _harvest(message: str, db: Path, prefs_path: Path, lang: str,
@@ -2843,6 +2893,10 @@ class Turn:
     #: The gather's `agent.Profile` name, "fast" or "deep": what the turn's
     #: cost line (`_log_cost`) is broken down by.
     profile: str = "fast"
+    #: "light" when the router read the question as easy and the cheapest
+    #: model answers first (`_routed`), "" when the reader's own model does.
+    #: On the turn's cost line.
+    route: str = ""
     #: What the stored answer is named by (`rate_turn`), and the `turn` field
     #: on the turn's log lines: a thumbs-down finds its tools and its cost.
     id: str = dc_field(default_factory=lambda: secrets.token_hex(6))
@@ -2947,6 +3001,15 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
             "out": translate("chat.step_quotes", lang, n=len(live)),
         })
     return steps
+
+
+def _merged_sources(web: list[dict], gathered: list[dict]) -> list[dict]:
+    """The web pages searched beside the gather, then what the gather read —
+    the app's own documents among it — each once. Either alone used to win,
+    and a fixed-path answer built on a help page cited only the web."""
+    out = list(web)
+    out += [s for s in gathered if s not in out]
+    return out
 
 
 def _unlisted_step(nowhere: dict, lang: str) -> dict:
@@ -3312,6 +3375,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             # the guard refused.
             tick=watching,
         )
+        hard = getattr(skills, "hard", None)
         skills = skills or []
         evidence = evidence or agent.Evidence(ok=False)
         hits, quotes, pages = [], [], ""
@@ -3331,17 +3395,32 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             scout, scout_key = next(
                 ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
                 (provider, key))
-            hits, quotes = in_parallel(
+            from stocks.chat import knowledge
+
+            hits, quotes, docs = in_parallel(
                 lambda: [] if own else ground_web(prefs, scout, scout_key,
                                                   history, view),
                 lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
+                # The app's own documents: with no tool loop the model never
+                # reached them, and "how do I undo an import?" was answered
+                # with a delete button that does not exist (prod eval
+                # 2026-10-29). The search abstains on anything else.
+                lambda: knowledge.lookup(message),
                 timeout=timeout_s,
                 tick=watching,
             )
             hits, quotes = hits or [], quotes or []
+            if docs:
+                # Filed as the gather's own lookup would be, so the material,
+                # the steps and the cited sources all read it the same way.
+                evidence.calls.append(llm.ToolCall(
+                    "lookup_knowledge", {"query": message}, knowledge.block(docs)))
+            if losses is None and (owed := _tax_year(
+                    message, watchlist, db, prefs, prefs_path)):
+                evidence.calls.append(owed)
             # No loop to watch here: the search and the quotes are told once
             # both have landed, already finished.
-            for n, line in enumerate(trace(None, hits, quotes, lang)):
+            for n, line in enumerate(trace(evidence, hits, quotes, lang)):
                 told({"id": f"tool_pre{n}", **line, "args": {}})
             pages = _pages(message, quotes, watchlist, db, prefs, lang, told,
                            timeout_s, watching)
@@ -3377,6 +3456,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # What they hold and how it is taxed: its own cache part, since it
         # changes when prices do and the view changes when the reader moves.
         book=book() + tax_rules(prefs),
+        # The reader's own key runs a large model, and the large models keep a
+        # rule wherever it is said; the free chain's are told it last.
+        rules_first=bool(getattr(provider, "needs_key", False)),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
     # system prompt — the stored history keeps the user's own text.
@@ -3419,6 +3501,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             msgs[-1]["content"] += debate.brief(sides)
             msgs = tokens.fit(msgs, system=system)
 
+    routed = _routed(atts, live[0], profile=profile, hard=hard,
+                     argued=bool(sides) or asked_for is not None)
     say("writing")
     steps = trace(evidence, hits, quotes, lang)
     if nowhere:
@@ -3463,11 +3547,11 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     offered = _proposed(evidence) if confirm_actions else None
     return Turn(
         history=history,
-        attempts=atts,
+        attempts=routed or atts,
         system=system,
         messages=msgs,
         skills=list(skills),
-        sources=list(chat_web.sources(hits) or evidence.sources()),
+        sources=_merged_sources(chat_web.sources(hits), evidence.sources()),
         steps=steps,
         lang=lang,
         activities=activities,
@@ -3477,11 +3561,53 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         learning=learning,
         thread=thread,
         profile=profile.name,
+        route="light" if routed else "",
         id=turn_id or secrets.token_hex(6),
         proposal=offered,
         rules_for=(_rules_asked(message, watchlist, focus)
                    if confirm_actions and offered is None else ""),
     ), None
+
+
+def _routed(atts: list[tuple[Provider, str, str]],
+            head: tuple[Provider, str, str], *, profile: agent.Profile,
+            hard: bool | None, argued: bool) -> list[tuple[Provider, str, str]]:
+    """The chain with the head provider's cheapest model asked first, when the
+    question is an easy one; [] to leave it as it is.
+
+    The reader's model is a ceiling, not a floor: a figure, a definition or a
+    quick look-up reads the same from the small model, in seconds instead of
+    the minute a large one spends thinking (prod 2026-10-29: flash 94-164 s,
+    lite 5-20 s), and the reader's model is still next when it fails. Only on
+    the router's own word (`chat_skills.Pick.hard` is False): a router that
+    failed or said nothing, a deep gather, a debate or a ticker brief keeps
+    the reader's model. The keyless chain picks its own models."""
+    provider, key, model = head
+    light = getattr(provider, "classifier_model", "")
+    if (hard is not False or argued or profile is not agent.FAST
+            or not getattr(provider, "needs_key", False) or not light
+            or light == (model or provider.default_model)):
+        return []
+    return [(provider, key, light)] + list(atts)
+
+
+def _light(turn: Turn, provider: Provider, model: str) -> bool:
+    """Whether this attempt is the cheap model `_routed` put first: when it
+    fails, the reader's own model is next anyway, not the provider's others."""
+    if not turn.route or not turn.attempts:
+        return False
+    first, _key, light = turn.attempts[0]
+    return first is provider and light == model
+
+
+def _thinking(turn: Turn, provider: Provider, model: str) -> str:
+    """How long the answering model reasons before it writes (`llm.thinking`):
+    the least on the cheapest model, a little on a quick turn, more on a deep
+    one, whose evidence takes weighing. Never the model's own default, which
+    on Gemini's flash is the slow part of the turn."""
+    if model == getattr(provider, "classifier_model", ""):
+        return "minimal"
+    return "medium" if turn.profile == "deep" else "low"
 
 
 def _charge(prefs: dict, prefs_path: Path, provider: Provider,
@@ -3745,6 +3871,76 @@ def _refused(text: str, history: list[dict], chat_path: Path,
     return Reply(text=text, provider_id=provider_id, turn_id=tid)
 
 
+# ------------------------------------------------------------- kept answers
+
+# The same question asked again on the same book: the reader sent it twice,
+# opened a new thread to ask it there, or the bot and the web asked it a
+# minute apart. A prompt that is byte for byte the last one — persona, book
+# at the same prices, the same evidence — gets the answer it got then,
+# without a model call. Minutes, not hours: a repeat later than that is
+# asking because something moved.
+ANSWER_KEEP_S = 600.0
+_KEPT_ANSWERS_MAX = 64
+# key -> (kept at, owner, provider id, model, text)
+_kept_answers: OrderedDict[str, tuple[float, str, str, str, str]] = OrderedDict()
+_kept_lock = threading.Lock()
+
+
+def _answer_key(turn: Turn, chat_path: Path) -> str:
+    """What a kept answer is found by; "" when this turn's answer is not one
+    to keep: it proposes a change, draws a card, carries a debate, or was
+    taught something — each its own event, never a repeat."""
+    if (turn.proposal or turn.activities or turn.debate or turn.learned
+            or turn.rules_for):
+        return ""
+    blob = json.dumps([str(chat_path), str(turn.system), turn.messages],
+                      ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _kept_answer(turn: Turn, kept_key: str
+                 ) -> tuple[Provider, str, str, str] | None:
+    """(provider, key, model, text) of the answer this very prompt got
+    minutes ago, when its provider is still on this turn's chain."""
+    if not kept_key:
+        return None
+    with _kept_lock:
+        hit = _kept_answers.get(kept_key)
+        if hit is None:
+            return None
+        if time.monotonic() - hit[0] >= ANSWER_KEEP_S:
+            del _kept_answers[kept_key]
+            return None
+    _at, _owner, pid, model, text = hit
+    for provider, key, _m in turn.attempts:
+        if provider.id == pid:
+            obs.event("chat.answer_kept", provider=pid, model=model,
+                      age_s=round(time.monotonic() - hit[0]))
+            return provider, key, model, text
+    return None
+
+
+def _keep_answer(kept_key: str, chat_path: Path, provider: Provider,
+                 model: str, text: str) -> None:
+    if not kept_key:
+        return
+    with _kept_lock:
+        _kept_answers.pop(kept_key, None)
+        _kept_answers[kept_key] = (time.monotonic(), str(chat_path),
+                                   provider.id, model, text)
+        while len(_kept_answers) > _KEPT_ANSWERS_MAX:
+            _kept_answers.popitem(last=False)
+
+
+def forget_answers(chat_path: Path) -> None:
+    """Drop the answers kept for this account's chat: a regenerate asks the
+    same prompt again precisely to get another answer."""
+    owner = str(chat_path)
+    with _kept_lock:
+        for k in [k for k, v in _kept_answers.items() if v[1] == owner]:
+            del _kept_answers[k]
+
+
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
                capped: bool, learned: tuple[dict, ...] = ()) -> Reply:
     """The Reply for a chain that ran out — and which wall it hit.
@@ -3773,6 +3969,7 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
     if not meter.uses:
         return
     obs.event("chat.cost", profile=turn.profile if turn else "",
+              route=turn.route if turn else "",
               skills=list(turn.skills) if turn else [],
               models=meter.models(), tokens=meter.tokens(),
               cached=meter.cached(), cache_write=meter.cache_write(),
@@ -3830,6 +4027,12 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         assert settled is not None
         return None, settled
 
+    kept_key = _answer_key(turn, chat_path)
+    if (kept := _kept_answer(turn, kept_key)) is not None:
+        provider, key, model, text = kept
+        return turn, _record(turn, text, provider, model, key, prefs=prefs,
+                             prefs_path=prefs_path, chat_path=chat_path,
+                             polish=polish, grace=learn_grace)
     capped = False
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
@@ -3844,16 +4047,17 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         # the timeout. The thread dies with the short-lived process.
         pool = ThreadPoolExecutor(max_workers=1)
         try:
-            future = pool.submit(
-                metering.bound(provider.complete, step="answer"), key, model,
-                turn.system, turn.messages)
+            with llm.thinking(_thinking(turn, provider, model)):
+                ask = metering.bound(provider.complete, step="answer")
+            future = pool.submit(ask, key, model, turn.system, turn.messages)
             text = (future.result(timeout=timeout_s) or "").strip()
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
             # before the call that never answered, so it goes back.
             _provider_failed(exc, provider, model, key)
             _refund(prefs, prefs_path, provider, turn.units)
-            pending[:0] = _busy_siblings(exc, provider, key, tried)
+            if not _light(turn, provider, model):
+                pending[:0] = _busy_siblings(exc, provider, key, tried)
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -3861,6 +4065,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             _refund(prefs, prefs_path, provider, turn.units)
             continue
         if text:
+            _keep_answer(kept_key, chat_path, provider, model, text)
             return turn, _record(turn, text, provider, model, key, prefs=prefs,
                                  prefs_path=prefs_path, chat_path=chat_path,
                                  polish=polish, grace=learn_grace)
@@ -4005,6 +4210,17 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     # A run picked up after a restart that had already paid for its answer
     # (`chat/checkpoint.py`) is not charged for it again.
     prepaid = checkpoint.prepaid if checkpoint is not None else ""
+    kept_key = _answer_key(turn, chat_path)
+    if (kept := _kept_answer(turn, kept_key)) is not None:
+        provider, key, model, text = kept
+        yield ("meta", {"provider": provider.id, "model": model,
+                        "skills": list(turn.skills),
+                        "sources": list(turn.sources)})
+        yield ("text", text)
+        yield ("done", _record(turn, text, provider, model, key, prefs=prefs,
+                               prefs_path=prefs_path, chat_path=chat_path,
+                               polish=polish))
+        return
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
     while pending:
@@ -4024,9 +4240,10 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         # (`_may_open_call`); None once they are shown.
         held: str | None = ""
         try:
-            for chunk in metering.iterate(
-                    provider.stream(key, model, turn.system, turn.messages),
-                    step="answer"):
+            with llm.thinking(_thinking(turn, provider, model)):
+                streamed = provider.stream(key, model, turn.system,
+                                           turn.messages)
+            for chunk in metering.iterate(streamed, step="answer"):
                 if isinstance(chunk, Cut):
                     cut = True
                     continue
@@ -4054,7 +4271,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 _refund(prefs, prefs_path, provider, turn.units)
                 if checkpoint is not None:
                     checkpoint.charged("")
-                pending[:0] = _busy_siblings(exc, provider, key, tried)
+                if not _light(turn, provider, model):
+                    pending[:0] = _busy_siblings(exc, provider, key, tried)
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
         if held:
@@ -4079,6 +4297,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             yield ("text", closed[len(text):])
             text = closed
         if text:
+            if not cut:
+                _keep_answer(kept_key, chat_path, provider, model, text)
             yield ("done", _record(turn, text, provider, model, key,
                                    prefs=prefs, prefs_path=prefs_path,
                                    chat_path=chat_path, polish=polish))

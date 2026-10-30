@@ -1610,6 +1610,8 @@ def _rewind(paths: UserPaths) -> tuple[str, dict]:
             detail="the answer on this thread has no question above it",
         )
     auth.save_chat(history[:-2], paths.chat)
+    # The same prompt again, to get another answer: not the one kept for it.
+    engine.forget_answers(paths.chat)
     briefed = asked.get("brief")
     return str(asked["content"]).strip(), briefed if isinstance(briefed, dict) else {}
 

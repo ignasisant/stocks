@@ -479,6 +479,15 @@ def no_quote_lookups(monkeypatch):
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
 
 
+@pytest.fixture(autouse=True)
+def no_documents(monkeypatch):
+    """The fixed path reads the app's help pages too; tests that care stub
+    their own hits (see test_the_fixed_path_reads_the_app_documents)."""
+    from stocks.chat import knowledge
+
+    monkeypatch.setattr(knowledge, "lookup", lambda *a, **k: [])
+
+
 def test_answer_free_happy_path(providers, paths):
     prefs = dict(BASE_PREFS)
     reply = engine.answer(prefs=prefs, message="How is my portfolio doing?",
@@ -1527,3 +1536,268 @@ def test_a_weighing_question_on_the_fixed_path_carries_the_ticker_pages(
     # Not a weighing question: the quote is enough.
     assert engine._pages("¿a cuánto cotiza MSFT hoy?", quotes, tmp_path / "w.yaml",
                          tmp_path / "db", {}, "es", told.append, 5.0) == ""
+
+
+def test_an_analyst_question_on_the_fixed_path_carries_the_ticker_page(
+        monkeypatch, tmp_path):
+    # Prod eval 2026-10-29: asked in Spanish, MSFT's target came back ~580
+    # against a 605 mean — the page holding the analysts was never fetched.
+    from stocks.chat import market, toolbox
+
+    monkeypatch.setattr(toolbox, "executor", lambda ctx: lambda name, args:
+                        f"{args['ticker']} page")
+    got = engine._pages("¿Qué precio objetivo dan los analistas a Microsoft?",
+                        [market.Quote("MSFT")], tmp_path / "w.yaml",
+                        tmp_path / "db", {}, "es", lambda _s: None, 5.0)
+    assert "MSFT page" in got
+
+
+def test_the_fixed_path_reads_the_app_documents(providers, paths, monkeypatch):
+    # Prod eval 2026-10-29: with no tool loop, "how do I undo an import?" was
+    # answered with a delete button that does not exist — the help page that
+    # says "Clear last import" was only reachable through a tool.
+    from stocks.chat import knowledge
+
+    # A real passage: the sources are read back from the corpus by heading.
+    page = next(p for p in knowledge.passages()
+                if p.doc == "importing" and "last import" in p.section.lower())
+    asked: list[str] = []
+    monkeypatch.setattr(engine, "gather_evidence",
+                        lambda *a, **k: engine.agent.Evidence(ok=False))
+    monkeypatch.setattr(engine, "ground_web", lambda *a, **k: [])
+    monkeypatch.setattr(knowledge, "lookup",
+                        lambda q, *a, **k: asked.append(q) or [page])
+    message = "¿Cómo deshago la última importación?"
+    reply = engine.answer(prefs=dict(BASE_PREFS), lang="es", message=message,
+                          **paths)
+    assert asked == [message]
+    sent = providers["free"].calls[0][3][-1]["content"]
+    assert page.text in sent
+    assert "### lookup_knowledge(" in sent
+    assert knowledge.source(page) in reply.sources
+    assert "lookup_knowledge" in [s["tool"] for s in reply.steps]
+
+
+def test_the_fixed_path_carries_this_years_tax(providers, paths, monkeypatch):
+    # Prod eval 2026-10-29: "¿Cuánto tengo que pagar a Hacienda…?" got the
+    # IRPF brackets and "see the tax tab"; the tab's 231 € never reached it.
+    from stocks.chat import toolbox
+
+    ran: list[str] = []
+    monkeypatch.setattr(engine, "gather_evidence",
+                        lambda *a, **k: engine.agent.Evidence(ok=False))
+    monkeypatch.setattr(engine, "ground_web", lambda *a, **k: [])
+    monkeypatch.setattr(toolbox, "executor", lambda ctx: lambda name, args: (
+        ran.append(name) or "realised so far this tax year: estimated tax 231.27 EUR"))
+    reply = engine.answer(
+        prefs=dict(BASE_PREFS), lang="es", **paths,
+        message="¿Cuánto tengo que pagar a Hacienda por mis ventas de este año?")
+    assert ran == ["harvest_losses"]
+    assert "estimated tax 231.27 EUR" in providers["free"].calls[0][3][-1]["content"]
+    assert "harvest_losses" in [s["tool"] for s in reply.steps]
+    # Its card answers another question and stays shut.
+    assert not reply.activities
+    # A tax rule asked in general is not a question about the reader's bill.
+    ran.clear()
+    engine.answer(prefs=dict(BASE_PREFS), lang="es", **paths,
+                  message="¿cómo tributan los dividendos?")
+    assert ran == []
+
+
+def test_web_and_document_sources_are_both_kept_once():
+    web = [{"title": "a", "url": "https://a"}]
+    doc = {"title": "Importing", "url": "/import", "step": "import"}
+    assert engine._merged_sources(web, [doc, web[0]]) == [*web, doc]
+
+
+# ------------------------------------------------------------- light route
+
+
+def _router_says(monkeypatch, hard):
+    from stocks.web import chat_skills
+
+    def classify(*_a, **_k):
+        picked = chat_skills.Pick([])
+        picked.hard = hard
+        return picked
+
+    monkeypatch.setattr(engine.chat_skills, "classify", classify)
+
+
+def _answered_on(provider) -> list[str]:
+    """The models asked for the answer itself — the title is asked too, on
+    the cheapest model, with a plain-string system."""
+    from stocks.web import llm
+
+    return [m for _k, m, system, _msgs in provider.calls
+            if isinstance(system, llm.Prompt)]
+
+
+ROUTED = {"chat_skills_mode": "auto"}
+
+
+def test_an_easy_question_is_answered_on_the_cheapest_model_first(
+        crowded, providers, enc, paths, monkeypatch):
+    # Prod 2026-10-29: flash took 94-164 s to answer what lite said in 5-20 s.
+    crowded.classifier_model = "m-lite"
+    _router_says(monkeypatch, hard=False)
+    reply = engine.answer(prefs={**ROUTED, **enc("gemini")},
+                          message="cuánto vale ASML?", **paths)
+    assert reply.provider_id == "gemini"
+    assert _answered_on(crowded) == ["m-lite"]
+
+
+def test_a_hard_or_unread_question_keeps_the_readers_model(
+        crowded, providers, enc, paths, monkeypatch):
+    crowded.classifier_model = "m-lite"
+    for hard in (True, None):
+        crowded.calls.clear()
+        _router_says(monkeypatch, hard=hard)
+        engine.answer(prefs={**ROUTED, **enc("gemini")},
+                      message="compara ASML con TSMC", **paths)
+        assert _answered_on(crowded) == ["m-latest"]
+
+
+def test_a_busy_light_model_falls_to_the_readers_model_not_its_siblings(
+        crowded, providers, enc, paths, monkeypatch):
+    crowded.classifier_model = "m-lite"
+    crowded.busy = ("m-lite",)
+    _router_says(monkeypatch, hard=False)
+    reply = engine.answer(prefs={**ROUTED, **enc("gemini")},
+                          message="cuánto vale ASML?", **paths)
+    assert reply.provider_id == "gemini"
+    assert _answered_on(crowded) == ["m-lite", "m-latest"]
+
+
+def test_the_light_route_is_only_taken_on_a_quick_keyed_turn():
+    keyed = FakeProvider("gemini", classifier_model="lite")
+    keyed.needs_key = True
+    head = (keyed, "k", "")
+    chain = [head]
+    quick = dict(profile=engine.agent.FAST, argued=False)
+    assert engine._routed(chain, head, hard=False, **quick) == [
+        (keyed, "k", "lite"), head]
+    assert engine._routed(chain, head, hard=None, **quick) == []
+    assert engine._routed(chain, head, hard=False, profile=engine.agent.DEEP,
+                          argued=False) == []
+    assert engine._routed(chain, head, hard=False, profile=engine.agent.FAST,
+                          argued=True) == []
+    assert engine._routed(chain, (keyed, "k", "lite"), hard=False, **quick) == []
+    keyless = FakeProvider("free", classifier_model="lite")
+    assert engine._routed(chain, (keyless, "", ""), hard=False, **quick) == []
+
+
+def test_the_answer_thinks_by_the_turns_depth():
+    p = FakeProvider("gemini", classifier_model="lite")
+    turn = engine.Turn(history=[], attempts=[], system="", messages=[],
+                       skills=[], sources=[])
+    assert engine._thinking(turn, p, "flash") == "low"
+    assert engine._thinking(turn, p, "lite") == "minimal"
+    turn.profile = "deep"
+    assert engine._thinking(turn, p, "flash") == "medium"
+
+
+def test_a_keyed_turn_says_the_rules_first_so_the_prefix_is_cacheable():
+    """Gemini caches a prefix of 1,024 tokens or more; the fixed paragraphs
+    alone are about 600, and every Gemini turn read cached=0."""
+    from stocks.chat import tokens
+
+    base = dict(memories="MEMORIES\n\n", book="BOOK\n\n")
+    first = engine.system_prompt({"set": False}, "VIEW", ["tech"], "es",
+                                 rules_first=True, **base)
+    head, book, tail = first.blocks
+    assert "RULES — these hold" in head and "RULES — these hold" not in tail
+    assert head.index("RULES — these hold") < head.index("MEMORIES")
+    assert tokens.count(head) >= 1024
+    assert book == "BOOK\n\n"
+    assert tail.startswith("VIEW")
+    # The language is still the last thing said.
+    assert first.rstrip().endswith("stay as they are.")
+    # A page move or new skills still leave the head untouched.
+    moved = engine.system_prompt({"set": False}, "ELSEWHERE", [], "es",
+                                 rules_first=True, **base)
+    assert moved.blocks[0] == head
+
+
+# ------------------------------------------------------------- kept answers
+
+
+def _ask_twice(ask, paths, between=None):
+    """The same first question in two fresh threads, minutes apart."""
+    first = ask()
+    paths["chat_path"].unlink()
+    if between:
+        between()
+    return first, ask()
+
+
+def test_the_same_prompt_again_is_answered_without_a_model_call(
+        providers, enc, paths):
+    prefs = {**BASE_PREFS, **enc("anthropic")}
+    first, again = _ask_twice(
+        lambda: engine.answer(prefs=prefs, message="qué es el P/E?", **paths),
+        paths)
+    assert again.text == first.text == "BYOK answer."
+    assert again.provider_id == "anthropic"
+    assert len(_answered_on(providers["anthropic"])) == 1
+
+
+def test_a_streamed_repeat_says_who_answered_then_the_text(
+        providers, enc, paths, monkeypatch):
+    from stocks.web import llm
+
+    streamer = Streamer("anthropic", reply="El P/E es precio entre beneficio.")
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "anthropic": streamer})
+    prefs = {**BASE_PREFS, **enc("anthropic")}
+    _first, again = _ask_twice(
+        lambda: list(engine.answer_stream(prefs=prefs, message="qué es el P/E?",
+                                          **paths)),
+        paths)
+    kinds = [k for k, _v in again if k in ("meta", "text", "done")]
+    assert kinds == ["meta", "text", "done"]
+    assert again[-1][1].text == "El P/E es precio entre beneficio."
+    assert len(_answered_on(streamer)) == 1
+
+
+def test_a_regenerate_or_a_stale_answer_asks_the_model_again(
+        providers, enc, paths, monkeypatch):
+    prefs = {**BASE_PREFS, **enc("anthropic")}
+
+    def ask():
+        return engine.answer(prefs=prefs, message="qué es el P/E?", **paths)
+
+    _ask_twice(ask, paths, between=lambda: engine.forget_answers(
+        paths["chat_path"]))
+    assert len(_answered_on(providers["anthropic"])) == 2
+    paths["chat_path"].unlink()
+    monkeypatch.setattr(engine, "ANSWER_KEEP_S", 0.0)
+    ask()
+    assert len(_answered_on(providers["anthropic"])) == 3
+
+
+def test_an_answer_that_did_something_is_never_a_repeat(paths):
+    turn = engine.Turn(history=[], attempts=[], system="s",
+                       messages=[{"role": "user", "content": "x"}],
+                       skills=[], sources=[])
+    assert engine._answer_key(turn, paths["chat_path"])
+    turn.learned = [{"text": "prefiero ETFs"}]
+    assert engine._answer_key(turn, paths["chat_path"]) == ""
+
+
+def test_a_cut_answer_is_not_kept(providers, enc, paths, monkeypatch):
+    from stocks.web import llm
+
+    @dataclass
+    class Cutting(Streamer):
+        def stream(self, api_key, model, system, messages):
+            yield from super().stream(api_key, model, system, messages)
+            yield llm.Cut()
+
+    streamer = Cutting("anthropic", reply="El P/E es")
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "anthropic": streamer})
+    prefs = {**BASE_PREFS, **enc("anthropic")}
+    _ask_twice(
+        lambda: list(engine.answer_stream(prefs=prefs, message="qué es el P/E?",
+                                          **paths)),
+        paths)
+    assert len(_answered_on(streamer)) == 2

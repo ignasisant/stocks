@@ -102,10 +102,8 @@ describe("the settings view", () => {
     expect(out).not.toContain("<progress");
   });
 
-  it("lets a provider of your own reach past its curated models", () => {
-    const out = draw(state({ preferred: "anthropic" }));
-    expect(out).toContain("chat.model_other");
-    // A model saved from the catalogue is still the select's value.
+  it("keeps a model picked from the catalogue as the select's value", () => {
+    // Nothing to type: the model is picked from the list, never written.
     const custom = draw(
       state({
         preferred: "anthropic",
@@ -126,7 +124,6 @@ describe("the settings view", () => {
 
   it("gives the keyless chain no model to pick", () => {
     const out = draw(state({}));
-    expect(out).not.toContain("chat.model_other");
     expect(out).not.toContain("ag-chat-select");
   });
 

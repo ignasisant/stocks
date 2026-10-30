@@ -2281,6 +2281,25 @@ def earnings_calendar(tickers: tuple[str, ...]):
     return calendar_events([Holding(ticker=t) for t in tickers])
 
 
+def calendar_tickers(entries, held) -> tuple[str, ...]:
+    """The names the calendar page asks `earnings_calendar` about: the
+    watchlist and the open positions, coins and funds left out, sorted.
+
+    One function so the page and the warm pass build the same cache key. The
+    ledger counts as much as the watchlist: a position imported from a
+    statement and never followed by hand still reports, and the Portfolio pill
+    offers it. Fund classification stays cache-only — a cold cache keeps a
+    fund in rather than blocking on a lookup.
+    """
+    from stocks.data.crypto import is_crypto
+    from stocks.data.funds import is_fund
+
+    names = {h.ticker for h in entries} | set(held)
+    return tuple(
+        sorted(t for t in names if not is_crypto(t) and not is_fund(t, fetch=False))
+    )
+
+
 # ------------------------------------------------------------------ the pulse
 # The market-regime screen. Two years of history because the trailing-year
 # percentile needs a full year before it scores anything and the 200-session

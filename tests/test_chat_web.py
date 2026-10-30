@@ -489,3 +489,88 @@ def test_a_pasted_front_door_is_still_read(monkeypatch):
     got = chat_web.collect([], "mira https://www.booking.com/")
     assert [r.url for r in got] == ["https://www.booking.com/"]
     assert got[0].text == "body"
+
+
+def test_a_search_asked_again_is_answered_from_what_was_kept(monkeypatch):
+    """Every turn searched afresh: 2-8 s, and DuckDuckGo's patience."""
+    import sys
+    import types
+
+    asked: list[str] = []
+
+    class Counting(_FakeDDG):
+        def text(self, q, max_results=0):
+            asked.append(q)
+            return self.hits
+
+    Counting.hits = [{"title": "ASML Q3", "href": "https://news.example/asml",
+                      "body": "ASML results beat"}]
+    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=Counting))
+    monkeypatch.setattr(chat_web, "available", lambda: True)
+    first = chat_web.search(["ASML results"], read_limit=0)
+    again = chat_web.search(["  asml   RESULTS "], read_limit=0)
+    assert [r.url for r in again] == [r.url for r in first]
+    assert asked == ["ASML results"]
+
+
+def test_an_empty_search_is_asked_again(monkeypatch):
+    """A throttled search answers nothing; keeping that would keep nothing."""
+    import sys
+    import types
+
+    asked: list[str] = []
+
+    class Empty(_FakeDDG):
+        def text(self, q, max_results=0):
+            asked.append(q)
+            return []
+
+    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=Empty))
+    monkeypatch.setattr(chat_web, "available", lambda: True)
+    chat_web.search(["asml"], read_limit=0)
+    chat_web.search(["asml"], read_limit=0)
+    assert asked == ["asml", "asml"]
+
+
+def test_a_page_read_once_is_not_fetched_again_but_a_miss_is(monkeypatch):
+    import io
+
+    opened: list[str] = []
+
+    class Resp(io.BytesIO):
+        headers = {"Content-Type": "text/html"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class Opener:
+        def open(self, req, timeout=0):
+            opened.append(req.full_url)
+            if "dead" in req.full_url:
+                raise TimeoutError
+            return Resp(b"<html>article</html>")
+
+    monkeypatch.setattr(chat_web, "_opener", Opener)
+    monkeypatch.setattr(chat_web, "fetchable", lambda url: True)
+    monkeypatch.setattr(chat_web, "_extract", lambda raw: "the article text")
+    assert chat_web.read_page("https://news.example/a") == "the article text"
+    assert chat_web.read_page("https://news.example/a") == "the article text"
+    assert chat_web.read_page("https://news.example/dead") == ""
+    assert chat_web.read_page("https://news.example/dead") == ""
+    assert opened == ["https://news.example/a", "https://news.example/dead",
+                      "https://news.example/dead"]
+
+
+def test_kept_items_expire_and_the_oldest_go_first(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(chat_web.time, "monotonic", lambda: clock[0])
+    kept = chat_web._Kept(ttl_s=10, size=2)
+    kept.put("a", 1)
+    kept.put("b", 2)
+    kept.put("c", 3)
+    assert kept.get("a") is None and kept.get("c") == 3
+    clock[0] = 10
+    assert kept.get("b") is None

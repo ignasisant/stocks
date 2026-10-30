@@ -236,6 +236,40 @@ describe("the composer's research switch", () => {
   });
 });
 
+describe("the composer's model picker", () => {
+  const own = {
+    id: "claude",
+    label: "Claude",
+    models: ["claude-opus-5", "claude-sonnet-5"],
+    model: "claude-sonnet-5",
+    needs_key: true,
+    has_key: true,
+    console_url: "",
+    key_placeholder: "",
+    key_days_left: null,
+    domain: null,
+  };
+
+  it("offers the answering provider's models, its own picked", () => {
+    const out = drawComposer(false, { providers: [own], answering: "claude" });
+    expect(out).toMatch(/aria-label="chat.model"/);
+    expect(out).toMatch(/<option value="claude-sonnet-5" selected="">/);
+    expect(out).not.toContain('<input type="text"');
+  });
+
+  it("is not drawn for the keyless chain's one model", () => {
+    const free = {
+      ...own,
+      id: "free",
+      models: ["auto"],
+      model: "auto",
+      needs_key: false,
+    };
+    const out = drawComposer(false, { providers: [free], answering: "free" });
+    expect(out).not.toContain('aria-label="chat.model"');
+  });
+});
+
 describe("the composer's paperclip", () => {
   it("offers a CSV by the type it was saved as, not only by its extension", () => {
     // Chrome on Android turns `.csv` into `text/comma-separated-values` for the

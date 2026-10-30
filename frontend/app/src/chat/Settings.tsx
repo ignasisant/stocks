@@ -35,14 +35,7 @@ import { ApiError } from "../shell/api";
 import { Icon } from "../shell/Icon";
 import { useRoute } from "../shell/router";
 import { Status } from "../ui/Status";
-import {
-  forgetKey,
-  readModels,
-  readState,
-  revealKey,
-  saveSettings,
-  storeKey,
-} from "./api";
+import { forgetKey, readModels, readState, revealKey, storeKey } from "./api";
 import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
 import { keyError, providerLabel, providerTag } from "./format";
 import { phone } from "./GuideCard";
@@ -318,44 +311,41 @@ function Key({
   );
 }
 
-/** The select's own value for "type another one", never a model id. */
-const OTHER = "\u0000other";
-
 /**
- * The provider's model: the curated few in a select, and any other its key can
- * reach behind "Other model…".
+ * The provider's model: one select holding every model the key can reach, the
+ * curated few first.
  *
- * The curated list is where most readers stop, so it stays one tap. The rest
- * is the vendor's own catalogue (`GET /chat/models/{provider}`), read only
- * once the reader asks for it — it is hundreds of ids on OpenRouter — and
- * offered as suggestions on a free-text field rather than a second select,
- * because typing "sonnet" is how anyone finds one model in that list. Saved
- * directly rather than through `onSave`: the server checks the id against
- * the same catalogue, and its refusal belongs under this field.
+ * The curated list is where most readers stop, so it leads. The rest is the
+ * vendor's own catalogue (`GET /chat/models/{provider}`, kept per key on the
+ * server), read once the select is on screen — `active` holds it back while
+ * the composer's picker is closed — and listed in a group of its own so the
+ * few are not lost in it. Nothing is typed: a reader picks from what the key
+ * actually serves. Without a key, or when the vendor will not say, the
+ * curated few are the list.
+ *
+ * Drawn here and in the composer's picker (`Composer.tsx`): a reader who
+ * wants a different model for the next question looks beside the field, not
+ * two screens away.
  */
-function Model({
+export function Model({
   provider,
   busy,
   onSave,
-  onState,
+  active = true,
 }: {
   provider: ProviderInfo;
   busy: boolean;
   onSave: (patch: SettingsPatch) => void;
-  onState: (next: ChatState) => void;
+  /** On screen, so the catalogue is worth asking for. */
+  active?: boolean;
 }) {
   const t = useT();
-  const uid = useId();
-  const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const [listed, setListed] = useState<{ models: string[]; live: boolean } | null>(
     null,
   );
-  const [working, setWorking] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || listed) return;
+    if (listed || !active || !provider.has_key) return;
     let gone = false;
     readModels(provider.id)
       .then((body) => !gone && setListed(body))
@@ -363,118 +353,36 @@ function Model({
     return () => {
       gone = true;
     };
-  }, [open, listed, provider.id]);
+  }, [active, listed, provider.id, provider.has_key]);
 
-  const save = async () => {
-    const model = typed.trim();
-    if (!model || working) return;
-    setWorking(true);
-    setFailed(null);
-    try {
-      onState(await saveSettings({ provider: provider.id, model }));
-      setOpen(false);
-      setTyped("");
-    } catch (failure) {
-      setFailed(
-        failure instanceof ApiError && failure.status === 422
-          ? "chat.model_unknown"
-          : "chat.api_error",
-      );
-    } finally {
-      setWorking(false);
-    }
-  };
+  // Every id the key reaches that the curated few do not already offer.
+  const rest = listed?.live
+    ? listed.models.filter((model) => !provider.models.includes(model))
+    : [];
 
   return (
-    <>
-      <select
-        className="ag-chat-select"
-        value={open ? OTHER : provider.model}
-        aria-label={t("chat.model")}
-        disabled={busy || working}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (value === OTHER) {
-            setOpen(true);
-            setFailed(null);
-            return;
-          }
-          setOpen(false);
-          onSave({ provider: provider.id, model: value });
-        }}
-      >
-        {provider.models.map((model) => (
-          <option key={model} value={model}>
-            {model}
-          </option>
-        ))}
-        {provider.needs_key && <option value={OTHER}>{t("chat.model_other")}</option>}
-      </select>
-
-      {open && (
-        <form
-          className="ag-chat-key"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <p className="ag-chat-hint">
-            {listed === null
-              ? t("chat.model_listing", { provider: provider.label })
-              : listed.live
-                ? t("chat.model_listed", {
-                    count: listed.models.length,
-                    provider: provider.label,
-                  })
-                : t("chat.model_type", { provider: provider.label })}
-          </p>
-          <input
-            type="text"
-            value={typed}
-            list={`${uid}-models`}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            maxLength={128}
-            placeholder={provider.models[0]}
-            aria-label={t("chat.model_other_label", { provider: provider.label })}
-            onChange={(event) => setTyped(event.target.value)}
-          />
-          <datalist id={`${uid}-models`}>
-            {(listed?.models ?? []).map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-          <div className="ag-chat-import-acts">
-            <button
-              type="submit"
-              className="ag-chat-btn ag-chat-btn-on"
-              disabled={busy || working || !typed.trim()}
-            >
-              {t("chat.model_use")}
-            </button>
-            <button
-              type="button"
-              className="ag-chat-btn"
-              disabled={working}
-              onClick={() => {
-                setOpen(false);
-                setFailed(null);
-              }}
-            >
-              {t("chat.cancel")}
-            </button>
-          </div>
-          {working && <Status label={t("chat.model_checking")} />}
-          {failed && (
-            <p className="ag-chat-note">
-              {t(failed, { model: typed.trim(), provider: provider.label })}
-            </p>
-          )}
-        </form>
+    <select
+      className="ag-chat-select"
+      value={provider.model}
+      aria-label={t("chat.model")}
+      disabled={busy}
+      onChange={(event) => onSave({ provider: provider.id, model: event.target.value })}
+    >
+      {provider.models.map((model) => (
+        <option key={model} value={model}>
+          {model}
+        </option>
+      ))}
+      {rest.length > 0 && (
+        <optgroup label={t("chat.model_all", { count: rest.length })}>
+          {rest.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
+        </optgroup>
       )}
-    </>
+    </select>
   );
 }
 
@@ -620,13 +528,7 @@ export function Settings({
         <>
           <Group>{t("chat.sec_model")}</Group>
           {picked.needs_key || picked.models.length > 1 ? (
-            <Model
-              key={picked.id}
-              provider={picked}
-              busy={busy}
-              onSave={onSave}
-              onState={onState}
-            />
+            <Model key={picked.id} provider={picked} busy={busy} onSave={onSave} />
           ) : (
             <p className="ag-chat-hint">{picked.model}</p>
           )}

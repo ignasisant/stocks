@@ -487,6 +487,13 @@ fixed meaning — they are not a series palette.
 - **Chart redraw:** marks sit in `<g className="ag-redraw" key={range}>`, so
   a range, zoom or series change cross-fades (opacity 0.25 → 1,
   `--ag-dur-move`) instead of snapping; none under reduced motion.
+- **Figures count** (`ui/Count.tsx`): a refreshed figure runs from the
+  value on screen to the new one (`COUNT_MS` 800, ease-out, no overshoot),
+  tinted `--ag-up` / `--ag-down` while it moves, then eases back to its ink.
+  Every `Kpi` value and `Chip` does it; anything else showing a live price
+  wraps its formatted string in `<Count text tint>`. Only a string holding one
+  number with the same unit and decimals counts; the rest swap, as do the
+  first render, a hidden tab and reduced motion.
 - **AI rim** (`.ag-ai`, chat FAB) is still at rest; it turns only on hover,
   focus-visible or `[data-busy]`, paused (not reset) so it resumes in place.
 

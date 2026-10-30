@@ -49,7 +49,7 @@ WINDOWS = {"day": 1, "week": 7, "month": 30}
 
 # How many names each side of a movers card can show. The card draws as many
 # rows as the 52-week card beside it, from 3 up to this; more and it stops
-# being a glance.
+# being a glance. `all=true` lifts the cut for the card's "show all".
 SHOWN = 7
 
 # How close to an extreme still counts as being at it — `api/home.py` owns the
@@ -156,6 +156,13 @@ def movers(
     account: Account,
     window: Annotated[str, Query(description="day | week | month.")] = "day",
     base: Base = None,
+    every: Annotated[
+        bool,
+        Query(
+            alias="all",
+            description=f"Every name that moved, not only the {SHOWN} strongest a side.",
+        ),
+    ] = False,
 ) -> Movers:
     """The book's best and worst names over one window, and the book itself.
 
@@ -177,6 +184,9 @@ def movers(
     there is one, the last completed session afterwards. `as_of` says which
     session that was, and `unpriced` how much of the book is missing from all
     of it.
+
+    Each side is cut to its `SHOWN` strongest unless `all` is set: the card
+    draws the cut and unfolds to the rest on "show all".
     """
     if window not in WINDOWS:
         raise HTTPException(
@@ -206,9 +216,20 @@ def movers(
         off = tuple(t for t in frame.columns if not market_live(str(t)))
         quotes = loaders.quotes(off) if off else {}
 
+    premarket: set[str] = set()
     if days <= 1:
         changes = ticker_day_changes(frame, quotes)
         whole = day_change(frame, quotes)
+        # Before the open a name's own day is a few premarket prints, so its row
+        # reads the last session with the premarket on top. The rows only: the
+        # book's own day above (`whole`) stays the move since the last close.
+        for ticker, quote in (quotes or {}).items():
+            prior = quote.get("prior")
+            if quote.get("session") != "pre" or prior is None:
+                continue
+            if ticker in changes.index and not pd.isna(changes[ticker]):
+                changes.loc[ticker] = (1 + changes[ticker]) * (1 + prior) - 1
+                premarket.add(ticker)
     else:
         changes = ticker_changes(frame, days)
         whole = basket_change(frame, days)
@@ -218,11 +239,17 @@ def movers(
         # Only today's figure can be a stale close, so the day column alone is
         # dimmed, for names whose market is not active right now.
         live = market_active(str(ticker)) if days <= 1 else None
-        return Mover(ticker=str(ticker), pct=float(pct), active=live)
+        return Mover(
+            ticker=str(ticker),
+            pct=float(pct),
+            active=live,
+            premarket=ticker in premarket,
+        )
 
-    answer.gainers = [mover(t, v) for t, v in changes[changes > 0].head(SHOWN).items()]
+    cut = None if every else SHOWN
+    answer.gainers = [mover(t, v) for t, v in changes[changes > 0].iloc[:cut].items()]
     answer.losers = [
-        mover(t, v) for t, v in changes[changes < 0].tail(SHOWN).sort_values().items()
+        mover(t, v) for t, v in changes[changes < 0].sort_values().iloc[:cut].items()
     ]
     if whole:
         answer.amount, answer.basket = _num(whole[0]), _num(whole[1])

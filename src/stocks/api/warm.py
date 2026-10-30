@@ -171,20 +171,11 @@ def warm_more(db: str, watchlist: str | Path, base: str) -> None:
     tab and the Pulso book card (`basket_report`), the Posiciones spots, the
     calendar's earnings and dividends. Each on its own: a feed that refuses
     costs that memo, never the rest of the pass."""
-    from stocks.data.crypto import is_crypto
-    from stocks.data.funds import is_fund
-
     mtime = loaders.db_mtime(db)
     entries = load_watchlist(Path(watchlist))
-    # The calendar's own key: the watchlist's reporting names, sorted
-    # (`routes/earnings`). Anything else warms an entry nobody reads.
-    reporting = tuple(
-        sorted(
-            h.ticker
-            for h in entries
-            if not is_crypto(h.ticker) and not is_fund(h.ticker, fetch=False)
-        )
-    )
+    # The calendar's own key (`routes/earnings`). Anything else warms an
+    # entry nobody reads.
+    reporting = loaders.calendar_tickers(entries, loaders.held(db, mtime))
     tbl = loaders.positions_table(db, mtime, base)
     currencies = (
         tuple(sorted({str(c).upper() for c in tbl["ccy"] if c}))

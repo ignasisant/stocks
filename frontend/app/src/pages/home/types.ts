@@ -142,6 +142,11 @@ export type Mover = {
    * figure — the last completed session, real but not moving. Null otherwise.
    */
   active?: boolean | null;
+  /**
+   * Day window only: the name is in US premarket, and `pct` is its last
+   * session compounded with the premarket move on top of it.
+   */
+  premarket?: boolean;
 };
 
 export type Movers = {
