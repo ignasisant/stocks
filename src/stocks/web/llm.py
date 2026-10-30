@@ -141,7 +141,8 @@ class Provider:
     key_placeholder: str
     console_url: str
     _module: str  # top-level import name used for the availability probe
-    _stream: Callable[[str, str, str, list[dict]], Iterator[str]]
+    # (api_key, model, system, messages), plus `thinking=` when `_thinking`.
+    _stream: Callable[..., Iterator[str]]
     _error_key: Callable[[Exception], str | None]
     needs_key: bool = True  # False = keyless (server-side keys); no BYOK gate
     _available: Callable[[], bool] | None = None  # overrides the SDK probe
