@@ -88,7 +88,8 @@ def _result(result: EarningsResult) -> CalendarResult:
 
 @router.get("/earnings", response_model=EarningsCalendar, summary="Reporting calendar")
 def earnings(account: Account) -> EarningsCalendar:
-    """The account's watchlist calendar: what is coming and what already printed.
+    """The account's calendar — watchlist and open positions alike: what is
+    coming and what already printed.
 
     Coins and funds are dropped before the fetch — neither ever reports, and
     asking spends a request on Yahoo answering "no earnings dates found". They
@@ -106,14 +107,14 @@ def earnings(account: Account) -> EarningsCalendar:
     covered = {h.ticker for h in reporting}
     skipped = [h.ticker for h in holdings if h.ticker not in covered]
 
-    events, results = loaders.earnings_calendar(
-        tuple(sorted(h.ticker for h in reporting))
-    )
-
     # Portfolio = open ledger positions, plus any watchlist entry carrying
     # shares. The two disagree whenever a name was added by hand.
     db = str(account.db)
     held = set(loaders.held(db, loaders.db_mtime(db)))
+    events, results = loaders.earnings_calendar(
+        loaders.calendar_tickers(holdings, held)
+    )
+
     groups: dict[str, list[str]] = {}
     if portfolio := held | {h.ticker for h in reporting if h.is_position}:
         groups["portfolio"] = sorted(portfolio)

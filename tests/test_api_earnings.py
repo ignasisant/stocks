@@ -159,6 +159,33 @@ def test_names_that_never_report_are_dropped_before_the_fetch(
     assert asked == [("AAPL", "MSFT")]
 
 
+def test_a_position_nobody_followed_by_hand_still_reports(
+    client, account, monkeypatch
+):
+    """A name imported from a statement and never added to the watchlist sits
+    under the Portfolio pill — its prints have to be on the grid too."""
+    ledger.add_many(
+        [
+            Transaction("2024-01-03", "GOOG", "buy", 3, 150.0, "USD", 1.0),
+            Transaction("2024-01-03", "SOL-EUR", "buy", 2, 90.0, "EUR", 1.0),
+        ],
+        path=account.db,
+    )
+    loaders.held.cache_clear()
+    asked: list[tuple[str, ...]] = []
+
+    def record(tickers):
+        asked.append(tickers)
+        return [], []
+
+    monkeypatch.setattr(loaders, "earnings_calendar", record)
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert asked == [("AAPL", "GOOG", "MSFT")]  # the coin still asks nothing
+    assert "GOOG" in payload["groups"]["portfolio"]
+
+
 def test_the_filter_sets_are_the_ones_the_calendar_can_offer(
     client, account, calendar
 ):
