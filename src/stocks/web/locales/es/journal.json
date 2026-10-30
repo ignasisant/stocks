@@ -103,6 +103,7 @@
   "journal.action_exit": "Regla de salida",
   "journal.kind_criterion_hit": "tu regla de salida cumplida",
   "journal.kind_criterion_near": "cerca de tu regla de salida",
+  "journal.kind_filing_flag": "alerta en la SEC",
   "journal.crit_below": "Cierre en {level} o menos",
   "journal.crit_drawdown_cost": "Pérdida del {level} % sobre coste",
   "journal.crit_drawdown_high": "Caída del {level} % desde máximos",

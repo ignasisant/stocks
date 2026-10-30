@@ -749,6 +749,17 @@ async def robots(request: Request) -> Response:
     )
 
 
+async def service_worker(request: Request) -> Response:
+    """`/sw.js` — Web Push's worker (`assets/sw.js`), served from the root so
+    its scope is the whole app. Revalidated every time: a worker cached past a
+    deploy keeps the old one handling pushes."""
+    return FileResponse(
+        _ASSETS / "sw.js",
+        media_type="text/javascript; charset=utf-8",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 async def sitemap(request: Request) -> Response:
     return Response(
         seo.sitemap_xml(base_url(request), lastmod=_lastmod()),
@@ -1257,6 +1268,7 @@ routes = [
     ),
     Route("/robots.txt", robots, methods=["GET", "HEAD"]),
     Route("/sitemap.xml", sitemap, methods=["GET", "HEAD"]),
+    Route("/sw.js", service_worker, methods=["GET", "HEAD"]),
     Route("/livez", healthz, methods=["GET", "HEAD"]),
     Route("/healthz", healthz, methods=["GET", "HEAD"]),
     Route("/status", status, methods=["GET", "HEAD"]),

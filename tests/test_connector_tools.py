@@ -244,6 +244,21 @@ def test_claude_reads_the_memory_the_assistant_keeps(site, token, book):
     assert "a conservative" in data["profile"]["persona"]
 
 
+def test_claude_reads_the_plan_the_book_is_held_to(site, token, book):
+    book.prefs.write_text(json.dumps({
+        "currency": "EUR",
+        "investor_plan": {"set": True, "limits": {"max_position_pct": 10},
+                          "contribution": {"amount": 500, "every": "monthly",
+                                           "day": 5}},
+    }))
+    data = ok(call(site, token, "investor_context"))
+    assert data["plan"]["set"] is True
+    assert data["plan"]["limits"]["max_position_pct"] == 10
+    assert data["plan"]["contribution"]["amount"] == 500
+    # The sentence the chat is given says it too.
+    assert "at most 10% in one position" in data["profile"]["persona"]
+
+
 def test_memory_switched_off_is_no_memory_here_either(site, token, book):
     from stocks.chat import learnings
 
@@ -691,6 +706,26 @@ def test_preferences_change_only_what_is_named_and_refuse_nonsense(site, editor)
     assert bad["isError"] is True and "currency must be one of" in result_text(bad)
     empty = call(site, editor, "set_preferences")
     assert empty["isError"] is True
+
+
+def test_a_plan_is_written_whole_and_read_back_in_investor_context(site, editor):
+    ok(call(site, editor, "set_plan",
+            targets={"stocks": 50, "equity_funds": 30, "bonds": 10, "cash": 10},
+            max_position_pct=12, contribution_amount=400, reserve_min_pct=5,
+            reserve_max_pct=15))
+    plan = ok(call(site, editor, "investor_context"))["plan"]
+    assert plan["mix"]["targets"]["stocks"] == 50
+    assert plan["limits"]["max_position_pct"] == 12
+    assert plan["contribution"]["amount"] == 400
+    bad = call(site, editor, "set_plan", targets={"stocks": 80, "crypto": 30})
+    assert bad["isError"] is True and "add up to 100" in result_text(bad)
+    empty = call(site, editor, "set_plan")
+    assert empty["isError"] is True
+
+
+def test_a_plan_needs_the_write_scope(site, token):
+    refused = call(site, token, "set_plan", targets={"stocks": 100})
+    assert refused["isError"] is True and "can only read" in result_text(refused)
 
 
 def test_a_sale_is_simulated_by_the_tax_engine(site, token, monkeypatch):

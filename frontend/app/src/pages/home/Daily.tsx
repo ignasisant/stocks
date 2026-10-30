@@ -51,6 +51,7 @@ import {
   wantsWriting,
 } from "../today/card";
 import { Card, TickerCell } from "./ui";
+import { Go } from "./Go";
 import { monthDay } from "./format";
 import type { DailyCard, DailyItem } from "./types";
 
@@ -260,7 +261,8 @@ export function Daily() {
   );
 }
 
-/** The teaser's lines: the text in full, its tickers at its end. */
+/** The teaser's lines: the text in full, its tickers and the page that acts
+ * on it at its end. */
 function Lines({ items }: { items: DailyItem[] }) {
   return (
     <ul className="hm-daily-list">
@@ -273,6 +275,12 @@ function Lines({ items }: { items: DailyItem[] }) {
                 <TickerCell key={ticker} ticker={ticker} name={false} />
               ))}
             </span>
+          ) : null}
+          {item.go ? (
+            <>
+              {" "}
+              <Go go={item.go} className="hm-daily-go" />
+            </>
           ) : null}
         </li>
       ))}

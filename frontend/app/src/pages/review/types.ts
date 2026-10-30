@@ -88,6 +88,7 @@ export type Review = {
   lines?: ReviewLines | null;
   /** What the page says about the book as a whole (`review.note_<key>`). */
   notes: ReviewNote[];
+  investor_plan?: ReviewInvestorPlan;
 };
 
 export type ReviewLines = {
@@ -108,6 +109,8 @@ export type ReviewNote = {
     | "cash_heavy"
     | "crypto_heavy"
     | "tax_offset"
+    | "plan_over"
+    | "plan_under"
     | string;
   count: number | null;
   /** Yahoo's sector name, English. */
@@ -121,6 +124,23 @@ export type ReviewNote = {
   tickers: string[];
   /** ISO day a repurchase stops undoing the loss. */
   day: string | null;
+  /** The plan's bucket (`plan_over`/`plan_under`): stocks, cash… */
+  bucket?: string | null;
+  /** That bucket's target, a fraction like `weight`. */
+  target?: number | null;
+};
+
+/** How the investor plan shaped the page (`GET /review` `investor_plan`). */
+export type ReviewInvestorPlan = {
+  /** The account saved a plan; false keeps every line the page's own. */
+  set: boolean;
+  /** One of the plan's caps replaced a line the page would have drawn. */
+  limits_used: boolean;
+  drift: { bucket: string; weight: number; target: number; side: "over" | "under" }[];
+  /** ISO day of the next scheduled contribution. */
+  next_contribution: string | null;
+  /** Its amount in the page's base currency. */
+  contribution: number | null;
 };
 
 /** Where a name sat on the review's map the day a window opened. */

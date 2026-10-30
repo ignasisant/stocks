@@ -70,6 +70,9 @@ export type DailyItem = {
   tickers: string[];
   /** alerts — an alert of the reader's own fired; watch — everything else. */
   section?: "alerts" | "watch";
+  /** The page that resolves it, a shell path with its query (`/review`,
+   * `/profile?tab=plan`); empty for a context line. */
+  go?: string;
 };
 
 type DailyBookRow = {

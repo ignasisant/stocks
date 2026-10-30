@@ -99,6 +99,8 @@ export function noteText(
     weight: percent(note.weight, lang) ?? na,
     amount: money(note.amount, taxCurrency, lang) ?? na,
     tickers: (note.tickers ?? []).join(", "),
+    bucket: note.bucket ? t(`profile.plan_bucket_${note.bucket}`) : "",
+    target: percent(note.target ?? null, lang) ?? na,
   });
   return note.day
     ? `${text} ${t(`review.note_${note.key}_window`, { date: note.day })}`

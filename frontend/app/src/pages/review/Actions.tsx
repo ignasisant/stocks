@@ -36,7 +36,7 @@ import { useHelp } from "./lines";
 import { useReturns } from "./returns";
 import { planMoves, waitingMoves } from "./filter";
 import { longDay, money, percent, verdictTone } from "./format";
-import type { Review, ReviewRow } from "./types";
+import type { Review, ReviewInvestorPlan, ReviewRow } from "./types";
 import { jurisdictionLabel } from "../portfolio/format";
 
 // The chart and its code wait for the full read: folded, the plan is figures.
@@ -158,6 +158,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
                 total={plan.new_money ?? 0}
                 book={data.total}
                 base={data.base}
+                upcoming={data.investor_plan}
                 brief
               />
             ) : null}
@@ -175,6 +176,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
           total={plan.new_money ?? 0}
           book={data.total}
           base={data.base}
+          upcoming={data.investor_plan}
         />
       ) : null}
       {moves.length > 0 ? (
@@ -223,17 +225,21 @@ function Waiting({
   total,
   book,
   base,
+  upcoming,
   brief = false,
 }: {
   rows: ReviewRow[];
   total: number;
   book: number | null;
   base: string;
+  /** The plan's contribution, which the list is sized to when it is set. */
+  upcoming?: ReviewInvestorPlan;
   brief?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
+  const due = upcoming?.next_contribution && upcoming.contribution;
   return (
     <div className={`ag-rev-mvs${brief ? "" : " ag-rev-wait"}`}>
       <h3 className="ag-rev-mvs-head">
@@ -243,6 +249,14 @@ function Waiting({
         </span>
         <span className="ag-rev-tone-up">{money(total, base, lang, true)}</span>
       </h3>
+      {due ? (
+        <p className="ag-rev-caption">
+          {t("review.wait_contribution", {
+            date: longDay(upcoming.next_contribution ?? "", lang),
+            amount: money(upcoming.contribution, base, lang) ?? na,
+          })}
+        </p>
+      ) : null}
       <ul className="ag-rev-mv-list">
         {rows.map((row) => {
           const from = row.target_weight ?? row.weight;

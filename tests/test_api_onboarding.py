@@ -119,6 +119,7 @@ def test_the_capabilities_are_read_for_this_account_not_a_session(
         "import": False,
         "ai": False,
         "telegram": False,
+        "plan": False,
     }
     # The watchlist file exists and is not the seeded one, so this is true —
     # proof the predicate read the account's paths and not a missing session.

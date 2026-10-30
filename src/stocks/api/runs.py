@@ -114,13 +114,15 @@ class Busy(Exception):
 
 def start(*, owner: str, rid: str, thread: str, question: str,
           events: Callable[[Run], Generator[str]], stopped: str,
-          failed: Callable[[str], bool]) -> Run:
+          failed: Callable[[str], bool],
+          done: Callable[[Run], object] | None = None) -> Run:
     """Register run `rid` and start answering it on a worker thread.
 
     `events` is the turn's frame stream; the worker drives it to the end,
     keeping every frame. `stopped` is the frame a stop ends the log with, so a
     second window tailing the same run is told why it ended. `failed` says
-    whether a frame is the run's refusal (`Run.failed`).
+    whether a frame is the run's refusal (`Run.failed`). `done` runs once an
+    answer was written to the end — not after a stop or a refusal.
     """
     run = Run(id=rid, owner=owner, thread=thread, question=question)
     with _lock:
@@ -133,18 +135,19 @@ def start(*, owner: str, rid: str, thread: str, question: str,
         mine = [r for r in mine if r.id != rid]
         if len(mine) >= PER_OWNER:
             # The oldest finished one goes; live ones are each a thread's own.
-            done = sorted((r for r in mine if not r.live), key=lambda r: r.started)
-            if not done:
+            ended = sorted((r for r in mine if not r.live), key=lambda r: r.started)
+            if not ended:
                 raise Busy(thread)
-            del _runs[_key(owner, done[0].id)]
+            del _runs[_key(owner, ended[0].id)]
         _runs[_key(owner, rid)] = run
-    threading.Thread(target=_work, args=(run, events, stopped, failed),
+    threading.Thread(target=_work, args=(run, events, stopped, failed, done),
                      name=f"chat-run-{rid[:8]}", daemon=True).start()
     return run
 
 
 def _work(run: Run, events: Callable[[Run], Generator[str]], stopped: str,
-          failed: Callable[[str], bool]) -> None:
+          failed: Callable[[str], bool],
+          done: Callable[[Run], object] | None = None) -> None:
     stream = events(run)
     refused = False
     try:
@@ -168,6 +171,9 @@ def _work(run: Run, events: Callable[[Run], Generator[str]], stopped: str,
         obs.event("chat.run_ended", stopped=run.stop.is_set(), failed=refused,
                   seconds=round(time.monotonic() - run.started, 1),
                   tailed=run.seen)
+        if done is not None and not run.stop.is_set() and not refused:
+            with obs.swallow("chat.run_done"):
+                done(run)
 
 
 def find(owner: str, rid: str) -> Run | None:

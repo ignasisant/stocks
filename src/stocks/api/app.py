@@ -57,6 +57,7 @@ from stocks.api.routes import (
     prefs,
     progress,
     pulse,
+    push,
     reference,
     review,
     search,
@@ -388,6 +389,7 @@ _private.include_router(learn.router)
 _private.include_router(brief.router)
 _private.include_router(onboarding.router)
 _private.include_router(notify.router)
+_private.include_router(push.router)
 _private.include_router(feedback.router)
 _private.include_router(client_error.router)
 _private.include_router(vitals.router)

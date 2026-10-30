@@ -519,6 +519,139 @@
   color: var(--ag-text-primary);
 }
 
+/* ------------------------------------------------------------- the plan */
+/* The AI press above the form: a line of why on the left, the press on the
+   right; on a narrow column the press goes under the line, full width. */
+.pl-ask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+.pl-ask-sub {
+  margin: 0;
+  max-width: 60ch;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+}
+.pl-ask-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  min-height: 44px;
+}
+@container ag-main (max-width: 40rem) {
+  .pl-ask {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pl-ask-btn {
+    justify-content: center;
+  }
+}
+
+/* A target field and, beside it, today's share as a fill with the target as
+   a tick across it. The bar takes the rest of the line and wraps under the
+   field when there is no room, never squeezing the figure. */
+.pl-num {
+  width: 5.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* A figure and, under it, why the text typed is not one. The reason only
+   takes room while there is one. */
+.pl-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pl-num[aria-invalid="true"] {
+  border-color: var(--ag-down);
+}
+.pl-err {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-down);
+  line-height: 1.4;
+}
+.pl-err:empty {
+  display: none;
+}
+.pl-mix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  width: 100%;
+}
+.pl-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.pl-bar {
+  position: relative;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-purple-800);
+}
+.pl-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-purple-400);
+}
+.pl-bar-target {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ag-text-primary);
+}
+.pl-bar-cap {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pl-sum {
+  margin: 0;
+  padding: 12px 20px 16px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+.pl-sum-off,
+.pl-warn {
+  color: var(--ag-warn);
+}
+/* Where the contribution leads, and the way to the tab that draws it. On a
+   finger the link is a full-height target of its own line. */
+.pl-leads-link {
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.pl-leads-link:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .pl-leads-link:hover {
+    text-decoration: underline;
+  }
+}
+@media (pointer: coarse) {
+  .pl-leads-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* ------------------------------------------------------------- the rail */
 .pr-sum {
   display: flex;
@@ -914,6 +1047,9 @@
   }
   .pr-cardbody {
     padding: 0 16px 16px;
+  }
+  .pl-sum {
+    padding: 12px 16px 14px;
   }
   .pr-ident {
     padding: 14px 16px;

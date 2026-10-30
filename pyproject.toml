@@ -116,6 +116,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [dependency-groups]
 dev = [
+    "http-ece>=1.2.1",
     "hypothesis>=6.170.5",
     "pytest>=9.1.1",
     "pytest-playwright>=0.9.0",

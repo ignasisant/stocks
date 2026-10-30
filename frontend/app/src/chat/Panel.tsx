@@ -20,6 +20,7 @@ import type {
 } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useT } from "../shell/i18n";
+import { useWidth } from "../shell/useWidth";
 import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
@@ -29,40 +30,40 @@ import { Composer } from "./Composer";
 import { Empty } from "./Empty";
 import { Glyph, ProviderMark } from "./icons";
 import { MemoryView } from "./Memory";
+import { PushOffer } from "./PushOffer";
 import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
+import { Tabs } from "./Tabs";
+import { close as closeTab, fit, readTabs, same, saveTabs } from "./strip";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
 import { rates, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
 import type { Chat } from "./useChat";
 import {
-  WIDTHS,
   applyPixels,
-  applyWidth,
   rememberPixels,
   restoreWidth,
   settle,
-  storedWidth,
   stretchAt,
+  WIDE,
+  widen,
   widthAt,
-  type WidthKey,
 } from "./width";
 
 /**
- * The grab strip on the panel's left edge.
- *
- * The three presets cover the three shapes a conversation takes; this covers
- * the reader who wants their own. Pointer events rather than mouse ones, and
- * the pointer is captured on press: the cursor spends the whole drag over the
- * page *behind* the panel, and without capture the first move outside the
- * strip would end it.
+ * The grab strip on the panel's left edge: the one way to size the drawer.
+ * Three preset buttons used to sit in the header beside it and were dropped —
+ * three icons for one choice the edge already makes, taking room from the
+ * thread's name. Pointer events rather than mouse ones, and the pointer is
+ * captured on press: the cursor spends the whole drag over the page *behind*
+ * the panel, and without capture the first move outside the strip would end
+ * it.
  *
  * Keyboard readers get the same range through the arrow keys, because a
- * separator nobody can reach is a control only half the readers have — the
- * presets beside it are the coarse version of the same choice.
+ * separator nobody can reach is a control only half the readers have.
  */
-function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
+function Grip() {
   const t = useT();
 
   const start = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -83,7 +84,7 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
       // A release past a limit springs back to it rather than snapping.
       const x = ended.clientX - grab;
       if (stretchAt(x) !== widthAt(x)) settle();
-      onWidth(rememberPixels(widthAt(x)));
+      rememberPixels(widthAt(x));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", stop);
@@ -101,7 +102,7 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
     const now = event.currentTarget.parentElement?.getBoundingClientRect().width;
     if (!now) return;
     event.preventDefault();
-    onWidth(rememberPixels(widthAt(window.innerWidth - (now + step))));
+    rememberPixels(widthAt(window.innerWidth - (now + step)));
   };
 
   return (
@@ -302,12 +303,10 @@ export default function Panel({
   // The width lives on the document, which a reload clears; the choice lives
   // in the browser, which one does not. Put the second back on the first as
   // soon as there is a panel to size.
-  const [width, setWidth] = useState<WidthKey | null>(storedWidth);
   useEffect(restoreWidth, []);
-  const resize = (key: WidthKey) => {
-    setWidth(key);
-    applyWidth(key);
-  };
+  // How wide the panel is now, dragged or restored: a wide table's "See wide"
+  // is offered only while there is room still to give it.
+  const [headRef, panelWidth] = useWidth<HTMLElement>(420);
 
   // The newest turn stays in view while it writes itself — until the reader
   // scrolls up, and then it stops. That second half is why this is a library
@@ -332,8 +331,30 @@ export default function Panel({
     resize: calm ? "instant" : undefined,
   });
 
+  // The tabs over a wide drawer (`strip.ts`): the thread on screen joins them,
+  // and a deleted one leaves, whichever way either happened.
+  const [tabs, setTabs] = useState<string[]>(readTabs);
+  useEffect(() => {
+    setTabs((was) => {
+      const next = fit(was, chat.activeId, chat.threads);
+      if (same(was, next)) return was;
+      saveTabs(next);
+      return next;
+    });
+  }, [chat.activeId, chat.threads]);
+  const dropTab = (cid: string) => {
+    const next = closeTab(tabs, cid, chat.activeId);
+    setTabs(next.tabs);
+    saveTabs(next.tabs);
+    if (next.open) openThread(next.open);
+  };
+
   const open = chat.threads?.find((c) => c.id === chat.activeId);
-  // Regenerate, for a finished answer: a refusal carries its own Retry.
+  // Some other thread is still being written: the way to the list breathes,
+  // as its row does, until the answer lands and the dot turns to "new".
+  const elsewhere = !!chat.threads?.some((c) => c.answering && c.id !== chat.activeId);
+  // Regenerate, for a finished answer, as an icon in its foot: a refusal
+  // carries its own Retry.
   const last = chat.turns[chat.turns.length - 1];
   const regen =
     !chat.busy &&
@@ -357,8 +378,8 @@ export default function Panel({
 
   return (
     <>
-      <Grip onWidth={setWidth} />
-      <header className="ag-chat-head">
+      <Grip />
+      <header className="ag-chat-head" ref={headRef}>
         <button
           type="button"
           className="ag-chat-thread-btn"
@@ -366,17 +387,20 @@ export default function Panel({
           aria-label={
             chat.unread.size > 0
               ? `${t("chat.threads_title")} · ${t("chat.unread_any")}`
-              : t("chat.threads_title")
+              : elsewhere
+                ? `${t("chat.threads_title")} · ${t("chat.answering_any")}`
+                : t("chat.threads_title")
           }
           onClick={() => setView("threads")}
         >
           <Glyph name="forum" size={16} />
-          {/* An answer landed on another thread: the way to the list says
-              so, since the list is where it is marked. */}
-          {chat.unread.size > 0 && (
+          {/* An answer landed on another thread, or is still being written
+              there: the way to the list says so, since the list is where it
+              is marked. A phone has no tabs, so this is all it gets. */}
+          {(chat.unread.size > 0 || elsewhere) && (
             <span
               className="ag-chat-dot ag-chat-head-dot"
-              data-state="unread"
+              data-state={chat.unread.size > 0 ? "unread" : "answering"}
               aria-hidden="true"
             />
           )}
@@ -409,27 +433,9 @@ export default function Panel({
         >
           <Glyph name="add" size={18} />
         </button>
-        {/* Three widths, because a table or a set of sources is unreadable in
-            a 380px column, and an import review wants the screen. Hidden on a
-            phone, where the panel is already the whole viewport. */}
-        <div className="ag-chat-widths" role="group" aria-label={t("chat.width")}>
-          {WIDTHS.map(({ key, icon }) => (
-            <button
-              key={key}
-              type="button"
-              className={`ag-chat-icon ag-chat-width-${key}${key === width ? " ag-chat-width-on" : ""}`}
-              title={t(`chat.width_${key}`)}
-              aria-label={t(`chat.width_${key}`)}
-              aria-pressed={key === width}
-              onClick={() => resize(key)}
-            >
-              <Glyph name={icon} size={16} />
-            </button>
-          ))}
-        </div>
         <button
           type="button"
-          className="ag-chat-icon ag-chat-head-wide"
+          className="ag-chat-icon ag-chat-head-wide ag-chat-head-end"
           title={t("chat.settings_short")}
           aria-label={t("chat.settings_short")}
           aria-pressed={view === "settings" || view === "memory"}
@@ -439,8 +445,9 @@ export default function Panel({
         >
           <Glyph name="settings" size={18} />
         </button>
-        {/* A phone keeps two controls in the header, at 44px: this menu
-            (new conversation, the list, settings) and Close. */}
+        {/* A phone keeps one control in the header, at 44px: this menu
+            (new conversation, the list, settings). Close is desktop-only:
+            there the tab bar's other items and the handle's swipe leave. */}
         <HeadMenu
           onNew={() => {
             setView("thread");
@@ -451,7 +458,7 @@ export default function Panel({
         />
         <button
           type="button"
-          className="ag-chat-icon"
+          className="ag-chat-icon ag-chat-head-wide"
           title={t("chat.close")}
           aria-label={t("chat.close")}
           onClick={onClose}
@@ -462,6 +469,17 @@ export default function Panel({
       {/* The handle a finger pulls the phone's drawer down by (`Drawer`'s
           swipe); nothing to drag on a desktop, where it is not drawn. */}
       <div className="ag-chat-handle" aria-hidden="true" />
+
+      {chat.threads && (
+        <Tabs
+          tabs={tabs}
+          threads={chat.threads}
+          activeId={chat.activeId}
+          unread={chat.unread}
+          onOpen={openThread}
+          onClose={dropTab}
+        />
+      )}
 
       {provider && (
         <div className="ag-chat-status">
@@ -565,11 +583,7 @@ export default function Panel({
               </p>
             )}
             <div
-              className={[
-                "ag-chat-scroll",
-                regen && "ag-chat-scroll-regen",
-                below && "ag-chat-scroll-fade",
-              ]
+              className={["ag-chat-scroll", below && "ag-chat-scroll-fade"]
                 .filter(Boolean)
                 .join(" ")}
               ref={scrollRef}
@@ -610,11 +624,7 @@ export default function Panel({
                       onPickAi={() => setView("settings")}
                       // A table wider than the column it landed in: one press
                       // to the next width that holds it.
-                      onWiden={
-                        phone || width === "wide" || width === "full"
-                          ? undefined
-                          : () => resize(window.innerWidth >= 1100 ? "wide" : "full")
-                      }
+                      onWiden={phone || panelWidth >= WIDE ? undefined : widen}
                       onDecide={chat.decide}
                       onUndo={chat.undo}
                       onLeave={onPark ?? onClose}
@@ -627,6 +637,9 @@ export default function Panel({
                       // history is already there and does not.
                       fresh={chat.busy && i >= all.length - 2}
                       onRated={(vote) => turn.id && chat.rated(turn.id, vote)}
+                      onRegenerate={
+                        regen && i === all.length - 1 ? chat.regenerate : undefined
+                      }
                     />
                   ))
                 ) : chat.opening ? (
@@ -682,37 +695,25 @@ export default function Panel({
                     label={t("chat.work_reading", { filename: chat.work.filename })}
                   />
                 )}
+                {/* An answer taking a while is when "tell me when it's ready"
+                    means something; the offer waits for that itself. */}
+                <PushOffer busy={chat.busy} />
               </div>
             </div>
             {/* Escaping the lock has to be undoable, or the reader who
                 scrolled up to check something is left scrolling back down
                 through an answer that grew while they read. */}
-            {/* Regenerate, and only that: clearing the thread is destructive
-                and lives in the settings view, behind a confirmation. Drawn
-                for a finished answer — a refusal carries its own Retry. */}
-            {(regen || below) && (
+            {below && (
               <div className="ag-chat-float">
-                {below && (
-                  <button
-                    type="button"
-                    className="ag-chat-down"
-                    title={t("chat.scroll_down")}
-                    aria-label={t("chat.scroll_down")}
-                    onClick={() => void scrollToBottom(calm ? "instant" : undefined)}
-                  >
-                    <Glyph name="down" size={18} />
-                  </button>
-                )}
-                {regen && (
-                  <button
-                    type="button"
-                    className="ag-chat-regen"
-                    onClick={chat.regenerate}
-                  >
-                    <Glyph name="refresh" size={13} />
-                    {t("chat.regenerate")}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="ag-chat-down"
+                  title={t("chat.scroll_down")}
+                  aria-label={t("chat.scroll_down")}
+                  onClick={() => void scrollToBottom(calm ? "instant" : undefined)}
+                >
+                  <Glyph name="down" size={18} />
+                </button>
               </div>
             )}
           </div>

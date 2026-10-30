@@ -51,7 +51,8 @@ def answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Dai
         generated=action.generated or None,
         pending=pending,
         items=[
-            DailyItem(**item, section=daily.section_of(item)) for item in action.items
+            DailyItem(**item, section=daily.section_of(item), go=daily.go_of(item))
+            for item in action.items
         ],
         upgradable=fresh and not pending and daily.wants_upgrade(action),
         analysed=[k for k, v in action.analysis.items() if v],

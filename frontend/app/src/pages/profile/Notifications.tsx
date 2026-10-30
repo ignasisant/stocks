@@ -12,6 +12,7 @@
 
 import { useT } from "../../shell/i18n";
 import type { Settings } from "./prefs";
+import { PushCard } from "./pushCard";
 import { useTelegram } from "./telegram";
 import { Card, Failure, Inline, Prose, Row, Toggle } from "./ui";
 
@@ -208,6 +209,8 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
             </Row>
           </Card>
         )}
+
+        <PushCard />
       </div>
 
       <aside className="pr-rail">

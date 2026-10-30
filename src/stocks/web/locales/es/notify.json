@@ -75,5 +75,8 @@
   "notify.usage_skill_col_mean": "$/resp",
   "notify.usage_skill_col_up": "+",
   "notify.usage_skill_col_down": "-",
-  "notify.usage_skills_total": "{answers} respuestas · {usd} $ en total"
+  "notify.usage_skills_total": "{answers} respuestas · {usd} $ en total",
+  "notify.push_answer_title": "Tu respuesta está lista",
+  "notify.push_test_title": "Las notificaciones de TopStocks funcionan",
+  "notify.push_test_body": "Este dispositivo recibirá un aviso cuando una respuesta esté lista."
 }

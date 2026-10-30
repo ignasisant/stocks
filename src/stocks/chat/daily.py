@@ -91,8 +91,9 @@ TITLE_CHARS = 48
 # The sections a line is filed under (`section_of`).
 ALERTS: Final = "alerts"
 WATCH: Final = "watch"
-# The kinds filed under today's alerts: the reader's own triggers, fired.
-_FIRED: Final = (signals.CRITERION_HIT, signals.ALERT_HIT)
+# The kinds filed under today's alerts: the reader's own triggers, fired, then
+# a held name's red-flag filing — each on the card whatever the model wrote.
+_FIRED: Final = (signals.CRITERION_HIT, signals.ALERT_HIT, signals.FILING_FLAG)
 # Where a brief stands on a card (`DailyAction.brief`): "" no brief; pending,
 # its data still being fetched; written, its sections on the card; missed, no
 # model wrote it and the default card stands in.
@@ -501,6 +502,7 @@ def build_facts(
     index: dict | None = None,
     brief: dict | None = None,
     money=None,
+    plan: dict | None = None,
 ) -> dict:
     """What the card is written from: the candidate actions, plus context.
 
@@ -533,6 +535,9 @@ def build_facts(
         index: the index's day / week / month in `currency`.
         brief: the reader's brief with its data (`daily_routines.gather`), or
             only its lines while that is fetched (`daily_routines.seeded`).
+        plan: the book against a saved plan (`briefing.plan_fact`): whether
+            it holds and when the next contribution is — what a day with
+            nothing else to say can close on. None without a plan.
     """
     from stocks.analysis.portfolio import basket_change, money_change, priced_totals
 
@@ -548,6 +553,8 @@ def build_facts(
         facts["index"] = dict(index)
     if brief:
         facts["brief"] = dict(brief)
+    if plan:
+        facts["plan"] = dict(plan)
     if tbl is not None and not tbl.empty:
         # Cost over the priced rows only: against the full basis a partly
         # priced book reads as a crash, and the briefing would open on it.
@@ -677,6 +684,16 @@ _KINDS = (
     "it, and name it in the headline when it is the day's news.\n"
     "- alert_near: the same alert is within a few percent of firing "
     "(gap_pct).\n"
+    "- filing_flag: a company the user HOLDS filed something with the SEC on "
+    "`date` that puts its accounts, debt or listing in doubt. `flag`: 4.02 = "
+    "past financial statements can no longer be relied on; 4.01 = auditor "
+    "changed (usually routine; the filing says whether there was a "
+    "disagreement); 1.03 = bankruptcy or receivership; 2.04 = debt made due "
+    "early; 3.01 = the exchange says a listing rule is no longer met; late = "
+    "the annual or quarterly report will be filed late (`form`). Read off "
+    "the filing's own form and item codes, not its text: say what was filed, "
+    "never what it means for the price, and that the next step is to read "
+    "the filing against the reason they hold it.\n"
     "- harvest: an open loss (loss) on a position, against gains already "
     "realised this tax year (gain_ytd); `offset` is what selling would cancel. "
     "`repurchase_window` is how long a repurchase would block the loss "
@@ -708,6 +725,37 @@ _KINDS = (
     "- drawdown: a position is `pnl_pct` under its cost. The moment to re-read "
     "the thesis, not a sell instruction.\n"
     "- concentration: one name is `weight_pct` of the whole book.\n"
+    "- plan_drift: a kind of asset in THE USER'S OWN PLAN (`bucket`: stocks, "
+    "equity_funds, bonds, cash = money market funds, crypto) is `actual_pct` "
+    "of the book against the `target_pct` they set, `gap_pp` points off "
+    "(`side` over or under), past their `band_pp` band. Over: new money goes "
+    "elsewhere until it is back. Under: where the next money can go. Never "
+    "propose selling to fix a drift — redirecting new money does it without "
+    "the tax.\n"
+    "- plan_limit: past a cap THE USER'S PLAN sets: `scope` position (the "
+    "ticker is `weight_pct` of the book, cap `cap_pct`) or sector (`sector`, "
+    "same fields). Their line, not the app's: the question is trim it or "
+    "raise the cap, and the Sell or add page sizes the trim.\n"
+    "- contribution_due: the regular contribution in the user's plan "
+    "(`amount` in `currency`) is due on `date`, in `in_days` days; `under` "
+    "lists the plan's kinds of asset below target, where it rebalances the "
+    "book without selling. Name no security for it: Sell or add lists the "
+    "user's own candidates.\n"
+    "- reserve: cash is `cash_pct` of the book, `state` low (under the plan's "
+    "`min_pct`) or high (over its `max_pct`). Cash is money market funds plus "
+    "the uninvested cash the user stated in their plan; their emergency fund "
+    "is never in it.\n"
+    "- cash_stale: the uninvested cash the user stated in their plan was last "
+    "updated `days` days ago (`as_of`). One short line: update it in My plan "
+    "so the mix and the reserve read right.\n"
+    "- no_exit_rule: the user's largest company or coin position, "
+    "`weight_pct` of the book, has neither an exit rule nor a price alert. "
+    "The suggestion is to write down now what would make them sell, never "
+    "to sell.\n"
+    "- plan_missing: the user has no plan yet (target mix, caps, "
+    "contribution, reserve). One short line at most, at the end, saying "
+    "where it lives (Profile, My plan) and what the card would then measure; "
+    "never ahead of a real trigger.\n"
     "- low_52w: a watchlist name (not held) is `gap_pct` from its 52-week low.\n"
     "- market: the index itself. `trend` is where it sits in its own trend "
     "(up / turning_down / turning_up / down), `from_high_pct` how far under "
@@ -742,7 +790,9 @@ _SHAPE = (
     "how the portfolio did against the index, then the one or two things "
     "that matter most, each named in a few words — e.g. 'Portfolio +0.8% vs "
     "S&P +0.3%; NVDA reports Thursday, your AAPL alert fired'. Without "
-    "`index`, the things alone.\n"
+    "`index`, the things alone. With `plan.on_track` and no action about the "
+    "plan, a day with little else may close on the plan holding, with "
+    "`plan.next_contribution` when there is one.\n"
     f"- items: {MIN_BULLETS} to {MAX_BULLETS}, ordered by how much they "
     "matter. `key` is the `key` of the action the line is about, copied "
     f"exactly. `line` is at most {BULLET_CHARS} characters: what to do or "
@@ -1646,6 +1696,9 @@ def _short_line(action: dict, lang: str) -> str:
         bank=_bank(action, lang),
         name=_deadline(action, lang) if kind == signals.TAX_DEADLINE else "",
         sector=translate(sector_slug, lang) if has(sector_slug) else sector,
+        bucket=_bucket(action.get("bucket"), lang) if action.get("bucket") else "",
+        subject=str(action.get("ticker") or "")
+        or (translate(sector_slug, lang) if has(sector_slug) else sector),
         index=action.get("index") or "",
         trend=translate(f"home.daily_trend_{action.get('trend') or 'unknown'}", lang),
         currency=action.get("currency") or "",
@@ -1696,11 +1749,122 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     }
 
 
+_PLAN_KINDS = frozenset({
+    signals.PLAN_DRIFT, signals.PLAN_LIMIT, signals.CONTRIBUTION_DUE,
+    signals.RESERVE, signals.NO_EXIT_RULE, signals.PLAN_MISSING,
+    signals.CASH_STALE,
+})
+
+
+def _share(value, lang: str, digits: int = 0) -> str:
+    """A plan percentage as printed: "35%"."""
+    return f"{fmt_num(float(value or 0), digits, lang)}%"
+
+
+def _bucket(name, lang: str) -> str:
+    """A plan bucket's own label, the one the plan form shows."""
+    from stocks.web.i18n import translate
+
+    return translate(f"profile.plan_bucket_{name or 'stocks'}", lang)
+
+
+def _sector_label(sector: str, lang: str) -> str:
+    from stocks.web.i18n import has, translate
+
+    slug = f"sentiment.sector_{sector.lower().replace(' ', '_')}"
+    return translate(slug, lang) if has(slug) else sector
+
+
+def _plan_line(action: dict, lang: str, ccy: str) -> str:
+    """A line about the reader's plan (`signals.plan_candidates`)."""
+    from stocks.web.i18n import translate
+
+    kind = str(action.get("kind") or "")
+    key = f"home.daily_act_{kind}"
+    if kind == signals.PLAN_DRIFT:
+        return translate(
+            f"{key}_{action.get('side') or 'over'}", lang,
+            bucket=_bucket(action.get("bucket"), lang),
+            actual=_share(action.get("actual_pct"), lang),
+            target=_share(action.get("target_pct"), lang),
+            band=fmt_num(float(action.get("band_pp") or 0), 0, lang),
+        )
+    if kind == signals.PLAN_LIMIT:
+        scope = str(action.get("scope") or "position")
+        return translate(
+            f"{key}_{scope}", lang, ticker=str(action.get("ticker") or ""),
+            sector=_sector_label(str(action.get("sector") or ""), lang),
+            weight=_share(action.get("weight_pct"), lang),
+            cap=_share(action.get("cap_pct"), lang),
+        )
+    if kind == signals.CONTRIBUTION_DUE:
+        line = translate(
+            key, lang, amount=_money(abs(float(action.get("amount") or 0)),
+                                     ccy, lang).replace("+", ""),
+            when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")),
+        )
+        under = [_bucket(b, lang) for b in action.get("under") or []]
+        if under:
+            return line + " " + translate(f"{key}_under", lang,
+                                          buckets=", ".join(under))
+        return line + " " + translate(f"{key}_even", lang)
+    if kind == signals.RESERVE:
+        return translate(
+            f"{key}_{action.get('state') or 'low'}", lang,
+            cash=_share(action.get("cash_pct"), lang, 1),
+            min=_share(action.get("min_pct"), lang),
+            max=_share(action.get("max_pct"), lang),
+        )
+    if kind == signals.NO_EXIT_RULE:
+        return translate(key, lang, ticker=str(action.get("ticker") or ""),
+                         weight=_share(action.get("weight_pct"), lang))
+    if kind == signals.PLAN_MISSING:
+        return translate(key, lang)
+    if kind == signals.CASH_STALE:
+        return translate(key, lang, days=str(int(action.get("days") or 0)))
+    return ""
+
+
+def go_of(item: dict) -> str:
+    """Where a line's reader goes to act on it: the page that resolves the
+    trigger, as a shell path with its query. Empty for a context line, and
+    for a line only about one name (a 52-week low, an alert, a filing): its
+    ticker cell already opens that name's page."""
+    kind = str(item.get("kind") or "")
+    if kind in (signals.PLAN_DRIFT, signals.RESERVE, signals.PLAN_MISSING,
+                signals.CASH_STALE):
+        return "/profile?tab=plan"
+    if kind in (signals.PLAN_LIMIT, signals.CONTRIBUTION_DUE,
+                signals.CONCENTRATION, signals.DRAWDOWN):
+        return "/review"
+    if kind in (signals.HARVEST, signals.TAX_DEADLINE, signals.TAX_YEAR_END,
+                signals.TAX_BRACKET, signals.REPURCHASE_CLEAR):
+        return "/portfolio?tab=tax"
+    if kind in (signals.EARNINGS, signals.EARNINGS_RESULT):
+        return "/earnings"
+    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
+                signals.NO_EXIT_RULE):
+        return "/profile?tab=journal"
+    if kind == signals.SECTOR_TILT:
+        return "/sector"
+    return ""
+
+
 def _criterion_key(key: str, action: dict) -> str:
     """An event rule's line quotes what it was met on instead of a figure."""
     from stocks.chat import journal
 
     return f"{key}_event" if action.get("rule") in journal.EVENT_RULES else key
+
+
+def _flag(action: dict, lang: str) -> str:
+    """What a filing flag's filing says, in a clause: "it says past accounts
+    can no longer be relied on"."""
+    from stocks.web.i18n import translate
+
+    flag = str(action.get("flag") or "late").replace(".", "_")
+    return translate(f"home.daily_flag_{flag}", lang)
 
 
 def _action_line(action: dict, lang: str, ccy: str) -> str:
@@ -1750,6 +1914,10 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
                 "home.daily_beat" if action.get("beat") else "home.daily_missed", lang
             ),
         )
+    if kind == signals.FILING_FLAG:
+        return translate(key, lang, ticker=ticker,
+                         date=_short_date(action.get("date")),
+                         what=_flag(action, lang))
     if kind == signals.MACRO_EVENT:
         return translate(
             key, lang, bank=_bank(action, lang),
@@ -1820,6 +1988,8 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
             key, lang, ticker=ticker,
             weight=f"{fmt_num(float(action.get('weight_pct') or 0), 0, lang)}%",
         )
+    if kind in _PLAN_KINDS:
+        return _plan_line(action, lang, ccy)
     if kind == signals.LOW_52W:
         return translate(
             key, lang, ticker=ticker,
@@ -1942,7 +2112,16 @@ def computed(facts: dict, lang: str, day: date) -> DailyAction:
         # the quiet part first so the card never poses a figure as a decision.
         # With the Portfolio section on the card the move is there already.
         change = {} if book else facts.get("day") or {}
-        headline = _summary(lead + [tr("no_actions")])
+        plan = facts.get("plan") or {}
+        holds = bool(plan.get("on_track"))
+        headline = _summary(lead + [tr("plan_holds" if holds else "no_actions")])
+        if holds and plan.get("next_contribution"):
+            bullets.append(tr(
+                "plan_next",
+                date=_short_date(plan["next_contribution"]),
+                amount=_money(abs(float(plan.get("amount") or 0)), ccy,
+                              lang).replace("+", ""),
+            ))
         if change.get("pct") is not None:
             # "Portfolio +0.19% today" is a lie off-hours: the figure is the
             # last completed session's. Same rule the model is held to.
@@ -2399,6 +2578,12 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
             level=num("level"), price=num("price"),
             gap=f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}%",
         )
+    if kind in _PLAN_KINDS:
+        return _plan_line(action, lang, ccy) + " " + translate(key, lang)
+    if kind == signals.FILING_FLAG:
+        return translate(key, lang, ticker=ticker, form=action.get("form") or "",
+                         date=_short_date(action.get("date")),
+                         what=_flag(action, lang))
     if kind == signals.HARVEST:
         text = translate(
             key, lang, ticker=ticker, loss=money(action.get("loss")),

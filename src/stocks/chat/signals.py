@@ -82,6 +82,34 @@ RESULT_DAYS = 3
 # Within this of the 52-week low, a watchlist name is worth a look.
 LOW_52W_PCT = 3.0
 
+# --- the reader's plan -------------------------------------------------------
+# A drawdown is a re-read sooner for a reader who said they could not stand
+# one (`web.auth` risk levels); an unset profile keeps DRAWDOWN_PCT.
+DRAWDOWN_BY_RISK = {
+    "conservative": 15.0,
+    "balanced": 20.0,
+    "aggressive": 25.0,
+    "very_aggressive": 35.0,
+}
+# A contribution this close is a date to choose where the money goes.
+CONTRIBUTION_DAYS = 3
+# A position this big without an exit rule or a price alert on it is one the
+# reader would be deciding about only after the fact: a share of the plan's
+# own position cap, or of CONCENTRATION_PCT without one.
+UNGUARDED_SHARE = 0.5
+
+# --- the filings --------------------------------------------------------------
+# The 8-K items that put a company's accounts, its debt or its listing in
+# doubt, and the urgency each starts from. An auditor change sits far under
+# the rest: most are a rotation or a merger of firms, and the 8-K itself says
+# whether there was a disagreement. "late" is a Form 12b-25 notice
+# (edgar.LATE_FORMS): the annual or quarterly report will not be on time.
+FLAG_URGENCY = {"1.03": 89, "4.02": 88, "2.04": 85, "3.01": 84, "late": 84,
+                "4.01": 64}
+# A flag this old is still unread news to a reader who was away; the card's
+# memory (`repeat`) is what keeps it to one showing.
+FLAG_DAYS = 30
+
 # --- the calendars ------------------------------------------------------------
 # A rate decision this close is worth planning around; one this recent is
 # still the backdrop. The ECB's window is longer because its deposit rate only
@@ -138,6 +166,10 @@ ALERT_HIT = "alert_hit"
 # moment, that this is when they would act.
 CRITERION_HIT = "criterion_hit"
 CRITERION_NEAR = "criterion_near"
+# A held company told the SEC something that puts its accounts or its listing
+# in doubt (`filing_signals`). Nobody has to have written a rule for it: an
+# auditor walking or a restatement is a re-read for any holder.
+FILING_FLAG = "filing_flag"
 HARVEST = "harvest"
 EARNINGS = "earnings"
 EARNINGS_RESULT = "earnings_result"
@@ -155,6 +187,19 @@ TAX_DEADLINE = "tax_deadline"
 TAX_YEAR_END = "tax_year_end"
 TAX_BRACKET = "tax_bracket"
 REPURCHASE_CLEAR = "repurchase_clear"
+# The reader's own plan (portfolio/plan.py), measured against the book: a
+# kind of asset outside its band, a position or sector past its cap (which
+# takes concentration's place: the reader drew the line), a contribution
+# coming up, the cash reserve outside its range. A big position with no exit
+# rule and no alert, the cash the reader stated gone stale, and — once, for a
+# book with no plan — the invitation to write one.
+PLAN_DRIFT = "plan_drift"
+PLAN_LIMIT = "plan_limit"
+CONTRIBUTION_DUE = "contribution_due"
+RESERVE = "reserve"
+NO_EXIT_RULE = "no_exit_rule"
+PLAN_MISSING = "plan_missing"
+CASH_STALE = "cash_stale"
 # The Today page's rows (chat/today_sections.py): never ranked on the card,
 # only remembered, so a headline is read once, an insider tally comes back
 # when a new trade lands and a print when a figure of it lands (the EPS the
@@ -166,24 +211,32 @@ RESULTS = "results"
 _URGENCY = {
     CRITERION_HIT: 92,
     ALERT_HIT: 90,
+    FILING_FLAG: 88,
     HARVEST: 75,
     EARNINGS_RESULT: 72,
     EARNINGS: 70,
     MACRO_RESULT: 66,
+    CONTRIBUTION_DUE: 64,
     TAX_DEADLINE: 62,
     CRITERION_NEAR: 61,
     ALERT_NEAR: 60,
     MARKET: 58,
     MACRO_EVENT: 57,
+    PLAN_LIMIT: 56,
     DRAWDOWN: 55,
+    PLAN_DRIFT: 54,
     SECTOR_TILT: 52,
+    RESERVE: 50,
     TAX_YEAR_END: 50,
     TAX_BRACKET: 48,
     REPURCHASE_CLEAR: 47,
     LOW_52W: 45,
     VS_BENCH: 44,
+    NO_EXIT_RULE: 42,
     FX: 40,
     CONCENTRATION: 35,
+    CASH_STALE: 30,
+    PLAN_MISSING: 20,
 }
 # How far a watched (not held) name's print or result sits under a held one's:
 # news about a candidate, not a decision about money already in it.
@@ -199,10 +252,12 @@ _CAP = {
     CRITERION_NEAR: 2,
     ALERT_HIT: 3,
     ALERT_NEAR: 2,
+    FILING_FLAG: 2,
     EARNINGS: 2,
     EARNINGS_RESULT: 2,
     LOW_52W: 2,
     MACRO_EVENT: 2,
+    PLAN_LIMIT: 2,
 }
 _CAP_DEFAULT = 1
 
@@ -225,8 +280,15 @@ _FAMILY = {
     TAX_YEAR_END: "tax",
     TAX_BRACKET: "tax",
     REPURCHASE_CLEAR: "tax",
+    PLAN_DRIFT: "plan",
+    PLAN_LIMIT: "plan",
+    CONTRIBUTION_DUE: "plan",
+    RESERVE: "plan",
+    PLAN_MISSING: "plan",
+    CASH_STALE: "plan",
 }
-_FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2}
+_FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2,
+               "plan": 2}
 
 # The kinds a reader would see word for word again tomorrow, and so the ones
 # `decay()` sinks. Left out on purpose: events (an alert crossing, a print, a
@@ -235,7 +297,8 @@ _FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2}
 _STANDING = frozenset(
     {
         HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR,
-        TAX_BRACKET, CRITERION_NEAR,
+        TAX_BRACKET, CRITERION_NEAR, PLAN_DRIFT, PLAN_LIMIT, RESERVE,
+        NO_EXIT_RULE, CASH_STALE,
     }
 )
 # Urgency lost per consecutive day already offered, and the floor it stops at.
@@ -271,6 +334,8 @@ _MATERIAL: dict[str, dict] = {
     CRITERION_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     ALERT_HIT: {"rule": None, "level": None},
     ALERT_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
+    # A filing is said once; a later one about the same name is news again.
+    FILING_FLAG: {"flag": None, "date": None},
     HARVEST: {"offset": _Rel(0.25)},
     DRAWDOWN: {"pnl_pct": 5.0},
     CONCENTRATION: {"weight_pct": 3.0},
@@ -287,6 +352,14 @@ _MATERIAL: dict[str, dict] = {
     TAX_YEAR_END: {"end": None, "phase": None},
     TAX_BRACKET: {"rate_pct": None, "room": _Rel(0.5)},
     REPURCHASE_CLEAR: {"clear_date": None},
+    PLAN_DRIFT: {"side": None, "target_pct": None, "gap_pp": 3.0},
+    PLAN_LIMIT: {"cap_pct": None, "weight_pct": 3.0},
+    CONTRIBUTION_DUE: {"date": None, "phase": None},
+    RESERVE: {"state": None, "cash_pct": 3.0},
+    NO_EXIT_RULE: {"weight_pct": 5.0},
+    PLAN_MISSING: {},
+    # Said again only once the figure is restated and goes stale again.
+    CASH_STALE: {"as_of": None},
     NEWS: {},
     INSIDER: {"latest": None, "net_value": _Rel(0.5), "cluster_buy": None},
     RESULTS: {"reported_eps": None, "revenue": None, "guidance": None,
@@ -300,6 +373,7 @@ _COOLDOWN: dict[str, int | None] = {
     CRITERION_NEAR: 7,
     ALERT_HIT: None,
     ALERT_NEAR: 7,
+    FILING_FLAG: None,
     HARVEST: 7,
     DRAWDOWN: 10,
     CONCENTRATION: 14,
@@ -316,6 +390,15 @@ _COOLDOWN: dict[str, int | None] = {
     TAX_YEAR_END: None,
     TAX_BRACKET: 14,
     REPURCHASE_CLEAR: None,
+    PLAN_DRIFT: 14,
+    PLAN_LIMIT: 14,
+    CONTRIBUTION_DUE: None,
+    RESERVE: 14,
+    NO_EXIT_RULE: 30,
+    # Asked once in a while, never nagged: a reader who chose not to write a
+    # plan is told where it lives, not told again next week.
+    PLAN_MISSING: 60,
+    CASH_STALE: 30,
     NEWS: 30,
     INSIDER: 14,
     RESULTS: 30,
@@ -360,6 +443,7 @@ def key_of(kind: str, data: dict) -> str:
         or data.get("sector")
         or data.get("bank")
         or data.get("deadline")
+        or data.get("bucket")
         or ""
     )
     return f"{kind}:{subject}"
@@ -478,14 +562,20 @@ def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
 # ------------------------------------------------------------- the ledger
 
 
-def _position_signals(tbl, currency: str) -> list[Signal]:
-    """Drawdown against cost and weight drift, straight off the positions frame."""
+def _position_signals(
+    tbl, currency: str, drawdown_pct: float = DRAWDOWN_PCT, concentration: bool = True
+) -> list[Signal]:
+    """Drawdown against cost and weight drift, straight off the positions frame.
+
+    `drawdown_pct` is the reader's own (`drawdown_line`); `concentration` is
+    off when their plan caps a position, whose `plan_limit` says it instead.
+    """
     out: list[Signal] = []
     if tbl is None or tbl.empty:
         return out
     for ticker, row in tbl.iterrows():
         pnl_pct = finite(row.get("pnl_pct"))
-        if pnl_pct is not None and pnl_pct * 100 <= -DRAWDOWN_PCT:
+        if pnl_pct is not None and pnl_pct * 100 <= -drawdown_pct:
             out.append(Signal(
                 DRAWDOWN, str(ticker), _URGENCY[DRAWDOWN],
                 {
@@ -495,12 +585,167 @@ def _position_signals(tbl, currency: str) -> list[Signal]:
                 },
             ))
         weight = finite(row.get("weight"))
-        if weight is not None and weight * 100 >= CONCENTRATION_PCT:
+        if concentration and weight is not None and weight * 100 >= CONCENTRATION_PCT:
             out.append(Signal(
                 CONCENTRATION, str(ticker), _URGENCY[CONCENTRATION],
                 {"weight_pct": _round(weight * 100), "currency": currency},
             ))
     return out
+
+
+def drawdown_line(risk: str | None) -> float:
+    """How far under cost a position is before the card asks for a re-read,
+    for the reader's stated risk; DRAWDOWN_PCT when they stated none."""
+    return DRAWDOWN_BY_RISK.get(str(risk or ""), DRAWDOWN_PCT)
+
+
+# ------------------------------------------------------------- the reader's plan
+
+
+def plan_candidates(
+    investor,
+    *,
+    tbl=None,
+    kind_of=None,
+    sectors=None,
+    holdings=(),
+    criteria=(),
+    currency: str = "EUR",
+    today: date | None = None,
+) -> list[Signal]:
+    """The book measured against the reader's own plan (`portfolio.plan.Plan`).
+
+    Built by the caller like `market_candidates()`, because the asset kinds
+    (`kind_of`, ticker -> kind) and the sector split (`sectors`, sector ->
+    fraction of the book, `briefing.book_sectors`) are lookups this module
+    does not make. Every figure is a percentage of the book, as the plan
+    states its own.
+
+    A plan that is not set yields one `plan_missing` for a book with
+    positions, and `repeat()` keeps it to once in `_COOLDOWN`. The cash
+    bucket's drift is left to `reserve` when that fires: one fact, one line.
+    `no_exit_rule` runs with or without a plan — the plan only says how big
+    "big" is. The cash the reader stated (`plan.Cash.investable`) joins the
+    cash bucket for the mix and the reserve, never the caps on one position:
+    those stay shares of what is invested.
+    """
+    from stocks.portfolio import plan as plans
+
+    day = today or date.today()
+    weights = _weights(tbl)
+    out: list[Signal] = []
+    if investor is None or not investor.set:
+        if weights:
+            out.append(Signal(PLAN_MISSING, "", _URGENCY[PLAN_MISSING], {}))
+        out += _unguarded(weights, kind_of, holdings, criteria, CONCENTRATION_PCT)
+        return out
+
+    shares = plans.buckets(weights, kind_of or (lambda _t: None)) if weights else {}
+    shares = plans.with_cash(shares, _book_value(tbl), investor.investable)
+    state = plans.reserve_state(investor, shares)
+    if state and investor.reserve is not None:
+        out.append(Signal(RESERVE, "", _URGENCY[RESERVE], {
+            "state": state,
+            "cash_pct": _round(shares.get(plans.CASH, 0.0), 1),
+            "min_pct": investor.reserve.min_pct,
+            "max_pct": investor.reserve.max_pct,
+        }))
+    drifts = plans.drift(investor, shares)
+    for d in drifts:
+        if state and d.bucket == plans.CASH:
+            continue
+        out.append(Signal(PLAN_DRIFT, "", _URGENCY[PLAN_DRIFT], {
+            "bucket": d.bucket,
+            "side": d.side,
+            "actual_pct": _round(d.actual_pct, 1),
+            "target_pct": _round(d.target_pct, 1),
+            "gap_pp": _round(d.gap_pp, 1),
+            "band_pp": _round(d.band_pp, 1),
+        }))
+    single = {t: w for t, w in weights.items() if _single(t, kind_of)}
+    for ticker, pct in plans.over_position(investor, single):
+        out.append(Signal(PLAN_LIMIT, ticker, _URGENCY[PLAN_LIMIT], {
+            "scope": "position", "weight_pct": pct,
+            "cap_pct": investor.limits.max_position_pct,
+        }))
+    equity = {
+        str(k): float(v) for k, v in (sectors or {}).items()
+        if str(k) not in NOT_EQUITY and finite(v) is not None
+    }
+    for sector, pct in plans.over_sector(investor, equity):
+        out.append(Signal(PLAN_LIMIT, "", _URGENCY[PLAN_LIMIT] - 2, {
+            "scope": "sector", "sector": sector, "weight_pct": pct,
+            "cap_pct": investor.limits.max_sector_pct,
+        }))
+    when = plans.next_contribution(investor, day)
+    if when is not None and investor.contribution is not None \
+            and (when - day).days <= CONTRIBUTION_DAYS:
+        in_days = (when - day).days
+        under = [d.bucket for d in drifts if d.side == "under"]
+        out.append(Signal(CONTRIBUTION_DUE, "", _URGENCY[CONTRIBUTION_DUE], {
+            "date": when.isoformat(),
+            "in_days": in_days,
+            "phase": "now" if in_days == 0 else "soon",
+            "amount": _round(investor.contribution.amount),
+            "currency": currency,
+            **({"under": under} if under else {}),
+        }))
+    if (age := plans.cash_stale(investor, day)) is not None and investor.cash:
+        out.append(Signal(CASH_STALE, "", _URGENCY[CASH_STALE], {
+            "days": age, "as_of": investor.cash.as_of,
+        }))
+    cap = investor.limits.max_position_pct or CONCENTRATION_PCT
+    out += _unguarded(weights, kind_of, holdings, criteria, cap)
+    return out
+
+
+def _book_value(tbl) -> float:
+    """What the priced rows are worth together, the base `weights` share."""
+    if tbl is None or tbl.empty or "value" not in tbl:
+        return 0.0
+    return sum(x for v in tbl["value"] if (x := finite(v)) is not None and x > 0)
+
+
+def _weights(tbl) -> dict[str, float]:
+    """Ticker -> fraction of the book, priced rows only."""
+    if tbl is None or tbl.empty or "weight" not in tbl:
+        return {}
+    out = {}
+    for ticker, w in tbl["weight"].items():
+        x = finite(w)
+        if x is not None and x > 0:
+            out[str(ticker)] = x
+    return out
+
+
+def _single(ticker: str, kind_of) -> bool:
+    """A company or a coin: what a cap on one position is about. A fund
+    holds hundreds of names, so Review never trims it for size either."""
+    from stocks.portfolio import plan as plans
+
+    kind = kind_of(ticker) if kind_of else None
+    return plans.bucket_of(kind) in (plans.STOCKS, plans.CRYPTO)
+
+
+def _unguarded(weights, kind_of, holdings, criteria, cap: float) -> list[Signal]:
+    """The heaviest company or coin at `UNGUARDED_SHARE` of `cap` or more
+    with neither an exit rule (`criteria`) nor a price alert on it — the
+    position the reader has said least about what would make them sell.
+    Funds are left out: a broad fund at a big weight is the plan working."""
+    guarded = {str(r.get("ticker")) for r in criteria or () if isinstance(r, dict)}
+    guarded |= {h.ticker for h in holdings or () if getattr(h, "alerts", None)}
+    floor = cap * UNGUARDED_SHARE
+    best: tuple[str, float] | None = None
+    for ticker, w in weights.items():
+        pct = w * 100
+        if pct < floor or ticker in guarded or not _single(ticker, kind_of):
+            continue
+        if best is None or pct > best[1]:
+            best = (ticker, pct)
+    if best is None:
+        return []
+    return [Signal(NO_EXIT_RULE, best[0], _URGENCY[NO_EXIT_RULE],
+                   {"weight_pct": _round(best[1], 1)})]
 
 
 def realized_this_year(realized, jurisdiction=None, today: date | None = None) -> float:
@@ -646,6 +891,44 @@ def _result_signals(results, held: set[str], today: date) -> list[Signal]:
         if not owned:
             urgency -= WATCHED_DISCOUNT
         out.append(Signal(EARNINGS_RESULT, result.ticker, urgency, data))
+    return out
+
+
+def filing_signals(reports: dict, held: set[str], today: date) -> list[Signal]:
+    """Held names that filed a red flag (`FLAG_URGENCY`) in the last
+    `FLAG_DAYS`: one signal per name, its most urgent flag, the newest filing
+    breaking a tie.
+
+    `reports` is {ticker: [edgar.CurrentReport]}, read by the caller (the
+    card's job, off `loaders.current_reports`). A watched name is left out:
+    the question a flag raises is about money already in the company. Read
+    off the item codes and the form alone — no document is opened and no
+    model asked — so a flag always names the filing it came from."""
+    out: list[Signal] = []
+    for ticker, rows in reports.items():
+        if ticker not in held:
+            continue
+        best: tuple[int, date, str, object] | None = None
+        for r in rows or ():
+            filed = getattr(r, "filed", None)
+            if not isinstance(filed, date) or not 0 <= (today - filed).days <= FLAG_DAYS:
+                continue
+            flags = [i for i in getattr(r, "items", ()) or () if i in FLAG_URGENCY]
+            if str(getattr(r, "form", "")).startswith("NT "):
+                flags.append("late")
+            for flag in flags:
+                if best is None or (FLAG_URGENCY[flag], filed) > best[:2]:
+                    best = (FLAG_URGENCY[flag], filed, flag, r)
+        if best is None:
+            continue
+        urgency, filed, flag, report = best
+        ago = (today - filed).days
+        out.append(Signal(FILING_FLAG, ticker, urgency - ago // 2, {
+            "flag": flag,
+            "form": str(getattr(report, "form", "")),
+            "date": filed.isoformat(),
+            "days_ago": ago,
+        }))
     return out
 
 
@@ -1303,6 +1586,9 @@ def candidates(
     limit: int = 8,
     year_net: float | None = None,
     criteria=(),
+    plan=(),
+    drawdown_pct: float = DRAWDOWN_PCT,
+    concentration: bool = True,
 ) -> list[Signal]:
     """Every action the book currently justifies and the card has not already
     said, most urgent first.
@@ -1320,6 +1606,9 @@ def candidates(
     they are the parts with a download behind them. `results` is the
     calendar's past prints (EarningsResult), newest first. `criteria` is the
     reader's exit rules as `journal.measured` read them this morning.
+    `plan` is what `plan_candidates()` built; `drawdown_pct` the reader's
+    own line (`drawdown_line`), and `concentration` off when the plan caps a
+    position itself.
     """
     day = today or date.today()
     held = set(tbl.index.astype(str)) if tbl is not None and not tbl.empty else set()
@@ -1329,11 +1618,12 @@ def candidates(
         *_harvest_signals(tbl, realized, jurisdiction, currency, today, year_net),
         *_earnings_signals(earnings, held),
         *_result_signals(results, held, day),
-        *_position_signals(tbl, currency),
+        *_position_signals(tbl, currency, drawdown_pct, concentration),
         *_low_signals(extremes, held),
         *_tax_signals(tbl, realized, jurisdiction, currency, day, year_net),
         *market,
         *macro,
+        *plan,
     ]
     fresh = [s for s in out if not repeat(s, shown, day)]
     ranked = sorted(fresh, key=lambda s: (-decay(s, shown, day), s.kind, s.ticker))

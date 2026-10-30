@@ -18,6 +18,7 @@
 
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../shell/api";
+import { useOnScreenBeat } from "../shell/push";
 import { useT } from "../shell/i18n";
 import {
   type Brief,
@@ -281,6 +282,20 @@ export function Drawer() {
     setMemory(true);
     show(true);
   }, [jump]);
+
+  // `?thread=<id>` — a push notification's "your answer is ready" (`sw.js`)
+  // lands here: the drawer opens on that conversation, and the parameter
+  // comes off the URL like the others.
+  const pushed = params.get("thread");
+  useEffect(() => {
+    if (!pushed) return;
+    setParams({ thread: undefined });
+    onThread(pushed);
+  }, [pushed]);
+
+  // While an answer is being written, say whether the app is on screen: a
+  // finished answer is pushed to the reader's devices only when it is not.
+  useOnScreenBeat(working);
 
   // Started once the drawer has finished its own opening read — otherwise the
   // thread it was loading would land on top of the guide's.

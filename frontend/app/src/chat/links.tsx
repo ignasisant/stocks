@@ -52,6 +52,7 @@ const TAB_LABELS: Record<string, Record<string, string>> = {
   profile: {
     prefs: "profile.preferences",
     iv: "profile.iv_section",
+    plan: "profile.plan_section",
     watch: "profile.watchlist",
     notify: "profile.notifications",
     claude: "profile.connector_tab",
@@ -84,7 +85,7 @@ export function PageLink({
     : t("chat.open_page", { page: name });
   const params: Record<string, string> = ticker ? { ticker } : tabLabel ? { tab } : {};
   return (
-    <div className="ag-guide-acts">
+    <div className="ag-guide-acts ag-chat-goto">
       <button
         type="button"
         className="ag-chat-btn"

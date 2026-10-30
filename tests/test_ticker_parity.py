@@ -59,8 +59,6 @@ _TEMPLATES = {
     # The number a rule asks for, whose label is the `field` the API names.
     "widgets.alert_": ("price", "pct", "level"),
     "portfolio.broker_": ("manual", "unknown"),
-    # The drawer's width presets, which are `chat/width.ts`'s three keys.
-    "chat.width_": ("compact", "wide", "full"),
 }
 
 def _sources() -> list[Path]:

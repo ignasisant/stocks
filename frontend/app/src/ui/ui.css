@@ -97,11 +97,23 @@
   container-type: inline-size;
 }
 
+/* Inline flow, not flex: a label that wraps keeps its "?" after the last word.
+   As a flex item the wrapped label took the tile's whole width and pushed the
+   mark to the far edge, a line away from the words it explains. The block
+   takes the label's size so its strut does not open the lines up. */
 .ag-kpi-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  line-height: 1.25;
+}
+
+.ag-kpi-head .ag-kpi-help-wrap {
+  margin-left: 4px;
+  vertical-align: -0.1em;
+}
+
+.ag-kpi-label-tail {
+  white-space: nowrap;
 }
 
 .ag-kpi-label {

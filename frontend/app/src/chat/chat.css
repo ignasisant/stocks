@@ -208,17 +208,10 @@
   user-select: none !important;
 }
 
-/* The width presets, in the header. The pressed one is filled rather than
-   outlined: three identical icons need something to say which is on. */
-.ag-chat-widths {
-  display: flex;
-  gap: 2px;
+/* Settings and Close sit at the header's far end; the thread's name and New
+   keep the start. */
+.ag-chat-head-end {
   margin-left: auto;
-}
-
-.ag-chat-width-on {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
 }
 
 .ag-chat-head {
@@ -227,6 +220,94 @@
   align-items: center;
   padding: 10px 12px;
   border-bottom: 1px solid var(--ag-border);
+}
+
+/* The open conversations as tabs (`Tabs.tsx`). The box is the container and
+   the strip inside it the thing that comes and goes: below 560px two titles
+   no longer read, so the 380px drawer and a phone keep the title button and
+   the list. A box with nothing shown in it is zero high. */
+.ag-chat-tabs-box {
+  container: ag-chat-tabs / inline-size;
+}
+
+.ag-chat-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+@container ag-chat-tabs (max-width: 559px) {
+  .ag-chat-tabs {
+    display: none;
+  }
+}
+
+/* A tab gives up width before it gives up a neighbour: at the cap of five a
+   720px drawer still shows a word or two of each. */
+.ag-chat-tab {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 200px;
+  align-items: center;
+  border-radius: var(--ag-radius-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-tab-on {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-tab-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 4px 5px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ag-chat-tab-on .ag-chat-tab-open {
+  cursor: default;
+}
+
+.ag-chat-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-chat-tab-close {
+  flex: none;
+  padding: 4px;
+  margin-right: 2px;
+  color: var(--ag-text-muted);
+}
+
+/* Under a mouse the ✕ waits for the tab to be pointed at or focused, as on a
+   browser's tabs, except on the open one; a finger has no pointing, so it
+   keeps them all. */
+@media (hover: hover) {
+  .ag-chat-tab:not(.ag-chat-tab-on) .ag-chat-tab-close {
+    opacity: 0;
+  }
+
+  .ag-chat-tab:hover .ag-chat-tab-close,
+  .ag-chat-tab:focus-within .ag-chat-tab-close {
+    opacity: 1;
+  }
+
+  .ag-chat-tab:not(.ag-chat-tab-on):hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-chat-status {
@@ -373,10 +454,6 @@
 
 /* Regenerate floats over the end of the region; the last answer's foot (its
    thumbs) scrolls clear of it instead of sitting underneath. */
-.ag-chat-scroll-regen {
-  padding-bottom: 44px;
-}
-
 /* `useStickToBottom` measures this element rather than the region, so it has
    to be the thing that grows: a wrapper that collapsed to the region's height
    would report no resize and the stream would not follow. */
@@ -658,7 +735,8 @@
     justify-content: center;
   }
 
-  .ag-chat-meta-btn {
+  .ag-chat-meta-btn,
+  .ag-chat-tab-open {
     min-height: 44px;
   }
 
@@ -1236,29 +1314,6 @@
   font-size: var(--ag-fs-2xs);
 }
 
-/* Regenerate sits at the foot of the scroll region, over the conversation
-   rather than in the composer: it is about the answer above it. */
-.ag-chat-regen {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  padding: 4px 10px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-card);
-  color: var(--ag-text-secondary);
-  font: inherit;
-  font-size: var(--ag-fs-2xs);
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .ag-chat-regen:hover {
-    border-color: var(--ag-border-focus);
-    color: var(--ag-text-primary);
-  }
-}
-
 /* The drop target, drawn only while something is being dragged over the
    conversation. Over everything and taking no pointer events of its own: the
    drop lands on the stage underneath, which is what is listening. */
@@ -1818,14 +1873,6 @@ button.ag-chat-op-mark::before {
   }
 }
 
-/* "Wide" is 720px: under 1100px of window it is most of the screen anyway,
-   and the drawer offers normal and full only. */
-@media (max-width: 1099px) {
-  .ag-chat-width-wide {
-    display: none;
-  }
-}
-
 .ag-chat-wall {
   display: flex;
   flex-direction: column;
@@ -2019,6 +2066,12 @@ a.ag-chat-btn {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+/* A "take me there" under an answer (`PageLink`, `Jump`): off the bubble's
+   edge rather than hung from it, the same air the meta row keeps. */
+.ag-chat-goto {
+  margin-top: 8px;
 }
 
 .ag-guide-skip {
@@ -2579,6 +2632,27 @@ a.ag-chat-btn {
   }
 }
 
+/* "Notify me when it's ready" under a long answer (`PushOffer.tsx`): the
+   nudge's tint, with its two answers under the question. */
+.ag-chat-push {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-cta-tint-edge);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+}
+
+@media (pointer: coarse) {
+  .ag-chat-push .ag-chat-btn {
+    min-height: 44px;
+  }
+}
+
 .ag-chat-starters {
   display: flex;
   flex-direction: column;
@@ -2707,11 +2781,6 @@ a.ag-chat-btn {
        entirely rather than merely behind the panel. */
     --toast-right: 20px;
   }
-  .ag-chat-widths {
-    /* Three buttons that all mean "the whole screen" on a screen this size,
-       taking room from the thread's own name. */
-    display: none;
-  }
   .ag-chat-fab {
     /* The assistant is a tab of the bottom bar here (`.ag-nav-ask`). */
     display: none;
@@ -2752,7 +2821,7 @@ a.ag-chat-btn {
     place-items: center;
   }
   /* After the icon rule, which would draw them again: new and settings live
-     in the ⋮ menu on a phone. */
+     in the ⋮ menu on a phone, and Close is the tab bar or the swipe. */
   .ag-chat-head > .ag-chat-thread-btn > svg,
   .ag-chat-head .ag-chat-head-wide {
     display: none;
@@ -3215,7 +3284,6 @@ a.ag-chat-btn {
     font-size: 16px;
   }
 
-  .ag-chat-regen,
   .ag-chat-thread-btn {
     min-height: 44px;
   }

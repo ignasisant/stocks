@@ -225,7 +225,7 @@ describe("review prompt", () => {
       t,
       "en",
     );
-    expect(text).toMatch(/review\.note_tax_offset\(1,,.*,INTC\)/);
+    expect(text).toMatch(/review\.note_tax_offset\(1,,.*,INTC,/);
     expect(text).toContain("review.note_tax_offset_window(2026-12-12)");
   });
 

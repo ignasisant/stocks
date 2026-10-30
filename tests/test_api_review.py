@@ -863,3 +863,108 @@ def test_the_preview_judges_the_shared_demo_book(client, book, monkeypatch):
     body = response.json()
     assert body["locked"] is False
     assert {r["ticker"] for r in body["held"]} == {"AMD", "XEON.DE", "ADBE"}
+
+
+# ------------------------------------------------------- the reader's own plan
+
+
+def _plan(book, **raw):
+    prefs = json.loads(book.prefs.read_text())
+    prefs["investor_plan"] = {**raw, "set": True}
+    book.prefs.write_text(json.dumps(prefs))
+
+
+def test_without_a_plan_the_page_says_none_shaped_it(client, book):
+    assert _get(client)["investor_plan"] == {
+        "set": False,
+        "limits_used": False,
+        "drift": [],
+        "next_contribution": None,
+        "contribution": None,
+        "cash": None,
+    }
+
+
+def test_the_plans_position_cap_is_the_line_and_no_buy_passes_it(client, book):
+    _plan(book, limits={"max_position_pct": 2})
+    body = _get(client)
+    assert body["lines"]["concentrated"] == pytest.approx(0.02)
+    assert body["investor_plan"]["limits_used"] is True
+    for row in body["held"] + body["candidates"]:
+        if row["target_weight"] is not None and row["verdict"] in ("add", "buy"):
+            assert row["target_weight"] <= 0.02 + 1e-9
+
+
+def test_shares_past_the_plans_share_take_no_new_company(client, book):
+    # Companies are 18% of the book against a 5% target: over by 13 points.
+    _plan(book, mix={"targets": {"stocks": 5, "cash": 95}})
+    body = _get(client)
+    drifts = {d["bucket"]: d["side"] for d in body["investor_plan"]["drift"]}
+    assert drifts == {"stocks": "over", "cash": "under"}
+    [over] = [n for n in body["notes"] if n["key"] == "plan_over"]
+    assert over["bucket"] == "stocks" and over["target"] == pytest.approx(0.05)
+    assert all(r["delta"] is None for r in body["candidates"])
+    assert all(r["new_money"] is None for r in body["held"])
+
+
+def test_a_book_inside_its_mix_draws_no_drift(client, book):
+    _plan(book, mix={"targets": {"stocks": 20, "cash": 80}})
+    body = _get(client)
+    assert body["investor_plan"]["drift"] == []
+    assert not [n for n in body["notes"] if n["key"].startswith("plan_")]
+
+
+def test_new_money_is_sized_to_the_plans_contribution(client, book, monkeypatch):
+    table = pd.DataFrame(
+        {
+            "shares": [50.0, 5.0],
+            "cost": [9_700.0, 300.0],
+            "value": [9_700.0, 300.0],
+            "pnl": [0.0, 0.0],
+            "pnl_pct": [0.0, 0.0],
+        },
+        index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    _plan(book, contribution={"amount": 100, "every": "monthly", "day": 1})
+    body = _get(client)
+    adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
+    # The open list asked 200; the plan brings 100 a month.
+    assert adbe["new_money"] == pytest.approx(100.0)
+    assert body["plan"]["new_money"] == pytest.approx(100.0)
+    assert body["investor_plan"]["contribution"] == pytest.approx(100.0)
+    assert body["investor_plan"]["next_contribution"]
+
+
+def test_stated_cash_joins_the_contribution_and_the_cash_bucket(
+    client, book, monkeypatch
+):
+    table = pd.DataFrame(
+        {
+            "shares": [50.0, 5.0],
+            "cost": [9_700.0, 300.0],
+            "value": [9_700.0, 300.0],
+            "pnl": [0.0, 0.0],
+            "pnl_pct": [0.0, 0.0],
+        },
+        index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    # 3% in companies against a 50% target; 50 stated, 10 000 behind a cushion.
+    _plan(book, mix={"targets": {"stocks": 50, "cash": 50}},
+          contribution={"amount": 100, "every": "monthly", "day": 1},
+          cash={"investable": 50, "cushion": 10_000})
+    body = _get(client)
+    assert body["investor_plan"]["cash"] == pytest.approx(50.0)
+    adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
+    assert adbe["new_money"] == pytest.approx(150.0)
+    # The cushion is never spent: only the 50 joins the 100.
+    assert body["plan"]["new_money"] == pytest.approx(150.0)
+
+
+def test_the_reserve_ceiling_is_where_idle_cash_is_named(client, book):
+    # 82% in a money-market fund: named under a 50% ceiling, not under 90%.
+    _plan(book, reserve={"max_pct": 50})
+    assert [n for n in _get(client)["notes"] if n["key"] == "cash_heavy"]
+    _plan(book, reserve={"max_pct": 90})
+    assert not [n for n in _get(client)["notes"] if n["key"] == "cash_heavy"]

@@ -50,6 +50,7 @@ from stocks.chat import (
     learnings,
     market,
     memory,
+    plan_builder,
     rebalance,
     reports,
     stopping,
@@ -741,7 +742,20 @@ def _join_en(parts: list[str]) -> str:
 def persona(prof: dict) -> str:
     """The 'who am I advising' sentence, from a loaded investor profile
     (auth.load_profile(prefs)). Falls back to the historical default when the user
-    hasn't filled the form yet (prof['set'] is False)."""
+    hasn't filled the form yet (prof['set'] is False). The investor plan, when
+    saved, follows either way (`portfolio.plan.describe`)."""
+    return _who(prof) + _plan_said(prof)
+
+
+def _plan_said(prof: dict) -> str:
+    if not prof.get("plan"):
+        return ""
+    from stocks.portfolio import plan as plans
+
+    return plans.describe(plans.parse(prof["plan"]))
+
+
+def _who(prof: dict) -> str:
     if not prof.get("set"):
         return "The signed-in user is an aggressive long-term (5y+) investor. "
     risk = _RISK_EN.get(prof.get("risk"), "an aggressive")
@@ -1893,6 +1907,43 @@ def _rebalance(message: str, watchlist: Path, db: Path, prefs_path: Path,
     told({"id": cid, "tool": "rebalance", "arg": symbol, "args": args,
           "out": _rebalance_step(moved, lang)["out"] if moved else "-"})
     return moved
+
+
+def _plan_builder(message: str, prefs: dict, db: Path, lang: str,
+                  told: Callable[[dict], None]) -> object:
+    """What the app knows toward the reader's plan, for the interview the
+    message asks for (`chat/plan_builder.py`), or None. Today's mix by
+    asset type is read off the Home frame, so the card does not ask how the
+    book leans."""
+    if not plan_builder.wants(message):
+        return None
+    from stocks.portfolio import plan as plans
+
+    cid = f"tool_plan_{secrets.token_hex(4)}"
+    told({"id": cid, "tool": "plan_builder", "arg": "", "args": {}})
+    base = reporting_currency(prefs)
+    shares: dict[str, float] = {}
+    try:
+        tbl = enriched_frame(db, base) if db.exists() else None
+        if tbl is not None and not tbl.empty and "weight" in tbl:
+            from stocks.api import loaders
+
+            shares = plans.buckets(tbl["weight"].to_dict(), loaders.asset_kind)
+    except Exception as exc:  # noqa: BLE001 — the card asks without today's mix
+        obs.warn("chat.plan_builder_mix_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+    known = plan_builder.known(prefs, shares, base)
+    obs.event("chat.plan_builder", asked=len(plan_builder.questions(known)),
+              priced=bool(shares), replaces=known.replaces)
+    told({"id": cid, "tool": "plan_builder", "arg": "", "args": {},
+          "out": _plan_step(known, lang)["out"]})
+    return known
+
+
+def _plan_step(known: plan_builder.Known, lang: str) -> dict:
+    return {"tool": "plan_builder", "arg": "",
+            "out": _tr("chat.step_plan", lang,
+                       count=len(plan_builder.questions(known)))}
 
 
 def _mix_step(mix: allocation.Mix, lang: str) -> dict:
@@ -3343,7 +3394,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
         (skills, evidence, sale, chart, mix, losses, moved, ahead, paid,
-         drafted) = in_parallel(
+         planned, drafted) = in_parallel(
             lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
                      else resolve_skills(prefs, provider, key, history,
                                          context=context + view)),
@@ -3364,6 +3415,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                 told) if one else None),
             lambda: _reports_ahead(message, watchlist, db, lang, told),
             lambda: _income(message, db, prefs_path, lang, told),
+            lambda: _plan_builder(message, prefs, db, lang, told) if one else None,
             # A company met for the first time this month gets its notes
             # drafted beside the research, on the cheapest model.
             lambda: (ticker_brief.draft_dossier(provider, key, asked_for.facts)
@@ -3383,7 +3435,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # the web has nothing to add to them and a search costs the turn its
         # slowest seconds (local review 2026-10-30: three and a half minutes
         # for the earnings calendar, its search "BKNG ¿Qué empresas…").
-        own = isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
+        # So is a plan built from the reader's own answers.
+        own = (isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
+               or isinstance(planned, plan_builder.Known))
         if nowhere:
             pass
         elif not evidence.ok:
@@ -3479,9 +3533,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
-    for found in (mix, losses, moved, ahead, paid):
+    for found in (mix, losses, moved, ahead, paid, planned):
         if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh,
-                              reports.Ahead, income.Income)):
+                              reports.Ahead, income.Income, plan_builder.Known)):
             msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
@@ -3543,6 +3597,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         activities.append(a2ui.activity(
             rebalance.SURFACE_ID,
             rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
+        ))
+    if isinstance(planned, plan_builder.Known):
+        steps.append(_plan_step(planned, lang))
+        activities.append(a2ui.activity(
+            plan_builder.SURFACE_ID,
+            plan_builder.surface(planned, lambda k, **kw: _tr(k, lang, **kw)),
         ))
     offered = _proposed(evidence) if confirm_actions else None
     return Turn(

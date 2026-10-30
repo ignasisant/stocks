@@ -2,7 +2,7 @@
  * The start card: the whole onboarding, drawn as a map rather than written
  * as instructions.
  *
- * Four nodes on a line — account, import, AI key, Telegram — each an icon and
+ * Five nodes on a line — account, import, plan, AI key, Telegram — each an icon and
  * a word, each a door straight into the section that switches it on. The
  * first one still to do is lit, and gets the card's one big button. Under the
  * line, three things that need nothing switched on (look a ticker up, ask the
@@ -26,7 +26,7 @@ import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Icon } from "../../shell/Icon";
 import { Skeleton } from "../../shell/Layout";
-import { openAssistant } from "../../shell/assistant";
+import { askAssistant, openAssistant } from "../../shell/assistant";
 import { signInHref } from "../../shell/guest";
 import { useRoute } from "../../shell/router";
 import { useSession, useSignIn } from "../../shell/session";
@@ -65,6 +65,7 @@ function Door({
   label: string;
   children: ReactNode;
 }) {
+  const t = useT();
   const { go } = useRoute();
   const signIn = signInHref(useSignIn());
   if (row.key === "login" && guest) {
@@ -106,7 +107,11 @@ function Door({
       className={className}
       aria-label={label}
       onClick={() =>
-        to.kind === "assistant" ? openAssistant() : go(to.page, to.params)
+        to.kind === "page"
+          ? go(to.page, to.params)
+          : to.ask
+            ? askAssistant(t(to.ask), { fresh: true })
+            : openAssistant()
       }
     >
       {children}

@@ -65,6 +65,7 @@ from stocks.chat import (
 )
 from stocks.data.crypto import is_crypto
 from stocks.formatting import finite
+from stocks.portfolio import plan as plans
 
 # How long `POST /daily` holds the request for a briefing before answering
 # `pending`. The free chain usually answers well inside it, and everything past
@@ -432,6 +433,9 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     # The reader's exit rules, measured on the same closes and positions, and
     # any met today marked hit before the card ranks them.
     rules = journal.safely(_criteria, paths.journal, closes, tbl, day) or []
+    investor = plans.load(prefs)
+    risk = (prefs.get("investor_profile") or {}).get("risk")
+    against = _plan(investor, tbl, entries, rules, ccy, day)
 
     return daily.build_facts(
         tbl,
@@ -445,6 +449,7 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
         # The brief's lines alone: their data is fetched on the job's thread
         # (`start`), so the request is not held for it.
         brief=daily_routines.seeded(daily_routines.load(prefs, paths.chat)),
+        plan=plan_fact(investor, against, day),
         signals=signals.candidates(
             holdings=entries,
             tbl=tbl,
@@ -461,8 +466,57 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             today=day,
             year_net=_tax_year_net(paths, prefs, ccy, day),
             criteria=rules,
+            plan=against,
+            drawdown_pct=signals.drawdown_line(risk),
+            concentration=investor.limits.max_position_pct is None,
         ),
     )
+
+
+def _plan(investor, tbl, entries, rules, ccy: str, day: date) -> list:
+    """The book against the reader's plan (`signals.plan_candidates`), or
+    nothing: a kind or a sector that cannot be read is a card without its
+    plan lines, not a card that is not there."""
+    try:
+        return signals.plan_candidates(
+            investor,
+            tbl=tbl,
+            kind_of=_kind_of,
+            sectors=book_sectors(tbl),
+            holdings=entries,
+            criteria=rules,
+            currency=ccy,
+            today=day,
+        )
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("daily_action.plan_unavailable", error_type=type(exc).__name__)
+        return []
+
+
+def plan_fact(investor, against, day: date) -> dict | None:
+    """Whether the book holds to a saved plan today, and the next
+    contribution — the card's "plan holds" on a day with nothing else.
+
+    Read off every plan trigger the book raised (`against`), before the
+    card's memory drops the ones it already said: a drift shown yesterday is
+    still a drift, so the plan does not hold. None without a plan."""
+    if investor is None or not investor.set:
+        return None
+    off = {signals.PLAN_DRIFT, signals.PLAN_LIMIT, signals.RESERVE}
+    out: dict = {"on_track": not any(s.kind in off for s in against)}
+    when = plans.next_contribution(investor, day)
+    if when is not None and investor.contribution is not None:
+        out["next_contribution"] = when.isoformat()
+        out["amount"] = investor.contribution.amount
+    return out
+
+
+def _kind_of(label: str) -> str | None:
+    """A held row's asset kind, read through its display symbol the way the
+    Review page reads it, so both put a holding in the same bucket."""
+    with obs.swallow("daily_action.kind"):
+        return loaders.asset_kind(loaders.display_symbol(label) or label)
+    return None
 
 
 def _criteria(path, closes: dict, tbl, day: date) -> list[dict]:
@@ -678,6 +732,63 @@ def with_fired(actions: list[dict], fired: list[dict], held: set[str],
     return out
 
 
+# How long the card's job may wait on the held names' 8-K feeds. Each is
+# cached three hours (`loaders.current_reports`), the Today page's news
+# reads the same ones, and a name not read in time is read on the next card.
+FILINGS_BUDGET_S = 15.0
+FILINGS_WORKERS = 4
+
+
+def _filings(held: set[str]) -> dict[str, list]:
+    """The held companies' recent 8-Ks, {ticker: reports}. Only names the SEC
+    knows are asked for — a fund, a coin or a name listed only in Europe has
+    no feed. A feed that fails or runs past the budget is left out."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    from stocks.data import edgar
+
+    try:
+        names = sorted(t for t in held
+                       if not is_crypto(t) and not _fund(t) and edgar.cik_for(t))
+    except Exception as exc:  # noqa: BLE001 — the ticker map is unreadable
+        obs.warn("daily_action.filings_unavailable", error_type=type(exc).__name__)
+        return {}
+    if not names:
+        return {}
+    pool = ThreadPoolExecutor(FILINGS_WORKERS)
+    futures = {pool.submit(loaders.current_reports, t): t for t in names}
+    done, _ = wait(futures, timeout=FILINGS_BUDGET_S)
+    pool.shutdown(wait=False, cancel_futures=True)
+    out: dict[str, list] = {}
+    for future in done:
+        try:
+            out[futures[future]] = list(future.result() or [])
+        except Exception:  # noqa: BLE001 — counted below; the next card retries
+            continue
+    if len(out) < len(names):
+        obs.warn("daily_action.filings_partial", read=len(out), wanted=len(names))
+    return out
+
+
+def with_flags(actions: list[dict], flags: list, shown: dict | None,
+               day: date) -> list[dict]:
+    """The card's candidate actions with the filing red flags the job found
+    (`signals.filing_signals`) among them: after the reader's own rules and
+    alerts that fired, ahead of what the app computed. A flag an earlier
+    card already showed stays off (`signals.repeat`), and no more than the
+    kind's cap get through."""
+    fresh = sorted((s for s in flags if not signals.repeat(s, shown, day)),
+                   key=lambda s: (-s.urgency, s.ticker))
+    new = [s.to_dict() for s in fresh[:signals._CAP[signals.FILING_FLAG]]]
+    if not new:
+        return actions
+    keys = {a["key"] for a in new}
+    rest = [a for a in actions if a.get("key") not in keys]
+    first = [a for a in rest
+             if a.get("kind") in (signals.CRITERION_HIT, signals.ALERT_HIT)]
+    return [*first, *new, *(a for a in rest if a not in first)]
+
+
 def _fund(ticker: str) -> bool:
     """Cache-only fund check — funds do not report earnings."""
     from stocks.data.funds import is_fund
@@ -703,12 +814,13 @@ def _review_rows(paths) -> list:
 
 
 def _alerted(facts: dict) -> list[str]:
-    """Names whose alert or exit rule fired or nearly fired today — their
-    news comes first."""
+    """Names whose alert or exit rule fired or nearly fired today, or that
+    filed a red flag — their news comes first."""
     return [str(a["ticker"]) for a in facts.get("actions") or []
             if isinstance(a, dict) and a.get("ticker")
             and a.get("kind") in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
-                                  signals.ALERT_HIT, signals.ALERT_NEAR)]
+                                  signals.ALERT_HIT, signals.ALERT_NEAR,
+                                  signals.FILING_FLAG)]
 
 
 def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
@@ -951,9 +1063,20 @@ def start(
             facts["actions"] = with_fired(facts.get("actions") or [], fired,
                                           _held(paths), day)
 
+    def _check_filings() -> None:
+        """The held names' 8-Ks read for red flags on the job's thread, any
+        found put on this very card. Before the Today sections, whose news
+        reads a flagged name first (`_alerted`)."""
+        held = _held(paths)
+        flags = signals.filing_signals(_filings(held), held, day) if held else []
+        if flags:
+            facts["actions"] = with_flags(facts.get("actions") or [], flags,
+                                          stored.shown if stored else None, day)
+
     def work() -> None:
         try:
             _gather_brief()
+            _check_filings()
             _gather_today()
             _check_rules()
             # What the card proposed about today's names before, and what

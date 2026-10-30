@@ -7,10 +7,10 @@
  * reading at this size: green means the book is worth more than what was put
  * into it.
  *
- * Two fingers, a mouse drag (as the ticker chart brushes), or a secondary
- * click (`useSpan`) compare two days:
- * how much the value moved, how much of it was money put in, and the rest —
- * what the market did. Amounts only, since money flowed through the span.
+ * A held finger slid along, two fingers, a mouse drag (as the ticker chart
+ * brushes), or a secondary click (`useSpan`) compare two days: how much the
+ * value moved, how much of it was money put in, and the rest — what the
+ * market did. Amounts only, since money flowed through the span.
  *
  * Fails to nothing. When the price span cannot be built the sparkline drops
  * out and the rest of the card stays: a glance card that renders an error
