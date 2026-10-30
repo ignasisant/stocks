@@ -75,5 +75,8 @@
   "notify.usage_skill_col_mean": "$/ans",
   "notify.usage_skill_col_up": "up",
   "notify.usage_skill_col_down": "down",
-  "notify.usage_skills_total": "{answers} answers · ${usd} in all"
+  "notify.usage_skills_total": "{answers} answers · ${usd} in all",
+  "notify.push_answer_title": "Your answer is ready",
+  "notify.push_test_title": "TopStocks notifications work",
+  "notify.push_test_body": "This device will be told when an answer is ready."
 }

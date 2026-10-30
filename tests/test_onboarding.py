@@ -212,14 +212,25 @@ def _paths(tmp_path: Path) -> SimpleNamespace:
     )
 
 
-def test_setup_state_reads_the_four_capabilities(monkeypatch, tmp_path):
+def test_setup_state_reads_the_capabilities(monkeypatch, tmp_path):
     monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
     state = onboarding.setup_state(
-        {"anthropic_key_enc": "…", "telegram_chat_id": 42},
+        {"anthropic_key_enc": "…", "telegram_chat_id": 42,
+         "investor_plan": {"set": True}},
         _paths(tmp_path),
         signed_in=True,
     )
-    assert state == {"login": True, "import": True, "ai": True, "telegram": True}
+    assert state == {"login": True, "import": True, "plan": True, "ai": True,
+                     "telegram": True}
+
+
+def test_the_start_cards_plan_is_the_tours_plan_step(tmp_path):
+    step = onboarding.by_id("plan")
+    for prefs in (
+        {}, {"investor_plan": {"set": False}}, {"investor_plan": {"set": True}}
+    ):
+        state = onboarding.setup_state(prefs, _paths(tmp_path), signed_in=True)
+        assert state["plan"] is step.done(prefs)
 
 
 def test_setup_state_for_a_guest_has_nothing_switched_on(monkeypatch, tmp_path):
@@ -230,6 +241,7 @@ def test_setup_state_for_a_guest_has_nothing_switched_on(monkeypatch, tmp_path):
     # The ledger check is skipped for a guest on purpose — the guest data dir
     # is shared, so its starter ledger is nobody's import.
     assert state["login"] is False and state["import"] is False
+    assert state["plan"] is False
 
 
 def test_setup_state_ignores_the_keyless_free_chain(monkeypatch, tmp_path):
@@ -415,7 +427,7 @@ def test_a_missing_watchlist_reads_as_untouched_rather_than_raising(account):
     assert onboarding.explore_state({}, account)["watchlist"] is False
 
 
-def test_explore_state_is_kept_apart_from_the_four_setup_capabilities(account):
+def test_explore_state_is_kept_apart_from_the_setup_capabilities(account):
     """Two strips, two meanings. The tour badges every connectable step from
     setup_state, so a key that drifted across would badge a step for something
     there is nothing to connect."""
@@ -423,5 +435,5 @@ def test_explore_state_is_kept_apart_from_the_four_setup_capabilities(account):
     explore = set(onboarding.explore_state({}, account))
     setup = set(onboarding.setup_state({}, account, signed_in=True))
     assert explore == {"search", "ask", "watchlist"}
-    assert setup == {"login", "import", "ai", "telegram"}
+    assert setup == {"login", "import", "plan", "ai", "telegram"}
     assert not explore & setup

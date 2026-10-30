@@ -47,7 +47,7 @@
   "ticker.span_months_n": "{n} meses",
   "ticker.span_minutes": "{m} min de mercado",
   "ticker.span_hours": "{h} h {m} min de mercado",
-  "ticker.span_hint_touch": "Dos dedos en el gráfico: variación entre dos fechas, y «Ampliar» para verlas de cerca",
+  "ticker.span_hint_touch": "Mantén pulsado y desliza: variación entre dos fechas, y «Ampliar» para verlas de cerca",
   "ticker.span_hint_mouse": "Arrastra para medir entre dos fechas · ← → recorren los días",
   "ticker.price_summary": "Precio {start} → {end} ({pct}), mínimo {lo}, máximo {hi}",
   "ticker.hover_ohlc": "apertura {open} · máximo {high} · mínimo {low}",

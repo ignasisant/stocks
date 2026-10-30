@@ -1232,6 +1232,76 @@ def test_projection_grows_a_sleeve_at_its_own_rate_only_when_asked(
     assert short["growth"] == 0.08 and short["growth_own"] is False
 
 
+def test_projection_starts_from_the_plan_when_asked(client, book, monkeypatch):
+    """`from_plan` fills what the reader did not type from their plan: the
+    contribution spread per month (a quarterly one is a third a month), the
+    profile's horizon as the span. A typed figure still wins; without the flag
+    the page keeps the history hint, and the plan is echoed either way."""
+    from stocks.data import fx
+
+    month = pd.Timestamp(date.today()).replace(day=1)
+    index = pd.date_range(end=month - pd.Timedelta(days=1), periods=24, freq="ME")
+    hist = pd.DataFrame({"value": [1000.0] * 24, "injected": [1000.0] * 24}, index=index)
+    empty = pd.Series(dtype=float)
+    monkeypatch.setattr(
+        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    )
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: report()
+    )
+
+    def ask(**params):
+        return client.get(
+            "/v1/portfolio/projection",
+            params={"account": EMAIL, **params},
+            headers=AUTH,
+        ).json()
+
+    book(trades())
+    bare = ask(from_plan="true")
+    assert bare["monthly"] == 0 and bare["years"] == 5
+    assert bare["plan"] == {
+        "currency": "EUR", "monthly": None, "amount": None, "every": None,
+        "day": None, "crypto_share": None, "years": None,
+    }
+
+    book(
+        trades(),
+        prefs={
+            "currency": "EUR",
+            "investor_profile": {"horizon": "1_3y", "set": True},
+            "investor_plan": {
+                "set": True,
+                "mix": {"targets": {"stocks": 90, "crypto": 10}},
+                "contribution": {"amount": 600, "every": "quarterly", "day": 5},
+            },
+        },
+    )
+    planned = ask(from_plan="true")
+    assert planned["monthly"] == pytest.approx(200.0)
+    assert planned["years"] == 3 and len(planned["dates"]) == 37
+    assert planned["plan"]["amount"] == 600 and planned["plan"]["every"] == "quarterly"
+    assert planned["plan"]["crypto_share"] == pytest.approx(0.1)
+    assert planned["plan"]["years"] == 3
+    typed = ask(from_plan="true", monthly=50, years=10)
+    assert typed["monthly"] == 50 and typed["years"] == 10
+    history = ask()
+    assert history["monthly"] == history["monthly_suggested"]
+    assert history["years"] == 5 and history["plan"]["monthly"] == pytest.approx(200.0)
+
+    # Read in another currency, the plan's amount is converted, and left out
+    # rather than guessed when no rate comes back.
+    monkeypatch.setattr(fx, "spot", lambda source, target: (1.1, None))
+    assert ask(from_plan="true", base="USD")["monthly"] == pytest.approx(220.0)
+
+    def down(source, target):
+        raise OSError("offline")
+
+    monkeypatch.setattr(fx, "spot", down)
+    offline = ask(from_plan="true", base="USD")
+    assert offline["monthly"] == 0 and offline["plan"]["amount"] == 600
+
+
 def test_unpriced_positions_answer_from_the_ledger_alone(client, book, monkeypatch):
     """`?priced=false` is what a table draws first: every row, no price, no
     network — the quote and download loaders must not be touched."""

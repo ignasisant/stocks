@@ -349,7 +349,7 @@ function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: strin
         const help = maybe(t, `review.note_${note.key}_help`);
         return (
           <p
-            key={`${note.key}-${note.sector ?? note.country ?? note.currency ?? ""}`}
+            key={`${note.key}-${note.sector ?? note.country ?? note.currency ?? note.bucket ?? ""}`}
             className="ag-rev-caption"
           >
             {noteText(note, taxCurrency, t, lang)}

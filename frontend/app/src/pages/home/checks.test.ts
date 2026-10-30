@@ -52,6 +52,14 @@ describe("target", () => {
     expect(target(row("ask"), STEPS)).toEqual({ kind: "assistant" });
   });
 
+  it("hands the plan to the chat's builder rather than the form", () => {
+    expect(target(row("plan"), STEPS)).toEqual({
+      kind: "assistant",
+      ask: "profile.plan_ask_prompt",
+    });
+    expect(row("plan").optional).toBe(true);
+  });
+
   it("stays inert for a step with no page and nothing to open", () => {
     const nowhere = [step("assistant", null)];
     expect(target(row("ai"), nowhere)).toBeNull();
@@ -95,6 +103,7 @@ describe("target", () => {
     expect(SETUP.map((entry) => entry.key)).toEqual([
       "login",
       "import",
+      "plan",
       "ai",
       "telegram",
     ]);
@@ -104,11 +113,11 @@ describe("target", () => {
 
 describe("guests", () => {
   it("disables every row whose target sits behind a sign-in, and only those", () => {
-    // The import, AI, Telegram, ask and watchlist rows are disabled for a
+    // The import, plan, AI, Telegram, ask and watchlist rows are disabled for a
     // guest; search stays live, and sign-in is the pending action itself.
     const gated = [...SETUP, ...EXPLORE]
       .filter((entry) => entry.signedIn)
       .map((entry) => entry.key);
-    expect(gated).toEqual(["import", "ai", "telegram", "ask", "watchlist"]);
+    expect(gated).toEqual(["import", "plan", "ai", "telegram", "ask", "watchlist"]);
   });
 });

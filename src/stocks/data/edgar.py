@@ -375,6 +375,10 @@ def earnings_release(ticker: str, report: date) -> str | None:
 # lookup above already reads.
 
 CURRENT_FORMS = ("8-K", "8-K/A")
+# A company that cannot file its annual or quarterly report on time says so on
+# Form 12b-25, filed as "NT 10-K" / "NT 10-Q" (a foreign filer's as "NT 20-F").
+# It reports no items, and is kept all the same: the notice is the news.
+LATE_FORMS = ("NT 10-K", "NT 10-Q", "NT 20-F")
 FILING_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{document}"
 # Item 9.01 is the exhibit list every 8-K carries: never news on its own.
 ITEM_TOPICS = {
@@ -417,7 +421,8 @@ class CurrentReport:
 def parse_current_reports(cik: str, subs: dict, since: date) -> list[CurrentReport]:
     """The 8-Ks in a submissions feed filed on or after `since`, newest first,
     each with the news items it reports (an exhibits-only filing has none and
-    is left out)."""
+    is left out), and the late-filing notices (`LATE_FORMS`), which have no
+    items."""
     recent = (subs.get("filings") or {}).get("recent") or {}
     rows = zip(
         recent.get("form") or [], recent.get("filingDate") or [],
@@ -426,7 +431,7 @@ def parse_current_reports(cik: str, subs: dict, since: date) -> list[CurrentRepo
     )
     out: list[CurrentReport] = []
     for form, day, items, accession, document in rows:
-        if form not in CURRENT_FORMS:
+        if form not in CURRENT_FORMS and form not in LATE_FORMS:
             continue
         try:
             filed = date.fromisoformat(day)
@@ -436,7 +441,7 @@ def parse_current_reports(cik: str, subs: dict, since: date) -> list[CurrentRepo
             continue
         codes = tuple(c for c in (s.strip() for s in str(items or "").split(","))
                       if c in ITEM_TOPICS)
-        if not codes:
+        if not codes and form not in LATE_FORMS:
             continue
         url = FILING_URL.format(cik=int(cik), folder=str(accession).replace("-", ""),
                                 document=document) if document else ""

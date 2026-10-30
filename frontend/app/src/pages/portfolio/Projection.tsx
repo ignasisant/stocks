@@ -12,7 +12,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { get } from "../../shell/api";
+import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
@@ -34,7 +34,11 @@ import { num } from "../../shell/numbers";
 
 type StockPreset = keyof typeof STOCK_PRESETS | typeof OWN_GROWTH;
 type CryptoGrowth = (typeof CRYPTO_GROWTH)[number] | typeof OWN_GROWTH;
-type CryptoShare = (typeof CRYPTO_SHARES)[number];
+type CryptoShare = (typeof CRYPTO_SHARES)[number] | typeof PLAN_SHARE;
+type Years = (typeof PROJECTION_YEARS)[number];
+
+/** The crypto-share option that is the plan's mix, not a number. */
+const PLAN_SHARE = "plan";
 
 export default function Projection() {
   const t = useT();
@@ -42,38 +46,49 @@ export default function Projection() {
   const base = useCurrency();
   const money = moneyIn(lang, base);
   const compact = compactMoneyIn(lang, base);
-  const [years, setYears] = useState<(typeof PROJECTION_YEARS)[number]>("5");
+  // Null until the reader picks: the server answers with the profile's
+  // horizon, or five years without one.
+  const [years, setYears] = useState<Years | null>(null);
   const [stocks, setStocks] = useState<StockPreset>("world");
   const [crypto, setCrypto] = useState<CryptoGrowth>("0");
   const [share, setShare] = useState<CryptoShare>("today");
   const [real, setReal] = useState<"nominal" | "real">("nominal");
   const [target, setTarget] = useState<number | null>(null);
-  // Zero until the reader types one: the fan opens on what is already in,
-  // and the last twelve months' average sits beside the box as a hint.
-  const [monthly, setMonthly] = useState(0);
+  // Null until the reader types one: the fan opens on the plan's
+  // contribution, or on what is already in without one (`from_plan`).
+  const [monthly, setMonthly] = useState<number | null>(null);
+  // Bumped by "use in my plan", so the answer reads the plan just stored.
+  const [stored, setStored] = useState(0);
+  const [save, setSave] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const [last, setLast] = useState<ProjectionData | null>(null);
 
   const query = useApi(
     () =>
       get<ProjectionData>("/portfolio/projection", {
         base,
-        years,
+        years: years ?? undefined,
+        from_plan: "true",
         // "own" lets the server read the rate it measures, so it is never a
         // stale number carried over from another currency's answer.
         stock_growth: stocks === OWN_GROWTH ? undefined : STOCK_PRESETS[stocks] / 100,
         stock_own: stocks === OWN_GROWTH ? "true" : undefined,
         crypto_growth: crypto === OWN_GROWTH ? undefined : Number(crypto) / 100,
         crypto_own: crypto === OWN_GROWTH ? "true" : undefined,
-        crypto_share: share === "today" ? undefined : Number(share) / 100,
-        monthly,
+        crypto_share:
+          share === "today"
+            ? undefined
+            : share === PLAN_SHARE
+              ? (last?.plan?.crypto_share ?? undefined)
+              : Number(share) / 100,
+        monthly: monthly ?? undefined,
         real: real === "real" ? "true" : undefined,
         target: target ?? undefined,
       }),
-    [base, years, stocks, crypto, share, monthly, real, target],
+    [base, years, stocks, crypto, share, monthly, real, target, stored],
   );
   // Every control refetches. Holding the last answer on screen (dimmed)
   // while the next one draws keeps the panel under the reader's hand instead
   // of swapping the whole view for a skeleton on each click.
-  const [last, setLast] = useState<ProjectionData | null>(null);
   if (query.state === "loaded" && query.data !== last) setLast(query.data);
   const data = query.state === "loaded" ? query.data : last;
 
@@ -109,6 +124,23 @@ export default function Projection() {
   ): readonly (T | typeof OWN_GROWTH)[] =>
     measured === null || measured === undefined ? options : [...options, OWN_GROWTH];
 
+  const plan = data.plan;
+  const offer = planOffer(data);
+  const storeInPlan = () => {
+    if (!offer) return;
+    setSave("saving");
+    send("PUT", "/plan/contribution", offer)
+      .then(() => {
+        setSave("saved");
+        setStored((n) => n + 1);
+      })
+      .catch(() => setSave("failed"));
+  };
+  const shares: readonly CryptoShare[] =
+    plan?.crypto_share === null || plan?.crypto_share === undefined
+      ? CRYPTO_SHARES
+      : [...CRYPTO_SHARES, PLAN_SHARE];
+
   const panel = (
     <aside className="pf-proj-panel" aria-label={t("portfolio.projection_assumptions")}>
       <PanelGroup title={t("portfolio.projection_plan")}>
@@ -116,11 +148,43 @@ export default function Projection() {
           label={t("portfolio.projection_monthly")}
           value={data.monthly}
           suffix="€"
-          hint={t("portfolio.projection_monthly_hint", {
-            amount: money(data.monthly_suggested) ?? "",
-          })}
-          onCommit={(value) => setMonthly(value ?? 0)}
+          hint={
+            plan?.monthly
+              ? t("portfolio.projection_monthly_hint_plan", {
+                  amount: money(plan.monthly) ?? "",
+                })
+              : t("portfolio.projection_monthly_hint", {
+                  amount: money(data.monthly_suggested) ?? "",
+                })
+          }
+          onCommit={(value) => {
+            setMonthly(value ?? 0);
+            setSave("idle");
+          }}
         />
+        {/* Stored only on the press: trying a figure here is not deciding
+            on it. Gone once the plan says the same. */}
+        {offer ? (
+          <button
+            type="button"
+            className="ag-btn pf-proj-use"
+            disabled={save === "saving"}
+            onClick={storeInPlan}
+          >
+            {offer.every === "quarterly"
+              ? t("portfolio.projection_use_in_plan_quarterly", {
+                  amount: money(offer.amount) ?? "",
+                })
+              : t("portfolio.projection_use_in_plan")}
+          </button>
+        ) : null}
+        {(save === "saved" && !offer) || save === "failed" ? (
+          <span className="pf-proj-hint" role="status">
+            {save === "failed"
+              ? t("common.offline")
+              : t("portfolio.projection_saved_in_plan")}
+          </span>
+        ) : null}
         {/* The same plan said in total, today's value included, as the
             figure beside the chart reads. Either box sets the monthly
             amount the server draws with; the other is recomputed. */}
@@ -140,6 +204,7 @@ export default function Projection() {
             setMonthly(
               months > 0 ? Math.max(Math.round((extra / months) * 100) / 100, 0) : 0,
             );
+            setSave("idle");
           }}
         />
         <AmountField
@@ -169,7 +234,7 @@ export default function Projection() {
         />
         {/* Crypto gets its own growth and its own share of each
             contribution, and only when there is crypto to move. */}
-        {data.crypto_weight > 0 ? (
+        {data.crypto_weight > 0 || (plan?.crypto_share ?? 0) > 0 ? (
           <>
             <Segmented
               label={t("portfolio.projection_crypto", {
@@ -188,7 +253,7 @@ export default function Projection() {
             />
             <Segmented
               label={t("portfolio.projection_crypto_share")}
-              options={CRYPTO_SHARES}
+              options={shares}
               value={share}
               onChange={setShare}
               format={(option) =>
@@ -196,7 +261,11 @@ export default function Projection() {
                   ? t("portfolio.projection_share_today", {
                       weight: pct(data.crypto_weight),
                     })
-                  : `${option}%`
+                  : option === PLAN_SHARE
+                    ? t("portfolio.projection_share_plan", {
+                        weight: pct(plan?.crypto_share),
+                      })
+                    : `${option}%`
               }
             />
           </>
@@ -217,7 +286,7 @@ export default function Projection() {
       <Segmented
         label={t("portfolio.projection_years")}
         options={PROJECTION_YEARS}
-        value={years}
+        value={years ?? (String(data.years) as Years)}
         onChange={setYears}
         format={(option) =>
           option === "1"
@@ -295,10 +364,10 @@ export default function Projection() {
                 the spread. The two meet at "today". */}
             <ReturnLines
               label={`${t(
-                years === "1"
+                data.years === 1
                   ? "portfolio.projection_years_n_one"
                   : "portfolio.projection_years_n",
-                { n: years },
+                { n: data.years },
               )}, ${t("portfolio.projection_range")} ${compact(low) ?? ""} – ${compact(high) ?? ""}`}
               dates={[...data.history_dates, ...data.dates]}
               format={(value) => compact(value) ?? ""}
@@ -426,6 +495,23 @@ function projectionBands(
       color,
     },
   ];
+}
+
+/**
+ * The contribution to store when the figure on screen is not the plan's, on
+ * the plan's own schedule (a quarter holds three months), or null. Only in
+ * the plan's currency, where the amount drawn is the amount stored; and not
+ * for nothing a month, which is clearing the contribution, not setting one.
+ */
+export function planOffer(
+  data: ProjectionData,
+): { amount: number; every: "monthly" | "quarterly"; day: number } | null {
+  const plan = data.plan;
+  if (!plan || data.monthly <= 0 || data.base !== plan.currency) return null;
+  if (Math.round(data.monthly) === Math.round(plan.monthly ?? -1)) return null;
+  const every = plan.every ?? "monthly";
+  const amount = data.monthly * (every === "quarterly" ? 3 : 1);
+  return { amount: Math.round(amount * 100) / 100, every, day: plan.day ?? 1 };
 }
 
 /**

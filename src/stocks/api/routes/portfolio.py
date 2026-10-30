@@ -12,7 +12,8 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
+from stocks import accounts, obs
+from stocks.accounts import UserPaths
 from stocks.analysis.monthly import window as book_window
 from stocks.analysis.portfolio import (
     allocation_parts,
@@ -65,6 +66,7 @@ from stocks.api.schemas import (
     Position,
     Positions,
     Projection,
+    ProjectionPlan,
     ProjectionSleeve,
     Risk,
     RiskCurves,
@@ -84,7 +86,7 @@ from stocks.api.schemas import (
 )
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
-from stocks.data import fetch
+from stocks.data import fetch, fx
 from stocks.frames import midnight
 from stocks.portfolio import (
     custody,
@@ -1509,6 +1511,9 @@ _PAST_MONTHS = 12
 # Share of a sleeve's value the risk download must price for its measured
 # volatility and growth to stand for the sleeve.
 _MIN_COVERAGE = 0.5
+# The investor profile's horizon as one of the page's spans: the far end of
+# each band, and ten years for "five or more" — the page's longest.
+_HORIZON_YEARS = {"under_1y": 1, "1_3y": 3, "3_5y": 5, "5y_plus": 10}
 
 
 @router.get(
@@ -1517,7 +1522,14 @@ _MIN_COVERAGE = 0.5
 def projection(
     account: Account,
     base: Base = None,
-    years: Annotated[int, Query(ge=1, le=30)] = 5,
+    years: Annotated[
+        int | None,
+        Query(
+            ge=1,
+            le=30,
+            description="Default 5, or the profile's horizon with `from_plan`.",
+        ),
+    ] = None,
     stock_growth: Annotated[
         float | None,
         Query(ge=-0.5, le=0.5, description="Median compound annual; default 8%."),
@@ -1567,6 +1579,16 @@ def projection(
             description="Value to reach; the share of paths that end at or above it.",
         ),
     ] = None,
+    from_plan: Annotated[
+        bool,
+        Query(
+            description=(
+                "Fill what is not given from the investor plan: `monthly` is its "
+                "contribution per month (0 without one), `years` the profile's "
+                "horizon. The plan itself is echoed under `plan` either way."
+            )
+        ),
+    ] = False,
 ) -> Projection:
     """Where the book's value could be `years` out, as a percentile fan.
 
@@ -1579,6 +1601,9 @@ def projection(
     `stock_own` / `crypto_own` swap a sleeve's chosen rate for the one its
     current holdings compounded at over the same window — the reader's ask,
     echoed as `own_growth` on every sleeve so the page can offer it by number.
+
+    `from_plan` starts the page where the reader's plan stands rather than at
+    nothing added; a figure the reader types still wins over it.
     """
     from stocks.analysis.portfolio import Sleeve, first_owned, sleeve_stats
     from stocks.data.crypto import is_crypto
@@ -1672,7 +1697,16 @@ def projection(
         for key in ("stocks", "crypto")
         if split[key] > 0 or shares[key] > 0
     ]
-    per_month = suggested if monthly is None else monthly
+    guest = account.root == accounts.GUEST_DIR
+    stated = None if guest else _projection_plan(account, ccy)
+    if monthly is not None:
+        per_month = monthly
+    elif from_plan:
+        per_month = (stated.monthly if stated else None) or 0.0
+    else:
+        per_month = suggested
+    if years is None:
+        years = (stated.years if from_plan and stated else None) or 5
     echo = [
         ProjectionSleeve(
             key=sl.key,
@@ -1695,6 +1729,7 @@ def projection(
         crypto_weight=crypto_weight,
         monthly=per_month,
         monthly_suggested=suggested,
+        plan=stated,
         real=real,
         inflation=_INFLATION,
         target=target,
@@ -1735,6 +1770,37 @@ def projection(
         history_dates=[str(d.date()) for d in past.index],
         history_value=[_num(v) for v in past["value"]] if not past.empty else [],
         history_invested=[_num(v) for v in past["injected"]] if not past.empty else [],
+    )
+
+
+def _projection_plan(paths: UserPaths, ccy: str) -> ProjectionPlan:
+    """The plan's say on the projection's inputs, its contribution in `ccy`.
+    The plan states money in the reporting currency; read in another `base`
+    with no rate to hand, the contribution is left out rather than guessed."""
+    from stocks.portfolio import plan as plans
+    from stocks.web.auth import load_profile
+
+    prefs = accounts.load_prefs(paths.prefs)
+    investor = plans.load(prefs)
+    profile = load_profile(prefs)
+    home = reporting_currency(paths)
+    c = investor.contribution
+    monthly = plans.per_month(investor)
+    if monthly is not None and home != ccy:
+        try:
+            monthly *= fx.spot(home, ccy)[0]
+        except Exception:  # noqa: BLE001 — the page stands without it
+            obs.event("projection.fx_missing", source=home, target=ccy)
+            monthly = None
+    mix = investor.mix
+    return ProjectionPlan(
+        currency=home,
+        monthly=None if monthly is None else round(monthly, 2),
+        amount=c.amount if c else None,
+        every=c.every if c else None,
+        day=c.day if c else None,
+        crypto_share=mix.targets.get(plans.CRYPTO, 0.0) / 100 if mix else None,
+        years=_HORIZON_YEARS.get(profile["horizon"]) if profile["set"] else None,
     )
 
 

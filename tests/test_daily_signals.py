@@ -538,3 +538,62 @@ def test_the_rules_met_on_the_card_s_job_go_first_within_the_cap():
     assert out[0]["kind"] == signals.CRITERION_HIT and out[0]["ticker"] == "ASML"
     assert [a["kind"] for a in out].count(signals.CRITERION_NEAR) == 2
     assert other in out
+
+
+def _report(form: str, days_ago: int, *items: str):
+    from datetime import timedelta
+
+    from stocks.data.edgar import CurrentReport
+
+    return CurrentReport(form, TODAY - timedelta(days=days_ago), items, "")
+
+
+def test_a_held_name_s_worst_filing_is_its_red_flag():
+    reports = {
+        "AMD": [_report("8-K", 2, "2.02", "4.01"), _report("8-K", 9, "4.02")],
+        "ASML": [_report("NT 10-Q", 0)],
+        "NVDA": [_report("8-K", 1, "1.03")],          # not held
+        "MSFT": [_report("8-K", 1, "2.02", "5.02")],  # nothing flagged
+        "TSLA": [_report("8-K", signals.FLAG_DAYS + 1, "4.02")],  # too old
+    }
+    out = {s.ticker: s for s in signals.filing_signals(
+        reports, {"AMD", "ASML", "MSFT", "TSLA"}, TODAY)}
+    assert set(out) == {"AMD", "ASML"}
+    amd = out["AMD"]
+    assert amd.kind == signals.FILING_FLAG and amd.key == "filing_flag:AMD"
+    assert amd.data == {"flag": "4.02", "form": "8-K",
+                        "date": "2026-08-25", "days_ago": 9}
+    assert amd.urgency == signals.FLAG_URGENCY["4.02"] - 4
+    assert out["ASML"].data["flag"] == "late"
+    assert out["ASML"].urgency == signals.FLAG_URGENCY["late"]
+
+
+def test_a_red_flag_is_shown_once_unless_a_new_filing_raises_it():
+    flag = signals.filing_signals({"AMD": [_report("8-K", 3, "4.02")]}, {"AMD"},
+                                  TODAY)[0]
+    shown = {flag.key: {"last": "2026-09-01", "run": 1,
+                        "v": signals.measure(flag.kind, flag.data)}}
+    assert signals.repeat(flag, shown, TODAY)
+    again = signals.filing_signals({"AMD": [_report("8-K", 0, "4.02")]}, {"AMD"},
+                                   TODAY)[0]
+    assert not signals.repeat(again, shown, TODAY)
+
+
+def test_red_flags_follow_the_rules_that_fired_within_their_cap():
+    from stocks.api.briefing import with_flags
+
+    reports = {t: [_report("8-K", 1, item)]
+               for t, item in (("AMD", "4.02"), ("ASML", "4.01"), ("NVDA", "1.03"))}
+    flags = signals.filing_signals(reports, set(reports), TODAY)
+    hit = {"kind": signals.CRITERION_HIT, "key": "criterion_hit:MSFT:below"}
+    other = {"kind": signals.CRITERION_NEAR, "key": "criterion_near:T:below"}
+    out = with_flags([other, hit], flags, None, TODAY)
+    assert out[0] == hit and out[-1] == other
+    assert [a["ticker"] for a in out[1:-1]] == ["NVDA", "AMD"]
+    nvda = next(f for f in flags if f.ticker == "NVDA")
+    shown = {nvda.key: {"last": "2026-09-02", "run": 1,
+                        "v": signals.measure(nvda.kind, nvda.data)}}
+    out = with_flags([other], flags, shown, TODAY)
+    assert [a["ticker"] for a in out[:-1]] == ["AMD", "ASML"]
+    assert with_flags([other], [], None, TODAY) == [other]
+

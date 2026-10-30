@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseAmount, projectionSeries } from "./Projection";
+import { parseAmount, planOffer, projectionSeries } from "./Projection";
+import type { Projection, ProjectionPlan } from "./api";
 
 describe("parseAmount", () => {
   it("reads both decimal conventions and thousands dots", () => {
@@ -40,6 +41,7 @@ describe("projectionSeries", () => {
     target_probability: null,
     monthly: 0,
     monthly_suggested: 0,
+    plan: null,
     dates: ["2026-09-27", "2026-10-27", "2026-11-27"],
     p10: [150, 140, 130],
     p25: [150, 145, 140],
@@ -77,5 +79,34 @@ describe("projectionSeries", () => {
       labels,
     );
     expect(lines.map((l) => l.label)).toEqual(["p90", "p50", "p10", "c"]);
+  });
+});
+
+describe("planOffer", () => {
+  const plan: ProjectionPlan = {
+    currency: "EUR",
+    monthly: 200,
+    amount: 600,
+    every: "quarterly",
+    day: 5,
+    crypto_share: null,
+    years: null,
+  };
+  const at = (monthly: number, extra: Partial<Projection> = {}) =>
+    ({ base: "EUR", monthly, plan, ...extra }) as Projection;
+
+  it("offers the figure on screen on the plan's own schedule", () => {
+    expect(planOffer(at(250))).toEqual({ amount: 750, every: "quarterly", day: 5 });
+    expect(
+      planOffer(at(250, { plan: { ...plan, monthly: null, every: null, day: null } })),
+    ).toEqual({ amount: 250, every: "monthly", day: 1 });
+  });
+
+  it("stays quiet when there is nothing to store", () => {
+    expect(planOffer(at(200))).toBeNull(); // the plan already says it
+    expect(planOffer(at(200.4))).toBeNull(); // the same figure, rounded
+    expect(planOffer(at(0))).toBeNull();
+    expect(planOffer(at(250, { base: "USD" }))).toBeNull(); // not the plan's money
+    expect(planOffer(at(250, { plan: null }))).toBeNull(); // a guest
   });
 });

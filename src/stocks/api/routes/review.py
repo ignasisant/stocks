@@ -55,6 +55,8 @@ from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     NameReturns,
     Review,
+    ReviewDrift,
+    ReviewInvestorPlan,
     ReviewLines,
     ReviewNote,
     ReviewPlan,
@@ -68,6 +70,7 @@ from stocks.data import fx, profiles, score_history
 from stocks.data.crypto import is_crypto
 from stocks.frames import midnight
 from stocks.portfolio import consistency, demo, tax
+from stocks.portfolio import plan as plans
 from stocks.portfolio.tax import prefs as tax_prefs
 
 router = APIRouter(tags=["review"])
@@ -761,6 +764,67 @@ def _window_closes(symbol: str, days: str) -> pd.Series | None:
         return None
 
 
+def _contribution(
+    investor: plans.Plan, account, ccy: str, today: date
+) -> tuple[float | None, date | None]:
+    """The plan's contribution in `ccy` and the day it is next due. The plan
+    states it in the account's reporting currency; a page read in another
+    `base` converts it, and drops it when no rate is had."""
+    upcoming = plans.next_contribution(investor, today)
+    if investor.contribution is None:
+        return None, upcoming
+    rate = _rate(reporting_currency(account), ccy)
+    if rate is None:
+        return None, upcoming
+    return investor.contribution.amount * rate, upcoming
+
+
+def _stated_cash(investor: plans.Plan, account, ccy: str) -> float | None:
+    """The uninvested cash the plan states (`plan.Cash.investable`), in
+    `ccy`; None without one or without a rate. The emergency fund is never
+    read here: it is not money to spend."""
+    if not investor.investable:
+        return None
+    rate = _rate(reporting_currency(account), ccy)
+    return None if rate is None else investor.investable * rate
+
+
+def _budget(contribution: float | None, cash: float | None) -> float | None:
+    """What the new-money list may spend: the next contribution plus the
+    cash already waiting. None, the list left open, when neither is stated."""
+    if contribution is None and cash is None:
+        return None
+    return (contribution or 0.0) + (cash or 0.0)
+
+
+def _size_new_money(
+    rows: list[ReviewRow], budget: float | None, total: float, stocks_over: bool
+) -> None:
+    """The adds that wait for new money, sized to what the plan says comes in:
+    the rows best case first (quality plus cheapness, the order the page lists
+    them in, `waitingMoves`) take it until it runs out, and one it does not
+    reach is no longer quoted. With shares already past the plan's share for
+    them, new money goes elsewhere and none is quoted here. Without a
+    contribution the list stays open, as before the plan."""
+    if stocks_over:
+        for r in rows:
+            r.new_money = None
+        return
+    if budget is None or total <= 0:
+        return
+    left = budget
+    best = sorted(rows, key=lambda r: -((r.quality or 0) + (r.cheapness or 0)))
+    for r in best:
+        if not r.new_money:
+            continue
+        take = min(r.new_money, left)
+        if take < engine.SMALL * total:
+            r.new_money = None
+            continue
+        r.new_money = take
+        left -= take
+
+
 def _imported(account) -> bool:
     try:
         return demo.has_real(account.db)
@@ -777,7 +841,12 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
     mtime = loaders.db_mtime(db)
     # The jurisdiction the rest of the app taxes this account under: never
     # the browser's, or this page and Portfolio's tax tab would disagree.
-    code, how = tax_prefs.resolve(tax_prefs.load(account.prefs))
+    stored = tax_prefs.load(account.prefs)
+    code, how = tax_prefs.resolve(stored)
+    # The reader's own plan: its caps replace the page's lines, its mix says
+    # which kinds of asset take no more money, its contribution sizes what
+    # new money buys. Without one every line is the page's own.
+    investor = plans.load(stored)
 
     # The held names are the ledger's, in the priced table's order; the prices
     # and the risk split download while the names' KPIs are fetched.
@@ -908,7 +977,19 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         )
         for label in held_labels
     ]
-    notes = engine.book_notes(rows, ccy)
+    cash = _stated_cash(investor, account, ccy)
+    mix = plans.with_cash(plans.buckets(dict(weights), kind_of), total, cash or 0.0)
+    drifts = plans.drift(investor, mix)
+    stocks_over = any(d.bucket == plans.STOCKS and d.side == "over" for d in drifts)
+    bets = sum(
+        1
+        for label in held_labels
+        if engine.company(kind_of(label))
+        and (m := facts.get(symbol_of(label), (None, None))[1])
+        and engine.stage(m) == engine.EARLY
+    )
+    limits = engine.Limits.from_plan(investor, bets)
+    notes = engine.plan_notes(drifts) + engine.book_notes(rows, ccy, limits)
     company_share = sum(r.weight or 0.0 for r in rows if engine.company(r.kind))
     # A move the page proposed before and still stands holds to the plain
     # line; a new one has to clear the margin past it (`engine.judge_held`).
@@ -929,6 +1010,7 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
                 names=names,
                 company_share=company_share or 1.0,
                 was=was(label, symbol_of(label)),
+                limits=limits,
             )
             for label in held_labels
         ]
@@ -939,7 +1021,9 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         share = tax_share(label, weight, verdict)
         verdict = engine.hold_for_cost(verdict, share)
         staged.append((weight, engine.stage_for_tax(weight, verdict, share)))
-    judged = engine.redeploy(staged, [sectors[label] for label in held_labels])
+    judged = engine.redeploy(
+        staged, [sectors[label] for label in held_labels], limits.sector
+    )
 
     # Losses the plan leaves open, against the gains its sales realise: the
     # names it sells or adds to are not the ones to sell for tax.
@@ -1024,14 +1108,23 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         if kind == "index":
             continue
         verdict = engine.judge_candidate(
-            metrics, kind=kind or "stock", names=names, was=was(ticker, symbol)
+            metrics,
+            kind=kind or "stock",
+            names=names,
+            was=was(ticker, symbol),
+            limits=limits,
         )
         outside.append((ticker, symbol, kind, _profile(symbol), verdict))
     placed, _ = engine.place_outside(
         [(w, v) for (w, _), v in zip(staged, judged, strict=True)],
         [sectors[label] for label in held_labels],
         [(verdict, place["sector"]) for *_, place, verdict in outside],
+        sector_line=limits.sector,
     )
+    # Shares already past the plan's share for them: what the sales free
+    # stays unplaced rather than opening another company.
+    if stocks_over:
+        placed = [None] * len(placed)
 
     outside_rows: list[ReviewRow] = []
     for (ticker, symbol, kind, place, verdict), target in zip(
@@ -1072,9 +1165,14 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
 
     held_rows.sort(key=order)
     outside_rows.sort(key=order)
+    contribution, upcoming = _contribution(investor, account, ccy, today)
+    _size_new_money(held_rows, _budget(contribution, cash), total, stocks_over)
     waiting = [r for r in held_rows if r.new_money and r.verdict == engine.HOLD]
     if idle := engine.cash_note(
-        rows, [r.verdict for r in held_rows + outside_rows], waiting=len(waiting)
+        rows,
+        [r.verdict for r in held_rows + outside_rows],
+        waiting=len(waiting),
+        limits=limits,
     ):
         notes.append(idle)
 
@@ -1165,6 +1263,10 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         close_calls=sum(1 for r in shown if engine.R_CLOSE_CALL in r.reasons),
         costly_holds=sum(1 for r in held_rows if engine.R_SALE_COSTLY in r.reasons),
         held_by_journal=sum(1 for r in shown if was(r.ticker, r.symbol)),
+        plan_set=investor.set,
+        plan_limits_used=limits.drawn,
+        plan_drift=[d.bucket for d in drifts],
+        plan_contribution=contribution is not None,
         phases=clock.ms,
         ms=round((perf_counter() - started) * 1000),
     )
@@ -1187,10 +1289,26 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         added=added,
         pending=pending,
         lines=ReviewLines(
-            concentrated=engine.concentration_line(names),
+            concentrated=engine.concentration_line(names, limits.position),
             small=engine.small_line(names),
             add_to=engine.add_line(names),
-            sector=engine.SECTOR_LINE,
+            sector=limits.sector,
+        ),
+        investor_plan=ReviewInvestorPlan(
+            set=investor.set,
+            limits_used=limits.drawn,
+            drift=[
+                ReviewDrift(
+                    bucket=d.bucket,
+                    weight=d.actual_pct / 100,
+                    target=d.target_pct / 100,
+                    side=d.side,
+                )
+                for d in drifts
+            ],
+            next_contribution=upcoming.isoformat() if upcoming else None,
+            contribution=_num(contribution),
+            cash=_num(cash),
         ),
         notes=[
             ReviewNote.model_validate(

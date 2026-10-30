@@ -136,6 +136,7 @@ DAILY_ACTIONS = {
     "repurchase_clear": "rebuy",
     "low_52w": "consider",
     "criterion_hit": "exit",
+    "filing_flag": "review",
 }
 # The Today page's insider rows: a cluster of insiders buying is a name worth
 # a look — the rest of the page (news, comparisons) is read, not decided.

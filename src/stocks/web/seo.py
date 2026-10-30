@@ -100,10 +100,11 @@ APP_PREFIXES = (
 )
 
 # Exact paths answered outside the page list: the OIDC return (ours, see
-# `web/oidc.py`), the MCP connector's endpoints and the retired `/next` entry.
-# JSON for machines, never documents.
+# `web/oidc.py`), the MCP connector's endpoints, the push service worker and
+# the retired `/next` entry. Machinery, never documents.
 APP_PATHS = (
     "/oauth2callback",
+    "/sw.js",
     "/mcp",
     "/authorize",
     "/token",

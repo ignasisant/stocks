@@ -2496,6 +2496,30 @@ class ProjectionSleeve(BaseModel):
     share: float = Field(description="Share of each monthly contribution it gets.")
 
 
+class ProjectionPlan(BaseModel):
+    """What the investor plan says about the inputs, for the page to offer
+    and to write back (`PUT /plan/contribution`)."""
+
+    currency: str = Field(description="The plan's currency: the reporting one.")
+    monthly: float | None = Field(
+        default=None,
+        description="The plan's contribution per month, in `base`; null without one.",
+    )
+    amount: float | None = Field(
+        default=None, description="The contribution as stored, in `currency`."
+    )
+    every: str | None = Field(default=None, description="`monthly` or `quarterly`.")
+    day: int | None = None
+    crypto_share: float | None = Field(
+        default=None,
+        description="The mix's crypto target, as a fraction; null without a mix.",
+    )
+    years: int | None = Field(
+        default=None,
+        description="The profile's horizon in projection years; null when never saved.",
+    )
+
+
 class Projection(BaseModel):
     """A range for the book's value, month by month, some years out.
 
@@ -2525,6 +2549,9 @@ class Projection(BaseModel):
     monthly: float = Field(description="Contribution added at each month's end.")
     monthly_suggested: float = Field(
         description="Average net monthly money put in over the last 12 months."
+    )
+    plan: ProjectionPlan | None = Field(
+        default=None, description="The investor plan's inputs; null for a guest."
     )
     real: bool = Field(
         default=False, description="True when the future is in today's money."
@@ -3868,6 +3895,11 @@ class DailyItem(BaseModel):
     )
     line: str
     tickers: list[str] = Field(default_factory=list)
+    go: str = Field(
+        default="",
+        description="The page that resolves it, as a shell path with its "
+        "query (`/review`, `/profile?tab=plan`); empty for a context line.",
+    )
     section: Literal["alerts", "watch"] = Field(
         default="watch",
         description=(
@@ -4773,7 +4805,8 @@ class ReviewNote(BaseModel):
     key: str = Field(
         description=(
             "`review.note_<key>`: few_names, sector_heavy, crypto_heavy, "
-            "tax_offset, country_heavy, currency_heavy, fund_core, cash_heavy."
+            "tax_offset, country_heavy, currency_heavy, fund_core, cash_heavy, "
+            "plan_over, plan_under."
         )
     )
     count: int | None = Field(default=None, description="Names it counts.")
@@ -4788,6 +4821,49 @@ class ReviewNote(BaseModel):
     )
     country: str | None = Field(default=None, description="Yahoo's country, English.")
     currency: str | None = Field(default=None, description="ISO quote currency.")
+    bucket: str | None = Field(
+        default=None,
+        description=(
+            "The investor plan's bucket: stocks, equity_funds, bonds, cash, crypto."
+        ),
+    )
+    target: float | None = Field(
+        default=None, description="The share of the book the plan gives `bucket`."
+    )
+
+
+class ReviewDrift(BaseModel):
+    """A bucket of the book outside the band the investor plan keeps it in."""
+
+    bucket: str
+    weight: float = Field(description="Its share of the book today.")
+    target: float = Field(description="The share the plan gives it.")
+    side: Literal["over", "under"]
+
+
+class ReviewInvestorPlan(BaseModel):
+    """How the reader's own plan (`/prefs/plan`) shaped this page."""
+
+    set: bool = Field(default=False, description="The account has saved a plan.")
+    limits_used: bool = Field(
+        default=False,
+        description="A cap from the plan replaced one of the page's own lines.",
+    )
+    drift: list[ReviewDrift] = Field(default_factory=list)
+    next_contribution: str | None = Field(
+        default=None, description="ISO day of the next scheduled contribution."
+    )
+    contribution: float | None = Field(
+        default=None,
+        description="Its amount in `base`: part of what `new_money` is sized to.",
+    )
+    cash: float | None = Field(
+        default=None,
+        description=(
+            "The uninvested cash the plan states, in `base`: counted in the "
+            "mix's cash bucket and spent by `new_money` with the contribution."
+        ),
+    )
 
 
 class ReviewLines(BaseModel):
@@ -4896,6 +4972,7 @@ class Review(BaseModel):
         default_factory=list, description="The `add` tickers, as understood."
     )
     lines: ReviewLines | None = None
+    investor_plan: ReviewInvestorPlan = Field(default_factory=ReviewInvestorPlan)
     pending: int = Field(
         default=0,
         description=(

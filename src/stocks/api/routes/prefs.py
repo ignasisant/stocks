@@ -434,3 +434,236 @@ def save(account: Writer, body: ProfileWrite) -> InvestorProfile:
     # With the persona too: a form that just changed what the assistant is told
     # should hand back what it now says, not make the client ask again.
     return _with_persona(load_profile(stored))
+
+
+# ------------------------------------------------------------- the investor plan
+# The numbers the reader holds the book to (`stocks.portfolio.plan`): a mix by
+# kind of asset, caps on one name, one sector and the speculative names, a
+# contribution schedule and a cash reserve. Review sizes its moves to it and
+# the daily card measures the book against it. Like the profile it is a nested
+# object with its own vocabulary, so it has its own route rather than a PATCH
+# field, and it is written whole: a mix whose targets were saved one at a time
+# would add up to 100 only by accident.
+
+
+class PlanMix(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    targets: dict[str, float] = Field(
+        description=(
+            "Percent of the book per bucket (`stocks.portfolio.plan.BUCKETS`); "
+            "adds up to 100."
+        )
+    )
+    band_pp: float = Field(
+        default=5.0, gt=0, le=50, description="Drift allowed either side, in points."
+    )
+
+    @field_validator("targets")
+    @classmethod
+    def _whole_book(cls, value: dict[str, float]) -> dict[str, float]:
+        from stocks.portfolio.plan import BUCKETS, MIX_SLACK_PP
+
+        unknown = sorted(set(value) - set(BUCKETS))
+        if unknown:
+            raise ValueError(f"unknown bucket: {', '.join(unknown)}")
+        if any(not 0 <= v <= 100 for v in value.values()):
+            raise ValueError("each target is a percent between 0 and 100")
+        if abs(sum(value.values()) - 100) > MIX_SLACK_PP:
+            raise ValueError("targets must add up to 100")
+        # In offering order, every bucket present: see `_in_offering_order`.
+        return {b: float(value.get(b, 0.0)) for b in BUCKETS}
+
+
+class PlanLimits(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    max_position_pct: float | None = Field(default=None, gt=0, le=100)
+    max_sector_pct: float | None = Field(default=None, gt=0, le=100)
+    max_speculative_pct: float | None = Field(default=None, gt=0, le=100)
+
+
+class PlanContribution(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    amount: float = Field(gt=0, description="In the account's reporting currency.")
+    every: str = Field(default="monthly", description="`monthly` or `quarterly`.")
+    day: int = Field(default=1, ge=1, le=28)
+
+    @field_validator("every")
+    @classmethod
+    def _known_every(cls, value: str) -> str:
+        from stocks.portfolio.plan import EVERY
+
+        if value not in EVERY:
+            raise ValueError(f"every must be one of {', '.join(EVERY)}")
+        return value
+
+
+class PlanReserve(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    min_pct: float | None = Field(default=None, ge=0, le=100)
+    max_pct: float | None = Field(default=None, ge=0, le=100)
+
+    @field_validator("max_pct")
+    @classmethod
+    def _floor_under_ceiling(cls, value, info):
+        low = info.data.get("min_pct")
+        if value is not None and low is not None and low > value:
+            raise ValueError("min_pct must not be over max_pct")
+        return value
+
+
+class PlanCash(BaseModel):
+    """Money held outside any position, as the reader states it."""
+
+    model_config = {"extra": "ignore"}
+
+    investable: float | None = Field(
+        default=None,
+        ge=0,
+        le=1e12,
+        description=(
+            "Uninvested money meant for the book (a broker's idle balance, a "
+            "savings account), in the reporting currency. Counts as cash."
+        ),
+    )
+    cushion: float | None = Field(
+        default=None,
+        ge=0,
+        le=1e12,
+        description="The emergency fund, kept apart and never counted.",
+    )
+    rate_pct: float | None = Field(
+        default=None, ge=0, le=20, description="Interest the account pays, a year."
+    )
+    as_of: str | None = Field(
+        default=None,
+        description=(
+            "ISO date the amounts were last stated. Set by the server when an "
+            "amount changes; ignored on the way in."
+        ),
+    )
+
+
+class PlanWrite(BaseModel):
+    """The whole plan, replaced. Every block may be left out."""
+
+    model_config = {"extra": "forbid"}
+
+    mix: PlanMix | None = None
+    limits: PlanLimits = PlanLimits()
+    contribution: PlanContribution | None = None
+    reserve: PlanReserve | None = None
+    cash: PlanCash | None = None
+
+
+class InvestorPlan(PlanWrite):
+    model_config = {"extra": "ignore"}
+
+    set: bool = Field(description="Whether this account has ever saved its plan.")
+    actual: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "The book's share per bucket today, in percent — what the form "
+            "draws beside the targets. Empty when no position is priced."
+        ),
+    )
+    currency: str = Field(
+        default="EUR", description="The currency `contribution.amount` is in."
+    )
+    next_contribution: str | None = Field(
+        default=None, description="ISO date of the next scheduled contribution."
+    )
+    cash_stale_days: int | None = Field(
+        default=None,
+        description=(
+            "Days since the stated cash was updated, once it is old enough to "
+            "ask again (`plan.CASH_STALE_DAYS`); null while fresh."
+        ),
+    )
+
+
+def _actual(paths: UserPaths, investable: float = 0.0) -> dict[str, float]:
+    """Today's mix by bucket, with the stated `investable` cash in the cash
+    bucket (`plan.with_cash`), or {} when the book cannot be read."""
+    from stocks import obs
+    from stocks.api import home, loaders
+    from stocks.api.deps import reporting_currency
+    from stocks.portfolio import plan as plans
+
+    try:
+        db = str(paths.db)
+        tbl = home.enriched(db, loaders.db_mtime(db), reporting_currency(paths))
+    except Exception as exc:  # noqa: BLE001 — the form stands without the bar
+        obs.warn("plan.actual_unavailable", error_type=type(exc).__name__)
+        return {}
+    if tbl is None or tbl.empty or "weight" not in tbl:
+        return plans.with_cash({}, 0.0, investable)
+    shares = plans.buckets(tbl["weight"].to_dict(), loaders.asset_kind)
+    value = float(tbl["value"].sum(skipna=True)) if "value" in tbl else 0.0
+    return plans.with_cash(shares, value, investable)
+
+
+def _plan_out(paths: UserPaths, prefs: dict) -> InvestorPlan:
+    from datetime import date
+
+    from stocks.api.deps import reporting_currency
+    from stocks.portfolio import plan as plans
+
+    investor = plans.load(prefs)
+    today = date.today()
+    upcoming = plans.next_contribution(investor, today)
+    return InvestorPlan(
+        **investor.to_dict(),
+        actual=_actual(paths, investor.investable),
+        currency=reporting_currency(paths),
+        next_contribution=upcoming.isoformat() if upcoming else None,
+        cash_stale_days=plans.cash_stale(investor, today),
+    )
+
+
+@router.get("/plan", response_model=InvestorPlan, summary="The investor plan")
+def plan(account: Account) -> InvestorPlan:
+    """The stored plan, read the way the app applies it, with today's mix.
+
+    A block that does not hold together is not served (`plan.parse`), so the
+    form never shows a line the app is not drawing.
+    """
+    return _plan_out(account, accounts.load_prefs(account.prefs))
+
+
+@router.put("/plan", response_model=InvestorPlan, summary="Replace it")
+def save_plan(account: Writer, body: PlanWrite) -> InvestorPlan:
+    """Store the whole plan and mark it set; a merge into prefs.json, like
+    the profile, so a setting saved next door survives. The cash block is
+    dated here, when an amount changed (`plan.stamp_cash`): the client's own
+    date would be a clock nobody checks."""
+    from datetime import date
+
+    from stocks.portfolio import plan as plans
+
+    old = plans.load(accounts.load_prefs(account.prefs)).cash
+    raw = body.model_dump()
+    raw["cash"] = plans.stamp_cash(raw.get("cash"), old, date.today())
+    stored = accounts.update_prefs(account.prefs, {plans.PREFS_KEY: {**raw, "set": True}})
+    return _plan_out(account, stored)
+
+
+@router.put(
+    "/plan/contribution",
+    response_model=InvestorPlan,
+    summary="Set only its contribution",
+)
+def save_plan_contribution(account: Writer, body: PlanContribution) -> InvestorPlan:
+    """Replace the plan's contribution and keep every other block as stored —
+    the projection's "use in my plan", which knows the amount and nothing of
+    the mix or the cash. Saving it sets the plan, as any plan write does."""
+    from stocks.portfolio import plan as plans
+
+    stored = accounts.load_prefs(account.prefs).get(plans.PREFS_KEY)
+    raw = dict(stored) if isinstance(stored, dict) else {}
+    raw["contribution"] = body.model_dump()
+    stored = accounts.update_prefs(account.prefs, {plans.PREFS_KEY: {**raw, "set": True}})
+    return _plan_out(account, stored)

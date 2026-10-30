@@ -36,6 +36,12 @@ export type Row = {
    */
   signedIn?: boolean;
   /**
+   * Catalog key of a request the row hands the assistant, in a fresh
+   * conversation, instead of opening its step's page: the plan is built
+   * faster by answering the chat's few questions than by filling the form.
+   */
+  ask?: string;
+  /**
    * Worth having, not needed: the assistant answers without a key of the
    * reader's own, and Telegram is a second place to read what Home says. Left
    * out of the card's count, so finishing the setup means signing in and
@@ -62,6 +68,19 @@ export const SETUP: Row[] = [
     cta: "home.start_go_import",
     step: "import",
     signedIn: true,
+  },
+  // Right after the import, when there is a book to hold to a plan. The chat's
+  // plan builder (`chat/plan_builder.py`) asks only what it does not know and
+  // saves the profile with it; the form stays on Profile → My plan.
+  {
+    key: "plan",
+    label: "home.start_plan",
+    icon: "flag",
+    cta: "home.start_go_plan",
+    step: "plan",
+    ask: "profile.plan_ask_prompt",
+    signedIn: true,
+    optional: true,
   },
   // The key gate lives inside the assistant drawer, which is not a page: the
   // registry says so with a null path, and `target()` leaves the row inert
@@ -119,7 +138,7 @@ export const EXPLORE: Row[] = [
  */
 export type Target =
   | { kind: "page"; page: string; params?: Record<string, string> }
-  | { kind: "assistant" };
+  | { kind: "assistant"; ask?: string };
 
 /**
  * The row's destination, taken from the payload rather than decided here.
@@ -134,6 +153,7 @@ export type Target =
  */
 export function target(row: Row, steps: TourStep[]): Target | null {
   if (row.page) return { kind: "page", page: row.page };
+  if (row.ask) return { kind: "assistant", ask: row.ask };
   const step = steps.find((entry) => entry.id === row.step);
   if (!step) return null;
   if (step.path === null) {

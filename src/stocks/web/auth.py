@@ -264,7 +264,14 @@ def load_profile(prefs: dict) -> dict:
     it to tell a real (possibly minimal) profile from the mere defaults.
     """
     stored = prefs.get("investor_profile") or {}
-    return {**_PROFILE_DEFAULTS, **stored, "set": bool(stored.get("set"))}
+    out = {**_PROFILE_DEFAULTS, **stored, "set": bool(stored.get("set"))}
+    # The investor plan rides along for `chat.engine.persona`, which says it
+    # after the profile: every prompt that knows who the reader is then also
+    # knows the lines they drew (`stocks.portfolio.plan`).
+    plan = prefs.get("investor_plan")
+    if isinstance(plan, dict) and plan.get("set"):
+        out["plan"] = plan
+    return out
 
 
 def profile_is_set(prefs: dict) -> bool:

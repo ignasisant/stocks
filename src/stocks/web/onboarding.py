@@ -204,6 +204,14 @@ STEPS: tuple[Step, ...] = (
         done=lambda prefs, _paths=None: auth.profile_is_set(prefs),
     ),
     Step(
+        id="plan",
+        icon="flag",
+        page="profile",
+        session={"profile_tab": "plan"},
+        gated=True,
+        done=lambda prefs, _paths=None: _has_plan(prefs),
+    ),
+    Step(
         id="prefs",
         icon="tune",
         page="profile",
@@ -527,6 +535,20 @@ RELEASES: tuple[Release, ...] = (
             News(slug="shorts", icon="trending_down", step="market"),
         ),
     ),
+    Release(
+        version="2026.10.11",
+        date="2026-10",
+        items=(
+            # Somewhere new to go: the Profile "My plan" tab. Review obeying
+            # it (caps, mix notes, new money sized to the contribution) is
+            # what the plan does, so it rides on this card, not one of its own.
+            News(slug="plan", icon="flag", step="plan"),
+            # A capability there was none of: the app reaching a device when
+            # an answer is done. Lives on the Notifications tab, so it rides
+            # on the notify step rather than a step of its own.
+            News(slug="push", icon="notifications_active", step="notify"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version
@@ -564,7 +586,7 @@ def _watchlist_is_own(_prefs: dict, paths) -> bool:
 def explore_state(prefs: dict, paths) -> dict[str, bool]:
     """Which of the no-setup-required things this account has actually tried.
 
-    Separate from `setup_state`: those four are capabilities to switch on, and
+    Separate from `setup_state`: those are capabilities to switch on, and
     an account with none of them connected can still do all three of these
     right now — the search, the assistant's free chain and the watchlist
     editor need no key, no import and no statement. On a first visit they are
@@ -578,6 +600,11 @@ def explore_state(prefs: dict, paths) -> dict[str, bool]:
     }
 
 
+def _has_plan(prefs: dict) -> bool:
+    """Saved once, by the form or the chat's plan builder."""
+    return bool((prefs.get("investor_plan") or {}).get("set"))
+
+
 def setup_state(prefs: dict, paths, *, signed_in: bool) -> dict[str, bool]:
     """Which connectable capabilities this account has switched on.
 
@@ -589,6 +616,7 @@ def setup_state(prefs: dict, paths, *, signed_in: bool) -> dict[str, bool]:
     return {
         "login": signed_in,
         "import": _has_ledger(prefs, paths) if signed_in else False,
+        "plan": _has_plan(prefs) if signed_in else False,
         "ai": _has_ai_key(prefs, paths),
         "telegram": bool(prefs.get("telegram_chat_id")),
     }

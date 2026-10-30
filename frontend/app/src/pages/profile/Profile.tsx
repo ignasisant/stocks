@@ -22,6 +22,7 @@ import { useApi } from "../../shell/useApi";
 import { SignInWall } from "../../shell/guest";
 import { Notifications } from "./Notifications";
 import { Investor } from "./Investor";
+import { Plan } from "./Plan";
 import { Journal } from "./Journal";
 import { Preferences } from "./Preferences";
 import { useSettings } from "./prefs";
@@ -48,6 +49,7 @@ type Identity = {
 const TABS = [
   { id: "prefs", label: "profile.preferences" },
   { id: "iv", label: "profile.iv_section" },
+  { id: "plan", label: "profile.plan_section" },
   { id: "watch", label: "profile.watchlist" },
   { id: "notify", label: "profile.notifications" },
   { id: "journal", label: "journal.tab" },
@@ -181,6 +183,7 @@ function Settings() {
         />
       )}
       {tab === "iv" && <Investor />}
+      {tab === "plan" && <Plan />}
       {tab === "watch" && <Watchlist query={listing} />}
       {tab === "notify" && <Notifications {...settings} />}
       {tab === "journal" && <Journal />}

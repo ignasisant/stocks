@@ -996,8 +996,62 @@
   "ZETA": "https://financialmodelingprep.com/image-stock/ZETA.png",
   "ZTS": "https://financialmodelingprep.com/image-stock/ZTS.png",
   "^GSPC": "",
+  "^STOXX50E": "",
   "^VIX": "",
-  "_blocked": {},
+  "_blocked": {
+    "BTI": [
+      "https://financialmodelingprep.com/image-stock/BTI.png",
+      1793366034.0673542
+    ],
+    "EPRT": [
+      "https://financialmodelingprep.com/image-stock/EPRT.png",
+      1793366035.144394
+    ],
+    "SBI": [
+      "https://financialmodelingprep.com/image-stock/SBI.png",
+      1793366034.105794
+    ],
+    "SENEA": [
+      "https://financialmodelingprep.com/image-stock/SENEA.png",
+      1793366008.214775
+    ],
+    "SENEB": [
+      "https://financialmodelingprep.com/image-stock/SENEB.png",
+      1793366008.275043
+    ],
+    "SENEL": [
+      "https://financialmodelingprep.com/image-stock/SENEL.png",
+      1793366008.4211981
+    ],
+    "SENEM": [
+      "https://financialmodelingprep.com/image-stock/SENEM.png",
+      1793366008.3758562
+    ],
+    "SENR": [
+      "https://financialmodelingprep.com/image-stock/SENR.png",
+      1793366008.487265
+    ],
+    "SENS": [
+      "https://financialmodelingprep.com/image-stock/SENS.png",
+      1793366008.308626
+    ],
+    "SNBH": [
+      "https://financialmodelingprep.com/image-stock/SNBH.png",
+      1793366035.228544
+    ],
+    "SNTI": [
+      "https://financialmodelingprep.com/image-stock/SNTI.png",
+      1793366034.166162
+    ],
+    "SNTL": [
+      "https://financialmodelingprep.com/image-stock/SNTL.png",
+      1793366008.436414
+    ],
+    "WTRG": [
+      "https://financialmodelingprep.com/image-stock/WTRG.png",
+      1793366035.3007948
+    ]
+  },
   "_v": 3,
   "brand:chatgpt.com": "https://www.google.com/s2/favicons?domain=chatgpt.com&sz=128",
   "brand:claude.ai": "https://www.google.com/s2/favicons?domain=claude.ai&sz=128",

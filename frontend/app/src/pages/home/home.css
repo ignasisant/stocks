@@ -36,6 +36,15 @@
   box-shadow: var(--ag-shadow-card);
 }
 
+/* On a phone the page gutter, the card and the tiles inside it each pad the
+   same edge: at 16px apiece a quarter of the width went to padding before a
+   label. The page gutter stays; the card gives up a third of its share. */
+@container ag-main (max-width: 38rem) {
+  .hm-card {
+    padding: 12px;
+  }
+}
+
 .hm-card-title {
   margin: 0;
   font-size: var(--ag-fs-base, 0.875rem);
@@ -664,6 +673,42 @@
   line-height: 1.45;
 }
 
+/* A line's way to act on it, at its end: accent text naming the page it
+   opens. Underlined on hover only where there is a pointer to hover with;
+   a touch gets the full 44px row to press. */
+.hm-daily-go {
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.hm-daily-go::after {
+  content: " \2192";
+  content: " \2192" / "";
+}
+
+@media (hover: hover) {
+  .hm-daily-go:hover {
+    text-decoration: underline;
+  }
+}
+
+.hm-daily-go:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (pointer: coarse) {
+  .hm-daily-go {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
 /* The way on to Today: the page holds the rest of the card. */
 .hm-daily-open {
   display: flex;
@@ -1112,14 +1157,19 @@ a.hm-step {
 }
 
 /* On a phone the key fills its row, so the selector gets one of its own:
-   full width with even segments, a bigger target under a thumb. */
+   full width with even segments, a bigger target under a thumb. One line,
+   always: at the coarse pointer's padding six windows overflowed a phone and
+   `5y` dropped onto a second row of its own. */
 @container ag-main (max-width: 38rem) {
   .hm-spark-head > .hm-segmented {
     flex: 1 1 100%;
+    flex-wrap: nowrap;
   }
 
   .hm-spark-head .ag-seg-opt {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 0.25rem;
   }
 }
 
@@ -1206,12 +1256,9 @@ a.hm-step {
 
 /* ------------------------------------------------------------- the market */
 
-.hm-market-title,
-.hm-market-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.6rem 0.75rem;
+/* Its own row under the head: a flex child of the card, kept to its width. */
+.hm-market > .hm-regime {
+  align-self: flex-start;
 }
 
 /* The Pulse's band, in the Pulse's colours — the `sn-regime-*` rules live in

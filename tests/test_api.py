@@ -655,6 +655,11 @@ WRITES = {
     # assistant's persona is built from — this is text that reaches the model's
     # system prompt, which is precisely why a token may not set it.
     ("/v1/profile", "put"),
+    # The investor plan, replaced whole: the caps Review trims to and the
+    # daily card measures against.
+    ("/v1/plan", "put"),
+    # Only the contribution block: the Projection tab's "use in my plan".
+    ("/v1/plan/contribution", "put"),
     ("/v1/watchlist", "post"),
     ("/v1/watchlist/{ticker}", "patch"),
     ("/v1/watchlist/{ticker}", "delete"),
@@ -785,6 +790,13 @@ WRITES = {
     ("/v1/notify/telegram", "post"),
     ("/v1/notify/telegram", "delete"),
     ("/v1/notify/telegram/test", "post"),
+    # This device's Web Push subscription, its test, and the on-screen beat
+    # that holds a push back. A token has no device, and one that could
+    # subscribe would read every finished answer's question.
+    ("/v1/push/subscription", "post"),
+    ("/v1/push/unsubscribe", "post"),
+    ("/v1/push/test", "post"),
+    ("/v1/push/presence", "post"),
     # Feedback. A write because it stores a file. The one a guest may make too —
     # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),
