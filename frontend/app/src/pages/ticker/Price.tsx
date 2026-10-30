@@ -20,6 +20,7 @@ import { useState, type ReactNode } from "react";
 import { calendarDay } from "../../shell/dates";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
+import { Count } from "../../ui/Count";
 import type { Query } from "../../shell/useApi";
 import {
   DASH,
@@ -431,7 +432,9 @@ function Hero({
   return (
     <div className="tk-hero">
       <div className="tk-hero-price">
-        <span className="tk-hero-level">{price === null ? DASH : money(price)}</span>
+        <span className="tk-hero-level">
+          {price === null ? DASH : <Count text={money(price)} tint />}
+        </span>
         {currency ? <span className="tk-hero-session">{currency}</span> : null}
         {dayPct !== null ? (
           <Chip chip={chipFor(dayPct, `${signed(dayPct * 100)}%`, dim)} />

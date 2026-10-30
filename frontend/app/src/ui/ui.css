@@ -950,3 +950,19 @@
     transition: none;
   }
 }
+
+/* ------------------------------------------- a figure counting to its value */
+
+/* `Count` (ui/Count.tsx): while a refreshed figure runs to its new value it
+   takes the colour of the move, then eases back to its own ink. */
+.ag-count {
+  transition: color var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-count[data-dir="up"] {
+  color: var(--ag-up);
+}
+
+.ag-count[data-dir="down"] {
+  color: var(--ag-down);
+}

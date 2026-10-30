@@ -25,6 +25,7 @@ import {
 } from "react";
 import { usePresence } from "../shell/useSheet";
 import { useTouchHold } from "../shell/useTouchHold";
+import { Count, counted } from "./Count";
 import "./ui.css";
 
 /**
@@ -77,7 +78,11 @@ export function bandTone(band: string | null | undefined): Tone {
 /** The pill. Draws nothing when handed nothing. */
 export function Chip({ chip }: { chip: ChipSpec | null | undefined }) {
   if (!chip || !chip.text) return null;
-  return <span className={`ag-chip ag-chip-${chip.tone}`}>{chip.text}</span>;
+  return (
+    <span className={`ag-chip ag-chip-${chip.tone}`}>
+      <Count text={chip.text} />
+    </span>
+  );
 }
 
 /** Breathing room kept between the popover and the viewport edge, in px. */
@@ -240,7 +245,7 @@ export function Kpi({
         <span
           className={valueTone ? `ag-kpi-value ag-tone-${valueTone}` : "ag-kpi-value"}
         >
-          {value}
+          {counted(value, true)}
         </span>
         <Chip chip={chip} />
       </div>

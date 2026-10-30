@@ -4325,6 +4325,13 @@ class Mover(BaseModel):
             "windows, which are close-to-close by construction."
         ),
     )
+    premarket: bool = Field(
+        default=False,
+        description=(
+            "Day window only: the name is in US premarket, and `pct` is its last "
+            "regular session compounded with the premarket move on top of it."
+        ),
+    )
 
 
 class Movers(BaseModel):

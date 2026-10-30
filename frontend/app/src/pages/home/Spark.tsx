@@ -7,7 +7,8 @@
  * reading at this size: green means the book is worth more than what was put
  * into it.
  *
- * Two fingers, or a secondary click with a mouse (`useSpan`), compare two days:
+ * Two fingers, a mouse drag (as the ticker chart brushes), or a secondary
+ * click (`useSpan`) compare two days:
  * how much the value moved, how much of it was money put in, and the rest —
  * what the market did. Amounts only, since money flowed through the span.
  *
@@ -96,6 +97,9 @@ export function Spark({ history }: { history: History | null }) {
   // the wrap's handlers read the day before handing it on.
   const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  // Where a mouse drag started, as the ticker chart brushes: the stretch reads
+  // live while the button is down and goes away when it lifts.
+  const dragFrom = useRef<number | null>(null);
   const drop = useCallback(() => {
     setHoverIndex(null);
     setMeasure(null);
@@ -365,20 +369,47 @@ export function Spark({ history }: { history: History | null }) {
           onPointerMove={(event) => {
             walk.quiet();
             if (spanned.move(event, indexAt(event))) return;
+            const at = indexAt(event);
+            if (dragFrom.current !== null && at !== dragFrom.current) {
+              setHoverIndex(null);
+              setMeasure({
+                from: Math.min(dragFrom.current, at),
+                to: Math.max(dragFrom.current, at),
+              });
+              return;
+            }
+            if (dragFrom.current !== null) setMeasure(null);
             setHoverIndex(dayAt(event.clientX));
           }}
           // A tap is a pointer that never moves: it reads the day too.
           onPointerDown={(event) => {
             walk.quiet();
             if (spanned.down(event, indexAt(event))) return;
+            // A drag keeps the pointer past the plot's edge. A finger is held
+            // by the browser already, and must stay free to scroll the page.
+            if (event.pointerType !== "touch" && event.button === 0) {
+              dragFrom.current = indexAt(event);
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+            }
             setHoverIndex(dayAt(event.clientX));
           }}
-          onPointerUp={spanned.up}
+          onPointerUp={(event) => {
+            if (spanned.up(event)) return;
+            if (dragFrom.current === null) return;
+            dragFrom.current = null;
+            setMeasure(null);
+            setHoverIndex(dayAt(event.clientX));
+          }}
           // A finger lifting is a leave too; the day stays up until the reader
           // touches elsewhere, the only moment the hand is off the plot.
           onPointerLeave={(event) => {
             spanned.leave(event);
-            if (event.pointerType !== "touch") setHoverIndex(null);
+            if (event.pointerType === "touch") return;
+            if (dragFrom.current !== null) {
+              dragFrom.current = null;
+              setMeasure(null);
+            }
+            setHoverIndex(null);
           }}
           onPointerCancel={spanned.cancel}
           onContextMenu={(event) => spanned.menu?.(event, indexAt(event))}
