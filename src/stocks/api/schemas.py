@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Health(BaseModel):
@@ -3387,6 +3387,33 @@ class HomeSlot(BaseModel):
     hidden: bool = False
 
 
+class ScheduleSlot(BaseModel):
+    """One scheduled run: whether it goes out, at what local time, on which days."""
+
+    model_config = {"extra": "forbid"}
+
+    on: bool = True
+    time: str = Field(description='Local wall-clock time, "HH:MM".')
+    days: list[int] = Field(description="Weekdays it runs on, Monday = 0.")
+
+    @field_validator("time")
+    @classmethod
+    def _clock(cls, value: str) -> str:
+        from stocks.notify.schedule import parse_time
+
+        at = parse_time(value)
+        if at is None:
+            raise ValueError('time is "HH:MM"')
+        return at.strftime("%H:%M")
+
+    @field_validator("days")
+    @classmethod
+    def _weekdays(cls, value: list[int]) -> list[int]:
+        if any(not 0 <= d <= 6 for d in value):
+            raise ValueError("days are weekday numbers, Monday = 0")
+        return sorted(set(value))
+
+
 class Prefs(BaseModel):
     """The account's settings as a client renders them.
 
@@ -3430,6 +3457,21 @@ class Prefs(BaseModel):
         ),
     )
     chat_panel_open: bool = False
+    notify_briefing: bool = True
+    timezone: str | None = Field(
+        default=None,
+        description=(
+            "IANA zone the scheduled runs keep time in; null until the browser "
+            "has sent one (`notify.schedule.DEFAULT_ZONE` meanwhile)."
+        ),
+    )
+    schedules: dict[str, ScheduleSlot] = Field(
+        default_factory=dict,
+        description=(
+            "The scheduled runs (`briefing`, `digest`, `weekly`) as the app "
+            "applies them, defaults filled in."
+        ),
+    )
 
 
 class Tags(BaseModel):

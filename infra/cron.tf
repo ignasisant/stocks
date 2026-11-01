@@ -180,3 +180,32 @@ resource "google_cloud_scheduler_job" "warm" {
 
   depends_on = [google_project_service.cloudscheduler]
 }
+
+# The scheduled runs: every quarter of an hour the app runs the briefings,
+# day's numbers and weekly reviews that came due at their accounts' own times
+# (notify/schedule.py, api/scheduled.py). An HTTP call to the service rather
+# than a job, because a run writes the account's chat, which the live
+# instance owns. UTC: each account keeps its own zone. The third job on the
+# billing account, the last free one.
+resource "google_cloud_scheduler_job" "schedule_tick" {
+  count = nonsensitive(var.api_token != "") && var.app_public_url != "" ? 1 : 0
+
+  project     = var.gcp_project
+  region      = var.gcp_region
+  name        = "${var.cloud_run_service}-schedule"
+  description = "Scheduled runs: POST /api/v1/schedule/tick"
+
+  schedule         = "*/15 * * * *"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = "${trimsuffix(var.app_public_url, "/")}/api/v1/schedule/tick"
+    headers = {
+      Authorization = "Bearer ${var.api_token}"
+    }
+  }
+
+  depends_on = [google_project_service.cloudscheduler]
+}

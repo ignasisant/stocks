@@ -28,6 +28,7 @@ type Writable = {
   tax_church_rate: number;
   /** A fraction too. The control asks for percent and divides on the way out. */
   tax_subnational_rate: number;
+  notify_briefing: boolean;
   notify_digest: boolean;
   notify_weekly: boolean;
   notify_alerts: boolean;

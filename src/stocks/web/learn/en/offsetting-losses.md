@@ -6,6 +6,8 @@ minutes: 5
 as_of: 2026-10-25
 terms: loss_offset, loss_carryforward, tax_loss_harvesting
 app: portfolio?tab=tax
+slug: spain-offsetting-losses
+description: How Spain lets you offset share losses against gains and dividends: the 25% cap, the four-year carry-forward, and tax-loss harvesting.
 ---
 A realised loss is not only a bad moment: it can reduce the tax you pay on your gains. There are rules about how and when.
 

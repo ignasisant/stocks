@@ -76,3 +76,11 @@ def message(title: str, lines: list[str | None], url: str, tag: str) -> dict:
     on screen — yesterday's digest is not worth a second row.
     """
     return {"title": clip(title, 80), "body": body(lines), "url": url, "tag": tag}
+
+
+def markdown(title: str, lines: list[str | None]) -> str:
+    """The same message as a chat turn (`notify/schedule.py` files it): the
+    title in bold, then every line, uncut — the thread is where the reader
+    goes for what the notification folded away."""
+    kept = [" ".join(line.split()) for line in lines if line and line.strip()]
+    return "\n".join([f"**{title.strip()}**", "", *(f"- {line}" for line in kept)])

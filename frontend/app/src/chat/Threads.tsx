@@ -7,6 +7,10 @@
  * them. Same reason rename and delete take over the row they belong to: a
  * dialog over a list of threads hides the very titles the reader is deciding
  * between.
+ *
+ * What the scheduled runs filed sits apart, in its own block on top
+ * (`Scheduled.tsx`): a briefing every weekday would otherwise bury the
+ * conversations the reader started under the ones the app did.
  */
 
 import { useState } from "react";
@@ -14,6 +18,7 @@ import { useLang, useT } from "../shell/i18n";
 import { group, stamp } from "./format";
 import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
+import { Scheduled } from "./Scheduled";
 import type { Conversation } from "./types";
 
 /** A thread's display name: its title, or a placeholder while unnamed.
@@ -183,9 +188,12 @@ export function Threads({
   onOpen,
   onRename,
   onDelete,
+  scheduledOpen,
 }: {
   threads: Conversation[];
   unread: ReadonlySet<string>;
+  /** Arrived by `?chat=scheduled`: the scheduled block starts unfolded. */
+  scheduledOpen?: boolean;
   onBack: () => void;
   onOpen: (cid: string) => void;
   onRename: (cid: string, title: string) => void;
@@ -202,6 +210,17 @@ export function Threads({
   const shown = query
     ? threads.filter((c) => (c.title || "").toLowerCase().includes(query))
     : threads;
+  const runs = shown.filter((c) => c.scheduled);
+  const rest = shown.filter((c) => !c.scheduled);
+  const row = (conv: Conversation) => (
+    <Row
+      conv={conv}
+      unread={unread.has(conv.id)}
+      onOpen={() => onOpen(conv.id)}
+      onRename={(title) => onRename(conv.id, title)}
+      onDelete={() => onDelete(conv.id)}
+    />
+  );
 
   let heading = "";
   return (
@@ -218,26 +237,26 @@ export function Threads({
           onChange={(event) => setNeedle(event.target.value)}
         />
       </div>
-      {shown.map((conv) => {
+      <Scheduled
+        runs={runs}
+        searching={!!query}
+        forceOpen={scheduledOpen}
+        renderRun={row}
+      />
+      {rest.map((conv) => {
         const next = group(conv.updated, t, lang);
         const first = next !== heading;
         heading = next;
         return (
           <div key={conv.id}>
             {first && next && <div className="ag-chat-group">{next}</div>}
-            <Row
-              conv={conv}
-              unread={unread.has(conv.id)}
-              onOpen={() => onOpen(conv.id)}
-              onRename={(title) => onRename(conv.id, title)}
-              onDelete={() => onDelete(conv.id)}
-            />
+            {row(conv)}
           </div>
         );
       })}
       {/* Two different nothings: an account that has never opened a thread,
           and a search that ruled every thread out. */}
-      {!shown.length && (
+      {!rest.length && !runs.length && (
         <p className="ag-chat-note">
           {t(query ? "chat.threads_no_match" : "chat.threads_empty")}
         </p>

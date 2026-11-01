@@ -642,6 +642,32 @@ def test_the_grifols_move_is_found_and_its_fix_applied_in_two_calls(
     assert "check_book again" in result_text(stale)
 
 
+def test_sales_an_import_left_out_are_a_finding_applied_like_any_other(
+    site, editor, book
+):
+    """A sale refused for want of shares, kept by the import, comes back once
+    a split covers it — and the connector applies it in the same two calls."""
+    from stocks.portfolio import held, validate
+
+    sale = Transaction("2024-04-01", "AAPL", "sell", 30, 40.0, "EUR", 0.0,
+                       "t")
+    held.keep([validate.Checked(tx=sale, issues=[
+        validate.Issue("error", "quantity", held.OVERSELL)])], "t", book.db)
+    assert ok(call(site, editor, "check_book"))["findings"] == []
+    ledger.add_many([Transaction("2024-03-15", "AAPL", "split", 4, 0.0, "EUR",
+                                 0.0, "split")], book.db)
+    [finding] = ok(call(site, editor, "check_book"))["findings"]
+    assert finding["kind"] == "held_sales"
+    plan = ok(call(site, editor, "apply_fix", key=finding["key"]))
+    assert plan["ok"]
+    ok(call(site, editor, "apply_fix", key=finding["key"],
+            plan_token=plan["plan_token"]))
+    assert ledger.all_transactions(book.db)[-1].quantity == 30
+    assert ok(call(site, editor, "check_book"))["findings"] == []
+    stale = call(site, editor, "apply_fix", key=finding["key"])
+    assert "check_book again" in result_text(stale)
+
+
 def test_a_rename_by_label_touches_only_that_label_at_that_broker(
     site, editor, book
 ):

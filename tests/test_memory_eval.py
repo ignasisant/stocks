@@ -12,6 +12,8 @@ what these cases name.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 
 from stocks.chat import engine, learnings, market, memory, memory_review
@@ -77,8 +79,12 @@ def test_forgotten_is_gone_from_the_next_prompt(life):
 
 def test_a_dated_rule_stops_at_its_date(life):
     life.say("recuerda que hasta fin de mes no compro bancos")
-    assert "bancos" in life.prompt("2026-10-31")
-    assert "bancos" not in life.prompt("2026-11-01")
+    # "fin de mes" is read off today, so the days come from what was stored.
+    [rule] = learnings.load(life.path)
+    last = date.fromisoformat(rule.until)
+    assert last.month != (last + timedelta(days=1)).month
+    assert "bancos" in life.prompt(last.isoformat())
+    assert "bancos" not in life.prompt((last + timedelta(days=1)).isoformat())
     # Still listed, so the reader sees it ran out rather than vanished.
     assert len(learnings.load(life.path)) == 1
 
@@ -116,11 +122,13 @@ def test_the_weekly_review_offers_to_drop_what_ran_out(life):
     life.say("recuerda que hasta fin de mes no compro bancos")
     life.say("recuerda que vivo en Girona")
     life.say("recuerda que prefiero dividendos crecientes")
+    until = next(r.until for r in learnings.load(life.path) if r.until)
+    day = (date.fromisoformat(until) + timedelta(days=2)).isoformat()
     found = memory_review.plain(learnings.load(life.path),
-                                learnings.usage(life.path), "2026-11-02")
+                                learnings.usage(life.path), day)
     assert [(p.action, p.reason) for p in found] == [("drop", "expired")]
-    memory_review.keep(life.path, found, "2026-11-02")
-    memory_review.settle(life.path, found[0].sid, "apply", "2026-11-02")
+    memory_review.keep(life.path, found, day)
+    memory_review.settle(life.path, found[0].sid, "apply", day)
     assert "bancos" not in learnings.block(learnings.load(life.path))
     assert len(learnings.load(life.path)) == 2
 

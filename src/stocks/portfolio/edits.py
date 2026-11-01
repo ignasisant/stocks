@@ -55,7 +55,8 @@ from stocks.portfolio.ledger import _row_to_tx as _from_sql
 
 FIELDS = ("date", "ticker", "action", "quantity", "price", "currency", "fee", "note")
 OPS = ("add", "update", "delete", "set_action", "relabel", "split_row")
-SOURCES = ("chat", "mcp", "api", "import")
+# doctor: a repair the app made by itself (stocks.portfolio.heal).
+SOURCES = ("chat", "mcp", "api", "import", "doctor")
 
 # Actions whose quantity is shares (or a split ratio), so zero is meaningless.
 _SHARES = ("buy", "sell", "transfer_in", "transfer_out", "split")

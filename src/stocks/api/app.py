@@ -25,7 +25,16 @@ from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts, loadtest, memstat, obs
-from stocks.api import cache, errors, guest, guestbook, holds, security, warm
+from stocks.api import (
+    cache,
+    errors,
+    guest,
+    guestbook,
+    holds,
+    scheduled,
+    security,
+    warm,
+)
 from stocks.api.routes import (
     account,
     bank,
@@ -318,8 +327,8 @@ for _dropped in (
 # HTML — a sign-in screen needs them before anyone is signed in. A chat run's
 # hold is this service calling itself, authenticated by the run's own token
 # rather than an account (`api/runs.py`), and so is a background refresh's
-# (`api/holds.py`). The warm-up answers to the API token alone, which it
-# checks itself (`api/warm.py`).
+# (`api/holds.py`). The warm-up and the scheduled runs' tick answer to the API
+# token alone, which they check themselves (`api/warm.py`, `api/scheduled.py`).
 _public = APIRouter(prefix=f"/{API_VERSION}")
 _public.include_router(health.router)
 _public.include_router(design.router)
@@ -327,6 +336,7 @@ _public.include_router(i18n.router)
 _public.include_router(chat.holds)
 _public.include_router(holds.router)
 _public.include_router(warm.router)
+_public.include_router(scheduled.router)
 
 
 def gate(request: Request, who: Who) -> Caller:

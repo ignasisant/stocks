@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 
 from stocks import navigation
 from stocks.web import landing
@@ -36,6 +37,7 @@ from stocks.web.landing import (
     FAQ_COUNT,
     LANDING_PATHS,
     PATH_EN,
+    PATH_GUIDES_EN,
     jur_key,
 )
 from stocks.web.markup import esc
@@ -52,6 +54,9 @@ OG_IMAGE_TYPE = "image/png"
 
 ICON_SVG = f"{ASSET_BASE}topstocks-icon.svg"
 APPLE_ICON = f"{ASSET_BASE}apple-touch-icon.png"
+# The SVG mark has no background: a launcher that falls back to the favicon
+# (a shortcut made without the manifest) plates it on white. This one is dark.
+ICON_PNG = f"{ASSET_BASE}icon-192.png"
 
 # Page background (`ds.SURFACE_PAGE`) — paints the browser chrome on mobile
 # and the loading canvas before the CSS lands.
@@ -298,6 +303,7 @@ def head(
         + _meta("color-scheme", "dark")
         + _meta("author", SITE_NAME)
         + f'<link rel="icon" href="{esc(ICON_SVG)}" type="image/svg+xml">'
+        + f'<link rel="icon" href="{esc(ICON_PNG)}" type="image/png" sizes="192x192">'
         + f'<link rel="apple-touch-icon" href="{esc(APPLE_ICON)}">'
         # Added to a home screen from the pitch, it still opens the app.
         + f'<link rel="manifest" href="{ASSET_BASE}manifest.webmanifest">'
@@ -447,7 +453,9 @@ def robots_txt(base_url: str) -> str:
     lines = []
     for agent in AI_CRAWLERS:
         lines += [f"User-agent: {agent}", "Disallow: /", ""]
-    allow = ["/$", *(p for p in LANDING_PATHS if p != PATH_EN), ASSET_BASE]
+    allow = [
+        "/$", *(p for p in LANDING_PATHS if p != PATH_EN), ASSET_BASE, PATH_GUIDES_EN,
+    ]
     disallow = app_page_paths() + APP_PATHS + APP_PREFIXES
     # A group never inherits from `*`, so the preview bots repeat it with
     # the ticker page taken out of the disallow list.
@@ -461,7 +469,12 @@ def robots_txt(base_url: str) -> str:
     return "\n".join(lines)
 
 
-def sitemap_xml(base_url: str, *, lastmod: str | None = None) -> str:
+def sitemap_xml(
+    base_url: str,
+    *,
+    lastmod: str | None = None,
+    pages: Iterable[tuple[str, dict[str, str], str]] = (),
+) -> str:
     """`/sitemap.xml` — every landing variant, cross-linked within its pair.
 
     Each URL carries its jurisdiction's full `xhtml:link` alternate set
@@ -469,6 +482,9 @@ def sitemap_xml(base_url: str, *, lastmod: str | None = None) -> str:
     half of the hreflang pairing in the head. Priority ranks the two default
     pairs above the cross ones — same content, less likely to be what a
     searcher meant.
+
+    `pages` adds other public documents as (path, hreflang → path, lastmod) —
+    the guides (`web/guides.sitemap_pages`), below the landing in priority.
     """
     mod = f"<lastmod>{esc(lastmod)}</lastmod>" if lastmod else ""
     entries = []
@@ -487,6 +503,18 @@ def sitemap_xml(base_url: str, *, lastmod: str | None = None) -> str:
             f"<url><loc>{esc(loc)}</loc>{mod}"
             f"<changefreq>weekly</changefreq>"
             f"<priority>{priority}</priority>"
+            f"{links}</url>"
+        )
+    for path, alternates, modified in pages:
+        links = "".join(
+            f'<xhtml:link rel="alternate" hreflang="{alt}" '
+            f'href="{esc(_abs(base_url, alt_path))}"/>'
+            for alt, alt_path in alternates.items()
+        )
+        page_mod = f"<lastmod>{esc(modified)}</lastmod>" if modified else ""
+        entries.append(
+            f"<url><loc>{esc(_abs(base_url, path))}</loc>{page_mod}"
+            f"<changefreq>monthly</changefreq><priority>0.8</priority>"
             f"{links}</url>"
         )
     return (

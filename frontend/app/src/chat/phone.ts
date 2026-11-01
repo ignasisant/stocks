@@ -11,12 +11,13 @@ import { useEffect, useState } from "react";
 
 const QUERY = "(max-width: 640px)";
 
-function matches(): boolean {
+/** The same line read once, for a decision taken at mount. */
+export function isPhone(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.(QUERY).matches;
 }
 
 export function usePhone(): boolean {
-  const [phone, setPhone] = useState(matches);
+  const [phone, setPhone] = useState(isPhone);
   useEffect(() => {
     const media = window.matchMedia?.(QUERY);
     if (!media) return;

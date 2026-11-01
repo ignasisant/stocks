@@ -641,7 +641,11 @@ def _market_splits(
 
 
 def _dupe_key(t: Transaction) -> tuple:
-    return (t.date, t.ticker, t.action, round(t.quantity, 6), round(t.price, 4))
+    # A dividend is the same payment when the same cash arrived: a Revolut row
+    # prints the net, and the book holds it as gross less withheld once the
+    # withholding is put back (`portfolio.heal`).
+    price = t.price - t.fee if t.action == "dividend" else t.price
+    return (t.date, t.ticker, t.action, round(t.quantity, 6), round(price, 4))
 
 
 def _loose_key(t: Transaction) -> tuple:

@@ -32,7 +32,7 @@ from starlette.testclient import TestClient
 from stocks import accounts
 from stocks.api import loaders
 from stocks.connector import oauth, store
-from stocks.connector.server import Door
+from stocks.connector.server import Door, build
 from tests import csp_check
 
 ORIGIN = "https://testserver"
@@ -446,6 +446,27 @@ def test_a_stray_host_is_refused_at_the_transport(site, sign_in, book):
     _, tokens = connect(site, sign_in)
     r = rpc(site, tokens["access_token"], "ping", Host="evil.example")
     assert r.status_code == 421
+
+
+def test_nothing_holds_a_stream_open(site, sign_in, book):
+    """A stream a stateless server never writes to bills Cloud Run until its
+    timeout, then the client reopens it: Claude Code's `subscriptions/listen`
+    did exactly that, all day, from every open session."""
+    _, tokens = connect(site, sign_in)
+    r = site.get("/mcp", headers={
+        "Authorization": f"Bearer {tokens['access_token']}",
+        "Accept": "text/event-stream",
+        "MCP-Protocol-Version": PROTOCOL,
+    })
+    assert r.status_code == 405
+    assert r.headers["allow"] == "POST"
+
+    lowlevel = build(ORIGIN)[0]._lowlevel_server
+    for era in (PROTOCOL, "2026-07-28"):
+        caps = lowlevel.get_capabilities(protocol_version=era)
+        assert not caps.resources.subscribe, era
+        assert not caps.tools.list_changed, era
+    assert "subscriptions/listen" not in lowlevel._request_handlers
 
 
 def test_registration_is_throttled_per_address(site):

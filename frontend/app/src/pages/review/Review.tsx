@@ -38,6 +38,9 @@ import { useLang, useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useCurrency } from "../../shell/session";
 import { Help } from "../../ui/Kpi";
+import { MixBar } from "../../ui/MixBar";
+import { formatter } from "../../shell/numbers";
+import { Go } from "../home/Go";
 import { maybe } from "../sentiment/format";
 import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
@@ -334,30 +337,100 @@ function Screen({
   );
 }
 
+/** Notes that set a plan bucket against the book: drawn as bars, not prose. */
+const MIX = new Set(["plan_over", "plan_under"]);
+
 /** What the read says about the whole book: too few names, one sector,
  *  country or currency carrying it, funds at its core, cash idle beside
  *  buys, coins past a quarter, losses that would cut the plan's tax.
  *  Unfiltered — a note is about the book, not about what the filters leave
- *  on screen. */
+ *  on screen. The plan's buckets come first as bars (where the book sits,
+ *  where the plan puts it), the rest as rows led by what each is about. */
 function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: string }) {
   const t = useT();
   const lang = useLang();
   if (notes.length === 0) return null;
+  const mix = notes.filter((note) => MIX.has(note.key));
+  const rest = notes.filter((note) => !MIX.has(note.key));
+  const key = (note: ReviewNote) =>
+    `${note.key}-${note.sector ?? note.country ?? note.currency ?? note.bucket ?? ""}`;
   return (
-    <div className="ag-rev-card">
-      {notes.map((note) => {
-        const help = maybe(t, `review.note_${note.key}_help`);
-        return (
-          <p
-            key={`${note.key}-${note.sector ?? note.country ?? note.currency ?? note.bucket ?? ""}`}
-            className="ag-rev-caption"
-          >
-            {noteText(note, taxCurrency, t, lang)}
-            {help ? <Help text={help} /> : null}
-          </p>
-        );
-      })}
-    </div>
+    <section className="ag-rev-card ag-rev-notes" aria-labelledby="ag-rev-notes-h">
+      <h2 className="ag-rev-h2" id="ag-rev-notes-h">
+        {t("review.notes_title")}
+      </h2>
+      {mix.length > 0 && (
+        <div className="ag-rev-mix">
+          <div className="ag-rev-mix-head">
+            <h3 className="ag-rev-h3">{t("review.mix_title")}</h3>
+            <Go go="profile?tab=plan" className="ag-rev-go" />
+          </div>
+          <ul className="ag-rev-mix-list">
+            {mix.map((note) => (
+              <MixRow key={key(note)} note={note} taxCurrency={taxCurrency} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {rest.length > 0 && (
+        <ul className="ag-rev-note-list">
+          {rest.map((note) => {
+            const help = maybe(t, `review.note_${note.key}_help`);
+            const kind = maybe(t, `review.note_kind_${note.key}`);
+            return (
+              <li key={key(note)} className="ag-rev-note">
+                {kind ? <span className="ag-rev-note-kind">{kind}</span> : null}
+                <p className="ag-rev-note-text">
+                  {noteText(note, taxCurrency, t, lang)}
+                  {help ? <Help text={help} /> : null}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** One plan bucket off its target: name, bar, today's share against the
+ *  plan's, and the gap in points. The sentence is read out; the row drawn. */
+function MixRow({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }) {
+  const t = useT();
+  const lang = useLang();
+  const help = maybe(t, `review.note_${note.key}_help`);
+  const weight = note.weight ?? 0;
+  const target = note.target ?? null;
+  const gap =
+    target === null
+      ? null
+      : formatter(lang, {
+          signDisplay: "exceptZero",
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }).format((weight - target) * 100);
+  return (
+    <li className="ag-rev-mix-row">
+      <span className="ag-sr">{noteText(note, taxCurrency, t, lang)}</span>
+      <span className="ag-rev-mix-name" aria-hidden="true">
+        {note.bucket ? t(`profile.plan_bucket_${note.bucket}`) : ""}
+      </span>
+      <span className="ag-rev-mix-bar">
+        <MixBar actual={weight * 100} target={target === null ? null : target * 100} />
+      </span>
+      <span className="ag-rev-mix-fig" aria-hidden="true">
+        <b>{percent(note.weight, lang) ?? t("review.na")}</b>
+        {target !== null ? (
+          <span className="ag-rev-mix-target">
+            {t("review.mix_target", { target: percent(target, lang) ?? "" })}
+          </span>
+        ) : null}
+      </span>
+      <span className="ag-rev-mix-gap" aria-hidden="true">
+        {gap === null ? "" : t("review.mix_gap", { gap })}
+      </span>
+      <span className="ag-rev-mix-help">{help ? <Help text={help} /> : null}</span>
+    </li>
   );
 }
 

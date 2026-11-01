@@ -857,7 +857,9 @@ body {
       .sn-cta,
       .earn-chip,
       .tk-ai-more,
-      .tk-ai-item
+      .tk-ai-item,
+      .ag-sched-day,
+      .ag-sched-more
     ):active:not(:disabled) {
     scale: 0.97;
   }

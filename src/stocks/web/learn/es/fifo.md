@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: fifo, cost_basis, lot
 app: portfolio?tab=tax
+slug: fifo-acciones-hacienda
+description: Qué acciones considera vendidas Hacienda cuando vendes parte de una posición: el método FIFO (art. 37 LIRPF) con un ejemplo en euros.
 ---
 Compraste la misma acción varias veces a precios distintos. Cuando vendes solo una parte, ¿cuál de esas compras estás vendiendo? De la respuesta depende cuánto tributas.
 

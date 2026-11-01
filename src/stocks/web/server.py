@@ -8,11 +8,13 @@ One process on one port, one Starlette app in front of everything:
     /es/           the landing (Spanish)
     /lp/*          the landing's own assets — brand mark, share card
     /robots.txt    crawl rules, generated for whatever host we answer on
-    /sitemap.xml   both landing URLs, cross-linked by hreflang
+    /sitemap.xml   the landing URLs and the guides, cross-linked by hreflang
     /livez         liveness probe for uptime checks (scripts/setup_monitoring.sh)
     /healthz       the same probe, for local runs and the Docker HEALTHCHECK
     /status        which revision answers, from which commit (scripts/deploy.sh)
     /legal/*       privacy policy and terms of use (static, bilingual)
+    /guides/*, /es/guias/*   the Spanish-tax lessons as public pages
+                   (web/guides.py), in the sitemap
     /auth/login, /oauth2callback, /auth/logout   sign-in (web/oidc.py)
     /api/v1/*      the HTTP API (stocks.api) every screen reads through
     /portfolio, /ticker, …   the app: the React shell (frontend/app), one
@@ -72,6 +74,7 @@ from stocks.secrets_env import secret
 from stocks.web import (
     attribution,
     csp,
+    guides,
     landing,
     landing_static,
     legal,
@@ -152,7 +155,7 @@ API_PREFIX = f"{api.MOUNT_PATH}/"
 _MARKETING_PREFIXES = (
     *(p for p in LANDING_PATHS if p != PATH_EN),
     ASSET_BASE, "/robots.txt", "/sitemap.xml", "/livez", "/healthz",
-    "/status", "/legal/",
+    "/status", "/legal/", landing.PATH_GUIDES_EN,
 )
 
 # A Host header ends up inside canonical and Open Graph URLs, so it is checked
@@ -762,7 +765,8 @@ async def service_worker(request: Request) -> Response:
 
 async def sitemap(request: Request) -> Response:
     return Response(
-        seo.sitemap_xml(base_url(request), lastmod=_lastmod()),
+        seo.sitemap_xml(base_url(request), lastmod=_lastmod(),
+                        pages=guides.sitemap_pages()),
         media_type="application/xml",
         headers={"Cache-Control": "public, max-age=3600"},
     )
@@ -841,6 +845,30 @@ async def legal_page(request: Request) -> Response:
     )
 
 
+async def guide_page(request: Request) -> Response:
+    """A public guide (`web/guides.py`), or a language's index of them."""
+    lang = "es" if request.url.path.startswith(guides.PATHS["es"]) else "en"
+    base = base_url(request)
+    slug = request.path_params.get("slug")
+    if slug is None:
+        lesson_id, document = "", guides.index(lang, base)
+    elif (lesson := guides.find(slug, lang)) is not None:
+        lesson_id, document = lesson.id, guides.page(lesson.id, lang, base)
+    else:
+        return not_found(request)
+    if request.method == "GET":
+        obs.event("guide.view", lesson=lesson_id, lang=lang, **_attribution(request))
+    return Response(
+        document,
+        media_type=_HTML,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Vary": "Accept-Encoding",
+            "Content-Security-Policy": guides.policy(document),
+        },
+    )
+
+
 @lru_cache(maxsize=1)
 def _app_document(mtime: float) -> bytes:  # noqa: ARG001 — mtime keys the cache
     """The shell's index.html with the design tokens inlined.
@@ -869,6 +897,9 @@ def _filled(html: str) -> bytes:
     html = html.replace("<!--AG-TOKENS-->", ds_vars_css())
     icon = (
         f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
+        # Dark-plated, for a home-screen shortcut made without the manifest.
+        f'<link rel="icon" type="image/png" sizes="192x192"'
+        f' href="{ASSET_BASE}icon-192.png">'
         f'<link rel="apple-touch-icon" href="{ASSET_BASE}apple-touch-icon.png">'
         f'<link rel="manifest" href="{ASSET_BASE}manifest.webmanifest">'
         '<meta name="apple-mobile-web-app-title" content="TopStocks">'
@@ -1273,6 +1304,9 @@ routes = [
     Route("/healthz", healthz, methods=["GET", "HEAD"]),
     Route("/status", status, methods=["GET", "HEAD"]),
     Route("/legal/{doc:str}", legal_page, methods=["GET", "HEAD"]),
+    *(Route(p, guide_page, methods=["GET", "HEAD"]) for p in guides.PATHS.values()),
+    *(Route(f"{p}{{slug:str}}", guide_page, methods=["GET", "HEAD"])
+      for p in guides.PATHS.values()),
     Route(f"{ASSET_BASE}{{path:path}}", asset, methods=["GET", "HEAD"]),
     Route(f"{APP_ASSETS}{{path:path}}", app_asset, methods=["GET", "HEAD"]),
     Route(f"{STATIC_PATH}{{path:path}}", static_file, methods=["GET", "HEAD"]),

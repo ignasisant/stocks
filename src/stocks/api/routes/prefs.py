@@ -25,9 +25,10 @@ from pydantic import BaseModel, Field, field_validator
 from stocks import accounts
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import HomeSlot, Prefs
+from stocks.api.schemas import HomeSlot, Prefs, ScheduleSlot
 from stocks.api.security import Caller, Who
 from stocks.config import CURRENCIES
+from stocks.notify.schedule import JOBS, PREFS_KEY, slots, valid_zone
 from stocks.portfolio import tax
 
 router = APIRouter(tags=["prefs"])
@@ -82,6 +83,10 @@ class PrefsPatch(BaseModel):
     notify_digest: bool | None = None
     notify_weekly: bool | None = None
     notify_alerts: bool | None = None
+    notify_briefing: bool | None = None
+    # Sent by the app itself (the browser's own zone), not a control: the
+    # clock the scheduled runs keep. null goes back to the default zone.
+    timezone: str | None = None
     chat_panel_open: bool | None = None
     setup_card_dismissed: bool | None = None
     onboarding_dismissed: bool | None = None
@@ -101,6 +106,17 @@ class PrefsPatch(BaseModel):
         if len(set(ids)) != len(ids):
             raise ValueError("each card appears once")
         return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, value: str | None) -> str | None:
+        from stocks.notify.schedule import valid_zone
+
+        if value is None:
+            return value
+        if not valid_zone(value):
+            raise ValueError(f"unknown time zone {value!r}")
+        return value.strip()
 
     @field_validator("currency")
     @classmethod
@@ -186,6 +202,9 @@ def _view(stored: dict) -> Prefs:
         notify_alerts=bool(stored.get("notify_alerts")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
         home_layout=_layout(stored.get("home_layout")),
+        notify_briefing=bool(stored.get("notify_briefing", True)),
+        timezone=stored.get("timezone") if valid_zone(stored.get("timezone")) else None,
+        schedules={job: ScheduleSlot(**s) for job, s in slots(stored).items()},
     )
 
 
@@ -245,6 +264,27 @@ def update(
             detail="send at least one setting to change",
         )
     return _view(accounts.update_prefs(account.prefs, changes))
+
+
+@router.put(
+    "/schedules/{job}", response_model=Prefs, summary="Time one scheduled run"
+)
+def save_schedule(account: Writer, job: str, body: ScheduleSlot) -> Prefs:
+    """Switch one run on or off and set its time and days, whole.
+
+    `on` is the job's `notify_<job>` key, the switch the Notifications screen
+    already drew; the time and days merge into `schedules` beside the other
+    jobs'. Neither the run's last day nor its zone moves: a run already sent
+    today is not sent again because its time changed.
+    """
+    if job not in JOBS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no scheduled run {job!r}")
+    stored = accounts.load_prefs(account.prefs).get(PREFS_KEY)
+    merged = dict(stored) if isinstance(stored, dict) else {}
+    merged[job] = {"time": body.time, "days": body.days}
+    return _view(accounts.update_prefs(
+        account.prefs, {f"notify_{job}": body.on, PREFS_KEY: merged},
+    ))
 
 
 # --------------------------------------------------------- the investor profile

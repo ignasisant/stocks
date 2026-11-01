@@ -1148,15 +1148,25 @@ def start(
     return job
 
 
-def now_day() -> tuple[datetime, date]:
-    """The server's local now and the action day it falls in.
+def now_day(paths=None) -> tuple[datetime, date]:
+    """The reader's now and the action day it falls in.
 
-    The server's zone stands in for the reader's, as `GET /daily` has always
-    done: the deploy runs in the zone its readers are in, and the card's
-    freshness is judged on the day it was stamped with, not on a clock.
+    In the account's zone (`timezone`, sent by the browser), turning over at
+    its own cutoff (`schedule.cutoff_hour`: earlier when its briefing is
+    scheduled earlier). With no account, or one whose settings do not read,
+    Madrid at `daily.CUTOFF_HOUR`. Not the server's clock: the host runs in
+    UTC, an hour or two behind the readers the cutoff was chosen for.
     """
-    now = datetime.now().astimezone()
-    return now, daily.action_day(now)
+    from stocks.notify import schedule
+
+    prefs: dict = {}
+    if paths is not None:
+        try:
+            prefs = accounts.load_prefs(paths.prefs)
+        except Exception:  # noqa: BLE001 — read as the defaults
+            prefs = {}
+    now = datetime.now(schedule.zone(prefs))
+    return now, daily.action_day(now, schedule.cutoff_hour(prefs, daily.CUTOFF_HOUR))
 
 
 # ------------------------------------------------------------------ analysis

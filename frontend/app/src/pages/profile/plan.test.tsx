@@ -37,7 +37,7 @@ describe("the plan tab", () => {
     for (const bucket of ["stocks", "equity_funds", "bonds", "cash", "crypto"])
       expect(html).toContain(`profile.plan_bucket_${bucket}`);
     expect(html).toContain("profile.plan_mix_none");
-    expect(html).not.toContain("pl-bar");
+    expect(html).not.toContain("ag-mixbar");
   });
 
   it("shows the app's own line where a limit is blank", () => {
@@ -53,7 +53,7 @@ describe("the plan tab", () => {
       set: true,
       actual: { stocks: 75, equity_funds: 20, bonds: 0, cash: 5, crypto: 0 },
     });
-    expect(html.match(/class="pl-bar"/g)).toHaveLength(5);
+    expect(html.match(/class="ag-mixbar"/g)).toHaveLength(5);
     expect(html).toContain("profile.plan_mix_whole");
     // Stocks 75 against 60 and funds 20 against 30 are past the 5-point band;
     // cash 5 against 10 is on it.

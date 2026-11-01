@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: tax_return, tax_year
 app: earnings
+slug: spain-tax-calendar-investors
+description: From the day you sell to your Spanish tax return: the tax year, the April–June filing season, Forms 720 and 721, and what to decide by 31 December.
 ---
 Tax is not paid the day you sell. It is calculated on the whole year and filed months later. Knowing the calendar lets you decide in time.
 

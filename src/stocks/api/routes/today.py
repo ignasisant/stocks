@@ -74,7 +74,7 @@ def today(account: Account, who: Who, lang: Lang = "en") -> TodayCard:
     `POST /today` has the personal card out. A guest gets the market read
     alone: the demo book has no card of its own.
     """
-    _, day = briefing.now_day()
+    _, day = briefing.now_day(account)
     market, stale = _market(lang)
     personal = None if who.kind == "guest" else daily_card.status(account, lang)
     return TodayCard(
@@ -102,7 +102,7 @@ def write_today(
     `force`. Waits `briefing.GRACE_S` like `POST /daily`; past that the
     personal card is `pending` and `GET /today` is the poll.
     """
-    _, day = briefing.now_day()
+    _, day = briefing.now_day(account)
     market, stale = _market(lang)
     personal = daily_card.request(account, lang, force=force, patient=True)
     return TodayCard(

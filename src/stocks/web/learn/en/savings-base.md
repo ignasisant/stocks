@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: irpf, savings_base, capital_gain_tax, tax_bracket, fund_transfer
 app: portfolio?tab=tax
+slug: spain-savings-base-tax
+description: Spain's IRPF savings-base brackets (19% to 30%), how they apply to your gains from selling shares, and a worked example.
 ---
 You sell shares at a profit and the tax office wants its share. But someone who makes €3,000 does not pay the same rate as someone who makes €70,000: the tax works in brackets.
 

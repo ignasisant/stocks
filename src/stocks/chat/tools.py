@@ -657,8 +657,8 @@ BOOK: dict[str, BookTool] = {
         BookTool(
             "check_book",
             "look for mistakes in the recorded trades (duplicates, transfers "
-            "read as sales, one company under two symbols). Optional "
-            '"ticker".',
+            "read as sales, one company under two symbols, a sale missing "
+            'after a split). Optional "ticker".',
         ),
         BookTool(
             "undo_change",

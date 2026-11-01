@@ -153,6 +153,16 @@ fixed meaning — they are not a series palette.
   never a dotted underline. Hover opens after 400ms, then the next "?" opens at
   once for 300ms (warm group); the bubble is `aria-hidden` (the label already
   read it) and fades out. Coarse hit area 44px via `::before`.
+- **Mix bar** (`ui/MixBar.tsx`, `.ag-mixbar`): a share as a purple-400 fill
+  on a neutral `--ag-border` track (a purple track reads as a fill), the target as a 2px primary tick across it;
+  `aria-hidden`, the words beside it or in `.ag-sr`. Profile's plan tab and
+  Review's "Frente a tu plan" draw the same one.
+- **Book notes** (Review "Tu cartera en conjunto"): never a stack of
+  same-weight sentences. Plan drift is rows on one subgrid (name · bar ·
+  figure + muted "plan x" · gap in p. p. in `--ag-warn` · "?"), the
+  sentence in `.ag-sr`; every other note a row led by a muted kind label
+  (Sector, Divisa…) over `--ag-fs-sm` secondary text, hairline between
+  rows, 75ch cap. Narrow: bar under its row, label over its sentence.
 - **Dense rows** tint `--ag-surface-hover` on hover, `(hover: hover)` only.
 - **Line action link** (`pages/home/Go.tsx`, `.hm-daily-go` / `.td-go`): a
   daily line ends on accent `--ag-fs-sm` 600 text naming where it lands
@@ -484,6 +494,18 @@ fixed meaning — they are not a series palette.
   (one `:is(…)` list in styles.css, reduced motion excluded). A new pressable
   joins that list and adds `scale var(--ag-dur-press) var(--ag-ease-out)` to
   its transition.
+- **Inline disclosure** (a row opening its editor, a folded block opening):
+  the new part grows down from the row that opened it (fade + 4px drop,
+  `--ag-dur-press`), only fades under reduced motion. The opener carries
+  `aria-expanded` + `aria-controls`; the first field takes focus, Escape
+  closes and gives focus back to the opener. Full-width rows take no press
+  scale; under `hover: none` they tint `--ag-surface-hover` on `:active`.
+- **Save feedback lives on the row it changed:** "Saved" with a check for
+  2 s in place of the row's meta line (`aria-live="polite"`), or the failure
+  and how to fix it right under the row. Never a block-level banner, never a
+  silent disabled button: when a form cannot be sent, a line says why
+  ("Pick at least one day"). The confirming word repeats the action's
+  (Save → Saved).
 - **Tabs** (`ui/Tabs.tsx`, the only one): WAI-ARIA tablist with manual
   activation (arrows move focus, Enter/Space pick), one `.ag-tabs-ink`
   underline that slides to the picked tab. Never a per-page tab strip.

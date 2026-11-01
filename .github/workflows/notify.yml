@@ -1,4 +1,9 @@
-# Push notifications — daily digest, weekly review, price alerts, reminder.
+# Push notifications — price alerts and the reminder.
+#
+# The day's numbers and the weekly review are scheduled runs now, each at the
+# account's own time and filed in its chat: the app runs them itself on a
+# Cloud Scheduler tick (notify/schedule.py, infra/cron.tf), because they write
+# chat.json, which the live instance owns.
 #
 # Every job is a headless fan-out over the accounts that turned notifications
 # on from a device (Profile → Notifications): user data is enumerated and
@@ -8,28 +13,22 @@
 #
 # Timing notes:
 # - GitHub cron regularly fires 3-15 min late; nothing here is latency-critical.
-# - The weekly review fires Sunday 17:00 UTC: the week is closed, and it lands
-#   before the reader plans Monday rather than during it.
-# - Cron is UTC. 21:30 UTC is after the US close in both DST regimes
-#   (20:00 UTC summer / 21:00 UTC winter). The alerts window 07-20 UTC covers
-#   the EU open through most/all of the US session year-round.
-# - Crypto trades 24/7; weekend moves surface in Monday's digest. Accepted v1.
+# - Cron is UTC. The alerts window 07-20 UTC covers the EU open through
+#   most/all of the US session year-round.
 name: notifications
 
 on:
   schedule:
-    - cron: "30 21 * * 1-5" # digest — evenings, after US close
-    - cron: "0 17 * * 0" # weekly review — Sunday afternoon, before the week starts
     - cron: "7 7-20 * * 1-5" # alerts — hourly, off the top-of-hour rush
     - cron: "0 10 * * 1-5" # nudge — late morning, for accounts quiet a week
   workflow_dispatch:
     inputs:
       job:
-        description: "Which job to run (digest | weekly | alerts | nudge | test)"
+        description: "Which job to run (alerts | nudge | test)"
         required: true
-        default: "digest"
+        default: "alerts"
         type: choice
-        options: [digest, weekly, alerts, nudge, test]
+        options: [alerts, nudge, test]
       user:
         description: "test only: one account label ('owner' or a slug); blank = all"
         required: false
@@ -59,45 +58,6 @@ permissions:
   contents: read
 
 jobs:
-  digest:
-    if: github.event.schedule == '30 21 * * 1-5' || inputs.job == 'digest'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      # Same Fernet key as the app's [chat] enc_key — lets the digest use a
-      # user's own (BYOK) LLM key for the highlight line. Optional.
-      CHAT_ENC_KEY: ${{ secrets.CHAT_ENC_KEY }}
-      # Free-chain fallback for the highlight line. Optional.
-      FREE_LLM_GROQ: ${{ secrets.FREE_LLM_GROQ }}
-      FREE_LLM_CEREBRAS: ${{ secrets.FREE_LLM_CEREBRAS }}
-      FREE_LLM_OPENROUTER: ${{ secrets.FREE_LLM_OPENROUTER }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - run: uv sync --frozen --no-dev
-      - run: uv run --no-sync stocks digest --all-users
-
-  weekly:
-    if: github.event.schedule == '0 17 * * 0' || inputs.job == 'weekly'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      # Same optional LLM chain as the digest — the review line, when a key is
-      # reachable. Without one the review ships computed-only.
-      CHAT_ENC_KEY: ${{ secrets.CHAT_ENC_KEY }}
-      FREE_LLM_GROQ: ${{ secrets.FREE_LLM_GROQ }}
-      FREE_LLM_CEREBRAS: ${{ secrets.FREE_LLM_CEREBRAS }}
-      FREE_LLM_OPENROUTER: ${{ secrets.FREE_LLM_OPENROUTER }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - run: uv sync --frozen --no-dev
-      - run: uv run --no-sync stocks weekly --all-users
-
   alerts:
     if: github.event.schedule == '7 7-20 * * 1-5' || inputs.job == 'alerts'
     runs-on: ubuntu-latest

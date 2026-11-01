@@ -48,6 +48,9 @@ class NotifyUser:
     db: Path
     prefs_path: Path
     state_path: Path  # alerts_state.json, sibling of prefs
+    # Built inside the app (`notify/schedule.py`), whose local files are the
+    # current ones: nothing is pulled from the bucket over them.
+    served: bool = False
 
     @property
     def lang(self) -> str:
@@ -81,7 +84,8 @@ class NotifyUser:
         from stocks.chat import engine, learnings
 
         try:
-            _restore_user_files(learnings.path_for(self.chat_path))
+            if not self.served:
+                _restore_user_files(learnings.path_for(self.chat_path))
             return engine.memory_block(self.prefs, self.chat_path)
         except Exception as exc:  # noqa: BLE001
             obs.warn("notify.memories_unavailable", user=self.label,
