@@ -32,6 +32,7 @@ from stocks import obs
 from stocks.chat import clock
 from stocks.chat.tools import Action
 from stocks.portfolio import demo, doctor, edits, ledger, positions, transfers
+from stocks.portfolio import held as shelf
 from stocks.portfolio.ledger import Transaction
 
 Translate = Callable[..., str]
@@ -473,20 +474,45 @@ def _nearest(ticker: str, rows: list[Transaction], limit: int = 5) -> str:
 
 
 def _check(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
+    """The doctor's findings, plus what an import left behind: sales it held
+    back that the book can carry now (`held.ready`), and statements worth
+    uploading again because a split was written after them (`held.reuploads`).
+    The first fix the doctor has is proposed; else the held sales are."""
     found = doctor.scan(rows, ctx.resolve)
+    sales = shelf.ready(ctx.db)[:MAX_ROWS]
+    hints = shelf.reuploads(rows, ctx.db)
     if act.ticker:
-        ids = {t.id for t in edits.select(
-            rows, edits.Selector(ticker=act.ticker), ctx.resolve)}
+        mine = edits.select(rows, edits.Selector(ticker=act.ticker), ctx.resolve)
+        ids = {t.id for t in mine}
         found = [f for f in found if ids & set(f.ids)]
-    if not found:
+        named = {id(t) for t in edits.select(
+            [h.tx for h in sales], edits.Selector(ticker=act.ticker), ctx.resolve)}
+        sales = [h for h in sales if id(h.tx) in named]
+        labels = {t.ticker for t in mine}
+        hints = [r for r in hints if r.ticker in labels]
+    if not found and not sales and not hints:
         return Draft(ctx.tr("chat.book_healthy"))
-    lines = [ctx.tr("chat.book_found", count=len(found))]
+    lines = [ctx.tr("chat.book_found", count=len(found) + len(sales) + len(hints))]
     lines += [f"- {_finding_line(f, ctx)}" for f in found[:_FINDINGS]]
+    lines += [f"- {_held_line(h, ctx)}" for h in sales[:_FINDINGS]]
+    lines += ["- " + ctx.tr("chat.book_finding_reupload", broker=r.broker,
+                            ticker=r.ticker, date=r.split_date) for r in hints]
     fixable = next((f for f in found if f.fix), None)
-    if fixable is None:
+    if fixable is not None:
+        planned = _planned(fixable.fix, _finding_summary(fixable, ctx), ctx)
+    elif sales:
+        summary = ctx.tr("chat.book_summary_held", count=len(sales),
+                         tickers=_names([h.tx for h in sales]))
+        planned = _planned(shelf.ops([h.tx for h in sales]), summary, ctx)
+    else:
         return Draft("\n".join(lines))
-    planned = _planned(fixable.fix, _finding_summary(fixable, ctx), ctx)
     return Draft("\n".join([*lines, "", planned.text]), planned.book)
+
+
+def _held_line(sale: shelf.Held, ctx: _Ctx) -> str:
+    t = sale.tx
+    return ctx.tr("chat.book_finding_held", quantity=_n(t.quantity),
+                  ticker=t.ticker, date=t.date, broker=t.note.split(" ")[0])
 
 
 def _undo(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:

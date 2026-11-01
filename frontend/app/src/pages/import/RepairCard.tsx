@@ -4,30 +4,37 @@
  * Both repairs propose and neither writes until the reader names what they
  * believe — every proposal arrives ticked, and a press is still required. The
  * badge counts what is waiting, so a book that is reporting a gain nobody made
- * says so before another statement is poured on top of it.
+ * says so before another statement is poured on top of it. Below them, the
+ * checkup (`Checkup.tsx`): held sales, statements worth uploading again, the
+ * doctor's fixes and the repairs the app made by itself.
  */
 
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
 import type { Move } from "./api";
 import { Eyebrow } from "./Card";
+import { Checkup } from "./Checkup";
 import { MoveList } from "./Moves";
 import { Splits } from "./Splits";
 import { useVocabulary } from "./text";
 
 export function Repairs({
   moves,
+  nonce,
   onApplied,
   onStale,
 }: {
   moves: Move[];
+  /** Bumped by every write on the page. */
+  nonce: number;
   onApplied: () => void;
   onStale: () => void;
 }) {
   const t = useT();
   const vocab = useVocabulary();
   const [gaps, setGaps] = useState(0);
-  const waiting = moves.length + gaps;
+  const [checks, setChecks] = useState(0);
+  const waiting = moves.length + gaps + checks;
 
   return (
     <section
@@ -46,6 +53,7 @@ export function Repairs({
       <MoveList moves={moves} onApplied={onApplied} onStale={onStale} />
       {moves.length > 0 && <hr className="im-rule" />}
       <Splits onApplied={onApplied} onFound={setGaps} />
+      <Checkup nonce={nonce} onApplied={onApplied} onFound={setChecks} />
     </section>
   );
 }

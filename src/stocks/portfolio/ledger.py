@@ -71,6 +71,35 @@ CREATE TABLE IF NOT EXISTS changes (
 # step, so every reader/writer — web, CLI, cron — upgrades any db it touches
 # and none of them ever sees a half-migrated file. Backup snapshots keep the
 # pre-migration copies (see stocks.backup).
+# What an import learned and the book alone cannot say (stocks.portfolio.held,
+# .heal): sales it held back for want of shares, which broker it read and how
+# far the ledger reached then, and the repairs the app made by itself once.
+# Tables of their own, created where missing like the journal above.
+HELD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS held_back (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    at       TEXT    NOT NULL,          -- ISO-8601 UTC, when the import ran
+    date     TEXT    NOT NULL,
+    ticker   TEXT    NOT NULL,
+    action   TEXT    NOT NULL,
+    quantity REAL    NOT NULL DEFAULT 0,
+    price    REAL    NOT NULL DEFAULT 0,
+    currency TEXT    NOT NULL DEFAULT 'USD',
+    fee      REAL    NOT NULL DEFAULT 0,
+    note     TEXT    NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS imported_brokers (
+    broker   TEXT    PRIMARY KEY,
+    at       TEXT    NOT NULL,          -- last import of this broker
+    top_id   INTEGER NOT NULL DEFAULT 0 -- highest ledger id after it
+);
+CREATE TABLE IF NOT EXISTS heals (
+    name     TEXT    PRIMARY KEY,       -- e.g. fee_in_coins, dismissed:...
+    at       TEXT    NOT NULL,
+    change   INTEGER                    -- the journal entry it wrote, if any
+);
+"""
+
 SCHEMA_VERSION = 2
 # v2: a Spanish Saxo Open/Close column ("Para abrir"/"Para cerrar") was read as
 # the note, so its first word became the broker. Those rows go to "other".
@@ -134,6 +163,7 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
     ).fetchone()
     conn.execute(SCHEMA)
     conn.execute(CHANGES_SCHEMA)
+    conn.executescript(HELD_SCHEMA)
     if fresh:
         # A brand-new db is created in the current shape; the migrations
         # describe how *old* shapes get here and must not replay over it.
@@ -190,11 +220,14 @@ def clear(path: Path = DB_PATH) -> None:
 
     The edit journal goes with it: an undo of a deletion checks only that the
     row is still absent, which a wiped book always passes, and would put rows
-    back into a book that is somebody else's start.
+    back into a book that is somebody else's start. So do the sales an import
+    held back and what it recorded per broker: both describe the old book.
     """
     with closing(connect(path)) as conn, conn:
         conn.execute("DELETE FROM transactions")
         conn.execute("DELETE FROM changes")
+        conn.execute("DELETE FROM held_back")
+        conn.execute("DELETE FROM imported_brokers")
     storage.persist(path)
 
 

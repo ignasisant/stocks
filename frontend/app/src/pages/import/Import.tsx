@@ -498,6 +498,7 @@ function Importer({
         {real > 0 && (
           <Repairs
             moves={moves}
+            nonce={writes}
             onApplied={wrote}
             onStale={() => setAgain((count) => count + 1)}
           />

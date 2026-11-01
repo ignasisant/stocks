@@ -843,8 +843,30 @@ async def app_help(
 async def check_book() -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api.routes import portfolio
+        from stocks.portfolio import demo, held
 
-        return {"kind": "book_health", **_plain(portfolio.health(paths))}
+        out = {"kind": "book_health", **_plain(portfolio.health(paths))}
+        # What an import left behind: sales refused for want of shares that
+        # the book can carry now (one finding, applied with apply_fix), and
+        # statements worth uploading again since a split came after them.
+        sales = held.ready(paths.db)[:ADD_MAX]
+        if sales:
+            fix = held.ops([h.tx for h in sales])
+            out["findings"].append({
+                "key": held.key_of(sales), "kind": "held_sales",
+                "ticker": ", ".join(sorted({h.tx.ticker for h in sales})),
+                "ids": [], "fix": fix,
+                "detail": {"sales": [op["row"] for op in fix]},
+                "weight": 0.0, "cause": None,
+            })
+        out["reupload"] = [
+            {"broker": r.broker, "ticker": r.ticker, "split_date": r.split_date,
+             "note": "Uploading this broker's statement again in Import may "
+                     "recover a sale refused before the split was known; rows "
+                     "the book has are skipped."}
+            for r in held.reuploads(demo.without(_rows(paths)), paths.db)
+        ]
+        return out
 
     return await _run("check_book", work)
 
@@ -1157,8 +1179,16 @@ async def apply_fix(
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api import loaders
-        from stocks.portfolio import demo, doctor
+        from stocks.portfolio import demo, doctor, held
 
+        ids = held.ids_in(key)
+        if ids is not None:
+            sales = held.take(ids, paths.db)
+            if sales is None:
+                raise _Refused("Those sales are not ready any more; run "
+                               "check_book again.")
+            return _edit(paths, held.ops(sales), plan_token,
+                         f"Add {len(sales)} sale(s) an import left out")
         rows = demo.without(_rows(paths))
         found = doctor.by_key(rows, key, loaders.display_symbol)
         if found is None:
@@ -1589,7 +1619,9 @@ TOOLS: tuple[Spec, ...] = (
          "Mistakes in the ledger, each with the edit that fixes it: shares "
          "that moved broker but read as a sale and a new buy (often under a "
          "different ticker), one company under two labels, a trade imported "
-         "twice, a sale of shares that never arrived. Fix one with apply_fix."),
+         "twice, a sale of shares that never arrived, sales an import left out "
+         "that the book can carry now, statements worth uploading again. "
+         "Fix one with apply_fix."),
     Spec(change_history, "Edit history",
          "Hand edits to the ledger, newest first, with where each came from "
          "(app, chat, mcp) and the rows it touched. Undoable by id."),

@@ -1706,6 +1706,26 @@
   flex: 1 1 auto;
 }
 
+/* A checkup line: what is wrong on the left, the one button on the right. */
+.im-fix {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.im-fix-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.im-fix > .im-btn {
+  flex: none;
+}
+
 /* One proposal each: ticked by default, and a card rather than a table row
    because the rail is 380px and every proposal carries its evidence. */
 .im-picks {

@@ -651,6 +651,8 @@ WRITES = {
     # reader would see five names frozen at whatever was stored last.
     ("/v1/search/recent", "post"),
     ("/v1/prefs", "patch"),
+    # One scheduled run's time and days (digest, weekly, …), merged into prefs.
+    ("/v1/schedules/{job}", "put"),
     # The investor profile, replaced whole. A write because it is what the
     # assistant's persona is built from — this is text that reaches the model's
     # system prompt, which is precisely why a token may not set it.
@@ -719,6 +721,12 @@ WRITES = {
     # the body names which of the proposals it accepts and never what they are.
     ("/v1/import/splits/apply", "post"),
     ("/v1/import/moves/apply", "post"),
+    # The book checkup: a held sale written, one forgotten, a re-upload hint
+    # waved off, a doctor finding's fix applied (tests/test_book_checkup.py).
+    ("/v1/import/held/apply", "post"),
+    ("/v1/import/held/{held_id}", "delete"),
+    ("/v1/import/reupload/dismiss", "post"),
+    ("/v1/import/fix", "post"),
     # The same split repair, from the Ticker page that shows the gap: the page
     # writes it unasked, so the scan proposes and the body only names its days.
     ("/v1/ticker/{symbol}/splits", "post"),
