@@ -404,14 +404,15 @@ def _items(raw) -> list[dict]:
     return out
 
 
-def action_day(now: datetime) -> date:
+def action_day(now: datetime, cutoff: int = CUTOFF_HOUR) -> date:
     """Which day's card is current at `now` — already in the reader's zone.
 
     Before the cutoff the answer is *yesterday*: at 07:40 the day has no numbers
     yet, and a card regenerated then would be a briefing about nothing. The
     stored card keeps its own date on screen, so a stale one reads as stale.
+    `cutoff` is earlier for a reader whose briefing is scheduled earlier.
     """
-    return now.date() if now.hour >= CUTOFF_HOUR else now.date() - timedelta(days=1)
+    return now.date() if now.hour >= cutoff else now.date() - timedelta(days=1)
 
 
 def is_fresh(

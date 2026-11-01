@@ -104,7 +104,7 @@ def status(account, lang: str) -> DailyCard:
     whose computed card is today's, and so fresh. Last, whatever is stored,
     marked as the older card it is.
     """
-    _, day = briefing.now_day()
+    _, day = briefing.now_day(account)
     key = key_now(account, day, lang)
     job = briefing.job_for(account, key)
     card = stored(account)
@@ -142,7 +142,7 @@ def request(account, lang: str, *, force: bool, patient: bool = False) -> DailyC
     """
     from stocks.web import auth
 
-    _, day = briefing.now_day()
+    _, day = briefing.now_day(account)
     key = key_now(account, day, lang)
     job = briefing.job_for(account, key)
     card = stored(account)

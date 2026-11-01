@@ -1200,23 +1200,38 @@ def system_prompt(profile: dict, context: str,
 # thread starts with the card — an assistant turn nobody asked for — and a
 # conversation sent to a model has to open with the user.
 CARD_OPENER = "My daily action card on Home, for {day}."
+# The same for the other scheduled runs (`notify/schedule.py`): what each one
+# was, said as the reader would have asked for it.
+SCHEDULED_OPENERS = {
+    "digest": "My end-of-day numbers for {day}.",
+    "weekly": "My weekly review, for the week to {day}.",
+}
 
 
 def recent(history: list[dict], limit: int = MAX_CONTEXT_MSGS) -> list[dict]:
     """The tail of the conversation sent to the model. Trims any leading
     assistant turn so the slice still opens with a user message (Anthropic
     requires it; the others don't care) — except a daily card's
-    (`auth.save_card_thread`), which is what the thread is about and gets
-    `CARD_OPENER` in front of it instead. Rebuilt as bare role/content dicts —
-    stored turns carry extra keys (e.g. "skills") the provider APIs reject."""
+    (`auth.save_card_thread`) or a scheduled run's (`save_scheduled_thread`),
+    which is what the thread is about and gets its opener in front instead.
+    Rebuilt as bare role/content dicts — stored turns carry extra keys (e.g.
+    "skills") the provider APIs reject."""
     msgs = history[-limit:]
-    while msgs and msgs[0]["role"] != "user" and not msgs[0].get("daily"):
+    while msgs and msgs[0]["role"] != "user" and not _opener(msgs[0]):
         msgs = msgs[1:]
     out = [{"role": m["role"], "content": m["content"]} for m in msgs]
     if msgs and msgs[0]["role"] != "user":
-        out.insert(0, {"role": "user",
-                       "content": CARD_OPENER.format(day=msgs[0]["daily"])})
+        out.insert(0, {"role": "user", "content": _opener(msgs[0])})
     return out
+
+
+def _opener(turn: dict) -> str:
+    """The user line a thread opened by `turn` starts with, "" when it is not
+    a card or a scheduled run's."""
+    if turn.get("daily"):
+        return CARD_OPENER.format(day=turn["daily"])
+    said = SCHEDULED_OPENERS.get(str(turn.get("scheduled") or ""))
+    return said.format(day=turn.get("run") or "") if said else ""
 
 
 def resolve_skills(prefs: dict, provider: Provider, api_key: str,

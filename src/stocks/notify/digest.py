@@ -469,9 +469,9 @@ def calendar_lines(data: DigestData, lang: str) -> list[str]:
     return lines
 
 
-def digest_message(data: DigestData, lang: str) -> dict:
-    """The digest as a push (`render.message`): the book in the title, then the
-    movers, the first calendar item and the narrated line. The tap opens Today."""
+def _digest_parts(data: DigestData, lang: str) -> tuple[str, list[str | None]]:
+    """The digest's title and its lines in reading order: the push shows the
+    first few, the scheduled thread every one."""
     from stocks.web.i18n import translate
 
     def tr(key: str, **kw) -> str:
@@ -486,59 +486,95 @@ def digest_message(data: DigestData, lang: str) -> dict:
     else:
         title = f"{tr('digest_title')} · {_date_line(data.date, lang)}"
     calendar = calendar_lines(data, lang)
-    lines = [
+    return title, [
         movers_line(data),
         *calendar[:1],
         data.highlight,
         *calendar[1:],
         benchmark_line(data, tr),
     ]
-    return render.message(title, lines, links.path(links.TODAY), "digest")
+
+
+def digest_message(data: DigestData, lang: str, url: str | None = None) -> dict:
+    """The digest as a push (`render.message`): the book in the title, then the
+    movers, the first calendar item and the narrated line. The tap opens
+    `url` — the run's thread when it was filed (`notify/schedule.py`) — else
+    Today."""
+    title, lines = _digest_parts(data, lang)
+    return render.message(title, lines, url or links.path(links.TODAY), "digest")
+
+
+def digest_markdown(data: DigestData, lang: str) -> str:
+    """The whole digest as the chat turn it is filed as: the title in bold,
+    then every line the push had to cut."""
+    title, lines = _digest_parts(data, lang)
+    return render.markdown(title, lines)
 
 
 # ------------------------------------------------------------------ fan-out
 
 
-def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
-    """Compute and push every subscriber's digest. Returns {label: status}."""
-    from stocks.notify import narrative, webpush
-    from stocks.notify.fanout import iter_notify_users
-    from stocks.notify.state import (
-        load_state,
-        recent_highlights,
-        remember_highlight,
-        remember_tax_reminders,
-        save_state,
-        tax_reminders_due,
-    )
+def build_digest(user, state: dict) -> DigestData | str:
+    """One account's digest, narrated, or why there is none ("no data",
+    "quiet") — a day with nothing to say sends nothing and files nothing."""
+    from stocks.notify import narrative
+    from stocks.notify.state import recent_highlights, tax_reminders_due
     from stocks.portfolio.tax import prefs as tax_prefs
+
+    base = str(user.prefs.get("currency") or "EUR").upper()
+    data = compute_digest_data(
+        user.watchlist, user.db, base, import_record=user.import_path
+    )
+    code, _ = tax_prefs.resolve(user.prefs)
+    data.tax_deadlines = tax_reminders_due(state, code, data.date)
+    if (
+        data.total is None
+        and not data.movers
+        and not data.earnings
+        and not data.ex_dividends
+        and not data.tax_deadlines
+    ):
+        return "no data"
+    if data.quiet:
+        return "quiet"
+    data.highlight = narrative.highlight(
+        data, user.prefs, user.lang, recent=recent_highlights(state),
+        memories=user.memories(),
+    )
+    return data
+
+
+def digest_delivered(user, state: dict, data: DigestData) -> None:
+    """Remember what a delivered digest said. Only what was actually delivered
+    joins the memory, so a push that reached no device does not burn the line
+    it never showed."""
+    from stocks.notify.state import remember_highlight, remember_tax_reminders, save_state
+
+    if data.highlight:
+        remember_highlight(state, data.highlight)
+    if data.tax_deadlines:
+        remember_tax_reminders(state, data.tax_deadlines)
+    if data.highlight or data.tax_deadlines:
+        save_state(state, user.state_path)
+
+
+def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
+    """Compute and push every subscriber's digest. Returns {label: status}.
+
+    By hand (`stocks digest`): the scheduled run is the app's own
+    (`notify/schedule.py`), which files it in the chat as well."""
+    from stocks.notify import webpush
+    from stocks.notify.fanout import iter_notify_users
+    from stocks.notify.state import load_state
 
     status: dict[str, str] = {}
     for user in iter_notify_users("digest"):
         try:
             state = load_state(user.state_path)
-            base = str(user.prefs.get("currency") or "EUR").upper()
-            data = compute_digest_data(
-                user.watchlist, user.db, base, import_record=user.import_path
-            )
-            code, _ = tax_prefs.resolve(user.prefs)
-            data.tax_deadlines = tax_reminders_due(state, code, data.date)
-            if (
-                data.total is None
-                and not data.movers
-                and not data.earnings
-                and not data.ex_dividends
-                and not data.tax_deadlines
-            ):
-                status[user.label] = "skipped: no data"
+            data = build_digest(user, state)
+            if isinstance(data, str):
+                status[user.label] = f"skipped: {data}"
                 continue
-            if data.quiet:
-                status[user.label] = "skipped: quiet"
-                continue
-            data.highlight = narrative.highlight(
-                data, user.prefs, user.lang, recent=recent_highlights(state),
-                memories=user.memories(),
-            )
             message = digest_message(data, user.lang)
             if dry_run:
                 print(f"── {user.label} ──\n{message['title']}\n{message['body']}\n")
@@ -546,15 +582,8 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
                 continue
             took = webpush.send_all(user.push_path, message, topic="digest")
             status[user.label] = f"sent {took}" if took else "not delivered"
-            # Only what was actually delivered joins the memory, so a push that
-            # reached no device does not burn the line it never showed.
             if took:
-                if data.highlight:
-                    remember_highlight(state, data.highlight)
-                if data.tax_deadlines:
-                    remember_tax_reminders(state, data.tax_deadlines)
-                if data.highlight or data.tax_deadlines:
-                    save_state(state, user.state_path)
+                digest_delivered(user, state, data)
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

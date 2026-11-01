@@ -55,6 +55,9 @@ PATH_ES = "/es/"
 PATH_EN_ES = "/en-es/"  # English copy, Spanish rules
 PATH_ES_US = "/es-us/"  # Spanish copy, US rules
 ASSET_BASE = "/lp/"
+# The public Spanish-tax guides (`web/guides.py`), one index per language.
+PATH_GUIDES_EN = "/guides/"
+PATH_GUIDES_ES = "/es/guias/"
 
 # The language this render is for. A ContextVar rather than an argument because
 # every section below reads it through tr() — threading a code through fifteen
@@ -1370,6 +1373,10 @@ def _legal_lang_q() -> str:
     return "?lang=es" if _is_es() else ""
 
 
+def _guides_path() -> str:
+    return PATH_GUIDES_ES if _is_es() else PATH_GUIDES_EN
+
+
 def _app_href(param: str) -> str:
     """The app entry URL for a CTA.
 
@@ -1984,6 +1991,7 @@ def _footer() -> str:
     <div class="ag-l-brand">{_mark()}<span>TopStocks</span></div>
     <a href="{esc(GITHUB_URL)}" target="_blank"
        rel="noopener noreferrer">{esc(tr("landing.nav_github"))}</a>
+    <a href="{_guides_path()}">{esc(tr("landing.footer_guides"))}</a>
     <a href="/legal/privacy{_legal_lang_q()}">{esc(tr("landing.footer_privacy"))}</a>
     <a href="/legal/terms{_legal_lang_q()}">{esc(tr("landing.footer_terms"))}</a>
     {_lang_toggle(footer=True)}

@@ -297,6 +297,9 @@ class Conversation(BaseModel):
     active: bool
     # The day of a daily card's thread (`auth.save_card_thread`), "" otherwise.
     daily: str = ""
+    # The job a scheduled run's thread came from (`notify/schedule.py`):
+    # "briefing", "digest" or "weekly"; "" for any other thread.
+    scheduled: str = ""
     # An answer is still being written on it (`runs.live_threads`). The panel
     # polls the list while one it is not showing is, to say when it lands.
     answering: bool = False

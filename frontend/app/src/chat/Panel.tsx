@@ -39,6 +39,7 @@ import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
 import { rates, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
+import type { Jump } from "./types";
 import type { Chat } from "./useChat";
 import {
   applyPixels,
@@ -224,8 +225,8 @@ export default function Panel({
   chat,
   connect = null,
   onConnectTaken,
-  memory = false,
-  onMemoryTaken,
+  jump = null,
+  onJumpTaken,
   thread = null,
   onThreadTaken,
   onClose,
@@ -235,9 +236,10 @@ export default function Panel({
   /** Back from a provider's sign-in: the settings view finishes it. */
   connect?: ConnectAsk | null;
   onConnectTaken?: () => void;
-  /** Sent here to the saved memories (`?chat=memory`, the profile's link). */
-  memory?: boolean;
-  onMemoryTaken?: () => void;
+  /** Sent here from the profile: the saved memories (`?chat=memory`) or the
+   *  scheduled runs (`?chat=scheduled`). */
+  jump?: Jump;
+  onJumpTaken?: () => void;
   /** Sent here to one conversation (the daily card's "Ask"). */
   thread?: string | null;
   onThreadTaken?: () => void;
@@ -258,11 +260,13 @@ export default function Panel({
   useEffect(() => {
     if (connect) setView("settings");
   }, [connect]);
+  const [scheduledOpen, setScheduledOpen] = useState(false);
   useEffect(() => {
-    if (!memory) return;
-    setView("memory");
-    onMemoryTaken?.();
-  }, [memory]);
+    if (!jump) return;
+    if (jump === "scheduled") setScheduledOpen(true);
+    setView(jump === "memory" ? "memory" : "threads");
+    onJumpTaken?.();
+  }, [jump]);
   // An earlier conversation named under an answer, or the one a memory was
   // said in: the thread view, on that thread.
   const openThread = (cid: string) => {
@@ -514,6 +518,7 @@ export default function Panel({
         <Threads
           threads={chat.threads ?? []}
           unread={chat.unread}
+          scheduledOpen={scheduledOpen}
           onBack={() => setView("thread")}
           onOpen={openThread}
           onRename={(cid, title) => void chat.rename(cid, title)}

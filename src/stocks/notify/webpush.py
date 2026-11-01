@@ -266,6 +266,13 @@ def devices(path: Path) -> int:
     return len(_read(path))
 
 
+def lang_of(path: Path) -> str | None:
+    """The language the newest device subscribed in, for a message written
+    once for all of them; None with no device."""
+    rows = sorted(_read(path).values(), key=lambda r: float(r.get("created") or 0))
+    return next((r["lang"] for r in reversed(rows) if r.get("lang")), None)
+
+
 def _drop(path: Path, endpoint: str) -> None:
     with obs.swallow("push.drop"):
         unsubscribe(path, endpoint)

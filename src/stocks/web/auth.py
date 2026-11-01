@@ -306,8 +306,10 @@ KEEP_DAYS = 30
 # cards must not push the reader's conversations out of MAX_CONVERSATIONS. Nor
 # out of sight: the panel's list leaves them out (`list_conversations`, cards=
 # False) until the reader opens one or writes in it — the list is what they
-# said, not what they were told.
-MAX_CARD_THREADS = 30
+# said, not what they were told. The scheduled runs (save_scheduled_thread)
+# share the budget, and are the exception to "out of sight": they are listed
+# in a section of their own, which is how a pushed one is found again.
+MAX_CARD_THREADS = 60
 _TITLE_MAX = 80
 
 # Every write is a read-modify-write of the whole book, and since the daily
@@ -408,9 +410,9 @@ def _idle_since(conv: dict, cutoff: datetime) -> bool:
 
 
 def _unread_card(conv: dict) -> bool:
-    """A daily card's thread the reader never wrote in. Once they have, it is
-    a conversation like any other, and is kept like one."""
-    return bool(conv.get("daily")) and not any(
+    """A daily card's or a scheduled run's thread the reader never wrote in.
+    Once they have, it is a conversation like any other, and is kept like one."""
+    return bool(conv.get("daily") or conv.get("scheduled")) and not any(
         m.get("role") == "user" for m in conv["messages"]
     )
 
@@ -520,12 +522,15 @@ def save_chat(history: list[dict], path: Path, cid: str | None = None) -> None:
 
 def list_conversations(path: Path, cards: bool = True) -> list[dict]:
     """Conversation metadata (no message bodies), most recently used first.
-    `daily` is the card day of a daily card's thread, "" for any other.
+    `daily` is the card day of a daily card's thread, "" for any other;
+    `scheduled` the job a scheduled run's thread came from (`notify/schedule.py`).
 
     `cards=False` is the panel's list: it leaves out the card threads nobody
     wrote in (`_unread_card`) unless one is the active thread — the card's
     "Ask" just opened it. A month of cards would otherwise bury the reader's
-    own conversations, and nothing in them was theirs to find. Every lookup
+    own conversations, and nothing in them was theirs to find. A scheduled
+    run's thread is listed all the same: it was pushed to the reader, and the
+    panel files it under its own section. Every lookup
     by id keeps the default: the threads exist, they are only not listed."""
     book = load_book(path)
     metas = [
@@ -534,9 +539,11 @@ def list_conversations(path: Path, cards: bool = True) -> list[dict]:
             "created": c["created"], "updated": c["updated"],
             "messages": len(c["messages"]), "active": c["id"] == book["active"],
             "daily": str(c.get("daily") or ""),
+            "scheduled": str(c.get("scheduled") or ""),
         }
         for c in book["conversations"]
-        if cards or c["id"] == book["active"] or not _unread_card(c)
+        if cards or c["id"] == book["active"] or c.get("scheduled")
+        or not _unread_card(c)
     ]
     return sorted(metas, key=lambda m: m["updated"], reverse=True)
 
@@ -687,6 +694,59 @@ def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     if memory.remember(index, msgs, conv["id"]):
         _persist(index)
     return conv["id"]
+
+
+@_locked
+def save_scheduled_thread(job: str, run: str, title: str, text: str, path: Path) -> str:
+    """File one scheduled run (`notify/schedule.py`) as a thread; returns its id.
+
+    `save_card_thread`'s rules, keyed on (job, run day) instead of the card
+    day: one thread per run, titled once, never made active, a same-day rerun
+    replacing its turn while nobody has answered it. Marked `scheduled` so the
+    panel lists it under its own section even unread."""
+    book = load_book(path)
+    conv = next(
+        (c for c in book["conversations"]
+         if c.get("scheduled") == job and c.get("run") == run),
+        None,
+    )
+    if conv is None:
+        conv = _blank_conversation(title[:_TITLE_MAX])
+        conv["title_auto"] = False
+        conv["scheduled"] = job
+        conv["run"] = run
+        book["conversations"].append(conv)
+    turn = {"role": "assistant", "content": text, "scheduled": job, "run": run}
+    msgs = conv["messages"]
+    if msgs and msgs[-1].get("scheduled") == job and msgs[-1].get("run") == run:
+        if msgs[-1].get("content") == text:
+            return conv["id"]
+        msgs[-1] = turn
+    else:
+        msgs.append(turn)
+    conv["updated"] = _now()
+    save_book(book, path)
+    index = memory_path(path)
+    if memory.remember(index, msgs, conv["id"]):
+        _persist(index)
+    return conv["id"]
+
+
+@_locked
+def mark_scheduled(cid: str, job: str, run: str, path: Path) -> bool:
+    """Mark an existing thread as a scheduled run's — the daily card's, which
+    `save_card_thread` filed, when the briefing job delivered it. False when
+    the thread is gone."""
+    book = load_book(path)
+    conv = next((c for c in book["conversations"] if c["id"] == cid), None)
+    if conv is None:
+        return False
+    if conv.get("scheduled") == job and conv.get("run") == run:
+        return True
+    conv["scheduled"] = job
+    conv["run"] = run
+    save_book(book, path)
+    return True
 
 
 # ---------------------------------------------------------------- watchlist

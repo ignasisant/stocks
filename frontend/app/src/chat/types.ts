@@ -247,6 +247,8 @@ export type Conversation = {
   active: boolean;
   /** The day of a daily card's thread, "" for any other conversation. */
   daily?: string;
+  /** The job a scheduled run's thread came from, "" for any other. */
+  scheduled?: string;
   /** An answer is still being written on it (`landed.ts` watches for it). */
   answering?: boolean;
 };
@@ -498,3 +500,6 @@ export type Done = {
   /** The stream ended with no ending: the connection dropped, not the run. */
   lost?: boolean;
 };
+
+/** A view the profile's links open the drawer on (`?chat=memory|scheduled`). */
+export type Jump = "memory" | "scheduled" | null;

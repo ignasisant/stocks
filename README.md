@@ -1135,10 +1135,15 @@ rollback, restore, secrets rotation.
 ## Push notifications
 
 Every account that turns notifications on from a device (Profile →
-Notifications, which subscribes it to Web Push) gets four streams on that
-device, each a short notification whose tap opens one page:
+Notifications, which subscribes it to Web Push) gets these streams on that
+device, each a short notification whose tap opens one page. The first three
+are **scheduled runs**: each goes out at the account's own time and days in
+its own zone (chat → *Scheduled*, or Profile → Notifications), and is filed
+as a chat thread of its own, which is what the tap opens:
 
-- **Daily digest** (weekday evenings, after the US close; opens *Today*): the
+- **AI briefing** (weekdays 08:30 by default): the Home card's daily action,
+  its thread marked scheduled.
+- **Daily digest** (weekdays 22:30 by default): the
   book's value and day change in the title, then the best and worst mover,
   what is on the calendar (a tax deadline, results just out, earnings in the
   next 7 days, ex-dividend dates, dividends received, a stale import) and an
@@ -1147,7 +1152,7 @@ device, each a short notification whose tap opens one page:
   omitted. A quiet day sends nothing. The last few delivered highlights are
   kept in `alerts_state.json` and shown to the model so it doesn't rewrite
   yesterday's sentence; a reply that echoes one anyway is dropped.
-- **Weekly review** (Sunday afternoon; opens *Portfolio*): the week, month
+- **Weekly review** (Sundays 18:00 by default): the week, month
   and year, the best and worst name, concentration and its drift, dividends,
   the week ahead and the benchmark.
 - **Price alerts** (hourly on market days; one name opens its page, several
@@ -1166,10 +1171,15 @@ by these crons are charged to the process-wide daily pot
 (highlights, drift baseline, alert edges, reminders) is only remembered once a
 push actually reached a device, so an undelivered one is retried, not lost.
 
-All four are GitHub Actions schedules (`.github/workflows/notify.yml`) running
-`stocks digest|weekly|alerts --all-users` and `stocks nudge`. Accounts and
-their `push.json` are discovered and restored from the `[storage]` bucket, so
-the ephemeral runner needs no user data in git. Finished chat answers push
+The scheduled runs are the app's own: Cloud Scheduler posts
+`/api/v1/schedule/tick` with the API token every quarter of an hour
+(`infra/cron.tf`) and the live instance runs whatever came due
+(`notify/schedule.py`) — it owns `chat.json`, which a runner could not write.
+`stocks digest|weekly --all-users` stay as manual runs. Alerts and the
+reminder are GitHub Actions schedules (`.github/workflows/notify.yml`) running
+`stocks alerts --all-users` and `stocks nudge`. Accounts and their `push.json`
+are discovered and restored from the `[storage]` bucket, so the ephemeral
+runner needs no user data in git. Finished chat answers push
 from the app itself (`notify/webpush.py`).
 
 Setup (one-time):

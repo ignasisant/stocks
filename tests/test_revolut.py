@@ -60,11 +60,12 @@ def test_parse_csv_imports_trades_and_dividends():
     assert eur_buy.ticker == "TEP.PA" and eur_buy.currency == "EUR"
 
 
-def test_dividend_maps_total_to_price_zero_fee():
+def test_dividend_maps_the_net_total_to_price_zero_fee():
     res = revolut.parse_csv(SAMPLE)
     div = next(t for t in res.transactions if t.action == "dividend")
-    assert div.price == 4.20  # gross total
+    assert div.price == 4.20  # what arrived, net of withholding (portfolio.heal)
     assert div.fee == 0.0
+    assert revolut.net_dividend(div)
 
 
 def test_skips_cash_split_and_fee_rows():

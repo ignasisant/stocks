@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: irpf, savings_base, capital_gain_tax, tax_bracket, fund_transfer
 app: portfolio?tab=tax
+slug: base-del-ahorro-irpf
+description: Tramos del IRPF para la base del ahorro (19 % a 30 %), cómo se aplican a tus ganancias por venta de acciones y un ejemplo calculado paso a paso.
 ---
 Vendes acciones con beneficio y Hacienda quiere su parte. Pero no paga lo mismo quien gana 3.000 € que quien gana 70.000 €: el impuesto va por tramos.
 

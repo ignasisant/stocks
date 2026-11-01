@@ -6,6 +6,8 @@ minutes: 5
 as_of: 2026-10-25
 terms: loss_offset, loss_carryforward, tax_loss_harvesting
 app: portfolio?tab=tax
+slug: compensar-perdidas-acciones
+description: Cómo compensar pérdidas por venta de acciones con ganancias y dividendos, el límite del 25 %, los cuatro años siguientes y cuándo vender para ahorrar.
 ---
 Una pérdida realizada no es solo un mal trago: puede reducir los impuestos que pagas por tus ganancias. Hay reglas sobre cómo y cuándo.
 

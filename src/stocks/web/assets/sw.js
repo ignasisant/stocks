@@ -41,8 +41,18 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of open) {
         if (new URL(client.url).origin !== target.origin) continue;
         await client.focus();
-        // The page reads ?thread= on navigation (chat/Drawer.tsx).
-        if ("navigate" in client) return client.navigate(target.href);
+        // The page reads ?thread= on navigation (chat/Drawer.tsx). `navigate`
+        // is missing on some browsers and refuses a page this worker does not
+        // control yet (one loaded before it registered): then the page moves
+        // itself, told by message (`shell/push.ts`, `useWorkerOpen`).
+        if ("navigate" in client) {
+          try {
+            return await client.navigate(target.href);
+          } catch (_) {
+            /* fall through to the message */
+          }
+        }
+        client.postMessage({ type: "open", url: target.pathname + target.search });
         return undefined;
       }
       return self.clients.openWindow(target.href);

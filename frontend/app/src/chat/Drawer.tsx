@@ -31,13 +31,14 @@ import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
 import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
-import { usePhone } from "./phone";
+import { isPhone, usePhone } from "./phone";
 import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
 import { toast } from "../ui/toast";
 import { hasDraft } from "./draft";
 import type { ConnectAsk } from "./connect";
+import type { Jump } from "./types";
 import "./chat.css";
 
 const Panel = lazy(() => import("./Panel"));
@@ -94,7 +95,12 @@ const LANDED_TOAST = "chat-landed";
 export function Drawer() {
   const t = useT();
   const { prefs } = useSession();
-  const [open, setOpen] = useState(prefs.chat_panel_open);
+  // A drawer left open comes back open on a wide screen, beside the page. On
+  // a phone it would be the whole screen: whatever brought the reader in —
+  // a notification's page, a shared link — would sit hidden under the last
+  // conversation, so a phone starts on the page. The explicit ways in below
+  // (`?thread=`, `?chat=`, the guide, a draft) still open it.
+  const [open, setOpen] = useState(() => prefs.chat_panel_open && !isPhone());
   const chat = useChat(open);
   // The walkthrough sent the reader to a page and the drawer stepped aside
   // (phones only — see `GuideCard.useVisit`). Per tab and in memory; any open
@@ -272,16 +278,17 @@ export function Drawer() {
     if (hasDraft()) show(true);
   }, []);
 
-  // `?chat=memory` — the profile's link to what the assistant remembers. Read
-  // once and taken off the URL like `?guide=`; the drawer opens on that view.
-  const jump = params.get("chat");
-  const [memory, setMemory] = useState(false);
+  // `?chat=memory` and `?chat=scheduled` — the profile's links to what the
+  // assistant remembers and to when the scheduled runs go out. Read once and
+  // taken off the URL like `?guide=`; the drawer opens on that view.
+  const view = params.get("chat");
+  const [jump, setJump] = useState<Jump>(null);
   useEffect(() => {
-    if (jump !== "memory") return;
+    if (view !== "memory" && view !== "scheduled") return;
     setParams({ chat: undefined });
-    setMemory(true);
+    setJump(view);
     show(true);
-  }, [jump]);
+  }, [view]);
 
   // `?thread=<id>` — a push notification's "your answer is ready" (`sw.js`)
   // lands here: the drawer opens on that conversation, and the parameter
@@ -471,8 +478,8 @@ export function Drawer() {
               chat={chat}
               connect={connect}
               onConnectTaken={() => setConnect(null)}
-              memory={memory}
-              onMemoryTaken={() => setMemory(false)}
+              jump={jump}
+              onJumpTaken={() => setJump(null)}
               thread={thread}
               onThreadTaken={() => setThread(null)}
               onClose={() => show(false)}

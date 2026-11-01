@@ -263,10 +263,9 @@ def _concentration_line(data: WeeklyData, tr) -> str | None:
     return line
 
 
-def weekly_message(data: WeeklyData, lang: str) -> dict:
-    """The review as a push (`render.message`): the week and the book in the
-    title, then the longer horizons, the names behind the week and the
-    narrated line. The tap opens the portfolio."""
+def _weekly_parts(data: WeeklyData, lang: str) -> tuple[str, list[str | None]]:
+    """The review's title and its lines in reading order: the push shows the
+    first few, the scheduled thread every one."""
     from stocks.web.i18n import translate
 
     def tr(key: str, **kw) -> str:
@@ -280,7 +279,7 @@ def weekly_message(data: WeeklyData, lang: str) -> dict:
         )
     else:
         title = f"{tr('weekly_title')} · {date_line(data.date, lang)}"
-    lines = [
+    return title, [
         _window_line(data, tr),
         _names_line(data),
         data.highlight,
@@ -289,40 +288,71 @@ def weekly_message(data: WeeklyData, lang: str) -> dict:
         _ahead_line(data, lang, tr),
         _benchmark_line(data, tr),
     ]
-    return render.message(title, lines, links.path(links.PORTFOLIO), "weekly")
+
+
+def weekly_message(data: WeeklyData, lang: str, url: str | None = None) -> dict:
+    """The review as a push (`render.message`): the week and the book in the
+    title, then the longer horizons, the names behind the week and the
+    narrated line. The tap opens `url` — the run's thread when it was filed
+    (`notify/schedule.py`) — else the portfolio."""
+    title, lines = _weekly_parts(data, lang)
+    return render.message(title, lines, url or links.path(links.PORTFOLIO), "weekly")
+
+
+def weekly_markdown(data: WeeklyData, lang: str) -> str:
+    """The whole review as the chat turn it is filed as."""
+    title, lines = _weekly_parts(data, lang)
+    return render.markdown(title, lines)
 
 
 # ------------------------------------------------------------------ fan-out
 
 
-def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
-    """Compute and push every subscriber's weekly review. {label: status}."""
-    from stocks.notify import narrative, webpush
-    from stocks.notify.fanout import iter_notify_users
-    from stocks.notify.state import (
-        load_state,
-        previous_top_weight,
-        remember_top_weight,
-        save_state,
-    )
+def build_weekly(user, state: dict) -> WeeklyData | str:
+    """One account's review, narrated, or why there is none ("no book")."""
+    from stocks.notify import narrative
+    from stocks.notify.state import previous_top_weight
 
-    now = datetime.now(UTC)
+    base = str(user.prefs.get("currency") or "EUR").upper()
+    data = compute_weekly_data(user.watchlist, user.db, base)
+    if data.total is None:
+        return "no book"
+    if data.top_weight is not None:
+        previous = previous_top_weight(state)
+        data.drift = data.top_weight - previous if previous is not None else None
+    data.highlight = narrative.weekly_line(data, user.prefs, user.lang,
+                                           memories=user.memories())
+    return data
+
+
+def weekly_delivered(user, state: dict, data: WeeklyData) -> None:
+    """Only a delivered review moves the concentration baseline: a push that
+    reached no device must not make next week's drift measure from a week the
+    reader never saw."""
+    from stocks.notify.state import remember_top_weight, save_state
+
+    if data.top_weight is not None:
+        remember_top_weight(state, data.top_weight, datetime.now(UTC))
+        save_state(state, user.state_path)
+
+
+def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
+    """Compute and push every subscriber's weekly review. {label: status}.
+
+    By hand (`stocks weekly`): the scheduled run is the app's own
+    (`notify/schedule.py`), which files it in the chat as well."""
+    from stocks.notify import webpush
+    from stocks.notify.fanout import iter_notify_users
+    from stocks.notify.state import load_state
+
     status: dict[str, str] = {}
     for user in iter_notify_users("weekly"):
         try:
             state = load_state(user.state_path)
-            base = str(user.prefs.get("currency") or "EUR").upper()
-            data = compute_weekly_data(user.watchlist, user.db, base)
-            if data.total is None:
-                status[user.label] = "skipped: no book"
+            data = build_weekly(user, state)
+            if isinstance(data, str):
+                status[user.label] = f"skipped: {data}"
                 continue
-            if data.top_weight is not None:
-                previous = previous_top_weight(state)
-                data.drift = (
-                    data.top_weight - previous if previous is not None else None
-                )
-            data.highlight = narrative.weekly_line(data, user.prefs, user.lang,
-                                                   memories=user.memories())
             message = weekly_message(data, user.lang)
             if dry_run:
                 print(f"── {user.label} ──\n{message['title']}\n{message['body']}\n")
@@ -330,12 +360,8 @@ def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
                 continue
             took = webpush.send_all(user.push_path, message, topic="weekly")
             status[user.label] = f"sent {took}" if took else "not delivered"
-            # Only a delivered review moves the concentration baseline: a push
-            # that reached no device must not make next Sunday's drift measure
-            # from a week the reader never saw.
-            if took and data.top_weight is not None:
-                remember_top_weight(state, data.top_weight, now)
-                save_state(state, user.state_path)
+            if took:
+                weekly_delivered(user, state, data)
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

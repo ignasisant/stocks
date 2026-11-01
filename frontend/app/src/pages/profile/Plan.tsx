@@ -27,6 +27,7 @@ import { useT } from "../../shell/i18n";
 import { formatter, num, numberLang } from "../../shell/numbers";
 import { Link } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
+import { MixBar } from "../../ui/MixBar";
 import type { Projection } from "../portfolio/api";
 import { describe } from "./errors";
 import { Card, Failure, Row, Select } from "./ui";
@@ -610,33 +611,6 @@ function Summary({
       <span>{label}</span>
       <b className={warn ? "pl-warn" : undefined}>{value}</b>
     </div>
-  );
-}
-
-/**
- * Today's share of the book as a fill, the target as a tick across it.
- * Decorative beside the caption that says the same in words.
- */
-function MixBar({
-  actual,
-  target,
-  caption,
-}: {
-  actual: number;
-  target: number | null;
-  caption: string;
-}) {
-  const clamp = (value: number) => Math.min(100, Math.max(0, value));
-  return (
-    <span className="pl-bar-wrap">
-      <span className="pl-bar" aria-hidden="true">
-        <span className="pl-bar-fill" style={{ width: `${clamp(actual)}%` }} />
-        {target !== null && (
-          <span className="pl-bar-target" style={{ left: `${clamp(target)}%` }} />
-        )}
-      </span>
-      <span className="pl-bar-cap">{caption}</span>
-    </span>
   );
 }
 

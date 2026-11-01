@@ -20,6 +20,7 @@ import { useEffect } from "react";
 import { BASE, get, send } from "./api";
 import { appleMobile } from "./install";
 import { isStandalone } from "./resume";
+import { navigate } from "./router";
 
 /** `GET /push` — `routes.push.Push`. */
 export type PushState = {
@@ -149,4 +150,31 @@ export function useOnScreenBeat(active: boolean): void {
       document.removeEventListener("visibilitychange", tick);
     };
   }, [active]);
+}
+
+/** The path in the worker's `{type: "open", url}`, or null for anything else. */
+export function workerTarget(data: unknown): string | null {
+  const said = data as { type?: unknown; url?: unknown } | null;
+  if (said?.type !== "open" || typeof said.url !== "string") return null;
+  if (!said.url.startsWith("/") || said.url.startsWith("//")) return null;
+  return said.url;
+}
+
+/**
+ * A notification pressed while this window was open but the worker could not
+ * move it (`sw.js`): the worker sends the address and the page goes there
+ * itself — same origin only, and only a path, never somewhere else.
+ */
+export function useWorkerOpen(): void {
+  useEffect(() => {
+    const worker =
+      typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
+    if (!worker) return;
+    const heard = (event: MessageEvent) => {
+      const url = workerTarget(event.data);
+      if (url) navigate(url);
+    };
+    worker.addEventListener("message", heard);
+    return () => worker.removeEventListener("message", heard);
+  }, []);
 }

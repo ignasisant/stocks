@@ -6,6 +6,8 @@ minutes: 5
 as_of: 2026-10-25
 terms: withholding_tax, double_taxation, tax_treaty
 app: portfolio?tab=dividends
+slug: dividendos-extranjeros-doble-imposicion
+description: Cómo tributan en España los dividendos extranjeros: retención en origen, W-8BEN, el 15 % del convenio con EE. UU. y la deducción por doble imposición.
 ---
 Cobras un dividendo de una empresa de EE. UU. y el importe ya llega con un recorte. ¿Pagas dos veces? No: existe una deducción para evitarlo.
 

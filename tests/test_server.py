@@ -250,6 +250,8 @@ def test_the_app_installs_to_a_home_screen_and_opens_past_the_pitch(client):
         client.cookies.clear()
         body = client.get(page if page != "/" else "/?landing=1").text
         assert 'rel="manifest"' in body and 'rel="apple-touch-icon"' in body
+        # Without it a shortcut made outside the manifest plates the bare SVG on white.
+        assert 'href="/lp/icon-192.png"' in body
 
 
 @pytest.mark.parametrize("name", ["..%2fapp.py", "%2e%2e/app.py", "nope.svg"])
@@ -468,6 +470,30 @@ def test_the_landing_links_the_legal_pages(client):
     assert 'href="/legal/privacy"' in html
     assert 'href="/legal/terms"' in html
     assert 'href="/legal/privacy?lang=es"' in client.get("/es/").text
+
+
+# ------------------------------------------------------------------ guides
+
+
+def test_the_guides_are_public_pages_in_both_languages(client):
+    for path in ("/guides/", "/es/guias/", "/es/guias/declarar-revolut-renta",
+                 "/guides/revolut-spain-tax-return"):
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert "x-robots-tag" not in r.headers, path
+        assert "set-cookie" not in r.headers, path
+        assert "sha256-" in r.headers["content-security-policy"]
+
+
+def test_an_unknown_guide_is_a_404(client):
+    assert client.get("/es/guias/no-existe").status_code == 404
+    assert client.get("/guides/declarar-revolut-renta").status_code == 404
+
+
+def test_the_sitemap_and_landing_lead_to_the_guides(client):
+    assert "/es/guias/declarar-revolut-renta</loc>" in client.get("/sitemap.xml").text
+    assert 'href="/guides/"' in client.get("/").text
+    assert 'href="/es/guias/"' in client.get("/es/").text
 
 
 # ---------------------------------------------------------- security headers

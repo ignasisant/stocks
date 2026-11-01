@@ -18,7 +18,7 @@ Nothing here touches the network: every loader is replaced.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pandas as pd
@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import home, loaders
+from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
 from stocks.chat import daily
@@ -100,7 +100,7 @@ def account(monkeypatch, tmp_path):
 
 def today_card(**over) -> dict:
     """A card stamped for whichever action day is current right now."""
-    day = daily.action_day(datetime.now().astimezone())
+    day = briefing.now_day()[1]
     return {
         "day": day.isoformat(),
         "headline": "Two names carry the week",
@@ -231,7 +231,7 @@ def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
 def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypatch):
     """Every figure in the card is a day behind, and the calendar date will not
     move until the cutoff — so the date alone cannot see this."""
-    day = daily.action_day(datetime.now().astimezone())
+    day = briefing.now_day()[1]
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
     monkeypatch.setattr(
         loaders,

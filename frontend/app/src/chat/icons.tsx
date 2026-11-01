@@ -41,6 +41,9 @@ const PATHS: Record<string, string> = {
   memory: "M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2zm0 15-5-2.2L7 18V5h10v13z",
   history:
     "M13 3a9 9 0 0 0-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12z",
+  // A scheduled run: the clock alone, where `history` has the arrow round it.
+  schedule:
+    "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
   key: "M21 10h-8.35A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H13l2 2 2-2 2 2 3-3.05L21 10zM7 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z",
   // The three width presets, in the order they widen. The frame says how much
   // room the panel takes; the arrows inside it say which way the press moves.

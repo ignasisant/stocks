@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: fifo, cost_basis, lot
 app: portfolio?tab=tax
+slug: spain-fifo-shares
+description: Which shares Spain's tax office counts as sold when you sell part of a position: the FIFO method (art. 37 LIRPF) with a euro example.
 ---
 You bought the same stock several times at different prices. When you sell only part of it, which of those purchases are you selling? The answer decides how much tax you pay.
 

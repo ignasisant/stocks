@@ -45,7 +45,9 @@ import { AmbientLight } from "./ambient";
 import { Toaster } from "../ui/Toaster";
 import { usePresence, useSwipeDismiss } from "./useSheet";
 import { PullRefresh } from "./PullRefresh";
+import { useWorkerOpen } from "./push";
 import { useReloadOnReturn } from "./resume";
+import { useZoneSync } from "./zone";
 
 /**
  * Whether the rail is folded to its icons, remembered per browser.
@@ -416,6 +418,8 @@ export function Layout({ children }: { children: ReactNode }) {
   // A Home Screen app lives in the background for hours: coming back to it
   // asks for today's figures, and so does its own pull (`shell/resume`).
   useReloadOnReturn();
+  useWorkerOpen();
+  useZoneSync();
   return (
     <div className="ag-shell">
       <SkipLink />
