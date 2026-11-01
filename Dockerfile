@@ -23,8 +23,10 @@ ENV HOME=/home/appuser
 WORKDIR /app
 
 # Dependency layer first: code edits reuse the resolved-lockfile layer.
+# --no-cache on every uv step: uv's download cache is a second copy of every
+# wheel already unpacked into .venv (~570MB), read by nothing at runtime.
 COPY --chown=appuser:appuser pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 # Bake the tiktoken BPE table into the image. Without it the first chat turn
 # after every cold start downloads it (~2s, and a hard failure with no egress);
@@ -32,36 +34,21 @@ RUN uv sync --frozen --no-dev --no-install-project
 ENV TIKTOKEN_CACHE_DIR=/home/appuser/.cache/tiktoken
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base')"
 
-# Same for the chat's embedding model (chat/memory.py): baked in, so long-term
-# memory works on a cold start with no egress, against a first-recall download
-# that fails closed on a locked-down revision.
+# Same for the chat's embedding model (chat/hybrid.py): built here, so search
+# works on a cold start with no egress, and so no serving instance ever builds
+# it — the cut (chat/embedding.py) downloads ~600MB and peaks near 800MB.
 #
-# Saved as a plain directory rather than left in the HF cache. What the hub
-# serves for this repo is model.safetensors *and* an ONNX copy of the same
-# weights, and from_pretrained fetches both while reading only the first — 123MB
-# of image for a file nothing opens. It cannot simply be deleted afterwards: the
-# next offline load fails huggingface_hub's snapshot completeness check.
-# save_pretrained writes what the model actually needs and nothing else, and the
-# hub cache goes with the layer that created it.
-#
-# Quantized to int8 here, at build time: the float32 table is +169MB resident
-# (+286MB while loading) on a 1GiB instance, and the first chat turn of every
-# process loads it — on Cloud Run's in-memory filesystem, the likeliest trigger
-# of the chat OOMs. The int8 table is +74MB (+93MB peak), its vectors sit at
-# cosine 0.998 from the float ones (so the indexes already written keep
-# matching), and the ranking on the test questions is unchanged. Quantizing at
-# load time instead peaks higher than not quantizing at all.
-#
-# HF_HUB_OFFLINE stays on so a missing directory fails loudly at load instead of
-# quietly reaching for the network on a revision that has no egress.
-ENV STOCKS_EMBED_MODEL=/home/appuser/models/potion-base-32M-int8 \
-    HF_HUB_DISABLE_TELEMETRY=1 \
-    HF_HUB_OFFLINE=1
-RUN HF_HUB_OFFLINE=0 HF_HOME=/tmp/hf /app/.venv/bin/python -c \
-    "from model2vec import StaticModel; \
-     StaticModel.from_pretrained('minishlab/potion-base-32M', quantize_to='int8') \
-         .save_pretrained('/home/appuser/models/potion-base-32M-int8')" \
-    && rm -rf /tmp/hf
+# The model is potion-multilingual-128M cut to English and Spanish, with its
+# own tokenizer: ~41MB resident, against ~97MB for the English-only
+# potion-base-32M it replaced and ~730MB for the uncut model under `tokenizers`.
+# Built from the one file before the project is installed, so a code edit
+# elsewhere reuses this layer; wordfreq (the word lists the cut keeps) and the
+# download live only in this step.
+ENV STOCKS_EMBED_MODEL=/home/appuser/models/potion-multilingual-128M-en-es-1
+COPY --chown=appuser:appuser src/stocks/chat/embedding.py /tmp/embed/embedding.py
+RUN uv run --no-sync --no-cache --with wordfreq==3.1.1 \
+        python /tmp/embed/embedding.py "$STOCKS_EMBED_MODEL" \
+    && rm -rf /tmp/embed
 
 # glibc's allocator, tamed. The API serves on ~40 AnyIO worker threads plus
 # per-request download pools, and by default glibc gives busy threads arenas of
@@ -77,13 +64,13 @@ ENV MALLOC_MMAP_THRESHOLD_=131072 \
 COPY --chown=appuser:appuser . .
 # Editable install of the project itself (default): stocks.config.PROJECT_ROOT
 # resolves to /app, so data/ and watchlist.yaml live next to the source.
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-cache
 
 # Compressed siblings of the hashed bundle files (web/precompress.py): each
 # chunk gzip'd and brotli'd once here, at the highest level, rather than
 # gzip-9'd by the middleware on the one throttled CPU every time a browser
 # asks for it. `brotli` is a build-time extra, not a runtime dependency.
-RUN uv run --frozen --no-dev --with brotli python -m stocks.web.precompress
+RUN uv run --frozen --no-dev --no-cache --with brotli python -m stocks.web.precompress
 
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD \

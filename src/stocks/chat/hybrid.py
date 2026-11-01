@@ -8,47 +8,43 @@ module owns how a question becomes a ranking.
 Two small dependencies do the work, both chosen so this survives a Cloud Run
 cold start with no network and no GPU:
 
-- **model2vec** (`potion-base-32M`, 512 dims) — static embeddings: a lookup
-  table, not a transformer forward pass. CPU, milliseconds per turn, no torch.
-  Baked into the image like the tiktoken table, quantized to int8 (~74MB
-  resident against ~169MB as float32, same ranking — see the Dockerfile). The
-  smaller potion-base-8M would cost less still, but 8M ranked an unrelated
-  answer above the right one on the first question tried, and a memory that
-  returns the wrong memory is worse than no memory.
+- **a static embedding model** (chat/embedding.py: potion-multilingual-128M
+  cut to English and Spanish, 256 dims) — a lookup table, not a transformer
+  forward pass. CPU, well under a millisecond per turn, no torch, ~41MB
+  resident. Multilingual on purpose: a user asks in Spanish about a turn they
+  had in English. The English-only potion-base-32M before it put "¿qué decidí
+  sobre ASML?" nearer to any Spanish text than to the English turn about ASML.
 - **sqlite-vec** — vector search as a SQLite extension. No server, no daemon.
 
 Search is **hybrid**: the vectors above, fused with SQLite's own FTS5 keyword
-index. Neither half is enough on its own. The static model is trained on
-English and misranks Spanish — "¿qué decidí sobre ASML?" put an unrelated
-Nvidia answer first in testing — while a keyword index cannot find "the
-conclusion about concentration" from "how much of one thing is too much". But
-tickers, company names and numbers are exactly what a user asks about later,
-and those the keyword half nails in any language. Ranks are combined with
-reciprocal rank fusion, which needs no score calibration between two searches
-whose numbers mean different things.
+index. Neither half is enough on its own. A keyword index cannot find "the
+conclusion about concentration" from "how much of one thing is too much",
+while a static model averages a sentence into one point and blurs the one word
+that mattered. But tickers, company names and numbers are exactly what a user
+asks about later, and those the keyword half nails in any language. Ranks are
+combined with reciprocal rank fusion, which needs no score calibration between
+two searches whose numbers mean different things.
 
-Both dependencies are optional. Without them `available()` is False and every
-store built on this module stays out of the chat's way.
+Both halves are optional. Without them `available()` is False and every store
+built on this module stays out of the chat's way.
 """
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import sqlite3
 from functools import lru_cache
+from pathlib import Path
 
 from stocks import obs
+from stocks.chat import embedding
 
-# The hub id, unless a deploy points at a directory holding the same weights.
-# The image bakes them with `save_pretrained` and sets STOCKS_EMBED_MODEL to
-# where they landed: what the hub serves for this repo is the safetensors file
-# *and* an ONNX copy of it, and `from_pretrained` fetches both while reading
-# only the first — 123MB of image for a file nothing opens. Deleting it from
-# the HF cache afterwards is not an option: the next offline load fails the
-# snapshot completeness check. A plain directory sidesteps the cache entirely.
-MODEL = os.environ.get("STOCKS_EMBED_MODEL") or "minishlab/potion-base-32M"
-DIM = 512
+DIM = embedding.DIM
+# What the vectors are. Stored next to every index that persists them, so one
+# written by another model is rebuilt instead of searched (chat/memory.py).
+EMBEDDER = embedding.NAME
 
 # Reciprocal rank fusion's damping constant. The literature's 60 was tuned on
 # TREC runs of hundreds of documents; against the handful of candidates each
@@ -70,16 +66,36 @@ _WORD_RE = re.compile(r"[^\W\d_]{2,}|\d[\w.\-]*", re.UNICODE)
 # ------------------------------------------------------------- dependencies
 
 
+def _model_dir() -> tuple[Path, bool]:
+    """Where the model lives, and whether a missing one may be built there.
+
+    The image builds it at build time and points STOCKS_EMBED_MODEL at it: a
+    serving instance never downloads 500MB to make one. Anywhere else (a dev
+    machine, CI) it is built on first use into the user's cache, once."""
+    baked = os.environ.get("STOCKS_EMBED_MODEL")
+    if baked:
+        return Path(baked), False
+    cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return cache / "stocks" / embedding.NAME, True
+
+
 @lru_cache(maxsize=1)
-def _model():
+def _model() -> embedding.Embedder | None:
     """The static embedding model, or None when it cannot be loaded.
 
-    Cached for the process: loading reads (and on a cold machine downloads)
-    ~124MB. A miss is not an error anywhere — it just means no search."""
+    Cached for the process. A miss is not an error anywhere — it just means
+    no search."""
+    directory, buildable = _model_dir()
     try:
-        from model2vec import StaticModel
-
-        return StaticModel.from_pretrained(MODEL)
+        if buildable and not (directory / "meta.json").exists():
+            # One builder at a time: pytest-xdist workers all get here at once.
+            directory.parent.mkdir(parents=True, exist_ok=True)
+            with open(directory.parent / f"{directory.name}.lock", "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                if not (directory / "meta.json").exists():
+                    obs.event("chat.embed.model_build", dir=str(directory))
+                    embedding.build(directory)
+        return embedding.Embedder(directory)
     except Exception as exc:
         obs.warn("chat.memory.model_unavailable", error_type=type(exc).__name__,
                  error=str(exc)[:200])
@@ -101,17 +117,11 @@ def embed(texts: list[str]) -> list[bytes] | None:
     if model is None or not texts:
         return None
     try:
-        import numpy as np
         import sqlite_vec
 
-        vectors = np.asarray(model.encode(texts), dtype="float32")
-        # Normalized, so the cosine distance the index is built on is a pure
-        # angle: model2vec's raw vectors are not unit length, and their
-        # magnitudes track text length, which would rank long turns as "close"
-        # to everything.
-        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-        vectors = vectors / np.clip(norms, 1e-9, None)
-        return [sqlite_vec.serialize_float32(v.tolist()) for v in vectors]
+        # Unit length, so the cosine distance the index is built on is a pure
+        # angle rather than one that tracks text length.
+        return [sqlite_vec.serialize_float32(v.tolist()) for v in model.encode(texts)]
     except Exception as exc:
         obs.warn("chat.memory.embed_failed", error_type=type(exc).__name__,
                  error=str(exc)[:200])
@@ -191,18 +201,15 @@ def fts_query(text: str, db: sqlite3.Connection | None = None,
     return " OR ".join(sorted({quote(t) for t in terms})) if terms else ""
 
 
-def fuse(*rankings: list[int], weights: tuple[float, ...] = ()) -> list[int]:
+def fuse(*rankings: list[int]) -> list[int]:
     """Row ids ordered by reciprocal rank fusion across several rankings.
 
     RRF because the two halves' scores are not comparable — a cosine distance
     and a BM25 score have neither the same scale nor the same direction — but
     their *ranks* are. A row both searches like beats one that either loves.
-    `weights`, one per ranking (1.0 when left out), tilts the vote toward the
-    half that is better at this particular question.
     """
     scores: dict[int, float] = {}
-    for n, ranking in enumerate(rankings):
-        weight = weights[n] if n < len(weights) else 1.0
+    for ranking in rankings:
         for rank, row_id in enumerate(ranking):
-            scores[row_id] = scores.get(row_id, 0.0) + weight / (_RRF_K + rank + 1)
+            scores[row_id] = scores.get(row_id, 0.0) + 1 / (_RRF_K + rank + 1)
     return sorted(scores, key=lambda i: -scores[i])

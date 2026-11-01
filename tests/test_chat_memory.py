@@ -6,7 +6,7 @@ from stocks.chat import memory
 
 pytestmark = pytest.mark.skipif(
     not memory.available(),
-    reason="memory needs model2vec + sqlite-vec; the chat degrades without them",
+    reason="memory needs the embedder + sqlite-vec; the chat degrades without them",
 )
 
 _T1 = [
@@ -104,6 +104,22 @@ def test_recall_finds_a_turn_that_shares_no_words(index):
     # The point of the embedding half: no term here appears in the note.
     got = memory.recall(index, "how much of one holding is too much")
     assert any("concentración" in m.text for m in got)
+
+
+@pytest.mark.parametrize(("question", "said"), [
+    # Asked in one language about a turn held in the other, sharing no word
+    # with it: the English-only model it replaced ranked by language first.
+    ("how risky is having a third of everything in one stock", "concentración"),
+    ("¿es caro añadir después de una gran subida?", "200% run"),
+])
+def test_recall_crosses_languages(index, question, said):
+    db = memory._connect(index)
+    try:
+        first = memory._semantic(db, question, 1)
+        text = db.execute("SELECT text FROM notes WHERE id = ?", first).fetchone()[0]
+    finally:
+        db.close()
+    assert said in text
 
 
 def test_recall_ignores_accents_the_user_did_not_type(index):
@@ -279,6 +295,87 @@ def test_forget_except_with_nothing_to_drop_changes_nothing(index, tmp_path):
     assert {m.thread for m in memory.recall(index, "position cartera")} == {"t1", "t2"}
 
 
+# -------------------------------------------------------------- migration
+
+
+def _index_of_another_model(path, turns):
+    """A memory file as an earlier embedder left it: 512-wide vectors, no stamp."""
+    import sqlite3
+
+    import sqlite_vec
+
+    db = sqlite3.connect(path)
+    memory.load_vec(db)
+    db.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, thread TEXT NOT NULL,"
+               " role TEXT NOT NULL, when_iso TEXT NOT NULL, text TEXT NOT NULL,"
+               " fingerprint TEXT NOT NULL UNIQUE)")
+    db.execute("CREATE VIRTUAL TABLE notes_vec USING vec0(note_id INTEGER PRIMARY KEY,"
+               " embedding float[512] distance_metric=cosine)")
+    db.execute("CREATE VIRTUAL TABLE notes_fts USING fts5(text, content='notes',"
+               " content_rowid='id', tokenize=\"unicode61 remove_diacritics 2\")")
+    for n, turn in enumerate(turns):
+        cur = db.execute("INSERT INTO notes (thread, role, when_iso, text, fingerprint)"
+                         " VALUES ('old', ?, '2026-09-01', ?, ?)",
+                         (turn["role"], turn["content"], f"fp{n}"))
+        db.execute("INSERT INTO notes_vec VALUES (?, ?)",
+                   (cur.lastrowid, sqlite_vec.serialize_float32([0.1] * 512)))
+        db.execute("INSERT INTO notes_fts (rowid, text) VALUES (?, ?)",
+                   (cur.lastrowid, turn["content"]))
+    db.commit()
+    db.close()
+
+
+def test_an_index_from_another_model_is_re_embedded_from_its_text(tmp_path):
+    path = tmp_path / memory.FILE
+    _index_of_another_model(path, _T1 + _T2)
+
+    got = memory.recall(path, "how risky is having a third of everything in one stock")
+
+    assert got and got[0].thread == "old"
+    db = memory._connect(path)
+    try:
+        assert db.execute("SELECT count(*) FROM notes_vec").fetchone()[0] == 4
+        assert dict(db.execute("SELECT key, value FROM meta")) == {
+            "embedder": memory.EMBEDDER}
+    finally:
+        db.close()
+
+
+def test_a_re_embedding_cut_short_is_finished_by_the_next_search(tmp_path, monkeypatch):
+    path = tmp_path / memory.FILE
+    _index_of_another_model(path, _T1 + _T2)
+    calls = []
+    real = memory.embed
+
+    def once(texts):  # the first batch lands, then the model goes away
+        calls.append(texts)
+        return real(texts) if len(calls) == 1 else None
+
+    monkeypatch.setattr(memory, "_BACKFILL_BATCH", 1)
+    monkeypatch.setattr(memory, "embed", once)
+    memory.recall(path, "ASML")
+    monkeypatch.undo()
+
+    assert memory.recall(path, "how risky is having a third of everything in one stock")
+
+    db = memory._connect(path)
+    try:
+        assert db.execute("SELECT count(*) FROM notes_vec").fetchone()[0] == 4
+        assert db.execute("SELECT 1 FROM meta WHERE key = 'backfill'").fetchone() is None
+    finally:
+        db.close()
+
+
+def test_a_new_index_has_nothing_to_re_embed(tmp_path):
+    path = tmp_path / memory.FILE
+    memory.remember(path, _T1, "t1")
+    db = memory._connect(path)
+    try:
+        assert db.execute("SELECT 1 FROM meta WHERE key = 'backfill'").fetchone() is None
+    finally:
+        db.close()
+
+
 # ------------------------------------------------------------- degradation
 
 
@@ -310,8 +407,7 @@ def test_a_long_word_is_matched_by_its_stem_only_when_asked():
     assert hybrid.fts_query("IRPF 720", stem=True) == '"720" OR "irpf"'
 
 
-def test_fusion_weights_tilt_the_vote():
+def test_a_row_both_halves_found_beats_one_either_loved():
     from stocks.chat import hybrid
 
-    assert hybrid.fuse([1, 2], [2, 1])[0] in (1, 2)
-    assert hybrid.fuse([1, 2], [2, 1], weights=(0.1, 1.0))[0] == 2
+    assert hybrid.fuse([1, 3], [2, 3])[0] == 3

@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from stocks import obs
-from stocks.chat.hybrid import DIM, available, embed, fts_query, load_vec
+from stocks.chat.hybrid import DIM, EMBEDDER, available, embed, fts_query, load_vec
 from stocks.chat.hybrid import fuse as _fuse
 
 FILE = "chat_memory.db"
@@ -45,6 +45,7 @@ MIN_CHARS = 60
 MAX_CHARS = 1500
 
 RECALL_LIMIT = 4  # memories returned per search
+_BACKFILL_BATCH = 256  # turns embedded per call while re-indexing
 
 
 def path_for(root: Path) -> Path:
@@ -85,11 +86,22 @@ def _connect(path: Path) -> sqlite3.Connection:
         # not store the same turn twice.
         " fingerprint TEXT NOT NULL UNIQUE)"
     )
-    db.execute(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS notes_vec USING vec0("
-        f" note_id INTEGER PRIMARY KEY, embedding float[{DIM}]"
-        " distance_metric=cosine)"
-    )
+    db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    stamp = db.execute("SELECT value FROM meta WHERE key = 'embedder'").fetchone()
+    if stamp is None or stamp[0] != EMBEDDER:
+        # Vectors from another model are not comparable with a question
+        # embedded by this one (nor, across models, the same width): drop
+        # them, and let the next search re-embed the turns from their text.
+        with db:
+            db.execute("DROP TABLE IF EXISTS notes_vec")
+            db.execute(
+                "CREATE VIRTUAL TABLE notes_vec USING vec0("
+                f" note_id INTEGER PRIMARY KEY, embedding float[{DIM}]"
+                " distance_metric=cosine)"
+            )
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('embedder', ?)", (EMBEDDER,))
+            if db.execute("SELECT 1 FROM notes LIMIT 1").fetchone():
+                db.execute("INSERT OR REPLACE INTO meta VALUES ('backfill', '1')")
     # remove_diacritics 2 so "posicion" finds "posición" — half of what a
     # Spanish-speaking user types has the accents dropped.
     db.execute(
@@ -98,6 +110,41 @@ def _connect(path: Path) -> sqlite3.Connection:
         ' tokenize="unicode61 remove_diacritics 2")'
     )
     return db
+
+
+def _backfill(db: sqlite3.Connection) -> None:
+    """Embed the turns that have text but no vector — every one of them, once,
+    after `_connect` dropped another model's. Needs the model, so it runs from
+    `remember` and `recall`, not from `_connect`. A failure leaves the flag up
+    for the next call to finish."""
+    if db.execute("SELECT 1 FROM meta WHERE key = 'backfill'").fetchone() is None:
+        return
+    try:
+        done = 0
+        while True:
+            rows = db.execute(
+                "SELECT id, text FROM notes WHERE id > ? ORDER BY id LIMIT ?",
+                (done, _BACKFILL_BATCH)).fetchall()
+            if not rows:
+                break
+            vectors = embed([r[1] for r in rows])
+            if vectors is None:
+                return
+            with db:
+                # vec0 has no upsert; a run cut short left some of these.
+                db.executemany("DELETE FROM notes_vec WHERE note_id = ?",
+                               [(r[0],) for r in rows])
+                db.executemany(
+                    "INSERT INTO notes_vec (note_id, embedding) VALUES (?, ?)",
+                    [(r[0], v) for r, v in zip(rows, vectors, strict=True)])
+            done = rows[-1][0]
+        with db:
+            db.execute("DELETE FROM meta WHERE key = 'backfill'")
+        obs.event("chat.memory.reindexed", embedder=EMBEDDER,
+                  notes=db.execute("SELECT count(*) FROM notes").fetchone()[0])
+    except Exception as exc:
+        obs.warn("chat.memory.reindex_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
 
 
 def _fingerprint(thread: str, text: str) -> str:
@@ -134,6 +181,7 @@ def remember(path: Path, history: list[dict], thread: str) -> int:
                  error=str(exc)[:200])
         return 0
     try:
+        _backfill(db)
         with db:
             known = {r[0] for r in db.execute(
                 "SELECT fingerprint FROM notes WHERE thread = ?", (thread,))}
@@ -240,6 +288,7 @@ def recall(path: Path, query: str, limit: int = RECALL_LIMIT,
                  error_type=type(exc).__name__, error=str(exc)[:300])
         return []
     try:
+        _backfill(db)
         depth = max(limit * 4, 8)
         order = _fuse(_semantic(db, query, depth), _lexical(db, query, depth))
         if not order:
