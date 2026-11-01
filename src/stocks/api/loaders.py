@@ -926,6 +926,23 @@ def bar_closes(ticker: str, label: str) -> pd.Series:
     return df["Close"]
 
 
+def daily_bars(ticker: str) -> pd.DataFrame:
+    """The chart's 2y daily OHLCV download, untrimmed, index made tz-naive.
+
+    The trend read needs the year before the chart's window too (a 12-month
+    momentum, a rising 200-session average), and this is the frame the 1y
+    chart was cut from — the same memo entry, so no second download.
+    """
+    df = _bars_download(ticker, "2y", "1d")
+    if df is None or df.empty:
+        return pd.DataFrame()
+    index = pd.DatetimeIndex(df.index)
+    if index.tz is not None:
+        df = df.copy()
+        df.index = index.tz_localize(None)
+    return df
+
+
 # The review's return columns: a book of 150 names would evict every chart
 # the ticker pages keep warm in `_bars_download`'s 64 entries, and needs five
 # closes of each, not five years. So the download is its own and only the
@@ -1758,6 +1775,20 @@ def listing_name(symbol: str) -> str | None:
     except Exception:
         return None
     return blob.get("longName") or blob.get("shortName") or None
+
+
+def listing_country(symbol: str) -> str | None:
+    """The company's home country, as Yahoo spells it — `listing_name`'s
+    sibling: the profile memo first, one `.info` when it has none."""
+    from stocks.data import profiles
+    from stocks.data.fetch import info
+
+    if country := (profiles.known(symbol) or {}).get("country"):
+        return country
+    try:
+        return info(symbol).get("country") or None
+    except Exception:
+        return None
 
 
 # What `listing_names` has learned, per process. Names only, never written

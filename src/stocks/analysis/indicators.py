@@ -47,3 +47,21 @@ def add_indicators(df: pd.DataFrame, price_col: str = "Close") -> pd.DataFrame:
     out["RSI14"] = rsi(out[price_col], 14)
     out["Return"] = daily_returns(out[price_col])
     return out
+
+
+def atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
+    """Average True Range (Wilder): the typical day's full swing, gaps included.
+
+    The true range takes the previous close into account, so an overnight gap
+    counts as range rather than vanishing between two bars. Needs High, Low and
+    Close; an all-NaN series when any is missing.
+    """
+    if not {"High", "Low", "Close"} <= set(df.columns):
+        return pd.Series(float("nan"), index=df.index)
+    prev = df["Close"].shift(1)
+    true_range = pd.concat(
+        [df["High"] - df["Low"], (df["High"] - prev).abs(), (df["Low"] - prev).abs()],
+        axis=1,
+    ).max(axis=1, skipna=False)
+    true_range.iloc[0] = df["High"].iloc[0] - df["Low"].iloc[0]
+    return true_range.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()

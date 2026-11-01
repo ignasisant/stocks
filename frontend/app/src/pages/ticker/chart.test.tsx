@@ -42,8 +42,6 @@ const bars = {
     SMA200: sma(-6),
   },
   dividends: dates.map(() => null),
-  rsi_verdict: null,
-  rsi_tone: null,
 } as unknown as Bars;
 
 const render = (mobile: boolean) =>

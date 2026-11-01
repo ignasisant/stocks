@@ -201,3 +201,32 @@ def test_every_euro_of_cost_is_in_a_lot_or_in_a_sale(txs, matching):
     kept = sum(p.cost for p in positions)
     gone = sum(s.cost for s in realized)
     assert kept + gone == pytest.approx(_bought(txs), rel=1e-9, abs=1e-6)
+
+
+@st.composite
+def year_path(draw) -> pd.Series:
+    """A positive weekly price series long enough for a 12-month read. The
+    reads look closes up by date, so weekly bars exercise the same lookups as
+    daily ones with a fifth of the data to generate."""
+    moves = draw(st.lists(MOVE, min_size=55, max_size=70))
+    prices = [100.0]
+    for m in moves:
+        prices.append(prices[-1] * m)
+    idx = pd.date_range("2024-01-05", periods=len(prices), freq="W-FRI")
+    return pd.Series(prices, index=idx)
+
+
+@settings(max_examples=50, deadline=None)
+@given(year_path(), year_path(), st.floats(min_value=0.01, max_value=1000.0))
+def test_trend_reads_do_not_depend_on_the_price_unit(path, bench, scale):
+    """Momentum and relative strength are ratios: quoting the same line in
+    cents, or after a split adjusted through the whole history, reads the same."""
+    from stocks.analysis.trend import excess_return, momentum_12_1
+
+    assert momentum_12_1(path * scale) == pytest.approx(momentum_12_1(path))
+    assert excess_return(path * scale, bench, 6) == pytest.approx(
+        excess_return(path, bench, 6)
+    )
+    assert excess_return(path, bench * scale, 12) == pytest.approx(
+        excess_return(path, bench, 12)
+    )

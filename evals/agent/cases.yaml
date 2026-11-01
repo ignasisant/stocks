@@ -80,6 +80,16 @@
   must_not: [propose_action]
   max_calls: 4
 
+- id: trend
+  message: "¿está NVDA en tendencia alcista?"
+  goals:
+    - Says NVDA trades above its 200-day average and that the average is rising
+    - Quotes the 12-1 momentum or the return against the S&P 500
+    - Names no price level absent from the material
+  must: [technicals]
+  must_not: [portfolio_snapshot, propose_action]
+  max_calls: 3
+
 - id: price-to-watch
   message: "¿a qué precio merece la pena vigilar NVDA? avísame si cae ahí"
   goals:

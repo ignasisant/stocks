@@ -47,7 +47,7 @@ describe("layout", () => {
 
   it("reads a coin by its range and its distance from the peak", () => {
     const shape = layout("crypto");
-    expect(shape.metrics).toEqual(["range_52w", "ath_drawdown"]);
+    expect(shape.metrics).toEqual(["range_52w", "ath_drawdown", "trend"]);
     expect(shape.markers).toEqual(["cycle"]);
     expect(shape.overlays).toContain("SMA20");
   });
@@ -61,7 +61,7 @@ describe("layout", () => {
 
   it("an unnamed kind is a share", () => {
     expect(layout(null)).toBe(layout("stock"));
-    expect(layout(null).metrics).toEqual(["range_52w", "pe", "next_results"]);
+    expect(layout(null).metrics).toEqual(["range_52w", "trend", "pe", "next_results"]);
     expect(layout(null).markers).toEqual(["results", "dividends"]);
   });
 
@@ -73,8 +73,17 @@ describe("layout", () => {
     );
     expect(dated).toEqual(["stock"]);
     // A basket and an index still say where the year put them.
-    expect(layout("equity_fund").metrics).toEqual(["range_52w"]);
-    expect(layout("index").metrics).toEqual(["range_52w"]);
+    expect(layout("equity_fund").metrics).toEqual(["range_52w", "trend"]);
+    expect(layout("index").metrics).toEqual(["range_52w", "trend"]);
+  });
+
+  it("reads a trend only where the price has one to follow", () => {
+    // A cash fund's line climbs a sliver a day: a trend cell would call it
+    // "up" forever, the way the RSI once called it "overbought".
+    const trending = ASSET_KINDS.filter((kind) =>
+      layout(kind).metrics.includes("trend"),
+    );
+    expect(trending).toEqual(["stock", "equity_fund", "crypto", "index"]);
   });
 
   it("every kind has a label and a line", () => {

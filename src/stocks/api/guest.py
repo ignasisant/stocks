@@ -89,6 +89,7 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/ticker/{symbol}/profile", "GET"),
         ("/v1/ticker/{symbol}/position", "GET"),
         ("/v1/ticker/{symbol}/bars", "GET"),
+        ("/v1/ticker/{symbol}/trend", "GET"),
         ("/v1/ticker/{symbol}/compare", "GET"),
         ("/v1/ticker/{symbol}/quote", "GET"),
         ("/v1/ticker/{symbol}/events", "GET"),

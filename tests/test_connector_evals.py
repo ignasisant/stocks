@@ -1,4 +1,4 @@
-"""The connector answered the way an investor would check it: twelve questions
+"""The connector answered the way an investor would check it: thirteen questions
 with an answer that can be worked out by hand.
 
 `test_connector_tools.py` proves each tool reaches its route and refuses what
@@ -175,3 +175,25 @@ def test_who_the_figures_belong_to(site, token):
     assert context["memory_enabled"] is True and context["memories"] == []
     assert context["profile"]["set"] is False
     assert "investor" in context["profile"]["persona"]
+
+
+def test_is_it_above_its_200_day_average(site, token, monkeypatch):
+    """300 flat sessions at 100, then one close at 110: the 200-day average is
+    (199 x 100 + 110) / 200 = 100.05, up from 100 a month ago, so the price
+    stands 110 / 100.05 - 1 above a rising average — an uptrend. The S&P 500
+    stub is flat, so twelve months' return against it is the stock's own,
+    110 / 100 - 1."""
+    days = pd.date_range("2024-01-02", periods=301, freq="B")
+    close = pd.Series([100.0] * 300 + [110.0], index=days)
+    bars = pd.DataFrame({"High": close, "Low": close, "Close": close})
+    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
+    monkeypatch.setattr(loaders, "daily_bars", lambda t: bars)
+    monkeypatch.setattr(loaders, "daily_closes",
+                        lambda t, period="max": pd.Series(100.0, index=days))
+    read = ok(call(site, token, "ticker_trend", ticker="aapl"))
+    assert read["state"] == "up" and read["sma200_rising"] is True
+    assert read["sma200"] == pytest.approx(100.05)
+    assert read["pct_vs_sma200"] == pytest.approx(110 / 100.05 - 1)
+    assert read["bench_name"] == "S&P 500"
+    assert read["rs_12m"] == pytest.approx(0.10)
+    assert read["pct_from_high"] == 0.0

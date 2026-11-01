@@ -17,7 +17,8 @@ def _run(name, args, ctx=None):
 def test_every_tool_is_offered_with_a_schema():
     names = [s.name for s in toolbox.specs(Context())]
     assert names == ["search_web", "read_page", "get_quotes", "ticker_data",
-                     "market_positioning", "portfolio_snapshot", "lookup_knowledge"]
+                     "market_positioning", "technicals", "portfolio_snapshot",
+                     "lookup_knowledge"]
     for spec in toolbox.specs():
         assert spec.description.strip()
         assert spec.schema["type"] == "object"
@@ -662,3 +663,40 @@ def test_the_calendar_and_income_tools_read_the_engines(monkeypatch, tmp_path):
         currency="EUR", spanish=True, years=()))
     assert "no dividend booked" in _run("income_report", {}, ctx)
     assert _run("income_report", {}, Context()) == toolbox._NO_LEDGER
+
+
+def test_technicals_reads_the_trend_with_its_figures(monkeypatch):
+    from stocks.analysis.trend import TrendRead
+    from stocks.api.routes import ticker
+
+    asked = []
+
+    def read(symbol):
+        asked.append(symbol)
+        return TrendRead(price=7.5, sma50=7.2, sma200=6.9, sma200_rising=True,
+                         pct_vs_sma200=0.087, mom_12_1=0.221, pct_from_high=-0.042,
+                         high_52w=7.83, low_52w=5.1, rs_6m=0.063, rs_12m=0.11,
+                         bench="^IBEX", bench_name="IBEX 35", rsi14=61.2,
+                         atr_pct=0.019, sessions=500, state="up")
+
+    monkeypatch.setattr(ticker, "read_trend", read)
+    out = _run("technicals", {}, Context(focus="san.mc"))
+    assert asked == ["SAN.MC"]
+    assert "above its 200-day average (+8.7%, average rising) — uptrend" in out
+    assert "12-1 momentum +22.1%" in out
+    assert "4.2% below the 52-week high (high 7.83, low 5.10)" in out
+    assert "vs IBEX 35" in out and "+6.3% over 6 months, +11.0% over 12 months" in out
+    assert "RSI14 61" in out and "ATR14 1.9% of price" in out
+
+
+def test_technicals_says_when_history_is_short_or_absent(monkeypatch):
+    from stocks.analysis.trend import TrendRead
+    from stocks.api.routes import ticker
+
+    monkeypatch.setattr(ticker, "read_trend",
+                        lambda s: TrendRead(price=10.0, sessions=90, rsi14=55.0))
+    out = _run("technicals", {"ticker": "NEWCO"})
+    assert "only 90 daily bars" in out and "uptrend" not in out
+    monkeypatch.setattr(ticker, "read_trend", lambda s: TrendRead())
+    assert "No trend for XEON.DE" in _run("technicals", {"ticker": "XEON.DE"})
+    assert _run("technicals", {}) == "No ticker given."
