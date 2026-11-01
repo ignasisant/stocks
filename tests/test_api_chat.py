@@ -2773,7 +2773,7 @@ def _talked_about_golar(signed_in) -> str:
 
 needs_index = pytest.mark.skipif(
     not engine.memory.available(),
-    reason="the earlier-conversations index needs model2vec + sqlite-vec",
+    reason="the earlier-conversations index needs the embedder + sqlite-vec",
 )
 
 

@@ -132,12 +132,6 @@ def test_the_keyword_half_alone_still_answers(monkeypatch):
     assert "tax-spain" in top
 
 
-def test_spanish_questions_lean_on_the_keywords():
-    assert knowledge._spanish_weight("¿cómo importo DEGIRO?") < 1.0
-    assert knowledge._spanish_weight("tramos del ahorro") < 1.0
-    assert knowledge._spanish_weight("how do I import DEGIRO") == 1.0
-
-
 def test_the_result_is_framed_as_documentation():
     hits = knowledge.lookup("Modelo 720")
     out = knowledge.block(hits)
@@ -289,12 +283,19 @@ def test_the_unknown_word_gate_counts_words_the_index_lacks(index):
     assert not index.out_of_scope("¿y?")  # nothing left after the stop words
 
 
-@pytest.mark.skipif(not hybrid.available(),
-                    reason="the cut is on the semantic half's distance")
-def test_a_close_paraphrase_without_shared_words_still_answers():
-    # "dividendos" is too common in the corpus to count as a keyword, so this
-    # one rides on meaning alone — and is close enough to.
-    assert "tour:income" in [h.doc for h in knowledge.lookup("como veo los dividendos")]
+@pytest.mark.skipif(not hybrid.available(), reason="needs the semantic half")
+def test_the_meaning_half_reads_a_spanish_question_in_either_language():
+    # The English-only model it replaced put a Spanish question nearest the
+    # Spanish tour copy, whatever that copy was about; the methodology is
+    # written in English only.
+    index = knowledge._Index(knowledge.passages())
+
+    def near(question: str) -> set[str]:
+        return {index.items[i].doc for i in index._semantic(question, 4)}
+
+    assert "importing" in near("¿cómo importo mi cuenta de DEGIRO?")
+    taxes = near("¿cuánto pago de impuestos si vendo con ganancias?")
+    assert {"tax-engine", "tax-spain"} & taxes
 
 
 # ------------------------------------------------------------------ browsing

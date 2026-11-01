@@ -12,8 +12,8 @@ Two sources, read from the repo at first use:
   and feature does and where it lives, in English and Spanish, kept current by
   the update-tutorial skill every time a feature ships. Indexing it rather than
   restating it is what keeps "how do I…" answers from drifting away from the
-  app. Both languages go in: the static embedding model misranks Spanish, and
-  the Spanish copy is what lets the keyword half catch a Spanish question.
+  app. Both languages go in: the Spanish copy is what lets the keyword half
+  catch a Spanish question.
 - **Hand-written methodology** (`web/knowledge/*.md`): what the tour is too
   short for — how returns, cost basis, tax and scores are actually computed,
   what each broker's export must look like. Each file carries an `as_of` date,
@@ -92,6 +92,9 @@ HEADER = (
 # keywords also matched (a right answer sits at 0.63, "capital de Francia" at
 # 0.45), but with no keyword hit the right answers sat under 0.40 ("como veo
 # los dividendos") and the noise above 0.53 (Tesla, iPhone, "hello").
+# Re-measured 2026-11-01 with the multilingual model (chat/embedding.py), whose
+# distances run higher: no golden question reaches this gate any more, the
+# nearest off-topic one sits at 0.40, so the cut stays where it was.
 _NEAR = 0.5
 
 # A question whose own words are mostly absent from the whole knowledge base is
@@ -104,29 +107,14 @@ _NEAR = 0.5
 # words unknown", or two or more and at least 40%, is out of scope.
 _UNKNOWN_SHARE = 0.5
 _UNKNOWN_SHARE_PAIR = 0.4
-# ...unless the question is semantically close to a passage anyway ("como veo
-# los dividendos": "veo" is nowhere, the dividends step sits at 0.34). The
-# out-of-scope questions measured sit at 0.42 and above.
-_UNKNOWN_BUT_CLOSE = 0.4
-
-
-# Words only Spanish has, among the ones a question is made of.
-_SPANISH = frozenset("""
-al como cual cuando del donde el en es esta este hay la las los mas mi mis muy
-para pero por que qué quien se si sin sobre su sus tu tus un una uno ya yo cómo
-cuál dónde porque está están estoy tengo puedo debo necesito
-""".split())
-# The semantic half's vote on a Spanish question. The embedding model is
-# English-trained: asked in Spanish it ranks the Spanish tour copy first for
-# being Spanish, whatever it says, while the keyword half — stems, tags — is
-# still reading the question.
-_SPANISH_SEMANTIC = 0.15
-
-
-def _spanish_weight(query: str) -> float:
-    words = {w.strip("¿?¡!.,;:()\"'").lower() for w in query.split()}
-    spanish = bool(words & _SPANISH) or any(c in query for c in "¿¡ñáéíóú")
-    return _SPANISH_SEMANTIC if spanish else 1.0
+# ...unless the question is semantically close to a passage anyway. Measured
+# 2026-11-01 with the multilingual model: the nearest out-of-scope question
+# ("the tax rate on lottery winnings in Spain") sits at 0.40, so the cut keeps
+# a margin under it. Nothing in the golden set needs it now; "como veo los
+# dividendos" ("veo" is nowhere) did under the English model, at 0.34, and
+# sits at 0.62 under this one — the one question that model answered and this
+# one abstains on.
+_UNKNOWN_BUT_CLOSE = 0.35
 
 
 @dataclass(frozen=True)
@@ -351,8 +339,7 @@ class _Index:
             lexical = self._lexical(query, depth)
             semantic = self._semantic(query, depth,
                                       within=None if lexical else _NEAR)
-            return hybrid.fuse(semantic, lexical,
-                               weights=(_spanish_weight(query), 1.0))
+            return hybrid.fuse(semantic, lexical)
 
 
 _BUILD = threading.Lock()

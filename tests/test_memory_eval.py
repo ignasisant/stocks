@@ -134,7 +134,7 @@ def test_the_weekly_review_offers_to_drop_what_ran_out(life):
 
 
 @pytest.mark.skipif(not memory.available(),
-                    reason="the index needs model2vec + sqlite-vec")
+                    reason="the index needs the embedder + sqlite-vec")
 def test_a_holding_is_recalled_under_its_other_name(tmp_path):
     index = tmp_path / memory.FILE
     memory.remember(index, [
