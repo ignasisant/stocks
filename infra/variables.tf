@@ -71,8 +71,8 @@ variable "cron_job" {
 
 # --- Notification secrets --------------------------------------------------------
 
-variable "telegram_bot_token" {
-  description = "Telegram bot token from @BotFather. Never configure a webhook on this bot — the Profile linking flow polls getUpdates."
+variable "webpush_private_key" {
+  description = "The VAPID private key the app signs Web Push with ([webpush] private_key in the app's secret). Copy it, never generate a new one: a different key orphans every device already subscribed."
   type        = string
   sensitive   = true
 }

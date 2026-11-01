@@ -80,7 +80,7 @@ locals {
 
 # --- GitHub Actions secrets for the notifications workflow --------------------
 #
-# Mirrors scripts/setup_notify_secrets.sh: required storage/Telegram secrets
+# Mirrors scripts/setup_notify_secrets.sh: required storage/push secrets
 # plus optional LLM keys. Empty optional values are skipped (not created),
 # matching the script's "skipped (empty)" behavior — notify.yml treats them
 # as optional. APP_PUBLIC_URL + API_TOKEN also feed warm.yml, the manual
@@ -92,7 +92,7 @@ locals {
     STOCKS_STORAGE_BUCKET            = cloudflare_r2_bucket.stocks.name
     STOCKS_STORAGE_ACCESS_KEY_ID     = local.r2_access_key_id
     STOCKS_STORAGE_SECRET_ACCESS_KEY = local.r2_secret_access_key
-    TELEGRAM_BOT_TOKEN               = var.telegram_bot_token
+    WEBPUSH_PRIVATE_KEY              = var.webpush_private_key
   }
 
   optional_secrets = {

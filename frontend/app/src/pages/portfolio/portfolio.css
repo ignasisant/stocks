@@ -1329,6 +1329,13 @@
   font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
+/* "Use in my plan": a quiet secondary press under the box it stores, sized to
+   its label rather than the panel. */
+.pf-proj-use {
+  align-self: flex-start;
+  font-size: var(--ag-fs-sm, 0.75rem);
+}
+
 .pf-swatch-dashed {
   height: 2px;
   width: 0.9rem;

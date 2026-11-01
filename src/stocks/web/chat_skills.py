@@ -172,7 +172,10 @@ _CLASSIFIER_SYSTEM = (
     "You route questions from a stock-tracker chat to analysis skills. List "
     f"at most {MAX_AUTO} skill ids from the catalog that clearly fit the "
     "user's latest message — or an empty list when none clearly applies "
-    "(casual talk, app questions, greetings).\n\nCatalog:\n"
+    "(casual talk, app questions, greetings). Set hard to true when a good "
+    "answer takes reasoning — comparing, valuing, weighing a decision, a "
+    "what-if, several steps — and false for a fact, a figure, a definition, "
+    "a quick look-up or small talk.\n\nCatalog:\n"
 )
 
 
@@ -187,6 +190,8 @@ class SkillPick(structured.Contract):
     """
 
     skills: list[str]
+    #: Whether the answer takes reasoning; None when the reply did not say.
+    hard: bool | None = None
 
     @field_validator("skills", mode="before")
     @classmethod
@@ -272,9 +277,18 @@ def heuristic(question: str, limit: int = MAX_AUTO) -> list[str]:
     return [sid for _, sid in sorted(hits)[:limit]]
 
 
+class Pick(list[str]):
+    """The router's skill ids, with its read of how hard the question is.
+
+    A list so every caller that only wanted the ids still gets them. `hard`
+    is None when the router did not say (a prose reply read by `_scan`)."""
+
+    hard: bool | None = None
+
+
 def classify(
     provider: Provider, api_key: str, question: str, context: str = ""
-) -> list[str] | None:
+) -> Pick | None:
     """Skill ids for a message, via the provider's cheapest model.
 
     Returns None when the classifier fails (caller may fall back to the
@@ -292,8 +306,10 @@ def classify(
     try:
         picked = structured.ask(provider, api_key, "PickSkills", system, user,
                                 SkillPick)
-        return picked.skills[:MAX_AUTO]
+        out = Pick(picked.skills[:MAX_AUTO])
+        out.hard = picked.hard
+        return out
     except structured.OffContract as exc:
-        return list(dict.fromkeys(_scan(exc.raw)))[:MAX_AUTO] or None
+        return Pick(list(dict.fromkeys(_scan(exc.raw)))[:MAX_AUTO]) or None
     except Exception:
         return None  # any SDK/network error -> caller falls back, answer proceeds

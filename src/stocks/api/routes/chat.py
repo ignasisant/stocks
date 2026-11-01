@@ -3,8 +3,8 @@
 The assistant itself lives in `stocks.chat.engine`: the provider chain, the free
 quota, skill routing, the web grounding, and a turn that ends with a completed
 user+assistant pair on disk. This router is the second binding of that engine
-(the Telegram bot is the first), so a React drawer and a chat window in Telegram
-give the same answer to the same question, and a change to how a turn works is
+(headless callers are the first), so every surface
+gives the same answer to the same question, and a change to how a turn works is
 made once.
 
 Sending is a stream, not a request/response. A chat turn takes ten to forty
@@ -71,6 +71,7 @@ from stocks.chat import (
     engine,
     guide_ai,
     navigate,
+    plan_builder,
     rebalance,
     tools,
     whatif,
@@ -78,6 +79,7 @@ from stocks.chat import (
 from stocks.chat import checkpoint as checkpoints
 from stocks.chat.checkpoint import Checkpoint
 from stocks.config import PROJECT_ROOT
+from stocks.notify import webpush
 from stocks.portfolio import autodetect
 from stocks.web import chat_skills, llm, stt
 
@@ -295,6 +297,9 @@ class Conversation(BaseModel):
     active: bool
     # The day of a daily card's thread (`auth.save_card_thread`), "" otherwise.
     daily: str = ""
+    # The job a scheduled run's thread came from (`notify/schedule.py`):
+    # "briefing", "digest" or "weekly"; "" for any other thread.
+    scheduled: str = ""
     # An answer is still being written on it (`runs.live_threads`). The panel
     # polls the list while one it is not showing is, to say when it lands.
     answering: bool = False
@@ -1610,6 +1615,8 @@ def _rewind(paths: UserPaths) -> tuple[str, dict]:
             detail="the answer on this thread has no question above it",
         )
     auth.save_chat(history[:-2], paths.chat)
+    # The same prompt again, to get another answer: not the one kept for it.
+    engine.forget_answers(paths.chat)
     briefed = asked.get("brief")
     return str(asked["content"]).strip(), briefed if isinstance(briefed, dict) else {}
 
@@ -1802,6 +1809,11 @@ def _launch(paths: UserPaths, request: Request, *, rid: str, thread: str,
             ),
             stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
             failed=lambda frame: '"type":"RUN_ERROR"' in frame,
+            # The reader may have put the phone away: tell the devices that
+            # asked to be told, unless the app is on screen somewhere.
+            done=lambda _run: webpush.answer_ready(
+                paths.push, str(paths.chat), thread=thread, question=question
+            ),
         )
     except runs.Busy:
         # Refused before it ran: a new checkpoint goes, and a resumed one is
@@ -1940,14 +1952,17 @@ class SurfaceUpdate(BaseModel):
              summary="Press something on a surface the assistant drew")
 def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     """An A2UI action from a surface in the drawer, answered with the messages
-    that update it. No model is asked and nothing is stored: a slider moving
-    is the reader exploring, and the answer above it still says what it said.
+    that update it. No model is asked, and nothing is stored but the one thing
+    a button says it stores: a slider moving is the reader exploring, and the
+    answer above it still says what it said.
 
-    Three surfaces answer here: the what-if sale's slider (`chat/whatif.py`),
+    Four surfaces answer here: the what-if sale's slider (`chat/whatif.py`),
     re-run through the tax engine for the shares it now names; the rebalance
     slider (`chat/rebalance.py`), sized and taxed again for the weight it now
-    names; and a price chart's window chips (`chat/charts.py`), fetched again
-    over the window picked. An action this server has no handler for is a
+    names; a price chart's window chips (`chat/charts.py`), fetched again
+    over the window picked; and the plan builder (`chat/plan_builder.py`),
+    whose chips redraft the plan and whose Save stores it as the reader's
+    plan, the one write here. An action this server has no handler for is a
     404, not a guess.
     """
     press_ = body.action
@@ -1961,6 +1976,8 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
         (whatif.SURFACE_ID, whatif.ACTION): _resell,
         (charts.SURFACE_ID, charts.ACTION): _rechart,
         (rebalance.SURFACE_ID, rebalance.ACTION): _reweigh,
+        (plan_builder.SURFACE_ID, plan_builder.DRAFT): _redraft,
+        (plan_builder.SURFACE_ID, plan_builder.SAVE): _keep_plan,
     }.get((press_.surfaceId, press_.name))
     if handler is None:
         raise HTTPException(
@@ -2014,6 +2031,81 @@ def _reweigh(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
             detail=f"no priced holding of {symbol or 'that'} to reweigh",
         )
     return rebalance.moved(moved, tr, lang)
+
+
+def _plan_known(paths: UserPaths) -> plan_builder.Known:
+    """What the plan builder knows of this account, read again on every press:
+    a plan saved in another tab since the card was drawn is the one replaced."""
+    from stocks.api.deps import reporting_currency
+    from stocks.api.routes.prefs import _actual
+
+    return plan_builder.known(_prefs(paths), _actual(paths), reporting_currency(paths))
+
+
+def _redraft(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
+    """The draft again, for the answers the chips now hold."""
+    return plan_builder.moved(_plan_known(paths), context, tr)
+
+
+def _keep_plan(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
+    """Store the draft as the reader's plan, recomputed here from the answers.
+
+    The plan is never read off the surface: the answers are, each checked
+    against its choices, and `plan.suggest` turns them into the figures, so a
+    client cannot save a plan the rule would not have drawn. Written through
+    the form's own model (`PlanWrite`) and merge. Risk and horizon asked
+    because the profile was never saved are kept there too: the reader just
+    answered them.
+    """
+    import dataclasses
+    from datetime import date
+
+    from stocks.api.routes.prefs import PlanWrite
+    from stocks.portfolio import plan as plans
+    from stocks.portfolio.plan import PREFS_KEY
+    from stocks.web.auth import load_profile
+
+    for q, choices in plan_builder.CHOICES.items():
+        if context.get(q) not in choices:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"{q} must be one of {', '.join(choices)}",
+            )
+    try:
+        plan_builder.amount_of(context.get(plan_builder.AMOUNT))
+        plan_builder.cash_amount(context.get(plan_builder.INVESTABLE))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="amount must be a number",
+        ) from exc
+    prefs = _prefs(paths)
+    known = _plan_known(paths)
+    body = PlanWrite.model_validate(plan_builder.draft(known, context))
+    raw = body.model_dump()
+    # The draft states only the cash typed here; the emergency fund and the
+    # rate saved in the form stay, and the block is dated as the form dates it.
+    old = plans.load(prefs).cash
+    kept = dataclasses.asdict(old) if old else {}
+    raw["cash"] = plans.stamp_cash(
+        {**kept, **{k: v for k, v in (raw.get("cash") or {}).items() if v is not None}},
+        old,
+        date.today(),
+    )
+    changes: dict = {PREFS_KEY: {**raw, "set": True}}
+    profile = load_profile(prefs)
+    if not profile["set"]:
+        profile.pop("plan", None)
+        changes["investor_profile"] = {
+            **profile,
+            plan_builder.RISK: context[plan_builder.RISK],
+            plan_builder.HORIZON: context[plan_builder.HORIZON],
+            "set": True,
+        }
+    accounts.update_prefs(paths.prefs, changes)
+    obs.event("chat.plan_saved", replaced=known.replaces,
+              profile=not profile["set"], contribution=body.contribution is not None)
+    return plan_builder.saved(raw, tr)
 
 
 def _rechart(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:

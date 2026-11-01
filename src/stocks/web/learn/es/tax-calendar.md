@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: tax_return, tax_year
 app: earnings
+slug: calendario-fiscal-inversor
+description: Del día que vendes a la declaración de la renta: año fiscal, campaña de abril a junio, modelos 720 y 721, y qué decidir antes del 31 de diciembre.
 ---
 El impuesto no se paga el día que vendes. Se calcula con el año completo y se declara meses después. Conocer el calendario te permite decidir a tiempo.
 

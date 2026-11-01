@@ -750,7 +750,7 @@ function Jump({ step, onLeave }: { step: GuideStep; onLeave: () => void }) {
   const t = useT();
   const visit = useVisit(onLeave);
   return (
-    <div className="ag-guide-acts">
+    <div className="ag-guide-acts ag-chat-goto">
       <button type="button" className="ag-chat-btn" onClick={() => visit(step)}>
         {t(step.cta_key ?? "guide.goto")}
       </button>
@@ -961,6 +961,7 @@ export function Turn({
   onMemory,
   askRating,
   onRated,
+  onRegenerate,
   walk,
   fresh,
 }: {
@@ -1003,6 +1004,8 @@ export function Turn({
   askRating?: boolean;
   /** The reader's vote on this turn changed. */
   onRated?: (vote: Rating | null) => void;
+  /** Ask again: only the newest finished answer gets one. */
+  onRegenerate?: () => void;
   /** Part of the exchange being asked now: it comes in rather than appears. */
   fresh?: boolean;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
@@ -1166,7 +1169,8 @@ export function Turn({
         spent ||
         (turn.steps?.length ?? 0) > 0 ||
         rateable ||
-        copyable) && (
+        copyable ||
+        onRegenerate) && (
         <div className="ag-chat-foot">
           {turn.web.length > 0 && (
             <Sources web={turn.web} onLeave={onLeave ?? (() => {})} />
@@ -1180,10 +1184,23 @@ export function Turn({
               {t("chat.see_wide")}
             </button>
           )}
-          {(copyable || rateable) && (
+          {(copyable || rateable || onRegenerate) && (
             <span className="ag-chat-thumbs">
               {copyable && <CopyAnswer text={turn.content} />}
               {rateable && <Thumbs rate={rate} />}
+              {onRegenerate && (
+                <button
+                  type="button"
+                  className="ag-chat-meta-btn ag-chat-thumb"
+                  aria-label={t("chat.regenerate")}
+                  title={t("chat.regenerate")}
+                  onClick={onRegenerate}
+                >
+                  {/* A ring drawn inside 16 of its 24 units: at the thumbs'
+                      14px it reads a size smaller than they do. */}
+                  <Glyph name="refresh" size={18} />
+                </button>
+              )}
             </span>
           )}
         </div>

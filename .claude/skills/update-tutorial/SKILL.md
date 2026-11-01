@@ -146,7 +146,7 @@ For each new step, in **both** `en/tour.json` and `es/tour.json`:
   (English), which the chat searches. Keep both in step: a new capability is a
   sentence there, and only reaches the step's `_body` if it is the main thing.
 - `tour.<id>_cta` — optional, overrides the generic "take me there"
-  ("Open Import", "Set up Telegram"). Skip it and the generic label is used.
+  ("Open Import", "Turn on notifications"). Skip it and the generic label is used.
 
 For each `News` item, in both catalogs:
 

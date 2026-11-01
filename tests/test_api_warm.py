@@ -325,6 +325,8 @@ def test_warm_more_fills_the_memos_the_other_pages_read(monkeypatch, tmp_path):
         loaders, "dividend_payments", lambda db, m, b: calls.append("dividends")
     )
     monkeypatch.setattr("stocks.data.funds.is_fund", lambda t, fetch=True: t == "VWCE.DE")
+    # A held name off the watchlist is on the calendar's key too.
+    monkeypatch.setattr(loaders, "held", lambda db, m: ("GOOG", "SOL-EUR"))
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text(
         "watchlist:\n  - ticker: MSFT\n  - ticker: AAPL\n  - ticker: BTC-EUR\n"
@@ -334,7 +336,7 @@ def test_warm_more_fills_the_memos_the_other_pages_read(monkeypatch, tmp_path):
     assert calls == [
         "book:EUR:2y",
         "spots:('EUR', 'USD'):EUR",
-        "earnings:('AAPL', 'MSFT')",
+        "earnings:('AAPL', 'GOOG', 'MSFT')",
         "dividends",
     ]
 
@@ -347,6 +349,7 @@ def test_warm_more_survives_a_feed_that_refuses(monkeypatch, tmp_path):
         loaders, "basket_report", lambda *a: (_ for _ in ()).throw(RuntimeError("yahoo"))
     )
     monkeypatch.setattr(loaders, "earnings_calendar", lambda t: calls.append("earnings"))
+    monkeypatch.setattr(loaders, "held", lambda db, m: ())
     monkeypatch.setattr(loaders, "dividend_payments",
                         lambda *a: calls.append("dividends"))
     watchlist = tmp_path / "watchlist.yaml"

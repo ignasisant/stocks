@@ -1358,3 +1358,82 @@ def test_the_ticker_page_reads_the_same_cautions_and_peak_pe(monkeypatch):
         review, "_cautions", lambda m, s: [review.R_ONE_READING, review.R_DEBT]
     )
     assert review.cautions(CHEAP_QUALITY) == [review.R_DEBT]
+
+
+# ------------------------------------------------------- the reader's own plan
+
+
+def _investor(**raw):
+    from stocks.portfolio import plan
+
+    return plan.parse(raw)
+
+
+def test_without_a_plan_every_line_is_the_pages_own():
+    limits = review.Limits.from_plan(_investor())
+    assert limits == review.Limits() and not limits.drawn
+    assert (limits.sector, limits.speculative, limits.cash, limits.crypto) == (
+        review.SECTOR_LINE, review.SPEC_MAX, review.CASH_LINE, review.CRYPTO_LINE,
+    )
+    assert limits.position is None
+
+
+def test_the_plans_caps_read_as_fractions_and_the_bets_share_theirs():
+    limits = review.Limits.from_plan(
+        _investor(
+            limits={
+                "max_position_pct": 8,
+                "max_sector_pct": 30,
+                "max_speculative_pct": 6,
+            },
+            mix={"targets": {"stocks": 90, "crypto": 10}, "band_pp": 5},
+            reserve={"min_pct": 2, "max_pct": 12},
+        ),
+        bets=3,
+    )
+    assert limits.drawn
+    assert limits.position == pytest.approx(0.08)
+    assert limits.sector == pytest.approx(0.30)
+    assert limits.speculative == pytest.approx(0.02)
+    assert limits.crypto == pytest.approx(0.15)
+    assert limits.cash == pytest.approx(0.12)
+
+
+def test_a_position_cap_is_the_concentration_line_whatever_the_count():
+    assert review.concentration_line(2, 0.10) == 0.10
+    assert review.concentration_line(40, 0.25) == 0.25
+
+
+def test_a_capped_good_name_is_cut_to_the_cap_and_never_added_past_it():
+    capped = review.Limits(position=0.08)
+    v = review.judge_held(CHEAP_QUALITY, weight=0.12, names=20, limits=capped)
+    assert v.verdict == review.TRIM and review.R_CONCENTRATED in v.reasons
+    assert v.target is not None and v.target <= 0.08
+    small = review.Limits(position=0.03)
+    add = review.judge_held(CHEAP_QUALITY, weight=0.01, names=20, limits=small)
+    assert add.verdict == review.ADD and add.target <= 0.03
+    buy = review.judge_candidate(CHEAP_QUALITY, names=20, limits=small)
+    assert buy.verdict == review.BUY and buy.fill <= 0.03
+
+
+def test_the_plans_sector_cap_moves_the_sector_note():
+    rows = _rows(("stock", "Technology", 0.2), ("stock", "Technology", 0.15),
+                 ("stock", "Energy", 0.65))
+    assert not [n for n in review.book_notes(rows) if n.key == review.N_SECTOR_HEAVY
+                and n.sector == "Technology"]
+    tight = review.book_notes(rows, limits=review.Limits(sector=0.30))
+    assert [n.sector for n in tight if n.key == review.N_SECTOR_HEAVY] == ["Technology"]
+
+
+def test_a_drifted_bucket_is_a_note_with_its_target():
+    from stocks.portfolio import plan
+
+    investor = _investor(mix={"targets": {"stocks": 60, "bonds": 30, "cash": 10}})
+    shares = {"stocks": 80, "bonds": 18, "cash": 2}
+    notes = review.plan_notes(plan.drift(investor, shares))
+    assert [(n.key, n.bucket) for n in notes] == [
+        (review.N_PLAN_OVER, "stocks"),
+        (review.N_PLAN_UNDER, "bonds"),
+        (review.N_PLAN_UNDER, "cash"),
+    ]
+    assert notes[0].weight == pytest.approx(0.8) and notes[0].target == pytest.approx(0.6)

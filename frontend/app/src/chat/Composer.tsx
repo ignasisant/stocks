@@ -54,6 +54,13 @@
  * they are the DS's segmented control; the lenses themselves are chips,
  * because several can be on at once.
  *
+ * The model sits at the top of the same picker, for the provider that will
+ * answer (`state.answering`): which model writes the next answer is as much a
+ * choice about that answer as its depth. It is the settings screen's own
+ * control (`Settings.Model`) — every model the key reaches, in one list — and
+ * asks for the catalogue only once the picker opens; drawn only
+ * where there is something to pick — the keyless chain has one model.
+ *
  * The picker closes on a press anywhere outside it, and on Escape: it is a
  * popover over the conversation, and a reader who has picked turns back to the
  * answer — reaching for the icon again to put it away was one press too many.
@@ -71,6 +78,7 @@ import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
 import { useAssistantFills } from "../shell/assistant";
 import { takeDraft } from "./draft";
+import { Model } from "./Settings";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
 
@@ -128,9 +136,25 @@ function Skills({
   // At the cap the lenses that are off go disabled rather than silently
   // refusing the press: the limit is the router's, and it has to be visible.
   const full = picked.length >= state.max_manual;
+  const answers = state.providers.find((p) => p.id === state.answering);
+  const choosable = answers && (answers.needs_key || answers.models.length > 1);
 
   return (
     <div className="ag-chat-picker" id={id} ref={box} hidden={hidden}>
+      {choosable && (
+        <>
+          <div className="ag-chat-group" aria-hidden="true">
+            {t("chat.model")}
+          </div>
+          <Model
+            key={answers.id}
+            provider={answers}
+            busy={false}
+            onSave={onSave}
+            active={!hidden}
+          />
+        </>
+      )}
       <div className="ag-chat-group" aria-hidden="true">
         {t("chat.depth_mode")}
       </div>

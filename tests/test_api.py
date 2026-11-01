@@ -651,10 +651,17 @@ WRITES = {
     # reader would see five names frozen at whatever was stored last.
     ("/v1/search/recent", "post"),
     ("/v1/prefs", "patch"),
+    # One scheduled run's time and days (digest, weekly, …), merged into prefs.
+    ("/v1/schedules/{job}", "put"),
     # The investor profile, replaced whole. A write because it is what the
     # assistant's persona is built from — this is text that reaches the model's
     # system prompt, which is precisely why a token may not set it.
     ("/v1/profile", "put"),
+    # The investor plan, replaced whole: the caps Review trims to and the
+    # daily card measures against.
+    ("/v1/plan", "put"),
+    # Only the contribution block: the Projection tab's "use in my plan".
+    ("/v1/plan/contribution", "put"),
     ("/v1/watchlist", "post"),
     ("/v1/watchlist/{ticker}", "patch"),
     ("/v1/watchlist/{ticker}", "delete"),
@@ -714,6 +721,12 @@ WRITES = {
     # the body names which of the proposals it accepts and never what they are.
     ("/v1/import/splits/apply", "post"),
     ("/v1/import/moves/apply", "post"),
+    # The book checkup: a held sale written, one forgotten, a re-upload hint
+    # waved off, a doctor finding's fix applied (tests/test_book_checkup.py).
+    ("/v1/import/held/apply", "post"),
+    ("/v1/import/held/{held_id}", "delete"),
+    ("/v1/import/reupload/dismiss", "post"),
+    ("/v1/import/fix", "post"),
     # The same split repair, from the Ticker page that shows the gap: the page
     # writes it unasked, so the scan proposes and the body only names its days.
     ("/v1/ticker/{symbol}/splits", "post"),
@@ -780,11 +793,13 @@ WRITES = {
     # again, and a token that could set it would retire an announcement the
     # account never saw.
     ("/v1/onboarding/seen", "post"),
-    # Linking a Telegram chat, and the two things done with a linked one. A
-    # token could otherwise aim the bot at a chat id it named itself.
-    ("/v1/notify/telegram", "post"),
-    ("/v1/notify/telegram", "delete"),
-    ("/v1/notify/telegram/test", "post"),
+    # This device's Web Push subscription, its test, and the on-screen beat
+    # that holds a push back. A token has no device, and one that could
+    # subscribe would read every finished answer's question.
+    ("/v1/push/subscription", "post"),
+    ("/v1/push/unsubscribe", "post"),
+    ("/v1/push/test", "post"),
+    ("/v1/push/presence", "post"),
     # Feedback. A write because it stores a file. The one a guest may make too —
     # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),

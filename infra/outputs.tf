@@ -39,10 +39,7 @@ output "deploy_secrets_reminder" {
     access_key_id = "${local.r2_access_key_id}"
     secret_access_key = "${local.r2_secret_access_key}"
 
-    [telegram]
-    bot_token = "${var.telegram_bot_token}"
-    bot_username = "<bot @handle, no @>"
-
-    # Also keep existing [auth] (Google OIDC), [chat], [free_llm] sections.
+    # Also keep existing [auth] (Google OIDC), [chat], [free_llm] and
+    # [webpush] sections.
   EOT
 }

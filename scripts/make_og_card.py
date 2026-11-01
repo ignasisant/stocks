@@ -21,14 +21,17 @@ were rendered with the real ones.
 from __future__ import annotations
 
 import io
+import re
 import sys
 import urllib.request
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "src" / "stocks" / "web" / "assets"
+# The bull the app shell and the tab already show; the home-screen icon is it.
+LOGO = ASSETS / "topstocks-icon.svg"
 
 W, H = 1200, 630
 
@@ -106,8 +109,9 @@ def _chips(d: ImageDraw.ImageDraw, labels: list[str], x: int, y: int) -> None:
     font = _load("body", 26, weight=600)
     for label in labels:
         w = int(d.textlength(label, font=font))
-        d.rounded_rectangle((x, y, x + w + 44, y + 56), radius=28, fill=CARD,
-                            outline=BORDER, width=1)
+        d.rounded_rectangle(
+            (x, y, x + w + 44, y + 56), radius=28, fill=CARD, outline=BORDER, width=1
+        )
         d.text((x + 22, y + 15), label, font=font, fill=MUTED)
         x += w + 44 + 14
 
@@ -119,8 +123,9 @@ def _sparkline(d: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int) -> None:
     repo, so it has to render identically on every run.
     """
     series = [0.10, 0.18, 0.14, 0.30, 0.26, 0.44, 0.52, 0.47, 0.68, 0.75, 0.92]
-    d.rounded_rectangle((x, y, x + w, y + h), radius=24, fill=CARD,
-                        outline=BORDER, width=1)
+    d.rounded_rectangle(
+        (x, y, x + w, y + h), radius=24, fill=CARD, outline=BORDER, width=1
+    )
     label = _load("body", 22, weight=500)
     d.text((x + 26, y + 18), "Portfolio, EUR", font=label, fill=MUTED)
 
@@ -132,8 +137,9 @@ def _sparkline(d: ImageDraw.ImageDraw, x: int, y: int, w: int, h: int) -> None:
     ]
     # Baseline first, then the curve over it — the same order the app's charts
     # paint in, so the grid never sits on top of the data.
-    d.line((plot_x, plot_y + plot_h, plot_x + plot_w, plot_y + plot_h),
-           fill=BORDER, width=1)
+    d.line(
+        (plot_x, plot_y + plot_h, plot_x + plot_w, plot_y + plot_h), fill=BORDER, width=1
+    )
     d.line(pts, fill=PURPLE_LIGHT, width=5, joint="curve")
     last = pts[-1]
     d.ellipse((last[0] - 8, last[1] - 8, last[0] + 8, last[1] + 8), fill=GREEN)
@@ -186,25 +192,85 @@ def build_card() -> Image.Image:
     return img.convert("RGB")
 
 
-def build_icon(size: int = 180, margin: float = 22 / 180) -> Image.Image:
-    """Square touch icon: the tile alone, on the page background.
+def _polygons(path: str) -> list[list[tuple[float, float]]]:
+    """Flatten an SVG path into closed polygons.
 
-    `margin` is the share of the side left clear on each edge. A maskable
-    icon (Android crops it to a circle or squircle) keeps the mark inside the
-    central 80%, so it takes a wider one.
+    Only M, Q and Z — all the traced logo uses. Anything else raises rather
+    than drawing a wrong bull.
+    """
+    tokens = re.findall(r"[A-Za-z]|-?\d*\.?\d+", path)
+    polys: list[list[tuple[float, float]]] = []
+    cur: list[tuple[float, float]] = []
+    cmd, i = "", 0
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            cmd = tokens[i]
+            i += 1
+            if cmd == "Z":
+                polys.append(cur)
+                cur = []
+            elif cmd not in "MQ":
+                raise ValueError(f"logo path command {cmd!r} not supported")
+            continue
+        n = [float(t) for t in tokens[i : i + (2 if cmd == "M" else 4)]]
+        if cmd == "M":
+            cur = [(n[0], n[1])]
+            i += 2
+        else:
+            (x0, y0), (cx, cy), (x1, y1) = cur[-1], n[:2], n[2:]
+            for k in range(1, 9):
+                t = k / 8
+                a, b, c = (1 - t) ** 2, 2 * (1 - t) * t, t * t
+                cur.append((a * x0 + b * cx + c * x1, a * y0 + b * cy + c * y1))
+            i += 4
+    if cur:
+        polys.append(cur)
+    return polys
+
+
+def _bull(box: int) -> Image.Image:
+    """The logo, `box` px on its long side, on transparency.
+
+    Drawn 4x and scaled down for antialiasing. Each subpath is XOR-ed into its
+    layer's mask: that is the SVG's fill-rule="evenodd", so the holes stay holes.
+    """
+    svg = LOGO.read_text("utf-8")
+    vx, vy, vw, vh = (float(v) for v in re.search(r'viewBox="([^"]+)"', svg)[1].split())
+    k = 4 * box / max(vw, vh)
+    w, h = round(vw * k), round(vh * k)
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for fill, path in re.findall(r'<path fill="(#[0-9A-Fa-f]{6})"[^>]* d="([^"]+)"', svg):
+        mask = Image.new("1", (w, h), 0)
+        for poly in _polygons(path):
+            sub = Image.new("1", (w, h), 0)
+            ImageDraw.Draw(sub).polygon(
+                [((x - vx) * k, (y - vy) * k) for x, y in poly], fill=1
+            )
+            mask = ImageChops.logical_xor(mask, sub)
+        rgb = tuple(int(fill[j : j + 2], 16) for j in (1, 3, 5))
+        out.paste(Image.new("RGBA", (w, h), (*rgb, 255)), (0, 0), mask.convert("L"))
+    return out.resize((max(1, w // 4), max(1, h // 4)), Image.LANCZOS)
+
+
+def build_icon(size: int = 180, scale: float = 0.74) -> Image.Image:
+    """Square touch icon: the bull, centred on the page background, full bleed.
+
+    No tile of its own: iOS and Android round the corners themselves, and a
+    drawn tile inside theirs reads as a frame. `scale` is the bull's long side
+    as a share of the icon. A maskable icon (Android crops it to a circle or
+    squircle) keeps the mark inside the central 80%, so it takes a smaller one.
     """
     img = Image.new("RGBA", (size, size), (*BG, 255))
-    d = ImageDraw.Draw(img)
-    inset = round(size * margin)
-    _mark(d, inset, inset, size - 2 * inset)
+    bull = _bull(round(size * scale))
+    img.alpha_composite(bull, ((size - bull.width) // 2, (size - bull.height) // 2))
     return img.convert("RGB")
 
 
-# The web app manifest's icons (`manifest.webmanifest`): name -> (size, margin).
+# The web app manifest's icons (`manifest.webmanifest`): name -> (size, scale).
 MANIFEST_ICONS = {
-    "icon-192.png": (192, 22 / 180),
-    "icon-512.png": (512, 22 / 180),
-    "icon-maskable-512.png": (512, 0.2),
+    "icon-192.png": (192, 0.74),
+    "icon-512.png": (512, 0.74),
+    "icon-maskable-512.png": (512, 0.58),
 }
 
 
@@ -215,8 +281,8 @@ def main() -> int:
     build_card().save(card, "PNG", optimize=True)
     build_icon().save(icon, "PNG", optimize=True)
     written = [card, icon]
-    for name, (size, margin) in MANIFEST_ICONS.items():
-        build_icon(size, margin).save(ASSETS / name, "PNG", optimize=True)
+    for name, (size, scale) in MANIFEST_ICONS.items():
+        build_icon(size, scale).save(ASSETS / name, "PNG", optimize=True)
         written.append(ASSETS / name)
     for p in written:
         print(f"  wrote {p.relative_to(ROOT)} ({p.stat().st_size // 1024} KB)")

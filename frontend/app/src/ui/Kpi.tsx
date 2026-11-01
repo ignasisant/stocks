@@ -25,6 +25,7 @@ import {
 } from "react";
 import { usePresence } from "../shell/useSheet";
 import { useTouchHold } from "../shell/useTouchHold";
+import { Count, counted } from "./Count";
 import "./ui.css";
 
 /**
@@ -77,7 +78,11 @@ export function bandTone(band: string | null | undefined): Tone {
 /** The pill. Draws nothing when handed nothing. */
 export function Chip({ chip }: { chip: ChipSpec | null | undefined }) {
   if (!chip || !chip.text) return null;
-  return <span className={`ag-chip ag-chip-${chip.tone}`}>{chip.text}</span>;
+  return (
+    <span className={`ag-chip ag-chip-${chip.tone}`}>
+      <Count text={chip.text} />
+    </span>
+  );
 }
 
 /** Breathing room kept between the popover and the viewport edge, in px. */
@@ -207,6 +212,32 @@ export function KpiGrid({ children }: { children: ReactNode }) {
   return <div className="ag-kpis">{children}</div>;
 }
 
+/**
+ * The label with its "?" glued to the last word, so a label that just fits
+ * never leaves the mark alone on a line of its own.
+ */
+function Label({ label, help }: { label: ReactNode; help?: string | null }) {
+  const cut = typeof label === "string" && help ? label.lastIndexOf(" ") : -1;
+  if (cut < 0) {
+    return (
+      <>
+        <span className="ag-kpi-label">{label}</span>
+        <Help text={help} />
+      </>
+    );
+  }
+  const text = label as string;
+  return (
+    <span className="ag-kpi-label">
+      {text.slice(0, cut + 1)}
+      <span className="ag-kpi-label-tail">
+        {text.slice(cut + 1)}
+        <Help text={help} />
+      </span>
+    </span>
+  );
+}
+
 export function Kpi({
   label,
   value,
@@ -233,14 +264,13 @@ export function Kpi({
   return (
     <div className="ag-kpi">
       <div className="ag-kpi-head">
-        <span className="ag-kpi-label">{label}</span>
-        <Help text={help} />
+        <Label label={label} help={help} />
       </div>
       <div className="ag-kpi-row">
         <span
           className={valueTone ? `ag-kpi-value ag-tone-${valueTone}` : "ag-kpi-value"}
         >
-          {value}
+          {counted(value, true)}
         </span>
         <Chip chip={chip} />
       </div>

@@ -10,6 +10,8 @@ import pytest
 from stocks.data.dividends import DividendEvent
 from stocks.data.earnings import EarningsEvent
 from stocks.notify import digest as dg
+from stocks.notify import render
+from stocks.web.i18n import translate
 
 D = date(2026, 8, 14)  # a Friday
 
@@ -30,53 +32,52 @@ def full_data() -> dg.DigestData:
 # ---------------------------------------------------------------- rendering
 
 
-def test_render_full_digest_en():
-    text = dg.render_digest(full_data(), "en")
-    assert "<b>📊 TopStocks — daily digest</b> · Fri 14 Aug" in text
-    assert "<b>Portfolio</b> €48,230" in text
-    assert "Day +412 € (+0.86%)" in text
-    assert "Week -1,105 € (-2.24%)" in text
-    assert "▲ NVDA +3.2%" in text and "▼ UNH -2.8%" in text
-    assert "• NVDA — Thu 20 Aug (T-6)" in text
-    assert "💡 Nvidia drove most of today" in text
+def test_the_push_carries_the_book_in_the_title_and_opens_today():
+    msg = dg.digest_message(full_data(), "en")
+    assert msg["title"] == "Portfolio €48,230 · today +412 € (+0.86%)"
+    assert msg["body"].splitlines() == [
+        "▲ NVDA +3.2% · ▼ UNH -2.8%",
+        "Earnings, next 7 days: NVDA Thu 20 Aug",
+        "Nvidia drove most of today's gain.",
+    ]
+    assert msg["url"] == "/today" and msg["tag"] == "digest"
 
 
-def test_render_spanish_labels():
-    text = dg.render_digest(full_data(), "es")
-    assert "resumen diario" in text
-    assert "<b>Cartera</b>" in text
-    assert "Día" in text and "Semana" in text
-    assert "vie 14 ago" in text
+def test_the_push_is_translated():
+    msg = dg.digest_message(full_data(), "es")
+    assert msg["title"] == "Cartera €48,230 · hoy +412 € (+0.86%)"
+    assert "Resultados, próximos 7 días: NVDA jue 20 ago" in msg["body"]
 
 
-def test_render_watchlist_only_omits_value_lines():
+def test_a_watchlist_falls_back_to_a_dated_title():
     data = dg.DigestData(date=D, watchlist_only=True,
                          movers=[("AAPL", 0.01)], earnings=[])
-    text = dg.render_digest(data, "en")
-    assert "Portfolio" not in text
-    assert "▲ AAPL +1.0%" in text
+    msg = dg.digest_message(data, "en")
+    assert msg["title"] == "Your daily digest · Fri 14 Aug"
+    assert msg["body"] == "▲ AAPL +1.0%"
+    assert dg.digest_message(data, "es")["title"] == "Tu resumen diario · vie 14 ago"
 
 
-def test_render_escapes_html_in_dynamic_text():
-    data = dg.DigestData(date=D, movers=[("A&B<X>", 0.05)],
-                         highlight="risk <on> & rising")
-    text = dg.render_digest(data, "en")
-    assert "A&amp;B&lt;X&gt;" in text
-    assert "risk &lt;on&gt; &amp; rising" in text
+def test_partial_sections_still_render():
+    msg = dg.digest_message(dg.DigestData(date=D, total=1000.0), "en")
+    assert msg["title"] == "Your daily digest · Fri 14 Aug"  # no day change
+    assert msg["body"] == ""
 
 
-def test_render_partial_sections_still_render():
-    data = dg.DigestData(date=D, total=1000.0)  # no day/week/movers/earnings
-    text = dg.render_digest(data, "en")
-    assert "€1,000" in text
-    assert "Top movers" not in text and "Earnings" not in text
-
-
-def test_movers_capped_at_three_per_side():
-    movers = [(f"G{i}", 0.01 * (10 - i)) for i in range(5)]
-    movers += [(f"L{i}", -0.01 * (i + 1)) for i in range(5)]
-    text = dg.render_digest(dg.DigestData(date=D, movers=movers), "en")
-    assert text.count("▲") == 3 and text.count("▼") == 3
+def test_the_body_keeps_the_lines_that_matter_most():
+    """A lock screen shows three lines: the movers, the first calendar item
+    and the narrated line win; the rest is what the tap is for."""
+    data = priced_data(
+        results=[_result()],
+        dividends_received=(124.0, 2),
+        benchmark=(0.014, None),
+        highlight="Nvidia carried the day.",
+    )
+    lines = dg.digest_message(data, "en")["body"].splitlines()
+    assert len(lines) == render.BODY_LINES
+    assert lines[0].startswith("▲ NVDA")
+    assert lines[1].startswith("Just reported: NVDA")
+    assert lines[2] == "Nvidia carried the day."
 
 
 # ------------------------------------------------------------ compute
@@ -195,119 +196,92 @@ def priced_data(**over) -> dg.DigestData:
     return dg.DigestData(**base)
 
 
+def tr(lang: str = "en"):
+    return lambda key, **kw: translate(f"notify.{key}", lang, **kw)
+
+
 def test_movers_are_ranked_by_money_not_percent():
-    text = dg.render_digest(priced_data(), "en")
-    gainers = text.split("Top movers")[1].splitlines()[1]
     # +9.0% on a small position must not outrank +3.2% on a large one.
-    assert gainers.index("NVDA") < gainers.index("SMALL")
-    assert "▲ NVDA +380 € (+3.2%)" in text
-    assert "▼ UNH -180 € (-2.8%)" in text
+    assert dg.movers_line(priced_data()) == "▲ NVDA +380 € (+3.2%) · ▼ UNH -180 € (-2.8%)"
 
 
 def test_movers_fall_back_to_percent_ranking_without_a_book():
     """A watchlist has no weights, so the percentage is all there is."""
     data = dg.DigestData(date=D, watchlist_only=True,
-                         movers=[("A", 0.01), ("B", 0.09)])
-    text = dg.render_digest(data, "en")
-    assert text.index("B +9.0%") < text.index("A +1.0%")
-    assert "€" not in text
+                         movers=[("A", 0.01), ("B", 0.09), ("C", -0.02)])
+    assert dg.movers_line(data) == "▲ B +9.0% · ▼ C -2.0%"
 
 
 def test_ranked_movers_unions_quotes_and_values():
     """A quote that failed still moved the book; a name absent from the value
     frame still has a quote. Neither may drop out of the ranking."""
-    data = dg.DigestData(date=D, movers=[("QUOTED", 0.02)],
+    data = dg.DigestData(date=D, movers=[("QUOTED", -0.02)],
                          contrib={"VALUED": 500.0})
     rows = dg.ranked_movers(data)
     assert {r[0] for r in rows} == {"QUOTED", "VALUED"}
-    text = dg.render_digest(data, "en")
-    assert "▲ VALUED +500 €" in text
-    assert "▲ QUOTED +2.0%" in text  # no money figure to lead with
+    # No money figure for QUOTED: it is sided by its percentage, not a flat 0.
+    assert dg.movers_line(data) == "▲ VALUED +500 € · ▼ QUOTED -2.0%"
 
 
 def test_money_movers_split_by_the_sign_of_the_money():
     """A name can be up on the day in percent and still be listed by its
-    money — the sign that decides the list is the one being printed."""
+    money — the sign that decides the side is the one being printed."""
     data = dg.DigestData(date=D, movers=[("A", 0.02)], contrib={"A": -50.0})
-    text = dg.render_digest(data, "en")
-    assert "▼ A -50 €" in text and "▲" not in text
+    assert dg.movers_line(data) == "▼ A -50 € (+2.0%)"
+
+
+def test_no_movers_is_no_line():
+    assert dg.movers_line(dg.DigestData(date=D)) is None
 
 
 # -------------------------------------------------------------- benchmark
 
 
 def test_benchmark_line_reports_the_gap_both_ways():
-    behind = dg.render_digest(priced_data(benchmark=(0.014, 0.02)), "en")
-    assert "vs S&amp;P 500 +1.40% · behind by 0.54 pt" in behind
-    ahead = dg.render_digest(priced_data(benchmark=(0.002, None)), "en")
-    assert "vs S&amp;P 500 +0.20% · ahead by 0.66 pt" in ahead
+    behind = dg.benchmark_line(priced_data(benchmark=(0.014, 0.02)), tr())
+    assert behind == "vs S&P 500 +1.40% · behind by 0.54 pt"
+    ahead = dg.benchmark_line(priced_data(benchmark=(0.002, None)), tr())
+    assert ahead == "vs S&P 500 +0.20% · ahead by 0.66 pt"
 
 
 def test_benchmark_line_omitted_when_incomparable():
-    assert "S&amp;P" not in dg.render_digest(priced_data(benchmark=None), "en")
-    assert "S&amp;P" not in dg.render_digest(
-        priced_data(benchmark=(None, 0.02)), "en"
-    )
+    assert dg.benchmark_line(priced_data(benchmark=None), tr()) is None
+    assert dg.benchmark_line(priced_data(benchmark=(None, 0.02)), tr()) is None
     # No day change of our own to compare against.
-    assert "S&amp;P" not in dg.render_digest(
-        dg.DigestData(date=D, total=100.0, benchmark=(0.01, 0.01)), "en"
-    )
+    bare = dg.DigestData(date=D, total=100.0, benchmark=(0.01, 0.01))
+    assert dg.benchmark_line(bare, tr()) is None
 
 
 def test_benchmark_line_is_translated():
-    text = dg.render_digest(priced_data(benchmark=(0.014, None)), "es")
-    assert "por detrás 0.54 pt" in text
+    line = dg.benchmark_line(priced_data(benchmark=(0.014, None)), tr("es"))
+    assert line.endswith("por detrás 0.54 pt")
 
 
 # ------------------------------------------------------------- dividends
 
 
-def test_dividend_section_shows_ex_dates_estimated_cash_and_receipts():
+def test_dividend_lines_show_ex_dates_estimated_cash_and_receipts():
     data = priced_data(
         ex_dividends=[
             DividendEvent("KO", date(2026, 8, 16), 2, 0.51, "USD"),
             DividendEvent("MSFT", date(2026, 8, 20), 6, 0.83, "USD"),
         ],
-        dividend_cash={"KO": 61.0},
+        dividend_cash={"KO": 61.0},  # no quantity held of MSFT
         dividends_received=(124.0, 2),
     )
-    text = dg.render_digest(data, "en")
-    assert "<b>Dividends</b>" in text
-    assert "• KO — ex-date Sun 16 Aug (T-2) · ~€61" in text
-    assert "• MSFT — ex-date Thu 20 Aug (T-6)" in text
-    assert "~€" not in text.split("MSFT")[1].splitlines()[0]  # no quantity held
-    assert "€124 received over the last 7 days, from 2 payments" in text
+    assert dg.calendar_lines(data, "en") == [
+        "Ex-dividend: KO Sun 16 Aug ~€61, MSFT Thu 20 Aug",
+        "€124 received over the last 7 days, from 2 payments",
+    ]
 
 
 def test_dividend_receipt_has_a_singular_form():
     data = priced_data(dividends_received=(38.0, 1))
-    assert "from one payment" in dg.render_digest(data, "en")
-    assert "de un pago" in dg.render_digest(data, "es")
-
-
-def test_dividend_list_is_capped():
-    events = [
-        DividendEvent(f"T{i}", date(2026, 8, 15 + i), i + 1, 0.1, "EUR")
-        for i in range(6)
-    ]
-    text = dg.render_digest(priced_data(ex_dividends=events), "en")
-    assert text.count("ex-date") == dg.DIVIDENDS_SHOWN
+    assert "from one payment" in dg.calendar_lines(data, "en")[0]
+    assert "de un pago" in dg.calendar_lines(data, "es")[0]
 
 
 # ------------------------------------------------------------- quiet days
-
-
-def test_a_flat_empty_session_renders_short():
-    data = dg.DigestData(date=D, total=48230.0, day=(12.0, 0.0002),
-                         week=(-1105.0, -0.0224),
-                         movers=[("NVDA", 0.001)],
-                         contrib={"NVDA": 12.0},
-                         highlight="should not be shown")
-    assert data.quiet is True
-    text = dg.render_digest(data, "en")
-    assert "€48,230" in text and "Day +12 €" in text
-    assert "Quiet session" in text
-    assert "Top movers" not in text and "should not be shown" not in text
 
 
 def test_a_calendar_entry_keeps_the_full_digest():
@@ -447,26 +421,6 @@ def test_compute_skips_the_benchmark_without_a_day_change(tmp_path, monkeypatch)
     assert data.benchmark is None
 
 
-# ------------------------------------------------------- currency attribution
-
-
-def test_fx_chip_appears_when_the_currency_explains_part_of_the_day():
-    text = dg.render_digest(priced_data(fx_effect=-180.0), "en")
-    assert "Day +412 € (+0.86%) · FX -180 €" in text
-    assert "Divisa -180 €" in dg.render_digest(priced_data(fx_effect=-180.0), "es")
-
-
-def test_fx_chip_hidden_when_it_is_rounding():
-    """Below the floor the number is noise, and a line that shows up every
-    evening is one the reader stops seeing on the evening it matters."""
-    assert "FX" not in dg.render_digest(priced_data(fx_effect=12.0), "en")
-    # Single-currency book: nothing computed at all.
-    assert "FX" not in dg.render_digest(priced_data(fx_effect=None), "en")
-    # A day that didn't move has no share to take.
-    flat = dg.DigestData(date=D, total=100.0, day=(0.0, 0.0), fx_effect=5.0)
-    assert "FX" not in dg.render_digest(flat, "en")
-
-
 # --------------------------------------------------------- reported quarters
 
 
@@ -479,36 +433,33 @@ def _result(**over):
     return EarningsResult(**base)
 
 
-def test_results_block_reads_beat_miss_eps_and_reaction():
+def test_results_line_reads_beat_miss_and_reaction():
     data = priced_data(results=[_result()], result_moves={"NVDA": 6.42})
-    text = dg.render_digest(data, "en")
-    assert "<b>Just reported</b>" in text
-    assert "• NVDA — beat, EPS 1.24 vs 1.18 · +6.4%" in text
+    assert dg.calendar_lines(data, "en") == ["Just reported: NVDA beat +6.4%"]
 
 
 def test_results_degrade_to_whatever_is_known():
-    no_eps = priced_data(results=[_result(eps_estimate=None, reported_eps=None,
-                                          surprise_pct=-3.0)])
-    assert "• NVDA — miss" in dg.render_digest(no_eps, "en")
+    miss = priced_data(results=[_result(surprise_pct=-3.0)])
+    assert dg.calendar_lines(miss, "en") == ["Just reported: NVDA miss"]
     bare = priced_data(results=[_result(eps_estimate=None, reported_eps=None,
                                         surprise_pct=None)])
-    assert "• NVDA\n" in dg.render_digest(bare, "en") + "\n"
+    assert dg.calendar_lines(bare, "en") == ["Just reported: NVDA"]
 
 
 def test_results_are_translated():
     data = priced_data(results=[_result()], result_moves={"NVDA": 6.42})
-    text = dg.render_digest(data, "es")
-    assert "Acaban de publicar" in text and "supera" in text
+    assert dg.calendar_lines(data, "es") == ["Acaban de publicar: NVDA supera +6.4%"]
 
 
 # ------------------------------------------------------------- import nudge
 
 
-def test_stale_import_nudge_renders_with_the_age():
-    text = dg.render_digest(priced_data(stale_import_days=63), "en")
-    assert "📎 Your last statement import was 63 days ago" in text
-    assert "the figures above may be out of date" in text
-    assert "hace 63 días" in dg.render_digest(priced_data(stale_import_days=63), "es")
+def test_stale_import_line_carries_the_age():
+    data = priced_data(stale_import_days=63)
+    assert dg.calendar_lines(data, "en") == [
+        "Last statement import 63 days ago — your book may be out of date."
+    ]
+    assert "hace 63 días" in dg.calendar_lines(data, "es")[0]
 
 
 def test_stale_import_days_only_fires_on_monday_and_only_when_old(tmp_path):
@@ -590,59 +541,31 @@ def test_compute_skips_the_nudge_without_a_book(tmp_path, monkeypatch):
     assert data.stale_import_days is None
 
 
-# ------------------------------------------------------------- deep links
-
-ORIGIN = "https://topstocks.example"
+# ------------------------------------------------------------- calendar
 
 
-def test_tickers_link_to_their_page_when_an_origin_is_configured():
+def test_calendar_lines_put_what_can_be_missed_first():
+    """A deadline outranks a print that happened, which outranks one coming,
+    which outranks cash; the import reminder is about the app, so it is last."""
+    from stocks.portfolio.tax import deadlines
+
     data = priced_data(
-        ex_dividends=[DividendEvent("KO", date(2026, 8, 16), 2, 0.51, "USD")],
+        tax_deadlines=deadlines.due_soon("ES", date(2027, 3, 5)),
         results=[_result()],
         earnings=[EarningsEvent("ASML", date(2026, 8, 20), 6)],
+        ex_dividends=[DividendEvent("KO", date(2026, 8, 16), 2, 0.51, "USD")],
+        dividends_received=(38.0, 1),
+        stale_import_days=63,
     )
-    text = dg.render_digest(data, "en", ORIGIN)
-    for ticker in ("NVDA", "KO", "ASML"):
-        assert f'<a href="{ORIGIN}/ticker?ticker={ticker}">{ticker}</a>' in text
-
-
-def test_no_origin_renders_exactly_the_plain_message():
-    data = priced_data(results=[_result()])
-    assert dg.render_digest(data, "en") == dg.render_digest(data, "en", None)
-    assert "<a href" not in dg.render_digest(data, "en")
-
-
-def test_a_ticker_that_needs_escaping_survives_both_halves():
-    """The symbol comes from a file the account controls and lands in both an
-    href and a parse_mode='HTML' body."""
-    text = dg.render_digest(
-        dg.DigestData(date=D, movers=[("A&B", 0.05)]), "en", ORIGIN
-    )
-    assert "ticker=A%26B" in text and ">A&amp;B</a>" in text
-
-
-def test_digest_buttons_follow_what_the_message_actually_says():
-    plain = dg.digest_buttons(priced_data(), "en", ORIGIN)
-    assert plain == [("Portfolio", f"{ORIGIN}/portfolio")]
-
-    with_calendar = dg.digest_buttons(priced_data(results=[_result()]), "en", ORIGIN)
-    assert [label for label, _ in with_calendar] == ["Portfolio", "Earnings"]
-
-    nudged = dg.digest_buttons(priced_data(stale_import_days=63), "en", ORIGIN)
-    assert nudged[-1] == ("Import statement", f"{ORIGIN}/import_transactions")
-
-
-def test_digest_buttons_are_empty_without_an_origin(monkeypatch):
-    monkeypatch.setattr(dg.links, "app_base", lambda: None)
-    assert dg.digest_buttons(priced_data(stale_import_days=9), "en") == []
-
-
-def test_digest_buttons_are_translated():
-    labels = [
-        label
-        for label, _ in dg.digest_buttons(priced_data(results=[_result()]), "es", ORIGIN)
+    lines = dg.calendar_lines(data, "en")
+    assert [line.split()[0] for line in lines] == [
+        "🗓", "Just", "Earnings,", "Ex-dividend:", "€38", "Last",
     ]
-    assert labels == ["Cartera", "Resultados"]
+
+
+def test_an_undated_print_is_left_out_of_the_calendar():
+    data = priced_data(earnings=[EarningsEvent("ASML", None, None)])
+    assert dg.calendar_lines(data, "en") == []
 
 
 def test_a_tax_deadline_is_named_and_keeps_the_full_digest():
@@ -655,7 +578,6 @@ def test_a_tax_deadline_is_named_and_keeps_the_full_digest():
         tax_deadlines=deadlines.due_soon("ES", today),
     )
     assert not data.quiet
-    text = dg.render_digest(data, "es")
-    assert "Plazos fiscales" in text
-    assert "Modelo 720 (2026)" in text
-    assert "T-26" in text
+    first = dg.calendar_lines(data, "es")[0]
+    assert first.startswith("🗓 ") and "Modelo 720 (2026)" in first
+    assert first.endswith("mié 31 mar")

@@ -6,6 +6,8 @@ minutes: 5
 as_of: 2026-10-25
 terms: withholding_tax, double_taxation, tax_treaty
 app: portfolio?tab=dividends
+slug: spain-foreign-dividends-tax
+description: How foreign dividends are taxed in Spain: withholding at source, the W-8BEN, the 15% US treaty rate and the double taxation deduction.
 ---
 You receive a dividend from a US company and it arrives already trimmed. Do you pay twice? No: there is a deduction to avoid that.
 

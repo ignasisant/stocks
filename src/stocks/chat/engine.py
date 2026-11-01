@@ -1,7 +1,7 @@
 """Headless chat engine — the web assistant's brain, with no UI in it.
 
-Everything the chat drawer (api/routes/chat.py) and the Telegram bot
-(stocks/chat/bot.py) share lives here: the persona built from the investor
+Everything the chat drawer (api/routes/chat.py) and the headless callers
+share lives here: the persona built from the investor
 profile, the portfolio snapshot for the system prompt, skill routing, the
 BYOK→free provider resolution (also used by notify/narrative.py), the free
 -tier daily quota, and answer() — one complete chat turn against explicit
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import hashlib
 import json
 import math
 import queue
@@ -24,6 +25,7 @@ import re
 import secrets
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -48,6 +50,7 @@ from stocks.chat import (
     learnings,
     market,
     memory,
+    plan_builder,
     rebalance,
     reports,
     stopping,
@@ -97,15 +100,6 @@ MAX_CONTEXT_MSGS = 20
 # ...and the same tail measured in tokens, applied after the web extracts and
 # quotes are appended. The message count is a cheap first cut; chat/tokens.py
 # is the one that knows how big the request actually got.
-
-# Prepended to the system prompt for Telegram turns: Telegram renders no
-# markdown tables/headers, so steer the model at the source.
-TELEGRAM_CONTEXT = (
-    "The user is chatting from Telegram. Answer in plain text: no markdown "
-    "tables, no headers, no code fences; short paragraphs and simple dashes "
-    "for lists.\n\n"
-)
-
 
 # ------------------------------------------------------------ provider keys
 
@@ -296,7 +290,7 @@ def free_eligible(prefs: dict) -> bool:
     """Whether this account may use the operator-funded chain.
 
     Reads the account's own prefs, so it works identically in the panel and in
-    the headless Telegram job — no session, no request, no email lookup.
+    a headless job — no session, no request, no email lookup.
     """
     policy = free_policy()
     if policy in ("open", "trial"):
@@ -431,7 +425,7 @@ _global_free_lock = threading.Lock()
 # every deploy and on idle scale-to-zero, and an in-memory counter hands out a
 # fresh 400 each time — which is exactly the lever an abuser leans on, since
 # the restart is free to provoke. Persisted through the same bucket as
-# everything else, so the web app and the Telegram job share one budget.
+# everything else, so the web app and the headless jobs share one budget.
 GLOBAL_FREE_FILE = DATA_DIR / "free_llm_global.json"
 
 
@@ -506,8 +500,8 @@ UNLISTED_WORDS = 12
 def spend_free_quota(prefs: dict, units: int = 1) -> bool:
     """Consume `units` of today's free allowance; False when they are not left.
 
-    Mutates `prefs` in place — the caller saves, so the web panel and the
-    Telegram bot share one counter ("free_msgs::<date>"). Keys from previous
+    Mutates `prefs` in place — the caller saves, so every caller
+    shares one counter ("free_msgs::<date>"). Keys from previous
     days are dropped on spend so prefs.json never accumulates. The account
     counter is checked first so a capped-out user can't drain the global pot.
 
@@ -739,7 +733,20 @@ def _join_en(parts: list[str]) -> str:
 def persona(prof: dict) -> str:
     """The 'who am I advising' sentence, from a loaded investor profile
     (auth.load_profile(prefs)). Falls back to the historical default when the user
-    hasn't filled the form yet (prof['set'] is False)."""
+    hasn't filled the form yet (prof['set'] is False). The investor plan, when
+    saved, follows either way (`portfolio.plan.describe`)."""
+    return _who(prof) + _plan_said(prof)
+
+
+def _plan_said(prof: dict) -> str:
+    if not prof.get("plan"):
+        return ""
+    from stocks.portfolio import plan as plans
+
+    return plans.describe(plans.parse(prof["plan"]))
+
+
+def _who(prof: dict) -> str:
     if not prof.get("set"):
         return "The signed-in user is an aggressive long-term (5y+) investor. "
     risk = _RISK_EN.get(prof.get("risk"), "an aggressive")
@@ -1114,7 +1121,7 @@ def language_rule(lang: str | None) -> str:
 def system_prompt(profile: dict, context: str,
                   skill_ids: list[str] | None = None,
                   lang: str | None = None, memories: str = "",
-                  book: str = "") -> llm.Prompt:
+                  book: str = "", rules_first: bool = False) -> llm.Prompt:
     """Persona + the user's saved memories + the book + the caller's context
     block (the view, what the surface draws) + the analysis frameworks chosen
     for this turn + the answer's language.
@@ -1125,7 +1132,16 @@ def system_prompt(profile: dict, context: str,
     `book` (the snapshot, which changes when prices do), then the rest, which
     changes with the page the question was asked on and the skills the router
     picked. A turn that only moved page rereads the first two parts from the
-    provider's cache instead of rewriting the whole prompt."""
+    provider's cache instead of rewriting the whole prompt.
+
+    `rules_first` moves RULES from the end into the first part, before the
+    memories. A provider caches only a prefix it has seen whole, and Gemini's
+    implicit cache only one of 1,024 tokens or more: the fixed paragraphs are
+    about 600, so on their own nothing was ever read back (prod: cached=0 on
+    every Gemini turn); with RULES they are about 1,800. For the large models
+    a reader's own key runs; the keyless chain's small ones drop a rule that
+    is not near the end, so theirs stay last. The language rule is said last
+    either way."""
     head = (
         "You are a concise investing assistant embedded in a personal stock "
         "tracker. " + persona(profile) + "You are not a licensed financial "
@@ -1164,13 +1180,18 @@ def system_prompt(profile: dict, context: str,
         "conversation does not already show its parsed result, you have not "
         "seen its contents and must say so. Asked to import with nothing "
         "attached, say what to attach.\n\n"
-        f"{memories}"
     )
+    if rules_first:
+        head += RULES.lstrip("\n") + "\n\n"
+    head += memories
+    closing = language_rule(lang)
+    if rules_first and closing:
+        closing = "\n\nRULES, continued:" + closing
     tail = (
         context
         + chat_skills.skills_block(skill_ids or [])
-        + RULES
-        + language_rule(lang)
+        + ("" if rules_first else RULES)
+        + closing
     )
     return llm.Prompt(head, book, tail)
 
@@ -1179,23 +1200,38 @@ def system_prompt(profile: dict, context: str,
 # thread starts with the card — an assistant turn nobody asked for — and a
 # conversation sent to a model has to open with the user.
 CARD_OPENER = "My daily action card on Home, for {day}."
+# The same for the other scheduled runs (`notify/schedule.py`): what each one
+# was, said as the reader would have asked for it.
+SCHEDULED_OPENERS = {
+    "digest": "My end-of-day numbers for {day}.",
+    "weekly": "My weekly review, for the week to {day}.",
+}
 
 
 def recent(history: list[dict], limit: int = MAX_CONTEXT_MSGS) -> list[dict]:
     """The tail of the conversation sent to the model. Trims any leading
     assistant turn so the slice still opens with a user message (Anthropic
     requires it; the others don't care) — except a daily card's
-    (`auth.save_card_thread`), which is what the thread is about and gets
-    `CARD_OPENER` in front of it instead. Rebuilt as bare role/content dicts —
-    stored turns carry extra keys (e.g. "skills") the provider APIs reject."""
+    (`auth.save_card_thread`) or a scheduled run's (`save_scheduled_thread`),
+    which is what the thread is about and gets its opener in front instead.
+    Rebuilt as bare role/content dicts — stored turns carry extra keys (e.g.
+    "skills") the provider APIs reject."""
     msgs = history[-limit:]
-    while msgs and msgs[0]["role"] != "user" and not msgs[0].get("daily"):
+    while msgs and msgs[0]["role"] != "user" and not _opener(msgs[0]):
         msgs = msgs[1:]
     out = [{"role": m["role"], "content": m["content"]} for m in msgs]
     if msgs and msgs[0]["role"] != "user":
-        out.insert(0, {"role": "user",
-                       "content": CARD_OPENER.format(day=msgs[0]["daily"])})
+        out.insert(0, {"role": "user", "content": _opener(msgs[0])})
     return out
+
+
+def _opener(turn: dict) -> str:
+    """The user line a thread opened by `turn` starts with, "" when it is not
+    a card or a scheduled run's."""
+    if turn.get("daily"):
+        return CARD_OPENER.format(day=turn["daily"])
+    said = SCHEDULED_OPENERS.get(str(turn.get("scheduled") or ""))
+    return said.format(day=turn.get("run") or "") if said else ""
 
 
 def resolve_skills(prefs: dict, provider: Provider, api_key: str,
@@ -1571,7 +1607,7 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
 def action_context(watchlist: Path) -> str:
     """What the action parser needs, headless: the watchlist (resolves
     company names to symbols) and existing groups. No 'current view' — there
-    is none on Telegram."""
+    is none headless."""
     from stocks.config import load_watchlist
     from stocks.web import auth
 
@@ -1751,13 +1787,18 @@ def _reports_step(ahead: reports.Ahead, lang: str) -> dict:
 
 # Companies whose ticker page rides on a weighing question on the fixed path.
 PAGE_TICKERS = 2
-# A question that weighs a company: its multiple, its value, against another.
+# A question that weighs a company: its multiple, its value, against another,
+# or what the analysts make of it.
 _WEIGHS_RE = re.compile(
     r"\bp/?e\b|\bper\b|\bpe ratio\b|valora|valuat|\bvalue[ds]?\b|\bvalor\b|"
     r"barat|cheap|\bcar[ao]s?\b|expensive|compar|\bvs\.?\b|\bversus\b|frente a|"
     r"m[uú]ltiplo|multiple|\bdcf\b|margen|margin|\bfcf\b|flujo de caja|"
     r"cash flow|analiz|analy[sz]|fundamental|\broic\b|\beps\b|\bbpa\b|"
-    r"comprar|\bbuy\b|\bupside\b|potencial",
+    r"comprar|\bbuy\b|\bupside\b|potencial|"
+    # What the analysts say is on the page too: asked without it, MSFT's
+    # target came out ~580 against a 605 mean (prod eval 2026-10-29).
+    r"precio objetivo|\btargets?\b|analista|analyst|consens|recomendaci|"
+    r"recommendation|\bratings?\b",
     re.IGNORECASE,
 )
 
@@ -1796,6 +1837,35 @@ def _pages(message: str, quotes: list, watchlist: Path, db: Path, prefs: dict,
                         timeout=timeout, tick=tick)
     blocks = [text for text in found if text]
     return ("\n\n---\n" + "\n\n".join(blocks)) if blocks else ""
+
+
+# What this year's sales cost in tax, asked of the reader's own book.
+_OWES_TAX_RE = re.compile(r"\b(?:hacienda|irpf|impuestos?|tributa\w*|tax(?:es)?|cgt)\b",
+                          re.IGNORECASE)
+_OWES_WHEN_RE = re.compile(
+    r"\beste a[nñ]o\b|\bthis (?:tax )?year\b|\bventas?\b|\bvendid|"
+    r"\bplusval|\bganancias\b|\bgains?\b|\bsales?\b|\bsold\b|\bpag|"
+    r"\bdebo\b|\bowe\b|\bpay\b",
+    re.IGNORECASE,
+)
+
+
+def _tax_year(message: str, watchlist: Path, db: Path, prefs: dict,
+              prefs_path: Path) -> ToolCall | None:
+    """This tax year's realised gains and estimated tax, on the fixed path,
+    for a message that asks what the reader owes — the harvest tool's figures
+    without its card, which answers another question.
+
+    Prod eval 2026-10-29: "¿Cuánto tengo que pagar a Hacienda por mis ventas
+    de este año?" came back as the IRPF brackets and "see the tax tab", with
+    the 231 € the tab shows never reaching the model. None when the message
+    does not ask. Told with the search and the quotes, as the lookup it is."""
+    if not (_OWES_TAX_RE.search(message) and _OWES_WHEN_RE.search(message)):
+        return None
+    run = toolbox.executor(toolbox.Context(
+        watchlist=watchlist, db=db, currency=reporting_currency(prefs),
+        prefs_path=prefs_path))
+    return llm.ToolCall("harvest_losses", {}, run("harvest_losses", {}))
 
 
 def _harvest(message: str, db: Path, prefs_path: Path, lang: str,
@@ -1843,6 +1913,43 @@ def _rebalance(message: str, watchlist: Path, db: Path, prefs_path: Path,
     told({"id": cid, "tool": "rebalance", "arg": symbol, "args": args,
           "out": _rebalance_step(moved, lang)["out"] if moved else "-"})
     return moved
+
+
+def _plan_builder(message: str, prefs: dict, db: Path, lang: str,
+                  told: Callable[[dict], None]) -> object:
+    """What the app knows toward the reader's plan, for the interview the
+    message asks for (`chat/plan_builder.py`), or None. Today's mix by
+    asset type is read off the Home frame, so the card does not ask how the
+    book leans."""
+    if not plan_builder.wants(message):
+        return None
+    from stocks.portfolio import plan as plans
+
+    cid = f"tool_plan_{secrets.token_hex(4)}"
+    told({"id": cid, "tool": "plan_builder", "arg": "", "args": {}})
+    base = reporting_currency(prefs)
+    shares: dict[str, float] = {}
+    try:
+        tbl = enriched_frame(db, base) if db.exists() else None
+        if tbl is not None and not tbl.empty and "weight" in tbl:
+            from stocks.api import loaders
+
+            shares = plans.buckets(tbl["weight"].to_dict(), loaders.asset_kind)
+    except Exception as exc:  # noqa: BLE001 — the card asks without today's mix
+        obs.warn("chat.plan_builder_mix_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+    known = plan_builder.known(prefs, shares, base)
+    obs.event("chat.plan_builder", asked=len(plan_builder.questions(known)),
+              priced=bool(shares), replaces=known.replaces)
+    told({"id": cid, "tool": "plan_builder", "arg": "", "args": {},
+          "out": _plan_step(known, lang)["out"]})
+    return known
+
+
+def _plan_step(known: plan_builder.Known, lang: str) -> dict:
+    return {"tool": "plan_builder", "arg": "",
+            "out": _tr("chat.step_plan", lang,
+                       count=len(plan_builder.questions(known)))}
 
 
 def _mix_step(mix: allocation.Mix, lang: str) -> dict:
@@ -2200,7 +2307,7 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
     """A ledger request (`chat/book.py`): drafted with the book in hand, and
     put to the reader whenever it would change anything — on every surface.
 
-    `typed` is a surface with no card to press (the Telegram bot), so the
+    `typed` is a surface with no card to press (a headless caller), so the
     question ends by saying how to answer it in words.
     """
     from stocks.chat import book
@@ -2268,7 +2375,7 @@ def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
     """The prompt's saved-memories section, "" when off or empty.
 
     Every surface that writes to the user reads this same block — the chat,
-    the Telegram bot and digests, the daily card and its analyses, the
+    the digests, the daily card and its analyses, the
     walkthrough — so what the user told the assistant once steers all of
     them, not only the conversation it was said in. `routines=False` is the
     daily card's reading: it answers the routines from its own data
@@ -2404,7 +2511,7 @@ def card_block(chat_path: Path, today: date | None = None) -> str:
     none from the last CARD_DAYS days.
 
     The card is this assistant talking too: what it told the user this
-    morning is something a question in the drawer or on Telegram may be
+    morning is something a question in the drawer may be
     about ("why does the card say to sell?"), and a message that names
     nothing would not find it through the index. Its figures are as of the
     session it was written from, so the context below wins on anything
@@ -2843,6 +2950,10 @@ class Turn:
     #: The gather's `agent.Profile` name, "fast" or "deep": what the turn's
     #: cost line (`_log_cost`) is broken down by.
     profile: str = "fast"
+    #: "light" when the router read the question as easy and the cheapest
+    #: model answers first (`_routed`), "" when the reader's own model does.
+    #: On the turn's cost line.
+    route: str = ""
     #: What the stored answer is named by (`rate_turn`), and the `turn` field
     #: on the turn's log lines: a thumbs-down finds its tools and its cost.
     id: str = dc_field(default_factory=lambda: secrets.token_hex(6))
@@ -2949,6 +3060,15 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
     return steps
 
 
+def _merged_sources(web: list[dict], gathered: list[dict]) -> list[dict]:
+    """The web pages searched beside the gather, then what the gather read —
+    the app's own documents among it — each once. Either alone used to win,
+    and a fixed-path answer built on a help page cited only the web."""
+    out = list(web)
+    out += [s for s in gathered if s not in out]
+    return out
+
+
 def _unlisted_step(nowhere: dict, lang: str) -> dict:
     """The one lookup a made-up symbol gets, as a tool line."""
     return {"tool": "get_quotes", "arg": ", ".join(nowhere)[:_STEP_ARG_CHARS],
@@ -2984,7 +3104,7 @@ def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
 
 def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             db: Path, message: str, lang: str = "en",
-            context: str = TELEGRAM_CONTEXT,
+            context: str = "",
             timeout_s: float = 90.0,
             staged_import: str = "",
             on_phase: Callable[[str], None] | None = None,
@@ -3035,12 +3155,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     detected action is filed as a pending proposal (`Reply.proposal`) and
     nothing is written to the watchlist until the reader approves it — with
     the drawer's button (`settle_proposal`) or by answering "yes" in words,
-    which this function settles itself. Off for the Telegram bot, whose reader
+    which this function settles itself. Off for a headless caller, whose reader
     has no card to press and already said what they wanted.
 
     `draws` says the caller shows the turn's surfaces, so a message asking for
     a chart gets one drawn under the answer (`chat/charts.py`) and the model is
-    told it is there. Off for the Telegram bot, which has nowhere to draw it.
+    told it is there. Off for a headless caller, which has nowhere to draw it.
 
     `thread` pins the turn to the conversation it was asked in: its history is
     read from there and everything it files is written there, wherever the
@@ -3066,7 +3186,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # button pressed, not a question for a model that would cheerfully reply
     # "done" without having done anything.
     # A ledger proposal is asked on every surface, so it is answered on every
-    # surface too; on the bot ("sí" written) that is the only way to answer.
+    # surface too; on a headless one ("sí" written) that is the only way to answer.
     held = _open_proposal(history[:-1])
     if held is not None and (confirm_actions
                              or isinstance(history[held]["proposal"].get("book"), dict)):
@@ -3076,8 +3196,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                         thread=thread,
                                         chat_path=chat_path,
                                         watchlist=watchlist, lang=lang, db=db,
-                                        source="chat" if confirm_actions
-                                        else "telegram")
+                                        source="chat")
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -3280,7 +3399,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
         (skills, evidence, sale, chart, mix, losses, moved, ahead, paid,
-         drafted) = in_parallel(
+         planned, drafted) = in_parallel(
             lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
                      else resolve_skills(prefs, provider, key, history,
                                          context=context + view)),
@@ -3301,6 +3420,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                 told) if one else None),
             lambda: _reports_ahead(message, watchlist, db, lang, told),
             lambda: _income(message, db, prefs_path, lang, told),
+            lambda: _plan_builder(message, prefs, db, lang, told) if one else None,
             # A company met for the first time this month gets its notes
             # drafted beside the research, on the cheapest model.
             lambda: (ticker_brief.draft_dossier(provider, key, asked_for.facts)
@@ -3312,6 +3432,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             # the guard refused.
             tick=watching,
         )
+        hard = getattr(skills, "hard", None)
         skills = skills or []
         evidence = evidence or agent.Evidence(ok=False)
         hits, quotes, pages = [], [], ""
@@ -3319,7 +3440,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # the web has nothing to add to them and a search costs the turn its
         # slowest seconds (local review 2026-10-30: three and a half minutes
         # for the earnings calendar, its search "BKNG ¿Qué empresas…").
-        own = isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
+        # So is a plan built from the reader's own answers.
+        own = (isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
+               or isinstance(planned, plan_builder.Known))
         if nowhere:
             pass
         elif not evidence.ok:
@@ -3331,17 +3454,32 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             scout, scout_key = next(
                 ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
                 (provider, key))
-            hits, quotes = in_parallel(
+            from stocks.chat import knowledge
+
+            hits, quotes, docs = in_parallel(
                 lambda: [] if own else ground_web(prefs, scout, scout_key,
                                                   history, view),
                 lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
+                # The app's own documents: with no tool loop the model never
+                # reached them, and "how do I undo an import?" was answered
+                # with a delete button that does not exist (prod eval
+                # 2026-10-29). The search abstains on anything else.
+                lambda: knowledge.lookup(message),
                 timeout=timeout_s,
                 tick=watching,
             )
             hits, quotes = hits or [], quotes or []
+            if docs:
+                # Filed as the gather's own lookup would be, so the material,
+                # the steps and the cited sources all read it the same way.
+                evidence.calls.append(llm.ToolCall(
+                    "lookup_knowledge", {"query": message}, knowledge.block(docs)))
+            if losses is None and (owed := _tax_year(
+                    message, watchlist, db, prefs, prefs_path)):
+                evidence.calls.append(owed)
             # No loop to watch here: the search and the quotes are told once
             # both have landed, already finished.
-            for n, line in enumerate(trace(None, hits, quotes, lang)):
+            for n, line in enumerate(trace(evidence, hits, quotes, lang)):
                 told({"id": f"tool_pre{n}", **line, "args": {}})
             pages = _pages(message, quotes, watchlist, db, prefs, lang, told,
                            timeout_s, watching)
@@ -3377,6 +3515,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # What they hold and how it is taxed: its own cache part, since it
         # changes when prices do and the view changes when the reader moves.
         book=book() + tax_rules(prefs),
+        # The reader's own key runs a large model, and the large models keep a
+        # rule wherever it is said; the free chain's are told it last.
+        rules_first=bool(getattr(provider, "needs_key", False)),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
     # system prompt — the stored history keeps the user's own text.
@@ -3397,9 +3538,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
-    for found in (mix, losses, moved, ahead, paid):
+    for found in (mix, losses, moved, ahead, paid, planned):
         if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh,
-                              reports.Ahead, income.Income)):
+                              reports.Ahead, income.Income, plan_builder.Known)):
             msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
@@ -3419,6 +3560,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             msgs[-1]["content"] += debate.brief(sides)
             msgs = tokens.fit(msgs, system=system)
 
+    routed = _routed(atts, live[0], profile=profile, hard=hard,
+                     argued=bool(sides) or asked_for is not None)
     say("writing")
     steps = trace(evidence, hits, quotes, lang)
     if nowhere:
@@ -3460,14 +3603,20 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             rebalance.SURFACE_ID,
             rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
+    if isinstance(planned, plan_builder.Known):
+        steps.append(_plan_step(planned, lang))
+        activities.append(a2ui.activity(
+            plan_builder.SURFACE_ID,
+            plan_builder.surface(planned, lambda k, **kw: _tr(k, lang, **kw)),
+        ))
     offered = _proposed(evidence) if confirm_actions else None
     return Turn(
         history=history,
-        attempts=atts,
+        attempts=routed or atts,
         system=system,
         messages=msgs,
         skills=list(skills),
-        sources=list(chat_web.sources(hits) or evidence.sources()),
+        sources=_merged_sources(chat_web.sources(hits), evidence.sources()),
         steps=steps,
         lang=lang,
         activities=activities,
@@ -3477,11 +3626,53 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         learning=learning,
         thread=thread,
         profile=profile.name,
+        route="light" if routed else "",
         id=turn_id or secrets.token_hex(6),
         proposal=offered,
         rules_for=(_rules_asked(message, watchlist, focus)
                    if confirm_actions and offered is None else ""),
     ), None
+
+
+def _routed(atts: list[tuple[Provider, str, str]],
+            head: tuple[Provider, str, str], *, profile: agent.Profile,
+            hard: bool | None, argued: bool) -> list[tuple[Provider, str, str]]:
+    """The chain with the head provider's cheapest model asked first, when the
+    question is an easy one; [] to leave it as it is.
+
+    The reader's model is a ceiling, not a floor: a figure, a definition or a
+    quick look-up reads the same from the small model, in seconds instead of
+    the minute a large one spends thinking (prod 2026-10-29: flash 94-164 s,
+    lite 5-20 s), and the reader's model is still next when it fails. Only on
+    the router's own word (`chat_skills.Pick.hard` is False): a router that
+    failed or said nothing, a deep gather, a debate or a ticker brief keeps
+    the reader's model. The keyless chain picks its own models."""
+    provider, key, model = head
+    light = getattr(provider, "classifier_model", "")
+    if (hard is not False or argued or profile is not agent.FAST
+            or not getattr(provider, "needs_key", False) or not light
+            or light == (model or provider.default_model)):
+        return []
+    return [(provider, key, light)] + list(atts)
+
+
+def _light(turn: Turn, provider: Provider, model: str) -> bool:
+    """Whether this attempt is the cheap model `_routed` put first: when it
+    fails, the reader's own model is next anyway, not the provider's others."""
+    if not turn.route or not turn.attempts:
+        return False
+    first, _key, light = turn.attempts[0]
+    return first is provider and light == model
+
+
+def _thinking(turn: Turn, provider: Provider, model: str) -> str:
+    """How long the answering model reasons before it writes (`llm.thinking`):
+    the least on the cheapest model, a little on a quick turn, more on a deep
+    one, whose evidence takes weighing. Never the model's own default, which
+    on Gemini's flash is the slow part of the turn."""
+    if model == getattr(provider, "classifier_model", ""):
+        return "minimal"
+    return "medium" if turn.profile == "deep" else "low"
 
 
 def _charge(prefs: dict, prefs_path: Path, provider: Provider,
@@ -3745,6 +3936,76 @@ def _refused(text: str, history: list[dict], chat_path: Path,
     return Reply(text=text, provider_id=provider_id, turn_id=tid)
 
 
+# ------------------------------------------------------------- kept answers
+
+# The same question asked again on the same book: the reader sent it twice,
+# opened a new thread to ask it there, or the bot and the web asked it a
+# minute apart. A prompt that is byte for byte the last one — persona, book
+# at the same prices, the same evidence — gets the answer it got then,
+# without a model call. Minutes, not hours: a repeat later than that is
+# asking because something moved.
+ANSWER_KEEP_S = 600.0
+_KEPT_ANSWERS_MAX = 64
+# key -> (kept at, owner, provider id, model, text)
+_kept_answers: OrderedDict[str, tuple[float, str, str, str, str]] = OrderedDict()
+_kept_lock = threading.Lock()
+
+
+def _answer_key(turn: Turn, chat_path: Path) -> str:
+    """What a kept answer is found by; "" when this turn's answer is not one
+    to keep: it proposes a change, draws a card, carries a debate, or was
+    taught something — each its own event, never a repeat."""
+    if (turn.proposal or turn.activities or turn.debate or turn.learned
+            or turn.rules_for):
+        return ""
+    blob = json.dumps([str(chat_path), str(turn.system), turn.messages],
+                      ensure_ascii=False, default=str)
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def _kept_answer(turn: Turn, kept_key: str
+                 ) -> tuple[Provider, str, str, str] | None:
+    """(provider, key, model, text) of the answer this very prompt got
+    minutes ago, when its provider is still on this turn's chain."""
+    if not kept_key:
+        return None
+    with _kept_lock:
+        hit = _kept_answers.get(kept_key)
+        if hit is None:
+            return None
+        if time.monotonic() - hit[0] >= ANSWER_KEEP_S:
+            del _kept_answers[kept_key]
+            return None
+    _at, _owner, pid, model, text = hit
+    for provider, key, _m in turn.attempts:
+        if provider.id == pid:
+            obs.event("chat.answer_kept", provider=pid, model=model,
+                      age_s=round(time.monotonic() - hit[0]))
+            return provider, key, model, text
+    return None
+
+
+def _keep_answer(kept_key: str, chat_path: Path, provider: Provider,
+                 model: str, text: str) -> None:
+    if not kept_key:
+        return
+    with _kept_lock:
+        _kept_answers.pop(kept_key, None)
+        _kept_answers[kept_key] = (time.monotonic(), str(chat_path),
+                                   provider.id, model, text)
+        while len(_kept_answers) > _KEPT_ANSWERS_MAX:
+            _kept_answers.popitem(last=False)
+
+
+def forget_answers(chat_path: Path) -> None:
+    """Drop the answers kept for this account's chat: a regenerate asks the
+    same prompt again precisely to get another answer."""
+    owner = str(chat_path)
+    with _kept_lock:
+        for k in [k for k, v in _kept_answers.items() if v[1] == owner]:
+            del _kept_answers[k]
+
+
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
                capped: bool, learned: tuple[dict, ...] = ()) -> Reply:
     """The Reply for a chain that ran out — and which wall it hit.
@@ -3773,6 +4034,7 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
     if not meter.uses:
         return
     obs.event("chat.cost", profile=turn.profile if turn else "",
+              route=turn.route if turn else "",
               skills=list(turn.skills) if turn else [],
               models=meter.models(), tokens=meter.tokens(),
               cached=meter.cached(), cache_write=meter.cache_write(),
@@ -3781,7 +4043,7 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
 
 def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
            watchlist: Path, db: Path, message: str, lang: str = "en",
-           context: str = TELEGRAM_CONTEXT, timeout_s: float = 90.0,
+           context: str = "", timeout_s: float = 90.0,
            staged_import: str = "", view: str = "", focus: str = "",
            fence: str = "", session_keys: dict[str, str] | None = None,
            polish: Callable[[dict], None] | None = None,
@@ -3830,6 +4092,12 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         assert settled is not None
         return None, settled
 
+    kept_key = _answer_key(turn, chat_path)
+    if (kept := _kept_answer(turn, kept_key)) is not None:
+        provider, key, model, text = kept
+        return turn, _record(turn, text, provider, model, key, prefs=prefs,
+                             prefs_path=prefs_path, chat_path=chat_path,
+                             polish=polish, grace=learn_grace)
     capped = False
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
@@ -3844,16 +4112,17 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         # the timeout. The thread dies with the short-lived process.
         pool = ThreadPoolExecutor(max_workers=1)
         try:
-            future = pool.submit(
-                metering.bound(provider.complete, step="answer"), key, model,
-                turn.system, turn.messages)
+            with llm.thinking(_thinking(turn, provider, model)):
+                ask = metering.bound(provider.complete, step="answer")
+            future = pool.submit(ask, key, model, turn.system, turn.messages)
             text = (future.result(timeout=timeout_s) or "").strip()
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
             # before the call that never answered, so it goes back.
             _provider_failed(exc, provider, model, key)
             _refund(prefs, prefs_path, provider, turn.units)
-            pending[:0] = _busy_siblings(exc, provider, key, tried)
+            if not _light(turn, provider, model):
+                pending[:0] = _busy_siblings(exc, provider, key, tried)
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -3861,6 +4130,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             _refund(prefs, prefs_path, provider, turn.units)
             continue
         if text:
+            _keep_answer(kept_key, chat_path, provider, model, text)
             return turn, _record(turn, text, provider, model, key, prefs=prefs,
                                  prefs_path=prefs_path, chat_path=chat_path,
                                  polish=polish, grace=learn_grace)
@@ -3870,7 +4140,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
 
 def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   watchlist: Path, db: Path, message: str, lang: str = "en",
-                  context: str = TELEGRAM_CONTEXT,
+                  context: str = "",
                   timeout_s: float = 90.0,
                   staged_import: str = "", view: str = "", focus: str = "",
                   fence: str = "",
@@ -4005,6 +4275,17 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     # A run picked up after a restart that had already paid for its answer
     # (`chat/checkpoint.py`) is not charged for it again.
     prepaid = checkpoint.prepaid if checkpoint is not None else ""
+    kept_key = _answer_key(turn, chat_path)
+    if (kept := _kept_answer(turn, kept_key)) is not None:
+        provider, key, model, text = kept
+        yield ("meta", {"provider": provider.id, "model": model,
+                        "skills": list(turn.skills),
+                        "sources": list(turn.sources)})
+        yield ("text", text)
+        yield ("done", _record(turn, text, provider, model, key, prefs=prefs,
+                               prefs_path=prefs_path, chat_path=chat_path,
+                               polish=polish))
+        return
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
     while pending:
@@ -4024,9 +4305,10 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         # (`_may_open_call`); None once they are shown.
         held: str | None = ""
         try:
-            for chunk in metering.iterate(
-                    provider.stream(key, model, turn.system, turn.messages),
-                    step="answer"):
+            with llm.thinking(_thinking(turn, provider, model)):
+                streamed = provider.stream(key, model, turn.system,
+                                           turn.messages)
+            for chunk in metering.iterate(streamed, step="answer"):
                 if isinstance(chunk, Cut):
                     cut = True
                     continue
@@ -4054,7 +4336,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 _refund(prefs, prefs_path, provider, turn.units)
                 if checkpoint is not None:
                     checkpoint.charged("")
-                pending[:0] = _busy_siblings(exc, provider, key, tried)
+                if not _light(turn, provider, model):
+                    pending[:0] = _busy_siblings(exc, provider, key, tried)
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
         if held:
@@ -4079,6 +4362,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             yield ("text", closed[len(text):])
             text = closed
         if text:
+            if not cut:
+                _keep_answer(kept_key, chat_path, provider, model, text)
             yield ("done", _record(turn, text, provider, model, key,
                                    prefs=prefs, prefs_path=prefs_path,
                                    chat_path=chat_path, polish=polish))

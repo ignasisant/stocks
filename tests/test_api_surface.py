@@ -176,7 +176,10 @@ def test_the_guest_list_is_not_silently_growing():
     # 68: `GET /learn`, `/learn/lessons/{lesson_id}` and `/learn/glossary` —
     # the Learn page's curriculum, shipped files the same for everyone; a
     # guest's progress stays in their browser.
-    assert len(guest.OPEN) == 68
+    # 69: `GET /ticker/{symbol}/trend` — the price card's trend figure: read
+    # off the chart's own daily bars and the home index, market data like
+    # `/bars`; no account goes into it.
+    assert len(guest.OPEN) == 69
 
 
 def test_every_route_a_guest_may_read_is_a_read():

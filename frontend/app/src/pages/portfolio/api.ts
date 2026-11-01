@@ -490,6 +490,21 @@ type ProjectionSleeve = {
   share: number;
 };
 
+/** The plan's contribution and mix as the projection reads them. */
+export type ProjectionPlan = {
+  /** The plan's own currency, the reporting one: what `amount` is in. */
+  currency: string;
+  /** The contribution per month in `base` (a quarterly one ÷ 3). */
+  monthly: number | null;
+  amount: number | null;
+  every: "monthly" | "quarterly" | null;
+  day: number | null;
+  /** The mix's crypto target as a fraction; null without a mix. */
+  crypto_share: number | null;
+  /** The profile's horizon as a span; null when never saved. */
+  years: number | null;
+};
+
 /**
  * A percentile fan for the book's value, month by month, from
  * `/portfolio/projection`. Not a forecast: every assumption it was drawn
@@ -506,6 +521,8 @@ export type Projection = {
   monthly: number;
   /** Last 12 months' average net money put in — the hint beside `monthly`. */
   monthly_suggested: number;
+  /** What the investor plan says about these inputs; null for a guest. */
+  plan: ProjectionPlan | null;
   /** True when the future is in today's money. */
   real: boolean;
   inflation: number;

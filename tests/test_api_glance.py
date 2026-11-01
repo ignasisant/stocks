@@ -18,7 +18,7 @@ Nothing here touches the network: every loader is replaced.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pandas as pd
@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import home, loaders
+from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
 from stocks.chat import daily
@@ -100,7 +100,7 @@ def account(monkeypatch, tmp_path):
 
 def today_card(**over) -> dict:
     """A card stamped for whichever action day is current right now."""
-    day = daily.action_day(datetime.now().astimezone())
+    day = briefing.now_day()[1]
     return {
         "day": day.isoformat(),
         "headline": "Two names carry the week",
@@ -231,7 +231,7 @@ def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
 def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypatch):
     """Every figure in the card is a day behind, and the calendar date will not
     move until the cutoff — so the date alone cannot see this."""
-    day = daily.action_day(datetime.now().astimezone())
+    day = briefing.now_day()[1]
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
     monkeypatch.setattr(
         loaders,
@@ -304,6 +304,28 @@ def test_each_side_keeps_its_strongest_names_strongest_first(
     worst = sorted(drops, key=drops.get)[: glance.SHOWN]
     assert losers == worst  # L9 … L3: the two mildest are the ones cut
     assert "FLAT" not in losers
+
+
+def test_all_lifts_the_cut_on_both_sides(client, account, monkeypatch):
+    """The card's "show all": every name that moved, still strongest first."""
+    index = pd.to_datetime([date(2024, 3, 1) + timedelta(days=i) for i in range(40)])
+    moves = {f"L{n}": -n / 100 for n in range(1, glance.SHOWN + 3)}
+    moves |= {f"G{n}": n / 100 for n in range(1, glance.SHOWN + 2)} | {"FLAT": 0.0}
+    frame = pd.DataFrame(
+        {
+            name: pd.Series([100.0] * 39 + [100.0 * (1 + pct)], index=index)
+            for name, pct in moves.items()
+        }
+    )
+    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": frame)
+    payload = client.get(
+        "/v1/movers", params=WHO | {"window": "week", "all": "true"}, headers=AUTH
+    ).json()
+    gainers = [m["ticker"] for m in payload["gainers"]]
+    losers = [m["ticker"] for m in payload["losers"]]
+    assert gainers == sorted((t for t in moves if moves[t] > 0), key=moves.get)[::-1]
+    assert losers == sorted((t for t in moves if moves[t] < 0), key=moves.get)
+    assert len(gainers) > glance.SHOWN and len(losers) > glance.SHOWN
 
 
 def test_a_window_nobody_defined_is_refused(client, account, monkeypatch):
@@ -427,6 +449,43 @@ def test_a_shut_market_reads_the_quote_and_not_the_flat_bar(
     assert payload["basket"] == pytest.approx((300 - opening) / opening)
     assert payload["as_of"] == "2024-03-01"
     assert [m["ticker"] for m in payload["gainers"]] == ["AAPL"]
+
+
+def test_a_premarket_row_reads_the_last_session_plus_the_premarket(
+    client, account, monkeypatch
+):
+    """Before the open a name's day is a few premarket prints, so its row
+    compounds yesterday's session with the premarket on top and says it is a
+    premarket figure. The book's own day stays the move since the last close."""
+    index = pd.to_datetime([date(2024, 3, 1) + timedelta(days=i) for i in range(3)])
+    flat = pd.DataFrame(
+        {
+            "AAPL": pd.Series([100.0] * 3, index=index),
+            "MSFT": pd.Series([200.0] * 3, index=index),
+        }
+    )
+    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": flat)
+    monkeypatch.setattr(glance, "us_market_open", lambda: False)
+    monkeypatch.setattr(glance, "market_live", lambda ticker: False)
+    monkeypatch.setattr(
+        loaders,
+        "quotes",
+        lambda tickers: {
+            # Up 2% yesterday, up 1% more before the bell.
+            "AAPL": {"pct": 0.01, "prior": 0.02, "session": "pre"},
+            # Closed (a foreign listing): the last session alone, as before.
+            "MSFT": {"pct": -0.01, "session": None},
+        },
+    )
+    payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
+    (aapl,) = payload["gainers"]
+    assert aapl["pct"] == pytest.approx(1.02 * 1.01 - 1)
+    assert aapl["premarket"] is True
+    (msft,) = payload["losers"]
+    assert msft["pct"] == pytest.approx(-0.01)
+    assert msft["premarket"] is False
+    opening = 100 / 1.01 + 200 / 0.99
+    assert payload["basket"] == pytest.approx((300 - opening) / opening)
 
 
 def test_a_live_session_leaves_the_bars_alone(client, account, monkeypatch):

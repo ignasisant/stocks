@@ -97,6 +97,17 @@ def test_an_8k_is_the_news_its_items_report():
                             "000126000001/d1.htm")
 
 
+
+def test_a_late_filing_notice_is_kept_though_it_reports_no_items():
+    subs = _subs(
+        ("NT 10-Q", "2026-10-01", "", "0001-26-000001", "nt.htm"),
+        ("NT 20-F", "2026-09-30", "", "0001-26-000002", "nt2.htm"),
+        ("8-K", "2026-09-30", "", "0001-26-000003", "d.htm"),
+        ("NT 10-K", "2026-08-01", "", "0001-26-000004", "old.htm"),
+    )
+    found = edgar.parse_current_reports("1045810", subs, since=date(2026, 9, 27))
+    assert [(r.form, r.items) for r in found] == [("NT 10-Q", ()), ("NT 20-F", ())]
+
 def test_holders_are_percent_numbers_dated_by_their_quarter():
     table = pd.DataFrame({
         "Date Reported": pd.to_datetime(["2026-06-30"] * 3),

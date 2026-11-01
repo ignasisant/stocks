@@ -111,23 +111,18 @@ export function Market({ data }: { data: MarketGlance }) {
   const tiles = data.tiles.filter((tile) => LABELS[tile.key]);
   return (
     <Card className="hm-market">
+      {/* The head every card with a range draws: title, the picker beside it.
+          The way out to the Pulse closes the card, as on the others. */}
       <div className="hm-card-head">
-        <div className="hm-market-title">
-          <CardTitle>{plain(t("home.market_title"))}</CardTitle>
-          <Regime data={data} />
-        </div>
-        <div className="hm-market-tools">
-          <Segmented
-            label={t("home.market_range")}
-            items={WINDOWS.map(({ key, label }) => ({ id: key, label: t(label) }))}
-            value={range}
-            onPick={pick}
-          />
-          <Link page="sentiment" className="hm-link">
-            {t("home.market_link_pulse")}
-          </Link>
-        </div>
+        <CardTitle>{plain(t("home.market_title"))}</CardTitle>
+        <Segmented
+          label={t("home.market_range")}
+          items={WINDOWS.map(({ key, label }) => ({ id: key, label: t(label) }))}
+          value={range}
+          onPick={pick}
+        />
       </div>
+      <Regime data={data} />
       {tiles.length === 0 ? (
         <Note>{t("home.market_unavailable")}</Note>
       ) : (
@@ -158,6 +153,9 @@ export function Market({ data }: { data: MarketGlance }) {
             .join(" · ")}
         </p>
       ) : null}
+      <Link page="sentiment" className="hm-link">
+        {t("home.market_link_pulse")}
+      </Link>
     </Card>
   );
 }

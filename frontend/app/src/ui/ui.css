@@ -97,11 +97,23 @@
   container-type: inline-size;
 }
 
+/* Inline flow, not flex: a label that wraps keeps its "?" after the last word.
+   As a flex item the wrapped label took the tile's whole width and pushed the
+   mark to the far edge, a line away from the words it explains. The block
+   takes the label's size so its strut does not open the lines up. */
 .ag-kpi-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  line-height: 1.25;
+}
+
+.ag-kpi-head .ag-kpi-help-wrap {
+  margin-left: 4px;
+  vertical-align: -0.1em;
+}
+
+.ag-kpi-label-tail {
+  white-space: nowrap;
 }
 
 .ag-kpi-label {
@@ -949,4 +961,57 @@
   .ag-fold-head::after {
     transition: none;
   }
+}
+
+/* ------------------------------------------- a figure counting to its value */
+
+/* `Count` (ui/Count.tsx): while a refreshed figure runs to its new value it
+   takes the colour of the move, then eases back to its own ink. */
+.ag-count {
+  transition: color var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-count[data-dir="up"] {
+  color: var(--ag-up);
+}
+
+.ag-count[data-dir="down"] {
+  color: var(--ag-down);
+}
+
+/* ------------------------------------------------------------- mix bar */
+
+/* `MixBar.tsx`: a share as a fill, its target as a tick across it. */
+.ag-mixbar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.ag-mixbar {
+  position: relative;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+  /* Neutral: a purple track read as a fill, so 0 % looked like a full bar. */
+  background: var(--ag-border);
+}
+.ag-mixbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-purple-400);
+}
+.ag-mixbar-target {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ag-text-primary);
+}
+.ag-mixbar-cap {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
 }

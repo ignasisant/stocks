@@ -84,6 +84,22 @@ def _symbol_search_offline():
 _FX_PER_EUR = {"EUR": 1.0, "USD": 1.10, "GBP": 0.85, "CHF": 0.95, "JPY": 160.0}
 
 
+@pytest.fixture(autouse=True)
+def _chat_keeps_forgotten():
+    """The chat keeps its searches, read pages (`chat_web._SEARCHED`, `_READ`)
+    and answers (`engine._kept_answers`) for minutes in process: one test's
+    fake hits or answer must not answer the next test. Only modules a test
+    already imported are touched."""
+    import sys
+
+    if (chat_web := sys.modules.get("stocks.web.chat_web")) is not None:
+        chat_web._SEARCHED.clear()
+        chat_web._READ.clear()
+    if (engine := sys.modules.get("stocks.chat.engine")) is not None:
+        engine._kept_answers.clear()
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _fx_offline():
     """Answer the three frankfurter shapes `stocks.data.fx` asks for — latest,
@@ -163,22 +179,6 @@ def _cftc_offline():
     cot.get_bytes = offline  # type: ignore[assignment]
     yield
     cot.get_bytes = before
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _no_telegram_pause():
-    """Send the fan-outs' messages back to back.
-
-    Every loop over accounts waits `telegram.SEND_PAUSE` between two sends to
-    stay under Telegram's rate — real seconds in a suite that fans out to fake
-    accounts hundreds of times, with nothing on the other end to rate-limit.
-    """
-    from stocks.notify import telegram
-
-    before = telegram.SEND_PAUSE
-    telegram.SEND_PAUSE = 0
-    yield
-    telegram.SEND_PAUSE = before
 
 
 _scratch_seq = itertools.count()

@@ -18,7 +18,7 @@
   "widgets.tags_placeholder": "Pick or type a new tag…",
   "widgets.tags_help": "Free-form groups, saved to your watchlist as you edit. Search the ticker list by tag to filter a group.",
   "widgets.alerts": "Alerts",
-  "widgets.alerts_caption": "Checked hourly on market days and sent to Telegram — connect it on your Profile.",
+  "widgets.alerts_caption": "Checked hourly on market days and sent as a notification — turn it on in your Profile.",
   "widgets.alert_none": "No alerts on {ticker} yet.",
   "widgets.alert_type": "Condition",
   "widgets.alert_price": "Price",

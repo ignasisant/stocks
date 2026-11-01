@@ -47,7 +47,7 @@
   "ticker.span_months_n": "{n} months",
   "ticker.span_minutes": "{m} min of trading",
   "ticker.span_hours": "{h} h {m} min of trading",
-  "ticker.span_hint_touch": "Two fingers on the chart: change between two dates, then Zoom in to see them up close",
+  "ticker.span_hint_touch": "Press, hold and slide: change between two dates, then Zoom in to see them up close",
   "ticker.span_hint_mouse": "Drag to measure between two dates · ← → step through days",
   "ticker.price_summary": "Price {start} → {end} ({pct}), low {lo}, high {hi}",
   "ticker.hover_ohlc": "open {open} · high {high} · low {low}",

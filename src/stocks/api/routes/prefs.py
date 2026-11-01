@@ -3,11 +3,10 @@
 Two rules shape this module, and both are about what is NOT here.
 
 **Not every stored key is writable.** prefs.json also holds things the server
-stamps (when this account was first seen), things a verified flow owns (the
-Telegram chat id, which is proved by the linking handshake, not asserted by a
-client) and things with a route of their own (the recent-search list). A PATCH
-that accepted the whole file would let a client forge its own signup date and
-point another chat at its digest, so the writable set is an explicit allowlist
+stamps (when this account was first and last seen) and things with a route
+of their own (the recent-search list). A PATCH that accepted the whole file
+would let a client forge its own signup date or its last visit, which the
+reminder reads, so the writable set is an explicit allowlist
 and anything outside it is refused by name rather than ignored.
 
 **Not every caller may write.** A bearer token names nobody and any holder can
@@ -26,9 +25,10 @@ from pydantic import BaseModel, Field, field_validator
 from stocks import accounts
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import HomeSlot, Prefs
+from stocks.api.schemas import HomeSlot, Prefs, ScheduleSlot
 from stocks.api.security import Caller, Who
 from stocks.config import CURRENCIES
+from stocks.notify.schedule import JOBS, PREFS_KEY, slots, valid_zone
 from stocks.portfolio import tax
 
 router = APIRouter(tags=["prefs"])
@@ -83,6 +83,10 @@ class PrefsPatch(BaseModel):
     notify_digest: bool | None = None
     notify_weekly: bool | None = None
     notify_alerts: bool | None = None
+    notify_briefing: bool | None = None
+    # Sent by the app itself (the browser's own zone), not a control: the
+    # clock the scheduled runs keep. null goes back to the default zone.
+    timezone: str | None = None
     chat_panel_open: bool | None = None
     setup_card_dismissed: bool | None = None
     onboarding_dismissed: bool | None = None
@@ -102,6 +106,17 @@ class PrefsPatch(BaseModel):
         if len(set(ids)) != len(ids):
             raise ValueError("each card appears once")
         return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, value: str | None) -> str | None:
+        from stocks.notify.schedule import valid_zone
+
+        if value is None:
+            return value
+        if not valid_zone(value):
+            raise ValueError(f"unknown time zone {value!r}")
+        return value.strip()
 
     @field_validator("currency")
     @classmethod
@@ -163,12 +178,7 @@ class PrefsPatch(BaseModel):
 
 
 def _view(stored: dict) -> Prefs:
-    """The settings a client renders, and nothing else.
-
-    The chat id itself does not cross the wire — a caller needs to know whether
-    Telegram is linked, not what it is linked to, and the id is what the
-    notification cron addresses.
-    """
+    """The settings a client renders, and nothing else."""
     return Prefs(
         currency=str(stored.get("currency") or "EUR"),
         language=stored.get("language"),
@@ -190,9 +200,11 @@ def _view(stored: dict) -> Prefs:
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),
         notify_alerts=bool(stored.get("notify_alerts")),
-        telegram_linked=bool(stored.get("telegram_chat_id")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
         home_layout=_layout(stored.get("home_layout")),
+        notify_briefing=bool(stored.get("notify_briefing", True)),
+        timezone=stored.get("timezone") if valid_zone(stored.get("timezone")) else None,
+        schedules={job: ScheduleSlot(**s) for job, s in slots(stored).items()},
     )
 
 
@@ -252,6 +264,27 @@ def update(
             detail="send at least one setting to change",
         )
     return _view(accounts.update_prefs(account.prefs, changes))
+
+
+@router.put(
+    "/schedules/{job}", response_model=Prefs, summary="Time one scheduled run"
+)
+def save_schedule(account: Writer, job: str, body: ScheduleSlot) -> Prefs:
+    """Switch one run on or off and set its time and days, whole.
+
+    `on` is the job's `notify_<job>` key, the switch the Notifications screen
+    already drew; the time and days merge into `schedules` beside the other
+    jobs'. Neither the run's last day nor its zone moves: a run already sent
+    today is not sent again because its time changed.
+    """
+    if job not in JOBS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no scheduled run {job!r}")
+    stored = accounts.load_prefs(account.prefs).get(PREFS_KEY)
+    merged = dict(stored) if isinstance(stored, dict) else {}
+    merged[job] = {"time": body.time, "days": body.days}
+    return _view(accounts.update_prefs(
+        account.prefs, {f"notify_{job}": body.on, PREFS_KEY: merged},
+    ))
 
 
 # --------------------------------------------------------- the investor profile
@@ -434,3 +467,236 @@ def save(account: Writer, body: ProfileWrite) -> InvestorProfile:
     # With the persona too: a form that just changed what the assistant is told
     # should hand back what it now says, not make the client ask again.
     return _with_persona(load_profile(stored))
+
+
+# ------------------------------------------------------------- the investor plan
+# The numbers the reader holds the book to (`stocks.portfolio.plan`): a mix by
+# kind of asset, caps on one name, one sector and the speculative names, a
+# contribution schedule and a cash reserve. Review sizes its moves to it and
+# the daily card measures the book against it. Like the profile it is a nested
+# object with its own vocabulary, so it has its own route rather than a PATCH
+# field, and it is written whole: a mix whose targets were saved one at a time
+# would add up to 100 only by accident.
+
+
+class PlanMix(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    targets: dict[str, float] = Field(
+        description=(
+            "Percent of the book per bucket (`stocks.portfolio.plan.BUCKETS`); "
+            "adds up to 100."
+        )
+    )
+    band_pp: float = Field(
+        default=5.0, gt=0, le=50, description="Drift allowed either side, in points."
+    )
+
+    @field_validator("targets")
+    @classmethod
+    def _whole_book(cls, value: dict[str, float]) -> dict[str, float]:
+        from stocks.portfolio.plan import BUCKETS, MIX_SLACK_PP
+
+        unknown = sorted(set(value) - set(BUCKETS))
+        if unknown:
+            raise ValueError(f"unknown bucket: {', '.join(unknown)}")
+        if any(not 0 <= v <= 100 for v in value.values()):
+            raise ValueError("each target is a percent between 0 and 100")
+        if abs(sum(value.values()) - 100) > MIX_SLACK_PP:
+            raise ValueError("targets must add up to 100")
+        # In offering order, every bucket present: see `_in_offering_order`.
+        return {b: float(value.get(b, 0.0)) for b in BUCKETS}
+
+
+class PlanLimits(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    max_position_pct: float | None = Field(default=None, gt=0, le=100)
+    max_sector_pct: float | None = Field(default=None, gt=0, le=100)
+    max_speculative_pct: float | None = Field(default=None, gt=0, le=100)
+
+
+class PlanContribution(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    amount: float = Field(gt=0, description="In the account's reporting currency.")
+    every: str = Field(default="monthly", description="`monthly` or `quarterly`.")
+    day: int = Field(default=1, ge=1, le=28)
+
+    @field_validator("every")
+    @classmethod
+    def _known_every(cls, value: str) -> str:
+        from stocks.portfolio.plan import EVERY
+
+        if value not in EVERY:
+            raise ValueError(f"every must be one of {', '.join(EVERY)}")
+        return value
+
+
+class PlanReserve(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    min_pct: float | None = Field(default=None, ge=0, le=100)
+    max_pct: float | None = Field(default=None, ge=0, le=100)
+
+    @field_validator("max_pct")
+    @classmethod
+    def _floor_under_ceiling(cls, value, info):
+        low = info.data.get("min_pct")
+        if value is not None and low is not None and low > value:
+            raise ValueError("min_pct must not be over max_pct")
+        return value
+
+
+class PlanCash(BaseModel):
+    """Money held outside any position, as the reader states it."""
+
+    model_config = {"extra": "ignore"}
+
+    investable: float | None = Field(
+        default=None,
+        ge=0,
+        le=1e12,
+        description=(
+            "Uninvested money meant for the book (a broker's idle balance, a "
+            "savings account), in the reporting currency. Counts as cash."
+        ),
+    )
+    cushion: float | None = Field(
+        default=None,
+        ge=0,
+        le=1e12,
+        description="The emergency fund, kept apart and never counted.",
+    )
+    rate_pct: float | None = Field(
+        default=None, ge=0, le=20, description="Interest the account pays, a year."
+    )
+    as_of: str | None = Field(
+        default=None,
+        description=(
+            "ISO date the amounts were last stated. Set by the server when an "
+            "amount changes; ignored on the way in."
+        ),
+    )
+
+
+class PlanWrite(BaseModel):
+    """The whole plan, replaced. Every block may be left out."""
+
+    model_config = {"extra": "forbid"}
+
+    mix: PlanMix | None = None
+    limits: PlanLimits = PlanLimits()
+    contribution: PlanContribution | None = None
+    reserve: PlanReserve | None = None
+    cash: PlanCash | None = None
+
+
+class InvestorPlan(PlanWrite):
+    model_config = {"extra": "ignore"}
+
+    set: bool = Field(description="Whether this account has ever saved its plan.")
+    actual: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "The book's share per bucket today, in percent — what the form "
+            "draws beside the targets. Empty when no position is priced."
+        ),
+    )
+    currency: str = Field(
+        default="EUR", description="The currency `contribution.amount` is in."
+    )
+    next_contribution: str | None = Field(
+        default=None, description="ISO date of the next scheduled contribution."
+    )
+    cash_stale_days: int | None = Field(
+        default=None,
+        description=(
+            "Days since the stated cash was updated, once it is old enough to "
+            "ask again (`plan.CASH_STALE_DAYS`); null while fresh."
+        ),
+    )
+
+
+def _actual(paths: UserPaths, investable: float = 0.0) -> dict[str, float]:
+    """Today's mix by bucket, with the stated `investable` cash in the cash
+    bucket (`plan.with_cash`), or {} when the book cannot be read."""
+    from stocks import obs
+    from stocks.api import home, loaders
+    from stocks.api.deps import reporting_currency
+    from stocks.portfolio import plan as plans
+
+    try:
+        db = str(paths.db)
+        tbl = home.enriched(db, loaders.db_mtime(db), reporting_currency(paths))
+    except Exception as exc:  # noqa: BLE001 — the form stands without the bar
+        obs.warn("plan.actual_unavailable", error_type=type(exc).__name__)
+        return {}
+    if tbl is None or tbl.empty or "weight" not in tbl:
+        return plans.with_cash({}, 0.0, investable)
+    shares = plans.buckets(tbl["weight"].to_dict(), loaders.asset_kind)
+    value = float(tbl["value"].sum(skipna=True)) if "value" in tbl else 0.0
+    return plans.with_cash(shares, value, investable)
+
+
+def _plan_out(paths: UserPaths, prefs: dict) -> InvestorPlan:
+    from datetime import date
+
+    from stocks.api.deps import reporting_currency
+    from stocks.portfolio import plan as plans
+
+    investor = plans.load(prefs)
+    today = date.today()
+    upcoming = plans.next_contribution(investor, today)
+    return InvestorPlan(
+        **investor.to_dict(),
+        actual=_actual(paths, investor.investable),
+        currency=reporting_currency(paths),
+        next_contribution=upcoming.isoformat() if upcoming else None,
+        cash_stale_days=plans.cash_stale(investor, today),
+    )
+
+
+@router.get("/plan", response_model=InvestorPlan, summary="The investor plan")
+def plan(account: Account) -> InvestorPlan:
+    """The stored plan, read the way the app applies it, with today's mix.
+
+    A block that does not hold together is not served (`plan.parse`), so the
+    form never shows a line the app is not drawing.
+    """
+    return _plan_out(account, accounts.load_prefs(account.prefs))
+
+
+@router.put("/plan", response_model=InvestorPlan, summary="Replace it")
+def save_plan(account: Writer, body: PlanWrite) -> InvestorPlan:
+    """Store the whole plan and mark it set; a merge into prefs.json, like
+    the profile, so a setting saved next door survives. The cash block is
+    dated here, when an amount changed (`plan.stamp_cash`): the client's own
+    date would be a clock nobody checks."""
+    from datetime import date
+
+    from stocks.portfolio import plan as plans
+
+    old = plans.load(accounts.load_prefs(account.prefs)).cash
+    raw = body.model_dump()
+    raw["cash"] = plans.stamp_cash(raw.get("cash"), old, date.today())
+    stored = accounts.update_prefs(account.prefs, {plans.PREFS_KEY: {**raw, "set": True}})
+    return _plan_out(account, stored)
+
+
+@router.put(
+    "/plan/contribution",
+    response_model=InvestorPlan,
+    summary="Set only its contribution",
+)
+def save_plan_contribution(account: Writer, body: PlanContribution) -> InvestorPlan:
+    """Replace the plan's contribution and keep every other block as stored —
+    the projection's "use in my plan", which knows the amount and nothing of
+    the mix or the cash. Saving it sets the plan, as any plan write does."""
+    from stocks.portfolio import plan as plans
+
+    stored = accounts.load_prefs(account.prefs).get(plans.PREFS_KEY)
+    raw = dict(stored) if isinstance(stored, dict) else {}
+    raw["contribution"] = body.model_dump()
+    stored = accounts.update_prefs(account.prefs, {plans.PREFS_KEY: {**raw, "set": True}})
+    return _plan_out(account, stored)

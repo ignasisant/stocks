@@ -899,6 +899,8 @@ def test_session_quote_prices_the_premarket_move(monkeypatch):
     assert quote["session"] == "pre"
     assert quote["price"] == 435.0
     assert abs(quote["pct"] - (435.0 / 500.0 - 1)) < 1e-9
+    # The session the premarket starts from, for "yesterday plus this morning".
+    assert abs(quote["prior"] - (500.0 / 480.0 - 1)) < 1e-9
 
 
 def test_session_quote_carries_the_years_extremes_off_the_same_row(monkeypatch):

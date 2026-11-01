@@ -12,8 +12,11 @@ Hand-written and shipped as files, in every language the app speaks:
   ordered list of lesson ids. A path's name and blurb are UI copy
   (`learn.path_<id>_title` / `_body` in `locales/<lang>/learn.json`).
 - `web/learn/<lang>/<lesson-id>.md` — one lesson: frontmatter (`id`, `path`,
-  `title`, `minutes`, `as_of`, `terms`, `app`) and a short markdown body. The
-  same ids exist in every language; `tests/test_learn.py` holds them together.
+  `title`, `minutes`, `as_of`, `terms`, `app`, and optionally `slug` and
+  `description`) and a short markdown body. The same ids exist in every
+  language; `tests/test_learn.py` holds them together. `slug` and
+  `description` are the lesson's public page (`web/guides.py`): its address in
+  that language, and the line a search result shows under the title.
 - `web/learn/<lang>/glossary.yaml` — term id → label, aliases, a one- or
   two-sentence definition, and the lesson that teaches it, when one does.
 
@@ -60,6 +63,11 @@ class Lesson:
     # query (`portfolio?tab=risk`). Empty when nothing on screen shows it.
     app: str
     body: str
+    # The public page's address segment in this language (`web/guides.py`);
+    # the id when the file names none.
+    slug: str = ""
+    # The search-result line; "" lets the page fall back to the opening one.
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,8 @@ def parse_lesson(text: str, name: str = "") -> Lesson:
             raise ValueError(f"{name}: frontmatter needs {field!r}")
     if not _ID.match(meta["id"]):
         raise ValueError(f"{name}: id {meta['id']!r} is not kebab-case")
+    if not _ID.match(meta.get("slug") or meta["id"]):
+        raise ValueError(f"{name}: slug {meta['slug']!r} is not kebab-case")
     try:
         minutes = int(meta["minutes"])
     except ValueError:
@@ -115,6 +125,8 @@ def parse_lesson(text: str, name: str = "") -> Lesson:
         terms=_list(meta.get("terms", "")),
         app=meta.get("app", ""),
         body=body,
+        slug=meta.get("slug") or meta["id"],
+        description=meta.get("description", ""),
     )
 
 
@@ -143,6 +155,11 @@ def lessons(lang: str) -> dict[str, Lesson]:
 
 def lesson(lesson_id: str, lang: str | None) -> Lesson | None:
     return lessons(_lang(lang)).get(lesson_id)
+
+
+def by_slug(slug: str, lang: str | None) -> Lesson | None:
+    """The lesson whose public address in `lang` is `slug`."""
+    return next((x for x in lessons(_lang(lang)).values() if x.slug == slug), None)
 
 
 def neighbours(lesson_id: str) -> tuple[str | None, str | None]:

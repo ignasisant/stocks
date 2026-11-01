@@ -524,6 +524,11 @@ N_COUNTRY_HEAVY = "country_heavy"
 N_CURRENCY_HEAVY = "currency_heavy"
 N_FUND_CORE = "fund_core"
 N_CASH_HEAVY = "cash_heavy"
+# A kind of asset outside the band the reader's plan keeps it in
+# (`portfolio.plan.drift`): over it the page buys no more of it, under it says
+# where the next money goes.
+N_PLAN_OVER = "plan_over"
+N_PLAN_UNDER = "plan_under"
 
 #: Kinds that are a fund held as the book's base (not money-market).
 FUND_KINDS = frozenset({"equity_fund", "bond_fund", "closed_end", "fund"})
@@ -1396,6 +1401,10 @@ class Note:
     country: str | None = None
     #: ISO quote currency, for `currency_heavy`.
     currency: str | None = None
+    #: The plan's bucket (`portfolio.plan.BUCKETS`) and its target share, for
+    #: `plan_over` / `plan_under`.
+    bucket: str | None = None
+    target: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1409,6 +1418,72 @@ class BookRow:
     country: str | None = None
     #: ISO quote currency, minor units folded (GBp is GBP); None if unknown.
     currency: str | None = None
+
+
+@dataclass(frozen=True)
+class Limits:
+    """The lines the reader drew in their plan (`portfolio.plan`), where they
+    replace the page's own; the defaults are the page's, so a book without a
+    plan reads exactly as before. Fractions of the book.
+
+    `position` is a cap on one company: set, it is the concentration line
+    whatever the count (`concentration_line`), and no add takes a name past
+    it. `speculative` is the most one early-stage bet may weigh. `crypto` is
+    where coins are named, `cash` where idle money-market funds are.
+    """
+
+    position: float | None = None
+    sector: float = SECTOR_LINE
+    speculative: float = SPEC_MAX
+    cash: float = CASH_LINE
+    crypto: float = CRYPTO_LINE
+
+    @property
+    def drawn(self) -> bool:
+        """True when any line is the reader's rather than the page's."""
+        return self != PAGE_LINES
+
+    @classmethod
+    def from_plan(cls, plan, bets: int = 0) -> Limits:
+        """The plan's caps as the engine reads them. The plan caps the
+        speculative names together; that is shared over the `bets` the book
+        holds, one bet's worth when it holds none yet. A mix sets where coins
+        are named (their target plus the band), a reserve where cash is."""
+        limits = plan.limits
+        out = cls()
+        if limits.max_position_pct is not None:
+            out = replace(out, position=limits.max_position_pct / 100)
+        if limits.max_sector_pct is not None:
+            out = replace(out, sector=limits.max_sector_pct / 100)
+        if limits.max_speculative_pct is not None:
+            out = replace(
+                out, speculative=limits.max_speculative_pct / 100 / max(1, bets)
+            )
+        if plan.mix is not None:
+            out = replace(
+                out, crypto=(plan.mix.targets.get("crypto", 0.0) + plan.mix.band_pp) / 100
+            )
+        if plan.reserve is not None and plan.reserve.max_pct is not None:
+            out = replace(out, cash=plan.reserve.max_pct / 100)
+        return out
+
+
+# The page's own lines, as the default every function below reads.
+PAGE_LINES = Limits()
+
+
+def plan_notes(drifts) -> list[Note]:
+    """One note per bucket outside the plan's band (`portfolio.plan.drift`),
+    furthest first: the share it is against the share the plan gives it."""
+    return [
+        Note(
+            N_PLAN_OVER if d.side == "over" else N_PLAN_UNDER,
+            bucket=d.bucket,
+            weight=d.actual_pct / 100,
+            target=d.target_pct / 100,
+        )
+        for d in drifts
+    ]
 
 
 def cautions(metrics: Mapping) -> list[str]:
@@ -1461,10 +1536,13 @@ def company(kind: str | None) -> bool:
     return _kind_verdict(kind, held=True) is None
 
 
-def concentration_line(names: int | None) -> float | None:
+def concentration_line(names: int | None, cap: float | None = None) -> float | None:
     """The weight from which one company is a concentration in a book of
     `names` companies; None when there are too few for it to be one
-    position's fault. An unknown count reads as a wide book."""
+    position's fault. An unknown count reads as a wide book. The reader's own
+    `cap` (`Limits.position`) is the line whatever the count."""
+    if cap is not None:
+        return cap
     if names is None:
         return CONCENTRATED
     if names < FEW_NAMES:
@@ -1491,14 +1569,17 @@ def _even_share(names: int | None, line: float) -> float:
     return min(share, line)
 
 
-def book_notes(rows: list[BookRow], reporting: str | None = None) -> list[Note]:
+def book_notes(
+    rows: list[BookRow], reporting: str | None = None, limits: Limits = PAGE_LINES
+) -> list[Note]:
     """What the page says about the book as a whole, before any one row.
 
     One or two companies carrying the book, one sector carrying `SECTOR_LINE`
     of it across two companies or more, one country carrying `COUNTRY_LINE`
     across `COUNTRY_NAMES`, one quote currency other than `reporting`
     carrying `CURRENCY_LINE`, funds past `FUND_CORE_LINE` and coins past
-    `CRYPTO_LINE` are each named once.
+    `CRYPTO_LINE` are each named once; a plan's `limits` move the sector and
+    coin lines.
     """
     companies = [r for r in rows if company(r.kind)]
     names = len(companies)
@@ -1513,7 +1594,7 @@ def book_notes(rows: list[BookRow], reporting: str | None = None) -> list[Note]:
         heavy = [
             Note(N_SECTOR_HEAVY, count=len(ws), sector=sector, weight=sum(ws))
             for sector, ws in sectors.items()
-            if len(ws) >= 2 and sum(ws) >= SECTOR_LINE
+            if len(ws) >= 2 and sum(ws) >= limits.sector
         ]
         notes += sorted(heavy, key=lambda n: -(n.weight or 0.0))
     for country, ws in _grouped(companies, lambda r: r.country).items():
@@ -1531,7 +1612,7 @@ def book_notes(rows: list[BookRow], reporting: str | None = None) -> list[Note]:
     if funds >= FUND_CORE_LINE:
         notes.append(Note(N_FUND_CORE, count=names, weight=funds))
     coins = sum(r.weight or 0.0 for r in rows if r.kind == "crypto")
-    if coins >= CRYPTO_LINE:
+    if coins >= limits.crypto:
         notes.append(Note(N_CRYPTO_HEAVY, weight=coins))
     return notes
 
@@ -1544,13 +1625,19 @@ def _grouped(rows: list[BookRow], key) -> dict[str, list[float]]:
     return out
 
 
-def cash_note(rows: list[BookRow], verdicts: list[str], waiting: int = 0) -> Note | None:
+def cash_note(
+    rows: list[BookRow],
+    verdicts: list[str],
+    waiting: int = 0,
+    limits: Limits = PAGE_LINES,
+) -> Note | None:
     """Money-market lines past `CASH_LINE` while the plan has names to add to
     or buy (`verdicts`, held and outside), or `waiting` adds the sales do not
-    pay for (`R_NEW_MONEY`): the cash the proposals could use."""
+    pay for (`R_NEW_MONEY`): the cash the proposals could use. A plan's
+    reserve ceiling is the line instead (`limits.cash`)."""
     cash = sum(r.weight or 0.0 for r in rows if r.kind == "money_market")
     wanted = sum(v in (ADD, BUY) for v in verdicts) + waiting
-    if cash < CASH_LINE or not wanted:
+    if cash < limits.cash or not wanted:
         return None
     return Note(N_CASH_HEAVY, count=wanted, weight=cash)
 
@@ -1564,6 +1651,7 @@ def judge_held(
     names: int | None = None,
     company_share: float = 1.0,
     was: str | None = None,
+    limits: Limits = PAGE_LINES,
 ) -> Verdict:
     """The verdict on one name the book holds.
 
@@ -1577,17 +1665,20 @@ def judge_held(
     is the move the page last proposed for it and still stands (the
     decision journal's open proposal): a sale or an add already on the table
     holds to the plain line, a new one has to clear `SELL_BELOW` or
-    `ADD_MARGIN`.
+    `ADD_MARGIN`. `limits` are the reader's plan's lines where they drew
+    them: a cap on one company is the concentration line, and no add goes
+    past it.
     """
     if by_kind := _kind_verdict(kind, held=True):
         return by_kind
     s = score(metrics or {})
     shown = _shown(metrics)
-    line = concentration_line(names)
+    line = concentration_line(names, limits.position)
+    spec = limits.speculative
     if s.stage == EARLY:
         reasons = _early_reasons(metrics or {})
-        if weight is not None and weight > SPEC_MAX:
-            return Verdict(TRIM, (R_BET_HEAVY, *reasons), None, None, SPEC_MAX, shown)
+        if weight is not None and weight > spec:
+            return Verdict(TRIM, (R_BET_HEAVY, *reasons), None, None, spec, shown)
         return Verdict(BET, tuple(reasons), None, None, None, shown)
     if s.quality is None or s.cheapness is None:
         unscored = _unscored(s, shown)
@@ -1608,7 +1699,9 @@ def judge_held(
     q, c = s.quality, s.cheapness
     w = weight
     small = small_line(names)
-    add_to = min(SPEC_MAX, add_line(names)) if s.stage == GROWTH else add_line(names)
+    add_to = min(spec, add_line(names)) if s.stage == GROWTH else add_line(names)
+    if limits.position is not None:
+        add_to = min(add_to, limits.position)
     reasons = _business_reasons(metrics or {}, s)
     clean = q >= GOOD and c >= CHEAP and not s.suspect and not _cautions(metrics or {}, s)
     over = w is not None and line is not None and w >= line
@@ -1739,6 +1832,7 @@ def hold_for_cost(verdict: Verdict, tax_share: float | None) -> Verdict:
 def redeploy(
     book: list[tuple[float | None, Verdict]],
     sectors: list[str | None] | None = None,
+    sector_line: float = SECTOR_LINE,
 ) -> list[Verdict]:
     """Where the money the sales free goes before it is left as cash.
 
@@ -1747,7 +1841,8 @@ def redeploy(
     adds already planned is spread over the names good and cheap enough to
     add to, best first, each up to its `fill`; a top-up under `SMALL` of the
     book is not worth a trade. No add, planned or spread, takes a sector past
-    `SECTOR_LINE`. Adds are never funded with money the plan does not raise:
+    `sector_line` (`SECTOR_LINE`, or the plan's cap). Adds are never funded
+    with money the plan does not raise:
     the adds the sales cannot pay for wait as holds marked `R_NEW_MONEY`
     with the weight new money would take them to (`want`), and what has no
     home stays unplaced.
@@ -1762,7 +1857,7 @@ def redeploy(
 
     def room(i: int) -> float:
         sector = sector_of[i]
-        return SECTOR_LINE - after[sector] if sector else float("inf")
+        return sector_line - after[sector] if sector else float("inf")
 
     # A planned add into a sector already past the line shrinks to fit it,
     # weakest first, or is held.
@@ -1838,10 +1933,11 @@ def place_outside(
     book: list[tuple[float | None, Verdict]],
     sectors: list[str | None],
     buys: list[tuple[Verdict, str | None]],
+    sector_line: float = SECTOR_LINE,
 ) -> tuple[list[float | None], float]:
     """What the plan's sales free and the book's own adds leave, spread over
     the outside Buys, best first, each up to its `fill`; a sector already at
-    `SECTOR_LINE` takes none, and a position under `SMALL` is not opened.
+    `sector_line` takes none, and a position under `SMALL` is not opened.
 
     `book` and `sectors` are the held names after `redeploy`, `buys` each
     outside name's verdict and sector. Returns each outside name's target
@@ -1870,7 +1966,7 @@ def place_outside(
         v, sector = buys[i]
         if v.verdict != BUY or v.fill is None:
             continue
-        room = SECTOR_LINE - after.get(sector, 0.0) if sector else float("inf")
+        room = sector_line - after.get(sector, 0.0) if sector else float("inf")
         take = min(v.fill, spare, room)
         if take < SMALL:
             continue
@@ -1887,6 +1983,7 @@ def judge_candidate(
     kind: str | None = "stock",
     names: int | None = None,
     was: str | None = None,
+    limits: Limits = PAGE_LINES,
 ) -> Verdict:
     """The verdict on one name the book does not hold yet. A Buy's `fill` is
     the weight an add would take it to in a book of `names` companies, for
@@ -1916,7 +2013,13 @@ def judge_candidate(
         reasons = (*reasons, R_CLOSE_CALL)
     fill = None
     if verdict == BUY:
-        fill = min(SPEC_MAX, add_line(names)) if s.stage == GROWTH else add_line(names)
+        fill = (
+            min(limits.speculative, add_line(names))
+            if s.stage == GROWTH
+            else add_line(names)
+        )
+        if limits.position is not None:
+            fill = min(fill, limits.position)
     return Verdict(verdict, reasons, q, c, None, shown, fill)
 
 

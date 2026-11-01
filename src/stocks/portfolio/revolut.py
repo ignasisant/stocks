@@ -17,9 +17,11 @@ Design choices (see module tests):
 * Stock splits are NOT auto-imported: Revolut reports the resulting share count,
   not the split ratio positions.py needs, and a wrong ratio corrupts every later
   lot. Split rows are surfaced in `skipped` with a note to add them by hand.
-* Dividends map to price=gross total, fee=0. Revolut's statement does not break
-  out withholding tax, so the Spanish double-tax credit will be understated —
-  edit the fee on dividend rows if your statement reports withholding.
+* Dividends map to price=total, fee=0 — and that total is what arrived, NET of
+  the tax withheld at source, which the statement never prints. Booked as is,
+  the gross is short and nothing is creditable; `stocks.portfolio.heal` puts
+  the withholding back from Yahoo's per-share history (`net_dividend` names
+  the rows it may touch), since this module reads the file and nothing else.
 * A return of capital maps to action="capital", price=total, the same shape:
   positions.py takes it off the cost of the shares held that day.
 
@@ -40,6 +42,8 @@ from stocks.portfolio.statement import (
     parse_date,
 )
 
+NOTE = "revolut"  # every row's note; the broker it came from (fees.broker_of)
+
 # Canonical Revolut column names, lowercased. Matching is case-insensitive and
 # tolerant of surrounding whitespace; alternates cover older/newer exports.
 _COLS = {
@@ -55,6 +59,16 @@ _COLS = {
     # stays implied by the total.
     "fee": ("fee",),
 }
+
+
+def net_dividend(tx: Transaction) -> bool:
+    """A dividend this importer booked: the cash that arrived, nothing withheld."""
+    return (
+        tx.action == "dividend"
+        and tx.note.strip().lower() == NOTE
+        and tx.fee == 0
+        and tx.price > 0
+    )
 
 
 # ------------------------------------------------------------------ type -> action
@@ -121,7 +135,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
             action=action,
             price=total,
             currency=currency,
-            note="revolut",
+            note=NOTE,
         )
 
     qty = row.money("quantity")
@@ -155,7 +169,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
         price=price,
         currency=currency,
         fee=fee,
-        note="revolut",
+        note=NOTE,
     )
 
 

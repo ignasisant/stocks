@@ -304,9 +304,9 @@ def test_the_form_answered_in_words_is_put_away(account, signed_in, hears):
     assert old["state"] == "cancelled"
 
 
-def test_on_telegram_a_missing_figure_is_asked_in_words(account, hears):
+def test_headless_a_missing_figure_is_asked_in_words(account, hears):
     hears(SALE_SAID)
-    asked = bot(account, "he vendido grifols a 13 el viernes")
+    asked = typed(account, "he vendido grifols a 13 el viernes")
     assert asked.proposal is None
     assert asked.text == ("Para apuntar la venta de GRF.MC me falta saber "
                           "cuántas acciones.")
@@ -394,35 +394,35 @@ def test_a_listing_asks_nothing(account, signed_in, hears):
     assert text.startswith("2 recorded trades:")
 
 
-# -------------------------------------------------------------- Telegram
+# ------------------------------------------------------------- Headless
 
 
-def bot(account, message: str) -> engine.Reply:
+def typed(account, message: str) -> engine.Reply:
     return engine.answer(prefs=dict(PREFS), prefs_path=account.prefs,
                          chat_path=account.chat, watchlist=account.watchlist,
                          db=account.db, message=message, lang="es")
 
 
-def test_on_telegram_a_ledger_edit_waits_for_a_typed_yes(account, hears):
-    """The bot acts on watchlist requests at once; the book it only touches
+def test_headless_a_ledger_edit_waits_for_a_typed_yes(account, hears):
+    """A headless caller acts on watchlist requests at once; the book it only touches
     once the reader writes "sí" under the question."""
     hears(Action("delete_transactions", "GRF.MC", {"broker": "ibkr"}))
-    asked = bot(account, "borra la compra de grifols en ibkr")
+    asked = typed(account, "borra la compra de grifols en ibkr")
     assert asked.proposal and asked.proposal["state"] == "pending"
     assert asked.text.endswith("Responde «sí» para aplicarlo o «no» para dejarlo.")
     assert len(all_transactions(account.db)) == 3
 
-    done = bot(account, "sí")
+    done = typed(account, "sí")
     assert done.proposal and done.proposal["state"] == "done"
     assert [t.note for t in all_transactions(account.db)] == ["degiro GRIFOLS"] * 2
     (change,) = edits.history(account.db)
-    assert change.source == "telegram"
+    assert change.source == "chat"
 
 
-def test_on_telegram_a_no_leaves_the_book_alone(account, hears):
+def test_headless_a_no_leaves_the_book_alone(account, hears):
     hears(Action("delete_transactions", "GRF.MC", {"broker": "ibkr"}))
-    bot(account, "borra la compra de grifols en ibkr")
-    said = bot(account, "no")
+    typed(account, "borra la compra de grifols en ibkr")
+    said = typed(account, "no")
     assert said.proposal and said.proposal["state"] == "cancelled"
     assert len(all_transactions(account.db)) == 3
 
@@ -443,10 +443,10 @@ def test_a_sale_told_over_several_messages_becomes_one_proposal(
         return next(heard, None)
 
     monkeypatch.setattr(tools, "detect", detect)
-    asked = bot(account, "Ayer vendí Grifols")
+    asked = typed(account, "Ayer vendí Grifols")
     assert asked.proposal is None and "GRF.MC" in asked.text
 
-    offered = bot(account, "100 a 12,5")
+    offered = typed(account, "100 a 12,5")
     assert offered.proposal and offered.proposal["state"] == "pending"
     assert "Earlier in this conversation" in contexts[-1]
     assert "User: Ayer vendí Grifols" in contexts[-1]

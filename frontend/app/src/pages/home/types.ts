@@ -70,6 +70,9 @@ export type DailyItem = {
   tickers: string[];
   /** alerts — an alert of the reader's own fired; watch — everything else. */
   section?: "alerts" | "watch";
+  /** The page that resolves it, a shell path with its query (`/review`,
+   * `/profile?tab=plan`); empty for a context line. */
+  go?: string;
 };
 
 type DailyBookRow = {
@@ -142,6 +145,11 @@ export type Mover = {
    * figure — the last completed session, real but not moving. Null otherwise.
    */
   active?: boolean | null;
+  /**
+   * Day window only: the name is in US premarket, and `pct` is its last
+   * session compounded with the premarket move on top of it.
+   */
+  premarket?: boolean;
 };
 
 export type Movers = {
@@ -374,7 +382,7 @@ export type Onboarding = {
    * a client talking to an API that predates it falls back to the session.
    */
   signed_in?: boolean;
-  /** login | import | ai | telegram — the four connectable capabilities. */
+  /** login | import | plan | ai | notify — the four connectable capabilities. */
   setup: Record<string, boolean>;
   /** search | ask | watchlist — the three that need no setup at all. */
   explore: Record<string, boolean>;

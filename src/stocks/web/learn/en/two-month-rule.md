@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: two_month_rule, wash_sale
 app: portfolio?tab=tax
+slug: spain-two-month-rule
+description: Buy the same stock back within two months of selling at a loss and Spain defers the loss. How the rule works, with an example.
 ---
 You sell at a loss to offset gains and, the next day, buy the same stock back. Can you claim the loss? In Spain, usually not.
 

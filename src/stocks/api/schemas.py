@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Health(BaseModel):
@@ -2544,6 +2544,30 @@ class ProjectionSleeve(BaseModel):
     share: float = Field(description="Share of each monthly contribution it gets.")
 
 
+class ProjectionPlan(BaseModel):
+    """What the investor plan says about the inputs, for the page to offer
+    and to write back (`PUT /plan/contribution`)."""
+
+    currency: str = Field(description="The plan's currency: the reporting one.")
+    monthly: float | None = Field(
+        default=None,
+        description="The plan's contribution per month, in `base`; null without one.",
+    )
+    amount: float | None = Field(
+        default=None, description="The contribution as stored, in `currency`."
+    )
+    every: str | None = Field(default=None, description="`monthly` or `quarterly`.")
+    day: int | None = None
+    crypto_share: float | None = Field(
+        default=None,
+        description="The mix's crypto target, as a fraction; null without a mix.",
+    )
+    years: int | None = Field(
+        default=None,
+        description="The profile's horizon in projection years; null when never saved.",
+    )
+
+
 class Projection(BaseModel):
     """A range for the book's value, month by month, some years out.
 
@@ -2573,6 +2597,9 @@ class Projection(BaseModel):
     monthly: float = Field(description="Contribution added at each month's end.")
     monthly_suggested: float = Field(
         description="Average net monthly money put in over the last 12 months."
+    )
+    plan: ProjectionPlan | None = Field(
+        default=None, description="The investor plan's inputs; null for a guest."
     )
     real: bool = Field(
         default=False, description="True when the future is in today's money."
@@ -3408,6 +3435,33 @@ class HomeSlot(BaseModel):
     hidden: bool = False
 
 
+class ScheduleSlot(BaseModel):
+    """One scheduled run: whether it goes out, at what local time, on which days."""
+
+    model_config = {"extra": "forbid"}
+
+    on: bool = True
+    time: str = Field(description='Local wall-clock time, "HH:MM".')
+    days: list[int] = Field(description="Weekdays it runs on, Monday = 0.")
+
+    @field_validator("time")
+    @classmethod
+    def _clock(cls, value: str) -> str:
+        from stocks.notify.schedule import parse_time
+
+        at = parse_time(value)
+        if at is None:
+            raise ValueError('time is "HH:MM"')
+        return at.strftime("%H:%M")
+
+    @field_validator("days")
+    @classmethod
+    def _weekdays(cls, value: list[int]) -> list[int]:
+        if any(not 0 <= d <= 6 for d in value):
+            raise ValueError("days are weekday numbers, Monday = 0")
+        return sorted(set(value))
+
+
 class Prefs(BaseModel):
     """The account's settings as a client renders them.
 
@@ -3450,15 +3504,22 @@ class Prefs(BaseModel):
             "means the default layout."
         ),
     )
-    telegram_linked: bool = Field(
-        default=False,
+    chat_panel_open: bool = False
+    notify_briefing: bool = True
+    timezone: str | None = Field(
+        default=None,
         description=(
-            "Whether a Telegram chat is linked. The chat id itself stays on the "
-            "server: a caller needs to know that notifications can be sent, not "
-            "where the cron sends them."
+            "IANA zone the scheduled runs keep time in; null until the browser "
+            "has sent one (`notify.schedule.DEFAULT_ZONE` meanwhile)."
         ),
     )
-    chat_panel_open: bool = False
+    schedules: dict[str, ScheduleSlot] = Field(
+        default_factory=dict,
+        description=(
+            "The scheduled runs (`briefing`, `digest`, `weekly`) as the app "
+            "applies them, defaults filled in."
+        ),
+    )
 
 
 class Tags(BaseModel):
@@ -3851,7 +3912,8 @@ class Change(BaseModel):
 
     id: int
     at: str = Field(description="ISO-8601 UTC.")
-    source: str = Field(description="chat, telegram, mcp, api or import.")
+    source: str = Field(
+        description="chat, mcp, api or import (older rows may read 'telegram').")
     summary: str
     changes: list[RowChange]
     undone_at: str | None = None
@@ -3916,6 +3978,11 @@ class DailyItem(BaseModel):
     )
     line: str
     tickers: list[str] = Field(default_factory=list)
+    go: str = Field(
+        default="",
+        description="The page that resolves it, as a shell path with its "
+        "query (`/review`, `/profile?tab=plan`); empty for a context line.",
+    )
     section: Literal["alerts", "watch"] = Field(
         default="watch",
         description=(
@@ -4373,6 +4440,13 @@ class Mover(BaseModel):
             "windows, which are close-to-close by construction."
         ),
     )
+    premarket: bool = Field(
+        default=False,
+        description=(
+            "Day window only: the name is in US premarket, and `pct` is its last "
+            "regular session compounded with the premarket move on top of it."
+        ),
+    )
 
 
 class Movers(BaseModel):
@@ -4814,7 +4888,8 @@ class ReviewNote(BaseModel):
     key: str = Field(
         description=(
             "`review.note_<key>`: few_names, sector_heavy, crypto_heavy, "
-            "tax_offset, country_heavy, currency_heavy, fund_core, cash_heavy."
+            "tax_offset, country_heavy, currency_heavy, fund_core, cash_heavy, "
+            "plan_over, plan_under."
         )
     )
     count: int | None = Field(default=None, description="Names it counts.")
@@ -4829,6 +4904,49 @@ class ReviewNote(BaseModel):
     )
     country: str | None = Field(default=None, description="Yahoo's country, English.")
     currency: str | None = Field(default=None, description="ISO quote currency.")
+    bucket: str | None = Field(
+        default=None,
+        description=(
+            "The investor plan's bucket: stocks, equity_funds, bonds, cash, crypto."
+        ),
+    )
+    target: float | None = Field(
+        default=None, description="The share of the book the plan gives `bucket`."
+    )
+
+
+class ReviewDrift(BaseModel):
+    """A bucket of the book outside the band the investor plan keeps it in."""
+
+    bucket: str
+    weight: float = Field(description="Its share of the book today.")
+    target: float = Field(description="The share the plan gives it.")
+    side: Literal["over", "under"]
+
+
+class ReviewInvestorPlan(BaseModel):
+    """How the reader's own plan (`/prefs/plan`) shaped this page."""
+
+    set: bool = Field(default=False, description="The account has saved a plan.")
+    limits_used: bool = Field(
+        default=False,
+        description="A cap from the plan replaced one of the page's own lines.",
+    )
+    drift: list[ReviewDrift] = Field(default_factory=list)
+    next_contribution: str | None = Field(
+        default=None, description="ISO day of the next scheduled contribution."
+    )
+    contribution: float | None = Field(
+        default=None,
+        description="Its amount in `base`: part of what `new_money` is sized to.",
+    )
+    cash: float | None = Field(
+        default=None,
+        description=(
+            "The uninvested cash the plan states, in `base`: counted in the "
+            "mix's cash bucket and spent by `new_money` with the contribution."
+        ),
+    )
 
 
 class ReviewLines(BaseModel):
@@ -4937,6 +5055,7 @@ class Review(BaseModel):
         default_factory=list, description="The `add` tickers, as understood."
     )
     lines: ReviewLines | None = None
+    investor_plan: ReviewInvestorPlan = Field(default_factory=ReviewInvestorPlan)
     pending: int = Field(
         default=0,
         description=(

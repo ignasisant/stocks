@@ -45,7 +45,6 @@ export type Prefs = {
   notify_digest: boolean;
   notify_weekly: boolean;
   notify_alerts: boolean;
-  telegram_linked: boolean;
   chat_panel_open: boolean;
   /** What is switched on, put away. */
   setup_card_dismissed: boolean;
@@ -55,7 +54,15 @@ export type Prefs = {
   profile_prompt_off: boolean;
   /** Home's cards in the reader's order; null is the default page. */
   home_layout: { id: string; hidden: boolean }[] | null;
+  notify_briefing?: boolean;
+  /** The IANA zone the scheduled runs keep time in; null until the app sent one. */
+  timezone?: string | null;
+  /** The scheduled runs (`briefing`, `digest`, `weekly`), defaults filled in. */
+  schedules?: Record<string, Schedule>;
 };
+
+/** One scheduled run: on or off, its local "HH:MM", its weekdays (Monday = 0). */
+export type Schedule = { on: boolean; time: string; days: number[] };
 
 /**
  * Settings and a refetch on both arms, `me` on only one.

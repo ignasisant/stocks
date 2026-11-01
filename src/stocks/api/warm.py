@@ -83,13 +83,14 @@ def seen_recently(last_seen: object, today: date, days: int = RECENT_DAYS) -> bo
 
 
 def warm_account(db: str, watchlist: str | Path, base: str) -> None:
-    """Repair the book's missing splits, then fill the memos one Home, one
-    Portfolio and one Today read: the book's close download and the three
-    frames built from it, the watchlist's year, then what Today's sections
-    fetch for the largest names."""
+    """Repair the book's missing splits and the app's own import mistakes,
+    then fill the memos one Home, one Portfolio and one Today read: the book's
+    close download and the three frames built from it, the watchlist's year,
+    then what Today's sections fetch for the largest names."""
     from stocks.api.home import closes_tuple, year_closes
 
     repair_splits(db)
+    heal_book(db)
     mtime = loaders.db_mtime(db)
     loaders.held_closes(db, mtime)
     tbl = loaders.positions_table(db, mtime, base)
@@ -124,6 +125,24 @@ def repair_splits(db: str) -> None:
     except Exception as exc:  # noqa: BLE001 — see above
         obs.warn("api.warm_splits_failed", error_type=type(exc).__name__)
 
+
+
+def heal_book(db: str) -> None:
+    """Write the app's own once-per-book repairs (`portfolio.heal`) before
+    pricing, like the splits above. Best effort for the same reason."""
+    from stocks.portfolio import heal
+
+    try:
+        heal.fee_in_coins(db)
+    except Exception as exc:  # noqa: BLE001 — see repair_splits
+        obs.warn("api.warm_heal_failed", error_type=type(exc).__name__)
+    try:
+        heal.net_dividends(
+            db, lambda names: loaders.dividend_histories(tuple(names))
+        )
+    except Exception as exc:  # noqa: BLE001 — see repair_splits
+        obs.warn("api.warm_heal_failed", kind=heal.NET_DIVIDENDS,
+                 error_type=type(exc).__name__)
 
 # What Today's comparisons and insider section read first: the Review metrics
 # of the largest names and the Form 4 feed of the largest US ones. The
@@ -171,20 +190,11 @@ def warm_more(db: str, watchlist: str | Path, base: str) -> None:
     tab and the Pulso book card (`basket_report`), the Posiciones spots, the
     calendar's earnings and dividends. Each on its own: a feed that refuses
     costs that memo, never the rest of the pass."""
-    from stocks.data.crypto import is_crypto
-    from stocks.data.funds import is_fund
-
     mtime = loaders.db_mtime(db)
     entries = load_watchlist(Path(watchlist))
-    # The calendar's own key: the watchlist's reporting names, sorted
-    # (`routes/earnings`). Anything else warms an entry nobody reads.
-    reporting = tuple(
-        sorted(
-            h.ticker
-            for h in entries
-            if not is_crypto(h.ticker) and not is_fund(h.ticker, fetch=False)
-        )
-    )
+    # The calendar's own key (`routes/earnings`). Anything else warms an
+    # entry nobody reads.
+    reporting = loaders.calendar_tickers(entries, loaders.held(db, mtime))
     tbl = loaders.positions_table(db, mtime, base)
     currencies = (
         tuple(sorted({str(c).upper() for c in tbl["ccy"] if c}))

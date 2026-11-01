@@ -88,7 +88,7 @@ type State = {
  * `params` is already query-shaped. `session` is not: the registry describes
  * client state to seed on arrival, and this shell puts that intent in the
  * URL — the Profile's tab is `?tab=`. Without this mapping every Profile step
- * lands on the default tab, so "set up Telegram" opened Preferences and the
+ * lands on the default tab, so "turn on notifications" opened Preferences and the
  * reader was told to look for a control that was not there.
  */
 export function landing(step: {

@@ -10,7 +10,7 @@ It lives here rather than in `web/` because more than one runtime needs it:
   `stocks.web.auth`, which reads and writes the files under it),
 * the internal HTTP API (`stocks.api`), which authenticates with a bearer
   token and is handed an account address,
-* headless jobs — the Telegram digest, the CLI — which have a prefs.json and
+* headless jobs — the digest, the CLI — which have a prefs.json and
   no session at all.
 
 Nothing here talks to a user. `restore_account` raises `StorageUnavailable`
@@ -44,7 +44,7 @@ GUEST_DIR = USERS_DIR / "_guest"
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE, journal.FILE, "devices.json",
+    learnings.FILE, journal.FILE, "devices.json", "push.json",
 )
 
 
@@ -90,6 +90,11 @@ class UserPaths:
         """The browsers signed in to this account (stocks/devices.py), beside
         the daily card like `verdicts`."""
         return self.action.with_name("devices.json")
+
+    @property
+    def push(self) -> Path:
+        """This account's Web Push subscriptions (stocks/notify/webpush.py)."""
+        return self.action.with_name("push.json")
 
     @property
     def learnings(self) -> Path:
@@ -141,17 +146,27 @@ def paths_for(
     other account lives under data/users/<slug>/.
     """
     if owner_email and email.strip().lower() == owner_email.strip().lower():
-        return UserPaths(
-            root=PROJECT_ROOT,
-            watchlist=WATCHLIST_FILE,
-            db=DATA_DIR / "portfolio.db",
-            last_import=DATA_DIR / "last_import.json",
-            prefs=DATA_DIR / "prefs.json",
-            chat=DATA_DIR / "chat.json",
-            bank=DATA_DIR / "bank.json",
-            action=DATA_DIR / "daily_action.json",
-        )
-    d = users_dir / slug(email)
+        return owner_paths()
+    return paths_in(users_dir / slug(email))
+
+
+def owner_paths() -> UserPaths:
+    """The owner account's paths: the repo-root book, data/ for the rest."""
+    return UserPaths(
+        root=PROJECT_ROOT,
+        watchlist=WATCHLIST_FILE,
+        db=DATA_DIR / "portfolio.db",
+        last_import=DATA_DIR / "last_import.json",
+        prefs=DATA_DIR / "prefs.json",
+        chat=DATA_DIR / "chat.json",
+        bank=DATA_DIR / "bank.json",
+        action=DATA_DIR / "daily_action.json",
+    )
+
+
+def paths_in(d: Path) -> UserPaths:
+    """A non-owner account's paths, from its folder (data/users/<slug>/) —
+    for the jobs that find accounts by listing folders, with no address."""
     return UserPaths(
         root=d,
         watchlist=d / "watchlist.yaml",
@@ -256,6 +271,14 @@ def restore_account(
                 # root's key pulled a file nothing ever wrote or read.
                 paths.memory_index,
                 paths.learnings,
+                # Derived like the two above, and as easy to leave out: the
+                # devices and push lists were, so after a reboot the server
+                # pushed to nobody and the next subscribe wrote a list of one
+                # over the bucket's.
+                paths.journal,
+                paths.verdicts,
+                paths.devices,
+                paths.push,
             ),
         )
     except Exception as exc:
@@ -335,7 +358,7 @@ def stamp_login(
     kind = "login"
     changed = False
     # The address, written into the account's own file so headless jobs can
-    # identify it — the Telegram bot has a prefs.json and no session. The
+    # identify it — a headless job has a prefs.json and no session. The
     # free-chain allowlist (engine.free_eligible) is the caller that needs it.
     if email and prefs.get("email") != email:
         prefs["email"] = email
@@ -381,10 +404,9 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # The signed-in address, for the jobs that have a prefs.json and no
     # session (and for the free-chain allowlist). None until the next login.
     "email": None,
-    # Telegram notifications: chat_id is set by the Profile linking flow; the
-    # toggles only take effect once it is. The cron (notify/fanout.py) reads
-    # these headless straight from prefs.json.
-    "telegram_chat_id": None,
+    # Push notifications: the toggles only take effect once a device has
+    # subscribed (push.json). The cron (notify/fanout.py) reads them headless
+    # straight from prefs.json.
     "notify_digest": True,
     # Absent here for a while, and read as `.get("notify_weekly", True)` by both
     # the Profile toggle and the cron — so the review was delivered while a
@@ -413,6 +435,15 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # whether it may search the account's earlier conversations (chat/memory.py).
     "chat_memory": True,
     "chat_recall": True,
+    # The scheduled runs (notify/schedule.py). The AI briefing is a run like
+    # the digest and the weekly review, switched by its own `notify_` key;
+    # `schedules` holds each run's time and days, None = the defaults, and
+    # `timezone` the zone they are read in (the browser's, sent by the shell).
+    # `schedule_last` is the server's: the local day each run last went out.
+    "notify_briefing": True,
+    "schedules": None,
+    "timezone": None,
+    "schedule_last": {},
 }
 
 

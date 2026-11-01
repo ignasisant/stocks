@@ -2328,6 +2328,10 @@ def _snapshot(quote: dict) -> dict | None:
     "regular" — whether or not that window is still open: overnight
     (PREPRE, CLOSED) the after-hours print is the latest trade, and for a
     company that reported after the bell it is the whole reaction.
+
+    `prior`, premarket only, is the last regular session's own move (the close
+    `pct` starts from over the one before it): a premarket reading that wants
+    "yesterday plus this morning" compounds the two.
     """
     with obs.swallow("quote.session"):
         symbol = str(quote.get("symbol") or "")
@@ -2351,6 +2355,11 @@ def _snapshot(quote: dict) -> dict | None:
             return {
                 "price": price,
                 "pct": consistency.day_move(price, float(regular), ticker=symbol),
+                "prior": (
+                    consistency.day_move(float(regular), float(prev), ticker=symbol)
+                    if prev
+                    else None
+                ),
                 "session": "pre",
                 "basis": "pre",
                 "as_of": _quote_date(quote, today=True),

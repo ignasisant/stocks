@@ -292,6 +292,75 @@ def estimate_payments(
     return sorted(out, key=lambda p: (p.ex_date, p.ticker))
 
 
+# ------------------------------------------------- withholding a statement hid
+# Revolut's stock statement prints a dividend as the cash that arrived, net of
+# the tax the issuer's country kept, and says nothing of that tax
+# (`stocks.portfolio.revolut`). Booked as is, the gross is short and nothing
+# is creditable: a Spanish return built on it pays the foreign tax twice. What
+# the shares were owed is known, though — per share from Yahoo times the
+# shares held the day before the ex-date — and the gap is the withholding.
+#
+# The rate is read, not assumed: 15% for a US name under the W-8BEN, around
+# 27% for a Danish one, 21% for a Taiwanese, nothing for a Chinese ADR. A read
+# within a few points of the 15% treaty rate is that rate (a few cents of
+# rounding on a small payment is not a 17% tax); anything else is kept as
+# measured, ADR fees and all. A read outside the band is a payment the
+# estimate cannot vouch for — shares the book has wrong, a special dividend,
+# no tax at all — and is left alone.
+
+# Days between an ex-date and the pay date it can explain.
+EX_TO_PAY_DAYS = 100
+_SNAP = 0.03  # how far from TREATY_WHT_CAP a read still is that rate
+WITHHELD_BAND = (0.05, 0.40)
+
+
+@dataclass(frozen=True)
+class Withheld:
+    """A dividend row booked net, with the gross it came from."""
+
+    tx: Transaction
+    gross: float  # in the row's currency, cents
+    withheld: float  # gross - what arrived
+    rate: float
+
+
+def withheld_at_source(
+    transactions: list[Transaction],
+    histories: dict[str, DividendHistory],
+    paid: list[Transaction],
+) -> list[Withheld]:
+    """The gross behind each net dividend in `paid` that history can explain.
+
+    `transactions` is the book the shares are counted from, under the same
+    labels `histories` is keyed by. Each row is matched to the latest ex-date
+    of its name, in its currency, within `EX_TO_PAY_DAYS` before it was paid.
+    Pure — no network.
+    """
+    owed: dict[str, list[EstimatedPayment]] = {}
+    for p in estimate_payments(transactions, histories):
+        owed.setdefault(p.ticker, []).append(p)
+    out: list[Withheld] = []
+    for tx in paid:
+        if tx.action != "dividend" or tx.price <= 0 or tx.fee > 0:
+            continue
+        floor = _date.fromisoformat(tx.date) - _timedelta(days=EX_TO_PAY_DAYS)
+        match = [
+            p for p in owed.get(tx.ticker, ())
+            if floor.isoformat() <= p.ex_date <= tx.date and p.currency == tx.currency
+        ]
+        if not match:
+            continue
+        rate = 1 - tx.price / match[-1].gross
+        if abs(rate - TREATY_WHT_CAP) <= _SNAP:
+            rate = TREATY_WHT_CAP
+        rate = round(rate, 3)
+        if not WITHHELD_BAND[0] <= rate <= WITHHELD_BAND[1]:
+            continue
+        gross = round(tx.price / (1 - rate), 2)
+        out.append(Withheld(tx, gross, round(gross - tx.price, 2), rate))
+    return out
+
+
 def estimate_by_year(
     payments: list[EstimatedPayment],
     to_base: ToBase | None = None,

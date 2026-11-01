@@ -103,6 +103,7 @@
   "journal.action_exit": "Exit rule",
   "journal.kind_criterion_hit": "your exit rule met",
   "journal.kind_criterion_near": "near your exit rule",
+  "journal.kind_filing_flag": "SEC red flag",
   "journal.crit_below": "Close at or below {level}",
   "journal.crit_drawdown_cost": "Loss of {level} % on cost",
   "journal.crit_drawdown_high": "Fall of {level} % from the high",

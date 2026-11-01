@@ -261,3 +261,49 @@ def test_withholding_reads_the_latest_booked_payments_and_skips_zero_fees():
 def test_a_book_with_no_booked_withholding_knows_no_rate():
     book = [_paid("2025-03-01", "MSFT", 10.0, 0.0), tx("2024-01-02", "MSFT", "buy", 5)]
     assert dv.withholding_rates(book) == ({}, {})
+
+
+# ------------------------------------------------- withholding a statement hid
+def net(day, ticker, amount, ccy="USD", tid=99):
+    return Transaction(date=day, ticker=ticker, action="dividend", price=amount,
+                       currency=ccy, note="revolut", id=tid)
+
+
+def test_a_us_dividend_booked_net_gets_its_fifteen_percent_back():
+    book = [tx("2024-01-02", "KO", "buy", 100)]
+    paid = net("2024-04-01", "KO", 40.80)  # 48.00 owed, 15% kept
+    [w] = dv.withheld_at_source(book, {"KO": KO}, [paid])
+    assert (w.gross, w.withheld, w.rate) == (48.0, 7.2, 0.15)
+
+
+def test_a_few_cents_of_rounding_still_reads_as_the_treaty_rate():
+    book = [tx("2024-01-02", "KO", "buy", 1)]
+    [w] = dv.withheld_at_source(book, {"KO": KO}, [net("2024-04-01", "KO", 0.40)])
+    assert w.rate == 0.15 and w.gross == 0.47
+
+
+def test_another_country_keeps_its_own_rate():
+    nvo = DividendHistory("NVO", (("2024-03-22", 1.0),), "USD")
+    book = [tx("2024-01-02", "NVO", "buy", 100)]
+    [w] = dv.withheld_at_source(book, {"NVO": nvo}, [net("2024-04-05", "NVO", 73.0)])
+    assert w.rate == 0.27 and w.gross == 100.0 and w.withheld == 27.0
+
+
+def test_what_history_cannot_vouch_for_is_left_alone():
+    book = [tx("2024-01-02", "KO", "buy", 100)]
+    baba = DividendHistory("BABA", (("2024-06-13", 1.0),), "USD")
+    left = [
+        net("2024-04-01", "KO", 47.5),  # ~1%: an ADR fee, no tax
+        net("2024-04-01", "KO", 20.0),  # 58%: the book has the shares wrong
+        net("2024-09-30", "KO", 40.0),  # no ex-date within the window
+        net("2024-04-01", "KO", 40.8, ccy="EUR"),  # another line's currency
+        net("2024-07-01", "BABA", 1.0),  # never held
+    ]
+    assert dv.withheld_at_source(book, {"KO": KO, "BABA": baba}, left) == []
+
+
+def test_a_row_that_already_carries_its_withholding_is_not_read_again():
+    book = [tx("2024-01-02", "KO", "buy", 100)]
+    booked = Transaction(date="2024-04-01", ticker="KO", action="dividend",
+                         price=48.0, fee=7.2, currency="USD", id=5)
+    assert dv.withheld_at_source(book, {"KO": KO}, [booked]) == []

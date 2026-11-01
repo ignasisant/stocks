@@ -772,6 +772,19 @@ def test_a_met_event_rule_quotes_where_it_was_read(rule, lang):
     assert "{" not in line and "home.daily" not in line and "None" not in line
 
 
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+@pytest.mark.parametrize("flag", ["4.02", "4.01", "1.03", "2.04", "3.01", "late"])
+def test_every_red_flag_filing_has_a_line_in_both_languages(flag, lang):
+    action = {"kind": "filing_flag", "ticker": "AMD", "flag": flag,
+              "form": "NT 10-Q" if flag == "late" else "8-K",
+              "date": "2026-09-01", "days_ago": 2}
+    for line in (daily._action_line(action, lang, "EUR"),
+                 daily._detail_line(action, {}, lang, "EUR")):
+        assert line and "{" not in line and "home.daily" not in line
+        assert "AMD" in line and "None" not in line
+    assert daily.section_of(action) == daily.ALERTS
+
 def test_each_provider_gets_a_background_job_s_time(monkeypatch):
     """The card is written off the request: a 25 s cap cut both providers off
     mid-answer in prod, and the computed card stood in. The free chain's

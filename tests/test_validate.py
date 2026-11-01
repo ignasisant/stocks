@@ -367,3 +367,16 @@ def test_a_revolut_crypto_buy_booked_gross_is_the_same_buy_reimported_net():
     other = Transaction("2025-02-03", "SOL-EUR", "buy", 5.0, 194.0, "EUR", 9.9, "kraken")
     assert validate(_result([other]), [gross], known={"SOL-EUR"},
                     today=TODAY).fresh == [other]
+
+
+def test_a_net_dividend_is_a_duplicate_of_its_grossed_up_row():
+    """Revolut prints what arrived; once the withholding is put back the book
+    holds 10.00 gross less 1.50 withheld. Uploading the statement again must
+    not book the same 8.50 a second time."""
+    booked = Transaction(date="2025-03-01", ticker="AAPL", action="dividend",
+                         quantity=0.0, price=10.0, fee=1.5, note="revolut")
+    again = Transaction(date="2025-03-01", ticker="AAPL", action="dividend",
+                        quantity=0.0, price=8.5, note="revolut")
+    v = validate(_result([again]), [booked], known=KNOWN, today=TODAY)
+    assert v.fresh == []
+    assert len(v.duplicates) == 1

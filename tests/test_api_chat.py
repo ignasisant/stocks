@@ -90,6 +90,15 @@ def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
 
 
+@pytest.fixture(autouse=True)
+def no_documents(monkeypatch):
+    """The fixed path reads the app's help pages; no test here is about them,
+    and a hit would add a step the expected lists do not name."""
+    from stocks.chat import knowledge
+
+    monkeypatch.setattr(knowledge, "lookup", lambda *a, **k: [])
+
+
 @pytest.fixture
 def account(monkeypatch, tmp_path):
     users = tmp_path / "users"
@@ -1254,7 +1263,7 @@ def test_the_import_note_opens_the_import_page(client, account, signed_in, serve
     cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
     stored = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"][-1]
     assert [c["args"] for c in stored["tool_calls"]] == [{"page": "import"}]
-    # Telegram and bare clients run no navigate: no button, words alone.
+    # Bare clients run no navigate: no button, words alone.
     stream = events(signed_in.post(
         "/v1/chat/runs", json=run("importa transacciones")
     ).text)
@@ -1264,7 +1273,7 @@ def test_the_import_note_opens_the_import_page(client, account, signed_in, serve
 def test_a_client_that_does_not_run_navigate_is_never_offered_it(
     client, account, signed_in, served
 ):
-    """A surface with no pages to open — Telegram, a bare AG-UI client — is
+    """A surface with no pages to open — a bare AG-UI client — is
     not told it can link to one."""
     provider = served(Recorder())
     signed_in.post("/v1/chat/runs", json=run("hola"))
@@ -1918,6 +1927,119 @@ def test_a_weight_press_with_no_answer_is_refused(
         "name": "reweigh", "surfaceId": "rebalance", "context": context,
     }})
     assert response.status_code == code
+
+
+# ---------------------------------------------------------------- plan builder
+
+PLAN_PICKS = {"risk": "aggressive", "horizon": "5y_plus", "cushion": "covered",
+              "style": "mixed", "crypto": "none", "amount": "300", "every": "monthly"}
+
+
+def plan_press(name: str, context: dict) -> dict:
+    return {"action": {"name": name, "surfaceId": "plan_builder",
+                       "sourceComponentId": name, "context": context}}
+
+
+def test_asking_for_a_plan_draws_the_builder_and_tells_the_model(
+    client, account, signed_in, book, monkeypatch
+):
+    seen: list[list[dict]] = []
+
+    class Reader(FakeProvider):
+        def stream(self, api_key, model, system, messages):
+            seen.append(messages)
+            yield from super().stream(api_key, model, system, messages)
+
+    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    stream = events(signed_in.post("/v1/chat/runs",
+                                   json=run("Móntame un plan de inversión")).text)
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == "plan_builder" and shown["activityType"] == "a2ui"
+    assert [c["name"] for c in calls(stream)] == ["plan_builder"]
+    asked = seen[0][-1]["content"]
+    assert "The app drew a plan builder" in asked
+    assert "stocks 100%" in asked  # TTD and WIN, both companies
+
+
+def test_a_plan_pick_is_redrawn_by_the_engine_not_a_model(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(engine, "attempts",
+                        lambda prefs: pytest.fail("a model was asked"))
+    response = signed_in.post("/v1/chat/actions", json=plan_press("draft", PLAN_PICKS))
+    assert response.status_code == 200
+    (view,) = [m["updateDataModel"] for m in response.json()["messages"]]
+    assert view["path"] == "/view"
+    assert abs(sum(s["weight"] for s in view["value"]["slices"]) - 1) < 1e-9
+
+
+def test_saving_the_draft_stores_the_plan_and_an_unset_profile(
+    client, account, signed_in
+):
+    from stocks.portfolio import plan as plans
+
+    response = signed_in.post("/v1/chat/actions", json=plan_press("save", PLAN_PICKS))
+    assert response.status_code == 200
+    prefs = json.loads(account.prefs.read_text())
+    stored = prefs["investor_plan"]
+    assert stored["set"] is True
+    assert stored["contribution"] == {"amount": 300.0, "every": "monthly", "day": 1}
+    assert stored["mix"]["targets"] == plans.suggest(plans.Answers(
+        "aggressive", "5y_plus", "covered", "mixed", "none", 300, "monthly"),
+    )["mix"]["targets"]
+    profile = prefs["investor_profile"]
+    assert (profile["risk"], profile["horizon"], profile["set"]) == (
+        "aggressive", "5y_plus", True)
+    assert signed_in.get("/v1/plan").json()["set"] is True
+
+
+def test_saving_a_plan_leaves_a_set_profile_alone(client, account, signed_in):
+    account.prefs.write_text(json.dumps({**PREFS, "investor_profile": {
+        "risk": "conservative", "horizon": "3_5y", "notes": "kids", "set": True}}))
+    signed_in.post("/v1/chat/actions", json=plan_press("save", PLAN_PICKS))
+    profile = json.loads(account.prefs.read_text())["investor_profile"]
+    assert (profile["risk"], profile["notes"]) == ("conservative", "kids")
+
+
+def test_a_plan_save_keeps_the_cushion_and_rate_it_was_not_asked_about(
+    client, account, signed_in
+):
+    import datetime as dt
+
+    account.prefs.write_text(json.dumps({**PREFS, "investor_plan": {
+        "set": True, "cash": {"investable": 1000, "cushion": 8000, "rate_pct": 2,
+                              "as_of": "2020-01-02"}}}))
+    picks = {**PLAN_PICKS, "investable": "2500"}
+    assert signed_in.post("/v1/chat/actions",
+                          json=plan_press("save", picks)).status_code == 200
+    cash = json.loads(account.prefs.read_text())["investor_plan"]["cash"]
+    assert cash == {"investable": 2500.0, "cushion": 8000, "rate_pct": 2,
+                    "as_of": dt.date.today().isoformat()}
+
+    signed_in.post("/v1/chat/actions", json=plan_press("save", PLAN_PICKS))
+    kept = json.loads(account.prefs.read_text())["investor_plan"]["cash"]
+    assert kept["investable"] == 2500.0  # left blank, not wiped
+
+
+@pytest.mark.parametrize("change", [
+    {"risk": "yolo"}, {"cushion": "mattress"}, {"amount": "lots"},
+    {"investable": "lots"},
+])
+def test_a_plan_save_with_a_bad_answer_is_refused(
+    client, account, signed_in, change
+):
+    response = signed_in.post("/v1/chat/actions",
+                              json=plan_press("save", {**PLAN_PICKS, **change}))
+    assert response.status_code == 422
+    assert "investor_plan" not in json.loads(account.prefs.read_text())
+
+
+def test_a_token_cannot_save_a_plan(client, account, signed_in):
+    client.cookies.clear()
+    response = client.post("/v1/chat/actions", params=WHO, headers=AUTH,
+                           json=plan_press("save", PLAN_PICKS))
+    assert response.status_code == 403
+    assert "investor_plan" not in json.loads(account.prefs.read_text())
 
 
 # ---------------------------------------------------------------- debate

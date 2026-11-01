@@ -3,8 +3,7 @@
 Everything the pages compute — positions, performance, the watchlist, live
 quotes — comes out of `stocks.portfolio`, `stocks.analysis` and `stocks.data`.
 This package puts an HTTP surface on that same code, for the React shell
-(`frontend/app`) and for anything else that reads a book: a cron job, the
-Telegram bot, a phone.
+(`frontend/app`) and for anything else that reads a book: a cron job, a phone.
 
 Mounted at `/api` inside the existing server (`stocks.web.server`), so it
 deploys with the app and answers on the same hostname.

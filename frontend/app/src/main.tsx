@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { Broken, Crash } from "./shell/Crash";
 import { listen, report } from "./shell/errors";
+import { watchInstall } from "./shell/install";
 import { watchVitals } from "./shell/vitals";
 import "./styles.css";
 
 listen();
 watchVitals();
+watchInstall();
 
 // Outside the catalog, which is fetched by the tree that just failed: the two
 // languages the app speaks, chosen by the browser's own.

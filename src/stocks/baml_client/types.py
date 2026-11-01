@@ -254,6 +254,7 @@ class SectionNote(BaseModel):
 
 class SkillPick(BaseModel):
     skills: typing.Optional[typing.List[str]] = Field(default=None, description='skill ids from the catalog')
+    hard: typing.Optional[bool] = Field(default=None, description='true when answering takes reasoning: a comparison, a valuation, a what-if, several steps')
 
 class StatementPage(BaseModel):
     kind: typing.Optional[DocumentKind] = None

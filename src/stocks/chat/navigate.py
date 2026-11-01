@@ -42,7 +42,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     "sector": (),
     "earnings": (),
     "learn": ("paths", "glossary"),
-    "profile": ("prefs", "iv", "watch", "notify", "claude"),
+    "profile": ("prefs", "iv", "plan", "watch", "notify", "claude"),
 }
 
 # Each tab's catalog key, by page slug and `?tab=` value: the label the shell
@@ -87,6 +87,7 @@ TAB_LABELS: dict[str, dict[str, str]] = {
     "profile": {
         "prefs": "profile.preferences",
         "iv": "profile.iv_section",
+        "plan": "profile.plan_section",
         "watch": "profile.watchlist",
         "notify": "profile.notifications",
         "claude": "profile.connector_tab",
@@ -134,7 +135,8 @@ _WHAT = {
     "learn": "short lessons on investing and Spanish tax. Tabs: paths "
              "(lessons), glossary (term definitions)",
     "profile": "account settings. Tabs: prefs (preferences), iv (investor "
-               "profile), watch (watchlist), notify (alerts and Telegram), claude "
+               "profile), plan (target mix, risk caps, contribution and cash "
+               "reserve), watch (watchlist), notify (alerts and notifications), claude "
                "(connect Claude to the account)",
 }
 
@@ -185,7 +187,7 @@ def claim(entry: dict, found: list[str]) -> dict[str, str] | None:
 
 def prompt_block() -> str:
     """The system-prompt paragraph that offers the tool. Only sent when the
-    client declared `navigate` — a surface with no pages (Telegram) is never
+    client declared `navigate` — a surface with no pages is never
     told it can link to one."""
     pages = "\n".join(f"- {slug}: {what}" for slug, what in _WHAT.items())
     return (

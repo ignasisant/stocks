@@ -70,7 +70,8 @@ they routinely disagree. Trend, momentum or entry timing comes from \
 `ticker_trend`: quote its levels rather than inventing support and resistance, \
 and present it as timing on top of the fundamentals, never as the reason to buy.
 
-Before advising, read `investor_context`: the person's investor profile and \
+Before advising, read `investor_context`: the person's investor profile, the \
+plan they hold the book to (target mix, caps, contribution, cash reserve) and \
 what they told the TopStocks assistant to remember. Frame answers by their \
 stated goals and limits, and build on a decision they recorded instead of \
 re-raising it — a position they said they keep is not a reason to suggest \
@@ -175,6 +176,11 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
             validate_token_resource=True,
         ),
         warn_on_duplicate_tools=False,
+        # Stateless: nothing is ever published, and a `subscriptions/listen`
+        # stream the client opens would sit idle until Cloud Run's timeout —
+        # billed the whole time, then reopened. Off, the capability is not
+        # advertised and Claude never asks for one.
+        subscriptions=False,
     )
     for spec in tools.TOOLS:
         if spec.name not in viewed:
@@ -246,6 +252,14 @@ class Door:
         if target is None:
             missing = JSONResponse({"error": "not_found"}, status_code=404)
             await missing(scope, receive, send)
+            return
+        if scope["path"] == oauth.MCP_PATH and scope.get("method") == "GET":
+            # The standalone SSE stream: a stateless server has nothing to push
+            # on it, and held open it bills the instance until the timeout.
+            # 405 is the spec's way of saying "no stream here".
+            refused = JSONResponse({"error": "method_not_allowed"},
+                                   status_code=405, headers={"Allow": "POST"})
+            await refused(scope, receive, send)
             return
         await target(scope, receive, send)
 

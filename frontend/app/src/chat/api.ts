@@ -212,15 +212,20 @@ export const revealKey = (provider: string) =>
 /**
  * A press on a surface the assistant drew (A2UI's client-to-server action),
  * answered with the messages that update it — a what-if slider let go comes
- * back as its new figures. No model is asked, and nothing is stored.
+ * back as its new figures. No model is asked, and nothing is stored but the
+ * plan builder's Save, which writes the plan (and a profile never saved).
  */
 export const pressSurface = (action: A2uiAction, lang?: string) =>
   send<{ messages: A2uiMessage[] }>(
     "POST",
     "/chat/actions",
     { action, lang },
-    { touches: [] },
+    { touches: savesPlan(action) ? ["/plan", "/profile", "/review"] : [] },
   ).then((body) => body.messages);
+
+/** The one press that writes: `chat/plan_builder.py`'s Save. */
+export const savesPlan = (action: A2uiAction) =>
+  action.surfaceId === "plan_builder" && action.name === "save";
 
 /**
  * Take back a ledger edit the chat made. 409 when it is not one, or its rows

@@ -43,15 +43,10 @@ def load_state(path: Path) -> dict:
         raw = json.loads(path.read_text())
         if isinstance(raw, dict) and isinstance(raw.get("alerts"), dict):
             raw.setdefault("version", VERSION)
-            raw.setdefault("delivery", {"blocked": False, "blocked_at": None})
             return raw
     except (OSError, ValueError):
         pass
-    return {
-        "version": VERSION,
-        "alerts": {},
-        "delivery": {"blocked": False, "blocked_at": None},
-    }
+    return {"version": VERSION, "alerts": {}}
 
 
 def save_state(
@@ -170,11 +165,3 @@ def previous_top_weight(state: dict) -> float | None:
 def remember_top_weight(state: dict, weight: float, now: datetime) -> None:
     """Record this week's concentration for next week's comparison."""
     state["weekly"] = {"top_weight": float(weight), "at": now.isoformat()}
-
-
-def mark_blocked(state: dict, now: datetime) -> None:
-    state["delivery"] = {"blocked": True, "blocked_at": now.isoformat()}
-
-
-def is_blocked(state: dict) -> bool:
-    return bool(state.get("delivery", {}).get("blocked"))

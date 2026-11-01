@@ -61,7 +61,7 @@ tracebacks): read it with `stocks logs tail --level WARNING --json` and look at
 | Auth / session / MCP | `auth.*`, `session.*`, `mcp.*` | `tail --event <e>` | Config or a client quirk |
 | Background jobs | `today.*`, `daily_action.*`, `sector.*`, `crypto.scan_failed`, `macro.*`, `storage.persist_failed`, `journal.*` | `tail --event <e>` | Bug or missing secret (`today.edgar_no_ua`, `today.cron_absent`) |
 | HTTP 5xx | access log | see below | Bug where an endpoint has no handled error |
-| Cron workflows | `today`, `crypto`, `sectors`, `warm`, `notify`, `backup`, `telegram_chat` | `gh run list --status failure --limit 30`, then `gh run view <id> --log-failed` | Bug or expired secret. Dependabot/PR `ci` failures are not prod: skip |
+| Cron workflows | `today`, `crypto`, `sectors`, `warm`, `notify`, `backup` | `gh run list --status failure --limit 30`, then `gh run view <id> --log-failed` | Bug or expired secret. Dependabot/PR `ci` failures are not prod: skip |
 
 ```bash
 gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="topstocks" AND httpRequest.status>=500' \

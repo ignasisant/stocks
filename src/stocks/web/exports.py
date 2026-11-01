@@ -189,8 +189,9 @@ def tax_csv(
 # The account's files `account_bundle` leaves out, and why: the ledger goes as
 # `ledger.csv` instead of its SQLite file (the rows are the data, the schema
 # is the app's), and the conversation index is derived from chat.json and
-# holds embeddings nobody can read back.
-NOT_BUNDLED = frozenset({"portfolio.db", "chat_memory.db"})
+# holds embeddings nobody can read back. The Web Push subscriptions are each
+# a device's delivery address and keys: anyone holding one can push to it.
+NOT_BUNDLED = frozenset({"portfolio.db", "chat_memory.db", "push.json"})
 
 # Prefs keys that are credentials, or about one, rather than preferences: a
 # provider key the account typed in (`engine.byok_fields`) is stored encrypted

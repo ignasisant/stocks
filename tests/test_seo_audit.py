@@ -20,7 +20,7 @@ from xml.etree import ElementTree
 import pytest
 from starlette.testclient import TestClient
 
-from stocks.web import landing, landing_static, markup, seo, server
+from stocks.web import guides, landing, landing_static, markup, seo, server
 
 BASE = "https://topstocks.example"
 VARIANTS = sorted(landing.VARIANTS.items())  # [((lang, jur), path), ...]
@@ -287,20 +287,28 @@ def test_legal_pages_are_noindex_and_not_in_the_sitemap(client):
     assert "/legal/" not in client.get("/sitemap.xml").text
 
 
-def test_sitemap_lists_exactly_the_served_landing_variants(client):
+def _guide_paths() -> list[str]:
+    return [path for path, _, _ in guides.sitemap_pages()]
+
+
+def test_sitemap_lists_exactly_the_landing_variants_and_the_guides(client):
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     tree = ElementTree.fromstring(client.get("/sitemap.xml").content)
     locs = [e.text for e in tree.findall("s:url/s:loc", ns)]
-    assert sorted(locs) == sorted(f"{BASE}{p}" for p in landing.LANDING_PATHS)
+    public = [*landing.LANDING_PATHS, *_guide_paths()]
+    assert sorted(locs) == sorted(f"{BASE}{p}" for p in public)
     assert {loc.split("/")[2] for loc in locs} == {"topstocks.example"}
     # The two languages are both present.
     assert f"{BASE}/" in locs and f"{BASE}{landing.PATH_ES}" in locs
-    # No private route, and no query string, slips in.
+    # No private route, and no query string, slips in; every one is served.
     for loc in locs:
         assert "?" not in loc
         path = loc.removeprefix(BASE)
-        assert path in landing.LANDING_PATHS
+        assert path in public
         assert not _blocked_for_search(path), path
+    for path in _guide_paths():
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code == 200 and "x-robots-tag" not in r.headers, path
 
 
 def test_sitemap_alternates_match_the_pages_own_hreflang(client):
@@ -313,8 +321,11 @@ def test_sitemap_alternates_match_the_pages_own_hreflang(client):
     for url in tree.findall("s:url", ns):
         loc = url.find("s:loc", ns).text
         listed = {a.get("hreflang"): a.get("href") for a in url.findall("x:link", ns)}
-        code, jur = by_url[loc]
-        assert listed == _hreflangs(_doc(code, jur)[1]), loc
+        if loc in by_url:
+            html = _doc(*by_url[loc])[0]
+        else:
+            html = client.get(loc.removeprefix(BASE)).text
+        assert listed == _hreflangs(_Doc(html)), loc
 
 
 def _group(agent: str) -> list[tuple[str, str]]:

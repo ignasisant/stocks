@@ -153,7 +153,24 @@ fixed meaning — they are not a series palette.
   never a dotted underline. Hover opens after 400ms, then the next "?" opens at
   once for 300ms (warm group); the bubble is `aria-hidden` (the label already
   read it) and fades out. Coarse hit area 44px via `::before`.
+- **Mix bar** (`ui/MixBar.tsx`, `.ag-mixbar`): a share as a purple-400 fill
+  on a neutral `--ag-border` track (a purple track reads as a fill), the target as a 2px primary tick across it;
+  `aria-hidden`, the words beside it or in `.ag-sr`. Profile's plan tab and
+  Review's "Frente a tu plan" draw the same one.
+- **Book notes** (Review "Tu cartera en conjunto"): never a stack of
+  same-weight sentences. Plan drift is rows on one subgrid (name · bar ·
+  figure + muted "plan x" · gap in p. p. in `--ag-warn` · "?"), the
+  sentence in `.ag-sr`; every other note a row led by a muted kind label
+  (Sector, Divisa…) over `--ag-fs-sm` secondary text, hairline between
+  rows, 75ch cap. Narrow: bar under its row, label over its sentence.
 - **Dense rows** tint `--ag-surface-hover` on hover, `(hover: hover)` only.
+- **Line action link** (`pages/home/Go.tsx`, `.hm-daily-go` / `.td-go`): a
+  daily line ends on accent `--ag-fs-sm` 600 text naming where it lands
+  ("Open Sell or add", "Open your plan") and a decorative " →" with empty alt
+  text, never a bare "Go" or an icon alone. Underline on hover with
+  `(hover: hover)` only, 2px accent focus ring, coarse 44px tall. A path the
+  component cannot name draws nothing; a line about one name has no link,
+  its ticker cell already is one.
 - **Box tools** (`.ag-box-tool`): coarse `::before` grows the hit area to 44px
   tall; width stays so neighbours never overlap.
 - **Split action** (`pages/ticker/AiAsk.tsx`): the primary press does the
@@ -412,7 +429,18 @@ fixed meaning — they are not a series palette.
   `autoComplete="off"`, `spellCheck={false}`, and an `enterKeyHint` that
   names what Enter does (`search`, `send`, `done`).
 - **Number fields** clamp to their min/max on commit; an inline edit commits
-  on Enter as well as on blur.
+  on Enter as well as on blur. A field whose figure the app then acts on (the
+  plan's targets, caps, contribution) validates instead of clamping: text that
+  is not a figure in bounds is never sent, the box keeps it with
+  `aria-invalid` (`--ag-down` border) and the reason under it in `--ag-down`
+  ("Between 1 and 28."), shown once the field is left and live until fixed;
+  Escape restores the stored value. A unit suffix only where there is a unit
+  (no `%` on a day).
+- **A figure the app cannot see** (My plan's cash outside the book) is dated
+  under its group in the caption style ("Stated on 1 Oct."), the date set by
+  the server when an amount changes. Once old (`cash_stale_days`) the caption
+  turns `--ag-down` and asks ("Stated 90 days ago — still right?") and the
+  rail's row warns; the field itself is never marked invalid for being old.
 - **44px coarse targets** hold in page stylesheets too, not just shell
   controls; a dense row grows its hit area with padding or `::before`.
   Text fields, selects and `.ag-btn` get the floor from styles.css
@@ -466,6 +494,18 @@ fixed meaning — they are not a series palette.
   (one `:is(…)` list in styles.css, reduced motion excluded). A new pressable
   joins that list and adds `scale var(--ag-dur-press) var(--ag-ease-out)` to
   its transition.
+- **Inline disclosure** (a row opening its editor, a folded block opening):
+  the new part grows down from the row that opened it (fade + 4px drop,
+  `--ag-dur-press`), only fades under reduced motion. The opener carries
+  `aria-expanded` + `aria-controls`; the first field takes focus, Escape
+  closes and gives focus back to the opener. Full-width rows take no press
+  scale; under `hover: none` they tint `--ag-surface-hover` on `:active`.
+- **Save feedback lives on the row it changed:** "Saved" with a check for
+  2 s in place of the row's meta line (`aria-live="polite"`), or the failure
+  and how to fix it right under the row. Never a block-level banner, never a
+  silent disabled button: when a form cannot be sent, a line says why
+  ("Pick at least one day"). The confirming word repeats the action's
+  (Save → Saved).
 - **Tabs** (`ui/Tabs.tsx`, the only one): WAI-ARIA tablist with manual
   activation (arrows move focus, Enter/Space pick), one `.ag-tabs-ink`
   underline that slides to the picked tab. Never a per-page tab strip.
@@ -487,8 +527,20 @@ fixed meaning — they are not a series palette.
 - **Chart redraw:** marks sit in `<g className="ag-redraw" key={range}>`, so
   a range, zoom or series change cross-fades (opacity 0.25 → 1,
   `--ag-dur-move`) instead of snapping; none under reduced motion.
+- **Figures count** (`ui/Count.tsx`): a refreshed figure runs from the
+  value on screen to the new one (`COUNT_MS` 800, ease-out, no overshoot),
+  tinted `--ag-up` / `--ag-down` while it moves, then eases back to its ink.
+  Every `Kpi` value and `Chip` does it; anything else showing a live price
+  wraps its formatted string in `<Count text tint>`. Only a string holding one
+  number with the same unit and decimals counts; the rest swap, as do the
+  first render, a hidden tab and reduced motion.
 - **AI rim** (`.ag-ai`, chat FAB) is still at rest; it turns only on hover,
   focus-visible or `[data-busy]`, paused (not reset) so it resumes in place.
+- **Ask-the-AI press** sits at the top of the screen it is about, never at
+  the bottom: Review's on the search row (icon-only under 40rem), Profile → My
+  plan's above the form with one line of why beside it (stacked, full width
+  under 40rem). It opens a fresh conversation (`askAssistant(…, {fresh})`);
+  one per screen.
 
 - **Toasts** (`ui/toast.ts`, mounted once by `ui/Toaster.tsx` in the shell;
   sonner underneath, never imported by a page): the only transient notice.
@@ -582,6 +634,11 @@ a laptop page the same way.
   320px container a field flanked by controls takes a row of its own (the chat
   composer). A row of small controls under a card wraps (`flex-wrap`) instead
   of pushing its last one off the screen.
+- **Padding does not stack.** The page gutter (16px) stays; a card pads 12px,
+  not 16. Every card keeps its box, tiles-only ones included: one card shape
+  down the page reads calmer than the width a bare grid would win. A tile's
+  "?" rides the label's last word (`.ag-kpi-label-tail`), never the tile's far
+  edge or a line alone.
 - **The answer first.** A page leads with what it concludes (Review: the plan,
   then the book-wide notes), in DOM order, not by CSS `order` — a screen
   reader and a phone read the same sequence.

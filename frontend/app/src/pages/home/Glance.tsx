@@ -95,9 +95,11 @@ export function useBook(nonce: number, enabled: boolean): Query<Book | null> {
         get<Summary>("/portfolio/summary"),
         get<Performance>("/portfolio/performance"),
         get<Positions>("/portfolio/positions"),
-        get<Movers>("/movers", { window: "day" }),
-        get<Movers>("/movers", { window: "week" }),
-        get<Movers>("/movers", { window: "month" }),
+        // Every name that moved, not the server's cut: the card draws its own
+        // cut and unfolds to the rest on "show all" without another trip.
+        get<Movers>("/movers", { window: "day", all: "true" }),
+        get<Movers>("/movers", { window: "week", all: "true" }),
+        get<Movers>("/movers", { window: "month", all: "true" }),
         // A table of exchange hours and a clock — no account, no fetch. It
         // only decides a caption, so it must never take the card down with it.
         get<MarketStatus>("/market/status").catch(() => null),
@@ -401,6 +403,9 @@ function GlanceCard({ book }: { book: Book }) {
  * All three windows come back with the page: picking a range is then a choice
  * between things already in hand, and the card's own gate needs all three
  * anyway — a flat day still deserves the card when the week moved.
+ *
+ * The sides are cut to `rows` so the card ends level with the 52-week one;
+ * "show all" unfolds both to every name that moved in the window.
  */
 function MoversCard({
   movers,
@@ -413,13 +418,17 @@ function MoversCard({
 }) {
   const t = useT();
   const [range, setRange] = useState<WindowKey>("day");
+  const [open, setOpen] = useState(false);
   const moved = WINDOWS.some(
     ({ key }) => movers[key].gainers.length > 0 || movers[key].losers.length > 0,
   );
   if (!moved) return null;
 
   const held = new Map(positions.map((position) => [position.ticker, position]));
-  const shown = moverSides(movers[range], rows);
+  const { gainers, losers } = movers[range];
+  const total = gainers.length + losers.length;
+  const folds = gainers.length > rows || losers.length > rows;
+  const shown = moverSides(movers[range], open ? total : rows);
   return (
     <Card>
       <div className="hm-card-head">
@@ -435,6 +444,19 @@ function MoversCard({
         <MoverTable label={t("home.gainers")} rows={shown.gainers} held={held} />
         <MoverTable label={t("home.losers")} rows={shown.losers} held={held} />
       </div>
+      {[...shown.gainers, ...shown.losers].some((row) => row.premarket) ? (
+        <p className="hm-caption">{t("home.movers_premarket")}</p>
+      ) : null}
+      {folds ? (
+        <button
+          type="button"
+          className="hm-more"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? t("home.movers_less") : t("home.movers_all", { n: total })}
+        </button>
+      ) : null}
     </Card>
   );
 }
@@ -458,6 +480,23 @@ export function moverSides(
   };
 }
 
+/**
+ * A mover's chip, by sign and greyed when its market is not quoting. A
+ * premarket figure keeps its colour and gets a muted word beside it, the way
+ * the ticker page names the session ("Precio · preapertura").
+ */
+function MoveChip({ row, text }: { row: Mover; text: string | null | undefined }) {
+  const t = useT();
+  const chip = <Chip chip={chipFor(row.pct, text, row.active === false)} />;
+  if (!row.premarket) return chip;
+  return (
+    <span className="hm-move">
+      {chip}
+      <span className="hm-session">{t("home.movers_pre_tag")}</span>
+    </span>
+  );
+}
+
 function MoverTable({
   label,
   rows,
@@ -469,7 +508,7 @@ function MoverTable({
    * outside its market's session it is the last completed one — real, not
    * moving. A week is close-to-close by construction, nothing to dim.
    */
-  rows: { ticker: string; pct: number; active?: boolean | null }[];
+  rows: Mover[];
   held: Map<string, Position>;
 }) {
   const t = useT();
@@ -518,7 +557,7 @@ function MoverTable({
                       }) ?? na}
                     </td>
                     <td className="hm-num">
-                      <Chip chip={chipFor(row.pct, move, row.active === false)} />
+                      <MoveChip row={row} text={move} />
                     </td>
                     <td className="hm-num">
                       {money(position?.value, currency, lang) ?? na}
@@ -539,13 +578,7 @@ function MoverTable({
             spec={{
               ticker: (row) => row.ticker,
               badge: (row) => (
-                <Chip
-                  chip={chipFor(
-                    row.pct,
-                    percent(row.pct, lang, { signed: true }),
-                    row.active === false,
-                  )}
-                />
+                <MoveChip row={row} text={percent(row.pct, lang, { signed: true })} />
               ),
               value: (row) => money(held.get(row.ticker)?.value, currency, lang) ?? na,
               sub: (row) => {

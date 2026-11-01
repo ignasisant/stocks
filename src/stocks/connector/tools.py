@@ -691,8 +691,9 @@ async def upcoming_earnings() -> CallToolResult:
 
 
 async def investor_context() -> CallToolResult:
-    """Who the figures belong to: the investor profile and the memories the
-    app's assistant keeps, so Claude advises the same person the chat does.
+    """Who the figures belong to: the investor profile, the plan they hold
+    the book to and the memories the app's assistant keeps, so Claude advises
+    the same person the chat does.
 
     Read under the same switch the app's own surfaces honour
     (`engine.memory_on`): memory off is no memories, here as everywhere. The
@@ -709,6 +710,9 @@ async def investor_context() -> CallToolResult:
         return {
             "kind": "context",
             "profile": _plain(profile_routes.profile(paths)),
+            # The lines the reader drew: mix, caps, contribution, reserve,
+            # with today's mix beside the targets (`GET /plan`).
+            "plan": _plain(profile_routes.plan(paths)),
             "memory_enabled": enabled,
             "memories": [
                 {"id": m.id, "kind": m.kind, "text": m.text,
@@ -848,8 +852,30 @@ async def app_help(
 async def check_book() -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api.routes import portfolio
+        from stocks.portfolio import demo, held
 
-        return {"kind": "book_health", **_plain(portfolio.health(paths))}
+        out: dict[str, Any] = {"kind": "book_health", **_plain(portfolio.health(paths))}
+        # What an import left behind: sales refused for want of shares that
+        # the book can carry now (one finding, applied with apply_fix), and
+        # statements worth uploading again since a split came after them.
+        sales = held.ready(paths.db)[:ADD_MAX]
+        if sales:
+            fix = held.ops([h.tx for h in sales])
+            out["findings"].append({
+                "key": held.key_of(sales), "kind": "held_sales",
+                "ticker": ", ".join(sorted({h.tx.ticker for h in sales})),
+                "ids": [], "fix": fix,
+                "detail": {"sales": [op["row"] for op in fix]},
+                "weight": 0.0, "cause": None,
+            })
+        out["reupload"] = [
+            {"broker": r.broker, "ticker": r.ticker, "split_date": r.split_date,
+             "note": "Uploading this broker's statement again in Import may "
+                     "recover a sale refused before the split was known; rows "
+                     "the book has are skipped."}
+            for r in held.reuploads(demo.without(_rows(paths)), paths.db)
+        ]
+        return out
 
     return await _run("check_book", work)
 
@@ -964,7 +990,7 @@ async def missing_splits() -> CallToolResult:
 
 # ---------------------------------------------------------- the book, edited
 # Every edit to the ledger goes through `stocks.portfolio.edits`, the road
-# the app, the chat and Telegram take, in two calls. Without `plan_token` a
+# the app and the chat take, in two calls. Without `plan_token` a
 # tool writes nothing and returns the plan: each row before and after, the
 # holdings and realized gains it moves, and the token. Called again with the
 # same arguments and that token, it applies exactly that plan — or refuses,
@@ -1162,8 +1188,16 @@ async def apply_fix(
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api import loaders
-        from stocks.portfolio import demo, doctor
+        from stocks.portfolio import demo, doctor, held
 
+        ids = held.ids_in(key)
+        if ids is not None:
+            sales = held.take(ids, paths.db)
+            if sales is None:
+                raise _Refused("Those sales are not ready any more; run "
+                               "check_book again.")
+            return _edit(paths, held.ops(sales), plan_token,
+                         f"Add {len(sales)} sale(s) an import left out")
         rows = demo.without(_rows(paths))
         found = doctor.by_key(rows, key, loaders.display_symbol)
         if found is None:
@@ -1438,6 +1472,48 @@ async def set_preferences(
     return await _run("set_preferences", work, write=True)
 
 
+async def set_plan(
+    targets: Annotated[dict[str, float] | None, Field(
+        description="Percent of the book per bucket — stocks, equity_funds, "
+                    "bonds, cash (money market), crypto — adding up to 100.")] = None,
+    band_pp: Annotated[float, Field(gt=0, le=50, description=(
+        "Drift allowed either side of each target, in points."))] = 5.0,
+    max_position_pct: Annotated[float | None, Field(gt=0, le=100)] = None,
+    max_sector_pct: Annotated[float | None, Field(gt=0, le=100)] = None,
+    max_speculative_pct: Annotated[float | None, Field(gt=0, le=100)] = None,
+    contribution_amount: Annotated[float | None, Field(gt=0, description=(
+        "Each contribution, in the account's reporting currency."))] = None,
+    contribution_every: Annotated[str, Field(
+        description="monthly or quarterly.")] = "monthly",
+    contribution_day: Annotated[int, Field(ge=1, le=28)] = 1,
+    reserve_min_pct: Annotated[float | None, Field(ge=0, le=100)] = None,
+    reserve_max_pct: Annotated[float | None, Field(ge=0, le=100)] = None,
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import prefs
+        from stocks.portfolio.plan import PREFS_KEY
+
+        body = prefs.PlanWrite.model_validate({
+            "mix": {"targets": targets, "band_pp": band_pp} if targets else None,
+            "limits": {"max_position_pct": max_position_pct,
+                       "max_sector_pct": max_sector_pct,
+                       "max_speculative_pct": max_speculative_pct},
+            "contribution": {"amount": contribution_amount,
+                             "every": contribution_every,
+                             "day": contribution_day}
+            if contribution_amount else None,
+            "reserve": {"min_pct": reserve_min_pct, "max_pct": reserve_max_pct}
+            if reserve_min_pct is not None or reserve_max_pct is not None else None,
+        })
+        if body == prefs.PlanWrite():
+            raise _Refused("Name at least one part of the plan.")
+        accounts.update_prefs(paths.prefs, {PREFS_KEY: {**body.model_dump(),
+                                                        "set": True}})
+        return {"kind": "plan", **body.model_dump()}
+
+    return await _run("set_plan", work, write=True)
+
+
 # ------------------------------------------------------------------ catalog
 
 
@@ -1558,10 +1634,12 @@ TOOLS: tuple[Spec, ...] = (
          "Mistakes in the ledger, each with the edit that fixes it: shares "
          "that moved broker but read as a sale and a new buy (often under a "
          "different ticker), one company under two labels, a trade imported "
-         "twice, a sale of shares that never arrived. Fix one with apply_fix."),
+         "twice, a sale of shares that never arrived, sales an import left out "
+         "that the book can carry now, statements worth uploading again. "
+         "Fix one with apply_fix."),
     Spec(change_history, "Edit history",
          "Hand edits to the ledger, newest first, with where each came from "
-         "(app, chat, telegram, mcp) and the rows it touched. Undoable by id."),
+         "(app, chat, mcp) and the rows it touched. Undoable by id."),
     Spec(simulate_sale, "Simulate a sale",
          "What selling some or all of a holding today would realize and add "
          "to this tax year's bill, under the account's own tax rules."),
@@ -1641,6 +1719,13 @@ TOOLS: tuple[Spec, ...] = (
     Spec(set_preferences, "Set preferences",
          "Change base currency, language, tax residence and filing details, "
          "or notifications. Only the fields given change.", write=True),
+    Spec(set_plan, "Set the plan",
+         "Replace the person's investor plan — target mix by asset type, caps "
+         "on one name, one sector and the speculative names, a contribution "
+         "schedule and a cash reserve — which Review and the morning card hold "
+         "the book to. Written whole: parts left out are cleared. Their plan, "
+         "not yours: show the draft and write it only once they agree.",
+         write=True, destructive=True),
 )
 
 WRITE_NAMES = frozenset(spec.name for spec in TOOLS if spec.write)

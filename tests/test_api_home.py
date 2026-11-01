@@ -25,7 +25,7 @@ import dataclasses
 import json
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -123,7 +123,7 @@ def written(day: date, headline: str = "Two names carry the week") -> daily.Dail
 
 
 def today() -> date:
-    return daily.action_day(datetime.now().astimezone())
+    return briefing.now_day()[1]
 
 
 def wait_done(paths, timeout: float = 5.0) -> None:

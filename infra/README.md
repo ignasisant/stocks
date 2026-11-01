@@ -6,10 +6,9 @@ Manages the parts of the deployment that have Terraform providers:
 |---|---|---|
 | Cloudflare R2 bucket | yes | persistent storage behind `stocks.storage` |
 | GitHub Actions secrets | yes | everything `.github/workflows/notify.yml` reads; replaces `scripts/setup_notify_secrets.sh` |
-| Cloud Run job `topstocks-cron` + Cloud Scheduler | yes | `cron.tf`: the Today page's market read (06:30 UTC, Tue–Sat), the price warm-up (four ticks a trading day, New York time) and the owner's usage digest (Monday 07:00 UTC, the same job started with `stocks usage-digest`; grants the service identity `roles/logging.viewer`). The job runs the service's image and environment; `scripts/deploy.sh` moves it with each promotion |
+| Cloud Run job `topstocks-cron` + Cloud Scheduler | yes | `cron.tf`: the Today page's market read (06:30 UTC, Tue–Sat) and the price warm-up (four ticks a trading day, New York time). The job runs the service's image and environment; `scripts/deploy.sh` moves it with each promotion |
 | Cloud Run service | no | `scripts/deploy.sh`; `cron.tf` only reads it (image, environment, identity) |
 | App secrets on the VM | no | no API — the app reads `deploy/secrets.toml`, see `deploy_secrets_reminder` output |
-| Telegram bot | no | @BotFather; never set a webhook (Profile linking polls `getUpdates`) |
 | Google OIDC client | no | Google Cloud console, OAuth consent screen |
 | R2 S3 credential pair | yes | `cloudflare_account_token` scoped to the bucket; S3 creds derived as access_key_id = token id, secret = `sha256(token value)` |
 

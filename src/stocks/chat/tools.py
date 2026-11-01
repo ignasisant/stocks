@@ -657,8 +657,8 @@ BOOK: dict[str, BookTool] = {
         BookTool(
             "check_book",
             "look for mistakes in the recorded trades (duplicates, transfers "
-            "read as sales, one company under two symbols). Optional "
-            '"ticker".',
+            "read as sales, one company under two symbols, a sale missing "
+            'after a split). Optional "ticker".',
         ),
         BookTool(
             "undo_change",
@@ -913,7 +913,7 @@ def reply(action: Action, translate: Callable[..., str]) -> str:
     """The confirmation bubble for an executed action.
 
     `translate(key, **kwargs) -> str` is the caller's own translator — the web
-    panel passes its session-language `tr`, the Telegram bot one bound to the
+    panel passes its session-language `tr`, a headless caller one bound to the
     recipient's language — so this stays the single place that knows which
     locale key and which slots each tool's confirmation needs.
     """

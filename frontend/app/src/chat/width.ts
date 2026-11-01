@@ -1,8 +1,10 @@
 /**
  * How wide the drawer is, and where that is remembered.
  *
- * Three presets and a drag handle beside them, written to one custom property
- * (`--chat-w`) and kept under one localStorage key.
+ * A drag handle on the panel's edge, written to one custom property
+ * (`--chat-w`) and kept under one localStorage key. Builds with the three
+ * header presets stored `380px`, `720px` or `100vw` there; any of them is
+ * still a width, and is honoured as one.
  *
  * Per browser rather than in `/prefs` — how much of a monitor a conversation
  * may take is a property of the monitor, not of the account.
@@ -10,42 +12,12 @@
 
 import { rubberBand } from "../shell/useSheet";
 
-export const WIDTHS = [
-  { key: "compact", css: "380px", icon: "width_normal" },
-  { key: "wide", css: "720px", icon: "width_wide" },
-  { key: "full", css: "100vw", icon: "fullscreen" },
-] as const;
-
-export type WidthKey = (typeof WIDTHS)[number]["key"];
-
 /** Where the width is kept. Older builds wrote here too, so it stays. */
 const STORED = "chatPanelWidth";
 
 /** The clamp the drag handle honours. */
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 1500;
-
-/** The preset a stored width belongs to, or null for a hand-dragged one. */
-function keyFor(css: string | null): WidthKey | null {
-  return WIDTHS.find((w) => w.css === css)?.key ?? null;
-}
-
-/**
- * The width this browser last chose, as a preset — or null when it is none of
- * them, because it was dragged or because nothing is stored at all.
- *
- * Null rather than a fallback on purpose: none of the three buttons should
- * look pressed for a width that no button produces, and the default 420px is
- * not one of the three either.
- */
-export function storedWidth(): WidthKey | null {
-  try {
-    return keyFor(window.localStorage.getItem(STORED));
-  } catch {
-    // Private windows and blocked site data throw on the read itself.
-    return null;
-  }
-}
 
 /** Write a CSS length onto the document, and remember it for the next load. */
 function put(css: string): void {
@@ -57,10 +29,16 @@ function put(css: string): void {
   }
 }
 
-/** Apply a preset: the property the panel is sized by, and the memory of it. */
-export function applyWidth(key: WidthKey): void {
-  const width = WIDTHS.find((w) => w.key === key);
-  if (width) put(width.css);
+/** The width a wide table is read at: the old "Wide" preset. */
+export const WIDE = 720;
+
+/**
+ * Take the panel to where a wide table holds — 720px, or the whole window
+ * when 720px would be most of it anyway — and keep it there: the reader asked
+ * for room, and the next wide answer should not ask again.
+ */
+export function widen(): void {
+  put(window.innerWidth >= 1100 ? `${WIDE}px` : "100vw");
 }
 
 /**
@@ -111,18 +89,17 @@ export function applyPixels(px: number): void {
   document.documentElement.style.setProperty("--chat-w", `${px}px`);
 }
 
-/** Keep a dragged width, and say which preset it lands on — usually none. */
-export function rememberPixels(px: number): WidthKey | null {
+/** Keep a dragged width. */
+export function rememberPixels(px: number): void {
   put(`${px}px`);
-  return keyFor(`${px}px`);
 }
 
 /**
  * Put a stored width back on the document.
  *
  * Called when the panel mounts, because the property lives on the document
- * and a reload clears it — without this a drawer stored at "full" would open
- * at 420px and only widen on the next press.
+ * and a reload clears it — without this a drawer dragged wide would open at
+ * 420px and only widen on the next drag.
  */
 export function restoreWidth(): void {
   let stored: string | null = null;

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Push every secret the notifications workflow needs to the GitHub repo, and
-# print the [telegram] block to add to the deploy's secrets.toml.
+# Push every secret the notifications workflow needs to the GitHub repo.
 #
 # Usage:
 #   cp .notify_secrets.env.example .notify_secrets.env   # then paste values
 #   ./scripts/setup_notify_secrets.sh
 #
 # Reads:
-#   .notify_secrets.env      TELEGRAM_* + STOCKS_STORAGE_* (you paste these)
-#   secrets.toml  [chat] enc_key + [free_llm] keys (harvested)
+#   .notify_secrets.env      STOCKS_STORAGE_* (you paste these)
+#   secrets.toml  [webpush] private_key, [chat] enc_key, [free_llm] keys
+#                 (harvested — the push key must be the deploy's own)
 #
 # Requires: gh CLI authenticated (`gh auth login`), python3.11+ (tomllib).
 
@@ -37,7 +37,7 @@ while IFS= read -r line; do
     export "$key=$val"
 done < "$ENV_FILE"
 
-for var in TELEGRAM_BOT_TOKEN STOCKS_STORAGE_ENDPOINT_URL STOCKS_STORAGE_BUCKET \
+for var in STOCKS_STORAGE_ENDPOINT_URL STOCKS_STORAGE_BUCKET \
            STOCKS_STORAGE_ACCESS_KEY_ID STOCKS_STORAGE_SECRET_ACCESS_KEY; do
     [ -n "${!var:-}" ] || { echo "error: $var is empty in $ENV_FILE" >&2; exit 1; }
 done
@@ -51,6 +51,11 @@ with open("secrets.toml", "rb") as f:
 EOF
 }
 
+WEBPUSH_PRIVATE_KEY="$(harvest webpush private_key)"
+[ -n "$WEBPUSH_PRIVATE_KEY" ] || {
+    echo "error: secrets.toml has no [webpush] private_key — copy the deploy's, never a new one" >&2
+    exit 1
+}
 APP_PUBLIC_URL="$(harvest app public_url)"
 CHAT_ENC_KEY="$(harvest chat enc_key)"
 FREE_LLM_GROQ="$(harvest free_llm groq)"
@@ -67,7 +72,7 @@ set_secret() { # set_secret <name> <value>
 }
 
 echo "Pushing GitHub Actions secrets to $REPO:"
-set_secret TELEGRAM_BOT_TOKEN "$TELEGRAM_BOT_TOKEN"
+set_secret WEBPUSH_PRIVATE_KEY "$WEBPUSH_PRIVATE_KEY"
 set_secret STOCKS_STORAGE_ENDPOINT_URL "$STOCKS_STORAGE_ENDPOINT_URL"
 set_secret STOCKS_STORAGE_BUCKET "$STOCKS_STORAGE_BUCKET"
 set_secret STOCKS_STORAGE_ACCESS_KEY_ID "$STOCKS_STORAGE_ACCESS_KEY_ID"
@@ -80,24 +85,7 @@ set_secret FREE_LLM_OPENROUTER "$FREE_LLM_OPENROUTER"
 
 cat << EOF
 
-Done. Now add this section to the deploy's secrets.toml — locally
-secrets.toml, on the VM deploy/secrets.toml (keep everything
-already there):
-
-[telegram]
-bot_token = "$TELEGRAM_BOT_TOKEN"
-bot_username = "${TELEGRAM_BOT_USERNAME:-}"
-
-Then:
-  1. Restart the app container so it picks up the new secrets
-     (docker compose -f deploy/docker-compose.yml up -d).
-  2. Deploy the webhook Worker and set the bot's webhook — see
-     workers/telegram-webhook/README.md (wrangler deploy + secrets, then
-     TELEGRAM_WEBHOOK_SECRET=... uv run stocks telegram-chat --set-webhook <url>).
-  3. Profile page -> Connect Telegram -> press Start in Telegram
-     (the link completes via the telegram chat workflow, ~30-90 s).
-  4. GitHub -> Actions -> notifications -> Run workflow -> digest.
-     Message should land in Telegram within ~2 min.
-  5. Chat: message the bot anything — the telegram chat workflow answers
-     with the same assistant as the app's chat panel.
+Done. Check the wiring: GitHub -> Actions -> notifications -> Run workflow
+-> test. Every device subscribed from Profile -> Notifications should get a
+push within ~2 min.
 EOF

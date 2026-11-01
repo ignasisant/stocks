@@ -15,7 +15,8 @@
  * or retry is the reader asking for the server's word on what is on screen:
  * it forgets what that screen was built from, and no more, and the figures
  * stay up (`refreshing`) until the new ones land, rather than a skeleton
- * taking their place.
+ * taking their place. The shell asks every mounted one for that at once
+ * (`shell/resume`): the Home Screen app's pull, and coming back to it later.
  *
  * A caller may ask for the same with `keep` when its inputs change — a window
  * picked on a chart, a sector chosen, a language switched: the figures on
@@ -73,6 +74,7 @@ import {
   staleAt,
   staleUrls,
 } from "./freshness";
+import { onReloadAll } from "./resume";
 
 /** When a stale answer is asked for again: past a refresh on the server's one
  * throttled vCPU, which runs twenty seconds to a minute. Then it stops — a
@@ -190,6 +192,34 @@ export function useApi<T>(
   // Read when the run starts, not a reason to start one.
   const keeps = useRef(keep);
   keeps.current = keep;
+  // The pull or the return to the app (`shell/resume`) waiting on a reload.
+  const state = useRef(query.state);
+  state.current = query.state;
+  const waiters = useRef<(() => void)[]>([]);
+  const settle = useCallback(() => {
+    const done = waiters.current;
+    waiters.current = [];
+    done.forEach((resolve) => resolve());
+  }, []);
+
+  useEffect(
+    () =>
+      onReloadAll(
+        () =>
+          new Promise<void>((resolve) => {
+            // A first fetch is already the server's word; signed out has none.
+            if (state.current === "loading" || state.current === "signed-out") {
+              resolve();
+              return;
+            }
+            waiters.current.push(resolve);
+            again();
+          }),
+      ),
+    [again],
+  );
+  // Gone before its reload landed: nobody waits on it any more.
+  useEffect(() => settle, [settle]);
 
   useEffect(() => {
     let live = true;
@@ -263,10 +293,17 @@ export function useApi<T>(
     if (bumped) {
       const asked = ask();
       waiting(asked.urls);
-      asked.result.then((data) => {
-        loaded(data);
-        follow(asked.urls);
-      }, failed);
+      asked.result.then(
+        (data) => {
+          loaded(data);
+          settle();
+          follow(asked.urls);
+        },
+        (error) => {
+          failed(error);
+          settle();
+        },
+      );
     } else {
       const first = watched(() => fromKept(run, scope.signal));
       waiting(first.urls);
@@ -306,7 +343,7 @@ export function useApi<T>(
       noteKept(mark, null);
       noteRetry(mark, null);
     };
-  }, [run, nonce, again]);
+  }, [run, nonce, again, settle]);
 
   return query;
 }

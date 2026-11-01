@@ -645,3 +645,66 @@ export async function sampleStatement(
     return null;
   }
 }
+
+/** A sale an import held back for want of shares, which the book carries now. */
+export type HeldSale = {
+  id: number;
+  date: string;
+  ticker: string;
+  action: string;
+  quantity: number;
+  price: number;
+  currency: string;
+  /** The statement it came from. */
+  broker: string;
+};
+
+/** A statement imported before a split on a name it still shows open. */
+export type ReuploadHint = {
+  key: string;
+  broker: string;
+  ticker: string;
+  split_date: string;
+};
+
+/** What looks wrong in the book and comes with its fix (`portfolio.doctor`). */
+export type Finding = {
+  key: string;
+  kind: "transfer" | "two_labels" | "oversold" | "duplicate" | "fee_in_coins";
+  ticker: string;
+  ids: number[];
+  detail: Record<string, unknown>;
+  weight: number;
+};
+
+/** A repair the app wrote by itself; undoing its change takes it back for good. */
+export type Healed = {
+  kind: "fee_in_coins" | "net_dividends";
+  change_id: number;
+  rows: number;
+  at: string;
+};
+
+export type Checkup = {
+  held: HeldSale[];
+  reupload: ReuploadHint[];
+  findings: Finding[];
+  healed: Healed[];
+};
+
+/** Everything the repairs card offers besides moves and splits. Ledger reads only. */
+export const checkup = () => get<Checkup>("/import/checkup");
+
+/** Write the named held sales; a 409 when the book cannot carry them all now. */
+export const applyHeld = (ids: number[]) =>
+  send<{ applied: number; tx_ids: number[] }>("POST", "/import/held/apply", { ids });
+
+export const dismissReupload = (key: string) =>
+  send<null>("POST", "/import/reupload/dismiss", { key });
+
+/** Apply a finding's fix as a scan run on the server finds it; 409 once gone. */
+export const applyFix = (key: string) =>
+  send<{ change_id: number; rows: number }>("POST", "/import/fix", { key });
+
+export const undoChange = (changeId: number) =>
+  send<unknown>("DELETE", `/portfolio/changes/${changeId}`);

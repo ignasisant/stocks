@@ -72,8 +72,8 @@ describe("the book tiles", () => {
 
   it("tones a move by its sign", () => {
     const html = draw();
-    expect(html).toMatch(/ag-tone-up">\+0\.80%/);
-    expect(html).toMatch(/ag-tone-down">-2\.00%/);
+    expect(html).toMatch(/ag-tone-up">(<span class="ag-count">)?\+0\.80%/);
+    expect(html).toMatch(/ag-tone-down">(<span class="ag-count">)?-2\.00%/);
   });
 });
 

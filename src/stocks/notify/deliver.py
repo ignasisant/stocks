@@ -1,10 +1,10 @@
-"""Deliver alert/reminder messages to real channels.
+"""Deliver a local `stocks alerts` run to real channels.
 
 Channels are opt-in via environment (.env): a channel with no config is simply
 skipped, so `stocks alerts --deliver` degrades to console-only until you wire
-one up. No secrets live in code.
+one up. No secrets live in code. Accounts get their notifications as Web Push
+from the crons (`notify/fanout.py`); this is the single-user path.
 
-  Telegram : TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
   Email    : SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
              ALERT_EMAIL_TO, ALERT_EMAIL_FROM (default SMTP_USER)
 """
@@ -15,12 +15,6 @@ import os
 import smtplib
 from email.message import EmailMessage
 
-from stocks.notify import telegram
-
-
-def telegram_configured() -> bool:
-    return bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"))
-
 
 def email_configured() -> bool:
     return bool(
@@ -30,17 +24,9 @@ def email_configured() -> bool:
 
 def configured_channels() -> list[str]:
     channels = ["console"]
-    if telegram_configured():
-        channels.append("telegram")
     if email_configured():
         channels.append("email")
     return channels
-
-
-def _send_telegram(text: str) -> str:
-    # Plain text to the global env chat — the historical single-user channel.
-    telegram.send_message(text, chat_id=os.environ["TELEGRAM_CHAT_ID"], parse_mode=None)
-    return "sent"
 
 
 def _send_email(subject: str, text: str) -> str:
@@ -74,11 +60,6 @@ def deliver(lines: list[str], subject: str = "Stock alerts") -> dict[str, str]:
         print(line)
     status["console"] = "sent"
 
-    if telegram_configured():
-        try:
-            status["telegram"] = _send_telegram(f"{subject}\n{text}")
-        except Exception as exc:
-            status["telegram"] = f"error: {exc}"
     if email_configured():
         try:
             status["email"] = _send_email(subject, text)

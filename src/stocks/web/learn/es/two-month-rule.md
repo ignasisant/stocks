@@ -6,6 +6,8 @@ minutes: 4
 as_of: 2026-10-25
 terms: two_month_rule, wash_sale
 app: portfolio?tab=tax
+slug: regla-de-los-dos-meses
+description: Si recompras la misma acción dos meses antes o después de vender con pérdidas, no puedes compensarla ese año. Cómo funciona la regla, con ejemplo.
 ---
 Vendes con pérdidas para compensar ganancias y, al día siguiente, recompras la misma acción. ¿Puedes apuntarte la pérdida? En España, normalmente no.
 

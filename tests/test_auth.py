@@ -148,11 +148,11 @@ def test_stamp_login_leaves_prefs_untouched_within_the_day(tmp_path):
 def test_stamp_login_keeps_the_rest_of_prefs(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
     restore(p)
-    save_prefs({**DEFAULT_PREFS, "currency": "USD", "telegram_chat_id": 7}, p.prefs)
+    save_prefs({**DEFAULT_PREFS, "currency": "USD", "notify_digest": False}, p.prefs)
     accounts.stamp_login(p, seeded=False)
     prefs = load_prefs(p.prefs)
     assert prefs["currency"] == "USD"
-    assert prefs["telegram_chat_id"] == 7
+    assert prefs["notify_digest"] is False
 
 
 def test_restore_account_migrates_legacy_dir(tmp_path):
@@ -243,10 +243,10 @@ def test_two_overlapping_turns_each_count_their_unit(tmp_path):
 
 def test_a_loaded_save_removes_what_it_removed_and_nothing_else(tmp_path):
     path = tmp_path / "prefs.json"
-    save_prefs({"tg_link_code": "x", "currency": "USD"}, path)
+    save_prefs({"pending_code": "x", "currency": "USD"}, path)
     held = load_prefs(path)
     accounts.update_prefs(path, {"gemini_key_enc": "ct"}, persist=lambda p: None)
-    held.pop("tg_link_code")
+    held.pop("pending_code")
     save_prefs(held, path)
     assert accounts.stored_prefs(path) == {"currency": "USD", "gemini_key_enc": "ct"}
 

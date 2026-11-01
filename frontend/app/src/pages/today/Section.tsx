@@ -17,6 +17,7 @@ import { useId, type ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { Help } from "../../ui/Kpi";
 import { TickerCell } from "../home/ui";
+import { Go } from "../home/Go";
 import { monthDay } from "../home/format";
 import type { DailyItem } from "../home/types";
 import { AnalysisPanel, type Panel } from "./Analysis";
@@ -75,7 +76,8 @@ function Tickers({ tickers }: { tickers: string[] }) {
   );
 }
 
-/** The card's own lines, each with its analysis a click away when it has one. */
+/** The card's own lines, each with the page that acts on it and its analysis
+ * a click away when it has them. */
 export function Lines({
   items,
   canOpen,
@@ -100,6 +102,12 @@ export function Lines({
           <li key={item.key}>
             {item.line}
             <Tickers tickers={item.tickers} />
+            {item.go ? (
+              <>
+                {" "}
+                <Go go={item.go} className="td-go" />
+              </>
+            ) : null}
             {canOpen && opens(item) ? (
               <>
                 {" "}

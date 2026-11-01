@@ -2,7 +2,7 @@
 #
 # Not a notification and not a fan-out: the output is one market-wide file
 # (data/sector_scan.json in the R2 bucket) that every account reads. No user
-# data is touched, so nothing here needs the Telegram bot or the Fernet key.
+# data is touched, so nothing here needs the push key or the Fernet key.
 #
 # What it costs: eleven sectors, ~18 companies each, ~5 Yahoo requests per
 # company — call it a thousand requests, paced by a five-second gap between
