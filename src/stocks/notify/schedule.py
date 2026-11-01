@@ -31,10 +31,14 @@ import time as clock
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from stocks import obs
+
+if TYPE_CHECKING:
+    from stocks.accounts import UserPaths
 
 JOBS = ("briefing", "digest", "weekly")
 DEFAULTS: dict[str, dict] = {
@@ -75,7 +79,8 @@ def valid_zone(name: object) -> bool:
 def zone(prefs: dict) -> ZoneInfo:
     """The account's zone, `DEFAULT_ZONE` until the browser has sent one."""
     name = prefs.get(ZONE_KEY)
-    return ZoneInfo(name.strip() if valid_zone(name) else DEFAULT_ZONE)
+    ok = isinstance(name, str) and valid_zone(name)
+    return ZoneInfo(name.strip() if ok and name else DEFAULT_ZONE)
 
 
 def parse_time(text: object) -> time | None:
@@ -161,7 +166,7 @@ def eligible(prefs: dict, devices: int, today: date) -> bool:
 @dataclass
 class Account:
     label: str
-    paths: object  # accounts.UserPaths
+    paths: UserPaths
     prefs: dict
     runs: list[tuple[str, date]] = field(default_factory=list)
 
@@ -172,7 +177,7 @@ class Account:
         return self.prefs.get("language") or webpush.lang_of(self.paths.push) or "en"
 
 
-def _roster() -> list[tuple[str, object]]:
+def _roster() -> list[tuple[str, UserPaths]]:
     """(label, UserPaths) for every account, the owner labelled "owner" — the
     crons' discovery (`fanout._slugs`), as paths this process serves."""
     from stocks import accounts
@@ -203,7 +208,8 @@ def plan(now: datetime) -> list[Account]:
         tz = zone(prefs)
         if not eligible(prefs, webpush.devices(paths.push), now.astimezone(tz).date()):
             continue
-        last = prefs.get(LAST_KEY) if isinstance(prefs.get(LAST_KEY), dict) else {}
+        stored = prefs.get(LAST_KEY)
+        last: dict = stored if isinstance(stored, dict) else {}
         runs = [
             (job, day)
             for job in JOBS

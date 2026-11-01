@@ -72,7 +72,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast, get_args
 
 from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -1505,8 +1505,11 @@ class ReuploadHint(BaseModel):
     split_date: str = Field(description="The split written after that import.")
 
 
+HealKind = Literal["fee_in_coins", "net_dividends"]
+
+
 class Healed(BaseModel):
-    kind: Literal["fee_in_coins", "net_dividends"] = Field(
+    kind: HealKind = Field(
         description="Which repair it was."
     )
     change_id: int = Field(description="`DELETE /portfolio/changes/{id}` undoes it.")
@@ -1605,10 +1608,11 @@ def checkup(account: Account) -> Checkup:
         ],
         healed=[
             Healed(
-                kind=kind, change_id=c.id, rows=len(c.changes), at=c.at,
-                summary=c.summary,
+                kind=cast(HealKind, kind), change_id=c.id, rows=len(c.changes),
+                at=c.at, summary=c.summary,
             )
             for kind, c in heal.recent(account.db)
+            if kind in get_args(HealKind)
         ],
     )
 

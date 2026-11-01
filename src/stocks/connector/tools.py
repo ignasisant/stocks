@@ -845,7 +845,7 @@ async def check_book() -> CallToolResult:
         from stocks.api.routes import portfolio
         from stocks.portfolio import demo, held
 
-        out = {"kind": "book_health", **_plain(portfolio.health(paths))}
+        out: dict[str, Any] = {"kind": "book_health", **_plain(portfolio.health(paths))}
         # What an import left behind: sales refused for want of shares that
         # the book can carry now (one finding, applied with apply_fix), and
         # statements worth uploading again since a split came after them.
