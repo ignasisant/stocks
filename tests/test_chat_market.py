@@ -102,6 +102,25 @@ def test_only_the_reader_s_own_symbols_carry_over():
     assert market.carried("¿Y los precios?", _CANDIDATES, {}) == []
 
 
+def test_a_central_bank_is_not_a_ticker_unless_the_reader_lists_it():
+    # Prod 2026-11-02: the daily card said "sin reuniones del BCE/Fed", and
+    # "¿Qué es BCE?" was answered as BCE Inc.
+    assert mentioned("Que es BCE", lookup=lambda n: "") == []
+    assert mentioned("¿Qué hará el ECB?", lookup=lambda n: "") == []
+    assert mentioned("Que es BCE", {"BCE": "BCE"}, lookup=_no_lookup) == ["BCE"]
+
+
+def test_each_quote_says_whether_the_reader_holds_it():
+    # Told "BCE Inc, last 20.39 USD", the answer said "sí, tienes BCE en
+    # cartera" with another position's shares and loss.
+    sent = augment("Que es BCE", [Quote("BCE", price=20.39, currency="USD"),
+                                  Quote("HMI", price=1303.5, currency="EUR")],
+                   held={"HMI"})
+    assert "BCE: last 20.39 USD | not held by the user" in sent
+    assert "HMI: last 1,303.50 EUR | held: figures in the book above" in sent
+    assert "held" not in augment("x", [Quote("BCE", price=20.39)])
+
+
 def test_unknown_company_name_falls_back_to_one_lookup():
     seen = []
 

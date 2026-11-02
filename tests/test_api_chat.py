@@ -994,7 +994,7 @@ def test_the_tool_trace_rides_on_the_answer_and_on_the_stored_turn(
 
     served()
     monkeypatch.setattr(market, "lookup_for", lambda *a, **k: [Quote()])
-    monkeypatch.setattr(market, "augment", lambda text, live, lang="en": text)
+    monkeypatch.setattr(market, "augment", lambda text, live, lang="en", held=None: text)
     body = signed_in.post("/v1/chat/runs", json=run("hola AAPL")).text
     done = finished(events(body))["result"]
     assert done["steps"] == [

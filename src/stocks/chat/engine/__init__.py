@@ -79,6 +79,7 @@ from stocks.chat.engine.actions import (
 from stocks.chat.engine.book import (
     book_snapshot,
     enriched_frame,
+    held_in,
     portfolio_context,
     reporting_currency,
     sector_exposure,
@@ -806,7 +807,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
-        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
+        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang,
+                                             held=held_in(book()))
     msgs[-1]["content"] += pages
     msgs[-1]["content"] += market.unlisted_block(nowhere)
     if asked_for is not None:

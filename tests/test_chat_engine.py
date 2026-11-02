@@ -913,6 +913,15 @@ def test_a_gather_that_quoted_nothing_still_gets_the_live_quotes(
     assert any(s["tool"] == "get_quotes" for s in reply.steps)
 
 
+def test_the_book_snapshot_names_what_is_held():
+    from stocks.chat.engine.book import held_in
+
+    book = ("Holdings (live market data, EUR). Total book 10 €:\n"
+            "- HMI: 1.69 sh | value 2 €\n- SAN.MC: 3 sh | value 8 €\n\n"
+            "Also on the watchlist (not held): ASML")
+    assert held_in(book) == {"HMI", "SAN.MC"}
+
+
 def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
         monkeypatch):
     # ZXQW took 1 m 58 s: a deep gather searching for a company that does

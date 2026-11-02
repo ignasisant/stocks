@@ -4,6 +4,7 @@ and the tax rules that apply to the account.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -105,6 +106,11 @@ def book_snapshot(
     if watching:
         book += "\n\nAlso on the watchlist (not held): " + ", ".join(watching)
     return book
+
+
+def held_in(book: str) -> set[str]:
+    """The tickers `book_snapshot` lists as positions."""
+    return set(re.findall(r"^- ([^:\s]+): ", book, re.MULTILINE))
 
 
 def enriched_frame(db: Path, base: str = "EUR") -> pd.DataFrame | None:

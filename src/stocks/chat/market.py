@@ -58,6 +58,10 @@ _AMPERSAND = (
 # model, whether a message names a company worth searching for.
 NOT_TICKERS = {
     "A", "AI", "ALL", "AND", "ANY", "API", "AT", "BE", "BUY", "BY", "CAGR",
+    # Central banks, as a daily card says them ("sin reuniones del BCE/Fed"):
+    # "¿qué es BCE?" was answered as BCE Inc. A reader who lists the company
+    # still gets it (`mentioned`).
+    "BCE", "BOE", "BOJ", "ECB",
     "CEO", "CFO", "CPI", "DCF", "DE", "DO", "EBIT", "EBITDA", "EL", "EPS",
     "ES", "ETF", "ETFS", "EU", "EUR", "EV", "FCF", "FED", "FOR", "FX", "GDP",
     "GO", "HOY", "I", "IA", "IF",
@@ -294,7 +298,7 @@ def mentioned(
     # The regex only matches all-caps runs, so a token here is one the user
     # actually typed in caps; the stop-list keeps "ETF"/"USA"/"CEO" out.
     for tok in _TICKER_RE.findall(_ampersands(message, add)):
-        if tok not in NOT_TICKERS:
+        if tok not in NOT_TICKERS or tok in known:
             add(known.get(tok, tok))
     said = f" {' '.join(_words(message))} "
     for name, tk in known.items():
@@ -695,10 +699,21 @@ def _scan() -> dict:
 # ----------------------------------------------------------------- prompt
 
 
-def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
-    """The user message with the live quotes appended (unchanged when none)."""
+def augment(message: str, quotes_: list[Quote], lang: str = "en",
+            held: set[str] | None = None) -> str:
+    """The user message with the live quotes appended (unchanged when none).
+
+    With `held`, each line says whether the reader holds it: told "BCE Inc,
+    last 20.39 USD", the model answered "yes, you hold BCE" with another
+    position's shares, value and loss."""
     if not quotes_:
         return message
+
+    def owned(q: Quote) -> str:
+        if held is None:
+            return ""
+        return (" | held: figures in the book above" if q.ticker in held
+                else " | not held by the user")
     return (
         message
         + "\n\n---\nLive market data fetched for this message (these are "
@@ -706,7 +721,7 @@ def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
         "prices quoted in web results; each move is dated with its session, "
         "and premarket or after-hours is where a report out of hours trades "
         "first):\n"
-        + "\n".join(q.line(lang) for q in quotes_)
+        + "\n".join(q.line(lang) + owned(q) for q in quotes_)
     )
 
 
