@@ -22,6 +22,30 @@ def pytest_xdist_auto_num_workers(config):
     return None
 
 
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config, items):
+    """Keep one CI shard's share of the tests: `PYTEST_SHARD=2/3` keeps every
+    third test from the second on.
+
+    By test, not by file: a few files carry most of the wall time
+    (test_loadtest alone is 14 s), so whole files would leave one shard
+    waiting on the other. Last, so `-m` has already dropped what it drops and
+    the split is over what will run. Every xdist worker collects the same
+    list in the same order and so keeps the same share.
+    """
+    import os
+
+    shard = os.environ.get("PYTEST_SHARD")
+    if not shard:
+        return
+    k, n = (int(part) for part in shard.split("/"))
+    kept, dropped = [], []
+    for i, item in enumerate(items):
+        (kept if i % n == k - 1 else dropped).append(item)
+    config.hook.pytest_deselected(items=dropped)
+    items[:] = kept
+
+
 @pytest.fixture(scope="session")
 def _scratch_root():
     """One temporary directory per test process, removed when it ends.
