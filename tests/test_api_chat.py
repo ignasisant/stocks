@@ -1086,7 +1086,8 @@ def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
     focused: list[str] = []
     monkeypatch.setattr(
         engine.market, "lookup_for",
-        lambda message, watchlist=None, focus="", lang="en": focused.append(focus) or [],
+        lambda message, watchlist=None, focus="", lang="en", earlier=(): (
+            focused.append(focus) or []),
     )
     signed_in.post(
         "/v1/chat/runs",

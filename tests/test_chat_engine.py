@@ -892,6 +892,27 @@ def test_answer_injects_live_quotes(providers, paths, monkeypatch):
     assert auth.load_chat(paths["chat_path"])[0]["content"] == "how is NVDA?"
 
 
+def test_a_gather_that_quoted_nothing_still_gets_the_live_quotes(
+        providers, paths, monkeypatch):
+    # Prod 2026-11-02: "Dámelos", asking for prices, went out with no tool
+    # called and four prices from memory.
+    from stocks.chat.market import Quote
+
+    patch_engine(monkeypatch, "gather_evidence",
+                 lambda *a, **k: engine.agent.Evidence())
+    seen = []
+    monkeypatch.setattr(engine.market, "lookup_for", lambda message, *a, **k: (
+        seen.append(k.get("earlier")) or [Quote("TSM", price=412.1, currency="USD")]))
+    auth.save_chat([{"role": "user", "content": "¿A qué precio compro TSM?"},
+                    {"role": "assistant", "content": "**TSM** cerca de soportes."}],
+                   paths["chat_path"])
+    reply = engine.answer(prefs=dict(BASE_PREFS), message="Dámelos", **paths)
+    _, _, _, messages = providers["free"].calls[0]
+    assert "last 412.10 USD" in messages[-1]["content"]
+    assert seen[0][-1]["content"] == "**TSM** cerca de soportes."
+    assert any(s["tool"] == "get_quotes" for s in reply.steps)
+
+
 def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
         monkeypatch):
     # ZXQW took 1 m 58 s: a deep gather searching for a company that does

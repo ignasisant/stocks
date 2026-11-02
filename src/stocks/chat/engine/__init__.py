@@ -725,7 +725,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             hits, quotes, docs = in_parallel(
                 lambda: [] if own else ground_web(prefs, scout, scout_key,
                                                   history, view),
-                lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
+                lambda: market.lookup_for(message, watchlist, focus=focus,
+                                          lang=lang, earlier=above),
                 # The app's own documents: with no tool loop the model never
                 # reached them, and "how do I undo an import?" was answered
                 # with a delete button that does not exist (prod eval
@@ -749,18 +750,30 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                 told({"id": f"tool_pre{n}", **line, "args": {}})
             pages = _pages(message, quotes, watchlist, db, prefs, lang, told,
                            timeout_s, watching)
-        elif web_enabled() and not own and not any(
-                c.name in ("search_web", "read_page") for c in evidence.calls):
+        else:
             # Searching is the default, and the model's own lookup skipped it.
             # Keywords decide instead — no second planner call — so small talk,
             # a definition or a question about the reader's own book still goes
             # without, and everything else reads the web.
-            queries = chat_web.heuristic_queries(message, web_context(history, view))
+            queries = (chat_web.heuristic_queries(message, web_context(history, view))
+                       if web_enabled() and not own and not any(
+                           c.name in ("search_web", "read_page")
+                           for c in evidence.calls) else [])
+            # So is a price: "Dámelos" after "the prices are wrong" went out
+            # with no tool called and four prices from memory (prod
+            # 2026-11-02). The fixed lookup quotes what it is about.
+            quoting = not any(c.name == "get_quotes" for c in evidence.calls)
             if queries:
                 say("searching")
-                hits = in_parallel(lambda: chat_web.collect(queries, message),
-                                   timeout=timeout_s, tick=watching)[0] or []
-                for n, line in enumerate(trace(None, hits, [], lang)):
+            if queries or quoting:
+                hits, quotes = in_parallel(
+                    lambda: chat_web.collect(queries, message) if queries else [],
+                    lambda: (market.lookup_for(message, watchlist, focus=focus,
+                                               lang=lang, earlier=above)
+                             if quoting else []),
+                    timeout=timeout_s, tick=watching)
+                hits, quotes = hits or [], quotes or []
+                for n, line in enumerate(trace(None, hits, quotes, lang)):
                     told({"id": f"tool_pre{n}", **line, "args": {}})
         if vetting is not None and (said := vetting.refusal()):
             raise guard.Blocked(said)

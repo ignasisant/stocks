@@ -65,6 +65,43 @@ def test_the_page_in_focus_is_quoted_only_when_the_message_points_at_it(monkeypa
                      ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"]]
 
 
+# Prod 2026-11-02, thread rated "made up": after an answer on TSM, NOW and
+# ASML, "No me has dicho el precio exacto" names no symbol, so nothing was
+# quoted and the answer gave TSM at half its price.
+_KNOWN = {"TSM": "TSM", "NOW": "NOW", "SERVICENOW, INC.": "NOW",
+          "ASML": "ASML", "GOOG": "GOOG"}
+_CANDIDATES = [
+    {"role": "user",
+     "content": "Analiza las noticias de los candidatos y a qué precio comprar"},
+    {"role": "assistant", "content": "Para **TSM**, **NOW** y **ASML**: un P/E "
+     "por debajo de 18x, en USD y EUR."},
+]
+
+
+def test_a_price_follow_up_quotes_what_the_last_answer_was_about(monkeypatch):
+    asked = []
+    monkeypatch.setattr(market, "quotes", lambda tickers: asked.append(tickers) or [])
+    monkeypatch.setattr(market, "watchlist_names", lambda _path: _KNOWN)
+    monkeypatch.setattr(market, "_lookup", lambda _name: "")
+    market.lookup_for("No me has dicho el precio exacto", "wl", focus="GOOG",
+                      earlier=_CANDIDATES)
+    # A short reply keeps the subject: the prices were the last question.
+    market.lookup_for("Dámelos", "wl", earlier=[
+        *_CANDIDATES, {"role": "user", "content": "Los precios están mal"},
+        {"role": "assistant", "content": "Busco el precio de TSM y NOW."}])
+    # A symbol it names wins, and a question about something else carries none.
+    market.lookup_for("¿y el precio de GOOG?", "wl", earlier=_CANDIDATES)
+    market.lookup_for("¿Qué es el ROIC y cómo se calcula en una empresa?", "wl",
+                      earlier=_CANDIDATES)
+    assert asked == [["TSM", "NOW", "ASML"], ["TSM", "NOW"], ["GOOG"], []]
+
+
+def test_only_the_reader_s_own_symbols_carry_over():
+    # "USD", "EUR" and the "E" of P/E are shaped like tickers too.
+    assert market.carried("¿Y los precios?", _CANDIDATES, {"TSM": "TSM"}) == ["TSM"]
+    assert market.carried("¿Y los precios?", _CANDIDATES, {}) == []
+
+
 def test_unknown_company_name_falls_back_to_one_lookup():
     seen = []
 

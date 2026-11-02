@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -86,7 +86,7 @@ _POINTS_RE = re.compile(
 _PRICED_RE = re.compile(
     r"\b(?:c[oó]mo (?:va|est[aá]|lo ves|la ves)|qu[eé] tal|cotiza|compr[oa]r?"
     r"|vend[oe]r?|mantengo|mantener|refuerzo|reforzar|barat[ao]s?|car[ao]s?"
-    r"|precio|price|cheap|expensive|buy|sell|hold)\b",
+    r"|precios?|prices?|cotizaci[oó]n(?:es)?|cheap|expensive|buy|sell|hold)\b",
     re.IGNORECASE,
 )
 
@@ -718,16 +718,60 @@ def points_at_screen(message: str, known: dict[str, str] | None = None) -> bool:
         message, known, lookup=lambda _name: "")
 
 
+# A reply this short that points back keeps the subject of the turns before
+# it: "Dámelos" after "the prices are wrong" still asks for prices, while
+# "¿qué es el ROIC?" there starts another one.
+_FOLLOW_UP_WORDS = 12
+_BACK_RE = re.compile(
+    r"\b(?:l[oa]s?|les|es[oa]s?|eso|ellos|ellas|siguen?|sigue|otra vez"
+    r"|them|those|these|they|it|again)\b|\w+l[oa]s\b",
+    re.IGNORECASE,
+)
+
+
+def carried(
+    message: str, earlier: Sequence[Mapping], known: dict[str, str]
+) -> list[str]:
+    """The reader's own tickers the last answer named, when `message` asks
+    for their prices without naming them.
+
+    "No me has dicho el precio exacto" after an answer on TSM, NOW and ASML
+    names no symbol: nothing was quoted, and the answer gave TSM at half its
+    price from memory."""
+    asked = [t.get("content") or "" for t in earlier if t.get("role") == "user"]
+    if not (_PRICED_RE.search(message) or (
+            len(message.split()) <= _FOLLOW_UP_WORDS and _BACK_RE.search(message)
+            and any(_PRICED_RE.search(text) for text in asked[-2:]))):
+        return []
+    mine = set(known.values())
+    said = [t.get("content") or "" for t in earlier if t.get("role") == "assistant"]
+    for text in reversed(said[-2:]):
+        # Only symbols on the reader's list: an answer's "USD" or "P/E" is
+        # shaped like a ticker too.
+        out = list(dict.fromkeys(
+            tk for tok in _TICKER_RE.findall(text)
+            if (tk := known.get(tok)) in mine))
+        if out:
+            return out[:MAX_TICKERS]
+    return []
+
+
 def lookup_for(
-    message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en"
+    message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en",
+    earlier: Sequence[Mapping] = (),
 ) -> list[Quote]:
     """The whole path in one call: mentions → live quotes.
 
     The convenience entry point both chat surfaces use; every failure inside
     degrades to []. `focus` is quoted only when the message points at it
-    (`points_at_screen`); a symbol it names is quoted whatever the page."""
+    (`points_at_screen`); a symbol it names is quoted whatever the page. A
+    price follow-up that names none quotes what the last answer was about
+    (`carried`), ahead of the page behind the drawer."""
     try:
         known = watchlist_names(watchlist) if watchlist else {}
+        if not mentioned(message, known, lookup=lambda _name: "") and (
+                follows := carried(message, earlier, known)):
+            return _with_crypto(quotes(follows), _scan, lang)
         focus = focus if focus and points_at_screen(message, known) else ""
         return _with_crypto(quotes(mentioned(message, known, focus)), _scan, lang)
     except Exception:
