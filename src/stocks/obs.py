@@ -41,7 +41,6 @@ import sys
 import threading
 import time
 import uuid
-import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 
@@ -204,17 +203,22 @@ class PlainFormatter(logging.Formatter):
 # ----------------------------------------------------------------------- setup
 
 
-def _quiet_library_deprecations() -> None:
+_YFINANCE_PANDAS_NOTICE = re.compile(
+    r"(^|[/\\])yfinance[/\\.][^:]*:\d+: Pandas4Warning: ")
+
+
+class _PandasNoticesFromYfinance(logging.Filter):
     """Drop pandas' future-removal notices raised from inside yfinance.
 
     They are yfinance's to fix, fire on every history download (×1245 a day
     after pandas 3.1) and buried the app's own warnings. Ours still log.
+    On the `py.warnings` logger, not a `warnings` filter: importing yfinance
+    puts its own `default` DeprecationWarning filter in front of ours, and the
+    app imports it lazily, after `setup()` — prod logged ~1000 a day anyway.
     """
-    try:
-        from pandas.errors import Pandas4Warning
-    except ImportError:  # pandas < 3.1 has no such category
-        return
-    warnings.filterwarnings("ignore", category=Pandas4Warning, module=r"yfinance(\.|$)")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not _YFINANCE_PANDAS_NOTICE.search(record.getMessage())
 
 
 def setup(level: str | int | None = None, *, force: bool = False) -> None:
@@ -248,7 +252,9 @@ def setup(level: str | int | None = None, *, force: bool = False) -> None:
     if not any(isinstance(f, _YahooMissIsNotAnError) for f in yf_log.filters):
         yf_log.addFilter(_YahooMissIsNotAnError())
     logging.captureWarnings(True)  # DeprecationWarning et al become log records
-    _quiet_library_deprecations()
+    py_warnings = logging.getLogger("py.warnings")
+    if not any(isinstance(f, _PandasNoticesFromYfinance) for f in py_warnings.filters):
+        py_warnings.addFilter(_PandasNoticesFromYfinance())
     _configured = True
     if IN_CLOUD_RUN:
         # One line per cold start — how you tell "the app is slow" from "the app
