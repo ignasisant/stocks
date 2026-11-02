@@ -43,7 +43,7 @@ _ASK_RE = re.compile(
 TIMEOUT = 25.0
 MAX_WORDS = 110
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 SIDES: dict[str, str] = {
     "bull": (

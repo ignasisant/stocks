@@ -84,7 +84,7 @@ MOVERS_SHOWN = 6
 WEIGHTS_SHOWN = 6
 EARNINGS_DAYS = 14
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 # Repurchase-window tokens the card knows how to phrase (tax.Jurisdiction
 # .repurchase_window). An unknown token is dropped rather than printed raw.
 _WINDOW_KEYS = ("2m", "30d", "28d")

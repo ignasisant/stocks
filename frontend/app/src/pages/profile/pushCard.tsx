@@ -10,7 +10,7 @@
  */
 
 import { useState } from "react";
-import { useLang, useT } from "../../shell/i18n";
+import { shippedLang, useLang, useT } from "../../shell/i18n";
 import {
   type PushState,
   disablePush,
@@ -59,7 +59,7 @@ export function PushCard({
     setSent(false);
     try {
       if (on) {
-        const granted = await enablePush(key, lang.startsWith("es") ? "es" : "en");
+        const granted = await enablePush(key, shippedLang(lang));
         onState({
           ...state,
           subscribed: granted,

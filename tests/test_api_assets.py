@@ -87,9 +87,9 @@ def test_a_prefix_filter_cuts_the_catalog_down(client):
 
 
 def test_a_language_nobody_ships_reads_in_english(client):
-    """A browser set to Italian asks for `it`. A 404 left the app with no
+    """A browser set to French asks for `fr`. A 404 left the app with no
     strings and every label on screen as its dotted key."""
-    served = client.get("/v1/i18n/it")
+    served = client.get("/v1/i18n/fr")
     assert served.status_code == 200
     assert served.json() == client.get("/v1/i18n/en").json()
 

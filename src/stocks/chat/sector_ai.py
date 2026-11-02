@@ -247,7 +247,7 @@ _VERDICT_SYSTEM = (
     "- Write in {language}. Be concrete and short; no preamble."
 )
 
-_LANGUAGES = {"en": "English", "es": "Spanish"}
+_LANGUAGES = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 def prompt(facts: dict, lang: str) -> tuple[str, list[dict]]:

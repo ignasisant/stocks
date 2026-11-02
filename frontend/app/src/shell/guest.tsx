@@ -16,7 +16,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { useLang, useT } from "./i18n";
+import { shippedLang, useLang, useT } from "./i18n";
 import { useGuest, useSignIn } from "./session";
 import { BASE, pagePath } from "./router";
 import { Icon } from "./Icon";
@@ -78,9 +78,9 @@ export function SignIn({
   );
 }
 
-/** A legal page in the reader's language; the server knows only en and es. */
+/** A legal page in the reader's language. */
 export function legalHref(doc: "privacy" | "terms", lang: string): string {
-  return `/legal/${doc}?lang=${lang.startsWith("es") ? "es" : "en"}`;
+  return `/legal/${doc}?lang=${shippedLang(lang)}`;
 }
 
 /**

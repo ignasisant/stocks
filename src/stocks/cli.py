@@ -1352,7 +1352,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="write the Today page's shared market read (morning cron)",
     )
     p_today.add_argument(
-        "--lang", action="append", choices=("es", "en"),
+        "--lang", action="append", choices=("es", "en", "it"),
         help="only this language (repeatable; default: es and en)",
     )
     p_today.add_argument(

@@ -41,16 +41,20 @@ def compact_money(v: float, symbol: str = "$") -> str:
     return f"{symbol}{v:,.0f}"
 
 
+# Languages that write "1.234,50": the dot groups, the comma marks decimals.
+DECIMAL_COMMA = frozenset({"es", "it"})
+
+
 def fmt_num(value: float, digits: int = 2, lang: str = "en", signed: bool = False) -> str:
     """`value` grouped and rounded in the reader's language.
 
-    "1,234.50" in English, "1.234,50" in Spanish. Grouping is always on, even
+    "1,234.50" in English, "1.234,50" in Spanish and Italian. Grouping is always on, even
     for four digits, so one app never mixes "9411" with "27.246". Text the LLM
     will quote goes through this, so the answer repeats numbers the way the
     screens print them.
     """
     text = f"{value:{'+' if signed else ''},.{digits}f}"
-    if (lang or "en").split("-")[0].lower() == "es":
+    if (lang or "en").split("-")[0].lower() in DECIMAL_COMMA:
         text = text.translate({ord(","): ".", ord("."): ","})
     return text
 

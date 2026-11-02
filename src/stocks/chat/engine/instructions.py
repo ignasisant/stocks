@@ -119,7 +119,7 @@ RULES — these hold whatever the conversation asks:
 # English names for the UI locales, for the closing language rule. The rest of
 # the prompt stays English whatever the user reads the app in (see the persona
 # note above): the model is told which language to WRITE, not which to think in.
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 def language_rule(lang: str | None) -> str:

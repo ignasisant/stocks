@@ -89,6 +89,7 @@ from stocks.web.landing import (
     LANDING_PATHS,
     PATH_EN,
     PATH_ES,
+    PATH_IT,
     variant_for,
 )
 
@@ -397,7 +398,9 @@ _NOT_FOUND_POLICY = csp.policy(styles=[csp.source(_NOT_FOUND_CSS)], fonts=False)
 
 def not_found(request: Request) -> Response:
     """A real 404, with just enough page to be worth landing on."""
-    home = PATH_ES if request.url.path.startswith(PATH_ES) else PATH_EN
+    home = next(
+        (p for p in (PATH_ES, PATH_IT) if request.url.path.startswith(p)), PATH_EN
+    )
     body = (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="robots" content="noindex">'
@@ -847,7 +850,11 @@ async def legal_page(request: Request) -> Response:
 
 async def guide_page(request: Request) -> Response:
     """A public guide (`web/guides.py`), or a language's index of them."""
-    lang = "es" if request.url.path.startswith(guides.PATHS["es"]) else "en"
+    lang = next(
+        (code for code, p in guides.PATHS.items()
+         if code != "en" and request.url.path.startswith(p)),
+        "en",
+    )
     base = base_url(request)
     slug = request.path_params.get("slug")
     if slug is None:

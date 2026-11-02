@@ -218,6 +218,116 @@ _PRIVACY = {
             ]),
         ],
     ),
+    "it": (
+        "Informativa sulla privacy",
+        [
+            ("Di cosa si tratta", [
+                "TopStocks è un tracker di portafoglio a codice sorgente "
+                "disponibile e senza scopo commerciale, gestito da una persona "
+                "fisica. Questa pagina spiega quali dati l'app ospitata "
+                "conserva e perché. Domande e richieste: apri una segnalazione "
+                f"su {_CONTACT}.",
+            ]),
+            ("Dati che conserviamo", [
+                "Identità dell'account: quando accedi con Google riceviamo il "
+                "tuo indirizzo email, il nome visualizzato e la foto del "
+                "profilo. L'email identifica la tua cartella di dati; dal tuo "
+                "account Google non viene letto nient'altro.",
+                "I tuoi dati: la watchlist, le transazioni importate, le "
+                "preferenze e le conversazioni con l'assistente che crei "
+                "nell'app. Sono conservati in un bucket di archiviazione "
+                "privato e non sono mai visibili ad altri utenti.",
+                "Log del server: visualizzazioni di pagina ed errori, "
+                "contrassegnati con uno slug di account pseudonimo e "
+                "conservati per circa 30 giorni a fini di debug. Vi rientrano "
+                "gli errori che il tuo browser incontra nell'app: l'errore, "
+                "la schermata e il punto del nostro codice in cui si è "
+                "verificato, con email e numeri oscurati. Copie di "
+                "backup periodiche del bucket di archiviazione sono "
+                "conservate per circa 30 giorni.",
+                "Diagnostica delle importazioni: quando l'importazione di un "
+                "estratto conto del broker non riesce, registriamo la sua "
+                "struttura (intestazioni delle colonne, tipo di file, "
+                "codifica e motivi per cui le righe sono state scartate) per "
+                "poter correggere l'importatore. I valori vengono oscurati "
+                "prima di essere salvati (una data diventa 99-99-9999, un "
+                "importo 9.999,99); l'estratto conto in sé non viene mai "
+                "conservato e non lascia mai il tuo browser.",
+            ]),
+            ("Collegamento bancario (facoltativo)", [
+                "Puoi collegare un conto bancario affinché l'app possa "
+                "riconciliare il denaro entrato e uscito con quanto "
+                "comunicato dal tuo broker. La funzione è disattivata finché "
+                "non la attivi, riguarda solo i conti che autorizzi e, "
+                "finché il collegamento funziona in modalità limitata, è "
+                "offerta a un piccolo elenco di conti autorizzati. Se non "
+                "colleghi mai una banca, nulla di questa sezione ti "
+                "riguarda.",
+                "Il collegamento avviene tramite Enable Banking Oy, un "
+                "prestatore finlandese di servizi di informazione sui conti "
+                "autorizzato ai sensi della PSD2, che detiene il collegamento "
+                "regolamentato con la tua banca. L'autenticazione avviene "
+                "sulle pagine della tua banca: questa app non vede mai le "
+                "tue credenziali bancarie. L'accesso è di sola lettura delle "
+                "informazioni sui conti: non è possibile disporre alcun "
+                "pagamento né spostare denaro.",
+                "Cosa viene conservato: il nome della banca, un identificativo "
+                "di sessione opaco, la data di scadenza del consenso e, per "
+                "ogni conto che autorizzi, il nome, la valuta e il numero "
+                "oscurato (ES12 ···· 3456: l'IBAN completo non viene mai "
+                "scritto su disco), insieme agli ultimi saldi letti e al "
+                "momento della lettura. Tutto ciò si trova nella tua cartella "
+                "di dati privata insieme al resto dei tuoi dati e nessun "
+                "altro utente può vederlo.",
+                "Un consenso dura fino a 180 giorni e di solito meno, a "
+                "seconda della tua banca. Puoi revocarlo in qualsiasi momento "
+                "dalla pagina Banca (Disconnetti, che chiude anche la "
+                "sessione presso Enable Banking) o dall'app della tua banca. "
+                "Eliminando il tuo account si elimina anche il collegamento, "
+                "insieme a tutto il resto.",
+            ]),
+            ("Cookie", [
+                "Un solo cookie di prima parte (ts_app) ricorda che il tuo "
+                "browser ha già usato l'app, così che la barra degli "
+                "indirizzi porti all'app anziché alla pagina di presentazione. "
+                "L'accesso imposta i cookie di sessione necessari al login. "
+                "Non ci sono cookie pubblicitari né di tracciamento "
+                "cross-site e nessuno strumento di analisi di terze parti.",
+            ]),
+            ("Terze parti", [
+                "I dati di mercato sono recuperati da fornitori pubblici di "
+                "dati di mercato; queste richieste contengono i simboli dei "
+                "titoli, mai la tua identità.",
+                "Se usi l'assistente di IA, il testo dei tuoi messaggi (più "
+                "il contesto del portafoglio necessario per rispondere) viene "
+                "inviato al fornitore del modello configurato per quella "
+                "risposta. Se usi una tua chiave API, questa viene conservata "
+                "cifrata.",
+                "Se attivi le notifiche, la sottoscrizione push di ciascun "
+                "dispositivo (il suo indirizzo push del browser e le chiavi) "
+                "viene conservata affinché le notifiche che hai abilitato "
+                "possano esservi inviate; disattivandole la sottoscrizione "
+                "viene rimossa.",
+                "Se colleghi una banca, la richiesta va a Enable Banking Oy, "
+                "il prestatore di servizi di informazione sui conti "
+                "autorizzato indicato sopra; i tuoi dati bancari non sono mai "
+                "condivisi con nessun altro.",
+                "I tuoi dati non vengono mai venduti né usati per scopi "
+                "pubblicitari.",
+            ]),
+            ("I tuoi diritti e la cancellazione", [
+                "Puoi scaricare tutto ciò che l'account contiene (registro "
+                "delle operazioni, watchlist, impostazioni, conversazioni, "
+                "memorie e diario delle decisioni) in un unico file zip da "
+                "Profilo → Dati e account → Scarica i tuoi dati.",
+                "Puoi eliminare da solo il tuo account e tutti i dati "
+                "conservati da Profilo → Preferenze → Elimina account. "
+                "L'eliminazione rimuove la tua cartella di dati e le sue "
+                "copie nel cloud; le righe di log e gli snapshot di backup "
+                "scadono secondo i propri tempi (circa 30 giorni).",
+            ]),
+        ],
+    ),
 }
 
 _TERMS = {
@@ -301,6 +411,50 @@ _TERMS = {
             ]),
         ],
     ),
+    "it": (
+        "Condizioni d'uso",
+        [
+            ("Non è consulenza in materia di investimenti", [
+                "TopStocks è uno strumento informativo. Nulla nell'app "
+                "(prezzi, indicatori, screener, analisi o risposte "
+                "dell'assistente di IA) costituisce consulenza in materia di "
+                "investimenti o fiscale, né una raccomandazione di acquisto o "
+                "vendita di alcuno strumento finanziario. Le decisioni di "
+                "investimento e le loro conseguenze sono esclusivamente "
+                "tue.",
+            ]),
+            ("Accuratezza dei dati", [
+                "I dati di mercato provengono da fonti di terzi e possono "
+                "essere in ritardo, incompleti o errati. I rendimenti passati "
+                "non sono indicativi di quelli futuri. Verifica ogni dato "
+                "rilevante con il tuo broker o con una fonte ufficiale prima "
+                "di agire.",
+            ]),
+            ("Il servizio", [
+                "Il codice sorgente dell'app è pubblico con licenza PolyForm "
+                "Noncommercial License 1.0.0 e l'app è fornita gratuitamente, "
+                "\"così com'è\" e \"come disponibile\", senza garanzie di "
+                "alcun tipo. Nella misura consentita dalla legge, il gestore "
+                "non risponde di alcuna perdita derivante dall'uso dell'app, "
+                "comprese le perdite di investimento e la perdita di dati. Il "
+                "servizio può cambiare o cessare in qualsiasi momento.",
+            ]),
+            ("Il tuo account", [
+                "Usa l'app in modo lecito e senza abusi (niente scraping "
+                "dell'app autenticata, tentativi di accesso ad altri account "
+                "o sovraccarico del servizio). Gli account che abusano del "
+                "servizio possono essere rimossi. Puoi eliminare il tuo "
+                "account e i tuoi dati in qualsiasi momento dalla pagina "
+                "Profilo.",
+            ]),
+            ("Modifiche", [
+                "Queste condizioni possono essere aggiornate; la data "
+                "riportata di seguito indica l'ultima revisione. Continuare "
+                "a usare l'app dopo una modifica comporta l'accettazione "
+                "delle condizioni aggiornate.",
+            ]),
+        ],
+    ),
 }
 
 _UI = {
@@ -308,6 +462,8 @@ _UI = {
            "privacy": "Privacy policy", "terms": "Terms of use"},
     "es": {"updated": "Última actualización", "home": "Volver a TopStocks",
            "privacy": "Política de privacidad", "terms": "Condiciones de uso"},
+    "it": {"updated": "Ultimo aggiornamento", "home": "Torna a TopStocks",
+           "privacy": "Informativa sulla privacy", "terms": "Condizioni d'uso"},
 }
 
 # Matches the landing's dark surface (seo.THEME_COLOR family) without pulling
@@ -356,7 +512,7 @@ def document(doc: str, lang: str) -> str:
     )
     other = PATH_TERMS if doc == "privacy" else PATH_PRIVACY
     other_label = ui["terms"] if doc == "privacy" else ui["privacy"]
-    lang_q = "?lang=es" if lang == "es" else ""
+    lang_q = f"?lang={lang}" if lang != DEFAULT_LANG else ""
 
     return (
         "<!doctype html>"

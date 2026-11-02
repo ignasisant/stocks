@@ -71,7 +71,7 @@ KNOWLEDGE = (
     ("pulse-risk-appetite", "Rotation, factor"),
 )
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 # ------------------------------------------------------------------- facts
@@ -396,7 +396,10 @@ _RULES = (
     "mention them, and write no source names, tickers of ETFs or dates in "
     "brackets."
 )
-_DECIMALS = {"es": "Use a decimal comma (4,2 %), as Spanish does."}
+_DECIMALS = {
+    "es": "Use a decimal comma (4,2 %), as Spanish does.",
+    "it": "Use a decimal comma (4,2%), as Italian does.",
+}
 
 
 def prompt(f: dict, lang: str) -> tuple[str, list[dict]]:

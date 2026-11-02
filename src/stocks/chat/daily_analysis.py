@@ -30,6 +30,7 @@ from datetime import date
 
 from stocks import obs
 from stocks.chat import daily, engine, memory, signals, structured
+from stocks.formatting import DECIMAL_COMMA
 
 VERDICT_CHARS = 160
 TITLE_CHARS = 48
@@ -274,7 +275,7 @@ _NA = "—"
 
 def _n(value, lang: str, digits: int = 1, sign: bool = False) -> str:
     text = format(float(value), f"{'+' if sign else ''},.{digits}f")
-    return text.translate(_ES) if lang == "es" else text
+    return text.translate(_ES) if lang in DECIMAL_COMMA else text
 
 
 def _p(value, lang: str, sign: bool = True, digits: int = 1) -> str:
@@ -298,7 +299,7 @@ def _money(value, ccy: str, lang: str) -> str:
     sign = "-" if amount < 0 else ""
     body = _n(abs(amount), lang, 0)
     symbol = currency_symbol(ccy)
-    return f"{sign}{body} {symbol}" if lang == "es" else f"{sign}{symbol}{body}"
+    return f"{sign}{body} {symbol}" if lang in DECIMAL_COMMA else f"{sign}{symbol}{body}"
 
 
 # A figure as the card's own templates print it (`daily._money`, "-31.2%"):
@@ -313,7 +314,7 @@ def _localize(text: str, lang: str) -> str:
     the analysis writes them. The "what happened" paragraph comes from the
     card's own templates, which print every figure the English way; beside
     tables in Spanish it would read as two different apps."""
-    if lang != "es":
+    if lang not in DECIMAL_COMMA:
         return text
 
     def swap(match: re.Match) -> str:
