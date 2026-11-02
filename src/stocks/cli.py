@@ -1127,8 +1127,13 @@ def _replay_import(diagnostic_id: str) -> None:
 
 def cmd_feedback(args: argparse.Namespace) -> None:
     """Print stored user feedback (local files + the bucket's copies)."""
+    from stocks import storage
     from stocks.web import feedback
 
+    # Which bucket was read: a local [storage] that is not prod's reads a
+    # handful of old submissions and looks like a quiet week.
+    print(f"read: local data/feedback + bucket {storage.bucket()}"
+          if storage.bucket() else "read: local data/feedback only (no [storage])")
     items = feedback.stored()
     if not items:
         print("(no feedback yet)")
