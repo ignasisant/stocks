@@ -1119,7 +1119,7 @@ def extract(filename: str, data: bytes, provider: Provider | None,
     # Worked out from the file itself, before anything is asked of anyone.
     # It is the answer when the model is unreachable, when it declines the
     # file, and when its mapping turns out to convert nothing — three
-    # failures that used to be the end of the import and are now a fallback.
+    # failures that would otherwise end the import.
     guess = guess_mapping(grid)
 
     down = ""

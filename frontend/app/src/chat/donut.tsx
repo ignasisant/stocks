@@ -1,7 +1,7 @@
 /**
  * An allocation in the drawer: what the A2UI `Donut` component draws.
  *
- * The Risk tab's own donut (`pages/portfolio/charts.tsx`) over the weights the
+ * The Risk tab's own donut (`pages/portfolio/charts/Donut.tsx`) over the weights the
  * server summed (`stocks/chat/allocation.py`): the book by position, sector,
  * country or currency. All four splits arrive at once, so the chips under it
  * switch between them without a round trip, and a model never draws one.

@@ -141,11 +141,9 @@ export type Screen = "pending" | "app" | "wall" | "offline";
  * Which of four screens a session query means — as a pure function.
  *
  * Extracted from the component because this is the part worth testing and
- * there is no DOM in this project's test run. It also fixes a branch that was
- * merely harmless before: `failed` and `signed-out` used to render the same
- * fallback, so a reader whose network dropped was told to sign in. Now that
- * signed-out is a state almost nobody reaches — `/me` answers "guest" rather
- * than 401 — collapsing the two would mean an outage reads as a login wall.
+ * there is no DOM in this project's test run. `failed` and `signed-out` stay
+ * apart: `/me` answers "guest" rather than 401, so signed-out is rare, and
+ * folding the two would make an outage read as a login wall.
  */
 export function screenFor(state: Query<unknown>["state"]): Screen {
   switch (state) {
@@ -198,8 +196,8 @@ function seedFromDocument(): void {
 /**
  * Resolve the session, then render the app under it.
  *
- * Named for what it does rather than for who it lets in: it used to be
- * `SignedIn`, which became a lie the moment it started rendering for guests.
+ * Named for what it does rather than for who it lets in: it renders for
+ * guests too.
  */
 export function WithSession({
   children,

@@ -18,7 +18,7 @@
 import { keyHeaders } from "../../chat/sessionKey";
 import { ApiError, get, send } from "../../shell/api";
 
-/** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why that
+/** Mirrors `MAX_BYTES` in `api/routes/import_statement/upload.py` (50 MB — why that
  *  size is explained there). Checked here so a file too big to send is refused
  *  before it is uploaded, not after. */
 export const MAX_BYTES = 50 * 1024 * 1024;

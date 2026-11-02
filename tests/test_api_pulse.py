@@ -27,6 +27,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.data import cot
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -54,8 +55,8 @@ def no_network(monkeypatch):
     setting the loader again — a later `monkeypatch.setattr` on the same
     attribute wins.
     """
-    monkeypatch.setattr(loaders, "pulse_closes", dict)
-    monkeypatch.setattr(loaders, "pulse_rates", dict)
+    patch_loaders(monkeypatch, "pulse_closes", dict)
+    patch_loaders(monkeypatch, "pulse_rates", dict)
 
 
 @pytest.fixture(autouse=True)
@@ -97,7 +98,7 @@ def built() -> PulseData:
 
 @pytest.fixture
 def pulse(monkeypatch):
-    monkeypatch.setattr(loaders, "market_pulse", lambda: built())
+    patch_loaders(monkeypatch, "market_pulse", lambda: built())
 
 
 def test_the_band_travels_as_a_key_not_as_prose(client, pulse):
@@ -151,9 +152,8 @@ def test_the_history_is_trimmed_to_what_a_sparkline_draws(client, pulse):
 
 
 def test_a_composite_nobody_could_build_is_null_and_unknown(client, monkeypatch):
-    monkeypatch.setattr(
-        loaders,
-        "market_pulse",
+    patch_loaders(
+        monkeypatch, "market_pulse",
         lambda: PulseData(score=float("nan"), missing=("momentum", "breadth")),
     )
     payload = client.get("/v1/pulse", headers=AUTH).json()
@@ -199,7 +199,7 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     return paths
 
 
@@ -234,18 +234,17 @@ def basket(monkeypatch):
             "sector": pd.Series({"Technology": 0.8, "Energy": 0.2}),
         },
     )
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report
     )
     # No priced table: the split falls back to the report's own.
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
     # A price path for the index, the long bond and the euro-dollar pair.
     index_prices = pd.Series(
         np.cumprod(1 + rng.normal(0.0008, 0.011, len(index))) * 4000, index=index
     )
-    monkeypatch.setattr(
-        loaders,
-        "pulse_closes",
+    patch_loaders(
+        monkeypatch, "pulse_closes",
         lambda: {
             "^GSPC": index_prices,
             "TLT": pd.Series(
@@ -256,8 +255,8 @@ def basket(monkeypatch):
             ),
         },
     )
-    monkeypatch.setattr(
-        loaders, "benchmark_sectors", lambda: {"Technology": 0.3, "Utilities": 0.1}
+    patch_loaders(
+        monkeypatch, "benchmark_sectors", lambda: {"Technology": 0.3, "Utilities": 0.1}
     )
     return report
 
@@ -330,8 +329,8 @@ def test_an_empty_book_gets_nulls_and_not_a_beta_of_zero(
     client, account, monkeypatch
 ):
     """Zero would read as a basket the market cannot move."""
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: None
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: None
     )
     payload = client.get(
         "/v1/pulse/book", params={"account": EMAIL}, headers=AUTH
@@ -345,7 +344,7 @@ def test_a_dead_price_feed_leaves_the_exposure_unmeasured(
     client, account, basket, monkeypatch
 ):
     """No index series is "nobody could measure this", not "beta 0"."""
-    monkeypatch.setattr(loaders, "pulse_closes", dict)
+    patch_loaders(monkeypatch, "pulse_closes", dict)
     payload = client.get(
         "/v1/pulse/book", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -365,7 +364,7 @@ def test_a_throttled_composite_answers_with_its_reason(client, monkeypatch):
     """A 503 would have every block on the page drop its heading for a generic
     failure. A null score in the unknown band, with the reason named, lets each
     keep its title and say that Yahoo is throttling."""
-    monkeypatch.setattr(loaders, "market_pulse", _throttled)
+    patch_loaders(monkeypatch, "market_pulse", _throttled)
     response = client.get("/v1/pulse", headers=AUTH)
     assert response.status_code == 200
     payload = response.json()
@@ -384,7 +383,7 @@ def test_a_throttled_price_burst_costs_the_betas_not_the_weights(
 ):
     """The currency split and the sector weights are read off the positions,
     and a throttle on the benchmark closes is no reason to blank them."""
-    monkeypatch.setattr(loaders, "pulse_closes", _throttled)
+    patch_loaders(monkeypatch, "pulse_closes", _throttled)
     response = client.get("/v1/pulse/book", params={"account": EMAIL}, headers=AUTH)
     assert response.status_code == 200
     payload = response.json()
@@ -403,7 +402,7 @@ def test_a_throttled_price_burst_costs_the_betas_not_the_weights(
 def test_a_throttled_replay_empties_the_card_and_says_why(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "basket_report", _throttled)
+    patch_loaders(monkeypatch, "basket_report", _throttled)
     response = client.get("/v1/pulse/book", params={"account": EMAIL}, headers=AUTH)
     assert response.status_code == 200
     payload = response.json()
@@ -441,10 +440,9 @@ def sources(monkeypatch):
 
     closes = {t: walk(100.0) for t in ("^GSPC", "SPY", "XLK", "XLE", "GC=F")}
     closes["^VIX"] = walk(18.0)
-    monkeypatch.setattr(loaders, "pulse_closes", lambda: closes)
-    monkeypatch.setattr(
-        loaders,
-        "pulse_rate_rows",
+    patch_loaders(monkeypatch, "pulse_closes", lambda: closes)
+    patch_loaders(
+        monkeypatch, "pulse_rate_rows",
         lambda: {
             "DGS10": pd.Series(np.linspace(4.0, 4.33, len(index)), index=index),
             "DFEDTARU": pd.Series([5.5] * len(index), index=index),
@@ -454,9 +452,8 @@ def sources(monkeypatch):
     # series. Writing this fixture the other way around is what hid a bug that
     # made the whole block unrenderable — the route iterated columns and tried
     # to take a float of the string "EA".
-    monkeypatch.setattr(
-        loaders,
-        "inflation",
+    patch_loaders(
+        monkeypatch, "inflation",
         lambda: pd.DataFrame(
             [
                 {
@@ -483,9 +480,8 @@ def sources(monkeypatch):
         ),
     )
     weeks = pd.date_range("2023-10-03", periods=100, freq="7D")
-    monkeypatch.setattr(
-        loaders,
-        "positioning",
+    patch_loaders(
+        monkeypatch, "positioning",
         lambda: {
             "sp500": pd.DataFrame(
                 {"net": [*np.linspace(-50.0, 50.0, 99), 400.0], "oi": 1000.0},
@@ -493,8 +489,8 @@ def sources(monkeypatch):
             )
         },
     )
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: None
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: None
     )
     return closes
 
@@ -546,7 +542,7 @@ def test_a_dead_cftc_leaves_positioning_down_and_the_rest_up(
     def dead():
         raise RuntimeError("cot: no data")
 
-    monkeypatch.setattr(loaders, "positioning", dead)
+    patch_loaders(monkeypatch, "positioning", dead)
     payload = client.get(
         "/v1/pulse/tables", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -567,9 +563,9 @@ def test_the_sources_download_side_by_side(client, account, sources, monkeypatch
     def waits(fn):
         return lambda: (together.wait(), fn())[1]
 
-    monkeypatch.setattr(loaders, "pulse_closes", waits(loaders.pulse_closes))
-    monkeypatch.setattr(loaders, "pulse_rate_rows", waits(loaders.pulse_rate_rows))
-    monkeypatch.setattr(loaders, "inflation", waits(loaders.inflation))
+    patch_loaders(monkeypatch, "pulse_closes", waits(loaders.pulse_closes))
+    patch_loaders(monkeypatch, "pulse_rate_rows", waits(loaders.pulse_rate_rows))
+    patch_loaders(monkeypatch, "inflation", waits(loaders.inflation))
     by_block = blocks_of(
         client.get(
             "/v1/pulse/tables",
@@ -586,7 +582,7 @@ def test_each_block_carries_its_configured_count_even_when_down(
 ):
     """The tab badge is what the block holds when it is up — the page draws
     it before any fetch — so a throttled block keeps its count."""
-    monkeypatch.setattr(loaders, "pulse_closes", _throttled)
+    patch_loaders(monkeypatch, "pulse_closes", _throttled)
     by_block = blocks_of(
         client.get("/v1/pulse/tables", params={"account": EMAIL}, headers=AUTH).json()
     )
@@ -717,7 +713,7 @@ def test_a_block_whose_source_died_keeps_its_place(client, account, sources,
     def throttled():
         raise YFRateLimitError
 
-    monkeypatch.setattr(loaders, "pulse_closes", throttled)
+    patch_loaders(monkeypatch, "pulse_closes", throttled)
     payload = client.get(
         "/v1/pulse/tables",
         params={"account": EMAIL, "blocks": "indices,rates"},
@@ -734,7 +730,7 @@ def test_a_block_whose_source_died_keeps_its_place(client, account, sources,
 def test_a_block_with_no_rows_says_so_rather_than_looking_healthy(
     client, account, monkeypatch, sources
 ):
-    monkeypatch.setattr(loaders, "inflation", lambda: pd.DataFrame())
+    patch_loaders(monkeypatch, "inflation", lambda: pd.DataFrame())
     block = blocks_of(
         client.get(
             "/v1/pulse/tables",
@@ -754,7 +750,7 @@ def test_a_book_that_cannot_be_priced_still_gets_the_market_read(
     def boom(db, mtime, base, period):
         raise RuntimeError("no prices")
 
-    monkeypatch.setattr(loaders, "basket_report", boom)
+    patch_loaders(monkeypatch, "basket_report", boom)
     block = blocks_of(
         client.get(
             "/v1/pulse/tables",
@@ -845,7 +841,7 @@ def market(monkeypatch):
     for _key, first, second in sm.FACTOR_PAIRS:
         closes.setdefault(first, walk(80.0, 0.0006))
         closes.setdefault(second, walk(80.0, 0.0004))
-    monkeypatch.setattr(loaders, "pulse_closes", lambda: closes)
+    patch_loaders(monkeypatch, "pulse_closes", lambda: closes)
     return closes
 
 
@@ -866,7 +862,7 @@ def test_breadth_counts_both_sides_of_the_fraction(client, market):
 
 
 def test_breadth_nobody_could_read_is_not_breadth_of_zero(client, monkeypatch):
-    monkeypatch.setattr(loaders, "pulse_closes", dict)
+    patch_loaders(monkeypatch, "pulse_closes", dict)
     body = client.get("/v1/pulse", headers=AUTH).json()
     assert body["breadth_indices"] is None
     assert body["breadth_sectors"] is None
@@ -891,8 +887,8 @@ def test_a_dead_price_burst_costs_the_cards_and_not_the_score(
     def throttled():
         raise RuntimeError("yahoo said no")
 
-    monkeypatch.setattr(loaders, "market_pulse", lambda: built())
-    monkeypatch.setattr(loaders, "pulse_closes", throttled)
+    patch_loaders(monkeypatch, "market_pulse", lambda: built())
+    patch_loaders(monkeypatch, "pulse_closes", throttled)
     body = client.get("/v1/pulse", headers=AUTH)
     assert body.status_code == 200
     payload = body.json()
@@ -928,7 +924,7 @@ def test_a_pair_with_a_missing_leg_is_dropped_not_halved(
 ):
     index = days(300)
     only_one = {"IVW": pd.Series(np.linspace(1.0, 2.0, len(index)), index=index)}
-    monkeypatch.setattr(loaders, "pulse_closes", lambda: only_one)
+    patch_loaders(monkeypatch, "pulse_closes", lambda: only_one)
     body = client.get(
         "/v1/pulse/tables", params={"account": EMAIL, "blocks": "factors"},
         headers=AUTH,
@@ -943,7 +939,7 @@ def test_a_sector_you_hold_none_of_is_zero_and_no_book_is_null(
     That is only true for a reader who has a book at all — null is reserved for
     the one who has none, and rendering it as 0.0% would be a claim about an
     allocation that does not exist."""
-    monkeypatch.setattr(loaders, "benchmark_sectors", lambda: {"Technology": 0.31})
+    patch_loaders(monkeypatch, "benchmark_sectors", lambda: {"Technology": 0.31})
 
     def one_sector(db, mtime, ccy, span):
         class Report:
@@ -954,7 +950,7 @@ def test_a_sector_you_hold_none_of_is_zero_and_no_book_is_null(
 
         return Report()
 
-    monkeypatch.setattr(loaders, "basket_report", one_sector)
+    patch_loaders(monkeypatch, "basket_report", one_sector)
     rows = client.get(
         "/v1/pulse/tables", params={"account": EMAIL, "blocks": "rotation"},
         headers=AUTH,
@@ -970,7 +966,7 @@ def test_a_sector_you_hold_none_of_is_zero_and_no_book_is_null(
 def test_a_reader_with_no_book_has_no_weights_at_all(
     client, market, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "basket_report", lambda *a, **k: None)
+    patch_loaders(monkeypatch, "basket_report", lambda *a, **k: None)
     rows = client.get(
         "/v1/pulse/tables", params={"account": EMAIL, "blocks": "rotation"},
         headers=AUTH,
@@ -989,7 +985,7 @@ def test_the_conditions_index_is_published_not_discarded(
         "DGS10": pd.Series(np.linspace(3.5, 4.2, len(index)), index=index),
         "NFCI": pd.Series(np.linspace(-0.4, -0.1, len(index)), index=index),
     }
-    monkeypatch.setattr(loaders, "pulse_rate_rows", lambda: series)
+    patch_loaders(monkeypatch, "pulse_rate_rows", lambda: series)
     rows = client.get(
         "/v1/pulse/tables", params={"account": EMAIL, "blocks": "rates"},
         headers=AUTH,

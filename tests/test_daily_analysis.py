@@ -28,6 +28,7 @@ import pandas as pd
 from stocks.api import evidence as ev
 from stocks.chat import daily
 from stocks.chat import daily_analysis as da
+from tests.patching import patch_loaders
 
 TODAY = date(2026, 9, 29)
 
@@ -327,7 +328,7 @@ def test_a_record_says_who_wrote_it():
 
 
 def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
-    from stocks.api import briefing, loaders
+    from stocks.api import briefing
     from stocks.data.estimates import RawEstimates
     from stocks.data.fundamentals import RawFundamentals
 
@@ -351,18 +352,16 @@ def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
         t: closes(np.linspace(100, end, 400))
         for t, end in (("DSGX", 80), ("MANH", 110), ("XLK", 120), ("SPY", 115))
     }
-    monkeypatch.setattr(
-        loaders, "fundamentals", lambda t: RawFundamentals(t, info=info[t])
+    patch_loaders(
+        monkeypatch, "fundamentals", lambda t: RawFundamentals(t, info=info[t])
     )
-    monkeypatch.setattr(
-        loaders,
-        "estimates",
+    patch_loaders(
+        monkeypatch, "estimates",
         lambda t: RawEstimates(t, price_targets={"current": 100.0, "mean": 125.0}),
     )
-    monkeypatch.setattr(loaders, "related", lambda t: ("QQQ", "MANH", "DSGX"))
-    monkeypatch.setattr(
-        loaders,
-        "rating_changes",
+    patch_loaders(monkeypatch, "related", lambda t: ("QQQ", "MANH", "DSGX"))
+    patch_loaders(
+        monkeypatch, "rating_changes",
         lambda t: [
             {
                 "date": "2026-10-20", "firm": "Loop Capital", "action": "downgrade",

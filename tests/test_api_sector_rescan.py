@@ -29,6 +29,7 @@ from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import sector as route
 from stocks.web import ratelimit
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -95,9 +96,8 @@ def signed_in(client, sign_in, account):
 @pytest.fixture
 def stored(monkeypatch):
     """Last night's cohort: widened with one non-US peer the ETF lacks."""
-    monkeypatch.setattr(
-        loaders,
-        "sector_scans",
+    patch_loaders(
+        monkeypatch, "sector_scans",
         lambda: {TECH: scan("2026-09-17", ("AAPL", "MSFT", "ASML"))},
     )
 
@@ -170,7 +170,7 @@ def test_a_newer_nightly_scan_supersedes_the_live_one(
     signed_in, stored, inline, monkeypatch
 ):
     signed_in.post(f"/v1/sectors/{TECH}/rescan")
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {TECH: scan("2026-09-25")})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {TECH: scan("2026-09-25")})
     assert signed_in.get(f"/v1/sectors/{TECH}").json()["as_of"] == "2026-09-25"
 
 
@@ -179,7 +179,7 @@ def test_a_rescan_dated_the_same_day_as_the_nightly_file_still_wins(
 ):
     """The nightly job runs before the day starts, so a same-day rescan was
     fetched after it — pressing the button must visibly do something."""
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {TECH: scan("2026-09-24")})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {TECH: scan("2026-09-24")})
     signed_in.post(f"/v1/sectors/{TECH}/rescan")
     assert len(signed_in.get(f"/v1/sectors/{TECH}").json()["rows"]) == 4
 
@@ -187,7 +187,7 @@ def test_a_rescan_dated_the_same_day_as_the_nightly_file_still_wins(
 def test_a_sector_never_scanned_can_be_scanned_from_its_empty_state(
     signed_in, inline, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "sector_scans", dict)
+    patch_loaders(monkeypatch, "sector_scans", dict)
     signed_in.post(f"/v1/sectors/{TECH}/rescan")
     assert inline["asked"] == [(TECH, ())]
     assert signed_in.get(f"/v1/sectors/{TECH}").json()["as_of"] == "2026-09-24"

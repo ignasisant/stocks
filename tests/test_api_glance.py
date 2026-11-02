@@ -1,6 +1,6 @@
 """The dashboard's opening reads: the briefing, the movers, the 52-week edges.
 
-Writing a briefing belongs to `chat/daily.py` and staying at a 52-week high is
+Writing a briefing belongs to `chat/daily/` and staying at a 52-week high is
 arithmetic. What is tested here is what these three routes decide:
 
 * the GET reports the card and never writes one — writing is `POST /daily`,
@@ -30,6 +30,7 @@ from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
 from stocks.chat import daily
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -93,8 +94,8 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
-    monkeypatch.setattr(loaders, "file_mtime", lambda path: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "file_mtime", lambda path: 1.0)
     return paths
 
 
@@ -118,9 +119,9 @@ def today_card(**over) -> dict:
 
 def test_the_card_is_reported_never_written(client, account, monkeypatch):
     """A GET never spends an account's model allowance; `POST /daily` does."""
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: {})
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["headline"] is None
     assert payload["fresh"] is False
@@ -128,9 +129,9 @@ def test_the_card_is_reported_never_written(client, account, monkeypatch):
 
 
 def test_a_current_card_reads_fresh(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["fresh"] is True
     assert payload["focus"] == ["NVDA"]
@@ -141,10 +142,10 @@ def test_a_card_from_before_the_today_sections_is_rewritten_once(
         client, account, monkeypatch):
     """No shape: written before Today had sections, which would leave the
     page without them until tomorrow."""
-    monkeypatch.setattr(loaders, "stored_action",
+    patch_loaders(monkeypatch, "stored_action",
                         lambda path, mtime: today_card(shape=""))
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["fresh"] is False
 
@@ -179,9 +180,9 @@ def test_the_card_reports_its_sections(client, account, monkeypatch):
         brief="written",
         brief_sig=sig,
     )
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: card)
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: card)
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert [i["section"] for i in payload["items"]] == ["alerts", "watch"]
     assert payload["book"]["rows"][0]["index_pct"] == 0.3
@@ -196,18 +197,18 @@ def test_the_card_reports_its_sections(client, account, monkeypatch):
 def test_a_brief_saved_since_stales_the_card(client, account, monkeypatch):
     """Written for another brief, or for none: the reader asked for a
     different card than the one on file."""
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     assert client.get("/v1/daily", params=WHO, headers=AUTH).json()["fresh"] is True
     _brief(account, "my insiders")
     assert client.get("/v1/daily", params=WHO, headers=AUTH).json()["fresh"] is False
 
 
 def test_a_card_from_before_sections_reads_without_them(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["book"] is None
     assert payload["sections"] == [] and payload["brief"] == ""
@@ -218,9 +219,9 @@ def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
 ):
     """The card is prose: a reader who just switched to Spanish should not be
     left with yesterday's English briefing until tomorrow."""
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get(
         "/v1/daily", params=WHO | {"lang": "es"}, headers=AUTH
     ).json()
@@ -232,10 +233,9 @@ def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypa
     """Every figure in the card is a day behind, and the calendar date will not
     move until the cutoff — so the date alone cannot see this."""
     day = briefing.now_day()[1]
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
-    monkeypatch.setattr(
-        loaders,
-        "held_closes",
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
+    patch_loaders(
+        monkeypatch, "held_closes",
         lambda db, mtime: {
             "AAPL": pd.Series([1.0], index=pd.to_datetime([day.isoformat()]))
         },
@@ -247,9 +247,9 @@ def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypa
 def test_the_cutoff_is_reported_so_a_client_need_not_hardcode_it(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: {})
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["cutoff_hour"] == daily.CUTOFF_HOUR
 
@@ -273,7 +273,7 @@ def basket() -> pd.DataFrame:
 
 
 def test_the_best_and_worst_names_are_split(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
     payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
     assert [m["ticker"] for m in payload["gainers"]] == ["AAPL"]
     assert payload["gainers"][0]["pct"] == pytest.approx(0.10)
@@ -295,7 +295,7 @@ def test_each_side_keeps_its_strongest_names_strongest_first(
             for name, pct in (drops | {"UP": 0.05, "FLAT": 0.0}).items()
         }
     )
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": frame)
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": frame)
     payload = client.get(
         "/v1/movers", params=WHO | {"window": "week"}, headers=AUTH
     ).json()
@@ -317,7 +317,7 @@ def test_all_lifts_the_cut_on_both_sides(client, account, monkeypatch):
             for name, pct in moves.items()
         }
     )
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": frame)
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": frame)
     payload = client.get(
         "/v1/movers", params=WHO | {"window": "week", "all": "true"}, headers=AUTH
     ).json()
@@ -329,7 +329,7 @@ def test_all_lifts_the_cut_on_both_sides(client, account, monkeypatch):
 
 
 def test_a_window_nobody_defined_is_refused(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
     response = client.get(
         "/v1/movers", params=WHO | {"window": "decade"}, headers=AUTH
     )
@@ -339,8 +339,8 @@ def test_a_window_nobody_defined_is_refused(client, account, monkeypatch):
 def test_a_book_with_no_prices_reads_empty_rather_than_flat(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(
-        loaders, "basket_values", lambda db, mtime, base="EUR": pd.DataFrame()
+    patch_loaders(
+        monkeypatch, "basket_values", lambda db, mtime, base="EUR": pd.DataFrame()
     )
     payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
     assert payload["gainers"] == [] and payload["losers"] == []
@@ -359,10 +359,9 @@ def test_money_paid_in_during_the_window_is_not_a_gain(client, account, monkeypa
     # One name, up 2% across the week. The book it sits in quadrupled, because
     # money arrived — `history()` would report that, and this must not.
     frame = pd.DataFrame({"AAPL": pd.Series([100.0] * 9 + [102.0], index=index)})
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": frame)
-    monkeypatch.setattr(
-        loaders,
-        "history",
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": frame)
+    patch_loaders(
+        monkeypatch, "history",
         lambda db, mtime, base="EUR": (
             pd.DataFrame(
                 {
@@ -387,7 +386,7 @@ def test_the_move_comes_back_as_money_as_well_as_a_percentage(
     """A tile that leads with the percentage and chips the same percentage is
     printing one fact twice. The money is what moved; the fraction is what it
     was worth relatively, and the card wants both."""
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
     payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
     # 300 -> 290 across the two positions.
     assert payload["amount"] == pytest.approx(-10.0)
@@ -398,10 +397,9 @@ def test_the_move_comes_back_as_money_as_well_as_a_percentage(
 def test_a_position_the_basket_cannot_price_is_declared(client, account, monkeypatch):
     """Two names held, one measurable. The percentage is honest about the rows
     it came from only if the ones it left out are countable."""
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
-    monkeypatch.setattr(
-        loaders,
-        "ledger_state",
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(
+        monkeypatch, "ledger_state",
         lambda db, mtime, base="EUR", matching="fifo": (
             [],
             [SimpleNamespace(ticker=t) for t in ("AAPL", "MSFT", "ORGN")],
@@ -430,12 +428,11 @@ def test_a_shut_market_reads_the_quote_and_not_the_flat_bar(
             "MSFT": pd.Series([200.0] * 3, index=index),
         }
     )
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": flat)
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": flat)
     monkeypatch.setattr(glance, "us_market_open", lambda: False)
     monkeypatch.setattr(glance, "market_live", lambda ticker: False)
-    monkeypatch.setattr(
-        loaders,
-        "quotes",
+    patch_loaders(
+        monkeypatch, "quotes",
         lambda tickers: {
             "AAPL": {"pct": 0.05, "as_of": "2024-03-01"},
             "MSFT": {"pct": -0.01, "as_of": "2024-03-01"},
@@ -464,12 +461,11 @@ def test_a_premarket_row_reads_the_last_session_plus_the_premarket(
             "MSFT": pd.Series([200.0] * 3, index=index),
         }
     )
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": flat)
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": flat)
     monkeypatch.setattr(glance, "us_market_open", lambda: False)
     monkeypatch.setattr(glance, "market_live", lambda ticker: False)
-    monkeypatch.setattr(
-        loaders,
-        "quotes",
+    patch_loaders(
+        monkeypatch, "quotes",
         lambda tickers: {
             # Up 2% yesterday, up 1% more before the bell.
             "AAPL": {"pct": 0.01, "prior": 0.02, "session": "pre"},
@@ -492,8 +488,8 @@ def test_a_live_session_leaves_the_bars_alone(client, account, monkeypatch):
     """Inside the session the bars already track the live price, so reaching
     for a quote would cost a request to be told what the frame says."""
     called = []
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: called.append(tickers) or {})
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: called.append(tickers) or {})
     payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
     assert called == []
     assert payload["gainers"][0]["pct"] == pytest.approx(0.10)
@@ -503,9 +499,9 @@ def test_a_longer_window_never_reads_a_quote(client, account, monkeypatch):
     """A week is close-to-close by construction — there is no live figure for
     it, and last night's quote is not one."""
     called = []
-    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
     monkeypatch.setattr(glance, "us_market_open", lambda: False)
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: called.append(tickers) or {})
+    patch_loaders(monkeypatch, "quotes", lambda tickers: called.append(tickers) or {})
     client.get("/v1/movers", params=WHO | {"window": "week"}, headers=AUTH)
     assert called == []
 
@@ -525,7 +521,7 @@ def test_a_name_at_its_high_is_reported_without_a_distance(
     client, account, monkeypatch
 ):
     """At or beyond the edge is a different fact from 0% away from it."""
-    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: year(140.0, 200.0))
+    patch_loaders(monkeypatch, "watchlist_closes", lambda tickers: year(140.0, 200.0))
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     by_ticker = {e["ticker"]: e for e in payload["extremes"]}
     assert by_ticker["AAPL"]["edge"] == "high"
@@ -533,7 +529,7 @@ def test_a_name_at_its_high_is_reported_without_a_distance(
 
 
 def test_a_name_just_under_its_high_carries_how_far(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: year(99.0, 150.0))
+    patch_loaders(monkeypatch, "watchlist_closes", lambda tickers: year(99.0, 150.0))
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     by_ticker = {e["ticker"]: e for e in payload["extremes"]}
     assert by_ticker["AAPL"]["edge"] == "high"
@@ -543,7 +539,7 @@ def test_a_name_just_under_its_high_carries_how_far(client, account, monkeypatch
 
 def test_highs_come_before_lows(client, account, monkeypatch):
     """AAPL at its low sorts first by name; the highs lead anyway."""
-    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: year(80.0, 250.0))
+    patch_loaders(monkeypatch, "watchlist_closes", lambda tickers: year(80.0, 250.0))
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     assert [(e["ticker"], e["edge"]) for e in payload["extremes"]] == [
         ("MSFT", "high"),
@@ -567,21 +563,21 @@ def test_a_name_in_the_middle_of_its_range_is_not_reported(
 ):
     index = pd.to_datetime([date(2024, 1, 1) + timedelta(days=i) for i in range(60)])
     middle = pd.Series([50.0] + [100.0] * 58 + [75.0], index=index)
-    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: {"AAPL": middle})
+    patch_loaders(monkeypatch, "watchlist_closes", lambda tickers: {"AAPL": middle})
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     assert payload["extremes"] == []
 
 
 def test_a_held_name_is_scanned_even_off_the_watchlist(client, account, monkeypatch):
     """`home.py` scans held ∪ favourites — a position nobody starred included."""
-    monkeypatch.setattr(loaders, "held", lambda db, mtime: ("NVDA",))
+    patch_loaders(monkeypatch, "held", lambda db, mtime: ("NVDA",))
     asked = []
 
     def closes(tickers):
         asked.append(tickers)
         return year(120.0, 150.0) | {"NVDA": year(140.0, 0)["AAPL"]}
 
-    monkeypatch.setattr(loaders, "watchlist_closes", closes)
+    patch_loaders(monkeypatch, "watchlist_closes", closes)
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     assert {e["ticker"] for e in payload["extremes"]} >= {"NVDA"}
     assert payload["scanned"] == 3
@@ -592,8 +588,8 @@ def test_crypto_and_unstarred_names_are_not_scanned(client, account, monkeypatch
     account.watchlist.write_text(
         "watchlist:\n  - ticker: AAPL\n  - ticker: BTC-EUR\n    favorite: true\n"
     )
-    monkeypatch.setattr(
-        loaders, "watchlist_closes", lambda tickers: pytest.fail("nothing to scan")
+    patch_loaders(
+        monkeypatch, "watchlist_closes", lambda tickers: pytest.fail("nothing to scan")
     )
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     assert payload == {"extremes": [], "scanned": 0}

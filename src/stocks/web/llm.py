@@ -155,7 +155,7 @@ class Provider:
     # own bundled icon instead.
     domain: str | None = None
     # Native tool use, when this backend has it wired up. None means the caller
-    # keeps the fixed pre-flight (chat/engine.py) — a provider without tools
+    # keeps the fixed pre-flight (chat/engine/) — a provider without tools
     # loses the model-directed lookup, not the answer.
     _tools: Callable[..., ToolRun] | None = None
     # One-click sign-in in place of a pasted key: an OAuth PKCE authorize page

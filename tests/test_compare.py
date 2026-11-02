@@ -17,9 +17,9 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.analysis import compare
 from stocks.analysis import portfolio as portfolio_mod
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import ticker as ticker_route
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -123,9 +123,8 @@ def offline(monkeypatch, tmp_path):
         "SAN.MC": [5.0, 5.5, 6.0],
         "ODD.XX": [1.0, 1.0, 1.0],
     }
-    monkeypatch.setattr(
-        loaders,
-        "price_bars",
+    patch_loaders(
+        monkeypatch, "price_bars",
         lambda t, label: pd.DataFrame({"Close": closes[t]}, index=pd.DatetimeIndex(DAYS)),
     )
 
@@ -134,7 +133,7 @@ def offline(monkeypatch, tmp_path):
             return pd.Series(dtype=float)
         return series(DAYS, closes[t])
 
-    monkeypatch.setattr(loaders, "bar_closes", bar_closes)
+    patch_loaders(monkeypatch, "bar_closes", bar_closes)
     monkeypatch.setattr(
         ticker_route,
         "listing_currencies",
@@ -150,8 +149,8 @@ def offline(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(ticker_route, "_sector_of", lambda t: "Technology")
-    monkeypatch.setattr(loaders, "related", lambda t: ("MDB", "BTC-USD"))
-    monkeypatch.setattr(loaders, "sec_title", lambda t: {"ESTC": "Elastic N.V."}.get(t))
+    patch_loaders(monkeypatch, "related", lambda t: ("MDB", "BTC-USD"))
+    patch_loaders(monkeypatch, "sec_title", lambda t: {"ESTC": "Elastic N.V."}.get(t))
 
 
 def ask(client, symbol="ESTC", **params):
@@ -177,7 +176,7 @@ def test_nothing_asked_draws_the_index_the_sector_and_rivals(client):
 
 def test_the_opening_lines_take_a_few_rivals_not_every_chip(client, monkeypatch):
     many = tuple(f"P{i}" for i in range(9))
-    monkeypatch.setattr(loaders, "related", lambda t: many)
+    patch_loaders(monkeypatch, "related", lambda t: many)
     body = ask(client).json()
     assert body["missing"] == list(many[: compare.OPENING_PEERS])
 
@@ -193,7 +192,7 @@ def test_the_picker_offers_the_sector_etf_and_related_names_but_no_coins(client)
 
 def test_the_chips_offer_a_handful_of_peers_not_yahoos_whole_list(client, monkeypatch):
     many = tuple(f"P{i}" for i in range(9))
-    monkeypatch.setattr(loaders, "related", lambda t: many)
+    patch_loaders(monkeypatch, "related", lambda t: many)
     peers = [o["ticker"] for o in ask(client).json()["offered"] if o["role"] == "peer"]
     assert peers == list(many[: compare.OFFERED_PEERS])
 
@@ -297,8 +296,8 @@ def returns_offline(monkeypatch):
     # SPY's sessions: weekdays up to a Friday, so a window opening on a weekend
     # moves to the Monday, as the price chart starts it.
     sessions = pd.bdate_range(end=ANCHOR, periods=600)
-    monkeypatch.setattr(
-        loaders, "bar_closes", lambda t, label: pd.Series(1.0, index=sessions)
+    patch_loaders(
+        monkeypatch, "bar_closes", lambda t, label: pd.Series(1.0, index=sessions)
     )
     # Oldest first: 2y, the trail's 18m step, 1y, 6m, 1m, the last session.
     closes = {
@@ -307,9 +306,8 @@ def returns_offline(monkeypatch):
         "XLK": [100.0, 100.0, 100.0, 100.0, 100.0, 120.0],
         "SAN.MC": [5.0, 5.0, 5.0, 5.0, 5.0, 6.0],
     }
-    monkeypatch.setattr(
-        loaders,
-        "window_closes",
+    patch_loaders(
+        monkeypatch, "window_closes",
         lambda t, days: (
             pd.Series(closes[t], index=pd.DatetimeIndex(days.split(",")))
             if t in closes

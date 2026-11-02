@@ -1,8 +1,7 @@
 /**
  * The first-login welcome: three steps to a live portfolio, in a few words.
  *
- * What the "New here?" card on Home used to say in a paragraph, said as three
- * rows — an icon, a short line, a shorter caption — each one a door into the
+ * Three rows — an icon, a short line, a shorter caption — each one a door into the
  * section that does it. The sections teach themselves (Import has its own
  * stepper), so the pop-up does not explain them: it gets the reader there.
  *

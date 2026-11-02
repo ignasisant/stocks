@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -54,7 +55,7 @@ class FakeRaw:
 def test_every_kpi_carries_where_it_came_from(client, monkeypatch):
     """`level` is the difference between a filed number and a forecast. A grid
     that prints them alike is how consensus wears a filing's authority."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "currency": "USD", "pe_ttm": 28.4},
@@ -68,7 +69,7 @@ def test_every_kpi_carries_where_it_came_from(client, monkeypatch):
 
 
 def test_a_missing_kpi_is_null_and_says_so_in_words(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "pe_ttm": None},
@@ -81,7 +82,7 @@ def test_a_missing_kpi_is_null_and_says_so_in_words(client, monkeypatch):
 
 def test_a_kpi_with_no_band_gets_no_verdict(client, monkeypatch):
     """Absent, not "fair" — a neutral default reads as a judgement nobody made."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "market_cap": 3.1e12},
@@ -93,7 +94,7 @@ def test_a_kpi_with_no_band_gets_no_verdict(client, monkeypatch):
 
 def test_a_label_kpi_survives_as_a_string(client, monkeypatch):
     """Not every KPI is a number; coercing a sector to a float would drop it."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "currency": "USD", "quote_type": "EQUITY"},
@@ -112,13 +113,13 @@ def test_reported_years_and_the_consensus_path_stay_separate(client, monkeypatch
         {"Revenue": [383.0, 391.0], "Net Income": [97.0, 93.0], "EPS": [6.13, 6.08]},
         index=[2023, 2024],
     )
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr("stocks.api.routes.ticker.annual_financials", lambda raw: annual)
     monkeypatch.setattr(
         "stocks.api.routes.ticker.quarterly_eps", lambda raw: pd.DataFrame()
     )
-    monkeypatch.setattr(
-        loaders, "estimates",
+    patch_loaders(
+        monkeypatch, "estimates",
         lambda t: SimpleNamespace(
             earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
         ),
@@ -143,18 +144,16 @@ def test_an_adr_whose_consensus_is_in_another_currency_gets_no_projection(
     would land thirty-odd times short of the reported ones. The route drops
     the whole path — on the server, where no client can forget the check."""
     annual = pd.DataFrame({"Revenue": [2.2e12, 2.9e12]}, index=[2023, 2024])
-    monkeypatch.setattr(
-        loaders,
-        "fundamentals",
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda t: FakeRaw(info={"currency": "USD", "financialCurrency": "TWD"}),
     )
     monkeypatch.setattr("stocks.api.routes.ticker.annual_financials", lambda raw: annual)
     monkeypatch.setattr(
         "stocks.api.routes.ticker.quarterly_eps", lambda raw: pd.DataFrame()
     )
-    monkeypatch.setattr(
-        loaders,
-        "estimates",
+    patch_loaders(
+        monkeypatch, "estimates",
         lambda t: SimpleNamespace(
             earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
         ),
@@ -178,13 +177,13 @@ def test_the_consensus_band_and_the_extrapolation_flag_both_travel(
     `Revenue Low`, which is how they silently arrived as null.
     """
     annual = pd.DataFrame({"Revenue": [391.0], "EPS": [6.08]}, index=[2024])
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr("stocks.api.routes.ticker.annual_financials", lambda raw: annual)
     monkeypatch.setattr(
         "stocks.api.routes.ticker.quarterly_eps", lambda raw: pd.DataFrame()
     )
-    monkeypatch.setattr(
-        loaders, "estimates",
+    patch_loaders(
+        monkeypatch, "estimates",
         lambda t: SimpleNamespace(
             earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
         ),
@@ -219,7 +218,7 @@ def test_the_consensus_band_and_the_extrapolation_flag_both_travel(
 
 
 def test_a_company_with_no_statements_still_answers(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.annual_financials", lambda raw: pd.DataFrame()
     )
@@ -241,8 +240,8 @@ def test_the_multiple_says_which_feed_reconstructed_it(client, monkeypatch):
          "percentile": [72.0], "premium": [0.077]},
         index=["5y"],
     )
-    monkeypatch.setattr(
-        loaders, "valuation",
+    patch_loaders(
+        monkeypatch, "valuation",
         lambda t: {"source": "SEC EDGAR", "pe": pe, "stats": stats, "current": 28.0},
     )
     body = client.get("/v1/ticker/AAPL/valuation", headers=AUTH).json()
@@ -261,8 +260,8 @@ def test_the_windows_offered_are_the_ones_the_page_can_select(client, monkeypatc
 
     days = pd.date_range("2016-01-01", periods=2600, freq="D")
     pe = pd.Series(range(len(days)), index=days, dtype=float)
-    monkeypatch.setattr(
-        loaders, "valuation",
+    patch_loaders(
+        monkeypatch, "valuation",
         lambda t: {"source": "SEC EDGAR", "pe": pe, "stats": None, "current": 28.0},
     )
     windows = client.get("/v1/ticker/AAPL/valuation", headers=AUTH).json()["windows"]
@@ -276,8 +275,8 @@ def test_the_windows_offered_are_the_ones_the_page_can_select(client, monkeypatc
 
 def test_a_name_no_feed_covers_reads_as_no_source(client, monkeypatch):
     """Null source, not a silently empty chart that looks like a flat P/E."""
-    monkeypatch.setattr(
-        loaders, "valuation",
+    patch_loaders(
+        monkeypatch, "valuation",
         lambda t: {"source": None, "pe": None, "stats": None, "current": None},
     )
     body = client.get("/v1/ticker/XYZ.PA/valuation", headers=AUTH).json()
@@ -308,7 +307,7 @@ class FakeMoat:
 
 def test_an_unscored_pillar_is_null_not_zero(client, monkeypatch):
     """Zero is a verdict — "no advantage". Null is the absence of one."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.moat_score",
         lambda raw: FakeMoat(
@@ -336,7 +335,7 @@ def test_an_unscored_pillar_is_null_not_zero(client, monkeypatch):
 def test_moat_names_keys_so_a_client_words_it(client, monkeypatch):
     """The API has no language: it names catalog keys and hands the numbers
     over raw, with the English words kept as the fallback."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.moat_score",
         lambda raw: FakeMoat(
@@ -371,7 +370,7 @@ def test_moat_names_keys_so_a_client_words_it(client, monkeypatch):
 
 def test_too_few_pillars_means_no_composite(client, monkeypatch):
     """A rating assembled from two pillars is a guess with a number on it."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.moat_score",
         lambda raw: FakeMoat("X", (FakePillar("roic", "ROIC", None, ""),), None, None, 2),
@@ -415,7 +414,7 @@ def test_a_disposal_comes_back_signed(client, monkeypatch):
         FakeTx(date(2024, 5, 1), "tim cook", "CEO", "S", False, 500.0, 190.0),
         FakeTx(date(2024, 4, 1), "luca maestri", "CFO", "P", True, 100.0, 170.0),
     ]
-    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    patch_loaders(monkeypatch, "insiders", lambda t: txs)
     body = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()
     shares = {t["insider"]: t["shares"] for t in body["trades"]}
     assert shares["Tim Cook"] == -500.0
@@ -435,7 +434,7 @@ def test_the_net_and_the_cluster_signal_actually_travel(client, monkeypatch):
         FakeTx(recent, "b director", "Director", "P", True, 100.0, 10.0),
         FakeTx(recent, "c officer", "CFO", "S", False, 50.0, 10.0),
     ]
-    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    patch_loaders(monkeypatch, "insiders", lambda t: txs)
     summary = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["summary"]
     assert summary["net_value"] == pytest.approx(1500.0), "2000 bought, 500 sold"
     # Two distinct buyers outweighing the sells: the signal the page calls out.
@@ -451,7 +450,7 @@ def test_a_row_carries_its_own_notional_and_whether_it_was_a_real_trade(
         FakeTx(date(2024, 5, 1), "tim cook", "CEO", "S", False, 500.0, 190.0),
         FakeTx(date(2024, 4, 1), "tim cook", "CEO", "A", True, 1000.0, None),
     ]
-    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    patch_loaders(monkeypatch, "insiders", lambda t: txs)
     rows = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["trades"]
     sale, grant = rows[0], rows[1]
     assert sale["value"] == pytest.approx(-95_000.0), "signed, like the shares"
@@ -462,8 +461,8 @@ def test_a_row_carries_its_own_notional_and_whether_it_was_a_real_trade(
 def test_a_name_nobody_files_for_says_so(client, monkeypatch):
     """Null source rather than an empty list — "no coverage" and "no trades"
     are different claims and the page words them differently."""
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(info={"longName": ""}))
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(info={"longName": ""}))
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
     monkeypatch.setattr("stocks.api.routes.ticker._issuer_name", lambda t: None)
     body = client.get("/v1/ticker/XYZ/insiders", headers=AUTH).json()
@@ -472,10 +471,10 @@ def test_a_name_nobody_files_for_says_so(client, monkeypatch):
 
 def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
     """The same disclosure, published by a different regulator in EUR."""
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
-    monkeypatch.setattr(
-        loaders, "fundamentals", lambda t: FakeRaw(info={"longName": "Nemetschek SE"})
+    patch_loaders(
+        monkeypatch, "fundamentals", lambda t: FakeRaw(info={"longName": "Nemetschek SE"})
     )
     monkeypatch.setattr(
         "stocks.api.routes.ticker.bafin_transactions",
@@ -490,11 +489,10 @@ def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
 
 def test_a_spanish_issuer_falls_through_to_the_cnmv(client, monkeypatch):
     """A .MC listing is read from the CNMV's register, never sent to BaFin."""
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
-    monkeypatch.setattr(
-        loaders,
-        "fundamentals",
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda t: FakeRaw(info={"longName": "Banco Santander, S.A."}),
     )
 
@@ -519,7 +517,7 @@ def test_a_quiet_us_filer_is_not_sent_to_bafin(client, monkeypatch):
     issuer — asking BaFin by its name spends a request and can match a
     stranger."""
     asked = []
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: True)
     monkeypatch.setattr(
         "stocks.api.routes.ticker.bafin_transactions",
@@ -534,11 +532,11 @@ def test_no_long_name_falls_back_to_the_catalog_name(client, monkeypatch):
     """Yahoo throttled → no `longName`. The route then searches BaFin by
     `company_name()`, through its account-free legs."""
     asked = []
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(info={}))
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(info={}))
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "sec_title", lambda t: None)
     monkeypatch.setattr("stocks.data.funds.fund_name", lambda t: "iShares Core DAX")
     monkeypatch.setattr(
         "stocks.api.routes.ticker.bafin_transactions",
@@ -555,7 +553,7 @@ def test_rows_come_newest_first_with_undated_last(client, monkeypatch):
         FakeTx(None, "undated", "CEO", "S", False, 1.0, 10.0),
         FakeTx(date(2024, 6, 1), "new", "CEO", "S", False, 1.0, 10.0),
     ]
-    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    patch_loaders(monkeypatch, "insiders", lambda t: txs)
     rows = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["trades"]
     assert [r["insider"] for r in rows] == ["New", "Old", "Undated"]
 
@@ -564,7 +562,7 @@ def test_a_row_names_its_code_and_a_priceless_sale_has_no_value(client, monkeypa
     """The English label rides as the client's fallback, and a disposal with
     no notional is null — never the signed zero that reads "worth nothing"."""
     txs = [FakeTx(date(2024, 5, 1), "tim cook", "CEO", "F", False, 50.0, None)]
-    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    patch_loaders(monkeypatch, "insiders", lambda t: txs)
     row = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["trades"][0]
     assert row["code"] == "F" and row["label"] == "Tax withholding"
     assert row["value"] is None
@@ -585,8 +583,8 @@ def fund_offline(monkeypatch):
     monkeypatch.setattr(
         funds, "quote_type", lambda t, fetch=True: funds._known_types().get(t.upper())
     )
-    monkeypatch.setattr(loaders, "price_bars", no_bars)
-    monkeypatch.setattr(loaders, "policy_rate", lambda ccy: None)
+    patch_loaders(monkeypatch, "price_bars", no_bars)
+    patch_loaders(monkeypatch, "policy_rate", lambda ccy: None)
     loaders._fund_kind.cache_clear()
     yield
     loaders._fund_kind.cache_clear()
@@ -597,9 +595,8 @@ def _serve_fund(monkeypatch, ticker, name, *, quote_type="ETF", **fields):
     from stocks.data.funds import FundProfile
 
     funds.remember(ticker, quote_type)
-    monkeypatch.setattr(
-        loaders,
-        "fund_profile",
+    patch_loaders(
+        monkeypatch, "fund_profile",
         lambda t: FundProfile(ticker=t, name=name, quote_type=quote_type, **fields),
     )
 
@@ -625,9 +622,9 @@ def test_a_money_market_fund_reports_its_yield_beside_its_banks_rate(
         currency="EUR",
         expense_ratio=0.001,
     )
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: _drift(300, 0.021))
-    monkeypatch.setattr(
-        loaders, "policy_rate", lambda ccy: ("ecb", 0.02, date(2026, 9, 17))
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: _drift(300, 0.021))
+    patch_loaders(
+        monkeypatch, "policy_rate", lambda ccy: ("ecb", 0.02, date(2026, 9, 17))
     )
     cash = client.get("/v1/ticker/XEON.DE/fund", headers=AUTH).json()["cash"]
     assert cash["source"] == "price"
@@ -649,7 +646,7 @@ def test_a_pinned_nav_fund_yields_what_it_pays_out(client, monkeypatch, fund_off
         currency="USD",
         dividend_yield=0.042,
     )
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: _drift(300, 0.0, 1.0))
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: _drift(300, 0.0, 1.0))
     cash = client.get("/v1/ticker/VMFXX/fund", headers=AUTH).json()["cash"]
     assert (cash["source"], cash["yield_1y"], cash["yield_3m"]) == (
         "distribution", 0.042, None,
@@ -672,8 +669,8 @@ def test_a_bond_fund_is_known_by_its_name_when_yahoo_has_no_mix(
 
 
 def test_a_company_is_not_a_fund_and_that_is_an_answer(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fund_profile", lambda t: None)
-    monkeypatch.setattr(loaders, "closed_end", lambda t: None)
+    patch_loaders(monkeypatch, "fund_profile", lambda t: None)
+    patch_loaders(monkeypatch, "closed_end", lambda t: None)
     body = client.get("/v1/ticker/AAPL/fund", headers=AUTH).json()
     assert body["is_fund"] is False and body["holdings"] == []
 
@@ -683,8 +680,8 @@ def test_a_funds_basket_comes_back_as_fractions(client, monkeypatch, fund_offlin
     multiplied by a hundred twice."""
     from stocks.data.funds import FundHolding, FundProfile
 
-    monkeypatch.setattr(
-        loaders, "fund_profile",
+    patch_loaders(
+        monkeypatch, "fund_profile",
         lambda t: FundProfile(
             ticker="SPY", name="SPDR S&P 500", quote_type="ETF", currency="USD",
             expense_ratio=0.000945,
@@ -704,7 +701,7 @@ def test_a_funds_basket_comes_back_as_fractions(client, monkeypatch, fund_offlin
 
 def test_the_subject_keeps_its_place_at_the_front(client, monkeypatch):
     """Order is the caller's — the subject leads, the peers follow."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(ticker=t))
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(ticker=t))
     monkeypatch.setattr(
         "stocks.api.routes.comparables.compute_metrics",
         lambda raw: {"ticker": raw.ticker, "pe_ttm": 20.0},
@@ -718,7 +715,7 @@ def test_the_subject_keeps_its_place_at_the_front(client, monkeypatch):
 
 
 def test_a_two_horse_race_has_no_podium(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(ticker=t))
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(ticker=t))
     monkeypatch.setattr(
         "stocks.api.routes.comparables.compute_metrics",
         lambda raw: {"ticker": raw.ticker, "pe_ttm": 20.0},
@@ -729,7 +726,7 @@ def test_a_two_horse_race_has_no_podium(client, monkeypatch):
 
 def test_the_rivals_median_and_outliers_ride_along(client, monkeypatch):
     pes = {"S": 60.0, "A": 18.0, "B": 20.0, "C": 22.0}
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(ticker=t))
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(ticker=t))
     monkeypatch.setattr(
         "stocks.api.routes.comparables.compute_metrics",
         lambda raw: {"ticker": raw.ticker, "pe_ttm": pes[raw.ticker]},
@@ -772,7 +769,7 @@ def test_a_throttled_upstream_is_a_503_with_a_reason_not_a_500(
     def throttled(_ticker):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "fundamentals", throttled)
+    patch_loaders(monkeypatch, "fundamentals", throttled)
     response = client.get("/v1/ticker/AAPL/financials", headers=AUTH)
     assert response.status_code == 503
     assert response.json()["reason"] == "rate_limited"
@@ -785,7 +782,7 @@ def test_an_unreachable_upstream_says_offline_instead(client, monkeypatch):
     def dropped(_ticker):
         raise URLError("no route to host")
 
-    monkeypatch.setattr(loaders, "fundamentals", dropped)
+    patch_loaders(monkeypatch, "fundamentals", dropped)
     response = client.get("/v1/ticker/AAPL/metrics", headers=AUTH)
     assert response.status_code == 503
     assert response.json()["reason"] == "offline"
@@ -810,7 +807,7 @@ def test_a_dropped_network_on_any_http_stack_says_offline(client, monkeypatch, d
     def raises(_ticker):
         raise error("could not resolve host")
 
-    monkeypatch.setattr(loaders, "fundamentals", raises)
+    patch_loaders(monkeypatch, "fundamentals", raises)
     response = client.get("/v1/ticker/AAPL/metrics", headers=AUTH)
     assert response.status_code == 503
     assert response.json()["reason"] == "offline"
@@ -820,7 +817,7 @@ def test_a_verdict_ships_the_tone_its_band_carries(client, monkeypatch):
     """The labels are a growing set — "net cash", "buybacks", "heavy dilution".
     A client colouring by label shows every band it has not heard of as
     neutral, which is the one reading a verdict must never have."""
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "pe_ttm": 9.0, "net_debt_ebitda": -0.4},
@@ -851,8 +848,8 @@ def test_analysts_carry_targets_against_the_price_and_the_split(client, monkeypa
         {"strongBuy": 5, "buy": 10, "hold": 4, "sell": 1, "strongSell": 0},
         {"current": 100.0, "low": 80.0, "high": 160.0, "mean": 120.0, "median": 110.0},
     )
-    monkeypatch.setattr(loaders, "estimates", lambda t: raw)
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "estimates", lambda t: raw)
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
     assert body["covered"] is True and body["analysts"] == 20
     assert body["currency"] == "USD"
@@ -866,8 +863,8 @@ def test_analysts_carry_targets_against_the_price_and_the_split(client, monkeypa
 def test_too_few_analysts_is_not_a_consensus(client, monkeypatch):
     """One rating drawn as a 100% buy bar reads as a unanimous street."""
     raw = _estimates({"strongBuy": 0, "buy": 2, "hold": 0, "sell": 0, "strongSell": 0})
-    monkeypatch.setattr(loaders, "estimates", lambda t: raw)
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    patch_loaders(monkeypatch, "estimates", lambda t: raw)
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
     assert body["covered"] is False and body["analysts"] == 2
     assert body["targets"] is None
@@ -876,12 +873,12 @@ def test_too_few_analysts_is_not_a_consensus(client, monkeypatch):
 def test_no_coverage_is_an_empty_view_not_an_error(client, monkeypatch):
     from stocks.data.estimates import RawEstimates
 
-    monkeypatch.setattr(loaders, "estimates", lambda t: RawEstimates(ticker="AAPL"))
+    patch_loaders(monkeypatch, "estimates", lambda t: RawEstimates(ticker="AAPL"))
 
     def _down(t):
         raise RuntimeError("throttled")
 
-    monkeypatch.setattr(loaders, "fundamentals", _down)
+    patch_loaders(monkeypatch, "fundamentals", _down)
     body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
     assert body["analysts"] == 0 and body["covered"] is False
     assert body["months"] == [] and body["revisions"] == []

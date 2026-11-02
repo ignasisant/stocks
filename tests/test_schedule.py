@@ -32,6 +32,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.chat import daily, engine
 from stocks.notify import schedule
 from stocks.web import auth
+from tests.patching import patch_loaders
 
 MADRID = ZoneInfo("Europe/Madrid")
 WEEKDAYS = [0, 1, 2, 3, 4]
@@ -320,7 +321,6 @@ EMAIL = "holder@example.com"
 
 @pytest.fixture
 def signed_in(client, sign_in, tmp_path, monkeypatch):
-    from stocks.api import loaders
 
     paths = accounts.paths_for(EMAIL, None, users_dir=tmp_path / "users")
     paths.root.mkdir(parents=True)
@@ -331,7 +331,7 @@ def signed_in(client, sign_in, tmp_path, monkeypatch):
         accounts, "paths_for", lambda email, owner=None, users_dir=None: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
     session = sign_in(client, EMAIL)
     session.paths = paths

@@ -290,10 +290,23 @@ def test_the_model_card_carries_the_computed_portfolio_section():
     assert card.book == daily_book.section(book_facts())
 
 
-def test_a_headline_misquoting_the_index_is_rejected():
+def test_a_headline_misquoting_the_index_gives_way_to_the_first_line():
+    # Rejecting the card sent the reader's own Gemini answer to the slow free
+    # chain over one bad figure in the headline (prod 11-01).
     raw = json.dumps({
         "headline": "Portfolio +0.8% vs S&P 500 +0.9%",
         "items": [{"key": "earnings:NVDA", "line": "NVDA reports in 3 days"}],
+    })
+    card = daily.parse(raw, day=TODAY, lang="en", facts=book_facts())
+    assert card is not None and "0.9%" not in card.headline
+    assert card.headline == card.bullets[0]
+
+
+def test_a_line_misquoting_the_index_still_rejects_the_card():
+    raw = json.dumps({
+        "headline": "NVDA reports Friday",
+        "items": [{"key": "earnings:NVDA", "line": "S&P 500 +0.9% while NVDA waits"},
+                  {"key": "alert_hit:AAPL", "line": "AAPL hit its alert"}],
     })
     assert daily.parse(raw, day=TODAY, lang="en", facts=book_facts()) is None
 
@@ -358,9 +371,14 @@ def test_the_brief_s_own_figures_count_as_sourced():
 def test_a_brief_reply_with_no_section_standing_is_a_miss():
     facts = book_facts(brief=BRIEF)
     assert daily.parse(_reply([]), day=TODAY, lang="en", facts=facts) is None
+
+
+def test_a_brief_headline_misquoting_the_index_gives_way_to_its_first_line():
     raw = _reply([{"asks": [1], "lines": [{"line": "NVDA at 182.50."}]}],
                  headline="Portfolio +0.8% vs S&P 500 +0.9%")
-    assert daily.parse(raw, day=TODAY, lang="en", facts=facts) is None
+    card = daily.parse(raw, day=TODAY, lang="en", facts=book_facts(brief=BRIEF))
+    assert card is not None
+    assert card.headline == card.bullets[0] and "0.9%" not in card.headline
 
 
 def test_a_bare_price_is_audited_but_counts_names_and_years_are_not():

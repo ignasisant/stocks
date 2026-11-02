@@ -54,9 +54,8 @@ import {
 
 /**
  * The grab strip on the panel's left edge: the one way to size the drawer.
- * Three preset buttons used to sit in the header beside it and were dropped —
- * three icons for one choice the edge already makes, taking room from the
- * thread's name. Pointer events rather than mouse ones, and the pointer is
+ * No preset buttons in the header: the edge already makes that choice, and
+ * the room goes to the thread's name. Pointer events rather than mouse ones, and the pointer is
  * captured on press: the cursor spends the whole drag over the page *behind*
  * the panel, and without capture the first move outside the strip would end
  * it.

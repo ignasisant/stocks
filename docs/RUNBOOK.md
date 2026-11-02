@@ -31,7 +31,7 @@ process.
    `concurrent: 1` names the culprit; above 1 the line lists every path that
    ran together and the growth is shared — read it as a lead.
 3. A `cgroup_mb` well above `rss_mb` means files: check `memo_mb` and the
-   `disk_max` of the memo that grew (`api/loaders.py`).
+   `disk_max` of the memo that grew (`api/loaders/`).
 
 ## Alert: `/healthz` down (uptime check)
 

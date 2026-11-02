@@ -26,6 +26,7 @@ from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -275,10 +276,10 @@ def test_an_unpriced_position_reads_null_and_is_counted(
         },
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     # Today's move is a basket read and a quote burst; offline here.
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -312,10 +313,10 @@ def test_a_share_price_is_reported_in_the_currency_it_trades_in(
         },
         index=pd.Index(["AAPL"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5})
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5})
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -342,10 +343,10 @@ def test_a_price_with_no_rate_to_convert_it_reads_null(
         },
         index=pd.Index(["AAPL"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {})
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {})
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -369,7 +370,7 @@ def test_the_summary_sums_the_same_rows_on_both_sides(
         },
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
 
     body = client.get(
         "/v1/portfolio/summary", params={"account": EMAIL}, headers=AUTH
@@ -398,7 +399,7 @@ def test_the_summary_names_the_unpriced_yahoo_does_not_list(
         },
         index=pd.Index(["AAPL", "SAN", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     # AAPL priced after all, so a stale verdict on it must not be repeated.
     fetch.mark_unlisted("SAN", "AAPL")
 
@@ -412,7 +413,7 @@ def test_the_summary_names_the_unpriced_yahoo_does_not_list(
 def test_an_empty_book_summarises_to_zero_without_dividing(
     client, token, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
     body = client.get(
         "/v1/portfolio/summary", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -430,7 +431,7 @@ def test_performance_reports_both_returns_and_what_it_could_not_price(
         index=index,
     )
     twr = pd.Series([0.1, 0.1], index=index[1:])
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, ["ORGN"]))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, twr, ["ORGN"]))
 
     body = client.get(
         "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
@@ -467,7 +468,7 @@ def test_performance_var_is_the_fifth_percentile_day_once_there_are_enough_days(
          "pnl_pct": [0.0, *(value / 100.0 - 1)]},
         index=index,
     )
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, daily, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, daily, []))
 
     body = client.get(
         "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
@@ -480,7 +481,7 @@ def test_performance_window_buy_in_and_young_spans_are_cumulative(
     client, token, account, monkeypatch
 ):
     """The chip's buy-in follows the window; a span under a year is not annualised."""
-    from stocks.api.routes import portfolio as route
+    from stocks.api.routes.portfolio import returns as route
 
     index = pd.date_range("2024-01-02", periods=4, freq="D")
     hist = pd.DataFrame(
@@ -490,7 +491,7 @@ def test_performance_window_buy_in_and_young_spans_are_cumulative(
         index=index,
     )
     twr = pd.Series([0.1, 0.0, 0.0], index=index[1:])
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, twr, []))
     flows = pd.Series([100.0, 50.0], index=[index[0], index[2]])
     monkeypatch.setattr(route, "flow_series", lambda *a, **k: flows)
 
@@ -507,8 +508,8 @@ def test_performance_window_buy_in_and_young_spans_are_cumulative(
         {"injected": 500.0, "value": [100.0 + i for i in range(300)], "pnl_pct": 0.0},
         index=days,
     )
-    monkeypatch.setattr(
-        loaders, "history",
+    patch_loaders(
+        monkeypatch, "history",
         lambda *a, **k: (long, pd.Series(0.001, index=days[1:]), []),
     )
     inside = days[days >= pd.Timestamp.today().normalize() - pd.Timedelta(days=182)]
@@ -534,7 +535,7 @@ def test_a_year_of_span_is_annualised(client, token, account, monkeypatch):
         index=index,
     )
     twr = pd.Series(0.0005, index=index[1:])
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, twr, []))
     body = client.get(
         "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -560,7 +561,7 @@ def test_performance_names_the_days_it_threw_out(
     )
     twr = pd.Series([0.1, 0.1], index=index[1:])
     twr.attrs["dropped_days"] = [pd.Timestamp("2024-01-03")]
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, twr, []))
 
     body = client.get(
         "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
@@ -569,8 +570,8 @@ def test_performance_names_the_days_it_threw_out(
 
 
 def test_a_book_with_no_history_still_answers(client, token, account, monkeypatch):
-    monkeypatch.setattr(
-        loaders, "history",
+    patch_loaders(
+        monkeypatch, "history",
         lambda *a, **k: (pd.DataFrame(), pd.Series(dtype=float), []),
     )
     body = client.get(
@@ -616,8 +617,8 @@ def test_unreadable_prefs_fall_back_to_eur(client, token, account):
 
 
 def test_quotes_separate_what_priced_from_what_did_not(client, token, monkeypatch):
-    monkeypatch.setattr(
-        loaders, "quotes",
+    patch_loaders(
+        monkeypatch, "quotes",
         lambda tickers: {"AAPL": {"price": 190.0, "pct": 0.012, "session": None,
                                   "as_of": "2024-03-01"}},
     )

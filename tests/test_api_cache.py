@@ -25,6 +25,7 @@ from stocks.api import cache, loaders
 from stocks.api.app import app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 
 def _together(fn, n: int, gate: threading.Event, *args):
@@ -360,7 +361,7 @@ def test_a_background_refresh_is_announced_with_its_landing(monkeypatch):
 
 def test_frames_built_from_one_download_are_built_once(monkeypatch):
     closes = {"AAPL": None}
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: closes)
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: closes)
     calls: list[object] = []
     gate = threading.Event()
 
@@ -374,7 +375,7 @@ def test_frames_built_from_one_download_are_built_once(monkeypatch):
     assert len(calls) == 1 and calls[0] is closes
     assert all(v is values[0] for v in values)
     # A new download is a new frame — the identity test is unchanged.
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: dict(closes))
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: dict(closes))
     assert frame("book.db", 1.0, "EUR") is not values[0]
     assert len(calls) == 2
 
@@ -436,7 +437,7 @@ def test_one_cold_home_is_one_bulk_download(book, monkeypatch):
         }
 
     monkeypatch.setattr("stocks.data.fetch.fetch_many", download)
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
     client = TestClient(app)
     paths = [
         "/v1/portfolio/summary",
@@ -622,7 +623,7 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     monkeypatch.setattr(
         "stocks.data.fetch.fetch_tail", lambda tickers, **_: download(tickers)
     )
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
     client = TestClient(app)
     headers = {"Authorization": "Bearer t"}
     priced = client.get(f"/v1/portfolio/positions?account={EMAIL}", headers=headers)

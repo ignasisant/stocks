@@ -233,8 +233,8 @@ def parse_skill_ids(raw: str, limit: int = MAX_AUTO) -> list[str]:
 
 # ------------------------------------------------- offline fallback
 
-# The router's other half: when the LLM call fails there used to be nothing to
-# read the message with, only the previous turn's lens. Each skill's
+# The router's other half, for when the LLM call fails: without it only the
+# previous turn's lens would read the message. Each skill's
 # `keywords:` frontmatter line (comma separated, EN + ES, accents omitted) is
 # matched against the folded message. A keyword matches from the start of a
 # word ("dividend" reads "dividends"); a trailing "$" makes it the whole word

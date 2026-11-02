@@ -15,6 +15,7 @@ import pytest
 
 from stocks.data import cnmv
 from stocks.data.insiders import BUY_CODE, SELL_CODE, summarize
+from tests.patching import patch_loaders
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cnmv"
 
@@ -252,7 +253,7 @@ def test_a_partial_read_says_so_and_the_next_one_is_fuller(slow_site):
 def test_the_loader_does_not_freeze_a_partial_read(slow_site, monkeypatch):
     from stocks.api import loaders
 
-    monkeypatch.setattr(loaders, "issuer_name", lambda t: "Banco Santander")
+    patch_loaders(monkeypatch, "issuer_name", lambda t: "Banco Santander")
     loaders._clear_eu_insiders()
     try:
         first = loaders.eu_insiders("SAN.MC")
@@ -263,7 +264,7 @@ def test_the_loader_does_not_freeze_a_partial_read(slow_site, monkeypatch):
 
         slow_site.set()
         _workers_done()
-        monkeypatch.setattr(loaders, "_CNMV_PARTIAL_TTL", 0.0)
+        patch_loaders(monkeypatch, "_CNMV_PARTIAL_TTL", 0.0)
         loaders._cnmv_cache["SAN.MC"] = (0.0, first)  # the 60 s have passed
         assert [t.shares for t in loaders.eu_insiders("SAN.MC")] == [600000.0, 6494.0]
 

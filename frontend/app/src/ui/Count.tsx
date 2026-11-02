@@ -1,9 +1,8 @@
 /**
  * A figure that counts to its new value instead of swapping.
  *
- * A price refresh used to replace "138.857 €" with "138.912 €" in one frame,
- * and nobody saw it happen: the page looked the same, so it looked stale. The
- * figure now runs from the old value to the new one, tinted by the direction
+ * Swapped in one frame, "138.857 €" becoming "138.912 €" goes unseen and the
+ * page looks stale. The figure runs from the old value to the new one, tinted by the direction
  * it moved, so a refresh reads as a refresh.
  *
  * It works on the text the caller already formatted, so no tile changes how

@@ -21,6 +21,7 @@ from stocks import accounts
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio.ledger import Transaction, add, add_many, all_transactions
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -208,8 +209,8 @@ def test_the_ledger_narrows_to_the_rows_a_person_names(client, account, query, e
 def test_health_finds_the_move_and_its_fix_goes_through_the_same_two_steps(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr(
-        loaders, "display_symbol", {"ES0171996087": "GRF.MC"}.get
+    patch_loaders(
+        monkeypatch, "display_symbol", {"ES0171996087": "GRF.MC"}.get
     )
     body = client.get("/v1/portfolio/health", params=WHO, headers=AUTH).json()
     [finding] = body["findings"]

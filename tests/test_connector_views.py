@@ -18,6 +18,7 @@ import pytest
 
 from stocks.connector import tools, views
 from stocks.web import i18n
+from tests.patching import patch_loaders
 
 ORIGIN = "https://topstocks.example"
 SOURCES = Path(__file__).resolve().parents[1] / "frontend" / "app" / "src" / "mcp"
@@ -116,7 +117,6 @@ def test_an_unmarked_build_still_loads(monkeypatch, tmp_path):
     ],
 )
 def test_a_logo_is_this_sites_mirror_or_nothing(monkeypatch, mirrored, origin, expected):
-    from stocks.api import loaders
 
-    monkeypatch.setattr(loaders, "logo", lambda ticker: mirrored)
+    patch_loaders(monkeypatch, "logo", lambda ticker: mirrored)
     assert tools._logo("AAPL", origin) == expected

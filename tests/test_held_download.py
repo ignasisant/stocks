@@ -23,6 +23,7 @@ from stocks.api import loaders
 from stocks.data import fetch
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 DAYS = pd.bdate_range("2024-01-02", periods=400)
 
@@ -164,7 +165,7 @@ def test_a_dividend_waits_for_the_rebase(book, yahoo, monkeypatch):
     assert y.asked[1:] == [(("AAPL", "MSFT"), SPARK)]
     assert (again["AAPL"]["Adj Close"] == 100.0).all()
 
-    monkeypatch.setattr(loaders, "_REBASE_S", -1.0)  # a day later
+    patch_loaders(monkeypatch, "_REBASE_S", -1.0)  # a day later
     again = _refresh(db)
     assert y.asked[2] == (("AAPL", "MSFT"), loaders._TAIL)
     assert y.asked[3][0] == ("AAPL",) and y.asked[3][1] not in (loaders._TAIL, SPARK)
@@ -178,9 +179,9 @@ def test_the_rebase_is_once_a_day(book, yahoo, monkeypatch):
     y = yahoo({"AAPL": _bars(100.0)})
     loaders._held_frames(db, 1.0)
     _refresh(db)
-    monkeypatch.setattr(loaders, "_REBASE_S", -1.0)
+    patch_loaders(monkeypatch, "_REBASE_S", -1.0)
     _refresh(db)
-    monkeypatch.setattr(loaders, "_REBASE_S", 20 * 3600.0)
+    patch_loaders(monkeypatch, "_REBASE_S", 20 * 3600.0)
     _refresh(db)
     assert [p for _, p in y.asked[1:]] == [SPARK, loaders._TAIL, SPARK]
 
@@ -194,7 +195,7 @@ def test_a_refused_rebase_still_brings_the_closes(book, yahoo, monkeypatch):
     y = yahoo({"AAPL": _bars(100.0)})
     loaders._held_frames(db, 1.0)
     _, stamped = loaders._frames_base(db, "2024-01-02")
-    monkeypatch.setattr(loaders, "_REBASE_S", -1.0)
+    patch_loaders(monkeypatch, "_REBASE_S", -1.0)
 
     def refuse(tickers, period="1y", **kwargs):
         if period == loaders._TAIL:

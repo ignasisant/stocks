@@ -24,6 +24,7 @@ from stocks import accounts
 from stocks.api import briefing, daily_card, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.chat import daily_book, today_market
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -53,10 +54,10 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "file_mtime", lambda path: 1.0)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: {})
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "file_mtime", lambda path: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     return paths
 
 
@@ -242,7 +243,7 @@ def test_the_index_is_read_back_to_the_books_first_day(
                          start=pd.Timestamp.today() - pd.DateOffset(years=opened))
     value = pd.Series(range(1, len(days) + 1), index=days, dtype=float)
     hist = pd.DataFrame({"value": value, "injected": 1.0})
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, None, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, None, []))
     periods = []
     monkeypatch.setattr(briefing, "_compare_closes",
                         lambda period="6y": periods.append(period) or {})
@@ -263,7 +264,7 @@ def test_every_window_is_the_book_against_its_own_money_in_the_index(
     injected = pd.Series([100.0] * 400 + [200.0] * 400, index=days)
     spy = pd.Series(50.0, index=days)
     hist = pd.DataFrame({"value": value, "injected": injected})
-    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, None, []))
+    patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, None, []))
     monkeypatch.setattr(briefing, "_compare_closes", lambda period="6y": {})
     monkeypatch.setattr(briefing, "_card_closes", dict)
     monkeypatch.setattr(daily_book, "index_series", lambda closes, ccy: (spy, "EUR"))
@@ -339,9 +340,9 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     monkeypatch.delenv("EDGAR_USER_AGENT", raising=False)
     monkeypatch.setattr(home, "enriched", lambda db, mtime, ccy: pd.DataFrame(
         {"weight": [0.7, 0.3]}, index=["AAPL", "KO"]))
-    monkeypatch.setattr(loaders, "headlines", lambda t: [])
-    monkeypatch.setattr(loaders, "insiders", lambda t: [])
-    monkeypatch.setattr(loaders, "eu_insiders", lambda t: [])
+    patch_loaders(monkeypatch, "headlines", lambda t: [])
+    patch_loaders(monkeypatch, "insiders", lambda t: [])
+    patch_loaders(monkeypatch, "eu_insiders", lambda t: [])
     monkeypatch.setattr(briefing, "_card_closes", lambda: {})
     row = SimpleNamespace(ticker="AAPL", verdict="trim", sector="Technology",
                           quality=70.0, cheapness=20.0)
@@ -352,7 +353,7 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     from stocks.data.earnings import EarningsResult
 
     monkeypatch.setattr(briefing, "_followed", lambda paths: ("AAPL", "KO"))
-    monkeypatch.setattr(loaders, "earnings_calendar", lambda tickers: (
+    patch_loaders(monkeypatch, "earnings_calendar", lambda tickers: (
         [], [EarningsResult("AAPL", date(2026, 10, 12), 0.98, 1.05, 7.1)]))
     asked: list = []
 

@@ -26,8 +26,8 @@ import pytest
 
 from stocks import storage
 from stocks.analysis import sentiment as sm
-from stocks.api import loaders
 from stocks.chat import engine, today_market
+from tests.patching import patch_engine, patch_loaders
 
 DAY = date(2026, 10, 13)
 SESSIONS = pd.bdate_range(end="2026-10-12", periods=260)
@@ -76,11 +76,11 @@ def _inflation() -> pd.DataFrame:
 def sources(monkeypatch):
     history = pd.Series(np.linspace(40, 62, 60), index=SESSIONS[-60:])
     pulse = SimpleNamespace(score=62.4, history=history)
-    monkeypatch.setattr(loaders, "pulse_closes", _closes)
-    monkeypatch.setattr(loaders, "market_pulse", lambda: pulse)
-    monkeypatch.setattr(loaders, "pulse_rate_rows", _rates)
-    monkeypatch.setattr(loaders, "inflation", _inflation)
-    monkeypatch.setattr(loaders, "crypto_scan", lambda: {
+    patch_loaders(monkeypatch, "pulse_closes", _closes)
+    patch_loaders(monkeypatch, "market_pulse", lambda: pulse)
+    patch_loaders(monkeypatch, "pulse_rate_rows", _rates)
+    patch_loaders(monkeypatch, "inflation", _inflation)
+    patch_loaders(monkeypatch, "crypto_scan", lambda: {
         "global": {"btc_dominance": 57.26},
         "fear_greed": [[f"2026-10-{d:02d}", 30 + d] for d in range(1, 13)],
     })
@@ -109,7 +109,7 @@ def test_a_failing_source_drops_only_its_block(sources, monkeypatch):
     def down():
         raise RuntimeError("FRED is down")
 
-    monkeypatch.setattr(loaders, "pulse_rate_rows", down)
+    patch_loaders(monkeypatch, "pulse_rate_rows", down)
     f = today_market.facts(DAY)
     assert "rates" in f["missing"]
     assert "rates" not in f
@@ -213,7 +213,7 @@ def test_the_write_spends_the_global_pot_only(sources, monkeypatch):
         seen.update(prefs=prefs, spend=spend_free, system=system)
         return None
 
-    monkeypatch.setattr(engine, "complete_attempts", attempts)
+    patch_engine(monkeypatch, "complete_attempts", attempts)
     card = today_market.write(today_market.facts(DAY), "es")
     assert seen["prefs"] == {} and seen["spend"] is engine.spend_free_global
     assert "Spanish" in seen["system"] and "decimal comma" in seen["system"]
@@ -226,7 +226,7 @@ def test_a_written_read_stands(sources, monkeypatch):
             "Appetite holds", ("trend", "Risk appetite is in its band."),
             ("macro", "The ECB decides soon.")))
 
-    monkeypatch.setattr(engine, "complete_attempts", attempts)
+    patch_engine(monkeypatch, "complete_attempts", attempts)
     card = today_market.write(today_market.facts(DAY), "en")
     assert card["source"] == "llm" and card["headline"] == "Appetite holds"
 
@@ -235,7 +235,7 @@ def test_a_written_read_stands(sources, monkeypatch):
 
 
 def test_run_saves_both_languages_stamped_by_session(sources, monkeypatch):
-    monkeypatch.setattr(engine, "complete_attempts", lambda *a, **k: None)
+    patch_engine(monkeypatch, "complete_attempts", lambda *a, **k: None)
     status = today_market.run(DAY)
     stored = today_market.load(restore=False)
     assert status["es"] == status["en"] == "computed"
@@ -246,7 +246,7 @@ def test_run_saves_both_languages_stamped_by_session(sources, monkeypatch):
 
 
 def test_a_new_language_reuses_the_stored_facts(sources, monkeypatch):
-    monkeypatch.setattr(engine, "complete_attempts", lambda *a, **k: None)
+    patch_engine(monkeypatch, "complete_attempts", lambda *a, **k: None)
     today_market.run(DAY, ("es",))
     before = today_market.load(restore=False)
 
@@ -261,13 +261,13 @@ def test_a_new_language_reuses_the_stored_facts(sources, monkeypatch):
 
 
 def test_dry_run_writes_nothing(sources, monkeypatch):
-    monkeypatch.setattr(engine, "complete_attempts", lambda *a, **k: None)
+    patch_engine(monkeypatch, "complete_attempts", lambda *a, **k: None)
     status = today_market.run(DAY, ("en",), dry_run=True)
     assert "dry_run" in status and not today_market.FILE.exists()
 
 
 def test_a_bucket_that_will_not_take_it_is_swallowed(sources, monkeypatch):
-    monkeypatch.setattr(engine, "complete_attempts", lambda *a, **k: None)
+    patch_engine(monkeypatch, "complete_attempts", lambda *a, **k: None)
     monkeypatch.setattr(storage, "enabled", lambda: True)
     monkeypatch.setattr(storage, "restore", lambda path: False)
 

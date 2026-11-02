@@ -19,9 +19,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data.crypto_market import Positioning
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -62,8 +62,8 @@ def client() -> TestClient:
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
-    monkeypatch.setattr(loaders, "crypto_scan", lambda: SCAN)
-    monkeypatch.setattr(loaders, "crypto_info", lambda t: {
+    patch_loaders(monkeypatch, "crypto_scan", lambda: SCAN)
+    patch_loaders(monkeypatch, "crypto_info", lambda t: {
         "marketCap": 1.5e12, "circulatingSupply": 19_900_000,
         "fiftyTwoWeekHigh": 100_000.0, "fiftyTwoWeekLow": 50_000.0,
     })
@@ -80,8 +80,8 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
-    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "custody", lambda db, m: {})
     return paths
 
 
@@ -109,7 +109,7 @@ def test_a_coin_off_the_scan_gets_the_52_week_high_labelled_as_such(client):
 
 
 def test_a_peak_since_the_scan_is_not_lost(client, monkeypatch):
-    monkeypatch.setattr(loaders, "crypto_info", lambda t: {"fiftyTwoWeekHigh": 120_000.0})
+    patch_loaders(monkeypatch, "crypto_info", lambda t: {"fiftyTwoWeekHigh": 120_000.0})
     body = client.get("/v1/ticker/BTC-EUR/crypto", headers=AUTH).json()
     assert body["ath"] == 120_000.0
 
@@ -128,7 +128,7 @@ def test_cycle_reads_sentiment_from_the_scan_and_stretch_from_the_closes(
     client, monkeypatch
 ):
     closes = {"SOL-EUR": _closes(1500, step=0.5), "BTC-EUR": _closes(1500, step=1.0)}
-    monkeypatch.setattr(loaders, "daily_closes",
+    patch_loaders(monkeypatch, "daily_closes",
                         lambda t, period="max": closes.get(t, pd.Series(dtype=float)))
     body = client.get("/v1/ticker/SOL-EUR/crypto/cycle", headers=AUTH).json()
     assert body["fear_greed"]["value"] == 70 and body["fear_greed"]["band"] == "greed"
@@ -150,14 +150,14 @@ def test_bitcoin_is_measured_against_the_nasdaq_in_dollars(client, monkeypatch):
         asked.append(t)
         return _closes(400)
 
-    monkeypatch.setattr(loaders, "daily_closes", closes)
+    patch_loaders(monkeypatch, "daily_closes", closes)
     body = client.get("/v1/ticker/BTC-EUR/crypto/cycle", headers=AUTH).json()
     assert "BTC-USD" in asked and "QQQ" in asked
     assert body["vs_btc_90d"] is None and body["vs_nasdaq_90d"] is not None
 
 
 def test_a_stablecoin_gets_the_market_and_nothing_of_its_own(client, monkeypatch):
-    monkeypatch.setattr(loaders, "daily_closes",
+    patch_loaders(monkeypatch, "daily_closes",
                         lambda *a, **k: pytest.fail("a peg has no cycle"))
     body = client.get("/v1/ticker/USDT-EUR/crypto/cycle", headers=AUTH).json()
     assert body["fear_greed"]["value"] == 70 and body["mayer"] is None
@@ -173,7 +173,7 @@ def test_a_share_asking_for_a_cycle_is_empty(client):
 
 
 def test_positioning_restates_funding_per_eight_hours(client, monkeypatch):
-    monkeypatch.setattr(loaders, "crypto_positioning", lambda coin: Positioning(
+    patch_loaders(monkeypatch, "crypto_positioning", lambda coin: Positioning(
         venue="bybit", symbol="KASUSDT", funding=0.00005, funding_7d=0.0002,
         interval_h=4.0, oi_usd=1e7, oi_change_7d=0.1))
     body = client.get("/v1/ticker/KAS-USD/crypto/positioning", headers=AUTH).json()
@@ -184,7 +184,7 @@ def test_positioning_restates_funding_per_eight_hours(client, monkeypatch):
 
 
 def _perp(monkeypatch):
-    monkeypatch.setattr(loaders, "crypto_positioning", lambda coin: Positioning(
+    patch_loaders(monkeypatch, "crypto_positioning", lambda coin: Positioning(
         venue="bybit", symbol=f"{coin}USDT", funding=0.0001, funding_7d=0.0001,
         interval_h=8.0, oi_usd=1e9, oi_change_7d=None))
 
@@ -206,7 +206,7 @@ def test_a_coin_without_an_index_reads_bitcoins(client, monkeypatch):
 
 def test_no_scan_yet_means_no_implied_vol_line(client, monkeypatch):
     _perp(monkeypatch)
-    monkeypatch.setattr(loaders, "crypto_scan", lambda: {})
+    patch_loaders(monkeypatch, "crypto_scan", lambda: {})
     body = client.get("/v1/ticker/BTC-USD/crypto/positioning", headers=AUTH).json()
     assert body["implied_vol"] is None and body["funding_8h"] is not None
 
@@ -215,13 +215,13 @@ def test_every_venue_down_hides_the_card(client, monkeypatch):
     def down(coin):
         raise RuntimeError("every derivatives venue failed")
 
-    monkeypatch.setattr(loaders, "crypto_positioning", down)
+    patch_loaders(monkeypatch, "crypto_positioning", down)
     got = client.get("/v1/ticker/BTC-EUR/crypto/positioning", headers=AUTH)
     assert got.json() is None
 
 
 def test_a_stablecoin_has_no_perpetual_worth_reading(client, monkeypatch):
-    monkeypatch.setattr(loaders, "crypto_positioning",
+    patch_loaders(monkeypatch, "crypto_positioning",
                         lambda coin: pytest.fail("not asked"))
     got = client.get("/v1/ticker/USDC-USD/crypto/positioning", headers=AUTH)
     assert got.json() is None
@@ -272,7 +272,7 @@ class FakeBook:
 
 
 def test_holding_reads_the_coin_against_the_crypto_sleeve(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: _book())
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, base: _book())
     body = client.get("/v1/ticker/BTC-EUR/crypto/holding",
                       params={"account": EMAIL}, headers=AUTH).json()
     assert body["held"] is True
@@ -283,8 +283,8 @@ def test_holding_reads_the_coin_against_the_crypto_sleeve(client, account, monke
 
 
 def test_a_coin_at_a_loss_carries_the_engine_harvest(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: _book())
-    monkeypatch.setattr(loaders, "crypto_replay", lambda *a: FakeBook())
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, base: _book())
+    patch_loaders(monkeypatch, "crypto_replay", lambda *a: FakeBook())
     body = client.get("/v1/ticker/ETH-EUR/crypto/holding",
                       params={"account": EMAIL}, headers=AUTH).json()
     harvest = body["harvest"]
@@ -293,7 +293,7 @@ def test_a_coin_at_a_loss_carries_the_engine_harvest(client, account, monkeypatc
 
 
 def test_a_coin_not_in_the_book_is_not_held(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: _book())
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, base: _book())
     body = client.get("/v1/ticker/SOL-EUR/crypto/holding",
                       params={"account": EMAIL}, headers=AUTH).json()
     assert body["held"] is False and body["crypto_share"] is None

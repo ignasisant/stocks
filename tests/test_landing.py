@@ -9,7 +9,7 @@ from contextlib import ExitStack
 
 import pytest
 
-from stocks.web import landing
+from stocks.web import landing, landing_css
 
 # ------------------------------------------------------------------ numbers
 
@@ -119,7 +119,7 @@ def _style_body(block: str) -> str:
 
 
 def test_stylesheet_is_one_block_with_the_breakpoints_in_order():
-    css = _style_body(landing._CSS)
+    css = _style_body(landing_css.CSS)
     assert css.count("{") == css.count("}")
     mobile = css.index("@media (max-width: 640px)")
     tiny = css.index("@media (max-width: 380px)")
@@ -129,19 +129,19 @@ def test_stylesheet_is_one_block_with_the_breakpoints_in_order():
 
 
 def test_mobile_rules_are_gated_by_width_in_the_stylesheet():
-    css = _style_body(landing._CSS)
+    css = _style_body(landing_css.CSS)
     after_breakpoint = css[css.index("@media (max-width: 640px)") :]
     assert ".ag-l-mbar {" in after_breakpoint
     # ...and the bar is hidden by default, outside any query
-    assert ".ag-l-mbar { display: none; }" in landing._BASE_CSS
+    assert ".ag-l-mbar { display: none; }" in landing_css.BASE_CSS
 
 
 def test_user_agent_override_reapplies_the_same_rules_at_900():
     css = _style_body(landing._mobile_css())
     assert css.startswith("@media (max-width: 900px) {")
-    assert landing._MOBILE_RULES in css
+    assert landing_css.MOBILE_RULES in css
     # the small-phone block rides along, and stays last so it still wins
-    assert css.index("@media (max-width: 380px)") > css.index(landing._MOBILE_RULES)
+    assert css.index("@media (max-width: 380px)") > css.index(landing_css.MOBILE_RULES)
 
 
 def test_mobile_bar_carries_the_sign_in_parameter():
@@ -314,5 +314,5 @@ def test_no_grid_track_can_outgrow_its_container():
     at the right edge rather than scrolling. Every auto-fit minimum is written
     min(Npx, 100%).
     """
-    bare = re.findall(r"minmax\(\d+px", landing._CSS)
+    bare = re.findall(r"minmax\(\d+px", landing_css.CSS)
     assert not bare, f"unclamped grid minimums: {bare}"

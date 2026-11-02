@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from stocks.chat import brief
+from tests.patching import patch_engine, patch_loaders
 
 TODAY = date(2026, 10, 24)
 
@@ -42,15 +43,13 @@ class _Provider:
 @pytest.fixture
 def world(monkeypatch, tmp_path):
     """A profile, a calendar and a book the brief reads, all in memory."""
-    from stocks.api import loaders
-    from stocks.chat import engine
     from stocks.data import fetch, profiles
 
     state = {"info": dict(LEU), "dates": [], "book": None}
     monkeypatch.setattr(fetch, "info", lambda t: state["info"])
     monkeypatch.setattr(profiles, "known", lambda t: {})
-    monkeypatch.setattr(loaders, "earnings", lambda t: (state["dates"], []))
-    monkeypatch.setattr(engine, "enriched_frame", lambda db, cur="EUR": state["book"])
+    patch_loaders(monkeypatch, "earnings", lambda t: (state["dates"], []))
+    patch_engine(monkeypatch, "enriched_frame", lambda db, cur="EUR": state["book"])
     monkeypatch.setattr(brief, "DOSSIER_DIR", tmp_path / "dossiers")
     monkeypatch.setattr(brief.storage, "enabled", lambda: False)
     db = tmp_path / "ledger.db"

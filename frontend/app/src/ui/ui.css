@@ -679,8 +679,8 @@
   outline-offset: 1px;
 }
 
-/* A control whose setting is off its default: the chip that used to say so
-   in words is an icon now, so the colour has to. */
+/* A control whose setting is off its default: the chip is an icon with no
+   words, so the colour has to say so. */
 .ag-box-set {
   color: var(--ag-brand-accent);
 }

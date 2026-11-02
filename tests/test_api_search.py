@@ -18,6 +18,7 @@ from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -54,9 +55,9 @@ def _offline(monkeypatch):
     """No tier reaches the network, and no entry survives into the next test."""
     for fn in _CACHED:
         fn.cache_clear()
-    monkeypatch.setattr(loaders, "sec_matches", lambda q: [])
-    monkeypatch.setattr(loaders, "world_matches", lambda q: [])
-    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    patch_loaders(monkeypatch, "sec_matches", lambda q: [])
+    patch_loaders(monkeypatch, "world_matches", lambda q: [])
+    patch_loaders(monkeypatch, "sec_title", lambda t: None)
     yield
     for fn in _CACHED:
         fn.cache_clear()
@@ -169,9 +170,9 @@ def test_the_query_comes_back_normalised(client, account, token):
 def test_every_tier_is_reported_by_name(client, account, token, monkeypatch):
     """A client draws the tiers apart — a Yahoo guess and an own holding must
     not arrive looking the same."""
-    monkeypatch.setattr(loaders, "sec_matches", lambda q: [("AMZN", "Amazon.com Inc")])
-    monkeypatch.setattr(
-        loaders, "world_matches", lambda q: [("AIR.PA", "Airbus SE", "Paris")]
+    patch_loaders(monkeypatch, "sec_matches", lambda q: [("AMZN", "Amazon.com Inc")])
+    patch_loaders(
+        monkeypatch, "world_matches", lambda q: [("AIR.PA", "Airbus SE", "Paris")]
     )
     kinds = {m["ticker"]: m["kind"] for m in find(client, "A")}
     assert kinds["AAPL"] == "watch"
@@ -180,8 +181,8 @@ def test_every_tier_is_reported_by_name(client, account, token, monkeypatch):
 
 
 def test_a_worldwide_row_carries_its_venue(client, account, token, monkeypatch):
-    monkeypatch.setattr(
-        loaders, "world_matches", lambda q: [("MIPS.ST", "Mips AB", "Stockholm")]
+    patch_loaders(
+        monkeypatch, "world_matches", lambda q: [("MIPS.ST", "Mips AB", "Stockholm")]
     )
     row = next(m for m in find(client, "MIPS") if m["kind"] == "world")
     assert row["exchange"] == "Stockholm"
@@ -199,9 +200,8 @@ def test_a_row_says_what_kind_of_asset_it_is_from_the_caches_alone(
         raise AssertionError("a search row must not fetch")
 
     monkeypatch.setattr(fetch, "info", no_network)
-    monkeypatch.setattr(
-        loaders,
-        "world_matches",
+    patch_loaders(
+        monkeypatch, "world_matches",
         lambda q: [
             ("XEON.DE", "Xtrackers II EUR Overnight Rate Swap UCITS ETF", "XETRA"),
             ("IWDA.AS", "iShares Core MSCI World UCITS ETF", "Amsterdam"),
@@ -240,7 +240,7 @@ def test_a_dead_tier_degrades_the_search_instead_of_failing_it(
 
     _REAL_WORLD.cache_clear()
     monkeypatch.setattr("stocks.data.symbols.search_rows", boom)
-    monkeypatch.setattr(loaders, "world_matches", _REAL_WORLD)
+    patch_loaders(monkeypatch, "world_matches", _REAL_WORLD)
     assert [m["ticker"] for m in find(client, "AAPL") if m["kind"] == "watch"] == ["AAPL"]
 
 
@@ -260,12 +260,12 @@ def test_a_cooling_yahoo_is_flagged_not_passed_off_as_nothing(
     assert down()
     assert not down(world="false")  # a local-only ask never claims it
     # A memo hit answered anyway: the tier spoke.
-    monkeypatch.setattr(
-        loaders, "world_matches", lambda q: [("005930.KS", "Samsung", "Korea")]
+    patch_loaders(
+        monkeypatch, "world_matches", lambda q: [("005930.KS", "Samsung", "Korea")]
     )
     assert not down()
     monkeypatch.setattr(symbols, "reachable", lambda: True)
-    monkeypatch.setattr(loaders, "world_matches", lambda q: [])
+    patch_loaders(monkeypatch, "world_matches", lambda q: [])
     assert not down()
 
 
@@ -275,7 +275,7 @@ def test_without_world_the_yahoo_tier_is_not_asked(client, account, token, monke
     def boom(_q):
         raise AssertionError("asked Yahoo")
 
-    monkeypatch.setattr(loaders, "world_matches", boom)
+    patch_loaders(monkeypatch, "world_matches", boom)
     kinds = {m["kind"] for m in find(client, "AAPL", world="false")}
     assert kinds == {"watch"}
 
@@ -354,8 +354,8 @@ def test_a_symbol_that_does_not_exist_is_not_kept(
 ):
     """The "analyze" row hands on whatever was typed: a typo Yahoo has never
     heard of must not sit in the history to be clicked again."""
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
-    monkeypatch.setattr(loaders, "listed", lambda t: t != "DIGITALOCE")
+    patch_loaders(monkeypatch, "company_name", lambda t, w: None)
+    patch_loaders(monkeypatch, "listed", lambda t: t != "DIGITALOCE")
     for ticker in ("DOCN", "DIGITALOCE"):
         client.post(
             "/v1/search/recent", params=WHO, headers=AUTH, json={"ticker": ticker}

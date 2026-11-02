@@ -20,9 +20,11 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
+from stocks.data import fetch, symbols
 from stocks.data.dividends import DividendHistory
 from stocks.portfolio import edits, heal, held, validate
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
+from tests.patching import patch_import, patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -232,18 +234,17 @@ def token(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    from stocks.api.routes import import_statement
     from stocks.portfolio import diagnostics
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
-    monkeypatch.setattr(import_statement, "_charted", lambda ticker, budget: None)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: None)
+    patch_import(monkeypatch, "_charted", lambda ticker, budget: None)
     monkeypatch.setattr(
-        import_statement.symbols, "symbol_for_code", lambda code, currency, **_: None
+        symbols, "symbol_for_code", lambda code, currency, **_: None
     )
-    monkeypatch.setattr(import_statement.fetch, "splits", lambda ticker: [])
-    monkeypatch.setattr(import_statement.loaders, "quotes", lambda tickers: {})
-    monkeypatch.setattr(import_statement.loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(import_statement, "_exists_memo", {})
+    monkeypatch.setattr(fetch, "splits", lambda ticker: [])
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_import(monkeypatch, "_exists_memo", {})
     monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path / "diagnostics")
     monkeypatch.setattr(diagnostics.storage, "persist", lambda path: None)
 

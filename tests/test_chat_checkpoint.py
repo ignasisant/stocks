@@ -18,6 +18,7 @@ from stocks.chat import agent, checkpoint, engine, toolbox
 from stocks.chat.checkpoint import Checkpoint
 from stocks.web import auth
 from stocks.web.llm import ToolCall, ToolRun
+from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
     FakeProvider,
@@ -137,7 +138,7 @@ def test_a_resumed_gather_does_not_fetch_twice(monkeypatch):
 
 
 def test_a_finished_gather_is_handed_back_without_running(tmp_path, monkeypatch):
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(agent, "gather", lambda *a, **k: pytest.fail("ran again"))
     point = Checkpoint(tmp_path / "t1.json", {
         "rid": "r", "plan": [{"text": "Precio", "done": True}],
@@ -239,7 +240,7 @@ def test_a_turn_on_a_key_held_for_the_session_is_never_written_down(
     opened = []
     monkeypatch.setattr(Checkpoint, "open", classmethod(
         lambda cls, *a, **k: opened.append(k) or pytest.fail("written down")))
-    monkeypatch.setattr("stocks.api.routes.chat.session_keys",
+    monkeypatch.setattr("stocks.api.routes.chat.turns.session_keys",
                         lambda provider, key: {"anthropic": "sk-held"})
     signed_in.post("/v1/chat/runs", json=run("hola"))
     _ended(account, "run-1")

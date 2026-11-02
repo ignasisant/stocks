@@ -2,10 +2,9 @@
  * What the ticker page shows for each kind of asset — one table, read by the
  * header, the price card, the chart and the sections below.
  *
- * The page used to draw every symbol as a share: RSI, SMA20 and candles for a
- * money-market fund whose price rises a sliver every day (so its RSI sits in
- * the nineties and the page called cash "overbought"), a position block and an
- * "Analyse" button for an index nobody can buy. Each row here is what that kind
+ * Drawn as a share, a money-market fund reads "overbought" (its price rises a
+ * sliver every day, so its RSI sits in the nineties) and an index gets a
+ * position block and an "Analyse" button nobody can use. Each row here is what that kind
  * is actually read by:
  *
  * - a **share** is read by where its price sits in the year, which way its
@@ -30,7 +29,7 @@
  * money-market fund and a closed-end fund are read by what they pay: a cash
  * fund's line climbs a sliver a day, so it would read "up" forever.
  *
- * `null` — a kind the server did not name — is a share, the page as it was.
+ * `null` — a kind the server did not name — is a share.
  */
 
 import type { AssetKind } from "../../shell/assets";

@@ -29,7 +29,7 @@ MAX_CHARS = 300
 ALERTS_SHOWN = 8
 
 # BYOK decryption and provider resolution live in the shared chat engine now
-# (stocks/chat/engine.py); these names stay for the callers and tests.
+# (stocks/chat/engine/); these names stay for the callers and tests.
 _decrypt_byok = engine.decrypt_byok
 _attempts = engine.attempts
 

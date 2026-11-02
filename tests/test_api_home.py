@@ -36,6 +36,7 @@ from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import home as home_routes
 from stocks.chat import daily, daily_analysis
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -90,8 +91,8 @@ def account(monkeypatch, tmp_path):
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
     # No held closes: the freshness check's "latest session" reads empty, so
     # the card's key is the day and the language alone.
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
     return paths
 
 
@@ -428,18 +429,16 @@ def closes(*values: float) -> pd.Series:
 def test_the_day_move_is_close_to_close_unless_the_exchange_is_shut(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(
-        loaders,
-        "watchlist_closes",
+    patch_loaders(
+        monkeypatch, "watchlist_closes",
         lambda tickers: {"AAPL": closes(100.0, 110.0), "SAP.DE": closes(50.0, 50.0)},
     )
     # New York trading, Frankfurt shut: only SAP's move comes off a quote.
     monkeypatch.setattr(home, "market_live", lambda t: t == "AAPL")
     monkeypatch.setattr(home_routes, "market_active", lambda t: t == "AAPL")
     asked = []
-    monkeypatch.setattr(
-        loaders,
-        "quotes",
+    patch_loaders(
+        monkeypatch, "quotes",
         lambda tickers: (
             asked.append(tickers)
             or {"SAP.DE": {"pct": -0.03, "as_of": "2026-09-23", "price": 48.5}}
@@ -459,7 +458,7 @@ def test_the_day_move_is_close_to_close_unless_the_exchange_is_shut(
 
 
 def test_a_name_the_download_missed_keeps_its_row(client, account, monkeypatch):
-    monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: {})
+    patch_loaders(monkeypatch, "watchlist_closes", lambda tickers: {})
     monkeypatch.setattr(home, "market_live", lambda t: True)
     rows = client.get("/v1/home/closes", params=WHO, headers=AUTH).json()["rows"]
     assert [r["ticker"] for r in rows] == ["AAPL", "SAP.DE"]
@@ -517,9 +516,8 @@ def test_a_row_is_converted_at_its_own_trade_date(client, account, monkeypatch):
             note="",
         ),
     ]
-    monkeypatch.setattr(
-        loaders,
-        "ledger_state",
+    patch_loaders(
+        monkeypatch, "ledger_state",
         lambda db, mtime, base="EUR", matching="fifo": (rows, [], []),
     )
     seen = []

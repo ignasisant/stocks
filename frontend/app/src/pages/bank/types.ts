@@ -1,4 +1,4 @@
-/** The shapes `/api/v1/bank` answers with. Mirrors `api/schemas.py`. */
+/** The shapes `/api/v1/bank` answers with. Mirrors `api/schemas/`. */
 
 type BankAccount = {
   uid: string;

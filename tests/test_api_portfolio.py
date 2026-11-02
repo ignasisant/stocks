@@ -30,6 +30,7 @@ from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -78,9 +79,9 @@ def _offline_prices(monkeypatch):
     from here. An unpriced book and no quotes is the offline answer — tests
     that care about either replace them again.
     """
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
 
 
 @pytest.fixture
@@ -95,7 +96,7 @@ def book(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
 
     def write(transactions, prefs: dict | None = None):
         paths.prefs.write_text(json.dumps(prefs or {"currency": "EUR"}))
@@ -135,7 +136,7 @@ def bars() -> dict[str, pd.DataFrame]:
 def test_fees_report_commission_and_spread_apart(client, book, monkeypatch):
     """Two different kinds of cost, never added up into one figure."""
     book(trades())
-    monkeypatch.setattr(loaders, "trade_bars", lambda db, mtime: bars())
+    patch_loaders(monkeypatch, "trade_bars", lambda db, mtime: bars())
 
     body = client.get("/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH)
     assert body.status_code == 200
@@ -154,7 +155,7 @@ def test_a_spread_that_beat_the_mid_never_lowers_the_cost(client, book, monkeypa
     from stocks.portfolio import fees
 
     book(trades())
-    monkeypatch.setattr(loaders, "trade_bars", lambda db, mtime: bars())
+    patch_loaders(monkeypatch, "trade_bars", lambda db, mtime: bars())
     beat = fees.SpreadStats(
         "revolut", measured=3, measured_volume=1000.0, spread=-99.66
     )
@@ -186,7 +187,7 @@ def test_an_unreachable_yahoo_leaves_the_spread_null_not_zero(
     def throttled(db, mtime):
         raise YFRateLimitError
 
-    monkeypatch.setattr(loaders, "trade_bars", throttled)
+    patch_loaders(monkeypatch, "trade_bars", throttled)
 
     payload = client.get(
         "/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH
@@ -208,7 +209,7 @@ def test_any_spread_failure_degrades_to_the_ledger_half(client, book, monkeypatc
     def broken(db, mtime):
         raise KeyError("High")
 
-    monkeypatch.setattr(loaders, "trade_bars", broken)
+    patch_loaders(monkeypatch, "trade_bars", broken)
     body = client.get("/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH)
     assert body.status_code == 200
     payload = body.json()
@@ -218,7 +219,7 @@ def test_any_spread_failure_degrades_to_the_ledger_half(client, book, monkeypatc
 
 def test_a_book_that_never_traded_reports_no_brokers(client, book, monkeypatch):
     book([Transaction("2024-01-02", "AAPL", "dividend", 0, 12.0, "EUR", 1.8)])
-    monkeypatch.setattr(loaders, "trade_bars", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "trade_bars", lambda db, mtime: {})
     payload = client.get(
         "/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -241,9 +242,8 @@ def test_an_estimate_never_adds_into_what_the_ledger_booked(
             Transaction("2024-06-01", "AAPL", "dividend", 0, 20.0, "EUR", 3.0),
         ]
     )
-    monkeypatch.setattr(
-        loaders,
-        "dividend_estimates",
+    patch_loaders(
+        monkeypatch, "dividend_estimates",
         lambda db, mtime, base: (
             {2024: EstimatedYear(year=2024, gross=26.0)},
             [],
@@ -273,9 +273,8 @@ def test_a_year_the_ledger_missed_still_gets_a_row(client, book, monkeypatch):
     from stocks.portfolio.dividends import EstimatedYear
 
     book([Transaction("2023-01-02", "AAPL", "buy", 10, 100.0, "EUR", 1.0)])
-    monkeypatch.setattr(
-        loaders,
-        "dividend_estimates",
+    patch_loaders(
+        monkeypatch, "dividend_estimates",
         lambda db, mtime, base: (
             {2023: EstimatedYear(year=2023, gross=9.0)},
             [],
@@ -305,7 +304,7 @@ def test_a_throttled_estimate_is_null_rather_than_nothing_owed(
             Transaction("2024-06-01", "AAPL", "dividend", 0, 20.0, "EUR", 0.0),
         ]
     )
-    monkeypatch.setattr(loaders, "dividend_estimates", throttled)
+    patch_loaders(monkeypatch, "dividend_estimates", throttled)
 
     payload = client.get(
         "/v1/portfolio/dividends", params={"account": EMAIL}, headers=AUTH
@@ -324,9 +323,8 @@ def test_unbooked_dividends_are_listed_newest_first_and_marked_by_shape(
     from stocks.portfolio.dividends import EstimatedPayment
 
     book([Transaction("2026-01-02", "KO", "buy", 100, 60.0, "USD", 1.0)])
-    monkeypatch.setattr(
-        loaders,
-        "unbooked_dividends",
+    patch_loaders(
+        monkeypatch, "unbooked_dividends",
         lambda db, mtime, base: [
             (EstimatedPayment("KO", "2026-09-12", 0.53, 100.0, "USD"), 45.0),
             (EstimatedPayment("KO", "2026-06-13", 0.53, 100.0, "USD"), None),
@@ -353,7 +351,7 @@ def test_a_throttled_unbooked_pass_is_unavailable_rather_than_empty(
         raise YFRateLimitError
 
     book([Transaction("2026-01-02", "KO", "buy", 100, 60.0, "USD", 1.0)])
-    monkeypatch.setattr(loaders, "unbooked_dividends", throttled)
+    patch_loaders(monkeypatch, "unbooked_dividends", throttled)
 
     payload = client.get(
         "/v1/portfolio/dividends/unbooked", params={"account": EMAIL}, headers=AUTH
@@ -566,13 +564,12 @@ def test_risk_draws_the_book_the_basket_and_the_benchmarks_on_one_axis(
     book(trades())
     index = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
     hist = pd.DataFrame({"value": [1010.0, 1020.1, 1030.301]}, index=index)
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
-    monkeypatch.setattr(
-        loaders,
-        "history",
+    patch_loaders(monkeypatch, "custody", lambda db, mtime: {})
+    patch_loaders(
+        monkeypatch, "history",
         lambda db, mtime, base="EUR": (hist, pd.Series(dtype=float), ["ORGN"]),
     )
 
@@ -599,13 +596,12 @@ def test_a_window_with_no_returns_has_no_curves(client, book, monkeypatch):
     book(trades())
     empty = report()
     empty.returns = pd.DataFrame()
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: empty
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: empty
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
-    monkeypatch.setattr(
-        loaders,
-        "history",
+    patch_loaders(monkeypatch, "custody", lambda db, mtime: {})
+    patch_loaders(
+        monkeypatch, "history",
         lambda db, mtime, base="EUR": (pd.DataFrame(), pd.Series(dtype=float), []),
     )
     payload = client.get(
@@ -616,11 +612,12 @@ def test_a_window_with_no_returns_has_no_curves(client, book, monkeypatch):
 
 def test_risk_reports_the_shape_of_the_basket(client, book, monkeypatch):
     book(trades())
-    monkeypatch.setattr("stocks.analysis.portfolio.MIN_CORR_DAYS", 1)  # 3-day fixture
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    # 3-day fixture
+    monkeypatch.setattr("stocks.analysis.portfolio.stats.MIN_CORR_DAYS", 1)
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
+    patch_loaders(monkeypatch, "custody", lambda db, mtime: {})
 
     payload = client.get(
         "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
@@ -670,8 +667,8 @@ def test_each_slice_says_what_it_is_worth_and_what_it_cost(
         "SPY": {"sector_weights": {"Technology": 0.4, "Energy": 0.6},
                 "country": "United States", "currency": "USD"},
     }
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: basket
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: basket
     )
     table = pd.DataFrame(
         {
@@ -680,10 +677,9 @@ def test_each_slice_says_what_it_is_worth_and_what_it_cost(
         },
         index=pd.Index(["AAPL", "MSFT", "SPY", "ORGN"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(
-        loaders,
-        "custody",
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, mtime: {
             "AAPL": {
                 "revolut": Custody("AAPL", "revolut", quantity=5.0),
@@ -723,12 +719,11 @@ def test_a_single_broker_book_gets_no_broker_split(client, book, monkeypatch):
     from stocks.portfolio.custody import Custody
 
     book(trades())
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
-    monkeypatch.setattr(
-        loaders,
-        "custody",
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, mtime: {
             "AAPL": {"revolut": Custody("AAPL", "revolut", quantity=10.0)},
             "MSFT": {"revolut": Custody("MSFT", "revolut", quantity=5.0)},
@@ -745,12 +740,11 @@ def test_a_multi_broker_book_gets_the_split_it_earns(client, book, monkeypatch):
     from stocks.portfolio.custody import Custody
 
     book(trades())
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
-    monkeypatch.setattr(
-        loaders,
-        "custody",
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, mtime: {
             "AAPL": {
                 "revolut": Custody("AAPL", "revolut", quantity=5.0),
@@ -778,17 +772,16 @@ def test_the_broker_donut_reads_the_priced_values_the_other_donuts_do(
     book(trades())
     basket = report()
     basket.weights = {"AAPL": 0.8, "MSFT": 0.1, "SPY": 0.1}  # deliberately off
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: basket
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: basket
     )
     table = pd.DataFrame(
         {"cost": [1_000.0, 800.0], "value": [2_000.0, 1_000.0]},
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(
-        loaders,
-        "custody",
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, mtime: {
             "AAPL": {
                 "revolut": Custody("AAPL", "revolut", quantity=5.0),
@@ -813,8 +806,8 @@ def test_a_window_nobody_defined_is_refused_rather_than_guessed_at(
     """yfinance takes any string and answers an unknown one with an empty frame,
     which would cross the wire as a book with no risk at all."""
     book(trades())
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
     response = client.get(
         "/v1/portfolio/risk",
@@ -828,8 +821,8 @@ def test_an_empty_book_has_no_risk_figures_rather_than_zeroed_ones(
     client, book, monkeypatch
 ):
     book([Transaction("2024-01-02", "AAPL", "buy", 10, 100.0, "EUR", 1.0)])
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: None
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: None
     )
     payload = client.get(
         "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
@@ -905,7 +898,7 @@ def test_foreign_asset_lines_price_the_open_book_cost_where_unpriced(
         {"cost": [30_000.0, 25_000.0], "value": [40_000.0, float("nan")]},
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     flags = client.get(
         "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
     ).json()["flags"]
@@ -924,8 +917,8 @@ def test_a_rate_that_failed_leaves_no_foreign_asset_line(client, book, monkeypat
     table = pd.DataFrame(
         {"cost": [1.0], "value": [2.0]}, index=pd.Index(["AAPL"], name="ticker")
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {})
     payload = client.get(
         "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -947,8 +940,8 @@ def test_performance_is_retaken_from_the_window_start(client, book, monkeypatch)
     book(trades())
     today = pd.Timestamp.today().normalize()
     hist, twr = _history(str((today - pd.Timedelta(days=799)).date()), 800)
-    monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (hist, twr, [])
+    patch_loaders(
+        monkeypatch, "history", lambda db, mtime, base="EUR": (hist, twr, [])
     )
     whole = client.get(
         "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
@@ -992,11 +985,10 @@ def test_risk_since_inception_starts_at_the_first_trade(client, book, monkeypatc
         asked.append(period)
         return full
 
-    monkeypatch.setattr(loaders, "basket_report", basket)
-    monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
-    monkeypatch.setattr(
-        loaders,
-        "history",
+    patch_loaders(monkeypatch, "basket_report", basket)
+    patch_loaders(monkeypatch, "custody", lambda db, mtime: {})
+    patch_loaders(
+        monkeypatch, "history",
         lambda db, mtime, base="EUR": (pd.DataFrame(), pd.Series(dtype=float), []),
     )
     payload = client.get(
@@ -1012,7 +1004,7 @@ def test_positions_carry_todays_move_and_their_custody(client, book, monkeypatch
     """The Hoy and Bróker columns: the basket's last two closes while the
     exchange is open, the session quote once it shuts — and which accounts
     hold the shares, off the ledger."""
-    from stocks.api.routes import portfolio as route
+    from stocks.api.routes.portfolio import holdings as route
     from stocks.portfolio.custody import Custody
 
     book(trades())
@@ -1031,18 +1023,17 @@ def test_positions_carry_todays_move_and_their_custody(client, book, monkeypatch
         {"AAPL": [1000.0, 1100.0], "SAN.MC": [500.0, 600.0]},
         index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: frame)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: frame)
     # AAPL's exchange is shut; SAN.MC's is trading.
     monkeypatch.setattr(route, "market_live", lambda t: t == "SAN.MC")
     monkeypatch.setattr(route, "market_active", lambda t: t == "SAN.MC")
-    monkeypatch.setattr(
-        loaders, "quotes", lambda tickers: {"AAPL": {"pct": 0.1, "as_of": "x"}}
+    patch_loaders(
+        monkeypatch, "quotes", lambda tickers: {"AAPL": {"pct": 0.1, "as_of": "x"}}
     )
-    monkeypatch.setattr(
-        loaders,
-        "custody",
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, mtime: {
             "AAPL": {
                 "revolut": Custody("AAPL", "revolut", quantity=6.0),
@@ -1093,9 +1084,9 @@ def test_a_throttled_basket_leaves_todays_move_null_not_the_table(
     def throttled(*a, **k):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
-    monkeypatch.setattr(loaders, "basket_values", throttled)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
+    patch_loaders(monkeypatch, "basket_values", throttled)
     response = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
     )
@@ -1117,11 +1108,11 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
         {"value": [1000.0] * 23 + [1200.0], "injected": [1000.0] * 24}, index=index
     )
     empty = pd.Series(dtype=float)
-    monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    patch_loaders(
+        monkeypatch, "history", lambda db, mtime, base="EUR": (hist, empty, [])
     )
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
     payload = client.get(
         "/v1/portfolio/projection",
@@ -1163,19 +1154,19 @@ def test_projection_splits_by_what_is_held_not_by_what_priced(
         {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
     )
     empty = pd.Series(dtype=float)
-    monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    patch_loaders(
+        monkeypatch, "history", lambda db, mtime, base="EUR": (hist, empty, [])
     )
     days = pd.date_range("2024-01-02", periods=30)
     wild = report()
     wild.weights = {"BTC-EUR": 1.0}
     wild.returns = pd.DataFrame({"BTC-EUR": [0.3, -0.3] * 15}, index=days)
-    monkeypatch.setattr(loaders, "basket_report", lambda db, mtime, base, period: wild)
+    patch_loaders(monkeypatch, "basket_report", lambda db, mtime, base, period: wild)
     held = pd.DataFrame(
         {"cost": [1000.0, 50.0], "value": [1200.0, None]},
         index=pd.Index(["AAPL", "BTC-EUR"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: held)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: held)
     payload = client.get(
         "/v1/portfolio/projection", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -1201,14 +1192,14 @@ def test_projection_grows_a_sleeve_at_its_own_rate_only_when_asked(
         {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
     )
     empty = pd.Series(dtype=float)
-    monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    patch_loaders(
+        monkeypatch, "history", lambda db, mtime, base="EUR": (hist, empty, [])
     )
     days = pd.bdate_range("2023-01-02", "2025-01-02")
     daily = 1.21 ** (1 / (len(days) - 1)) - 1  # +21% over two years: 10% a year
     long = report()
     long.returns = pd.DataFrame({"AAPL": daily, "MSFT": daily}, index=days)
-    monkeypatch.setattr(loaders, "basket_report", lambda db, mtime, base, period: long)
+    patch_loaders(monkeypatch, "basket_report", lambda db, mtime, base, period: long)
 
     def ask(**params):
         return client.get(
@@ -1224,8 +1215,8 @@ def test_projection_grows_a_sleeve_at_its_own_rate_only_when_asked(
     assert own["growth_own"] is True
     assert own["growth"] == pytest.approx(0.10, abs=0.005)
 
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
     short = ask(stock_own="true")
     assert short["own_growth"] is None
@@ -1243,11 +1234,11 @@ def test_projection_starts_from_the_plan_when_asked(client, book, monkeypatch):
     index = pd.date_range(end=month - pd.Timedelta(days=1), periods=24, freq="ME")
     hist = pd.DataFrame({"value": [1000.0] * 24, "injected": [1000.0] * 24}, index=index)
     empty = pd.Series(dtype=float)
-    monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    patch_loaders(
+        monkeypatch, "history", lambda db, mtime, base="EUR": (hist, empty, [])
     )
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda db, mtime, base, period: report()
+    patch_loaders(
+        monkeypatch, "basket_report", lambda db, mtime, base, period: report()
     )
 
     def ask(**params):
@@ -1313,7 +1304,7 @@ def test_unpriced_positions_answer_from_the_ledger_alone(client, book, monkeypat
     for name in (
         "positions_table", "spot_rates", "quotes", "basket_values", "held_closes",
     ):
-        monkeypatch.setattr(loaders, name, boom)
+        patch_loaders(monkeypatch, name, boom)
     answer = client.get(
         "/v1/portfolio/positions",
         params={"account": EMAIL, "priced": "false"},
@@ -1449,9 +1440,8 @@ def test_attribution_splits_the_window_and_adds_up(client, book, monkeypatch):
     hist = injected_vs_value(
         txs, {"AAPL": pd.Series([100.0, 110.0], index=idx)}, to_base=lambda a, c, d: a
     )
-    monkeypatch.setattr(
-        loaders,
-        "history",
+    patch_loaders(
+        monkeypatch, "history",
         lambda db, mtime, base="EUR": (hist, pd.Series(dtype=float), []),
     )
     body = client.get(

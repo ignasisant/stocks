@@ -11,6 +11,7 @@ import pytest
 
 from stocks.chat import engine
 from stocks.web import auth
+from tests.patching import patch_engine
 
 
 @pytest.fixture(autouse=True)
@@ -21,8 +22,8 @@ def free_pot_file(monkeypatch, tmp_path):
     spend that follows still writes (and mirrors) the live
     data/free_llm_global.json, so running the suite eats the day's shared pot.
     """
-    monkeypatch.setattr(engine, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
-    monkeypatch.setattr(engine, "_global_free_loaded", True)
+    patch_engine(monkeypatch, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
+    patch_engine(monkeypatch, "_global_free_loaded", True)
 
 
 @dataclass
@@ -247,7 +248,7 @@ def test_free_daily_cap_env_override(monkeypatch):
 
 def test_spend_free_quota_counts_and_sweeps(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "2")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     prefs = {"free_msgs::2000-01-01": 9}
     assert engine.spend_free_quota(prefs)
     assert "free_msgs::2000-01-01" not in prefs  # stale day swept
@@ -265,7 +266,7 @@ def test_a_charge_checks_the_cap_against_the_file_not_a_stale_read(
     from stocks import accounts
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "2")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     monkeypatch.setattr(auth, "_persist", lambda path: None)
     path = tmp_path / "prefs.json"
     key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
@@ -280,7 +281,7 @@ def test_a_charge_checks_the_cap_against_the_file_not_a_stale_read(
 def test_global_free_cap_backstops_across_accounts(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "10")
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "3")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     # Three different accounts, each well under their own cap...
     accounts = [{}, {}, {}, {}]
     spent = [engine.spend_free_quota(p) for p in accounts]
@@ -291,8 +292,8 @@ def test_global_free_cap_backstops_across_accounts(monkeypatch):
 
 def test_global_free_cap_resets_at_utc_midnight(monkeypatch):
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "1")
-    monkeypatch.setattr(
-        engine, "_global_free", {"day": "1999-12-31", "used": 99}
+    patch_engine(
+        monkeypatch, "_global_free", {"day": "1999-12-31", "used": 99}
     )
     assert engine.spend_free_quota({})  # new day -> counter forgotten
 
@@ -303,7 +304,7 @@ def test_refund_returns_the_unit_to_both_counters(monkeypatch):
     spend it on the question they actually get an answer to."""
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "2")
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "2")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     prefs: dict = {}
     assert engine.spend_free_quota(prefs)
 
@@ -311,7 +312,7 @@ def test_refund_returns_the_unit_to_both_counters(monkeypatch):
 
     day_key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
     assert prefs[day_key] == 0
-    assert engine._global_free["used"] == 0
+    assert engine.quota._global_free["used"] == 0
     # Both units are still there to spend.
     assert engine.spend_free_quota(prefs) and engine.spend_free_quota(prefs)
     assert not engine.spend_free_quota(prefs)
@@ -320,21 +321,21 @@ def test_refund_returns_the_unit_to_both_counters(monkeypatch):
 def test_a_refund_after_midnight_is_dropped_not_credited(monkeypatch):
     """Counters are cost guards, not ledgers — yesterday's unit must not turn
     into an extra message today."""
-    monkeypatch.setattr(engine, "_global_free",
+    patch_engine(monkeypatch, "_global_free",
                         {"day": "1999-12-31", "used": 5})
     prefs = {"free_msgs::1999-12-31": 5}
 
     engine.refund_free_quota(prefs)
 
     assert prefs["free_msgs::1999-12-31"] == 5  # untouched
-    assert engine._global_free["used"] == 5
+    assert engine.quota._global_free["used"] == 5
     assert engine.free_account_left(prefs) == engine.free_daily_cap()
 
 
 def test_free_left_states_whichever_wall_binds_first(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "10")
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "3")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     prefs: dict = {}
     assert engine.free_left(prefs) == 3  # room on the account, not in the pot
 
@@ -349,7 +350,7 @@ def test_free_left_states_whichever_wall_binds_first(monkeypatch):
 def test_free_cap_reason_names_the_account_wall(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "1")
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "50")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     prefs: dict = {}
     assert engine.spend_free_quota(prefs)
 
@@ -528,7 +529,7 @@ def test_a_caller_with_time_to_spare_waits_for_what_the_message_teaches(
 ):
     """A headless caller cannot add the memory line to a message once it is
     sent, so it waits past the panel's grace for the read to finish."""
-    monkeypatch.setattr(engine, "LEARN_GRACE", 0)
+    patch_engine(monkeypatch, "LEARN_GRACE", 0)
     providers["free"] = SlowLearner("free", reply="Free answer.")
     reply = engine.answer(
         prefs=dict(BASE_PREFS), learn_grace=5, **paths,
@@ -568,6 +569,56 @@ def test_answer_byok_first_then_free_on_failure(providers, enc, paths):
     assert reply.provider_id == "free"
     assert providers["anthropic"].calls  # attempted first, with default model
     assert providers["anthropic"].calls[0][1] == "default-model"
+
+
+
+@pytest.fixture
+def byok_to_free(monkeypatch):
+    """The `llm.byok_to_free` lines logged, as their fields."""
+    from stocks import obs
+
+    seen: list[dict] = []
+    real = obs.warn
+
+    def warn(name, **fields):
+        if name == "llm.byok_to_free":
+            seen.append(fields)
+        else:
+            real(name, **fields)
+
+    monkeypatch.setattr(obs, "warn", warn)
+    return seen
+
+
+def test_a_key_that_failed_over_to_the_free_chain_is_counted(
+        providers, enc, paths, byok_to_free):
+    providers["anthropic"].fail = True
+    engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                  message="thoughts on my book?", **paths)
+    assert byok_to_free == [{"surface": "chat", "own": "anthropic",
+                             "why": "anthropic:RuntimeError"}]
+
+
+def test_no_fallback_is_counted_when_the_key_answers_or_free_was_picked(
+        providers, enc, paths, byok_to_free):
+    engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                  message="thoughts on my book?", **paths)
+    engine.answer(prefs={**BASE_PREFS, "llm_provider": "free", **enc("gemini")},
+                  message="thoughts on my book?", **paths)
+    engine.answer(prefs=dict(BASE_PREFS), message="thoughts on my book?", **paths)
+    assert byok_to_free == []
+
+
+def test_a_background_reply_thrown_away_counts_as_rejected(
+        providers, enc, byok_to_free):
+    providers["gemini"].reply = "headline with a made-up figure"
+    out = engine.complete_attempts(
+        enc("gemini"), "sys", [{"role": "user", "content": "x"}], 5,
+        spend_free=lambda _p: True,
+        accept=lambda raw: None if "made-up" in raw else raw)
+    assert out == "Free answer."
+    assert byok_to_free == [{"surface": "test_chat_engine", "own": "gemini",
+                             "why": "gemini:rejected"}]
 
 
 WRITTEN_CALL = '{{search_web(query: "Adyen ADYYF latest earnings vs consensus")}}'
@@ -848,8 +899,8 @@ def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
     def researching(*_a, **_kw):
         raise AssertionError("researched a symbol nobody lists")
 
-    monkeypatch.setattr(engine, "gather_evidence", researching)
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "gather_evidence", researching)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(engine.market, "_search_rows", lambda q: ([], True))
     reply = engine.answer(prefs=dict(BASE_PREFS),
                           message="Analiza ZXQW a fondo", **paths)
@@ -872,8 +923,8 @@ def test_the_reader_s_own_calendar_goes_without_a_search(providers, paths,
         searched.append(a)
         return []
 
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
-    monkeypatch.setattr(engine, "ground_web", searching)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "ground_web", searching)
     monkeypatch.setattr(engine.chat_web, "collect", searching)
     monkeypatch.setattr(reports, "build", lambda *_a, **_kw: reports.Ahead(
         days=7, due=(), checked=3, held=1, undated=(), skipped=()))
@@ -1033,8 +1084,8 @@ def test_only_something_shaped_like_a_ticker_is_put_in_focus():
 def test_a_session_key_answers_first_and_is_never_put_in_prefs(monkeypatch):
     """A key held for one request outranks a stored one for the same provider,
     and — the whole point of it — never lands in the dict every spend saves."""
-    monkeypatch.setattr(engine, "decrypt_byok", lambda prefs, pid: "")
-    monkeypatch.setattr(engine, "free_eligible", lambda prefs: False)
+    patch_engine(monkeypatch, "decrypt_byok", lambda prefs, pid: "")
+    patch_engine(monkeypatch, "free_eligible", lambda prefs: False)
     prefs: dict = {}
     chain = engine.attempts(prefs, {"anthropic": "sk-ant-held"})
     assert [(p.id, key) for p, key, _ in chain] == [("anthropic", "sk-ant-held")]
@@ -1042,8 +1093,8 @@ def test_a_session_key_answers_first_and_is_never_put_in_prefs(monkeypatch):
 
 
 def test_a_session_key_for_a_provider_nobody_offers_is_ignored(monkeypatch):
-    monkeypatch.setattr(engine, "decrypt_byok", lambda prefs, pid: "")
-    monkeypatch.setattr(engine, "free_eligible", lambda prefs: False)
+    patch_engine(monkeypatch, "decrypt_byok", lambda prefs, pid: "")
+    patch_engine(monkeypatch, "free_eligible", lambda prefs: False)
     assert engine.attempts({}, {"astrology": "xxxxxxxx"}) == []
 
 
@@ -1336,14 +1387,14 @@ def test_an_in_depth_question_takes_more_of_the_free_allowance(
     from stocks.web import llm
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     seen = _costs(monkeypatch)
     prefs = dict(BASE_PREFS)
     engine.answer(prefs=prefs, message="analiza ASML a fondo", **paths)
     assert seen[-1]["profile"] == "deep"
     assert prefs[_today()] == engine.DEEP_UNITS
-    assert engine._global_free["used"] == engine.DEEP_UNITS
+    assert engine.quota._global_free["used"] == engine.DEEP_UNITS
 
 
 def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
@@ -1353,7 +1404,7 @@ def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
     from stocks.web import llm
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     from stocks import accounts
 
@@ -1370,12 +1421,12 @@ def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
 
 def test_a_refund_gives_back_every_unit_a_turn_took(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     prefs: dict = {}
     assert engine.spend_free_quota(prefs, 2)
     assert not engine.spend_free_quota(prefs, 4)  # 2 + 4 > 5: none taken
     engine.refund_free_quota(prefs, 2)
-    assert prefs[_today()] == 0 and engine._global_free["used"] == 0
+    assert prefs[_today()] == 0 and engine.quota._global_free["used"] == 0
 
 
 def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths,
@@ -1396,8 +1447,8 @@ def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths,
             time.sleep(0.02)
         return engine.agent.Evidence(ok=False)
 
-    monkeypatch.setattr(engine, "gather_evidence", researching)
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "gather_evidence", researching)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     it = engine.answer_stream(prefs=dict(BASE_PREFS), message="¿qué tal ASML?",
                               **paths)
     assert next(it) == ("phase", "gathering")
@@ -1413,8 +1464,8 @@ def test_a_deep_plan_is_handed_over_while_the_research_runs(monkeypatch, paths,
         on_plan(plan)
         return engine.agent.Evidence(ok=False)
 
-    monkeypatch.setattr(engine, "gather_evidence", researching)
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "gather_evidence", researching)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     it = engine.answer_stream(prefs=dict(BASE_PREFS), message="¿qué tal ASML?",
                               **paths)
     said = []
@@ -1561,9 +1612,9 @@ def test_the_fixed_path_reads_the_app_documents(providers, paths, monkeypatch):
     page = next(p for p in knowledge.passages()
                 if p.doc == "importing" and "last import" in p.section.lower())
     asked: list[str] = []
-    monkeypatch.setattr(engine, "gather_evidence",
+    patch_engine(monkeypatch, "gather_evidence",
                         lambda *a, **k: engine.agent.Evidence(ok=False))
-    monkeypatch.setattr(engine, "ground_web", lambda *a, **k: [])
+    patch_engine(monkeypatch, "ground_web", lambda *a, **k: [])
     monkeypatch.setattr(knowledge, "lookup",
                         lambda q, *a, **k: asked.append(q) or [page])
     message = "¿Cómo deshago la última importación?"
@@ -1583,9 +1634,9 @@ def test_the_fixed_path_carries_this_years_tax(providers, paths, monkeypatch):
     from stocks.chat import toolbox
 
     ran: list[str] = []
-    monkeypatch.setattr(engine, "gather_evidence",
+    patch_engine(monkeypatch, "gather_evidence",
                         lambda *a, **k: engine.agent.Evidence(ok=False))
-    monkeypatch.setattr(engine, "ground_web", lambda *a, **k: [])
+    patch_engine(monkeypatch, "ground_web", lambda *a, **k: [])
     monkeypatch.setattr(toolbox, "executor", lambda ctx: lambda name, args: (
         ran.append(name) or "realised so far this tax year: estimated tax 231.27 EUR"))
     reply = engine.answer(
@@ -1620,7 +1671,7 @@ def _router_says(monkeypatch, hard):
         picked.hard = hard
         return picked
 
-    monkeypatch.setattr(engine.chat_skills, "classify", classify)
+    monkeypatch.setattr(chat_skills, "classify", classify)
 
 
 def _answered_on(provider) -> list[str]:

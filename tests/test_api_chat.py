@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import engine
+from tests.patching import patch_engine, patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -127,8 +128,8 @@ def served(monkeypatch):
 
     def install(provider=None):
         provider = provider or FakeProvider()
-        monkeypatch.setattr(
-            engine, "attempts", lambda prefs: [(provider, "k", "fake-1")]
+        patch_engine(
+            monkeypatch, "attempts", lambda prefs: [(provider, "k", "fake-1")]
         )
         monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
         return provider
@@ -216,7 +217,7 @@ def test_an_account_the_free_chain_does_not_serve_has_no_allowance_to_show(
     """Null, not 0. Zero left is a wall that lifts tomorrow; null is a reader
     who was never given an allowance, and "0 of 30" tells them they spent
     messages they never sent."""
-    monkeypatch.setattr(engine, "free_eligible", lambda prefs: False)
+    patch_engine(monkeypatch, "free_eligible", lambda prefs: False)
     body = signed_in.get("/v1/chat/state").json()
     assert body["free_left"] is None
     assert body["free_cap"] is None
@@ -226,8 +227,8 @@ def test_an_account_the_free_chain_does_not_serve_has_no_allowance_to_show(
 def test_an_eligible_account_gets_a_number_and_no_wall(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr(engine, "free_eligible", lambda prefs: True)
-    monkeypatch.setattr(engine, "free_left", lambda prefs: 12)
+    patch_engine(monkeypatch, "free_eligible", lambda prefs: True)
+    patch_engine(monkeypatch, "free_left", lambda prefs: 12)
     body = signed_in.get("/v1/chat/state").json()
     assert body["free_left"] == 12
     assert body["cap_reason"] is None
@@ -539,8 +540,8 @@ def test_a_backend_that_dies_before_its_first_word_falls_through(
 ):
     dead = FakeProvider(chunks=("x",), fail_after=0, pid="dead")
     alive = FakeProvider(chunks=("Hola",), pid="alive")
-    monkeypatch.setattr(
-        engine, "attempts",
+    patch_engine(
+        monkeypatch, "attempts",
         lambda prefs: [(dead, "k", "fake-1"), (alive, "k", "fake-1")],
     )
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
@@ -557,8 +558,8 @@ def test_a_backend_that_dies_mid_sentence_keeps_what_it_said(
     still worth keeping."""
     half = FakeProvider(chunks=("Los dividendos", " se declaran"), fail_after=2)
     other = FakeProvider(chunks=("otra cosa",), pid="other")
-    monkeypatch.setattr(
-        engine, "attempts",
+    patch_engine(
+        monkeypatch, "attempts",
         lambda prefs: [(half, "k", "fake-1"), (other, "k", "fake-1")],
     )
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
@@ -572,7 +573,7 @@ def test_a_backend_that_dies_mid_sentence_keeps_what_it_said(
 def test_an_exhausted_chain_still_ends_the_stream(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [])
     stream = events(signed_in.post("/v1/chat/runs", json=run("hola")).text)
     assert kinds(stream) == ["RUN_STARTED", "RUN_ERROR"]
     assert finished(stream)["code"] == "chat.free_exhausted"
@@ -660,7 +661,6 @@ def test_each_provider_names_its_mark_by_its_own_brand_domain(
 ):
     """The settings tiles draw these. The keyless chain is the app's own and
     declares no domain, so it is asked for none and says null."""
-    from stocks.api import loaders
 
     asked = []
 
@@ -668,7 +668,7 @@ def test_each_provider_names_its_mark_by_its_own_brand_domain(
         asked.append((provider, domain))
         return f"/app/static/logos/brand-ai-{provider}.png" if domain else None
 
-    monkeypatch.setattr(loaders, "provider_logo", logo)
+    patch_loaders(monkeypatch, "provider_logo", logo)
     providers = {
         p["id"]: p for p in signed_in.get("/v1/chat/state").json()["providers"]
     }
@@ -712,7 +712,7 @@ def test_a_deployment_that_cannot_encrypt_refuses_rather_than_storing(
     # Only the engine's own lookup: blanking `secrets_env.secret` wholesale
     # takes the free-tier counter's configuration down with it, and the test
     # would then be about a different failure.
-    monkeypatch.setattr(engine, "secret", lambda *a, **k: "")
+    patch_engine(monkeypatch, "secret", lambda *a, **k: "")
     response = signed_in.put("/v1/chat/keys/anthropic", json={"key": "sk-ant-xxxxxxxx"})
     assert response.status_code == 503
     assert "anthropic_key_enc" not in account.prefs.read_text()
@@ -1462,7 +1462,7 @@ def _researched(monkeypatch, said=None, **args):
         seen.append(kw)
         return agent.Evidence(calls=[ToolCall("propose_action", args, said)])
 
-    monkeypatch.setattr(engine, "gather_evidence", gather)
+    patch_engine(monkeypatch, "gather_evidence", gather)
     return seen
 
 
@@ -1470,7 +1470,7 @@ def _plain_research(monkeypatch):
     """A gather that proposes nothing, the way a fallback model answers."""
     from stocks.chat import agent
 
-    monkeypatch.setattr(engine, "gather_evidence",
+    patch_engine(monkeypatch, "gather_evidence",
                         lambda *a, **kw: agent.Evidence())
 
 
@@ -1700,7 +1700,7 @@ def test_the_model_is_told_the_engine_s_figures(
             seen.append(messages)
             yield from super().stream(api_key, model, system, messages)
 
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     signed_in.post("/v1/chat/runs", json=run("what if I sell half my AAPL?"))
     asked = seen[0][-1]["content"]
@@ -1710,7 +1710,7 @@ def test_the_model_is_told_the_engine_s_figures(
 def test_a_slider_let_go_is_answered_by_the_engine_not_a_model(
     client, account, signed_in, holding, monkeypatch
 ):
-    monkeypatch.setattr(engine, "attempts",
+    patch_engine(monkeypatch, "attempts",
                         lambda prefs: pytest.fail("a model was asked"))
     response = signed_in.post("/v1/chat/actions", json={"action": {
         "name": "simulate", "surfaceId": "whatif", "sourceComponentId": "shares",
@@ -1775,7 +1775,7 @@ def test_a_chart_asked_for_is_drawn_under_the_answer_not_typed_in_it(
             seen.append((system, messages))
             yield from super().stream(api_key, model, system, messages)
 
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     stream = events(signed_in.post(
         "/v1/chat/runs", json=run("hazme un grafico evolucion euro dolar")
@@ -1798,7 +1798,7 @@ def test_a_chart_asked_for_is_drawn_under_the_answer_not_typed_in_it(
 def test_a_window_chip_is_answered_with_new_closes_not_a_model(
     client, account, signed_in, monkeypatch, closes
 ):
-    monkeypatch.setattr(engine, "attempts",
+    patch_engine(monkeypatch, "attempts",
                         lambda prefs: pytest.fail("a model was asked"))
     response = signed_in.post("/v1/chat/actions", json={"action": {
         "name": "rechart", "surfaceId": "chart", "sourceComponentId": "windows",
@@ -1854,7 +1854,7 @@ def book(account, monkeypatch):
         "weight": [0.25, 0.75], "day_asof": [None, None], "day": [0.0, 0.0],
         "day_pct": [0.0, 0.0],
     }, index=pd.Index(["TTD", "WIN"], name="ticker"))
-    monkeypatch.setattr(engine, "enriched_frame", lambda db, base="EUR": frame)
+    patch_engine(monkeypatch, "enriched_frame", lambda db, base="EUR": frame)
     monkeypatch.setattr(portfolio, "load_meta", lambda tickers: {
         "TTD": {"sector": "Technology", "country": "United States", "currency": "USD"},
         "WIN": {"sector": "Healthcare", "country": "Denmark", "currency": "EUR"},
@@ -1890,7 +1890,7 @@ def test_the_model_is_told_the_harvest_s_figures(
             seen.append(messages)
             yield from super().stream(api_key, model, system, messages)
 
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
     signed_in.post("/v1/chat/runs", json=run("which losses would offset my gains?"))
     asked = seen[0][-1]["content"]
     assert "Tax-loss harvesting worked out by the app's own tax engine" in asked
@@ -1900,7 +1900,7 @@ def test_the_model_is_told_the_harvest_s_figures(
 def test_a_weight_slider_let_go_is_answered_by_the_engine_not_a_model(
     client, account, signed_in, book, monkeypatch
 ):
-    monkeypatch.setattr(engine, "attempts",
+    patch_engine(monkeypatch, "attempts",
                         lambda prefs: pytest.fail("a model was asked"))
     response = signed_in.post("/v1/chat/actions", json={"action": {
         "name": "reweigh", "surfaceId": "rebalance", "sourceComponentId": "target",
@@ -1950,7 +1950,7 @@ def test_asking_for_a_plan_draws_the_builder_and_tells_the_model(
             seen.append(messages)
             yield from super().stream(api_key, model, system, messages)
 
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
     stream = events(signed_in.post("/v1/chat/runs",
                                    json=run("Móntame un plan de inversión")).text)
     (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
@@ -1964,7 +1964,7 @@ def test_asking_for_a_plan_draws_the_builder_and_tells_the_model(
 def test_a_plan_pick_is_redrawn_by_the_engine_not_a_model(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr(engine, "attempts",
+    patch_engine(monkeypatch, "attempts",
                         lambda prefs: pytest.fail("a model was asked"))
     response = signed_in.post("/v1/chat/actions", json=plan_press("draft", PLAN_PICKS))
     assert response.status_code == 200
@@ -2101,7 +2101,7 @@ def test_the_answer_is_told_both_cases(client, account, signed_in, monkeypatch):
             seen.append(messages)
             yield from super().stream(api_key, model, system, messages)
 
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     signed_in.post("/v1/chat/runs", json=run("should I buy AAPL?"))
     asked = seen[0][-1]["content"]
@@ -2147,7 +2147,7 @@ def test_a_session_only_key_answers_the_turn_and_is_written_nowhere(
         seen.append(session_keys)
         return [(FakeProvider(), (session_keys or {}).get("anthropic", ""), "fake-1")]
 
-    monkeypatch.setattr(engine, "attempts", chain)
+    patch_engine(monkeypatch, "attempts", chain)
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     body = signed_in.post(
         "/v1/chat/runs", json=run("hola"), headers=SESSION
@@ -2183,7 +2183,7 @@ def test_a_key_for_a_keyless_or_unknown_provider_is_ignored(client, account, sig
 def test_the_state_says_whether_a_key_can_be_stored_at_all(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr(engine, "secret", lambda *a, **k: "")
+    patch_engine(monkeypatch, "secret", lambda *a, **k: "")
     assert signed_in.get("/v1/chat/state").json()["key_storage"] is False
 
 
@@ -2338,7 +2338,7 @@ def test_a_memory_saved_before_a_refused_question_is_still_said(
     client, account, signed_in, monkeypatch
 ):
     """`RUN_ERROR` has no result, so the change travels ahead of it."""
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [])
     stream = events(signed_in.post(
         "/v1/chat/runs",
         json=run("recuerda que tengo 40 años, ¿cuánto debería tener en bonos?"),
@@ -2655,7 +2655,7 @@ def test_a_memory_learned_too_late_for_its_turn_is_said_on_the_next(
 
     gate = threading.Event()
     provider = served(Learner([_DIVIDENDS], gate=gate))
-    monkeypatch.setattr(engine, "LEARN_GRACE", 0)
+    patch_engine(monkeypatch, "LEARN_GRACE", 0)
     first = finished(events(signed_in.post(
         "/v1/chat/runs",
         json=run("prefiero dividendos crecientes, ¿qué me recomiendas?"),
@@ -2697,7 +2697,7 @@ def test_a_comparison_gets_the_deep_gather_on_the_answering_model(
     model that will answer it, with the tax settings the engines replay under;
     a lookup stays on the quick gather."""
     seen = []
-    monkeypatch.setattr(engine, "gather_evidence",
+    patch_engine(monkeypatch, "gather_evidence",
                         lambda *a, **kw: seen.append(kw) or None)
     served(FakeProvider())
     for asked in ("compara NVDA y AMD", "nvidia?"):
@@ -2715,7 +2715,7 @@ def test_recall_switched_off_keeps_earlier_conversations_out_of_the_lookup(
 ):
     """The model's `recall` tool is only built when the account allows it."""
     seen = []
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(engine.agent, "gather",
                         lambda provider, key, msgs, ctx, **kw: seen.append(ctx))
     for recall in (True, False):
@@ -2732,7 +2732,7 @@ def test_the_lookup_knows_the_readers_last_turns_and_only_theirs(
     """What a proposal is checked against: the reader's own recent words,
     never the assistant's, and not a thread-old ask."""
     seen = []
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(engine.agent, "gather",
                         lambda provider, key, msgs, ctx, **kw: seen.append(ctx))
     said = ["avísame si NVDA cae", "vale", "¿y AMD?", "¿y MELI?"]

@@ -6,10 +6,10 @@ from datetime import date
 
 import pytest
 
-from stocks.api import loaders
 from stocks.chat import reports
 from stocks.data import earnings, finnhub
 from stocks.data.earnings import Consensus, EarningsEvent
+from tests.patching import patch_loaders
 
 TODAY = date(2026, 10, 29)
 
@@ -43,8 +43,8 @@ def test_dates_of_held_and_followed_names_inside_the_window(tmp_path, monkeypatc
                          "- ticker: BTC-EUR\n- ticker: NVDA\n")
     db = tmp_path / "prices.db"
     db.touch()
-    monkeypatch.setattr(loaders, "held", lambda *_a: ("META", "BTC-EUR"))
-    monkeypatch.setattr(loaders, "db_mtime", lambda *_a: 0.0)
+    patch_loaders(monkeypatch, "held", lambda *_a: ("META", "BTC-EUR"))
+    patch_loaders(monkeypatch, "db_mtime", lambda *_a: 0.0)
     asked: list = []
 
     def calendar(tickers):
@@ -53,7 +53,7 @@ def test_dates_of_held_and_followed_names_inside_the_window(tmp_path, monkeypatc
                 EarningsEvent("META", date(2026, 11, 4)),
                 EarningsEvent("NVDA", date(2026, 11, 19))], []
 
-    monkeypatch.setattr(loaders, "earnings_calendar", calendar)
+    patch_loaders(monkeypatch, "earnings_calendar", calendar)
     monkeypatch.setattr(reports, "_consensus_cache", {})
     monkeypatch.setattr(earnings, "consensus", lambda t, _day: (
         Consensus(7.12, 4.5e10, "amc") if t == "META" else None))

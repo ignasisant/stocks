@@ -15,9 +15,9 @@ from datetime import date, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data import shorts
+from tests.patching import patch_loaders
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "shorts"
 TOKEN = "s3cret-token"
@@ -183,7 +183,7 @@ class Fundamentals:
 
 def test_route_us_name_reads_yahoo_info_and_stored_volume(client, monkeypatch):
     shorts._volume_store()["days"]["20261026"] = {"GME": [40, 100]}
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: Fundamentals({
+    patch_loaders(monkeypatch, "fundamentals", lambda t: Fundamentals({
         "shortPercentOfFloat": 0.2, "shortRatio": 3.0, "sharesShort": 50.0,
         "sharesShortPriorMonth": 40.0, "dateShortInterest": 1_790_000_000,
     }))
@@ -196,7 +196,7 @@ def test_route_us_name_reads_yahoo_info_and_stored_volume(client, monkeypatch):
 
 
 def test_route_us_name_without_figures_is_null_not_zero(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: Fundamentals({}))
+    patch_loaders(monkeypatch, "fundamentals", lambda t: Fundamentals({}))
     body = client.get("/v1/ticker/ZZZZ/shorts", headers=AUTH).json()
     assert body == {"ticker": "ZZZZ", "us": None, "eu": None}
 
@@ -204,7 +204,7 @@ def test_route_us_name_without_figures_is_null_not_zero(client, monkeypatch):
 def test_route_eu_name_returns_total_and_top_holders(client, monkeypatch):
     stub_sources(monkeypatch, AFM=lambda: shorts.parse_afm(fixture("afm.csv")))
     shorts.refresh_registers()
-    monkeypatch.setattr(loaders, "issuer_name", lambda t: "Akzo Nobel N.V.")
+    patch_loaders(monkeypatch, "issuer_name", lambda t: "Akzo Nobel N.V.")
     body = client.get("/v1/ticker/AKZA.AS/shorts", headers=AUTH).json()
     assert body["us"] is None
     assert body["eu"]["source"] == "AFM"
@@ -214,6 +214,6 @@ def test_route_eu_name_returns_total_and_top_holders(client, monkeypatch):
 
 
 def test_route_eu_name_not_in_a_register_is_null(client, monkeypatch):
-    monkeypatch.setattr(loaders, "issuer_name", lambda t: "Nobody SE")
+    patch_loaders(monkeypatch, "issuer_name", lambda t: "Nobody SE")
     body = client.get("/v1/ticker/NOB.DE/shorts", headers=AUTH).json()
     assert body["eu"] is None and body["us"] is None

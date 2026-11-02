@@ -15,6 +15,7 @@ import pytest
 
 from stocks.analysis import portfolio as ap
 from stocks.data import fetch, profiles
+from tests.patching import patch_loaders
 
 
 @pytest.fixture(autouse=True)
@@ -177,9 +178,8 @@ def test_daily_labels_under_a_year_share_one_bars_download(monkeypatch):
     calls: list[tuple[str, str]] = []
     idx = pd.date_range("2022-01-03", periods=520, freq="B", tz="America/New_York")
     frame = pd.DataFrame({"Close": range(520)}, index=idx)
-    monkeypatch.setattr(
-        loaders,
-        "bars_download",
+    patch_loaders(
+        monkeypatch, "bars_download",
         lambda t, period, interval: calls.append((period, interval)) or frame,
     )
     month = loaders.price_bars("AAPL", "1m")
@@ -239,7 +239,7 @@ def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
 def test_home_reads_held_names_off_the_book_download(monkeypatch):
     """The watchlist's year asks Yahoo only for the names the ledger does not
     hold; a held name's twelve months are sliced from the book's own frames."""
-    from stocks.api import home, loaders
+    from stocks.api import home
 
     days = pd.bdate_range("2022-01-03", periods=700)
     book = {"AAPL": pd.Series(range(700), index=days, dtype=float)}
@@ -249,8 +249,8 @@ def test_home_reads_held_names_off_the_book_download(monkeypatch):
         asked.append(tickers)
         return {t: pd.Series([1.0, 2.0]) for t in tickers}
 
-    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: book)
-    monkeypatch.setattr(loaders, "watchlist_closes", watchlist)
+    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: book)
+    patch_loaders(monkeypatch, "watchlist_closes", watchlist)
     year = home.year_closes(("AAPL", "MSFT", "NVDA"), "book.db", 1.0)
     assert asked == [("MSFT", "NVDA")]
     assert 250 <= len(year["AAPL"]) <= 265 and year["AAPL"][-1] == 699.0
@@ -265,8 +265,8 @@ def test_one_book_is_one_replay_however_its_defaults_are_spelled(monkeypatch):
     from stocks.api import loaders
 
     replays = []
-    monkeypatch.setattr(
-        loaders, "all_transactions", lambda db: replays.append(db) or []
+    patch_loaders(
+        monkeypatch, "all_transactions", lambda db: replays.append(db) or []
     )
     loaders.ledger_state.cache_clear()
     try:
@@ -289,8 +289,8 @@ def test_the_backtest_answers_from_the_last_process_while_it_downloads(monkeypat
     from stocks.api import cache, loaders
 
     position = type("P", (), {"ticker": "AAPL"})()
-    monkeypatch.setattr(
-        loaders, "ledger_state", lambda db, mtime, base="EUR": ([], [position], [])
+    patch_loaders(
+        monkeypatch, "ledger_state", lambda db, mtime, base="EUR": ([], [position], [])
     )
     monkeypatch.setattr(portfolio, "holdings_from_positions", lambda p: p)
     monkeypatch.setattr(portfolio, "first_owned", lambda txs: None)

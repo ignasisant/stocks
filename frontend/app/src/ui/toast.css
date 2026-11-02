@@ -5,7 +5,7 @@
  * stylesheet sonner injects at runtime.
  */
 
-/* Where it sits: the corner the old "sent" note used, lifted over the phone's
+/* Where it sits: bottom right, lifted over the phone's
    tab bar (`--dock`, which already carries the home indicator's inset) and
    moved out of the open chat drawer's way (`--toast-right`, set in
    chat.css). */

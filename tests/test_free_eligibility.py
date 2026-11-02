@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from stocks.chat import engine
+from tests.patching import patch_engine
 
 
 def _prefs(hours_old=None, *, estimated=False, email=None):
@@ -24,7 +25,7 @@ def _prefs(hours_old=None, *, estimated=False, email=None):
 def policy(monkeypatch):
     """Set the [free_llm] policy the way a deploy would."""
     def apply(**settings):
-        monkeypatch.setattr(engine, "secret",
+        patch_engine(monkeypatch, "secret",
                             lambda env, section, key, default="":
                             settings.get(key, default))
     return apply
@@ -217,6 +218,6 @@ def test_the_quota_refuses_an_ineligible_account_outright(policy):
 def test_byok_is_untouched_by_the_policy(policy, monkeypatch):
     # A user with their own key pays their own bill and needs no permission.
     policy(eligibility="allowlist", allowed_emails="nobody@example.com")
-    monkeypatch.setattr(engine, "decrypt_byok", lambda prefs, pid: "sk-real")
+    patch_engine(monkeypatch, "decrypt_byok", lambda prefs, pid: "sk-real")
     ids = [p.id for p, _, _ in engine.attempts(_prefs(0))]
     assert "anthropic" in ids and "free" not in ids

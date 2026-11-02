@@ -10,9 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks.analysis import dcf
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data.fundamentals import RawFundamentals
+from tests.patching import patch_loaders
 
 FIXTURE = (
     Path(__file__).parent.parent
@@ -135,7 +135,7 @@ def test_refusals_give_a_reason_and_no_number(over, reason):
 
 def test_route(monkeypatch):
     monkeypatch.setenv("API_TOKEN", "t")
-    monkeypatch.setattr(loaders, "fundamentals", lambda t: _raw())
+    patch_loaders(monkeypatch, "fundamentals", lambda t: _raw())
     monkeypatch.setattr(
         "stocks.api.routes.ticker.compute_metrics", lambda raw: _metrics()
     )

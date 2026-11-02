@@ -154,7 +154,7 @@ export const EXPLORE: Row[] = [
  *
  * The drawer is not a route — the shell mounts it over every page — so a row
  * that explains it cannot be a link. It is still a control, which is why it is
- * a case here rather than the `null` it used to collapse into.
+ * a case here rather than `null`.
  */
 /** What this browser knows about installing, which `/onboarding` cannot. */
 export type Device = {

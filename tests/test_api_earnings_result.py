@@ -24,11 +24,11 @@ from fastapi.testclient import TestClient
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import earnings as route
 from stocks.data.earnings import EarningsResult, Quarter
 from stocks.data.estimates import RawEstimates
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -67,8 +67,8 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "company_name", lambda ticker, wl: "Microsoft")
-    monkeypatch.setattr(loaders, "logo", lambda ticker: "/static/logos/msft.png")
+    patch_loaders(monkeypatch, "company_name", lambda ticker, wl: "Microsoft")
+    patch_loaders(monkeypatch, "logo", lambda ticker: "/static/logos/msft.png")
     return paths
 
 
@@ -121,11 +121,11 @@ def feeds(monkeypatch):
         EarningsResult("MSFT", date(2026, 4, 28), 1.9, 2.0, 5.26),
         EarningsResult("MSFT", PRINT, 2.2, 2.4, 9.09),
     ]
-    monkeypatch.setattr(loaders, "earnings", lambda ticker: ([], history))
+    patch_loaders(monkeypatch, "earnings", lambda ticker: ([], history))
     monkeypatch.setattr(route, "price_reaction", lambda ticker, day: 4.5)
     monkeypatch.setattr(route, "fetch_quarters", lambda ticker: QUARTERS)
     monkeypatch.setattr(route, "fetch_statement_currency", lambda ticker: "USD")
-    monkeypatch.setattr(loaders, "estimates", lambda ticker: _estimates())
+    patch_loaders(monkeypatch, "estimates", lambda ticker: _estimates())
 
 
 def _get(client, symbol="msft", day=PRINT):

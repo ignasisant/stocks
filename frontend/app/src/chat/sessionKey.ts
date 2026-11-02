@@ -8,11 +8,11 @@
  * closes — so the key lives there and nowhere else. The server never stores
  * it: each request that needs it (`/chat/state`, `/chat/runs`, the attachment
  * mapper, the walkthrough's narration) carries it in `X-Chat-Provider` +
- * `X-Chat-Key`, and `api/routes/chat.py` uses it for that request alone.
+ * `X-Chat-Key`, and `api/routes/chat/preferences.py` uses it for that request alone.
  *
  * It is also the only way to use a key of your own on a deployment that has no
  * encryption secret, where `PUT /chat/keys` answers 503 rather than write a
- * key in the clear — a case the drawer used to refuse outright.
+ * key in the clear.
  *
  * Not `localStorage`: a key that outlived the tab would be a stored key in all
  * but name, kept in the one place on the machine with none of the encryption

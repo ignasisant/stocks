@@ -9,7 +9,7 @@
  * (`askAssistant` with `fresh`), and the reader's bubble folds it to its first
  * lines.
  *
- * The chat refuses a message over 4,000 characters (`routes/chat.py`
+ * The chat refuses a message over 4,000 characters (`routes/chat/turns.py`
  * `MAX_MESSAGE`), so rows are added in the page's own order — actions first —
  * until the budget is spent, and the rest are counted, not dropped silently.
  */

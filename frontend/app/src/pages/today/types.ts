@@ -1,5 +1,5 @@
 /**
- * `GET/POST /today`, transcribed from `api/schemas.py` (`TodayCard` and the
+ * `GET/POST /today`, transcribed from `api/schemas/` (`TodayCard` and the
  * models under it). The personal half is the same `DailyCard` Home's teaser
  * reads; the market half is the read every account shares.
  *

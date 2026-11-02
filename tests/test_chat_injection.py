@@ -38,6 +38,7 @@ from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import engine, learnings
 from stocks.web import chat_web
+from tests.patching import patch_engine
 
 EMAIL = "reader@example.com"
 WATCHLIST = """\
@@ -141,7 +142,7 @@ def reader(account, sign_in) -> TestClient:
 @pytest.fixture
 def serve(monkeypatch):
     def install(provider):
-        monkeypatch.setattr(engine, "attempts", lambda prefs: [(provider, "k", "fake-1")])
+        patch_engine(monkeypatch, "attempts", lambda prefs: [(provider, "k", "fake-1")])
         monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
         return provider
     return install
@@ -151,7 +152,7 @@ def serve(monkeypatch):
 def fallback_reads_the_page(monkeypatch):
     """The research did not search, so the keyword fallback does, and finds
     the hostile page."""
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(chat_web, "available", lambda: True)
     monkeypatch.setattr(chat_web, "heuristic_queries", lambda *a, **k: ["nvda news"])
     monkeypatch.setattr(chat_web, "collect", lambda *a, **k: [PAGE])
@@ -160,7 +161,7 @@ def fallback_reads_the_page(monkeypatch):
 @pytest.fixture
 def tool_reads_the_page(monkeypatch):
     """The model's own `read_page` call lands on the hostile page."""
-    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    patch_engine(monkeypatch, "web_enabled", lambda: True)
     monkeypatch.setattr(chat_web, "available", lambda: True)
     monkeypatch.setattr(chat_web, "read_page", lambda url, *a, **k: PLANTED)
     monkeypatch.setattr(chat_web, "heuristic_queries", lambda *a, **k: [])

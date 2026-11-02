@@ -24,6 +24,7 @@ from stocks.analysis.sectors import SectorScan
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.chat import sector_ai
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -88,7 +89,7 @@ def signed_in(client, sign_in):
 @pytest.fixture
 def tonight(monkeypatch):
     current = {"scan": scan()}
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {TECH: current["scan"]})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {TECH: current["scan"]})
     return current
 
 
@@ -155,7 +156,7 @@ def test_no_model_answering_is_the_stand_in_not_an_error(
 
 
 def test_a_sector_nobody_scanned_says_so(client, account, signed_in, monkeypatch):
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
     assert signed_in.get(f"/v1/sectors/{TECH}/verdict").status_code == 404
 
 

@@ -22,6 +22,14 @@ still get the order or the invariant wrong, write a skill.
 - `prod-triage/` — production error logs by family, in-app feedback and chat
   ratings become one Claude Doc of tasks ("TopStocks · Triage · AAAA-MM-DD"),
   then the fix-review loop works through it.
+- `antislop-code/` — comment hygiene: drop comments that restate the code or
+  narrate history, keep the ones that carry a rule. Adapted from
+  [anti-slop](https://github.com/miqdadbadjuber/anti-slop) (MIT).
+- `improve-codebase-architecture/` and `codebase-design/` — find shallow
+  modules and the seams to split or deepen them along. Verbatim from
+  [mattpocock/skills](https://github.com/mattpocock/skills) (MIT); the
+  `grilling` and `domain-modeling` skills they mention are not installed, and
+  the repo has no `GLOSSARY.md` or `docs/adr/` yet.
 
 What does **not** belong here: how the code works (that is what the modules'
 docstrings are for — they are unusually thorough in this repo and are the

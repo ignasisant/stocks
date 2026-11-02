@@ -33,7 +33,7 @@ actually declared or the ledger actually holds:
     with gains or losses still open, the next savings bracket within reach,
     and the day a loss sale's repurchase window lets go.
 
-Each candidate carries its numbers and an urgency; stocks/chat/daily.py hands
+Each candidate carries its numbers and an urgency; stocks/chat/daily/ hands
 the top few to the model, which picks and phrases — it never gets to invent one
 — and renders them directly when no model is available. Nothing here fetches:
 every input is a frame, list or series the caller already loaded.
@@ -668,8 +668,9 @@ def plan_candidates(
             "scope": "position", "weight_pct": pct,
             "cap_pct": investor.limits.max_position_pct,
         }))
+    # `briefing.book_sectors` hands a Series, whose truth value raises.
     equity = {
-        str(k): float(v) for k, v in (sectors or {}).items()
+        str(k): float(v) for k, v in (sectors if sectors is not None else {}).items()
         if str(k) not in NOT_EQUITY and finite(v) is not None
     }
     for sector, pct in plans.over_sector(investor, equity):

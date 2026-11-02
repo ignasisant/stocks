@@ -158,9 +158,9 @@ const busyListeners = new Set<() => void>();
 
 /**
  * The drawer says whether it is writing an answer (or following a detached
- * run) while it is shut, so the phone tab bar's Assistant item can show what
- * the floating button used to: the assistant is at it. Same state source as
- * that button — the drawer's own `busy`.
+ * run) while it is shut, so the phone tab bar's Assistant item can show
+ * the assistant is at it. Same state source as the floating button — the
+ * drawer's own `busy`.
  */
 export function setAssistantWorking(next: boolean): void {
   if (working === next) return;

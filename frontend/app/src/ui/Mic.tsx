@@ -3,10 +3,8 @@
  *
  * The chat's composer and the feedback dialog both take dictation, and they
  * draw the microphone the same way in the same place: inside the box, bottom
- * right, where the thumb is when a line ends. The reader asked for exactly
- * that (feedback, 2026-09-29) after finding it beside the paperclip in one and
- * as a text button under the box in the other — and two copies of one control
- * drift, which is how they came to differ.
+ * right, where the thumb is when a line ends. One component for
+ * both, because two copies of one control drift apart.
  *
  * The box only lays the controls over the field's corner; the field pads
  * itself clear of them (`ag-box`), so a long line wraps before it runs under

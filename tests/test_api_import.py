@@ -30,12 +30,14 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _charted as _real_charted
+from stocks.data import fetch, fx, symbols
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
 
 # The real one, held before the suite's conftest swaps `venue.pick` out for
 # every test: the relabel tests below put it back.
 from stocks.portfolio.venue import pick as _real_pick
+from tests.patching import patch_import, patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -81,17 +83,16 @@ def offline(monkeypatch, tmp_path):
     against, and diagnostics land in tmp rather than in the checkout's
     data/imports.
     """
-    from stocks.api.routes import import_statement
     from stocks.portfolio import diagnostics
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
-    monkeypatch.setattr(import_statement, "_charted", lambda ticker, budget: None)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: None)
+    patch_import(monkeypatch, "_charted", lambda ticker, budget: None)
     monkeypatch.setattr(
-        import_statement.symbols, "symbol_for_code", lambda code, currency, **_: None
+        symbols, "symbol_for_code", lambda code, currency, **_: None
     )
-    monkeypatch.setattr(import_statement.fetch, "splits", lambda ticker: [])
-    monkeypatch.setattr(import_statement.loaders, "quotes", lambda tickers: {})
-    monkeypatch.setattr(import_statement, "_exists_memo", {})
+    monkeypatch.setattr(fetch, "splits", lambda ticker: [])
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
+    patch_import(monkeypatch, "_exists_memo", {})
     monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path / "diagnostics")
     monkeypatch.setattr(diagnostics.storage, "persist", lambda path: None)
 
@@ -143,10 +144,9 @@ def test_a_branded_platform_carries_its_logo_and_a_generic_one_none(
 ):
     """The picker draws the brand mark beside the name; a platform with no
     brand site gets no image rather than a broken one."""
-    from stocks.api import loaders
 
-    monkeypatch.setattr(
-        loaders, "brand_logo", lambda key: f"/app/static/logos/{key}.png"
+    patch_loaders(
+        monkeypatch, "brand_logo", lambda key: f"/app/static/logos/{key}.png"
         if key == "revolut" else None
     )
     payload = client.get("/v1/import/platforms", params=WHO, headers=AUTH).json()
@@ -228,7 +228,6 @@ def test_a_skip_names_its_reason_for_the_catalog(client, account, signed_in):
 
 def quoted(monkeypatch, prices: dict[str, tuple[float, str]]) -> list:
     """Today's quotes for the preview's buys, and a log of what it asked for."""
-    from stocks.api.routes import import_statement
 
     asked: list = []
 
@@ -240,7 +239,7 @@ def quoted(monkeypatch, prices: dict[str, tuple[float, str]]) -> list:
             if t in tickers
         }
 
-    monkeypatch.setattr(import_statement.loaders, "quotes", quotes)
+    patch_loaders(monkeypatch, "quotes", quotes)
     return asked
 
 
@@ -301,11 +300,10 @@ def test_quotes_that_hang_cost_the_gain_not_the_preview(
 ):
     import time as clock
 
-    from stocks.api.routes import import_statement
 
-    monkeypatch.setattr(import_statement, "QUOTES_BUDGET_S", 0.05)
-    monkeypatch.setattr(
-        import_statement.loaders, "quotes", lambda tickers: clock.sleep(1) or {}
+    patch_import(monkeypatch, "QUOTES_BUDGET_S", 0.05)
+    patch_loaders(
+        monkeypatch, "quotes", lambda tickers: clock.sleep(1) or {}
     )
     payload = signed_in.post("/v1/import/preview", json=body()).json()
     assert [row["gain"] for row in payload["importable"]] == [None, None]
@@ -332,9 +330,8 @@ def test_an_oversized_statement_is_refused_before_it_is_parsed(
 ):
     # The cap shrunk for the test: sending 50 MB of base64 through a test
     # client proves nothing a kilobyte does not.
-    from stocks.api.routes import import_statement
 
-    monkeypatch.setattr(import_statement, "MAX_BYTES", 1024)
+    patch_import(monkeypatch, "MAX_BYTES", 1024)
     huge = base64.b64encode(b"x" * 1025).decode()
     response = signed_in.post("/v1/import/preview", json=body() | {"content": huge})
     assert response.status_code == 413
@@ -398,7 +395,6 @@ def test_a_symbol_the_market_quotes_carries_no_unknown_ticker_warning(
 ):
     """The page's live lookup, on this surface too: without it the same
     statement read clean there and warned here."""
-    from stocks.api.routes import import_statement
 
     unusual = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -412,8 +408,8 @@ def test_a_symbol_the_market_quotes_carries_no_unknown_ticker_warning(
     assert "validate.unknown_ticker" in keys(blind)
 
     asked: list[str] = []
-    monkeypatch.setattr(
-        import_statement, "_ticker_exists", lambda t: asked.append(t) or True
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: asked.append(t) or True
     )
     seen = signed_in.post("/v1/import/preview", json=body(unusual)).json()
     assert "validate.unknown_ticker" not in keys(seen)
@@ -428,9 +424,9 @@ def test_a_lookup_that_hangs_is_given_up_on(client, account, signed_in, monkeypa
 
     from stocks.api.routes import import_statement
 
-    monkeypatch.setattr(import_statement, "LOOKUP_BUDGET_S", 0.05)
-    monkeypatch.setattr(
-        import_statement, "_ticker_exists", lambda t: clock.sleep(1) or True
+    patch_import(monkeypatch, "LOOKUP_BUDGET_S", 0.05)
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: clock.sleep(1) or True
     )
     unusual = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -448,9 +444,8 @@ def test_a_symbol_yahoo_says_it_does_not_list_is_named_in_the_preview(
 ):
     """The rows go in, but hold at cost with no price: the reader has to hear
     which ones before committing, not find n/a on the portfolio later."""
-    from stocks.api.routes import import_statement
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
+    patch_import(monkeypatch, "_ticker_exists", lambda t: False)
     unusual = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
         "2024-01-02,ZZZQX,buy,10,100.00,EUR,1.00,revolut Something\n"
@@ -468,7 +463,6 @@ def test_a_code_the_book_already_holds_is_flagged_once_yahoo_disowns_it(
     statement carrying it read clean while it sat unpriced. The price pass's
     verdict (`fetch.unlisted`) takes it back out of the known set — and is
     trusted without asking Yahoo a second time."""
-    from stocks.api.routes import import_statement
     from stocks.data import fetch
 
     ledger.add_many(
@@ -476,8 +470,8 @@ def test_a_code_the_book_already_holds_is_flagged_once_yahoo_disowns_it(
         account.db,
     )
     asked: list[str] = []
-    monkeypatch.setattr(
-        import_statement, "_ticker_exists", lambda t: asked.append(t) or True
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: asked.append(t) or True
     )
     again = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -504,7 +498,6 @@ def test_a_code_yahoo_disowns_but_its_search_places_imports_clean(
     SIE.DE. The search is asked on the trade currency's venues, and a hit
     makes the row known — no warning, not named as unpriced — and teaches the
     price path the symbol."""
-    from stocks.api.routes import import_statement
     from stocks.data import fetch, symbols
 
     asked: list[tuple[str, str]] = []
@@ -513,8 +506,8 @@ def test_a_code_yahoo_disowns_but_its_search_places_imports_clean(
         asked.append((code, currency))
         return {"SIE": "SIE.DE"}.get(code)
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
-    monkeypatch.setattr(import_statement.symbols, "symbol_for_code", search)
+    patch_import(monkeypatch, "_ticker_exists", lambda t: False)
+    monkeypatch.setattr(symbols, "symbol_for_code", search)
     statement = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
         "2024-01-02,SIE,buy,2,150.00,EUR,1.00,revolut Siemens\n"
@@ -540,15 +533,14 @@ def test_a_quote_check_that_cannot_say_still_asks_the_search(
     "no". The search still runs on that — a Revolut statement of nine euro
     codes warned on all 35 rows without it — and each code is asked once,
     however many rows trade it."""
-    from stocks.api.routes import import_statement
 
     quoted: list[str] = []
     searched: list[str] = []
-    monkeypatch.setattr(
-        import_statement, "_ticker_exists", lambda t: quoted.append(t) and None
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: quoted.append(t) and None
     )
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "symbol_for_code",
         lambda code, currency, **_: searched.append(code) or {"SIE": "SIE.DE"}.get(code),
     )
@@ -573,12 +565,10 @@ def test_a_code_nothing_places_is_asked_of_the_chart(
     has the last word. Its "No data found" makes the code unlisted on the first
     preview — not only after the book's own download heard it — so the page
     can offer the code's lines right away; bars make it known."""
-    from stocks.api.routes import import_statement
 
     charted: list[str] = []
-    monkeypatch.setattr(
-        import_statement,
-        "_charted",
+    patch_import(
+        monkeypatch, "_charted",
         lambda t, budget: charted.append(t) or {"MRLQ": False, "NEWCO": True}.get(t),
     )
     statement = (
@@ -599,14 +589,13 @@ def test_a_code_nothing_places_is_asked_of_the_chart(
 def test_the_chart_is_not_asked_of_a_code_the_search_places(
     client, account, signed_in, monkeypatch
 ):
-    from stocks.api.routes import import_statement
 
     charted: list[str] = []
-    monkeypatch.setattr(
-        import_statement, "_charted", lambda t, budget: charted.append(t) or False
+    patch_import(
+        monkeypatch, "_charted", lambda t, budget: charted.append(t) or False
     )
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "symbol_for_code",
         lambda code, currency, **_: {"SIE": "SIE.DE"}.get(code),
     )
@@ -659,13 +648,12 @@ def test_a_search_that_runs_out_of_time_is_not_a_verdict(
     time: "could not check", not "will import unpriced"."""
     import threading
 
-    from stocks.api.routes import import_statement
 
     released = threading.Event()
-    monkeypatch.setattr(import_statement, "LOOKUP_BUDGET_S", 0.3)
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
+    patch_import(monkeypatch, "LOOKUP_BUDGET_S", 0.3)
+    patch_import(monkeypatch, "_ticker_exists", lambda t: False)
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "symbol_for_code",
         lambda code, currency, **_: released.wait(5) and None,
     )
@@ -697,9 +685,9 @@ def test_a_code_the_map_holds_on_a_floor_is_asked_for_its_home_line(
         asked.append((code, currency, isin, vet("MRL.MC"), vet("MEQA.SG")))
         return "MRL.MC"
 
-    monkeypatch.setattr(import_statement.symbols, "symbol_for_code", search)
+    monkeypatch.setattr(symbols, "symbol_for_code", search)
     monkeypatch.setattr(
-        import_statement.fetch,
+        fetch,
         "close_on",
         lambda symbol, day: {"MRL.MC": 12.1, "MEQA.SG": 9.0}.get(symbol),
     )
@@ -746,7 +734,6 @@ def picker(monkeypatch):
     """A Yahoo that does not quote MEQA bare, finds Merlin's lines by name and
     closed MRL.MC near the fills and MEQA.F nowhere near. Returns the queries
     the search was asked."""
-    from stocks.api.routes import import_statement
 
     closes = {
         ("MRL.MC", "2025-01-02"): 12.1,
@@ -754,13 +741,13 @@ def picker(monkeypatch):
         ("MEQA.F", "2025-01-02"): 9.0,
     }
     queries = []
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: False)
-    monkeypatch.setattr(import_statement.fetch, "ticker_aliases", lambda: {})
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: False)
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {})
     monkeypatch.setattr(
-        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+        fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
     )
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "_quotes",
         lambda query, count, min_len=1: queries.append(query) or MERLIN_ROWS,
     )
@@ -824,7 +811,6 @@ def test_a_code_something_already_prices_is_not_this_pick_to_move(
     """The map is every account's: a code another statement placed, a code
     Yahoo quotes as it is, and one its search places now all keep their
     answer, whatever fills this pick brings."""
-    from stocks.api.routes import import_statement
     from stocks.data import symbols
 
     symbols._code_memo = {"MEQA": "MEQA.F"}
@@ -833,13 +819,13 @@ def test_a_code_something_already_prices_is_not_this_pick_to_move(
     assert symbols.code_symbol("MEQA") == "MEQA.F"
 
     symbols._code_memo = {}
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: True)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: True)
     response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
     assert response.status_code == 409
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: False)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: False)
     monkeypatch.setattr(
-        import_statement.symbols, "symbol_for_code", lambda code, currency, **_: "MRL.MC"
+        symbols, "symbol_for_code", lambda code, currency, **_: "MRL.MC"
     )
     response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
     assert response.status_code == 409
@@ -848,10 +834,9 @@ def test_a_code_something_already_prices_is_not_this_pick_to_move(
 def test_a_yahoo_that_cannot_be_asked_is_a_retry_not_a_verdict(
     account, signed_in, picker, monkeypatch
 ):
-    from stocks.api.routes import import_statement
     from stocks.data import symbols
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: None)
     response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
     assert response.status_code == 503
     assert symbols.code_symbol("MEQA") is None
@@ -863,18 +848,17 @@ def test_a_quote_check_that_cannot_say_is_settled_by_the_chart(
     """yfinance raises on a code Yahoo has no quote for, so the pick asks the
     chart — on whichever instance it lands, not only the one whose preview
     heard the 404."""
-    from stocks.api.routes import import_statement
     from stocks.data import symbols
 
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
-    monkeypatch.setattr(
-        import_statement, "_charted", lambda t, budget: {"MEQA": False}.get(t)
+    patch_import(monkeypatch, "_ticker_exists", lambda ticker: None)
+    patch_import(
+        monkeypatch, "_charted", lambda t, budget: {"MEQA": False}.get(t)
     )
     response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
     assert response.status_code == 200
     assert symbols.code_symbol("MEQA") == "MRL.MC"
 
-    monkeypatch.setattr(import_statement, "_charted", lambda t, budget: True)
+    patch_import(monkeypatch, "_charted", lambda t, budget: True)
     response = signed_in.post(
         "/v1/import/venue", json=merlin(code="OZTA", symbol="MRL.MC")
     )
@@ -902,21 +886,20 @@ def venues(monkeypatch):
     """The relabel's Yahoo: it quotes every code bare, offers ALV.DE and ALV.F
     for ALV, closed ALV.DE at 249.10 and Autoliv at 95 USD on the fill's day,
     and the dollar buys 0.92 of anything. Returns the closes, to empty."""
-    from stocks.api.routes import import_statement
     from stocks.portfolio import venue
 
     closes = {("ALV.DE", "2025-03-03"): 249.1, ("ALV", "2025-03-03"): 95.0}
     monkeypatch.setattr(venue, "pick", _real_pick)
-    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: True)
+    patch_import(monkeypatch, "_ticker_exists", lambda t: True)
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "listings_for_code",
         lambda code, currency, limit=6: ["ALV.DE", "ALV.F"] if code == "ALV" else [],
     )
     monkeypatch.setattr(
-        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+        fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
     )
-    monkeypatch.setattr(import_statement.fx, "rate_on", lambda day, base, quote: 0.92)
+    monkeypatch.setattr(fx, "rate_on", lambda day, base, quote: 0.92)
     return closes
 
 
@@ -1000,10 +983,9 @@ def test_an_oversold_ticker_is_rescued_by_the_split_the_file_never_printed(
 ):
     """A statement of trades alone: 1 share bought, 20 sold after a 20:1. The
     page adds the split row instead of rejecting the sell, and so does this."""
-    from stocks.api.routes import import_statement
 
     monkeypatch.setattr(
-        import_statement.fetch, "splits", lambda t: [("2024-02-01", 20.0)]
+        fetch, "splits", lambda t: [("2024-02-01", 20.0)]
     )
     split_hidden = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -1201,14 +1183,13 @@ def test_a_row_sent_back_with_an_action_the_ledger_does_not_know_is_refused(
 
 
 def test_rows_sent_back_are_never_read_again(client, account, signed_in, monkeypatch):
-    from stocks.api.routes import import_statement
 
     preview = signed_in.post("/v1/import/preview", json=body()).json()
 
     def never(*a, **k):
         raise AssertionError("a commit with rows reads no file")
 
-    monkeypatch.setattr(import_statement, "_read", never)
+    patch_import(monkeypatch, "_read", never)
     response = signed_in.post(
         "/v1/import/commit",
         json={"filename": "ledger.csv", "rows": rows_of(preview)},
@@ -1231,7 +1212,6 @@ def model(monkeypatch):
     Patched where `autodetect` calls it, with a provider in front so it is
     reached at all (conftest keeps every other test on the parsers alone).
     """
-    from stocks.api.routes import import_statement
     from stocks.portfolio import autodetect, llm_map
     from stocks.portfolio.statement import ParseResult
 
@@ -1248,8 +1228,8 @@ def model(monkeypatch):
         )
 
     monkeypatch.setattr(autodetect.llm_map, "extract", extract)
-    monkeypatch.setattr(
-        import_statement, "_provider", lambda paths, held=None: (_Backend(), "k")
+    patch_import(
+        monkeypatch, "_provider", lambda paths, held=None: (_Backend(), "k")
     )
     return calls
 

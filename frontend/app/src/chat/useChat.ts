@@ -153,7 +153,7 @@ const rejoinWait = (tries: number) => (tries ? Math.min(1000 * 2 ** tries, 10_00
 /** Away this long, a stream still open is not trusted to be alive. */
 const AWAY_MS = 15_000;
 
-/** The ending a stopped run is logged with (`routes/chat.py` STOPPED). */
+/** The ending a stopped run is logged with (`routes/chat/turns.py` STOPPED). */
 const STOPPED = "chat.stopped";
 
 /** Whether this turn is one the server never stored — a refusal or a stop. */

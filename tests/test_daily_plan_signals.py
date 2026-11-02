@@ -154,6 +154,16 @@ def test_a_sector_past_its_cap_is_keyed_on_the_sector():
     assert sector[0].key == "plan_limit:Technology"
 
 
+def test_the_sector_split_arrives_as_the_series_briefing_builds():
+    # briefing.book_sectors returns a Series; `sectors or {}` raised on it and
+    # the card lost every plan line (daily_action.plan_unavailable, prod 10-31).
+    found = signals.plan_candidates(
+        _plan(limits={"max_sector_pct": 30}), tbl=_book(KEPT), kind_of=KINDS.get,
+        sectors=pd.Series({"Technology": 0.40, "Funds": 0.50}), today=DAY,
+    )
+    assert [s.data["sector"] for s in found
+            if s.kind == signals.PLAN_LIMIT and "sector" in s.data] == ["Technology"]
+
 def test_the_plans_cap_takes_concentrations_place():
     heavy = _book({"NVDA": 0.45, "VWCE.DE": 0.55})
     plain = signals.candidates(tbl=heavy, today=DAY)

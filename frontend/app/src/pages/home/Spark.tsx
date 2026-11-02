@@ -44,7 +44,7 @@ const SMA_WINDOW = 20;
  * ("Semana", "Mes") like the market card's selector does. It opens on `1y`: a year is the view the home card is for, and `all` is the
  * wrong one for a book that took a transfer, because one step dwarfs every
  * month of market movement around it. The spans are `_HISTORY_SPANS` in
- * `api/routes/portfolio.py`, counted from the same end, so a slice here is the
+ * `api/routes/portfolio/returns.py`, counted from the same end, so a slice here is the
  * window the server would have cut.
  */
 const RANGES = {

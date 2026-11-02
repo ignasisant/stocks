@@ -5,7 +5,7 @@
  * One text, a line per thing — "the biggest moves in my portfolio", "next
  * week's events", "what insiders at my companies did", "review my exit
  * criteria". The card answers it line by line, a section each, in place of
- * its default sections (`/daily/brief`, `chat/daily.py`). The chat files the
+ * its default sections (`/daily/brief`, `chat/daily/`). The chat files the
  * same brief when asked ("cada mañana dime…"); this is where it is read whole
  * and rewritten.
  *

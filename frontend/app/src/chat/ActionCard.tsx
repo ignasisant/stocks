@@ -5,9 +5,8 @@
  * finished *interrupted* on a `confirm_action` call instead of writing the
  * watchlist, and this card is how the reader answers it: Confirm runs it,
  * Edit opens the values the classifier read so a misheard price or the wrong
- * symbol is fixed before anything is written, Cancel drops it. The drawer
- * used to act first and confirm afterwards, which left a misread instruction
- * already applied by the time anyone saw it.
+ * symbol is fixed before anything is written, Cancel drops it. Nothing is
+ * written before Confirm, so a misread instruction is caught before it lands.
  *
  * The fields under Edit are not this file's: they are an A2UI surface the
  * server built from the tool registry (`chat/a2ui.py`'s `proposal_form`), so

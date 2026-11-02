@@ -1272,7 +1272,7 @@ def test_sleeve_stats_reads_each_blocks_own_compound_growth_over_a_year():
 
 
 # ------------------------------------------------- the clock knows the calendar
-from stocks.analysis import portfolio as _pf  # noqa: E402
+from stocks.analysis.portfolio import clock as _clock  # noqa: E402
 from stocks.analysis.portfolio import us_market_open  # noqa: E402
 
 
@@ -1307,17 +1307,19 @@ def test_foreign_venues_follow_their_own_calendars():
 
 def test_the_live_clock_takes_the_exchanges_word(monkeypatch):
     monkeypatch.setattr(
-        _pf, "_us_live", lambda: {"open": False, "session": "pre", "holiday": None}
+        _clock, "_us_live", lambda: {"open": False, "session": "pre", "holiday": None}
     )
     assert not us_market_open()
     assert us_extended_session() == "pre"
     monkeypatch.setattr(
-        _pf, "_us_live", lambda: {"open": True, "session": "regular", "holiday": None}
+        _clock, "_us_live", lambda: {"open": True, "session": "regular", "holiday": None}
     )
     assert us_market_open()
     assert us_extended_session() is None
     monkeypatch.setattr(
-        _pf, "_us_live", lambda: {"open": False, "session": None, "holiday": "Christmas"}
+        _clock,
+        "_us_live",
+        lambda: {"open": False, "session": None, "holiday": "Christmas"},
     )
     assert not us_market_open()
     assert us_extended_session() is None
@@ -1326,7 +1328,7 @@ def test_the_live_clock_takes_the_exchanges_word(monkeypatch):
 def test_an_injected_clock_is_the_time_table_alone(monkeypatch):
     """A test's instant reads the same with or without a Finnhub key."""
     monkeypatch.setattr(
-        _pf, "_us_live", lambda: pytest.fail("asked Finnhub for an injected instant")
+        _clock, "_us_live", lambda: pytest.fail("asked Finnhub for an injected instant")
     )
     assert not us_market_open(_utc(1, 6, 12))  # Saturday
     assert us_extended_session(_utc(1, 3, 22)) == "post"

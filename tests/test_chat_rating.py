@@ -21,6 +21,7 @@ import pytest
 
 from stocks.chat import engine
 from stocks.web import auth, chat_web, feedback, llm
+from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
     AUTH,
@@ -384,7 +385,7 @@ def test_the_search_plan_skips_a_key_refused_minutes_ago(
     client, account, signed_in, monkeypatch
 ):
     bad, good = FakeProvider(pid="bad"), FakeProvider(pid="good")
-    monkeypatch.setattr(engine, "attempts",
+    patch_engine(monkeypatch, "attempts",
                         lambda prefs: [(bad, "k-bad", "fake-1"), (good, "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     monkeypatch.setattr(chat_web, "available", lambda: True)

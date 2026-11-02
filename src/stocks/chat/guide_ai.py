@@ -18,7 +18,7 @@ than a slideshow:
   step, attempted once ever.
 
 Everything here takes the account's prefs, paths and language as arguments,
-and `api/routes/chat.py` / `api/routes/guide.py` call it with what the request
+and `api/routes/chat/turns.py` / `api/routes/guide.py` call it with what the request
 resolved.
 
 Every path through the model half degrades to silence rather than to an error:

@@ -1,7 +1,7 @@
 /**
  * The shapes `/pulse`, `/pulse/book` and `/pulse/tables` actually send.
  *
- * Mirrors `src/stocks/api/schemas.py`. Every figure the server could not
+ * Mirrors `src/stocks/api/schemas/`. Every figure the server could not
  * compute arrives as `null` rather than as a zero, and that difference is the
  * whole reason these are `| null` and not optional: a book the market cannot
  * move and a book nobody could measure are different claims.

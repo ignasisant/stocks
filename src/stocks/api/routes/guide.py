@@ -21,7 +21,7 @@ whether *this* load is the one that spends it.
 
 **The model half is `chat/guide_ai.py`**: the one generated opening line lands
 here, on the advance to the second step, and the prompt fence and the jump
-marker ride on the chat turn itself (`api/routes/chat.py`) because that is
+marker ride on the chat turn itself (`api/routes/chat/turns.py`) because that is
 where a mid-tour question is answered. All of it degrades to silence by
 design; the walkthrough is complete without.
 

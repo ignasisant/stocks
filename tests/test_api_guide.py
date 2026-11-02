@@ -26,6 +26,7 @@ from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import guide_ai
 from stocks.web import guide, onboarding
+from tests.patching import patch_engine
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -70,7 +71,7 @@ def narrator(monkeypatch):
         lines.calls.append({"system": system, "messages": messages, **kwargs})
         return lines.pop(0) if lines else None
 
-    monkeypatch.setattr("stocks.chat.engine.complete_attempts", complete)
+    patch_engine(monkeypatch, "complete_attempts", complete)
     return lines
 
 

@@ -4,8 +4,7 @@ import { Component, type ReactNode } from "react";
  * What a screen shows when it threw while rendering, instead of a blank page.
  *
  * React unmounts the whole tree under a render error that nothing catches, so
- * one bad row on one tab used to leave a reader with an empty white window and
- * no way out but the reload button they might not think of. This catches it at
+ * one bad row on one tab would leave an empty white window. This catches it at
  * the page (the rail and the search box stay, so the reader can go elsewhere)
  * and, outside everything, at the root. The report itself is the root's job
  * (`onCaughtError` in `main.tsx`), not this component's.

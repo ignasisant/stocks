@@ -28,6 +28,7 @@ from stocks.notify import narrative
 from stocks.notify.alerts import AlertHit
 from stocks.notify.digest import DigestData
 from stocks.notify.fanout import NotifyUser
+from tests.patching import patch_engine
 
 DAY = date(2026, 10, 3)
 SAID = "Mantengo NVDA a largo plazo, no la quiero vender"
@@ -66,9 +67,9 @@ class Recorder:
 
 @pytest.fixture(autouse=True)
 def free_pot(monkeypatch, tmp_path):
-    monkeypatch.setattr(engine, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
-    monkeypatch.setattr(engine, "_global_free_loaded", True)
+    patch_engine(monkeypatch, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free_loaded", True)
 
 
 @pytest.fixture
@@ -124,8 +125,8 @@ def test_a_memory_that_cannot_be_read_is_a_line_without_it(chat, monkeypatch):
     def broken(*a, **k):
         raise OSError("disk")
 
-    monkeypatch.setattr(engine, "memory_block", broken)
-    monkeypatch.setattr(engine, "talk_about", broken)
+    patch_engine(monkeypatch, "memory_block", broken)
+    patch_engine(monkeypatch, "talk_about", broken)
     assert engine.user_memory({}, chat, ["NVDA"]) == ("", [])
 
 
@@ -146,8 +147,8 @@ def test_the_card_quotes_what_was_said_about_todays_tickers(
     provider, chat, monkeypatch
 ):
     asked = []
-    monkeypatch.setattr(
-        engine, "talk_about",
+    patch_engine(
+        monkeypatch, "talk_about",
         lambda prefs, path, names, **k: asked.append(names) or [recalled()],
     )
     daily.generate({}, {}, FACTS, "en", DAY, chat_path=chat)
@@ -175,8 +176,8 @@ def test_a_card_without_a_chat_path_reads_nothing(provider):
 
 def test_the_analysis_reads_the_memory_about_its_line(provider, chat, monkeypatch):
     asked = []
-    monkeypatch.setattr(
-        engine, "talk_about",
+    patch_engine(
+        monkeypatch, "talk_about",
         lambda prefs, path, names, **k: asked.append(names) or [recalled()],
     )
     daily_analysis.generate({}, {}, card(), "drawdown:NVDA", {}, "en",
@@ -193,9 +194,8 @@ def test_the_analysis_reads_the_memory_about_its_line(provider, chat, monkeypatc
 
 def test_a_line_without_a_ticker_looks_up_no_conversation(provider, chat, monkeypatch):
     asked = []
-    monkeypatch.setattr(
-        engine, "talk_about", lambda prefs, path, names, **k: asked.append(names) or []
-    )
+    patch_engine(monkeypatch, "talk_about",
+                 lambda prefs, path, names, **k: asked.append(names) or [])
     daily_analysis.generate({}, {}, card(), "vs_benchmark:", {}, "en", chat_path=chat)
     assert asked == [[]]
     assert SAID in provider.systems[0]

@@ -44,9 +44,9 @@ cd "$(dirname "$0")/.."
 PROJECT="${STOCKS_GCP_PROJECT:-topstocks-507209}"
 REGION="${STOCKS_GCP_REGION:-europe-west1}"
 
-# No default target. A bare run used to mean staging, which quietly recreated
-# the staging service (and its images in the registry, which cost money past
-# the free 0.5 GB) whenever it had been deleted.
+# No default target: a bare run defaulting to staging would quietly recreate
+# the staging service (and its registry images, billed past the free 0.5 GB)
+# whenever it had been deleted.
 USAGE="usage: $0 staging|prod [--min-instances N] [--secret NAME:VER] [--no-canary] [--allow-unmerged]"
 ENV="${1:-}"
 if [ -z "$ENV" ]; then
