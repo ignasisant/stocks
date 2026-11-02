@@ -99,6 +99,19 @@
   gap: 16px;
 }
 
+/* A section waiting to be seen (`Slot` in Ticker.tsx). Open and waiting it
+   holds about a card's room: at a skeleton's height every slot sat "near the
+   viewport" on arrival and the page asked for all of them at once. Folded on a
+   phone it is the heading alone, like the card it stands for. One that
+   answered "nothing" draws nothing, and takes no gap. */
+.tk-slot:has(.ag-skeleton) {
+  min-height: 24rem;
+}
+
+.tk-slot:empty {
+  display: none;
+}
+
 .tk-card-head {
   display: flex;
   flex-direction: column;
