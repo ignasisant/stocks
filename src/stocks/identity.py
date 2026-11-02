@@ -102,7 +102,13 @@ def company_name(ticker: str, watchlist: Path | str) -> str | None:
         # the profile the allocation donuts already pulled, so no request.
         from stocks.data import profiles
 
-        return (profiles.known(resolved) or {}).get("name")
+        if name := (profiles.known(resolved) or {}).get("name"):
+            return name
+        # An ISIN Yahoo has no line for (a bond, a fund class): the registry's
+        # name, if anything here asked OpenFIGI about it already.
+        from stocks.data import openfigi
+
+        return (sec.name or None) if (sec := openfigi.known(ticker)) else None
     except Exception:
         return None
 

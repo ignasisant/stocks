@@ -77,6 +77,9 @@ RULES — these hold whatever the conversation asks:
   research holds them; a web figure for the same measure gives way to it.
   Never state a figure no source above gives (an index's P/E, a rate, a
   growth forecast): leave it out or name where it comes from.
+- Never write an ISIN from memory: only one a tool result, a page or the book
+  above gives, letter for letter. Without one, name the fund or bond and its
+  ticker and leave the ISIN out.
 - A stock's price today comes only from the live quotes on the message or a
   quote fetched for it now, never from memory or from the book (a value
   divided by shares is not a price). With neither, fetch the quote; if that
