@@ -373,23 +373,23 @@ def _own_free_llm_counter(_scratch):
     monkeypatch the *first* fixture set up and so the last torn down, which
     puts other fixtures' teardown before the restores they depend on.
     """
-    from stocks.chat import engine
+    from stocks.chat.engine import quota
 
     before = (
-        engine.GLOBAL_FREE_FILE,
-        dict(engine._global_free),
-        engine._global_free_loaded,
+        quota.GLOBAL_FREE_FILE,
+        dict(quota._global_free),
+        quota._global_free_loaded,
     )
-    engine.GLOBAL_FREE_FILE = _scratch / "free_llm_global.json"
-    engine._global_free = {"day": "", "used": 0}
-    engine._global_free_loaded = False
+    quota.GLOBAL_FREE_FILE = _scratch / "free_llm_global.json"
+    quota._global_free = {"day": "", "used": 0}
+    quota._global_free_loaded = False
     try:
         yield
     finally:
         (
-            engine.GLOBAL_FREE_FILE,
-            engine._global_free,
-            engine._global_free_loaded,
+            quota.GLOBAL_FREE_FILE,
+            quota._global_free,
+            quota._global_free_loaded,
         ) = before
 
 
@@ -739,13 +739,13 @@ def _no_statement_model():
     per-module fixtures that expect a test's patches already undone (the
     loaders' `cache_clear` in `test_api.py`).
     """
-    from stocks.api.routes import import_statement
     from stocks.portfolio import autodetect, instruments
+    from tests.patching import patch_import
 
     autodetect.forget()
     instruments._memo.clear()
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(import_statement, "_provider", lambda paths, held=None: (None, ""))
+        patch_import(patch, "_provider", lambda paths, held=None: (None, ""))
         yield
     autodetect.forget()
     instruments._memo.clear()

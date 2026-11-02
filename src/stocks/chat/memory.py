@@ -1,7 +1,7 @@
 """Long-term memory for the chat: past conversations, searchable by meaning.
 
 The thread the model sees is the last MAX_CONTEXT_MSGS messages of the current
-conversation (chat/engine.py). Everything before that — the other threads, last
+conversation (chat/engine/). Everything before that — the other threads, last
 month's reasoning about a position, the conclusion the user asked for in March
 — is on disk and invisible. Asking "what did I decide about ASML?" gets an
 answer built from nothing.

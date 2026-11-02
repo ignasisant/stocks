@@ -1,7 +1,7 @@
 /**
  * What the document carried for the shell to start with.
  *
- * The server writes the two answers every page used to wait on — `/me`, who
+ * The server writes the two answers every page waits on — `/me`, who
  * is asking, and `/prefs`, what they have set — into the document as a JSON
  * block (`web/server.py`, `_boot_tag`), plus the stamp under which the string
  * catalog is immutable. Read once, synchronously, before anything is fetched:
@@ -9,7 +9,7 @@
  * document preloads, and the page's own figures.
  *
  * Absent (the dev server without the API, the MCP views, the tests, a server
- * that failed to build it) the shell fetches the pair as it always did. Every
+ * that failed to build it) the shell fetches the pair. Every
  * field is checked before it is trusted: the block is the server's, but a
  * shape it did not mean to send must not crash the one component that renders
  * before the error boundary does.

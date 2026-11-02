@@ -8,6 +8,7 @@ import pytest
 
 from stocks.chat import toolbox
 from stocks.chat.toolbox import Context
+from tests.patching import patch_engine, patch_loaders
 
 
 def _run(name, args, ctx=None):
@@ -114,7 +115,6 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
     # holding an 8 B$ tax benefit, and a forward P/E left unexplained.
     import pandas as pd
 
-    from stocks.api import loaders
     from stocks.api.routes import ticker as routes
     from stocks.api.schemas import Valuation, ValuationWindow
 
@@ -128,7 +128,7 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
          [17e9, 17e9, 25e9, 17e9, 17e9]],
         index=["Pretax Income", "Operating Income", "Tax Provision", "Net Income"],
         columns=cols)
-    monkeypatch.setattr(loaders, "fundamentals", lambda code: SimpleNamespace(
+    patch_loaders(monkeypatch, "fundamentals", lambda code: SimpleNamespace(
         info={"forwardPE": 17.2}, income_q=income))
     got = toolbox._page_valuation("META", Context())
     assert "today in the 7th percentile" in got
@@ -154,25 +154,23 @@ def test_market_positioning_reads_the_cftc_block(monkeypatch):
     import numpy as np
     import pandas as pd
 
-    from stocks.api import loaders
 
     weeks = pd.date_range("2023-10-03", periods=100, freq="7D")
     frame = pd.DataFrame(
         {"net": [*np.linspace(-50.0, 50.0, 99), 400.0], "oi": 1000.0}, index=weeks
     )
-    monkeypatch.setattr(loaders, "positioning", lambda: {"sp500": frame})
+    patch_loaders(monkeypatch, "positioning", lambda: {"sp500": frame})
     got = _run("market_positioning", {})
     assert "E-mini S&P 500" in got and "crowded long" in got
     assert "100th percentile" in got
 
 
 def test_market_positioning_says_so_when_the_cftc_is_down(monkeypatch):
-    from stocks.api import loaders
 
     def dead():
         raise RuntimeError("cot: no data")
 
-    monkeypatch.setattr(loaders, "positioning", dead)
+    patch_loaders(monkeypatch, "positioning", dead)
     assert "unavailable" in _run("market_positioning", {})
 
 
@@ -251,27 +249,24 @@ def test_portfolio_snapshot_needs_an_account():
 
 
 def test_portfolio_snapshot_reads_the_accounts_book(monkeypatch, tmp_path):
-    from stocks.chat import engine
 
-    monkeypatch.setattr(engine, "portfolio_context",
+    patch_engine(monkeypatch, "portfolio_context",
                         lambda watchlist, db, currency="EUR": "NVDA 10 shares")
     ctx = Context(watchlist=tmp_path / "watchlist.yaml")
     assert _run("portfolio_snapshot", {}, ctx) == "NVDA 10 shares"
 
 
 def test_portfolio_snapshot_survives_an_unreadable_book(monkeypatch, tmp_path):
-    from stocks.chat import engine
 
     def boom(watchlist, db, currency="EUR"):
         raise ValueError("corrupt yaml")
 
-    monkeypatch.setattr(engine, "portfolio_context", boom)
+    patch_engine(monkeypatch, "portfolio_context", boom)
     got = _run("portfolio_snapshot", {}, Context(watchlist=tmp_path / "w.yaml"))
     assert "could not be read" in got
 
 
 def test_a_missing_price_cache_is_still_a_snapshot(monkeypatch, tmp_path):
-    from stocks.chat import engine
 
     seen = {}
 
@@ -279,7 +274,7 @@ def test_a_missing_price_cache_is_still_a_snapshot(monkeypatch, tmp_path):
         seen["db"] = db
         return "the book"
 
-    monkeypatch.setattr(engine, "portfolio_context", spy)
+    patch_engine(monkeypatch, "portfolio_context", spy)
     _run("portfolio_snapshot", {}, Context(watchlist=tmp_path / "w.yaml"))
     # engine.portfolio_context falls back to the watchlist's own figures when
     # the cache path does not exist, so "no cache" is a path, not a None.
@@ -439,10 +434,10 @@ def test_rebalance_needs_a_target(tmp_path):
 
 
 def test_allocation_reads_an_unknown_split_as_by_position(monkeypatch, tmp_path):
-    from stocks.chat import allocation, engine
+    from stocks.chat import allocation
 
     seen = {}
-    monkeypatch.setattr(engine, "enriched_frame", lambda db, base="EUR": "tbl")
+    patch_engine(monkeypatch, "enriched_frame", lambda db, base="EUR": "tbl")
     monkeypatch.setattr(allocation, "build",
                         lambda tbl, by, cur: seen.update(by=by) or _Found("mix"))
     assert _run("allocation", {"by": "planet"}, _book(tmp_path)) == "mix"

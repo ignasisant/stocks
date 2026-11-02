@@ -1,9 +1,8 @@
 /**
  * The one way the app tells somebody what just happened.
  *
- * Import, the assistant's actions, bank links and the settings all used to
- * draw their own line and time it their own way. Every transient notice now
- * goes through here, on sonner, mounted once by `ui/Toaster.tsx`. A caller
+ * Every transient notice — import, the assistant's actions, bank links, the
+ * settings — goes through here, on sonner, mounted once by `ui/Toaster.tsx`. A caller
  * never imports sonner: the wrapper is where the defaults live (how long, how
  * it is dismissed, what motion it makes), so they change in one place.
  *

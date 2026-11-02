@@ -113,8 +113,7 @@ let warmUntil = 0;
 /**
  * The definition marker beside a label.
  *
- * It used to ride a native `title`, which a phone cannot show: no hover, so
- * the definition behind every tile was simply unreachable. It is a button now
+ * A button, not a native `title`, which a phone cannot show (no hover)
  * — a tap opens the text under the mark, a tap anywhere else or Escape puts it
  * away (`useTouchHold` is the same "touch elsewhere" dismissal the charts
  * use), and a mouse still gets it on hover or keyboard focus. Hover waits

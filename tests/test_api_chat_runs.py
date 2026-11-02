@@ -26,8 +26,8 @@ import time
 import pytest
 
 from stocks.api import runs
-from stocks.chat import engine
 from stocks.web import auth
+from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
     EMAIL,
@@ -206,7 +206,7 @@ def test_a_refusal_nobody_saw_is_shown_once(
 ):
     """A refused turn stores nothing, so the thread alone would just have lost
     the question: the run stays on it until the reader has seen it end."""
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [])
     cid = fresh_thread(signed_in)
     signed_in.post("/v1/chat/runs", json=run("hola", thread=cid))
     assert ended(account).failed

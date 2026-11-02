@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from stocks.analysis.sectors import SECTORS, SectorScan
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -58,7 +59,7 @@ def scan() -> SectorScan:
 
 @pytest.fixture
 def scanned(monkeypatch):
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {TECH: scan()})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {TECH: scan()})
 
 
 def test_every_sector_is_listed_even_the_unscanned_ones(client, scanned):
@@ -135,7 +136,7 @@ def test_an_unscanned_sector_still_answers_with_the_table_it_would_draw(
 ):
     """The metric catalog is not a property of the scan: a client can build the
     columns and the sort control before any cohort exists."""
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
     payload = client.get(f"/v1/sectors/{TECH}", headers=AUTH).json()
     assert payload["rows"] == [] and payload["as_of"] is None
     assert "roic" in payload["metric_keys"]

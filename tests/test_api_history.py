@@ -32,6 +32,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.api.routes.portfolio import _ledger_csv
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -79,7 +80,7 @@ def book(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
 
     def write(transactions, prefs: dict | None = None):
         paths.prefs.write_text(json.dumps(prefs or {"currency": "EUR"}))
@@ -131,7 +132,7 @@ def priced(monkeypatch):
 
     def use(prices: dict[str, float]) -> None:
         series = closes(prices)
-        monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: series)
+        patch_loaders(monkeypatch, "held_closes", lambda db, mtime: series)
 
     return use
 
@@ -348,7 +349,7 @@ def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
     # off at *every* fill is another instrument, rejected before any return.)
     series = closes({"AAPL": 100.0})
     series["AAPL"] = series["AAPL"].where(series["AAPL"].index < "2024-01-04", 1.0)
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: series)
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: series)
 
     payload = get(client)
     assert payload["dropped_days"] == ["2024-01-04"]
@@ -507,13 +508,13 @@ def test_a_refused_download_reads_what_the_live_pass_missed_off_the_kept_frames(
     def refused(db, mtime):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "held_closes", refused)
+    patch_loaders(monkeypatch, "held_closes", refused)
     monkeypatch.setattr(
         analysis, "market_values",
         lambda positions, base="EUR", **k: {"AAPL": 15 * 7.0},
     )
     kept = download({"MSFT": 150.0, "X0": 50.0, "X1": 50.0})(["MSFT", "X0", "X1"])
-    monkeypatch.setattr(loaders, "_stored_base", lambda db: (START, kept, 0.0))
+    patch_loaders(monkeypatch, "_stored_base", lambda db: (START, kept, 0.0))
     loaders._self_priced_positions.cache_clear()
     summary = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
     assert summary["stale"] == ["MSFT", "X0", "X1"]
@@ -531,7 +532,7 @@ def test_a_new_download_moves_the_tile_and_the_history_together(
     the old price. Both are keyed on the download now, never on a clock."""
     book(trades())
     current = {"series": closes({"AAPL": 120.0})}
-    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: current["series"])
+    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: current["series"])
 
     def values() -> tuple[float, float]:
         s = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()

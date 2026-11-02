@@ -1,9 +1,9 @@
 /**
  * The last answer each screen opened with, kept on this device between visits.
  *
- * Arriving at the app used to mean a blank card for as long as the server took
- * to price the book — tens of seconds on a cold instance, a minute when Yahoo
- * throttled it. The reader has seen these figures before; showing them again
+ * Without it, arriving at the app means a blank card for as long as the
+ * server takes to price the book — tens of seconds on a cold instance, a minute
+ * when Yahoo throttles it. The reader has seen these figures before; showing them again
  * at once, and swapping in the live ones when they land, is what this is for.
  * `shell/api` writes every answer a screen opens with here, and `useApi` reads
  * them back for the first paint of the next visit (`fromKept`).

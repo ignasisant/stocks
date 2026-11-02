@@ -489,7 +489,8 @@ def _plan(investor, tbl, entries, rules, ccy: str, day: date) -> list:
             today=day,
         )
     except Exception as exc:  # noqa: BLE001
-        obs.warn("daily_action.plan_unavailable", error_type=type(exc).__name__)
+        obs.warn("daily_action.plan_unavailable", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
         return []
 
 

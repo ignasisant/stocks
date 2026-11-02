@@ -1,4 +1,4 @@
-"""Remembered BYOK keys (chat/engine.py's byok helpers).
+"""Remembered BYOK keys (chat/engine/providers.py).
 
 The window is sliding: reading a live key pushes its expiry out, reading any
 prefs at all deletes the keys that already died. Both halves matter — the
@@ -17,6 +17,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from stocks.chat import engine
+from tests.patching import patch_engine
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +88,7 @@ def test_forget_wipes_every_field():
 
 def test_no_secret_means_no_key_is_stored(monkeypatch):
     monkeypatch.delenv("CHAT_ENC_KEY")
-    monkeypatch.setattr(engine, "secret", lambda *a, **k: "")
+    patch_engine(monkeypatch, "secret", lambda *a, **k: "")
     prefs: dict = {}
     assert engine.save_byok(prefs, "anthropic", "sk-user") is False
     assert prefs == {}

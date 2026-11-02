@@ -23,6 +23,7 @@ from stocks.connector import oauth, store, tools
 from stocks.connector.server import Door
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_engine, patch_loaders
 
 ORIGIN = "https://testserver"
 EMAIL = "holder@example.com"
@@ -44,9 +45,9 @@ def site(monkeypatch):
 @pytest.fixture(autouse=True)
 def _offline_prices(monkeypatch):
     """Nothing below a tool may reach Yahoo from a test."""
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {})
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ def book(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     for fn in vars(loaders).values():
         if callable(fn) and hasattr(fn, "cache_clear"):
             fn.cache_clear()
@@ -182,7 +183,7 @@ def test_the_overview_puts_priced_holdings_first(site, token, monkeypatch):
         },
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     data = ok(call(site, token, "portfolio_overview"))
     assert data["kind"] == "overview"
     assert data["summary"]["base"] == "EUR"
@@ -336,9 +337,8 @@ def test_a_ticker_names_the_framework_the_chat_would_read_it_through(
 ):
     from types import SimpleNamespace
 
-    from stocks.api import loaders
 
-    monkeypatch.setattr(loaders, "fundamentals", lambda code: SimpleNamespace(info=info))
+    patch_loaders(monkeypatch, "fundamentals", lambda code: SimpleNamespace(info=info))
     assert tools._skill_for("X") == skill
 
 
@@ -629,7 +629,7 @@ def test_the_grifols_move_is_found_and_its_fix_applied_in_two_calls(
     """The case behind all this: one broker's sale under the ISIN, the
     other's buy under the symbol, read as a 398 EUR gain that never was."""
     ledger.add_many(GRIFOLS, book.db)
-    monkeypatch.setattr(loaders, "display_symbol", {"ES0171996087": "GRF.MC"}.get)
+    patch_loaders(monkeypatch, "display_symbol", {"ES0171996087": "GRF.MC"}.get)
     [finding] = ok(call(site, editor, "check_book"))["findings"]
     assert finding["kind"] == "transfer"
     plan = ok(call(site, editor, "apply_fix", key=finding["key"]))
@@ -913,10 +913,10 @@ def test_the_book_against_the_index_is_cut_to_its_end_and_a_path():
 
 
 def test_harvest_and_rebalance_run_the_chats_engines(site, token, monkeypatch):
-    from stocks.chat import engine, rebalance
+    from stocks.chat import rebalance
     from stocks.chat.rebalance import Reweigh
 
-    monkeypatch.setattr(engine, "enriched_frame", lambda db, base="EUR": pd.DataFrame())
+    patch_engine(monkeypatch, "enriched_frame", lambda db, base="EUR": pd.DataFrame())
     none = call(site, token, "harvest_losses")
     assert none["isError"] is True and "No open positions" in result_text(none)
 

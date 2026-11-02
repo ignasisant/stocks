@@ -51,7 +51,7 @@ let memoNext = false;
  * memo hands one request to every screen that asks for it, and one of them
  * closing must not cancel it under the others. A `get` made outside any scope
  * — a click handler, the shell's own reads — pins its flight, which then runs
- * to the end as every request used to.
+ * to the end.
  *
  * The last waiter leaving is acted on a tick later, not at once: React's
  * StrictMode unmounts and remounts every effect straight away, and the

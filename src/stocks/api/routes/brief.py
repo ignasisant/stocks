@@ -4,7 +4,7 @@ The brief is what the card tells this reader every morning, in their own
 words, one line per thing ("what moved in my book", "this week's events",
 "my companies' insiders", "review my kill criteria"). The card answers it
 line by line, a section each, in place of the default sections
-(`chat/daily.py`).
+(`chat/daily/`).
 
 It is kept as a memory of kind "routine" (`chat/learnings.py`), so the chat
 files one when asked ("cada mañana dime…") and the memory screen lists it.

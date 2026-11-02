@@ -16,7 +16,8 @@ from datetime import date, datetime
 import pandas as pd
 import pytest
 
-from stocks.chat import daily, engine, signals
+from stocks.chat import daily, signals
+from tests.patching import patch_engine
 
 
 @dataclass
@@ -44,9 +45,9 @@ class FakeProvider:
 @pytest.fixture(autouse=True)
 def free_pot(monkeypatch, tmp_path):
     """Isolate the process-wide free pot — generation spends it for real."""
-    monkeypatch.setattr(engine, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
-    monkeypatch.setattr(engine, "_global_free_loaded", True)
+    patch_engine(monkeypatch, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free_loaded", True)
 
 
 @pytest.fixture

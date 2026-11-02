@@ -322,7 +322,7 @@ def _us_home_by_name(row: dict, fallback: str) -> str:
 # the code family Revolut uses, then on the other euro venues Yahoo ranks.
 #
 # Asked only for a code Yahoo has just said it does not quote bare
-# (stocks.api.routes.import_statement._Lookup), and only a row whose symbol is
+# (stocks.api.routes.import_statement.lookups._Lookup), and only a row whose symbol is
 # the code plus a suffix counts: "SIE" never lands on Siemens Energy (ENR.DE),
 # which the same search ranks first.
 #

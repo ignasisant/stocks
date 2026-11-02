@@ -263,7 +263,7 @@ matter most and phrases them:
 | `low_52w` | a watchlist name (not held) within 3% of its 52-week low |
 
 - **One briefing a day.** It turns over at 09:00 in your own timezone
-  ([`chat/daily.py`](src/stocks/chat/daily.py) `action_day`); before that the
+  ([`chat/daily/card.py`](src/stocks/chat/daily/card.py) `action_day`); before that the
   previous day's card stands, stamped with its date. The card is stored per
   account (`daily_action.json`, mirrored to the bucket like every other user
   file), so reruns, reloads and container restarts re-read it instead of
@@ -721,7 +721,7 @@ src/stocks/
   portfolio/dividends.py    dividend income + foreign withholding (EUR)
   analysis/indicators  SMA, EMA, RSI, returns
   analysis/fundamentals.py  KPI computation + KPI_SOURCES source-of-truth map
-  analysis/portfolio.py     allocation, concentration, vol/beta/drawdown, corr
+  analysis/portfolio/       allocation, concentration, vol/beta/drawdown, corr
   analysis/screener.py      cross-sectional KPI rank/filter over a set of tickers
   analysis/sectors.py       per-sector cohorts (ETF basket + vetted non-US names)
   notify/alerts.py     evaluate alerts vs price history (price/RSI/drawdown/cross/52w)
@@ -735,7 +735,7 @@ src/stocks/
   web/auth.py          per-account data files: prefs, chat book, watchlist
   web/onboarding.py    guided tour + per-release "what's new" (one step registry)
   web/llm.py           multi-provider LLM registry (Claude/ChatGPT/Gemini), streaming + error map
-  chat/engine.py       portfolio-aware assistant: context + BYOK key + conversation
+  chat/engine/         portfolio-aware assistant: context + BYOK key + conversation
   api/                 the HTTP API every app page reads and writes through
   cli.py               `stocks` command
 frontend/app/              the React shell: one page per route, the chat drawer
@@ -899,7 +899,7 @@ a different piece of work.
 
 Two things about how it serves, by design:
 
-- **A TTL memo keyed on the file.** The loaders in `stocks/api/loaders.py`
+- **A TTL memo keyed on the file.** The loaders in `stocks/api/loaders/`
   cache through `api/cache.py` on `(db path, ledger mtime, base currency)`, so
   an import invalidates a book the moment the file changes.
 - **No app cookie.** `/api/*` is exempt from `ts_app` and from the canonical-host
@@ -916,11 +916,11 @@ A third seam came out of the same work: `stocks.identity` resolves a stored
 broker label to the symbol it stands for, finds a company name for it and
 locates its logo. The ledger keeps what the broker wrote — an ISIN, a local
 Revolut code — because that string is the audit trail; every screen prints what
-it resolves to, and `api/loaders.py` caches it on the TTL memo.
+it resolves to, and `api/loaders/names.py` caches it on the TTL memo.
 
 Shared arithmetic lives in the domain, not in a caller:
 `analysis.portfolio.book_history` computes injected-vs-value, the flow-adjusted
-TWR and the list of names it could not price, and `api/loaders.py` calls it.
+TWR and the list of names it could not price, and `api/loaders/book.py` calls it.
 `stocks.search` owns which search tier answers first and how the tiers dedup,
 and the CLI, the chat and `/api/v1/search` all read it. When a number or a
 ranking needs changing it changes once.

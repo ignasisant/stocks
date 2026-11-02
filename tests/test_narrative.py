@@ -12,6 +12,7 @@ from stocks.chat import engine
 from stocks.notify import narrative
 from stocks.notify.alerts import AlertHit
 from stocks.notify.digest import DigestData
+from tests.patching import patch_engine
 
 
 @dataclass
@@ -37,9 +38,9 @@ class FakeProvider:
 @pytest.fixture(autouse=True)
 def free_pot(monkeypatch, tmp_path):
     """Isolate the process-wide free pot — these jobs now spend it for real."""
-    monkeypatch.setattr(engine, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
-    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
-    monkeypatch.setattr(engine, "_global_free_loaded", True)
+    patch_engine(monkeypatch, "GLOBAL_FREE_FILE", tmp_path / "free_llm_global.json")
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
+    patch_engine(monkeypatch, "_global_free_loaded", True)
 
 
 def data() -> DigestData:
@@ -126,7 +127,7 @@ def test_wrong_enc_key_falls_to_free(providers, enc, monkeypatch):
 def test_free_attempt_spends_the_global_pot(providers, monkeypatch):
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "1")
     assert narrative.highlight(data(), {}, "en") == "Free line."
-    assert engine._global_free["used"] == 1
+    assert engine.quota._global_free["used"] == 1
     # Pot empty: the next digest ships computed-only instead of draining the
     # operator's shared keys.
     assert narrative.highlight(data(), {}, "en") is None
@@ -137,7 +138,7 @@ def test_byok_never_touches_the_pot(providers, enc, monkeypatch):
     monkeypatch.setenv("FREE_LLM_GLOBAL_DAILY_CAP", "0")
     prefs = {"llm_provider": "anthropic", **enc("anthropic")}
     assert narrative.highlight(data(), prefs, "en") == "BYOK line."
-    assert engine._global_free["used"] == 0  # the user's own billing
+    assert engine.quota._global_free["used"] == 0  # the user's own billing
 
 
 # ---------------------------------------------------------- anti-repetition

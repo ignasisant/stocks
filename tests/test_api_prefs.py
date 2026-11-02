@@ -21,8 +21,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -62,7 +62,7 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     # Nothing in a test should reach the bucket.
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
     return paths

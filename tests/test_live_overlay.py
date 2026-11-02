@@ -14,6 +14,7 @@ import pytest
 
 from stocks.analysis.portfolio import _snapshot
 from stocks.api import loaders
+from tests.patching import patch_loaders
 
 
 def _closes(**last: float) -> dict[str, pd.Series]:
@@ -38,7 +39,7 @@ def live(monkeypatch):
             if t in tickers
         }
 
-    monkeypatch.setattr(loaders, "quotes", quotes)
+    patch_loaders(monkeypatch, "quotes", quotes)
     loaders._READINGS.clear()
     yield snaps, asks
     loaders._READINGS.clear()
@@ -93,7 +94,7 @@ def test_quotes_failing_is_the_bars_as_they_were(monkeypatch):
     def boom(tickers):
         raise RuntimeError("yahoo down")
 
-    monkeypatch.setattr(loaders, "quotes", boom)
+    patch_loaders(monkeypatch, "quotes", boom)
     closes = _closes(AAPL=100.0)
     assert loaders._overlay_live(closes, ("db", "Close")) is closes
 
@@ -131,9 +132,9 @@ def test_held_closes_hand_the_same_object_until_something_moves(live, monkeypatc
     days = pd.DatetimeIndex(["2026-10-08", "2026-10-09"], name="Date")
     bars = {"Close": [99.0, 100.0], "Adj Close": [98.0, 99.0]}
     frames = {"AAPL": pd.DataFrame(bars, index=days)}
-    monkeypatch.setattr(loaders, "_held", lambda db: ([], ["AAPL"]))
-    monkeypatch.setattr(loaders, "_held_frames", lambda db, mtime: frames)
-    monkeypatch.setattr(loaders, "plausible_closes", lambda closes, txs: closes)
+    patch_loaders(monkeypatch, "_held", lambda db: ([], ["AAPL"]))
+    patch_loaders(monkeypatch, "_held_frames", lambda db, mtime: frames)
+    patch_loaders(monkeypatch, "plausible_closes", lambda closes, txs: closes)
     compute = loaders.held_closes.__wrapped__
     snaps["AAPL"] = (101.0, "2026-10-12")
     first = compute("book.db", 1.0)

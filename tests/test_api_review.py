@@ -23,6 +23,7 @@ from stocks.api.routes import review as route
 from stocks.chat import whatif
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -85,8 +86,8 @@ def _offline(monkeypatch):
     monkeypatch.setattr(route, "_metrics", lambda symbol: METRICS.get(symbol))
     monkeypatch.setattr(route, "_kind", lambda symbol: KINDS.get(symbol, "stock"))
     monkeypatch.setattr(route.profiles, "known", lambda symbol: PROFILES.get(symbol))
-    monkeypatch.setattr(loaders, "display_symbol", lambda ticker: ticker)
-    monkeypatch.setattr(loaders, "basket_report_since", lambda *a, **k: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda ticker: ticker)
+    patch_loaders(monkeypatch, "basket_report_since", lambda *a, **k: None)
     monkeypatch.setattr(whatif, "_price", lambda ticker: (150.0, "EUR"))
 
 
@@ -104,7 +105,7 @@ def book(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     paths.prefs.write_text(json.dumps({"currency": "EUR", "tax_residence": "ES"}))
     ledger.add_many(
         [
@@ -126,7 +127,7 @@ def book(monkeypatch, tmp_path):
         },
         index=pd.Index(["AMD", "XEON.DE", "ADBE"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     return paths
 
 
@@ -176,9 +177,9 @@ def test_a_sale_carries_its_money_and_its_tax(client, book):
 
 def test_a_held_share_is_priced_in_the_currency_it_trades_in(client, book, monkeypatch):
     table = loaders.positions_table().assign(ccy=["USD", "EUR", "EUR"])
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    monkeypatch.setattr(
-        loaders, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5, "EUR": 1.0}
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(
+        monkeypatch, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5, "EUR": 1.0}
     )
     body = _get(client, add="bkng")
     rows = {r["ticker"]: r for r in body["held"] + body["candidates"]}
@@ -248,8 +249,8 @@ def test_add_refuses_what_is_not_a_ticker(client, book):
 
 
 def test_an_empty_book_still_answers_its_watchlist(client, book, monkeypatch):
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
-    monkeypatch.setattr(loaders, "ledger_state", lambda *a, **k: ([], [], []))
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
+    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: ([], [], []))
     body = _get(client)
     assert body["held"] == [] and body["total"] is None
     assert {r["ticker"] for r in body["candidates"]} == {"AMD", "BKNG", "SNAP"}
@@ -304,7 +305,7 @@ def test_a_plan_that_moves_nothing_is_advice_to_stay(client, book, monkeypatch):
         index=pd.Index(["ADBE", "BKNG"], name="ticker"),
     )
     current = {"table": still}
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: current["table"])
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: current["table"])
     body = _get(client)
     assert (body["plan"]["sells"], body["plan"]["buys"]) == (0, 0)
     # (BKNG is outside too: the ledger, not the priced table, says what is held.)
@@ -333,7 +334,7 @@ def test_an_add_the_sales_cannot_pay_for_waits_for_new_money(
         },
         index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     body = _get(client)
     adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
     assert adbe["verdict"] == "hold" and adbe["reasons"][0] == "needs_new_money"
@@ -379,7 +380,7 @@ def test_a_sale_the_page_proposed_holds_to_the_plain_line(client, book, monkeypa
         },
         index=pd.Index(["AMD", "XEON.DE", "ADBE"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     amd = next(r for r in _get(client)["held"] if r["ticker"] == "AMD")
     assert amd["verdict"] == "hold" and amd["reasons"][0] == "close_call"
     journal.record(
@@ -422,7 +423,7 @@ def test_a_book_of_one_or_two_companies_is_told_so(client, book, monkeypatch):
         },
         index=pd.Index(["ADBE", "BKNG"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     body = _get(client)
     [note] = [n for n in body["notes"] if n["key"] == "few_names"]
     assert note["count"] == 2
@@ -446,7 +447,7 @@ def test_a_concentration_cut_dear_in_tax_is_staged(client, book, monkeypatch):
         },
         index=pd.Index(["AMD", "XEON.DE", "ADBE", "BKNG"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     held = {r["ticker"]: r for r in _get(client)["held"]}
     bkng = held["BKNG"]
     assert bkng["verdict"] == "trim"
@@ -481,7 +482,7 @@ def test_open_losses_that_would_cut_the_plans_tax_are_named(client, book, monkey
         },
         index=pd.Index(["AMD", "XEON.DE", "ADBE", "BKNG", "INTC"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     body = _get(client)
     held = {r["ticker"]: r for r in body["held"]}
     assert held["INTC"]["verdict"] == "unrated"
@@ -504,7 +505,7 @@ def test_no_sale_in_the_plan_means_no_offset_note(client, book, monkeypatch):
         },
         index=pd.Index(["XEON.DE", "INTC"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     assert "tax_offset" not in [n["key"] for n in _get(client)["notes"]]
 
 
@@ -575,7 +576,7 @@ def _us_book(monkeypatch):
         },
         index=pd.Index(["AMD", "ADBE", "BKNG"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
 
 
 def test_a_book_quoted_in_dollars_for_a_euro_reader_is_named(client, book, monkeypatch):
@@ -925,7 +926,7 @@ def test_new_money_is_sized_to_the_plans_contribution(client, book, monkeypatch)
         },
         index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     _plan(book, contribution={"amount": 100, "every": "monthly", "day": 1})
     body = _get(client)
     adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
@@ -949,7 +950,7 @@ def test_stated_cash_joins_the_contribution_and_the_cash_bucket(
         },
         index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
     # 3% in companies against a 50% target; 50 stated, 10 000 behind a cushion.
     _plan(book, mix={"targets": {"stocks": 50, "cash": 50}},
           contribution={"amount": 100, "every": "monthly", "day": 1},

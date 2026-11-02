@@ -30,11 +30,13 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _provider as _real_provider
+from stocks.data import fetch, fx, symbols
 from stocks.portfolio import demo, ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
 
 # The real one, held before the suite's conftest swaps `venue.pick` out.
 from stocks.portfolio.venue import pick as _real_pick
+from tests.patching import patch_import
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -89,20 +91,20 @@ def offline(monkeypatch, tmp_path):
     """No live lookup, no split lookup, no ISIN map and no diagnostics on disk:
     this file is about the HTTP surface, and the validation it borrows from the
     Import page asks Yahoo about every symbol it does not know."""
-    monkeypatch.setattr(
-        "stocks.api.routes.import_statement._ticker_exists", lambda t: True
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: True
     )
     monkeypatch.setattr(
-        "stocks.api.routes.import_statement.symbols.symbol_for_code",
+        "stocks.data.symbols.symbol_for_code",
         lambda *a, **k: None,
     )
     monkeypatch.setattr(
-        "stocks.api.routes.import_statement.symbols.symbol_for_isin",
+        "stocks.data.symbols.symbol_for_isin",
         lambda *a, **k: None,
     )
-    monkeypatch.setattr("stocks.api.routes.import_statement._exists_memo", {})
-    monkeypatch.setattr(
-        "stocks.api.routes.import_statement._charted", lambda ticker, budget: None
+    patch_import(monkeypatch, "_exists_memo", {})
+    patch_import(
+        monkeypatch, "_charted", lambda ticker, budget: None
     )
     monkeypatch.setattr("stocks.data.fetch.splits", lambda *a, **k: {})
     monkeypatch.setattr(
@@ -176,8 +178,8 @@ def test_why_a_row_was_flagged_reads_in_the_account_language(
     """The issue text is rendered on the server, where a language left
     unpassed falls back to English: a Spanish account read every warning of
     a Spanish-titled card in English."""
-    monkeypatch.setattr(
-        "stocks.api.routes.import_statement._ticker_exists", lambda t: None
+    patch_import(
+        monkeypatch, "_ticker_exists", lambda t: None
     )
     account.prefs.write_text(json.dumps({"currency": "EUR", "language": "es"}))
     odd = (
@@ -193,9 +195,8 @@ def test_a_file_no_parser_owns_is_answered_rather_than_failed(
 ):
     """An account with nothing to ask — no key, no free chain — still gets an
     answer: the parsers read, the model is simply never reached."""
-    from stocks.api.routes import import_statement
 
-    monkeypatch.setattr(import_statement, "_provider", _real_provider)
+    patch_import(monkeypatch, "_provider", _real_provider)
     monkeypatch.setattr(
         "stocks.chat.engine.attempts", lambda prefs, held=None: []
     )
@@ -298,12 +299,11 @@ def test_a_relabeled_batch_moves_the_books_rows_with_it(
 ):
     """Revolut's euro ALV previews as ALV.DE; committing it moves the Allianz
     the book already held under "ALV" too, so the two are one position."""
-    from stocks.api.routes import import_statement
     from stocks.portfolio import venue
 
     monkeypatch.setattr(venue, "pick", _real_pick)
     monkeypatch.setattr(
-        import_statement.symbols,
+        symbols,
         "listings_for_code",
         lambda code, currency, limit=6: ["ALV.DE"] if code == "ALV" else [],
     )
@@ -315,9 +315,9 @@ def test_a_relabeled_batch_moves_the_books_rows_with_it(
         ("ALV", "2025-03-03"): 95.0,
     }
     monkeypatch.setattr(
-        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+        fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
     )
-    monkeypatch.setattr(import_statement.fx, "rate_on", lambda day, base, quote: 0.92)
+    monkeypatch.setattr(fx, "rate_on", lambda day, base, quote: 0.92)
     ledger.add_many(
         [
             Transaction(
@@ -418,8 +418,8 @@ def mapper(monkeypatch):
 
     monkeypatch.setattr(llm_map, "map_columns", wrong)
     monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "stocks.api.routes.import_statement._provider",
+    patch_import(
+        monkeypatch, "_provider",
         lambda paths, held=None: (Backend(), "k"),
     )
     return asked

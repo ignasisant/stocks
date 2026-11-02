@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from stocks.web import csp, landing, landing_static, server
 from tests.csp_check import assert_enforced
+from tests.patching import patch_loaders
 
 
 @pytest.fixture(autouse=True)
@@ -112,7 +113,6 @@ def test_the_boot_block_is_data_and_changes_nothing_in_the_policy(
     import json
 
     from stocks import accounts
-    from stocks.api import loaders
 
     email = "reader@example.com"
     users = tmp_path / "users"
@@ -124,7 +124,7 @@ def test_the_boot_block_is_data_and_changes_nothing_in_the_policy(
         accounts, "paths_for", lambda e, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
 
     guest = client.get("/portfolio")

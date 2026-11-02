@@ -24,6 +24,7 @@ from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio.custody import Custody
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -44,7 +45,7 @@ def token(monkeypatch):
 def not_closed_end(monkeypatch):
     """Nothing here is a closed-end fund unless a test says so — the real
     check asks EDGAR, and these run offline."""
-    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: False)
+    patch_loaders(monkeypatch, "is_closed_end", lambda t, fetch=True: False)
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +73,7 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     return paths
 
 
@@ -99,7 +100,7 @@ def frame() -> pd.DataFrame:
 
 
 def test_bars_carry_the_series_a_chart_needs(client, monkeypatch):
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/aapl/bars", params={"range": "1y"}, headers=AUTH).json()
     assert body["ticker"] == "AAPL" and body["range"] == "1y"
     assert body["interval"] == "1d"
@@ -110,7 +111,7 @@ def test_bars_carry_the_series_a_chart_needs(client, monkeypatch):
 def test_an_indicators_warmup_is_null_not_zero(client, monkeypatch):
     """SMA50 has no value for its first 49 bars. Plotted as 0 it draws a cliff
     through the middle of the chart."""
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert body["series"]["SMA50"] == [None, None, None]
     assert body["series"]["SMA200"] == [None, None, None]
@@ -120,14 +121,14 @@ def test_an_indicators_warmup_is_null_not_zero(client, monkeypatch):
 def test_dividends_ride_with_the_bars(client, monkeypatch):
     """They come out of the history frame, so there is no second round trip and
     no way for the two to disagree."""
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert body["dividends"] == [0.0, 0.25, 0.0]
 
 
 def test_the_axis_breaks_come_with_the_bars(client, monkeypatch):
     """Without them a weekend renders as a flat gap in the candles."""
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert {"bounds": ["sat", "mon"]} in body["rangebreaks"]
 
@@ -135,7 +136,7 @@ def test_the_axis_breaks_come_with_the_bars(client, monkeypatch):
 def test_timestamps_carry_no_zone(client, monkeypatch):
     """Exchange-local wall time: stamping them UTC slides every session by its
     own offset, and the hour-based breaks stop lining up with the axis."""
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert not any(s.endswith("Z") or "+" in s for s in body["dates"])
 
@@ -145,21 +146,21 @@ def test_a_young_listing_is_offered_only_the_ranges_it_fills(client, monkeypatch
     a label that overstates it."""
     young = frame()
     young.attrs["first_trade"] = "2023-12-01"
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: young)
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: young)
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert body["listed"] == "2023-12-01"
     assert body["ranges"] == ["1d", "1w", "1m", "3m", "max"]
 
 
 def test_an_unknown_listing_date_offers_every_range(client, monkeypatch):
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", params={"range": "1y"}, headers=AUTH).json()
     assert body["listed"] is None
     assert body["ranges"][-1] == "max" and "5y" in body["ranges"]
 
 
 def test_max_is_a_range(client, monkeypatch):
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     params = {"range": "max"}
     body = client.get("/v1/ticker/AAPL/bars", params=params, headers=AUTH).json()
     assert body["range"] == "max" and body["listed"] == "2024-03-01"
@@ -174,7 +175,7 @@ def test_a_long_max_reports_the_bar_size_it_is_drawn_at(client, monkeypatch):
     close = pd.Series(range(1, len(index) + 1), index=index, dtype=float)
     long = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close,
                          "Volume": 1.0, "Dividends": 0.0})
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: shape(long, label))
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: shape(long, label))
     params = {"range": "max"}
     body = client.get("/v1/ticker/AAPL/bars", params=params, headers=AUTH).json()
     assert body["interval"] == "1wk" and body["rangebreaks"] == []
@@ -182,13 +183,13 @@ def test_a_long_max_reports_the_bar_size_it_is_drawn_at(client, monkeypatch):
 
 
 def test_a_range_nobody_defined_is_refused(client, monkeypatch):
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: frame())
     response = client.get("/v1/ticker/AAPL/bars", params={"range": "7y"}, headers=AUTH)
     assert response.status_code == 422
 
 
 def test_a_ticker_with_no_history_still_answers(client, monkeypatch):
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: pd.DataFrame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: pd.DataFrame())
     body = client.get("/v1/ticker/NOSUCH/bars", headers=AUTH).json()
     assert body["dates"] == [] and body["series"] == {}
 
@@ -209,14 +210,14 @@ def _ohlc(close: pd.Series) -> pd.DataFrame:
 
 def test_trend_reads_against_the_home_index(client, monkeypatch):
     asked: list[tuple[str, str]] = []
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
-    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(400, 0.002)))
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "stock")
+    patch_loaders(monkeypatch, "daily_bars", lambda t: _ohlc(_rising(400, 0.002)))
 
     def closes(t, period="max"):
         asked.append((t, period))
         return _rising(400, 0.0005)
 
-    monkeypatch.setattr(loaders, "daily_closes", closes)
+    patch_loaders(monkeypatch, "daily_closes", closes)
     body = client.get("/v1/ticker/san.mc/trend", headers=AUTH).json()
     assert asked == [("^IBEX", "2y")]
     assert body["ticker"] == "SAN.MC"
@@ -227,41 +228,41 @@ def test_trend_reads_against_the_home_index(client, monkeypatch):
 
 
 def test_trend_on_a_german_floor_asks_the_company_country(client, monkeypatch):
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
-    monkeypatch.setattr(loaders, "listing_country", lambda t: "United States")
-    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(300)))
-    monkeypatch.setattr(loaders, "daily_closes", lambda t, period="max": _rising(300))
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "stock")
+    patch_loaders(monkeypatch, "listing_country", lambda t: "United States")
+    patch_loaders(monkeypatch, "daily_bars", lambda t: _ohlc(_rising(300)))
+    patch_loaders(monkeypatch, "daily_closes", lambda t, period="max": _rising(300))
     assert client.get("/v1/ticker/APC.DE/trend", headers=AUTH).json()["bench"] == "^GSPC"
 
 
 def test_trend_for_a_coin_has_no_index(client, monkeypatch):
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "crypto")
-    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(300)))
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "crypto")
+    patch_loaders(monkeypatch, "daily_bars", lambda t: _ohlc(_rising(300)))
 
     def no_index(*a, **k):
         raise AssertionError("a coin pair has no home index")
 
-    monkeypatch.setattr(loaders, "daily_closes", no_index)
+    patch_loaders(monkeypatch, "daily_closes", no_index)
     body = client.get("/v1/ticker/BTC-EUR/trend", headers=AUTH).json()
     assert body["bench"] is None and body["rs_6m"] is None
     assert body["state"] == "up"
 
 
 def test_trend_is_empty_for_a_money_market_fund(client, monkeypatch):
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "money_market")
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "money_market")
 
     def no_bars(t):
         raise AssertionError("a yield line has no trend to read")
 
-    monkeypatch.setattr(loaders, "daily_bars", no_bars)
+    patch_loaders(monkeypatch, "daily_bars", no_bars)
     body = client.get("/v1/ticker/XEON.DE/trend", headers=AUTH).json()
     assert body["state"] is None and body["price"] is None and body["sessions"] == 0
 
 
 def test_trend_with_short_history_is_null_not_zero(client, monkeypatch):
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
-    monkeypatch.setattr(loaders, "daily_bars", lambda t: _ohlc(_rising(60)))
-    monkeypatch.setattr(loaders, "daily_closes", lambda t, period="max": _rising(400))
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "stock")
+    patch_loaders(monkeypatch, "daily_bars", lambda t: _ohlc(_rising(60)))
+    patch_loaders(monkeypatch, "daily_closes", lambda t, period="max": _rising(400))
     body = client.get("/v1/ticker/NEWCO/trend", headers=AUTH).json()
     assert body["price"] is not None
     assert body["state"] is None and body["sma200"] is None and body["mom_12_1"] is None
@@ -322,8 +323,8 @@ def test_a_native_price_is_restated_only_when_a_base_is_asked_for(client, monkey
     )
     monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
     fetched = []
-    monkeypatch.setattr(
-        loaders, "fundamentals",
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda t: fetched.append(t) or type("F", (), {"info": {"currency": "KRW"}})(),
     )
     monkeypatch.setattr("stocks.data.fx.spot", lambda a, b: (0.00068, "2026-09-18"))
@@ -342,8 +343,8 @@ def test_a_native_price_is_restated_only_when_a_base_is_asked_for(client, monkey
     )
 
     # Already quoted in the reader's own money: nothing to restate.
-    monkeypatch.setattr(
-        loaders, "fundamentals",
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda t: type("F", (), {"info": {"currency": "USD"}})(),
     )
     same = client.get(
@@ -364,8 +365,8 @@ def test_a_quote_that_names_its_currency_needs_no_fundamentals(client, monkeypat
     )
     monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
     fetched = []
-    monkeypatch.setattr(
-        loaders, "fundamentals",
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda t: fetched.append(t) or type("F", (), {"info": {"currency": "USD"}})(),
     )
     monkeypatch.setattr("stocks.data.fx.spot", lambda a, b: (0.00068, "2026-09-18"))
@@ -391,8 +392,8 @@ def test_a_coin_pair_is_never_sent_to_fundamentals_for_its_currency(
     monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
     monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: True)
     fetched = []
-    monkeypatch.setattr(
-        loaders, "fundamentals", lambda t: fetched.append(t) or object()
+    patch_loaders(
+        monkeypatch, "fundamentals", lambda t: fetched.append(t) or object()
     )
     body = client.get(
         "/v1/ticker/BTC-EUR/quote", params={"base": "eur"}, headers=AUTH
@@ -418,7 +419,7 @@ class FakeResult:
 def test_reported_and_upcoming_dates_are_told_apart(client, monkeypatch):
     dates = [date(2024, 2, 1), date(2024, 5, 1)]
     results = [FakeResult(date(2024, 2, 1), 1.0, 1.2, 20.0)]
-    monkeypatch.setattr(loaders, "earnings", lambda t: (dates, results))
+    patch_loaders(monkeypatch, "earnings", lambda t: (dates, results))
     monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: False)
     monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: False)
 
@@ -432,7 +433,7 @@ def test_a_fund_is_not_asked_for_a_calendar(client, monkeypatch):
     """It pays distributions and never reports, so the round trip only ever
     comes back with "no earnings dates found"."""
     called = []
-    monkeypatch.setattr(loaders, "earnings", lambda t: called.append(t) or ([], []))
+    patch_loaders(monkeypatch, "earnings", lambda t: called.append(t) or ([], []))
     monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: False)
     monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: True)
 
@@ -444,10 +445,10 @@ def test_a_closed_end_fund_is_not_asked_either(client, monkeypatch):
     """Yahoo files MUA as an ordinary share, so `is_fund` says no; the
     closed-end verdict already on disk is what spares the round trip."""
     called = []
-    monkeypatch.setattr(loaders, "earnings", lambda t: called.append(t) or ([], []))
+    patch_loaders(monkeypatch, "earnings", lambda t: called.append(t) or ([], []))
     monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: False)
     monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: False)
-    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: t == "MUA")
+    patch_loaders(monkeypatch, "is_closed_end", lambda t, fetch=True: t == "MUA")
 
     assert client.get("/v1/ticker/MUA/events", headers=AUTH).json()["earnings"] == []
     assert called == []
@@ -455,7 +456,7 @@ def test_a_closed_end_fund_is_not_asked_either(client, monkeypatch):
 
 def test_a_coin_is_not_asked_either(client, monkeypatch):
     called = []
-    monkeypatch.setattr(loaders, "earnings", lambda t: called.append(t) or ([], []))
+    patch_loaders(monkeypatch, "earnings", lambda t: called.append(t) or ([], []))
     monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: True)
 
     assert client.get("/v1/ticker/BTC-EUR/events", headers=AUTH).json()["earnings"] == []
@@ -479,7 +480,7 @@ class FakePosition:
 
 def test_a_ticker_this_account_does_not_hold(client, account, monkeypatch):
     """"Not held" is a different answer from "held, worth nothing"."""
-    monkeypatch.setattr(loaders, "native_positions", lambda db, m: {})
+    patch_loaders(monkeypatch, "native_positions", lambda db, m: {})
     body = client.get(
         "/v1/ticker/AAPL/position", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -500,7 +501,7 @@ FILLS = (
 
 @pytest.fixture
 def ledger(monkeypatch):
-    monkeypatch.setattr(loaders, "ledger_state", lambda *a, **k: (list(FILLS), [], []))
+    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: (list(FILLS), [], []))
 
 
 def test_a_closed_position_still_reports_where_it_was_entered(
@@ -508,7 +509,7 @@ def test_a_closed_position_still_reports_where_it_was_entered(
 ):
     """The fills are the only part of a chart that was ever the reader's. A
     sold-out name keeps its markers."""
-    monkeypatch.setattr(loaders, "native_positions", lambda db, m: {})
+    patch_loaders(monkeypatch, "native_positions", lambda db, m: {})
     body = client.get(
         "/v1/ticker/AAPL/position", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -522,7 +523,7 @@ def test_a_closed_position_still_reports_where_it_was_entered(
 def test_fills_are_scaled_to_todays_shares(client, account, ledger, monkeypatch):
     """Ledger prices are as-traded, Yahoo's bars are split-adjusted. Raw, a
     pre-split buy plots twenty times above the candles it belongs on."""
-    monkeypatch.setattr(loaders, "native_positions", lambda db, m: {})
+    patch_loaders(monkeypatch, "native_positions", lambda db, m: {})
     monkeypatch.setattr(
         "stocks.portfolio.corporate.split_factors",
         lambda txs: {"AAPL": [("2024-02-01", 4.0)]},
@@ -559,19 +560,19 @@ def test_every_buy_and_sell_reaches_the_chart_across_brokers_and_spellings(
     the security — both sides, partial sells included, whichever broker booked
     it and however that broker spelled it — and keep sending them when the
     book's pricing pass fails: a 5xx there once took every marker with it."""
-    monkeypatch.setattr(
-        loaders, "ledger_state", lambda *a, **k: (list(TWO_BROKER_BOOK), [], [])
+    patch_loaders(
+        monkeypatch, "ledger_state", lambda *a, **k: (list(TWO_BROKER_BOOK), [], [])
     )
-    monkeypatch.setattr(
-        loaders, "native_positions",
+    patch_loaders(
+        monkeypatch, "native_positions",
         lambda db, m: {"ASML": FakePosition("ASML", 5.0, 3150.0, "EUR")},
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
+    patch_loaders(monkeypatch, "custody", lambda db, m: {})
 
     def throttled(*a, **k):
         raise RuntimeError("Too Many Requests")
 
-    monkeypatch.setattr(loaders, "positions_table", throttled)
+    patch_loaders(monkeypatch, "positions_table", throttled)
     monkeypatch.setattr(
         "stocks.portfolio.corporate.split_factors", lambda txs: {}
     )
@@ -596,19 +597,19 @@ def test_every_buy_and_sell_reaches_the_chart_across_brokers_and_spellings(
 def test_a_held_position_reports_native_cost_and_the_broker_split(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(
-        loaders, "native_positions",
+    patch_loaders(
+        monkeypatch, "native_positions",
         lambda db, m: {"AAPL": FakePosition("AAPL", 10.0, 1000.0, "USD")},
     )
-    monkeypatch.setattr(
-        loaders, "custody",
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, m: {"AAPL": {
             "Revolut": Custody("AAPL", "Revolut", 6.0, 600.0),
             "IBKR": Custody("AAPL", "IBKR", 4.0, 400.0),
         }},
     )
-    monkeypatch.setattr(
-        loaders, "positions_table",
+    patch_loaders(
+        monkeypatch, "positions_table",
         lambda db, m, base: pd.DataFrame(
             {"shares": [10.0], "ccy": ["USD"], "cost": [900.0], "value": [1200.0]},
             index=pd.Index(["AAPL"], name="ticker"),
@@ -631,19 +632,19 @@ def test_custody_marks_are_ready_to_draw_and_largest_first(
     """The header prints a brand mark per custodian, so the split travels
     resolved: a front end re-deriving key -> brand keeps its own copy of a
     table that changes when a broker is renamed."""
-    monkeypatch.setattr(
-        loaders, "native_positions",
+    patch_loaders(
+        monkeypatch, "native_positions",
         lambda db, m: {"AAPL": FakePosition("AAPL", 10.0, 1000.0, "USD")},
     )
-    monkeypatch.setattr(
-        loaders, "custody",
+    patch_loaders(
+        monkeypatch, "custody",
         lambda db, m: {"AAPL": {
             "manual": Custody("AAPL", "manual", 2.0, 200.0),
             "revolut": Custody("AAPL", "revolut", 8.0, 800.0),
         }},
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: pd.DataFrame())
-    monkeypatch.setattr(loaders, "brand_logo", lambda key: f"/logo/{key}.png")
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, base: pd.DataFrame())
+    patch_loaders(monkeypatch, "brand_logo", lambda key: f"/logo/{key}.png")
     marks = client.get(
         "/v1/ticker/AAPL/position", params={"account": EMAIL}, headers=AUTH
     ).json()["custody"]
@@ -666,7 +667,7 @@ def no_fetch(monkeypatch):
     that memo warm; the day the memo was cold the suite hung for fifteen
     minutes on a curl timeout, which is how this fixture came to exist.
     """
-    monkeypatch.setattr(loaders, "fundamentals", lambda ticker: object())
+    patch_loaders(monkeypatch, "fundamentals", lambda ticker: object())
 
 
 def test_the_grid_is_the_domain_s_nine_tiles_and_names_its_strings(
@@ -744,13 +745,13 @@ def test_an_unpriced_holding_keeps_its_shares_and_loses_only_its_value(
     client, account, monkeypatch
 ):
     """A throttled price pass must not turn a real position into a zero."""
-    monkeypatch.setattr(
-        loaders, "native_positions",
+    patch_loaders(
+        monkeypatch, "native_positions",
         lambda db, m: {"AAPL": FakePosition("AAPL", 10.0, 1000.0, "USD")},
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
-    monkeypatch.setattr(
-        loaders, "positions_table",
+    patch_loaders(monkeypatch, "custody", lambda db, m: {})
+    patch_loaders(
+        monkeypatch, "positions_table",
         lambda db, m, base: pd.DataFrame(
             {"shares": [10.0], "ccy": ["USD"], "cost": [900.0],
              "value": [float("nan")]},
@@ -772,9 +773,9 @@ def test_peers_are_suggestions_with_names_where_the_sec_map_has_them(
 ):
     from stocks.data import spark
 
-    monkeypatch.setattr(loaders, "peer_groups", lambda t: (("MSFT", "NOKIA.HE"), ()))
-    monkeypatch.setattr(
-        loaders, "sec_title", lambda t: "Microsoft Corp" if t == "MSFT" else None
+    patch_loaders(monkeypatch, "peer_groups", lambda t: (("MSFT", "NOKIA.HE"), ()))
+    patch_loaders(
+        monkeypatch, "sec_title", lambda t: "Microsoft Corp" if t == "MSFT" else None
     )
     monkeypatch.setattr(spark, "names", lambda symbols: {})
     body = client.get("/v1/ticker/AAPL/peers", headers=AUTH).json()
@@ -796,10 +797,10 @@ def test_a_peer_only_yahoo_names_is_named_in_one_request(client, monkeypatch):
         asked.append(list(symbols))
         return {"7974.T": "Nintendo Co., Ltd.", "8306.T": "Mitsubishi UFJ"}
 
-    monkeypatch.setattr(
-        loaders, "peer_groups", lambda t: (("7974.T",), ("8306.T", "ZZ.T"))
+    patch_loaders(
+        monkeypatch, "peer_groups", lambda t: (("7974.T",), ("8306.T", "ZZ.T"))
     )
-    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    patch_loaders(monkeypatch, "sec_title", lambda t: None)
     monkeypatch.setattr(profiles, "known", lambda t: None)
     monkeypatch.setattr(spark, "names", names)
     body = client.get("/v1/ticker/6758.T/peers", headers=AUTH).json()
@@ -817,14 +818,14 @@ def test_a_peer_only_yahoo_names_is_named_in_one_request(client, monkeypatch):
 
 def test_a_coin_is_never_suggested_as_a_comparable(client, monkeypatch):
     """The comps table ranks on KPIs a coin has none of."""
-    monkeypatch.setattr(loaders, "peer_groups", lambda t: ((), ("BTC-EUR", "MSFT")))
-    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    patch_loaders(monkeypatch, "peer_groups", lambda t: ((), ("BTC-EUR", "MSFT")))
+    patch_loaders(monkeypatch, "sec_title", lambda t: None)
     body = client.get("/v1/ticker/AAPL/peers", headers=AUTH).json()
     assert [p["ticker"] for p in body["related"]] == ["MSFT"]
 
 
 def test_no_suggestions_is_an_empty_list_not_a_failure(client, monkeypatch):
-    monkeypatch.setattr(loaders, "peer_groups", lambda t: ((), ()))
+    patch_loaders(monkeypatch, "peer_groups", lambda t: ((), ()))
     assert client.get("/v1/ticker/ZZQQ/peers", headers=AUTH).json()["related"] == []
 
 
@@ -836,9 +837,9 @@ def test_the_profile_prints_the_resolved_symbol_not_the_stored_label(
 ):
     """A holding the ledger keeps as an ISIN has to read as its ticker in the
     header. The ledger and every link keep the original string."""
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: "NOW")
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: "ServiceNow, Inc.")
-    monkeypatch.setattr(loaders, "logo", lambda t: "/app/static/logos/NOW.png")
+    patch_loaders(monkeypatch, "display_symbol", lambda t: "NOW")
+    patch_loaders(monkeypatch, "company_name", lambda t, w: "ServiceNow, Inc.")
+    patch_loaders(monkeypatch, "logo", lambda t: "/app/static/logos/NOW.png")
     body = client.get(
         "/v1/ticker/US81762P1021/profile", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -850,10 +851,10 @@ def test_the_profile_prints_the_resolved_symbol_not_the_stored_label(
 def test_a_name_no_source_knows_comes_back_empty_never_invented(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
-    monkeypatch.setattr(loaders, "listing_name", lambda t: None)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: None)
+    patch_loaders(monkeypatch, "listing_name", lambda t: None)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
     body = client.get(
         "/v1/ticker/ZZQQ/profile", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -868,9 +869,9 @@ def test_a_listing_only_yahoo_names_still_gets_its_name(
     from stocks.data import fetch, profiles
 
     monkeypatch.setattr(profiles, "known", lambda t: None)
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: None)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
     monkeypatch.setattr(
         fetch,
         "info",
@@ -889,9 +890,9 @@ def test_a_refused_name_lookup_leaves_the_header_on_its_symbol(
         raise RuntimeError("Too Many Requests")
 
     monkeypatch.setattr(profiles, "known", lambda t: None)
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: None)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
     monkeypatch.setattr(fetch, "info", refused)
     assert _profile(client, "2330.TW")["name"] == ""
 
@@ -903,10 +904,10 @@ def test_a_closed_end_fund_profiles_as_a_fund(client, account, monkeypatch):
 
     funds.remember("MUA", "EQUITY")
     funds.remember("AAPL", "EQUITY")
-    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: t == "MUA")
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: "BlackRock MuniAssets")
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "is_closed_end", lambda t, fetch=True: t == "MUA")
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: "BlackRock MuniAssets")
+    patch_loaders(monkeypatch, "logo", lambda t: None)
     fund = client.get(
         "/v1/ticker/MUA/profile", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -925,10 +926,10 @@ def _profile(client, ticker):
 
 @pytest.fixture
 def bare_header(monkeypatch):
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: "")
-    monkeypatch.setattr(loaders, "listing_name", lambda t: None)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: "")
+    patch_loaders(monkeypatch, "listing_name", lambda t: None)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
 
 
 def test_the_profile_says_what_kind_of_asset_the_page_is_about(
@@ -940,9 +941,8 @@ def test_the_profile_says_what_kind_of_asset_the_page_is_about(
     from stocks.data.funds import FundProfile
 
     funds.remember("XEON.DE", "ETF")
-    monkeypatch.setattr(
-        loaders,
-        "fund_profile",
+    patch_loaders(
+        monkeypatch, "fund_profile",
         lambda t: FundProfile(
             ticker=t,
             name="Xtrackers II EUR Overnight Rate Swap UCITS ETF 1C",
@@ -971,7 +971,7 @@ def test_a_symbol_yahoo_has_never_heard_of_is_not_found(
     client, account, bare_header, monkeypatch
 ):
     """What stops the page drawing a column of empty cards for a typo."""
-    monkeypatch.setattr(loaders, "listed", lambda t: False)
+    patch_loaders(monkeypatch, "listed", lambda t: False)
     body = _profile(client, "DIGITALOCE")
     assert (body["found"], body["asset"]) == (False, None)
 
@@ -981,7 +981,7 @@ def test_a_feed_that_could_not_tell_is_not_a_missing_company(
 ):
     """A throttled Yahoo answers None, and a real company must still get its
     page — only a sure "no" counts."""
-    monkeypatch.setattr(loaders, "listed", lambda t: None)
+    patch_loaders(monkeypatch, "listed", lambda t: None)
     assert _profile(client, "AAPL")["found"] is True
 
 
@@ -992,10 +992,10 @@ def test_a_name_or_a_row_in_the_book_keeps_an_unquoted_symbol_found(
     from stocks.portfolio import ledger
     from stocks.portfolio.ledger import Transaction
 
-    monkeypatch.setattr(loaders, "listed", lambda t: False)
+    patch_loaders(monkeypatch, "listed", lambda t: False)
     ledger.add(Transaction("2024-01-02", "GONE", "buy", 1, 10.0), path=account.db)
     assert _profile(client, "GONE")["found"] is True
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: "Named Corp")
+    patch_loaders(monkeypatch, "company_name", lambda t, w: "Named Corp")
     assert _profile(client, "NAMED")["found"] is True
 
 
@@ -1003,7 +1003,7 @@ def test_listed_needs_both_a_clean_empty_profile_and_no_bars(monkeypatch):
     from stocks.data import fetch
 
     monkeypatch.setattr(fetch, "info", lambda t: {"trailingPegRatio": None})
-    monkeypatch.setattr(loaders, "price_bars", lambda t, label: pd.DataFrame())
+    patch_loaders(monkeypatch, "price_bars", lambda t, label: pd.DataFrame())
     assert loaders.listed("ZZZZQQ") is False
 
     def throttled(t):
@@ -1019,19 +1019,18 @@ def test_the_profile_is_keyed_to_the_asking_account(client, account, monkeypatch
     """A name someone set by hand on their own list must not render for
     another account, so the watchlist path is an argument, not a lookup."""
     asked = []
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
-    monkeypatch.setattr(
-        loaders, "company_name", lambda t, w: asked.append(w) or "Apple"
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
+    patch_loaders(
+        monkeypatch, "company_name", lambda t, w: asked.append(w) or "Apple"
     )
     client.get("/v1/ticker/AAPL/profile", params={"account": EMAIL}, headers=AUTH)
     assert asked == [str(account.watchlist)]
 
 
 def test_a_coin_gets_asset_stats_instead_of_fundamentals(client, monkeypatch):
-    monkeypatch.setattr(
-        loaders,
-        "crypto_info",
+    patch_loaders(
+        monkeypatch, "crypto_info",
         lambda t: {
             "marketCap": 1.2e12,
             "volume24Hr": 3.4e10,
@@ -1067,10 +1066,9 @@ def test_fills_are_found_under_the_label_the_position_is_built_on(
     """A book fed by two brokers spells one holding two ways — DEGIRO books
     under the ISIN, IBKR under the symbol. Positions already unify them, so a
     chart keyed on the raw ledger shows no entry for a position you hold."""
-    monkeypatch.setattr(loaders, "native_positions", lambda db, m: {})
-    monkeypatch.setattr(
-        loaders,
-        "ledger_state",
+    patch_loaders(monkeypatch, "native_positions", lambda db, m: {})
+    patch_loaders(
+        monkeypatch, "ledger_state",
         lambda *a, **k: (
             [
                 Transaction(
@@ -1104,13 +1102,13 @@ def test_a_dollar_buy_charted_off_a_euro_listing_is_restated_onto_its_axis(
         Transaction("2025-11-13", "ASML", "buy", 1, 690.0, "USD", 0.0),
     ]
     rates = {"2024-10-24": 0.9, "2025-11-13": 0.86}
-    monkeypatch.setattr(loaders, "ledger_state", lambda *a, **k: (book, [], []))
-    monkeypatch.setattr(
-        loaders, "native_positions",
+    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: (book, [], []))
+    patch_loaders(
+        monkeypatch, "native_positions",
         lambda db, m: {"ASML": FakePosition("ASML", 3.0, 2130.0, "USD")},
     )
-    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: pd.DataFrame())
+    patch_loaders(monkeypatch, "custody", lambda db, m: {})
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, base: pd.DataFrame())
     monkeypatch.setattr("stocks.portfolio.corporate.split_factors", lambda txs: {})
     monkeypatch.setattr(
         "stocks.analysis.listing._lookup", lambda t: {"ASML": "EUR"}.get(t)
@@ -1145,9 +1143,9 @@ def test_a_bank_gets_the_bank_grid_with_its_rivals_middle(client, monkeypatch):
     scan = sectors.SectorScan("Financial Services", "2026-10-19",
                               tuple(r["ticker"] for r in rivals), tuple(rivals), {}, ())
     monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: bank)
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {scan.sector: scan})
-    monkeypatch.setattr(
-        loaders, "fundamentals",
+    patch_loaders(monkeypatch, "sector_scans", lambda: {scan.sector: scan})
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda ticker: SimpleNamespace(info={"sector": "Financial Services"}),
     )
     body = client.get("/v1/ticker/JPM/metrics", headers=AUTH).json()
@@ -1175,9 +1173,9 @@ def test_the_grid_carries_the_reviews_verdict_and_the_reported_pe(client, monkey
                 "pe_ttm_reported": 16.1, "pe_fwd": 20.8, "roic": 0.3,
                 "op_margin": 0.33, "fcf_yield": 0.02, "moat": 80.0}
     monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: alphabet)
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
-    monkeypatch.setattr(
-        loaders, "fundamentals",
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
+    patch_loaders(
+        monkeypatch, "fundamentals",
         lambda ticker: SimpleNamespace(info={"sector": "Communication Services"}),
     )
     body = client.get("/v1/ticker/GOOGL/metrics", headers=AUTH).json()

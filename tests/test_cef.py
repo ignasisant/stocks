@@ -21,9 +21,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data import cef
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -509,8 +509,8 @@ def client() -> TestClient:
 
 def test_the_fund_route_serves_a_closed_end_fund_with_its_sources(client, monkeypatch):
     nav = NAV | {"2026-08-31": 16.40}
-    monkeypatch.setattr(loaders, "fund_profile", lambda t: None)
-    monkeypatch.setattr(loaders, "closed_end", lambda t: _profile(nav_closes=nav))
+    patch_loaders(monkeypatch, "fund_profile", lambda t: None)
+    patch_loaders(monkeypatch, "closed_end", lambda t: _profile(nav_closes=nav))
     body = client.get("/v1/ticker/PDI/fund", headers=AUTH).json()
     assert body["is_fund"] is True
     assert body["quote_type"] == "CEF"
@@ -536,8 +536,8 @@ def test_an_empty_figure_crosses_the_wire_as_null_with_what_was_tried(
     empty = cef.build_profile(
         "NEA", {}, price_closes={}, nav_closes={}, facts=None, nport=None
     )
-    monkeypatch.setattr(loaders, "fund_profile", lambda t: None)
-    monkeypatch.setattr(loaders, "closed_end", lambda t: empty)
+    patch_loaders(monkeypatch, "fund_profile", lambda t: None)
+    patch_loaders(monkeypatch, "closed_end", lambda t: empty)
     ce = client.get("/v1/ticker/NEA/fund", headers=AUTH).json()["closed_end"]
     assert ce["nav"] == {
         "value": None,
@@ -549,8 +549,8 @@ def test_an_empty_figure_crosses_the_wire_as_null_with_what_was_tried(
 
 
 def test_a_company_is_still_not_a_fund(client, monkeypatch):
-    monkeypatch.setattr(loaders, "fund_profile", lambda t: None)
-    monkeypatch.setattr(loaders, "closed_end", lambda t: None)
+    patch_loaders(monkeypatch, "fund_profile", lambda t: None)
+    patch_loaders(monkeypatch, "closed_end", lambda t: None)
     body = client.get("/v1/ticker/AAPL/fund", headers=AUTH).json()
     assert body["is_fund"] is False
     assert body["closed_end"] is None

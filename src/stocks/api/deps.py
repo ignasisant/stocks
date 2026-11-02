@@ -152,9 +152,8 @@ def account(
     """FastAPI dependency: this request's account paths, or 4xx/503."""
     asked = _valid(email.strip().lower()) if email else None
 
-    # First, and deliberately first. This function used to end in a token
-    # fall-through, so anything that was not a session took the branch that
-    # reads `?account=` — which is the one branch a guest must never reach.
+    # First, deliberately: a guest must never reach the branch below that
+    # reads `?account=`, whatever else falls through.
     if caller.kind == "guest":
         if asked:
             # 403 for the same reason a session gets one below: 404 would

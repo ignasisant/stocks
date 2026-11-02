@@ -9,9 +9,8 @@
  * line, three things that need nothing switched on (look a ticker up, ask the
  * assistant, make the watchlist yours) as icon chips.
  *
- * No paragraph anywhere, on purpose. A walkthrough read before the reader has
- * done anything was the part they skipped — in the drawer, in the modal, in
- * the markdown card this replaced. The sections teach themselves (Import has
+ * No paragraph anywhere, on purpose: a walkthrough read before the reader has
+ * done anything is the part they skip. The sections teach themselves (Import has
  * its own stepper), so the card's only job is getting the reader there.
  *
  * Every state on screen is the server's. `/onboarding` derives both groups

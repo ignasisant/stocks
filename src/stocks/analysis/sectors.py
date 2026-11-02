@@ -80,7 +80,7 @@ class SectorScan:
     scores: dict[str, float]
     podium: tuple[str, ...]
     # Defaulted, unlike the fields above: existing call sites (tests,
-    # `SectorScan.from_dict` reading a scan taken before this existed)
+    # `SectorScan.from_dict` reading an older saved scan)
     # construct a scan with no idea these exist.
     tech_metrics: tuple[dict, ...] = ()
     tech_scores: dict[str, float] = field(default_factory=dict)

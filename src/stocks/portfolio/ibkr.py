@@ -157,7 +157,7 @@ _INSTRUMENT_ALIASES: dict[str, tuple[str, ...]] = {
 # reporting. Booked unqualified, that holding is priced off the ADR and read as
 # EUR — a silent ~15% on a position nothing in the numbers flags. US venues map
 # to no suffix because there the bare symbol is right, and a code not listed
-# here keeps the symbol as IBKR wrote it (the same as before this map existed).
+# here keeps the symbol as IBKR wrote it.
 _VENUE_SUFFIX: dict[str, str] = {
     "nasdaq": "", "nasdaq nms": "", "nyse": "", "arca": "", "amex": "",
     "bats": "", "iex": "", "pink": "", "value": "", "nyseam": "",

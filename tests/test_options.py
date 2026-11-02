@@ -18,6 +18,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.data import options as options_data
 from stocks.data.estimates import rating_changes
 from stocks.data.options import Chain, RawOptions, closed, pick_expiries, summarize
+from tests.patching import patch_loaders
 
 TODAY = date(2026, 10, 27)
 TOKEN = "s3cret-token"
@@ -185,7 +186,7 @@ def test_a_session_reading_past_its_keep_does_not_answer(monkeypatch):
         lambda t: RawOptions(100.0, [session_chain()], "REGULAR"),
     )
     loaders.options_view("AAPL")
-    monkeypatch.setattr(loaders, "_SESSION_KEEP_S", 0.0)
+    patch_loaders(monkeypatch, "_SESSION_KEEP_S", 0.0)
     monkeypatch.setattr(
         options_data,
         "fetch_chains",
@@ -298,9 +299,9 @@ def test_rating_changes_of_nothing_is_empty():
 def test_analysts_carry_the_changes_beside_the_consensus(client, monkeypatch):
     from stocks.data.estimates import RawEstimates
 
-    monkeypatch.setattr(loaders, "estimates", lambda t: RawEstimates(ticker=t))
-    monkeypatch.setattr(
-        loaders, "rating_changes", lambda t: rating_changes(sample_changes(), TODAY)
+    patch_loaders(monkeypatch, "estimates", lambda t: RawEstimates(ticker=t))
+    patch_loaders(
+        monkeypatch, "rating_changes", lambda t: rating_changes(sample_changes(), TODAY)
     )
     body = client.get("/v1/ticker/NVDA/analysts", headers=AUTH).json()
     assert [c["firm"] for c in body["changes"]][0] == "MoffettNathanson"
@@ -313,8 +314,8 @@ def test_a_refused_changes_call_leaves_the_card_whole(client, monkeypatch):
     def refused(t):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "estimates", lambda t: RawEstimates(ticker=t))
-    monkeypatch.setattr(loaders, "rating_changes", refused)
+    patch_loaders(monkeypatch, "estimates", lambda t: RawEstimates(ticker=t))
+    patch_loaders(monkeypatch, "rating_changes", refused)
     res = client.get("/v1/ticker/NVDA/analysts", headers=AUTH)
     assert res.status_code == 200 and res.json()["changes"] == []
 
@@ -331,7 +332,7 @@ def test_options_route_shapes_the_view_and_says_unlisted_for_the_rest(
         "open_interest": 986682,
         "expiries": 4,
     }
-    monkeypatch.setattr(loaders, "options_view", lambda t: view if t == "AAPL" else None)
+    patch_loaders(monkeypatch, "options_view", lambda t: view if t == "AAPL" else None)
     body = client.get("/v1/ticker/AAPL/options", headers=AUTH).json()
     assert body["listed"] is True and body["iv"] == 0.28 and body["put_call_oi"] == 0.88
     other = client.get("/v1/ticker/SAP.DE/options", headers=AUTH).json()
@@ -345,7 +346,7 @@ def test_a_throttled_options_call_is_a_503_not_a_verdict(client, monkeypatch):
     def refused(t):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "options_view", refused)
+    patch_loaders(monkeypatch, "options_view", refused)
     assert client.get("/v1/ticker/AAPL/options", headers=AUTH).status_code == 503
 
 

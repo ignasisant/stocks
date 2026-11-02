@@ -21,6 +21,7 @@ from starlette.testclient import TestClient
 
 from stocks import session
 from stocks.web import landing_static, server
+from tests.patching import patch_loaders
 
 STUB = "APP-SHELL"
 
@@ -1021,7 +1022,6 @@ def account(monkeypatch, tmp_path):
     import json
 
     from stocks import accounts
-    from stocks.api import loaders
 
     users = tmp_path / "users"
     paths = accounts.paths_for(EMAIL, None, users_dir=users)
@@ -1032,7 +1032,7 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
     return paths
 

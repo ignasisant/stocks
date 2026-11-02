@@ -24,6 +24,7 @@ from stocks.data.earnings import EarningsEvent, EarningsResult
 from stocks.portfolio import ledger
 from stocks.portfolio.dividends import EstimatedPayment
 from stocks.portfolio.ledger import Transaction
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -62,9 +63,9 @@ def _cold_caches():
 @pytest.fixture(autouse=True)
 def _no_dividends(monkeypatch):
     """A book that pays nothing, unless a test says otherwise — offline."""
-    monkeypatch.setattr(loaders, "dividend_payments", lambda db, mtime, base: [])
-    monkeypatch.setattr(loaders, "ex_dividends", lambda tickers: [])
-    monkeypatch.setattr(loaders, "dividend_histories", lambda tickers: {})
+    patch_loaders(monkeypatch, "dividend_payments", lambda db, mtime, base: [])
+    patch_loaders(monkeypatch, "ex_dividends", lambda tickers: [])
+    patch_loaders(monkeypatch, "dividend_histories", lambda tickers: {})
 
 
 # A dollar is 0.90 euro on every past day and 0.80 today, so a test can tell
@@ -108,7 +109,7 @@ def account(monkeypatch, tmp_path):
         accounts, "paths_for", lambda email, owner=None, users_dir=users: paths
     )
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     return paths
 
 
@@ -129,8 +130,8 @@ def calendar(monkeypatch):
         # Nothing to compare: a date, and no figures on either side of it.
         EarningsResult(ticker="AAPL", date=past),
     ]
-    monkeypatch.setattr(
-        loaders, "earnings_calendar", lambda tickers: (events, results)
+    patch_loaders(
+        monkeypatch, "earnings_calendar", lambda tickers: (events, results)
     )
     return events, results
 
@@ -154,7 +155,7 @@ def test_names_that_never_report_are_dropped_before_the_fetch(
         asked.append(tickers)
         return [], []
 
-    monkeypatch.setattr(loaders, "earnings_calendar", record)
+    patch_loaders(monkeypatch, "earnings_calendar", record)
     client.get("/v1/earnings", params={"account": EMAIL}, headers=AUTH)
     assert asked == [("AAPL", "MSFT")]
 
@@ -178,7 +179,7 @@ def test_a_position_nobody_followed_by_hand_still_reports(
         asked.append(tickers)
         return [], []
 
-    monkeypatch.setattr(loaders, "earnings_calendar", record)
+    patch_loaders(monkeypatch, "earnings_calendar", record)
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -249,9 +250,9 @@ def test_a_watchlist_of_nothing_but_coins_asks_yahoo_nothing(
 def test_a_list_of_tickers_gets_its_names_and_logos_in_one_call(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: f"{t} Inc")
-    monkeypatch.setattr(loaders, "logo", lambda t: f"/logo/{t}.png")
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: f"{t} Inc")
+    patch_loaders(monkeypatch, "logo", lambda t: f"/logo/{t}.png")
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
     payload = client.get(
         "/v1/market/profiles",
         params={"account": EMAIL, "tickers": "aapl,msft,aapl"},
@@ -267,9 +268,9 @@ def test_a_list_of_tickers_gets_its_names_and_logos_in_one_call(
 def test_a_name_nobody_knows_is_empty_rather_than_invented(
     client, account, monkeypatch
 ):
-    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
-    monkeypatch.setattr(loaders, "logo", lambda t: None)
-    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    patch_loaders(monkeypatch, "company_name", lambda t, w: None)
+    patch_loaders(monkeypatch, "logo", lambda t: None)
+    patch_loaders(monkeypatch, "display_symbol", lambda t: t)
     payload = client.get(
         "/v1/market/profiles",
         params={"account": EMAIL, "tickers": "ZZZZ"},
@@ -317,9 +318,8 @@ def test_an_unset_residence_gets_the_spanish_calendar(client, account, calendar)
 
 def test_a_past_ex_date_carries_the_shares_it_paid_on(client, account, monkeypatch):
     went_ex = (date.today() - timedelta(days=20)).isoformat()
-    monkeypatch.setattr(
-        loaders,
-        "dividend_payments",
+    patch_loaders(
+        monkeypatch, "dividend_payments",
         lambda db, mtime, base: [EstimatedPayment("MSFT", went_ex, 0.83, 5, "USD")],
     )
     payload = client.get(
@@ -352,7 +352,7 @@ def test_a_declared_ex_date_is_priced_on_todays_position(client, account, monkey
         asked.append(tickers)
         return [DividendEvent("MSFT", ahead, 9, 0.91, "USD")]
 
-    monkeypatch.setattr(loaders, "ex_dividends", declared)
+    patch_loaders(monkeypatch, "ex_dividends", declared)
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -380,9 +380,8 @@ def test_withholding_is_read_off_the_books_own_statements(client, account, monke
         ],
         path=account.db,
     )
-    monkeypatch.setattr(
-        loaders,
-        "ex_dividends",
+    patch_loaders(
+        monkeypatch, "ex_dividends",
         lambda t: [
             DividendEvent("MSFT", ahead, 9, 0.91, "USD"),
             DividendEvent("AAPL", ahead, 9, 0.26, "USD"),
@@ -406,8 +405,10 @@ def test_an_fx_outage_costs_the_conversion_not_the_dividend(client, account, mon
 
     monkeypatch.setattr(fx, "rate_on", down)
     ahead = date.today() + timedelta(days=9)
-    monkeypatch.setattr(
-        loaders, "ex_dividends", lambda t: [DividendEvent("MSFT", ahead, 9, 0.91, "USD")]
+    patch_loaders(
+        monkeypatch,
+        "ex_dividends",
+        lambda t: [DividendEvent("MSFT", ahead, 9, 0.91, "USD")],
     )
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
@@ -420,15 +421,16 @@ def test_an_fx_outage_costs_the_conversion_not_the_dividend(client, account, mon
 def test_an_ex_date_of_today_is_drawn_once(client, account, monkeypatch):
     """History runs through today, and so does the declared date: one chip."""
     today = date.today()
-    monkeypatch.setattr(
-        loaders,
-        "dividend_payments",
+    patch_loaders(
+        monkeypatch, "dividend_payments",
         lambda db, mtime, base: [
             EstimatedPayment("MSFT", today.isoformat(), 0.83, 5, "USD")
         ],
     )
-    monkeypatch.setattr(
-        loaders, "ex_dividends", lambda t: [DividendEvent("MSFT", today, 0, 0.83, "USD")]
+    patch_loaders(
+        monkeypatch,
+        "ex_dividends",
+        lambda t: [DividendEvent("MSFT", today, 0, 0.83, "USD")],
     )
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
@@ -438,9 +440,8 @@ def test_an_ex_date_of_today_is_drawn_once(client, account, monkeypatch):
 
 def test_ex_dates_older_than_two_years_are_left_out(client, account, monkeypatch):
     old = (date.today() - timedelta(days=800)).isoformat()
-    monkeypatch.setattr(
-        loaders,
-        "dividend_payments",
+    patch_loaders(
+        monkeypatch, "dividend_payments",
         lambda db, mtime, base: [EstimatedPayment("MSFT", old, 0.5, 5, "USD")],
     )
     payload = client.get(
@@ -457,9 +458,9 @@ def test_a_throttled_yahoo_costs_the_chips_not_the_calendar(
     def throttled(*args):
         raise YFRateLimitError()
 
-    monkeypatch.setattr(loaders, "dividend_payments", throttled)
-    monkeypatch.setattr(loaders, "ex_dividends", throttled)
-    monkeypatch.setattr(loaders, "dividend_histories", throttled)
+    patch_loaders(monkeypatch, "dividend_payments", throttled)
+    patch_loaders(monkeypatch, "ex_dividends", throttled)
+    patch_loaders(monkeypatch, "dividend_histories", throttled)
     response = client.get("/v1/earnings", params={"account": EMAIL}, headers=AUTH)
     assert response.status_code == 200
     payload = response.json()
@@ -484,7 +485,7 @@ def _quarterly(ticker: str = "MSFT") -> DividendHistory:
 
 def test_last_years_schedule_fills_the_year_ahead(client, account, monkeypatch):
     """Yahoo declares weeks out; the rest of the year is last year's dates."""
-    monkeypatch.setattr(loaders, "dividend_histories", lambda t: {"MSFT": _quarterly()})
+    patch_loaders(monkeypatch, "dividend_histories", lambda t: {"MSFT": _quarterly()})
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
     ).json()
@@ -497,9 +498,9 @@ def test_last_years_schedule_fills_the_year_ahead(client, account, monkeypatch):
 
 def test_a_declared_ex_date_replaces_its_guess(client, account, monkeypatch):
     declared = date.today() + timedelta(days=60)
-    monkeypatch.setattr(loaders, "dividend_histories", lambda t: {"MSFT": _quarterly()})
+    patch_loaders(monkeypatch, "dividend_histories", lambda t: {"MSFT": _quarterly()})
     event = DividendEvent("MSFT", declared, 60, 0.91, "USD")
-    monkeypatch.setattr(loaders, "ex_dividends", lambda t: [event])
+    patch_loaders(monkeypatch, "ex_dividends", lambda t: [event])
     payload = client.get(
         "/v1/earnings", params={"account": EMAIL}, headers=AUTH
     ).json()

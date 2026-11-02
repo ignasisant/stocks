@@ -3,8 +3,8 @@
  *
  * A pointer reads the day under it (a crosshair and the hover box), a finger
  * leaves its last reading up until the reader touches elsewhere, and the
- * keyboard walks the points. The three used to be wired by hand beside each
- * chart; this is the one place they are, so a chart cannot have the pointer
+ * keyboard walks the points. This is the one place the three are wired,
+ * so a chart cannot have the pointer
  * and forget the keys or the phone.
  *
  * - touch hold (`shell/useTouchHold`): `held` says a reading is up, `drop`

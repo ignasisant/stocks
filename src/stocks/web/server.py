@@ -171,9 +171,9 @@ _HTML = "text/html; charset=utf-8"
 # handling the request*, so sending them to the canonical host defeats their
 # whole purpose:
 # a canary lives at a tagged hostname (candidate---<service>…), and redirecting
-# its /status hands back the revision already serving 100% of traffic. That is
-# how scripts/deploy.sh came to smoke-test the old revision and refuse to
-# promote a healthy candidate.
+# its /status hands back the revision already serving 100% of traffic, so
+# scripts/deploy.sh would smoke-test the old revision and refuse a healthy
+# candidate.
 # The MCP connector's machine paths join them: an MCP client fetches its
 # metadata and posts its calls where it was told to, and follows no redirect.
 # `/authorize` and the consent page are left out on purpose — a browser goes

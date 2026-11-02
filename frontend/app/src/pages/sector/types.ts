@@ -1,7 +1,7 @@
 /**
  * What `/api/v1/sectors` and `/api/v1/sectors/{sector}` answer with.
  *
- * Mirrors `Sectors` / `SectorCohort` in `src/stocks/api/schemas.py`. Two
+ * Mirrors `Sectors` / `SectorCohort` in `src/stocks/api/schemas/`. Two
  * nullables carry meaning rather than absence and are typed so they cannot be
  * quietly coerced: `as_of: null` is "never scanned" — not "does not exist" —
  * and a `metrics` value of null is "nobody could measure it", which on a

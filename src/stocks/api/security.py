@@ -90,8 +90,8 @@ def refuse() -> NoReturn:
     if not configured_token():
         # Worth an operator's attention — a deployment with no API token can
         # only ever serve browsers — but not worth a different status code. A
-        # token is optional now that a session is a first-class way in, so "no
-        # token configured" is an ordinary deployment, and answering 503 here
+        # session is a first-class way in, so "no token configured" is an
+        # ordinary deployment, and answering 503 here
         # would show an anonymous visitor a server error where the page means
         # to show them a sign-in button.
         obs.warn("api.no_token_configured")

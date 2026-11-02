@@ -20,9 +20,8 @@ function sparing(): boolean {
 /**
  * The screen for a session that could not be fetched.
  *
- * Its own screen, because `failed` and `signed-out` used to share a fallback
- * and that stopped being harmless: a reader whose network dropped was told to
- * sign in, which is advice that cannot work and hides the real problem. This is
+ * Its own screen, not the sign-in one: telling a reader whose network dropped
+ * to sign in is advice that cannot work and hides the real problem. This is
  * the only state in the app where there is nothing to render around — `/me`
  * and `/prefs` are what the chrome itself is built from.
  */

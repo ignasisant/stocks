@@ -68,7 +68,7 @@ class UserPaths:
     prefs: Path
     chat: Path
     bank: Path
-    action: Path  # the dashboard's daily AI card (chat/daily.py)
+    action: Path  # the dashboard's daily AI card (chat/daily/)
 
     @property
     def verdicts(self) -> Path:

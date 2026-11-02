@@ -21,7 +21,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from stocks.api import loaders
+from tests.patching import patch_loaders
 from tests.test_connector_tools import (  # noqa: F401 — fixtures by name
     _offline_prices,
     book,
@@ -59,7 +59,7 @@ def priced(monkeypatch):
         },
         index=pd.Index(["AAPL"], name="ticker"),
     )
-    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
 
 
 def test_how_much_is_the_book_worth(site, token, priced):
@@ -186,9 +186,9 @@ def test_is_it_above_its_200_day_average(site, token, monkeypatch):
     days = pd.date_range("2024-01-02", periods=301, freq="B")
     close = pd.Series([100.0] * 300 + [110.0], index=days)
     bars = pd.DataFrame({"High": close, "Low": close, "Close": close})
-    monkeypatch.setattr(loaders, "asset_kind", lambda t: "stock")
-    monkeypatch.setattr(loaders, "daily_bars", lambda t: bars)
-    monkeypatch.setattr(loaders, "daily_closes",
+    patch_loaders(monkeypatch, "asset_kind", lambda t: "stock")
+    patch_loaders(monkeypatch, "daily_bars", lambda t: bars)
+    patch_loaders(monkeypatch, "daily_closes",
                         lambda t, period="max": pd.Series(100.0, index=days))
     read = ok(call(site, token, "ticker_trend", ticker="aapl"))
     assert read["state"] == "up" and read["sma200_rising"] is True

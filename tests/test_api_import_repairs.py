@@ -32,11 +32,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data import fetch
 from stocks.portfolio import demo, platforms
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -352,12 +352,11 @@ def test_the_lookup_that_joins_two_brokers_labels_is_wired_in(
         ],
         account.db,
     )
-    monkeypatch.setattr(loaders, "display_symbol", lambda ticker: ticker)
+    patch_loaders(monkeypatch, "display_symbol", lambda ticker: ticker)
     assert scan_moves(client)["moves"] == [], "nothing resolved, so no pair"
 
-    monkeypatch.setattr(
-        loaders,
-        "display_symbol",
+    patch_loaders(
+        monkeypatch, "display_symbol",
         lambda ticker: "ASML" if ticker == "NL0010273215" else ticker,
     )
     move = scan_moves(client)["moves"][0]
@@ -417,7 +416,7 @@ def test_a_deployment_without_the_file_is_a_404_rather_than_a_500(
     """A trimmed deploy: the page says nothing rather than failing, and a
     client has to be able to do the same."""
     monkeypatch.setattr(
-        "stocks.api.routes.import_statement._ASSETS", tmp_path / "gone"
+        "stocks.api.routes.import_statement.example._ASSETS", tmp_path / "gone"
     )
     response = client.get(
         "/v1/import/sample", params={"platform": "revolut"}, headers=AUTH

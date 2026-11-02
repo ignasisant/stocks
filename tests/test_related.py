@@ -4,6 +4,7 @@ import pytest
 
 import stocks.data.related as related
 from stocks.data.related import parse_related, related_tickers
+from tests.patching import patch_loaders
 
 PAYLOAD = {
     "finance": {
@@ -81,8 +82,8 @@ def test_the_cohort_rivals_come_before_the_co_viewed(monkeypatch):
         ),
         {}, (),
     )
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {"Technology": scan})
-    monkeypatch.setattr(loaders, "sec_title", lambda t: t)
+    patch_loaders(monkeypatch, "sector_scans", lambda: {"Technology": scan})
+    patch_loaders(monkeypatch, "sec_title", lambda t: t)
     monkeypatch.setattr(profiles, "known", lambda t: {
         "TSLA": {"industry": "Auto Manufacturers"},
         "MU": {"industry": "Semiconductors"},
@@ -103,8 +104,8 @@ def test_co_viewed_names_outside_the_industry_are_dropped(monkeypatch):
     from stocks.api import loaders
     from stocks.data import fetch, profiles
 
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
-    monkeypatch.setattr(loaders, "sec_title", lambda t: t)
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
+    patch_loaders(monkeypatch, "sec_title", lambda t: t)
     monkeypatch.setattr(profiles, "known", lambda t: {
         "ADBE": {"industry": "Software - Application"},
         "CRM": {"industry": "Software - Application"},
@@ -130,8 +131,8 @@ def test_a_fund_keeps_what_its_readers_also_watch(monkeypatch):
     from stocks.api import loaders
     from stocks.data import profiles
 
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
-    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
+    patch_loaders(monkeypatch, "sec_title", lambda t: None)
     monkeypatch.setattr(profiles, "known", lambda t: {"quoteType": "ETF"})
     monkeypatch.setattr(related, "get_json", lambda url: {
         "finance": {"result": [{"recommendedSymbols": [
@@ -148,7 +149,7 @@ def test_an_equity_memo_from_before_industries_asks_yahoo(monkeypatch):
     from stocks.api import loaders
     from stocks.data import fetch, profiles
 
-    monkeypatch.setattr(loaders, "sector_scans", lambda: {})
+    patch_loaders(monkeypatch, "sector_scans", lambda: {})
     monkeypatch.setattr(profiles, "known", lambda t: {"quoteType": "EQUITY"})
     monkeypatch.setattr(fetch, "info", lambda t: {"industry": "Software - Application"})
     assert loaders._industry("ADBE", {}) == "Software - Application"

@@ -26,6 +26,7 @@ from stocks.chat.tools import Action
 from stocks.portfolio import edits
 from stocks.portfolio.ledger import Transaction, add, add_many, all_transactions
 from stocks.web import auth
+from tests.patching import patch_engine
 
 EMAIL = "holder@example.com"
 PREFS = {"currency": "EUR", "chat_skills_mode": "off"}
@@ -64,7 +65,7 @@ class Provider:
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     monkeypatch.setattr(book, "resolver", lambda: lambda s: SYMBOLS.get(s, s))
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Provider(), "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Provider(), "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
 
 

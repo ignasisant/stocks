@@ -21,6 +21,7 @@ import pytest
 
 from stocks.chat import engine, learnings
 from stocks.chat.learnings import Command
+from tests.patching import patch_engine
 
 DAY = date(2026, 10, 3)
 
@@ -289,7 +290,7 @@ def test_a_routine_past_the_cap_is_refused_in_words(tmp_path, monkeypatch):
 def test_a_plain_question_is_logged_without_a_model(tmp_path, monkeypatch):
     monkeypatch.setattr("stocks.storage.persist", lambda p: None)
     handed = []
-    monkeypatch.setattr(engine, "complete_attempts",
+    patch_engine(monkeypatch, "complete_attempts",
                         lambda *a, **k: handed.append(a))
     chat = tmp_path / "chat.json"
     done = engine.learn({}, chat, [{"role": "user", "content": "¿cómo va mi cartera?"}],

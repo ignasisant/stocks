@@ -22,7 +22,7 @@ adapter can be added per provider later without touching the tools themselves.
 
 Auth is imported lazily inside the runners so parsing stays trivially
 testable; all UI — confirmation cards, i18n — lives with the caller that
-dispatches here (chat/engine.py).
+dispatches here (chat/engine/).
 """
 
 from __future__ import annotations

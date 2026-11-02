@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from stocks.api import loaders, warm
+from stocks.api import warm
+from tests.patching import patch_loaders
 
 TODAY = date(2026, 9, 27)
 
@@ -103,25 +104,26 @@ def test_warms_only_the_accounts_seen_lately_and_survives_a_bad_one(monkeypatch)
 
 def test_warm_account_fills_the_memos_a_page_reads(monkeypatch, tmp_path):
     calls: list[str] = []
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
-    monkeypatch.setattr(loaders, "held_closes", lambda db, m: calls.append("closes"))
-    monkeypatch.setattr(
-        loaders, "positions_table", lambda db, m, b: calls.append(f"positions:{b}")
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "held_closes", lambda db, m: calls.append("closes"))
+    patch_loaders(
+        monkeypatch, "positions_table", lambda db, m, b: calls.append(f"positions:{b}")
     )
-    monkeypatch.setattr(loaders, "history", lambda db, m, b: calls.append("history"))
-    monkeypatch.setattr(loaders, "basket_values", lambda db, m, b: calls.append("basket"))
-    monkeypatch.setattr(loaders, "held", lambda db, m: ("MSFT",))
+    patch_loaders(monkeypatch, "history", lambda db, m, b: calls.append("history"))
+    patch_loaders(monkeypatch, "basket_values", lambda db, m, b: calls.append("basket"))
+    patch_loaders(monkeypatch, "held", lambda db, m: ("MSFT",))
     # The held name comes out of the book's own prices, so the list download
     # is warmed under the key Home reads: the names those prices do not cover.
-    monkeypatch.setattr(
-        loaders,
-        "held_printed_closes",
+    patch_loaders(
+        monkeypatch, "held_printed_closes",
         lambda db, m: {
             "MSFT": pd.Series([1.0, 2.0], index=pd.bdate_range("2026-10-01", periods=2))
         },
     )
-    monkeypatch.setattr(
-        loaders, "watchlist_closes", lambda tickers: calls.append(f"year:{tickers}") or {}
+    patch_loaders(
+        monkeypatch,
+        "watchlist_closes",
+        lambda tickers: calls.append(f"year:{tickers}") or {},
     )
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text("watchlist:\n  - ticker: AAPL\n")
@@ -277,8 +279,8 @@ def test_warm_today_reads_the_largest_names_first_and_survives_a_feed(monkeypatc
         if ticker == "MSFT":
             raise RuntimeError("SEC refused")
 
-    monkeypatch.setattr(loaders, "review_metrics", metrics.append)
-    monkeypatch.setattr(loaders, "insiders", insiders)
+    patch_loaders(monkeypatch, "review_metrics", metrics.append)
+    patch_loaders(monkeypatch, "insiders", insiders)
     monkeypatch.setattr(warm, "TODAY_INSIDERS", 2)
     warm.warm_today(tbl)
     # By value, coins left out; insiders only for US listings.
@@ -287,7 +289,7 @@ def test_warm_today_reads_the_largest_names_first_and_survives_a_feed(monkeypatc
 
 
 def test_warm_today_skips_an_empty_book(monkeypatch):
-    monkeypatch.setattr(loaders, "review_metrics", lambda t: pytest.fail(t))
+    patch_loaders(monkeypatch, "review_metrics", lambda t: pytest.fail(t))
     warm.warm_today(pd.DataFrame())
     warm.warm_today(None)
 
@@ -295,38 +297,38 @@ def test_warm_today_skips_an_empty_book(monkeypatch):
 def test_warm_recent_reads_the_shared_market_once(monkeypatch):
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: [])
     reads: list[int] = []
-    monkeypatch.setattr(loaders, "today_market", lambda: reads.append(1) or {})
+    patch_loaders(monkeypatch, "today_market", lambda: reads.append(1) or {})
     for memo in ("pulse_closes", "pulse_rate_rows", "market_pulse"):
-        monkeypatch.setattr(loaders, memo, lambda: {})
+        patch_loaders(monkeypatch, memo, lambda: {})
     warm.warm_recent(today=TODAY)
     assert reads == [1]
 
 
 def test_warm_more_fills_the_memos_the_other_pages_read(monkeypatch, tmp_path):
     calls: list[str] = []
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
-    monkeypatch.setattr(
-        loaders,
-        "positions_table",
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
+    patch_loaders(
+        monkeypatch, "positions_table",
         lambda db, m, b: pd.DataFrame({"ccy": ["USD", "EUR", "USD"]}),
     )
-    monkeypatch.setattr(
-        loaders,
-        "basket_report",
+    patch_loaders(
+        monkeypatch, "basket_report",
         lambda db, m, b, period: calls.append(f"book:{b}:{period}"),
     )
-    monkeypatch.setattr(
-        loaders, "spot_rates", lambda ccys, base: calls.append(f"spots:{ccys}:{base}")
+    patch_loaders(
+        monkeypatch, "spot_rates", lambda ccys, base: calls.append(f"spots:{ccys}:{base}")
     )
-    monkeypatch.setattr(
-        loaders, "earnings_calendar", lambda tickers: calls.append(f"earnings:{tickers}")
+    patch_loaders(
+        monkeypatch,
+        "earnings_calendar",
+        lambda tickers: calls.append(f"earnings:{tickers}"),
     )
-    monkeypatch.setattr(
-        loaders, "dividend_payments", lambda db, m, b: calls.append("dividends")
+    patch_loaders(
+        monkeypatch, "dividend_payments", lambda db, m, b: calls.append("dividends")
     )
     monkeypatch.setattr("stocks.data.funds.is_fund", lambda t, fetch=True: t == "VWCE.DE")
     # A held name off the watchlist is on the calendar's key too.
-    monkeypatch.setattr(loaders, "held", lambda db, m: ("GOOG", "SOL-EUR"))
+    patch_loaders(monkeypatch, "held", lambda db, m: ("GOOG", "SOL-EUR"))
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text(
         "watchlist:\n  - ticker: MSFT\n  - ticker: AAPL\n  - ticker: BTC-EUR\n"
@@ -343,14 +345,16 @@ def test_warm_more_fills_the_memos_the_other_pages_read(monkeypatch, tmp_path):
 
 def test_warm_more_survives_a_feed_that_refuses(monkeypatch, tmp_path):
     calls: list[str] = []
-    monkeypatch.setattr(loaders, "db_mtime", lambda db: 1.0)
-    monkeypatch.setattr(loaders, "positions_table", lambda db, m, b: pd.DataFrame())
-    monkeypatch.setattr(
-        loaders, "basket_report", lambda *a: (_ for _ in ()).throw(RuntimeError("yahoo"))
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
+    patch_loaders(monkeypatch, "positions_table", lambda db, m, b: pd.DataFrame())
+    patch_loaders(
+        monkeypatch,
+        "basket_report",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("yahoo")),
     )
-    monkeypatch.setattr(loaders, "earnings_calendar", lambda t: calls.append("earnings"))
-    monkeypatch.setattr(loaders, "held", lambda db, m: ())
-    monkeypatch.setattr(loaders, "dividend_payments",
+    patch_loaders(monkeypatch, "earnings_calendar", lambda t: calls.append("earnings"))
+    patch_loaders(monkeypatch, "held", lambda db, m: ())
+    patch_loaders(monkeypatch, "dividend_payments",
                         lambda *a: calls.append("dividends"))
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text("watchlist: []\n")
@@ -391,12 +395,12 @@ def test_warm_recent_runs_the_second_pass_after_every_home(monkeypatch):
 
 def test_warm_shared_reads_the_market_memos_once_and_survives_one(monkeypatch):
     reads: list[str] = []
-    monkeypatch.setattr(loaders, "today_market", lambda: reads.append("today") or {})
-    monkeypatch.setattr(
-        loaders, "pulse_closes", lambda: (_ for _ in ()).throw(RuntimeError("yahoo"))
+    patch_loaders(monkeypatch, "today_market", lambda: reads.append("today") or {})
+    patch_loaders(
+        monkeypatch, "pulse_closes", lambda: (_ for _ in ()).throw(RuntimeError("yahoo"))
     )
-    monkeypatch.setattr(loaders, "pulse_rate_rows", lambda: reads.append("rates") or {})
-    monkeypatch.setattr(loaders, "market_pulse", lambda: reads.append("pulse"))
-    monkeypatch.setattr(loaders, "positioning", lambda: reads.append("cot"))
+    patch_loaders(monkeypatch, "pulse_rate_rows", lambda: reads.append("rates") or {})
+    patch_loaders(monkeypatch, "market_pulse", lambda: reads.append("pulse"))
+    patch_loaders(monkeypatch, "positioning", lambda: reads.append("cot"))
     warm.warm_shared()
     assert reads == ["today", "rates", "pulse", "cot"]

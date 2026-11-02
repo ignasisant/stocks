@@ -7,7 +7,7 @@
  * because it carries a figure and a few lines rather than a breakdown:
  *
  * - an upcoming print: when, what the report contains, and a way on to the
- *   ticker, which is where the chip used to lead;
+ *   ticker;
  * - a dividend: what lands in the account. Gross is per share × shares; net
  *   takes off the withholding the book's own statements printed for the name
  *   (or its currency), and says so when they printed none rather than

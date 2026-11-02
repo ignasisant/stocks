@@ -15,6 +15,7 @@ import pytest
 from stocks import accounts
 from stocks.chat import learnings
 from stocks.chat.learnings import Command
+from tests.patching import patch_engine
 
 
 @pytest.fixture
@@ -459,7 +460,6 @@ def test_the_extraction_is_handed_the_saved_list_and_the_user_s_words(path):
 def extraction(monkeypatch):
     """`engine.complete_attempts` answering an extraction with `reply`, and
     a record of what each call was handed."""
-    from stocks.chat import engine
 
     monkeypatch.setattr("stocks.storage.persist", lambda p: None)
     handed: list[dict] = []
@@ -471,7 +471,7 @@ def extraction(monkeypatch):
                        "spend_free": spend_free})
         return accept(reply["raw"])
 
-    monkeypatch.setattr(engine, "complete_attempts", fake)
+    patch_engine(monkeypatch, "complete_attempts", fake)
     return handed, reply
 
 

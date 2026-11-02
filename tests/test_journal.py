@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import journal, toolbox
+from tests.patching import patch_engine, patch_loaders
 
 DAY = date(2026, 10, 1)
 TOKEN = "s3cret-token"
@@ -538,7 +539,7 @@ def test_the_route_returns_the_outcome(book):
 def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
     import pandas as pd
 
-    from stocks.api import briefing, loaders
+    from stocks.api import briefing
 
     asked = []
 
@@ -546,11 +547,11 @@ def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
         asked.append((ticker, days))
         return pd.Series([float("nan"), 12.5], index=pd.DatetimeIndex(days.split(",")))
 
-    monkeypatch.setattr(loaders, "window_closes", window)
+    patch_loaders(monkeypatch, "window_closes", window)
     got = briefing._closes_on("AMD", [DAY, DAY + timedelta(days=30)])
     assert got == [None, 12.5]
     assert asked == [("AMD", "2026-10-01,2026-10-31")]
-    monkeypatch.setattr(loaders, "window_closes", lambda t, d: pd.Series(dtype=float))
+    patch_loaders(monkeypatch, "window_closes", lambda t, d: pd.Series(dtype=float))
     assert briefing._closes_on("AMD", [DAY]) == [None]
 
 
@@ -833,7 +834,7 @@ def test_slow_rules_read_as_words(path):
 
 
 def test_the_judge_reads_its_contract_and_asks_one_question_per_event(monkeypatch):
-    from stocks.chat import engine, exit_judge
+    from stocks.chat import exit_judge
 
     assert exit_judge.parse('{"met": true, "item": 1, "quote": "steps down"}') == {
         "met": True, "item": 1, "quote": "steps down"}
@@ -845,7 +846,7 @@ def test_the_judge_reads_its_contract_and_asks_one_question_per_event(monkeypatc
         asked.update(system=system, text=messages[-1]["content"])
         return accept('{"met": false}')
 
-    monkeypatch.setattr(engine, "complete_attempts", complete)
+    patch_engine(monkeypatch, "complete_attempts", complete)
     judge = exit_judge.make_judge({}, spend_free=lambda prefs: True)
     verdict = judge("dividend_cut", "AMD", [_passage("AMD suspends its dividend.")])
     assert verdict == {"met": False, "item": None, "quote": ""}
@@ -878,10 +879,10 @@ def test_a_long_release_is_judged_on_the_stretch_that_says_it(path):
                                                (0, False)])
 def test_the_judge_never_takes_the_cards_free_units(monkeypatch, left, charged):
     from stocks.api import briefing
-    from stocks.chat import daily, engine
+    from stocks.chat import daily
 
     assert daily.FREE_UNITS == 2
-    monkeypatch.setattr(engine, "free_left", lambda prefs: left)
+    patch_engine(monkeypatch, "free_left", lambda prefs: left)
     calls = []
     assert briefing.spend_for_judge({}, lambda p: calls.append(p) or True) is charged
     assert len(calls) == int(charged)

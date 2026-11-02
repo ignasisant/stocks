@@ -2,8 +2,7 @@
  * Browser errors, sent to the server log.
  *
  * A JavaScript error never reaches the server on its own — a render that
- * threw, a promise nobody awaited — so before this the only trace of a screen
- * that broke was a reader who wrote in about it. Each one now goes to
+ * threw, a promise nobody awaited — so each one goes to
  * `POST /client-error` and lands in the production log as `client.error`,
  * beside whatever the server logged for the same account
  * (`routes/client_error.py`, which also masks it).

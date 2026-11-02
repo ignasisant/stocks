@@ -20,6 +20,7 @@ from stocks.analysis.sentiment import Pulse as PulseData
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import home
+from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -69,9 +70,9 @@ def market(monkeypatch):
     closes = {symbol: rising() for _, symbol, _, _ in home.MARKET_TILES}
     closes["^VIX"] = rising(start=30.0, end=15.0)
     yields = pd.Series(np.linspace(4.0, 4.5, 260), index=days(260))
-    monkeypatch.setattr(loaders, "pulse_closes", lambda: closes)
-    monkeypatch.setattr(loaders, "pulse_rate_rows", lambda: {"DGS10": yields})
-    monkeypatch.setattr(loaders, "market_pulse", lambda: built())
+    patch_loaders(monkeypatch, "pulse_closes", lambda: closes)
+    patch_loaders(monkeypatch, "pulse_rate_rows", lambda: {"DGS10": yields})
+    patch_loaders(monkeypatch, "market_pulse", lambda: built())
     return closes
 
 
@@ -133,7 +134,7 @@ def test_a_dead_composite_costs_the_chip_not_the_tiles(client, market, monkeypat
     def _dead():
         raise RuntimeError("no inputs")
 
-    monkeypatch.setattr(loaders, "market_pulse", _dead)
+    patch_loaders(monkeypatch, "market_pulse", _dead)
     payload = client.get("/v1/home/market", headers=AUTH).json()
     assert payload["score"] is None
     assert payload["regime"] == "unknown"
@@ -144,7 +145,7 @@ def test_a_dead_fred_costs_the_yield_tile_only(client, market, monkeypatch):
     def _dead():
         raise OSError("FRED tarpit")
 
-    monkeypatch.setattr(loaders, "pulse_rate_rows", _dead)
+    patch_loaders(monkeypatch, "pulse_rate_rows", _dead)
     keys = tiles(client.get("/v1/home/market", headers=AUTH).json())
     assert "us10y" not in keys
     assert "vix" in keys
@@ -163,7 +164,7 @@ def test_a_throttled_price_burst_empties_the_card_and_says_why(client, monkeypat
     def _throttled():
         raise YFRateLimitError
 
-    monkeypatch.setattr(loaders, "pulse_closes", _throttled)
+    patch_loaders(monkeypatch, "pulse_closes", _throttled)
     response = client.get("/v1/home/market", headers=AUTH)
     assert response.status_code == 200
     assert response.json()["unavailable"] == "rate_limited"

@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import engine, journal, learnings, memory
+from tests.patching import patch_engine
 
 ALICE, BOB = "alice@example.com", "bob@example.com"
 # One word per store, so a failure names the store that leaked.
@@ -124,9 +125,9 @@ def books(monkeypatch, tmp_path):
 @pytest.fixture
 def backend(monkeypatch) -> Recorder:
     recorder = Recorder()
-    monkeypatch.setattr(engine, "attempts", lambda prefs: [(recorder, "k", "fake-1")])
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(recorder, "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
-    monkeypatch.setattr(engine, "web_enabled", lambda: False)
+    patch_engine(monkeypatch, "web_enabled", lambda: False)
     return recorder
 
 

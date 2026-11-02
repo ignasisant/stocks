@@ -5,12 +5,9 @@
  * None of it is prose — codes, currency marks and endonyms — so nothing in this
  * file belongs in a catalog.
  *
- * The tax jurisdictions used to be here too, transcribed from
- * `stocks.portfolio.tax`. They are `GET /jurisdictions` now: adding a country
- * is one module under that package plus its catalog copy, and a table copied
- * into the front end drops the new one the day it ships — silently, because
- * nobody reports a country they cannot see. What is left below is what no route
- * serves.
+ * Tax jurisdictions are not here: they come from `GET /jurisdictions`, because
+ * a copy in the front end would silently miss every country the server adds.
+ * What is left below is what no route serves.
  */
 
 /** `stocks.config.CURRENCIES` — what the app can reckon in. */
