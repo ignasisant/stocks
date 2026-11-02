@@ -179,7 +179,9 @@ def test_the_guest_list_is_not_silently_growing():
     # 69: `GET /ticker/{symbol}/trend` — the price card's trend figure: read
     # off the chart's own daily bars and the home index, market data like
     # `/bars`; no account goes into it.
-    assert len(guest.OPEN) == 69
+    # 70: `POST /launch` — the app opened from a guest's Home Screen: one log
+    # line, nothing on disk, metered per address like `/vitals`.
+    assert len(guest.OPEN) == 70
 
 
 def test_every_route_a_guest_may_read_is_a_read():
