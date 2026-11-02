@@ -204,8 +204,10 @@ from stocks.chat.engine.text import (
     _may_open_call,
     _only_calls,
     close_markdown,
+    may_head_with_date,
     scrub_written_calls,
     strip_cite_marks,
+    strip_date_head,
 )
 from stocks.chat.engine.titles import (
     TITLE_MAX_CHARS,
@@ -1074,7 +1076,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     turn.learned = [*turn.learned, *_unseen(chat_path)]
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
-    text = scrub_written_calls(strip_cite_marks(text))
+    text = strip_date_head(scrub_written_calls(strip_cite_marks(text)))
     if guard.leaked(text, system_prompt({}, "")):
         # The fixed instructions, repeated back (`chat/guard.py`). Under
         # `block` the stored and finished answer is the refusal instead; the
@@ -1528,6 +1530,11 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     continue
                 if held is not None:
                     held += chunk
+                    if may_head_with_date(held):
+                        continue
+                    held = strip_date_head(held)
+                    if not held.strip():
+                        continue
                     if _may_open_call(held) and (
                             len(held) < CALL_HOLD_CHARS
                             or _WRITTEN_CALL.search(held)):
@@ -1562,7 +1569,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 if checkpoint is not None:
                     checkpoint.charged("")
                 continue
-            held = scrub_written_calls(held)
+            held = scrub_written_calls(strip_date_head(held))
             if not parts:
                 yield ("meta", {"provider": provider.id, "model": model,
                                 "skills": list(turn.skills),

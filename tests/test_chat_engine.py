@@ -748,6 +748,45 @@ def test_prose_that_names_a_tool_is_not_a_call():
         assert engine.scrub_written_calls(text) == text
 
 
+# Prod 2026-11-02: gemini opened answers with the bare date of the clock line.
+DATED = "2026-11-02\n\nAnalizando TSM: margen bruto 59 %."
+
+
+def test_an_answer_headed_with_the_bare_date_loses_it(providers, paths):
+    providers["free"].reply = DATED
+    reply = engine.answer(prefs=dict(BASE_PREFS), message="TSM?", **paths)
+    assert reply.text == "Analizando TSM: margen bruto 59 %."
+
+
+def test_a_streamed_date_head_never_reaches_the_reader(
+        providers, enc, paths, monkeypatch):
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "PROVIDERS", {
+        **providers, "anthropic": Streamer("anthropic", reply=DATED)})
+    seen = list(engine.answer_stream(prefs={**BASE_PREFS, **enc("anthropic")},
+                                     message="TSM?", **paths))
+    shown = "".join(v for k, v in seen if k == "text")
+    assert shown == "Analizando TSM: margen bruto 59 %."
+    assert next(v for k, v in seen if k == "done").text == shown
+
+
+@pytest.mark.parametrize("text", [
+    "2026-11-02 es lunes y el mercado abre.",
+    "2025 fue un buen año.",
+    "Resultados del 2026-10-29:\n\n- BPA 1,20",
+    "42",
+])
+def test_a_date_inside_the_answer_stays(text):
+    assert engine.strip_date_head(text) == text
+
+
+def test_the_clock_line_asks_for_no_date_heading():
+    from stocks.chat import clock
+
+    assert "Never head an answer with a date" in clock.line()
+
+
 def test_answer_leaves_the_key_clock_alone(providers, enc, paths):
     prefs = {**BASE_PREFS, **enc("anthropic", saved_ago=60 * 24 * 3600)}
     before = prefs["anthropic_key_saved_at"]

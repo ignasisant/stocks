@@ -71,6 +71,22 @@ def _only_calls(text: str, provider: Provider, model: str) -> bool:
     return True
 
 
+# Gemini headed answers with the bare date ("2026-11-02", then the answer),
+# read off the prompt's own clock line (prod 2026-11-02, three in a day).
+_DATE_HEAD = re.compile(r"\A[\s*#]*\d{4}-\d{2}-\d{2}[ \t*]*(?:\n\s*|\Z)")
+
+
+def strip_date_head(text: str) -> str:
+    """The answer without a line that is nothing but a date at its top."""
+    return _DATE_HEAD.sub("", text, count=1)
+
+
+def may_head_with_date(text: str) -> bool:
+    """Whether an answer's first characters could still be a date line."""
+    head = text.lstrip(" \t\n*#")
+    return len(head) <= 10 and re.fullmatch(r"[\d-]*", head) is not None
+
+
 def close_markdown(text: str) -> str:
     """A half-written answer made whole enough to render.
 

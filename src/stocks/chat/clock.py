@@ -27,5 +27,5 @@ def line() -> str:
     to choose between them has headed an answer with the wrong day."""
     return (f"Today is {today().isoformat()} (Europe/Madrid). This is the only "
             "current date: dates inside fetched web pages or search results "
-            "are when those pages were written, never today's — head an "
-            "answer with today's date or none, never with one read off a page")
+            "are when those pages were written, never today's. Never head an "
+            "answer with a date")
