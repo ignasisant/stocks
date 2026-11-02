@@ -197,9 +197,11 @@ _BOOK_RE = re.compile(
     r"\b(app|aplicaci[oó]n|importar|import)\b",
     re.IGNORECASE,
 )
-_FOCUS_RE = re.compile(
-    r"(?:ticker in focus is|conversation is about) ([A-Z0-9][A-Z0-9.\-]{0,14})",
-    re.IGNORECASE)
+_SYMBOL = r"[A-Z0-9][A-Z0-9.\-]{0,14}"
+_FOCUS_RE = re.compile(rf"ticker in focus is ({_SYMBOL})", re.IGNORECASE)
+# What the thread is about outranks the page behind it (engine `web_context`).
+_TOPIC_RE = re.compile(rf"conversation is about ({_SYMBOL}(?:, {_SYMBOL})*)",
+                       re.IGNORECASE)
 _CAPS_RE = re.compile(r"\b[A-Z]{2,5}(?:[.\-][A-Z]{1,4})?\b")
 _TODAY_RE = re.compile(r"Today is (\d{4})-\d{2}-\d{2}")
 
@@ -222,15 +224,16 @@ def heuristic_queries(question: str, context: str = "") -> list[str]:
     if not (_FRESH_RE.search(q) or names_ticker) and (
             _QUIET_RE.search(q) or _TIMELESS_RE.search(q) or _BOOK_RE.search(q)):
         return []
-    focus = _FOCUS_RE.search(context)
+    about = _TOPIC_RE.search(context) or _FOCUS_RE.search(context)
     year = _TODAY_RE.search(context)
     parts = [q.strip("¿?¡!. ")[:160]]
-    ticker = focus.group(1).upper().rstrip(".") if focus else ""
+    tickers = ([t.upper().rstrip(".") for t in about.group(1).split(", ")]
+               if about else [])
     # The page open beside a question about the reader's own book is not its
     # subject: "BKNG ¿Qué empresas de mi cartera presentan resultados…?"
     # searched for nothing (local review 2026-10-30).
-    if ticker and ticker not in q.upper() and not _BOOK_RE.search(q):
-        parts.insert(0, ticker)
+    if not _BOOK_RE.search(q):
+        parts[:0] = [t for t in tickers if t not in q.upper()]
     if year and year.group(1) not in q:
         parts.append(year.group(1))
     return [" ".join(parts)]

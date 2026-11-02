@@ -726,8 +726,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             from stocks.chat import knowledge
 
             hits, quotes, docs = in_parallel(
-                lambda: [] if own else ground_web(prefs, scout, scout_key,
-                                                  history, view),
+                lambda: [] if own else ground_web(
+                    prefs, scout, scout_key, history, view,
+                    market.watchlist_names(watchlist) if watchlist else {}),
                 lambda: market.lookup_for(message, watchlist, focus=focus,
                                           lang=lang, earlier=above),
                 # The app's own documents: with no tool loop the model never
@@ -758,7 +759,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             # Keywords decide instead — no second planner call — so small talk,
             # a definition or a question about the reader's own book still goes
             # without, and everything else reads the web.
-            queries = (chat_web.heuristic_queries(message, web_context(history, view))
+            queries = (chat_web.heuristic_queries(message, web_context(
+                history, view,
+                market.watchlist_names(watchlist) if watchlist else {}))
                        if web_enabled() and not own and not any(
                            c.name in ("search_web", "read_page")
                            for c in evidence.calls) else [])
