@@ -5,6 +5,8 @@
   "validate.missing_ticker": "the ticker is missing",
   "validate.malformed_ticker": "{ticker} doesn't look like a ticker",
   "validate.unknown_ticker": "we don't recognise {ticker} — it imports, but may show no price if it's your broker's own code (SAN instead of SAN.MC)",
+  "validate.negative_quantity": "the number of shares can't be negative ({value})",
+  "validate.negative_price": "the price can't be negative ({value})",
   "validate.zero_price_sell": "sold at 0 — right if the company went bust or was delisted; the whole position counts as a loss",
   "validate.duplicate": "this exact trade is already in your portfolio or earlier in the file — importing it again counts it twice",
   "validate.near_duplicate": "your portfolio or this file already has a {action} of {quantity} {ticker} on {date} at another price — probably the same trade read twice",

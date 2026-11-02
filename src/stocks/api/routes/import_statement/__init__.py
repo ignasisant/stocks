@@ -67,6 +67,7 @@ from fastapi import APIRouter
 
 from stocks.api.routes.import_statement import (
     book_checkup,
+    buy_dates,
     example,
     moves,
     splits,
@@ -128,5 +129,13 @@ __all__ = [
 # flattened, and the guest gate reads the innermost route's path, which must
 # still say "/import/...".
 router = APIRouter()
-for _leaf in (statements, splits, book_checkup, venue_lines, moves, example):
+for _leaf in (
+    statements,
+    splits,
+    book_checkup,
+    venue_lines,
+    moves,
+    example,
+    buy_dates,
+):
     router.include_router(_leaf.router)

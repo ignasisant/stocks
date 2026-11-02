@@ -37,7 +37,7 @@ from pathlib import Path
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
 from stocks.data.crypto import crypto_name, is_crypto
 from stocks.data.symbols import resolved_codes
-from stocks.portfolio import consistency, revolut_crypto, transfers
+from stocks.portfolio import consistency, lexicon, revolut_crypto, transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -103,6 +103,8 @@ ISSUE_TEXT = {
         "we don't recognise {ticker} — it imports, but may show no price if "
         "it's your broker's own code (SAN instead of SAN.MC)"
     ),
+    "validate.negative_quantity": "the number of shares can't be negative ({value})",
+    "validate.negative_price": "the price can't be negative ({value})",
     "validate.zero_price_sell": (
         "sold at 0 — right if the company went bust or was delisted; the "
         "whole position counts as a loss"
@@ -264,6 +266,7 @@ def validate(
     for c in checked:
         _check_date(c, today)
         _check_ticker(c, known, lookup)
+        _check_signs(c)
         if c.tx.action == "sell" and c.tx.price == 0:
             c.issues.append(Issue("warning", "price", "validate.zero_price_sell"))
         _check_duplicate(c, seen, similar)
@@ -274,6 +277,12 @@ def validate(
 
 
 # ------------------------------------------------------------------ split rows
+def _split_row(rtype: str) -> bool:
+    """A skipped row's type names a split: "STOCK SPLIT", "StockSplit", or the
+    word in a language the vocabulary knows ("Desdoblamiento")."""
+    return "SPLIT" in rtype.upper() or lexicon.action_of(rtype) == "split"
+
+
 def resolve_splits(result: ParseResult, prior: list[Transaction]) -> list[Transaction]:
     """Turn skipped STOCK SPLIT rows into split transactions when the ratio
     is derivable: ratio = (held + shares_added) / held at the split date.
@@ -282,7 +291,7 @@ def resolve_splits(result: ParseResult, prior: list[Transaction]) -> list[Transa
     splits = [
         s
         for s in result.skipped
-        if "SPLIT" in s.get("type", "").upper() and s.get("ticker")
+        if _split_row(s.get("type", "")) and s.get("ticker")
     ]
     if not splits:
         return []
@@ -354,6 +363,26 @@ def _check_date(c: Checked, today: date) -> None:
         c.issues.append(
             Issue("error", "date", "validate.ancient_date", {"date": d})
         )
+
+
+def _check_signs(c: Checked) -> None:
+    """A trade's share count and price are never below zero: the direction is
+    the action. Zero stays allowed (a free share, a bust company sold at 0);
+    a minus sign is a misread column or a typo, and a ledger that takes it
+    would book a sale as a buy. Other actions (cash, fees, splits) carry their
+    own sign conventions and are left alone."""
+    if c.tx.action not in ("buy", "sell"):
+        return
+    for name, value in (("quantity", c.tx.quantity), ("price", c.tx.price)):
+        if value < 0:
+            c.issues.append(
+                Issue(
+                    "error",
+                    name,
+                    f"validate.negative_{name}",
+                    {"value": f"{value:g}"},
+                )
+            )
 
 
 def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:

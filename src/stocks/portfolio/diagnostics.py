@@ -56,6 +56,9 @@ MAX_HEADER_LEN = 80
 # Distinct reason strings only; a 5000-row statement that breaks the same way
 # on every row is one finding, and its count carries the severity.
 MAX_REASONS = 12
+# Distinct type cells no parser knew ("Compra - Mercado"): the top ones are
+# what a missing word in a parser's vocabulary looks like.
+MAX_TYPES = 10
 
 
 # ------------------------------------------------------------------- masking
@@ -273,6 +276,48 @@ def reasons(result: ParseResult | None) -> dict[str, int]:
     return dict(ordered[:MAX_REASONS])
 
 
+# The skip reasons that mean "this type cell named nothing the parser knows".
+_UNKNOWN_TYPE = ("unrecognised type", "unrecognised action")
+
+
+def _vocabulary(cell: str) -> str:
+    """A type cell as recorded: verbatim when it reads as a broker's word for
+    an operation — a few words, no digits — masked like any value otherwise.
+
+    "Compra - Mercado" is the broker's schema, as a header is, and masked it
+    would say nothing ("Aaaaaa - Aaaaaaa"). A cell with digits, an address or
+    a sentence in it is a column misread as the type, and that is data.
+    """
+    text = " ".join(cell.split())
+    if not text:
+        return "(empty)"
+    words = text.split()
+    if (len(text) <= 40 and len(words) <= 4 and "@" not in text
+            and not any(ch.isdigit() for ch in text)):
+        return text
+    return mask(text)
+
+
+def unknown_types(result: ParseResult | None) -> dict[str, int]:
+    """The type cells no parser knew, and how many rows carried each.
+
+    The reason alone ("unrecognised type — not imported" ×24) says a parser
+    missed a word, never which: these are the words, the top MAX_TYPES.
+    "(empty)" is a file with no type column at all, which is a different bug
+    (prod 10-31: a holdings snapshot read under a preselected Revolut).
+    """
+    if result is None:
+        return {}
+    counts: dict[str, int] = {}
+    for entry in result.skipped:
+        if not str(entry.get("reason", "")).startswith(_UNKNOWN_TYPE):
+            continue
+        key = _vocabulary(str(entry.get("type") or ""))
+        counts[key] = counts.get(key, 0) + 1
+    ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    return dict(ordered[:MAX_TYPES])
+
+
 def issue_counts(validation: Validation | None) -> dict[str, int]:
     """Validation issues by catalog key (`validate.oversell`, …).
 
@@ -415,6 +460,9 @@ def fingerprint(
                        if e.get("reason") in ROUTINE_SKIPS) if result else 0,
         "reasons": reasons(result),
     }
+    types = unknown_types(result)
+    if types:
+        out["types"] = types
     hint = date_hint(result)
     if hint:
         out["date_hint"] = hint
@@ -457,6 +505,8 @@ def _fields(fp: dict) -> dict:
         top, count = next(iter(fp["reasons"].items()))
         flat["top_reason"] = top
         flat["top_reason_rows"] = count
+    if fp.get("types"):
+        flat["top_type"] = next(iter(fp["types"]))
     if fp.get("issues"):
         flat["top_issue"] = next(iter(fp["issues"]))
     if fp.get("date_hint"):

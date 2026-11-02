@@ -112,6 +112,42 @@ export type Preview = {
    * cost with no price until mapped. Optional for an older server.
    */
   unlisted?: string[];
+  /** With `kind` "positions", what the report says is held, undated. Each is
+   *  a buy once the reader dates it. Optional for an older server. */
+  holdings?: Holding[];
+};
+
+/** One line of a holdings report: held, never dated. */
+export type Holding = {
+  row: number;
+  /** The symbol, else the ISIN when the file printed no symbol. */
+  ticker: string;
+  isin: string;
+  quantity: number;
+  /** As the file named it; empty when it did not. */
+  currency: string;
+  /** Average paid per share when a column said so; a bare price is today's. */
+  cost: number | null;
+};
+
+/** A stretch of sessions whose low-high range held the price. */
+type BuyRun = {
+  start: string;
+  end: string;
+  /** The session whose close sat nearest: the date to offer. */
+  day: string;
+  close: number;
+  sessions: number;
+};
+
+export type BuyDates = {
+  /** The Yahoo line the bars are from — what the buy is written under. */
+  symbol: string;
+  currency: string;
+  /** The oldest session there is: a price before it cannot be dated. */
+  first: string;
+  /** Newest first. */
+  runs: BuyRun[];
 };
 
 export type Result = {
@@ -344,6 +380,18 @@ export const commit = (
       wipe_confirm: wipe.on ? wipe.confirm : "",
     }),
   );
+
+/**
+ * The days `holding` could have been bought at `price`: one download of the
+ * listing's whole history, so it is asked when the reader asks, not on arrival.
+ */
+export const buyDates = (holding: Holding, price: number) =>
+  get<BuyDates>("/import/buy-dates", {
+    ticker: holding.ticker,
+    isin: holding.isin || undefined,
+    currency: holding.currency || undefined,
+    price,
+  });
 
 /** Delete exactly the rows the last commit inserted. */
 export const undoLast = () => attempt(() => send<LastImport>("DELETE", "/import/last"));

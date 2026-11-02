@@ -44,10 +44,11 @@ import {
   reportUnreadable,
   scanMoves,
 } from "./api";
-import type { Book, Platform, Result, Staged } from "./api";
+import type { Book, Platform, Preview, Result, Staged } from "./api";
 import { Eyebrow, jump } from "./Card";
 import { CommitPanel } from "./Commit";
 import { Glyph } from "./Glyph";
+import { Holdings } from "./Holdings";
 import { LastBatch } from "./Last";
 import { Ledger } from "./Ledger";
 import { Repairs } from "./RepairCard";
@@ -429,35 +430,44 @@ function Importer({
               </div>
             }
           >
-            {(outcome) =>
-              outcome !== null && outcome.ok ? (
+            {(outcome) => {
+              if (outcome === null || !outcome.ok) return null;
+              const read = outcome.value;
+              const panel = (shown: Preview, keep: boolean) => (
+                <CommitPanel
+                  keep={keep}
+                  onCommitted={(committed) => {
+                    setResult(committed);
+                    setStaged(null);
+                    setWipe(NO_WIPE);
+                    pasted.current = "";
+                    if (file.current) file.current.value = "";
+                    wrote();
+                  }}
+                  platforms={platforms}
+                  preview={shown}
+                  staged={staged}
+                  wipe={wipe}
+                />
+              );
+              // A holdings report has no dated rows: its lines are dated here
+              // first, and become the rows the same commit writes.
+              return read.kind === "positions" && (read.holdings ?? []).length > 0 ? (
+                <Holdings key={read.digest} preview={read}>
+                  {(dated) => panel(dated, false)}
+                </Holdings>
+              ) : (
                 <Tiers
                   // A new reading starts with its duplicates left out again.
-                  key={outcome.value.digest}
+                  key={read.digest}
                   onVenue={wrote}
                   picked={platform}
-                  preview={outcome.value}
+                  preview={read}
                 >
-                  {(keep) => (
-                    <CommitPanel
-                      keep={keep}
-                      onCommitted={(committed) => {
-                        setResult(committed);
-                        setStaged(null);
-                        setWipe(NO_WIPE);
-                        pasted.current = "";
-                        if (file.current) file.current.value = "";
-                        wrote();
-                      }}
-                      platforms={platforms}
-                      preview={outcome.value}
-                      staged={staged}
-                      wipe={wipe}
-                    />
-                  )}
+                  {(keep) => panel(read, keep)}
                 </Tiers>
-              ) : null
-            }
+              );
+            }}
           </Loaded>
         )}
 

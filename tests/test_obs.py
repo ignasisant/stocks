@@ -179,18 +179,23 @@ def test_pandas_removal_notices_from_yfinance_stay_off_the_log():
             # pytest swaps showwarning per test; re-latch logging's capture.
             logging.captureWarnings(False)
             obs.setup(force=True)
-            for module in ("yfinance.scrapers.history", "stocks.portfolio"):
+            # What `import yfinance` does, lazily, after setup(): its filter
+            # goes in front of anything setup() could install.
+            warnings.filterwarnings("default", category=DeprecationWarning,
+                                    module="^yfinance")
+            site = "/app/.venv/lib/python3.12/site-packages"
+            for module, path in (
+                ("yfinance.utils", f"{site}/yfinance/utils.py"),
+                ("stocks.portfolio", "/app/src/stocks/portfolio/__init__.py"),
+            ):
                 warnings.warn_explicit(
-                    "The 'inplace' keyword is deprecated",
-                    Pandas4Warning,
-                    f"{module}.py",
-                    1,
+                    "The 'inplace' keyword is deprecated", Pandas4Warning, path, 1,
                     module=module,
                 )
             logging.captureWarnings(False)
     finally:
         py_warnings.removeHandler(sink)
-    assert len(seen) == 1 and seen[0].startswith("stocks.portfolio.py")
+    assert len(seen) == 1 and seen[0].startswith("/app/src/stocks/portfolio/")
 
 
 def test_the_api_process_configures_logging_at_boot(monkeypatch):

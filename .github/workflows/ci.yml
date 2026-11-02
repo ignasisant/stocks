@@ -143,7 +143,7 @@ jobs:
   # The built shell in a real browser, against the real ASGI app with Yahoo,
   # the model and the network sealed off (tests/e2e/serve.py). Runs on the
   # committed bundle, which the frontend job proves is the one the sources build.
-  e2e:
+  e2e-shard:
     name: e2e ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -182,6 +182,19 @@ jobs:
           name: playwright-traces-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
+
+  # The branch protection on main requires a check named "e2e"; since the
+  # shards report as "e2e 1/2" and "e2e 2/2", this is that check, green only
+  # when both are. `always()` for the same reason as `test`.
+  e2e:
+    if: always()
+    needs: e2e-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "$SHARDS" = success
+        env:
+          SHARDS: ${{ needs.e2e-shard.result }}
 
   # The Terraform under infra/ (R2 bucket, Actions secrets, branch ruleset)
   # otherwise has no check at all: a typo there surfaces on the next manual

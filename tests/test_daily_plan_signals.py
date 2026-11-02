@@ -164,6 +164,7 @@ def test_the_sector_split_arrives_as_the_series_briefing_builds():
     assert [s.data["sector"] for s in found
             if s.kind == signals.PLAN_LIMIT and "sector" in s.data] == ["Technology"]
 
+
 def test_the_plans_cap_takes_concentrations_place():
     heavy = _book({"NVDA": 0.45, "VWCE.DE": 0.55})
     plain = signals.candidates(tbl=heavy, today=DAY)

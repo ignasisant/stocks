@@ -29,14 +29,23 @@ ES_CSV = (
     "03/04/2024;SAN;Traspaso;5;4,10;EUR;0\n"
 )
 
-# A holdings report: a table, but no date and nothing that says what
-# happened. Neither the model nor the guess can make transactions of it, and
-# that is the case where an outage is still an outage.
+# A holdings report: what is held, with no date and nothing that says what
+# happened. Read as one before any model is asked.
 POSITIONS_CSV = (
     "Resumen de cartera;;\n"
     "Posicion;Cantidad;Valor\n"
     "AAPL;10;1.805,00\n"
     "MSFT;5;2.000,00\n"
+)
+
+# A table that says nothing the guess can use: no date, no action, not even a
+# quantity to call it holdings. Only the model could read it, and that is the
+# case where an outage is still an outage.
+UNREADABLE_CSV = (
+    "Seguimiento;;\n"
+    "Nombre;Objetivo;Nota\n"
+    "Apple;200;mirar\n"
+    "Microsoft;450;esperar\n"
 )
 
 MAPPING = {
@@ -675,7 +684,7 @@ def test_one_block_failing_is_not_an_outage(monkeypatch):
 
 def test_a_dead_provider_on_the_spreadsheet_path_too():
     """Only when the file defeats the model *and* the header/content guess."""
-    found = llm_map.extract("posiciones.csv", POSITIONS_CSV.encode(),
+    found = llm_map.extract("seguimiento.csv", UNREADABLE_CSV.encode(),
                             _StubProvider(boom=True), "k")
     assert found.unavailable is True
     assert "assistant is down" in found.result.skipped[0]["reason"]
@@ -692,7 +701,7 @@ def test_a_dead_provider_still_imports_a_readable_file():
 
 
 def test_a_refused_mapping_is_not_an_outage():
-    found = llm_map.extract("posiciones.csv", POSITIONS_CSV.encode(),
+    found = llm_map.extract("seguimiento.csv", UNREADABLE_CSV.encode(),
                             _StubProvider('{"columns": null}'), "k")
     assert found.unavailable is False
 
@@ -747,14 +756,14 @@ def test_parse_reports_an_unreadable_spreadsheet():
 
 
 def test_parse_reports_a_refused_mapping():
-    result = llm_map.parse("posiciones.csv", POSITIONS_CSV.encode(),
+    result = llm_map.parse("seguimiento.csv", UNREADABLE_CSV.encode(),
                            _StubProvider('{"columns": null}'))
     assert not result.transactions
     assert "columns could not be matched" in result.skipped[0]["reason"]
 
 
 def test_parse_survives_a_dead_provider():
-    result = llm_map.parse("posiciones.csv", POSITIONS_CSV.encode(),
+    result = llm_map.parse("seguimiento.csv", UNREADABLE_CSV.encode(),
                            _StubProvider(boom=True))
     assert not result.transactions and result.skipped
 
@@ -874,3 +883,64 @@ def test_an_action_the_sample_never_showed_the_model_still_maps():
     mapping = dict(MAPPING, action_map={"compra": "buy"})
     result = llm_map.apply_mapping(grid, mapping)
     assert [tx.action for tx in result.transactions] == ["buy", "sell", "dividend"]
+
+
+def test_a_holdings_csv_is_positions_before_any_model_is_asked():
+    provider = _StubProvider(boom=True)
+    found = llm_map.extract("posiciones.csv", POSITIONS_CSV.encode(), provider, "k")
+    assert found.kind == llm_map.KIND_POSITIONS
+    assert not found.result.transactions and not found.unavailable
+    assert provider.calls == []
+    assert llm_map.preset_read("posiciones.csv", POSITIONS_CSV.encode()).kind \
+        == llm_map.KIND_POSITIONS
+
+
+def test_a_holdings_snapshot_hands_back_each_line_held():
+    found = llm_map.preset_read("posiciones.csv", POSITIONS_CSV.encode())
+    assert [(h["ticker"], h["quantity"], h["cost"]) for h in found.holdings] == [
+        ("AAPL", 10.0, None), ("MSFT", 5.0, None),
+    ]
+
+
+def holdings(text: str) -> list[tuple]:
+    rows = llm_map.holdings_rows(llm_map.read_grid("x.csv", text.encode()))
+    return [(h["ticker"], h["isin"], h["quantity"], h["currency"], h["cost"])
+            for h in rows]
+
+
+def test_only_a_column_that_says_average_or_cost_is_the_price_paid():
+    # "Valor" names the position's worth here, and "Precio" is today's quote:
+    # neither is what was paid, and the symbols are found by their cells.
+    assert holdings(
+        "Posicion;Cantidad;Precio;Precio medio;Valor\n"
+        "AAPL;10;180,50;150,25;1.805,00\n"
+    ) == [("AAPL", "", 10.0, "", 150.25)]
+    assert holdings(
+        "Valor;ISIN;Cantidad;Coste total;Divisa\n"
+        "Apple;US0378331005;10;1500;usd\n"
+    ) == [("US0378331005", "US0378331005", 10.0, "USD", 150.0)]
+
+
+def test_the_symbol_beside_the_isin_is_the_ticker():
+    assert holdings(
+        "Symbol,ISIN,Quantity,Average price,Currency\n"
+        "AAPL,US0378331005,10,150.5,USD\n"
+        "VWCE,IE00BK5BQT80,3,,EUR\n"
+        "CASH,,0,,EUR\n"
+    ) == [("AAPL", "US0378331005", 10.0, "USD", 150.5),
+          ("VWCE", "IE00BK5BQT80", 3.0, "EUR", None)]
+
+
+def test_a_dated_or_typed_column_is_never_a_holdings_snapshot():
+    # A trades file is still a trades file when its date column's header is
+    # one the table never listed: the cells give it away.
+    assert not llm_map.holdings_only(llm_map.read_grid("x.csv", ES_CSV.encode()))
+    undated_header = (
+        "Cuando;Valor;Cantidad;Precio\n"
+        "02/01/2024;AAPL;10;180,50\n"
+        "05/03/2024;MSFT;4;190,00\n"
+    )
+    assert not llm_map.holdings_only(
+        llm_map.read_grid("x.csv", undated_header.encode()))
+    assert not llm_map.holdings_only(
+        llm_map.read_grid("x.csv", UNREADABLE_CSV.encode()))
