@@ -41,6 +41,42 @@ def test_future_and_ancient_dates_rejected():
     assert v.importable == []
 
 
+def test_a_trade_never_carries_a_negative_count_or_price():
+    v = validate(
+        _result([_buy(price=-5.0), _buy(ticker="GOOG", qty=-3.0), _sell(price=-1.0)]),
+        [_buy(qty=10.0, day="2024-01-02")],
+        known=KNOWN,
+        today=TODAY,
+    )
+    keys = sorted(i.key for c in v.rejected for i in c.errors)
+    assert keys == [
+        "validate.negative_price",
+        "validate.negative_price",
+        "validate.negative_quantity",
+    ]
+    assert v.importable == []
+
+
+def test_zero_stays_a_price_and_other_actions_keep_their_sign():
+    fee = Transaction(date="2025-02-01", ticker="AAPL", action="fee",
+                      quantity=0, price=-2.5)
+    v = validate(_result([_buy(price=0.0), fee]), [], known=KNOWN, today=TODAY)
+    assert not any(
+        i.key.startswith("validate.negative_") for c in v.checked for i in c.issues
+    )
+
+
+def test_today_is_a_trade_day_and_tomorrow_is_not():
+    v = validate(
+        _result([_buy(day="2026-08-02"), _buy(day="2026-08-03", ticker="GOOG")]),
+        [],
+        known=KNOWN,
+        today=TODAY,
+    )
+    assert [t.ticker for t in v.importable] == ["AAPL"]
+    assert [i.key for c in v.rejected for i in c.errors] == ["validate.future_date"]
+
+
 def test_unknown_ticker_warns_but_imports():
     v = validate(_result([_buy(ticker="DHER")]), [], known=KNOWN, today=TODAY)
     assert len(v.importable) == 1

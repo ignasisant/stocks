@@ -5,6 +5,8 @@
   "validate.missing_ticker": "falta el ticker",
   "validate.malformed_ticker": "{ticker} no parece un ticker",
   "validate.unknown_ticker": "no reconocemos {ticker} — se importa, pero puede quedarse sin precio si es un código propio del bróker (SAN en vez de SAN.MC)",
+  "validate.negative_quantity": "el número de acciones no puede ser negativo ({value})",
+  "validate.negative_price": "el precio no puede ser negativo ({value})",
   "validate.zero_price_sell": "vendida a 0 — correcto si la empresa quebró o dejó de cotizar; toda la posición cuenta como pérdida",
   "validate.duplicate": "esta misma operación ya está en tu cartera o antes en el archivo — importarla otra vez la cuenta dos veces",
   "validate.near_duplicate": "tu cartera o este archivo ya tiene una {action} de {quantity} {ticker} el {date} a otro precio — seguramente la misma operación leída dos veces",
