@@ -295,6 +295,28 @@ def test_a_follow_up_searches_for_the_conversation_s_ticker():
     assert queries and queries[0].startswith("SHOP")
 
 
+def test_a_price_follow_up_searches_the_answer_s_tickers_not_the_page():
+    """Prod 2026-11-02: "No me has dicho el precio exacto" after an answer on
+    TSM, NOW and ASML searched "Alphabet GOOG stock price" from the GOOG page."""
+    history = [
+        {"role": "user", "content": "Analiza las noticias de los candidatos"},
+        {"role": "assistant", "content": "**TSM**, **NOW** y **ASML**: ..."},
+        {"role": "user", "content": "No me has dicho el precio exacto"},
+    ]
+    known = {t: t for t in ("TSM", "NOW", "ASML", "GOOG")}
+    view = "Current view: The ticker in focus is GOOG."
+    ctx = engine.web_context(history, view, known)
+    assert "conversation is about TSM, NOW, ASML" in ctx
+    queries = chat_web.heuristic_queries(history[-1]["content"], ctx)
+    assert queries and queries[0].startswith("TSM NOW ASML")
+    assert "GOOG" not in queries[0]
+    # A message about the page itself still searches it.
+    history[-1] = {"role": "user", "content": "¿Por qué ha subido hoy?"}
+    ctx = engine.web_context(history, view, known)
+    assert chat_web.heuristic_queries(history[-1]["content"], ctx)[0].startswith(
+        "GOOG")
+
+
 def test_the_open_page_is_not_the_subject_of_a_question_about_the_book():
     """Local review 2026-10-30: the search read "BKNG ¿Qué empresas de mi
     cartera presentan resultados…" with Booking's page open."""

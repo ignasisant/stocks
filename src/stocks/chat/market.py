@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
+from stocks.chat import clock
 from stocks.formatting import bound
 from stocks.portfolio import consistency
 
@@ -58,6 +59,10 @@ _AMPERSAND = (
 # model, whether a message names a company worth searching for.
 NOT_TICKERS = {
     "A", "AI", "ALL", "AND", "ANY", "API", "AT", "BE", "BUY", "BY", "CAGR",
+    # Central banks, as a daily card says them ("sin reuniones del BCE/Fed"):
+    # "¿qué es BCE?" was answered as BCE Inc. A reader who lists the company
+    # still gets it (`mentioned`).
+    "BCE", "BOE", "BOJ", "ECB",
     "CEO", "CFO", "CPI", "DCF", "DE", "DO", "EBIT", "EBITDA", "EL", "EPS",
     "ES", "ETF", "ETFS", "EU", "EUR", "EV", "FCF", "FED", "FOR", "FX", "GDP",
     "GO", "HOY", "I", "IA", "IF",
@@ -73,7 +78,7 @@ NOT_TICKERS = {
 # exposición tengo por país?"), and quoting that ticker anyway pulled every
 # answer towards it. "este año" and "esta semana" are dates, not the page.
 _POINTS_RE = re.compile(
-    r"\b(?:this|it|its|it's|that one|here|the (?:stock|company|share)s?"
+    r"\b(?:this|it|its|it's|that one|here|the (?:stock|company|share)s?|sus?"
     r"|(?:est|es)[aeo]s?(?!\s+(?:año|mes|semana|trimestre|semestre|ejercicio"
     r"|lunes|martes|miércoles|jueves|viernes|vez|momento|tipo|tema)\b)"
     r"|aquí|aquest[ae]?s?|això"
@@ -86,7 +91,7 @@ _POINTS_RE = re.compile(
 _PRICED_RE = re.compile(
     r"\b(?:c[oó]mo (?:va|est[aá]|lo ves|la ves)|qu[eé] tal|cotiza|compr[oa]r?"
     r"|vend[oe]r?|mantengo|mantener|refuerzo|reforzar|barat[ao]s?|car[ao]s?"
-    r"|precio|price|cheap|expensive|buy|sell|hold)\b",
+    r"|precios?|prices?|cotizaci[oó]n(?:es)?|cheap|expensive|buy|sell|hold)\b",
     re.IGNORECASE,
 )
 
@@ -164,7 +169,7 @@ class Quote:
         head = f"{self.ticker}" + (f" ({self.name})" if self.name else "")
         bits = []
         pct = self.day_pct
-        day = f" {self.as_of}" if self.as_of else ""
+        day = clock.session(self.as_of)
         if self.price is not None and self.session == "pre":
             bits.append(f"premarket {n(self.price, 2)} {self.currency}".strip())
             if pct is not None and self.prev_close:
@@ -294,7 +299,7 @@ def mentioned(
     # The regex only matches all-caps runs, so a token here is one the user
     # actually typed in caps; the stop-list keeps "ETF"/"USA"/"CEO" out.
     for tok in _TICKER_RE.findall(_ampersands(message, add)):
-        if tok not in NOT_TICKERS:
+        if tok not in NOT_TICKERS or tok in known:
             add(known.get(tok, tok))
     said = f" {' '.join(_words(message))} "
     for name, tk in known.items():
@@ -695,10 +700,21 @@ def _scan() -> dict:
 # ----------------------------------------------------------------- prompt
 
 
-def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
-    """The user message with the live quotes appended (unchanged when none)."""
+def augment(message: str, quotes_: list[Quote], lang: str = "en",
+            held: set[str] | None = None) -> str:
+    """The user message with the live quotes appended (unchanged when none).
+
+    With `held`, each line says whether the reader holds it: told "BCE Inc,
+    last 20.39 USD", the model answered "yes, you hold BCE" with another
+    position's shares, value and loss."""
     if not quotes_:
         return message
+
+    def owned(q: Quote) -> str:
+        if held is None:
+            return ""
+        return (" | held: figures in the book above" if q.ticker in held
+                else " | not held by the user")
     return (
         message
         + "\n\n---\nLive market data fetched for this message (these are "
@@ -706,7 +722,7 @@ def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
         "prices quoted in web results; each move is dated with its session, "
         "and premarket or after-hours is where a report out of hours trades "
         "first):\n"
-        + "\n".join(q.line(lang) for q in quotes_)
+        + "\n".join(q.line(lang) + owned(q) for q in quotes_)
     )
 
 
@@ -718,16 +734,60 @@ def points_at_screen(message: str, known: dict[str, str] | None = None) -> bool:
         message, known, lookup=lambda _name: "")
 
 
+# A reply this short that points back keeps the subject of the turns before
+# it: "Dámelos" after "the prices are wrong" still asks for prices, while
+# "¿qué es el ROIC?" there starts another one.
+_FOLLOW_UP_WORDS = 12
+_BACK_RE = re.compile(
+    r"\b(?:l[oa]s?|les|es[oa]s?|eso|ellos|ellas|siguen?|sigue|otra vez"
+    r"|them|those|these|they|it|again)\b|\w+l[oa]s\b",
+    re.IGNORECASE,
+)
+
+
+def carried(
+    message: str, earlier: Sequence[Mapping], known: dict[str, str]
+) -> list[str]:
+    """The reader's own tickers the last answer named, when `message` asks
+    for their prices without naming them.
+
+    "No me has dicho el precio exacto" after an answer on TSM, NOW and ASML
+    names no symbol: nothing was quoted, and the answer gave TSM at half its
+    price from memory."""
+    asked = [t.get("content") or "" for t in earlier if t.get("role") == "user"]
+    if not (_PRICED_RE.search(message) or (
+            len(message.split()) <= _FOLLOW_UP_WORDS and _BACK_RE.search(message)
+            and any(_PRICED_RE.search(text) for text in asked[-2:]))):
+        return []
+    mine = set(known.values())
+    said = [t.get("content") or "" for t in earlier if t.get("role") == "assistant"]
+    for text in reversed(said[-2:]):
+        # Only symbols on the reader's list: an answer's "USD" or "P/E" is
+        # shaped like a ticker too.
+        out = list(dict.fromkeys(
+            tk for tok in _TICKER_RE.findall(text)
+            if (tk := known.get(tok)) in mine))
+        if out:
+            return out[:MAX_TICKERS]
+    return []
+
+
 def lookup_for(
-    message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en"
+    message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en",
+    earlier: Sequence[Mapping] = (),
 ) -> list[Quote]:
     """The whole path in one call: mentions → live quotes.
 
     The convenience entry point both chat surfaces use; every failure inside
     degrades to []. `focus` is quoted only when the message points at it
-    (`points_at_screen`); a symbol it names is quoted whatever the page."""
+    (`points_at_screen`); a symbol it names is quoted whatever the page. A
+    price follow-up that names none quotes what the last answer was about
+    (`carried`), ahead of the page behind the drawer."""
     try:
         known = watchlist_names(watchlist) if watchlist else {}
+        if not mentioned(message, known, lookup=lambda _name: "") and (
+                follows := carried(message, earlier, known)):
+            return _with_crypto(quotes(follows), _scan, lang)
         focus = focus if focus and points_at_screen(message, known) else ""
         return _with_crypto(quotes(mentioned(message, known, focus)), _scan, lang)
     except Exception:
