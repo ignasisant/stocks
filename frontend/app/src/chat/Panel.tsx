@@ -370,6 +370,9 @@ export default function Panel({
   const below = !isAtBottom && chat.turns.length > 0;
   const named = (open?.title || "").trim();
   const state = chat.state;
+  // The opening read paints the thread before the state lands (`useChat`):
+  // the turns are drawn, the composer waits.
+  const early = !state && view === "thread" && chat.turns.length > 0;
   const provider = state?.providers.find((p) => p.id === state.answering);
   const byok = provider?.needs_key ?? false;
   // Null is not zero: an account the free chain never served has no counter,
@@ -507,7 +510,7 @@ export default function Panel({
 
       {chat.failed && <p className="ag-chat-note">{t("chat.api_error")}</p>}
 
-      {!state && !chat.failed && (
+      {!state && !early && !chat.failed && (
         <div className="ag-chat-body">
           <Skeleton rows={4} />
         </div>
@@ -547,7 +550,7 @@ export default function Panel({
         <MemoryView onBack={() => setView("settings")} onOpen={openThread} />
       )}
 
-      {state && view === "thread" && (
+      {(state || early) && view === "thread" && (
         <>
           {/* Dropping a statement on the conversation is the same import the
               paperclip starts — the drawer simply says so while something is
@@ -581,7 +584,7 @@ export default function Panel({
               }
             }}
           >
-            {overDrop && (
+            {overDrop && state && (
               <p className="ag-chat-drop">
                 {t("chat.drop_zone", { mb: state.upload_max_mb })}
               </p>
@@ -598,8 +601,8 @@ export default function Panel({
                     <Turn
                       key={i}
                       turn={turn}
-                      skills={state.skills}
-                      providers={state.providers}
+                      skills={state?.skills ?? []}
+                      providers={state?.providers ?? []}
                       walk={
                         chat.guide
                           ? {
@@ -610,7 +613,7 @@ export default function Panel({
                             }
                           : null
                       }
-                      cap={state.free_cap}
+                      cap={state?.free_cap ?? null}
                       onRetry={chat.retry}
                       // Only the newest turn can be discarded: an older refusal
                       // is history the reader has already moved past.
@@ -619,7 +622,7 @@ export default function Panel({
                       // while today's allowance lasts, a BYOK provider only
                       // with a key in hand. A pick that still needs one goes
                       // through settings instead.
-                      switchTo={state.providers.filter(
+                      switchTo={state?.providers.filter(
                         (p) =>
                           p.id !== state.answering &&
                           (p.needs_key ? p.has_key : (state.free_left ?? 0) > 0),
@@ -650,7 +653,7 @@ export default function Panel({
                   // Not the starters: they are an empty thread's, and this one
                   // is only empty until its turns arrive.
                   <Status label={t("common.loading")} />
-                ) : needsSetup(state) ? (
+                ) : !state ? null : needsSetup(state) ? (
                   <Setup
                     state={state}
                     onSave={(patch) => void chat.settings(patch)}
@@ -721,16 +724,24 @@ export default function Panel({
               </div>
             )}
           </div>
-          <Composer
-            state={state}
-            busy={chat.busy}
-            reading={chat.reading}
-            onSend={(text, spoken, deep) => void chat.send(text, spoken, false, deep)}
-            onStop={chat.stop}
-            onSave={(patch) => void chat.settings(patch)}
-            onAttach={(file) => void chat.attach(file)}
-            onSettings={() => setView("settings")}
-          />
+          {state ? (
+            <Composer
+              state={state}
+              busy={chat.busy}
+              reading={chat.reading}
+              onSend={(text, spoken, deep) => void chat.send(text, spoken, false, deep)}
+              onStop={chat.stop}
+              onSave={(patch) => void chat.settings(patch)}
+              onAttach={(file) => void chat.attach(file)}
+              onSettings={() => setView("settings")}
+            />
+          ) : (
+            // The field needs the state (lenses, voice, upload types); the
+            // turns above do not, so they are drawn while it is still coming.
+            <div className="ag-chat-composer">
+              <Skeleton rows={1} />
+            </div>
+          )}
         </>
       )}
     </>
