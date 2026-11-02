@@ -1087,6 +1087,11 @@
   white-space: nowrap;
 }
 
+/* An ISIN carries the fund's name, too long to keep on one line in the drawer. */
+.ag-chat-isin {
+  white-space: normal;
+}
+
 @media (hover: hover) {
   .ag-chat-tick:hover .ag-tick-sym {
     text-decoration: underline;

@@ -49,7 +49,7 @@ class Subscription(BaseModel):
 
     endpoint: str = Field(max_length=1000)
     keys: Keys
-    lang: Literal["en", "es"] = "en"
+    lang: Literal["en", "es", "it"] = "en"
 
 
 class Endpoint(BaseModel):

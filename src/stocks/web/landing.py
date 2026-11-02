@@ -32,6 +32,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+from stocks.formatting import DECIMAL_COMMA
 from stocks.portfolio import tax
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, has, translate
 from stocks.web.landing_css import CSS, MOBILE_RULES, TINY_CSS
@@ -48,6 +49,7 @@ PARAM_GUEST = "guest"
 # resolve against the wrong directory there.
 PATH_EN = "/"
 PATH_ES = "/es/"
+PATH_IT = "/it/"
 # Language and tax residence are independent: an English-reading filer in Spain
 # and a Spanish-reading filer in the US both exist, and the pitch is a
 # country's case, so each combination is its own indexable page rather than a
@@ -59,6 +61,7 @@ ASSET_BASE = "/lp/"
 # The public Spanish-tax guides (`web/guides.py`), one index per language.
 PATH_GUIDES_EN = "/guides/"
 PATH_GUIDES_ES = "/es/guias/"
+PATH_GUIDES_IT = "/it/guide/"
 
 # The language this render is for. A ContextVar rather than an argument because
 # every section below reads it through tr() — threading a code through fifteen
@@ -72,19 +75,21 @@ _LANG: ContextVar[str] = ContextVar("landing_lang", default=DEFAULT_LANG)
 # fourth landing variant per language pair would be four indexed pages arguing
 # past each other. The language toggle switches both, and `render_language`
 # takes an explicit override for the day that stops being true.
-JURISDICTION_BY_LANG = {"en": "US", "es": "ES"}
+JURISDICTION_BY_LANG = {"en": "US", "es": "ES", "it": "IT"}
 # Unset rather than defaulting to one country: outside a render (seo.py called
 # directly, a test) the right jurisdiction is the language's own, not Spain's.
 _JUR: ContextVar[str | None] = ContextVar("landing_jur", default=None)
 
 # (language, jurisdiction) -> the one URL that serves it. Two pages became four
 # when the copy split by country; the pairs a language defaults to keep the
-# short paths so nothing already indexed moves.
+# short paths so nothing already indexed moves. Italian argues only Italy's
+# case: no cross pairs until someone files from there in another language.
 VARIANTS: dict[tuple[str, str], str] = {
     ("en", "US"): PATH_EN,
     ("es", "ES"): PATH_ES,
     ("en", "ES"): PATH_EN_ES,
     ("es", "US"): PATH_ES_US,
+    ("it", "IT"): PATH_IT,
 }
 LANDING_PATHS: tuple[str, ...] = tuple(VARIANTS.values())
 
@@ -94,10 +99,19 @@ def jurisdiction_for(lang: str) -> str:
 
 
 def variant_path(lang: str, jurisdiction: str | None = None) -> str:
-    """The URL serving `lang` under `jurisdiction` (its default if unset)."""
+    """The URL serving `lang` under `jurisdiction` (its default if unset).
+
+    A pair with no page of its own (Italian copy, Spanish rules) lands on the
+    language's default page: the reader asked for the language first.
+    """
     code = lang if lang in LANGUAGES else DEFAULT_LANG
     jur = tax.normalize(jurisdiction or jurisdiction_for(code))
-    return VARIANTS.get((code, jur), PATH_EN)
+    return VARIANTS.get((code, jur)) or VARIANTS[(code, jurisdiction_for(code))]
+
+
+def jurisdictions_for(lang: str) -> tuple[str, ...]:
+    """The jurisdictions `lang` has a page for, in registry order."""
+    return tuple(jur for code, jur in VARIANTS if code == lang)
 
 
 def variant_for(path: str) -> tuple[str, str] | None:
@@ -208,8 +222,13 @@ def _is_es() -> bool:
     return active_language() == "es"
 
 
+def _comma() -> bool:
+    """Decimal comma and dot grouping: Spanish and Italian."""
+    return active_language() in DECIMAL_COMMA
+
+
 def _group(digits: str) -> str:
-    sep = "." if _is_es() else ","
+    sep = "." if _comma() else ","
     out, count = [], 0
     for ch in reversed(digits):
         if count and count % 3 == 0:
@@ -230,7 +249,7 @@ def _money(amount: int, *, signed: bool = False) -> str:
         sign = "−" if amount < 0 else "+"
     body = _group(str(abs(amount)))
     sym = _symbol()
-    return f"{sign}{body} {sym}" if _is_es() else f"{sign}{sym}{body}"
+    return f"{sign}{body} {sym}" if _comma() else f"{sign}{sym}{body}"
 
 
 def _plain(amount: int, *, signed: bool = False) -> str:
@@ -242,14 +261,16 @@ def _plain(amount: int, *, signed: bool = False) -> str:
 def _pct(value: float, *, signed: bool = True) -> str:
     sign = ("−" if value < 0 else "+") if signed else ""
     body = f"{abs(value):.1f}"
-    if _is_es():
-        return f"{sign}{body.replace('.', ',')} %"
+    if _comma():
+        # Spanish spaces the sign off the figure; Italian sets it tight.
+        gap = " " if _is_es() else ""
+        return f"{sign}{body.replace('.', ',')}{gap}%"
     return f"{sign}{body}%"
 
 
 def _dec(value: float, places: int) -> str:
     body = f"{value:.{places}f}"
-    return body.replace(".", ",") if _is_es() else body
+    return body.replace(".", ",") if _comma() else body
 
 
 def _rows(n: int) -> str:
@@ -303,20 +324,23 @@ def _mark(width_class: str = "") -> str:
 
 
 def _lang_toggle(*, footer: bool = False) -> str:
-    """EN / ES switch — one indexable URL each, paired by hreflang in the head.
+    """EN / ES / IT switch — one indexable URL each, paired by hreflang in the head.
 
-    The switch keeps the jurisdiction: a reader on the Spanish-tax page who
-    wants English wants the English *Spanish-tax* page, not a different
-    country's argument.
+    The switch keeps the jurisdiction where the other language argues it: a
+    reader on the Spanish-tax page who wants English wants the English
+    *Spanish-tax* page, not a different country's argument. Italian argues only
+    Italy's case, so it links to that page from anywhere.
     """
-    es = _is_es()
+    here = active_language()
     jur = active_jurisdiction()
-    en_href, es_href = variant_path("en", jur), variant_path("es", jur)
-    en_part = '<span class="on">EN</span>' if not es else f'<a href="{en_href}">EN</a>'
-    es_part = '<span class="on">ES</span>' if es else f'<a href="{es_href}">ES</a>'
+    parts = [
+        f'<span class="on">{code.upper()}</span>' if code == here
+        else f'<a href="{variant_path(code, jur)}">{code.upper()}</a>'
+        for code in LANGUAGES
+    ]
     if footer:
-        return f'<div class="ag-l-foot-lang">{en_part}<span>·</span>{es_part}</div>'
-    return f'<div class="ag-l-lang">{en_part}{es_part}</div>'
+        return f'<div class="ag-l-foot-lang">{"<span>·</span>".join(parts)}</div>'
+    return f'<div class="ag-l-lang">{"".join(parts)}</div>'
 
 
 def _jur_toggle(*, footer: bool = False) -> str:
@@ -324,27 +348,33 @@ def _jur_toggle(*, footer: bool = False) -> str:
 
     Footer-only in the chrome (the header has no room on a phone) plus one
     contextual link in the tax section, which is where a reader discovers the
-    page is arguing the wrong country at them.
+    page is arguing the wrong country at them. A language with a single
+    country's page (Italian) has nothing to switch to and draws none.
     """
     lang = active_language()
     here = active_jurisdiction()
+    codes = jurisdictions_for(lang)
+    if len(codes) < 2:
+        return ""
     parts = []
-    for code in ("ES", "US"):
+    for code in codes:
         label = esc(tr(f"landing.jur_{code.lower()}"))
         parts.append(
             f'<span class="on">{label}</span>' if code == here
             else f'<a href="{variant_path(lang, code)}">{label}</a>'
         )
     if footer:
-        return (
-            f'<div class="ag-l-foot-lang">{parts[0]}<span>·</span>{parts[1]}</div>'
-        )
-    return f'<div class="ag-l-lang">{parts[0]}{parts[1]}</div>'
+        return f'<div class="ag-l-foot-lang">{"<span>·</span>".join(parts)}</div>'
+    return f'<div class="ag-l-lang">{"".join(parts)}</div>'
 
 
 def _jur_switch_link() -> str:
     """"Filing in the US instead?" — the other country's page, same language."""
-    other = "US" if active_jurisdiction() == "ES" else "ES"
+    here = active_jurisdiction()
+    others = [c for c in jurisdictions_for(active_language()) if c != here]
+    if not others:
+        return ""
+    other = others[0]
     href = variant_path(active_language(), other)
     return (
         f'<a class="ag-l-jurswitch" href="{href}">'
@@ -354,11 +384,13 @@ def _jur_switch_link() -> str:
 
 def _legal_lang_q() -> str:
     """Query string that keeps the legal pages in this page's language."""
-    return "?lang=es" if _is_es() else ""
+    lang = active_language()
+    return f"?lang={lang}" if lang != DEFAULT_LANG else ""
 
 
 def _guides_path() -> str:
-    return PATH_GUIDES_ES if _is_es() else PATH_GUIDES_EN
+    guides = {"es": PATH_GUIDES_ES, "it": PATH_GUIDES_IT}
+    return guides.get(active_language(), PATH_GUIDES_EN)
 
 
 def _app_href(param: str) -> str:
@@ -366,10 +398,11 @@ def _app_href(param: str) -> str:
 
     Always root-absolute with the query parameter: `server.py` hands any
     parameterised request for `/` to the app, so this one link both leaves
-    the landing and tells the app what the visitor asked for. The Spanish page
-    carries its language along, since the app resolves that per session.
+    the landing and tells the app what the visitor asked for. A non-English
+    page carries its language along, since the app resolves that per session.
     """
-    lang = "" if not _is_es() else "&lang=es"
+    code = active_language()
+    lang = "" if code == DEFAULT_LANG else f"&lang={code}"
     return f"{PATH_EN}?{param}=1{lang}"
 
 
@@ -500,6 +533,33 @@ def _brokers() -> str:
 </section>"""
 
 
+# The sample book's lots of one company: (n, year bought, shares). The mock
+# sells 15 of them, matched oldest first, or newest first where the law says
+# LIFO; the lots are drawn in the order they are matched.
+_LOTS = ((1, 2022, 10), (2, 2023, 12), (3, 2025, 8))
+_LOTS_SOLD = 15
+_LIFO = frozenset({"IT"})
+
+
+def _lots() -> str:
+    lots = _LOTS[::-1] if active_jurisdiction() in _LIFO else _LOTS
+    left = _LOTS_SOLD
+    out = []
+    for n, year, shares in lots:
+        sold, left = min(shares, left), left - min(shares, left)
+        head = f"<b>{esc(tr('landing.fifo_lot', n=n, year=year))}</b>"
+        parts = [("sold", sold, "landing.fifo_sold"),
+                 ("held", shares - sold, "landing.fifo_held")]
+        cells = [
+            f'<div class="ag-l-lot {cls} ag-l-f{k}">{head if i == 0 else "<b>&nbsp;</b>"}'
+            f'\n  <i class="ag-l-mono">{esc(tr(key, n=k))}</i></div>'
+            for i, (cls, k, key) in enumerate(p for p in parts if p[1])
+        ]
+        out.append(cells[0] if len(cells) == 1 else
+                   f'<div class="ag-l-lotpair ag-l-f{shares}">{"".join(cells)}</div>')
+    return "".join(out)
+
+
 def _gap() -> str:
     pairs = (
         ("landing.gap_p1", "landing.gap_b1", "landing.gap_s1"),
@@ -518,21 +578,7 @@ def _gap() -> str:
     fifo = f"""
 <div class="ag-l-diagram">
   <span class="ag-l-mono ag-l-eyebrow-sm">{esc(tr("landing.fifo_label"))}</span>
-  <div class="ag-l-lots">
-    <div class="ag-l-lot sold ag-l-f10">
-      <b>{esc(tr("landing.fifo_lot", n=1, year=2022))}</b>
-      <i class="ag-l-mono">{esc(tr("landing.fifo_sold", n=10))}</i></div>
-    <div class="ag-l-lotpair ag-l-f12">
-      <div class="ag-l-lot sold ag-l-f5">
-        <b>{esc(tr("landing.fifo_lot", n=2, year=2023))}</b>
-        <i class="ag-l-mono">{esc(tr("landing.fifo_sold", n=5))}</i></div>
-      <div class="ag-l-lot held ag-l-f7"><b>&nbsp;</b>
-        <i class="ag-l-mono">{esc(tr("landing.fifo_held", n=7))}</i></div>
-    </div>
-    <div class="ag-l-lot held ag-l-f8">
-      <b>{esc(tr("landing.fifo_lot", n=3, year=2025))}</b>
-      <i class="ag-l-mono">{esc(tr("landing.fifo_held", n=8))}</i></div>
-  </div>
+  <div class="ag-l-lots">{_lots()}</div>
   <span class="ag-l-note">{esc(tr("landing.fifo_note"))}</span>
 </div>"""
 
@@ -889,28 +935,35 @@ def _depth_a() -> str:
 _TAX_PILLS = {
     "ES": ("art. 37 LIRPF", "art. 33.5.f", "Modelo 720", "19–30%"),
     "US": ("FIFO", "IRC 1091", "Form 8938", "0/15/20%"),
+    "IT": ("LIFO", "Art. 67 TUIR", "Quadro RW", "26%"),
 }
 
 # Headline rate on the panel's sample base: Spain's first savings-base bracket,
-# the US long-term middle rate. Illustrative, like every figure in the mocks.
-_PANEL_RATE = {"ES": 19.0, "US": 15.0}
+# the US long-term middle rate, Italy's flat imposta sostitutiva. Illustrative,
+# like every figure in the mocks.
+_PANEL_RATE = {"ES": 19.0, "US": 15.0, "IT": 26.0}
+_PANEL_NET = 2141
+# Italy has no repurchase rule, so its panel has no deferred loss to strike.
+_NO_WASH_RULE = frozenset({"IT"})
 
 
 def _depth_b() -> str:
-    rate = _pct(_PANEL_RATE.get(active_jurisdiction(), 19.0), signed=False)
+    jur = active_jurisdiction()
+    rate = _PANEL_RATE.get(jur, 19.0)
+    deferred = "" if jur in _NO_WASH_RULE else f"""
+<div class="ag-l-irpf-r ag-l-warnrow">
+  <span>{_WARN_MARK}{esc(tr("landing.irpf_deferred"))}</span>
+  <b class="ag-l-struck">{esc(_money(-612, signed=True))}</b></div>"""
     rows = f"""
 <div class="ag-l-irpf-r"><span>{esc(tr("landing.irpf_gains"))}</span>
   <b class="ag-l-up">{esc(_money(2521, signed=True))}</b></div>
 <div class="ag-l-irpf-r"><span>{esc(tr("landing.irpf_losses"))}</span>
-  <b class="ag-l-down">{esc(_money(-380, signed=True))}</b></div>
-<div class="ag-l-irpf-r ag-l-warnrow">
-  <span>{_WARN_MARK}{esc(tr("landing.irpf_deferred"))}</span>
-  <b class="ag-l-struck">{esc(_money(-612, signed=True))}</b></div>
+  <b class="ag-l-down">{esc(_money(-380, signed=True))}</b></div>{deferred}
 <div class="ag-l-irpf-r total"><span>{esc(tr("landing.irpf_net"))}</span>
-  <b>{esc(_money(2141))}</b></div>
+  <b>{esc(_money(_PANEL_NET))}</b></div>
 <div class="ag-l-irpf-r total">
-  <span>{esc(tr("landing.irpf_tax", rate=rate))}</span>
-  <b>{esc(_money(407))}</b></div>
+  <span>{esc(tr("landing.irpf_tax", rate=_pct(rate, signed=False)))}</span>
+  <b>{esc(_money(round(_PANEL_NET * rate / 100)))}</b></div>
 <div class="ag-l-irpf-r"><span>{esc(tr("landing.irpf_carry"))}</span>
   <b class="ag-l-down">{esc(_money(-612, signed=True))}</b></div>"""
 

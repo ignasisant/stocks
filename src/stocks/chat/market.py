@@ -32,7 +32,7 @@ from pathlib import Path
 
 from stocks import obs
 from stocks.chat import clock
-from stocks.formatting import bound
+from stocks.formatting import DECIMAL_COMMA, bound
 from stocks.portfolio import consistency
 
 MAX_TICKERS = 3  # quotes fetched per message
@@ -640,7 +640,7 @@ def crypto_context(
     if ath and drop is not None:
         day = (entry.get("ath_date") or {}).get(q) or "?"
         high = f"{ath:,.6g}"
-        if lang == "es":
+        if lang in DECIMAL_COMMA:
             high = high.translate({ord(","): ".", ord("."): ","})
         bits.append(
             f"all-time high {high} {ccy} on {day} ({p(drop, 0, signed=True)} from it)"

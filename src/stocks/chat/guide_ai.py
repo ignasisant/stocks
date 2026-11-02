@@ -55,7 +55,7 @@ _HOLD = 48
 NARRATE_TIMEOUT_S = 12.0
 NARRATE_MAX_CHARS = 280
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 # ------------------------------------------------------------------ the state

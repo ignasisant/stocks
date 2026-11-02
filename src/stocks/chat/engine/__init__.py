@@ -39,6 +39,7 @@ from stocks.chat import (
     guard,
     harvest,
     income,
+    isins,
     journal,
     learnings,
     market,
@@ -1080,6 +1081,11 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
     text = strip_date_head(scrub_written_calls(strip_cite_marks(text)))
+    # Made-up ISINs out, known ones drawn with their own name (chat/isins.py);
+    # one the reader typed stays, so "X is not an ISIN" keeps its X.
+    typed = "\n".join(str(m.get("content") or "") for m in turn.history
+                      if m.get("role") == "user")
+    text = isins.verify(text, asked=typed)
     if guard.leaked(text, system_prompt({}, "")):
         # The fixed instructions, repeated back (`chat/guard.py`). Under
         # `block` the stored and finished answer is the refusal instead; the

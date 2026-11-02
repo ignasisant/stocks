@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import functools
 import importlib.util
 import re
 import time
@@ -213,7 +214,7 @@ class Provider:
         """True when this provider's SDK is installed (or its override says so)."""
         if self._available is not None:
             return self._available()
-        return importlib.util.find_spec(self._module) is not None
+        return installed(self._module)
 
     def stream(
         self, api_key: str, model: str, system: str, messages: list[dict]
@@ -1070,6 +1071,18 @@ def _skip(plan: list, attempt: int) -> bool:
         n.id not in _free_dead and not _resting(n) for n, _ in plan[attempt + 1:])
 
 
+@functools.cache
+def installed(module: str) -> bool:
+    """Whether `module` can be imported, asked once per process.
+
+    `find_spec` stats its way down `sys.path`, and every stat hands the GIL
+    away: the drawer's opening read asked it a dozen times, and behind a
+    page's worth of busy loaders each hand-back cost a wait for the lock —
+    seconds, all told, for an answer an install never changes while running.
+    """
+    return importlib.util.find_spec(module) is not None
+
+
 def _free_secrets() -> dict:
     cfg = secrets_env.section("free_llm")
     # Env overlay so headless jobs (GitHub Actions digest) can run the chain
@@ -1108,7 +1121,7 @@ def _free_backends() -> list[_FreeBackend]:
     A backend joins only when its [free_llm] key is set and its SDK is
     installed, so an unconfigured deploy simply has no free provider."""
     cfg = _free_secrets()
-    if importlib.util.find_spec("openai") is None:
+    if not installed("openai"):
         return []
     out = []
     for bid, default_model, base_url in _FREE_BACKEND_DEFAULTS:

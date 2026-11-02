@@ -1,0 +1,15 @@
+{
+  "validate.bad_date": "impossibile leggere la data {date}",
+  "validate.future_date": "la data {date} è nel futuro",
+  "validate.ancient_date": "la data {date} è troppo vecchia per essere un'operazione reale",
+  "validate.missing_ticker": "manca il ticker",
+  "validate.malformed_ticker": "{ticker} non sembra un ticker",
+  "validate.unknown_ticker": "non riconosciamo {ticker} — viene importato, ma potrebbe non mostrare alcun prezzo se è un codice interno del tuo broker (SAN invece di SAN.MC)",
+  "validate.negative_quantity": "il numero di azioni non può essere negativo ({value})",
+  "validate.negative_price": "il prezzo non può essere negativo ({value})",
+  "validate.zero_price_sell": "venduto a 0 — corretto se la società è fallita o è stata delistata; l'intera posizione conta come perdita",
+  "validate.duplicate": "questa operazione identica è già nel tuo portafoglio o prima nel file — importarla di nuovo la conta due volte",
+  "validate.near_duplicate": "il tuo portafoglio o questo file ha già un {action} di {quantity} {ticker} il {date} a un altro prezzo — probabilmente la stessa operazione letta due volte",
+  "validate.oversell": "vende {quantity} ma ne risultavano solo {held} il {date} — manca un acquisto precedente o uno split?",
+  "validate.split_added": "aggiunto uno split {ratio}:1 del {date} da Yahoo — il tuo estratto non lo riporta e le vendite successive non tornano senza di esso"
+}

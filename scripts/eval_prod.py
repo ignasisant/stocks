@@ -301,6 +301,14 @@ def _pool(refs: dict) -> list[float]:
     return [n for data in refs.values() for n in prod_eval.harvest(data)]
 
 
+def _score(q, ans, truth, ref) -> tuple[dict, dict]:
+    """The rule checks, and the references the judge reads: the run's own plus
+    what OpenFIGI says each ISIN in the answer is."""
+    registry = prod_eval.isin_registry(ans.text)
+    found = prod_eval.checks(q, ans, truth, _pool(ref), registry)
+    return found, ({**ref, "openfigi:isins": registry} if registry else ref)
+
+
 def _recheck(args, path: Path, catalog: dict, refs: dict) -> int:
     """Re-score a saved run's answers against fresh references: new rules
     without spending a turn. Prices have moved since, so a figure near a
@@ -313,9 +321,7 @@ def _recheck(args, path: Path, catalog: dict, refs: dict) -> int:
             continue
         truth, ref = refs[q.id]
         ans = prod_eval.Answer.from_dict(row["answer"])
-        rows.append(
-            {**row, "truth": truth, "checks": prod_eval.checks(q, ans, truth, _pool(ref))}
-        )
+        rows.append({**row, "truth": truth, "checks": _score(q, ans, truth, ref)[0]})
         print(
             f"  {prod_eval.verdict(rows[-1]):6} {q.id:28} "
             f"{rows[-1]['checks']['failed'] or ''}"
@@ -429,9 +435,9 @@ def main() -> int:
                 "model": model.label,
                 "truth": truth,
                 "answer": ans.as_dict(),
-                "checks": prod_eval.checks(q, ans, truth, _pool(ref)),
             }
-            row["judged"] = _judge(judge, q, ans, truth, ref)
+            row["checks"], judged_on = _score(q, ans, truth, ref)
+            row["judged"] = _judge(judge, q, ans, truth, judged_on)
             rows.append(row)
             save()
             print(

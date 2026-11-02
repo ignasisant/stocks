@@ -11,6 +11,10 @@
  * visit (per section, in this browser only — a convenience, not state). A
  * link that lands inside it — a page's jump bar, a shared `#anchor` — opens
  * it, since a heading reached on purpose is a section asked for.
+ *
+ * Folded, its content is not drawn, so a section that fetches for it can wait:
+ * `onShown` fires once the content is on show — at once on a desktop, on the
+ * first open on a phone.
  */
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -40,6 +44,7 @@ export function Fold({
   id,
   head,
   opened = false,
+  onShown,
   children,
 }: {
   /** Names the section in storage; stable across companies. */
@@ -47,11 +52,16 @@ export function Fold({
   head: ReactNode;
   /** Open on arrival whatever was remembered: the URL asked for this part. */
   opened?: boolean;
+  /** The content is on show: a desktop, or the fold open. */
+  onShown?: () => void;
   children: ReactNode;
 }) {
   const mobile = useMobile();
   const [open, setOpen] = useState(() => opened || remembered(id));
   const fold = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (!mobile || open) onShown?.();
+  }, [mobile, open, onShown]);
   useEffect(() => {
     if (!mobile) return;
     const land = () => {
