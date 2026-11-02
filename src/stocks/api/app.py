@@ -57,6 +57,7 @@ from stocks.api.routes import (
     i18n,
     import_statement,
     journal,
+    launch,
     learn,
     market,
     me,
@@ -401,6 +402,7 @@ _private.include_router(push.router)
 _private.include_router(feedback.router)
 _private.include_router(client_error.router)
 _private.include_router(vitals.router)
+_private.include_router(launch.router)
 _private.include_router(account.router)
 _private.include_router(connections.router)
 _private.include_router(bank.router)

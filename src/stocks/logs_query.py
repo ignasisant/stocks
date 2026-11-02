@@ -792,6 +792,71 @@ def render_connector(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# -------------------------------------------------------------------- installs
+
+INSTALLS_EXTRA = 'jsonPayload.event="app.launch"'
+
+#: Users that name no account: a guest, a reader with LOG_USER off, a failure.
+_NO_ACCOUNT = ("", "-", "anon", "?", "guest")
+
+
+def installs(entries: Iterable[dict]) -> dict:
+    """Who has the app on a Home Screen: one row per account and device.
+
+    Read off `app.launch`, which the shell posts when it boots standalone
+    (`api/routes/launch.py`). An account opens it from a phone and a tablet,
+    two rows. A launch is a cold start only — back from the background, the
+    app sends nothing — so `launches` undercounts use; `last` is the fact
+    to read. Guests launch as one name each, counted beside the rows.
+    """
+    rows: dict[tuple[str, str], dict] = {}
+    guests = 0
+    for entry in entries:
+        body = payload(entry)
+        if body.get("event") != "app.launch":
+            continue
+        user = str(body.get("user") or "")
+        if user in _NO_ACCOUNT:
+            guests += 1
+            continue
+        stamp = str(entry.get("timestamp") or "")
+        device = str(body.get("device") or "other")
+        row = rows.setdefault((user, device), {
+            "user": user, "device": device, "ua": str(body.get("ua") or ""),
+            "first": stamp, "last": stamp, "launches": 0,
+        })
+        row["launches"] += 1
+        if stamp and (not row["first"] or stamp < row["first"]):
+            row["first"] = stamp
+        if stamp > row["last"]:
+            row["last"] = stamp
+            row["ua"] = str(body.get("ua") or row["ua"])
+    return {
+        "rows": sorted(rows.values(), key=lambda r: r["last"], reverse=True),
+        "accounts": len({user for user, _ in rows}),
+        "guest_launches": guests,
+    }
+
+
+def render_installs(summary: dict) -> str:
+    if not summary["rows"] and not summary["guest_launches"]:
+        return "(no launches from a Home Screen in range)"
+    lines = [
+        f"{'account':<32} {'device':<8} {'browser':<16} {'first':<11} "
+        f"{'last':<12} {'n':>4}",
+        "-" * 88,
+    ]
+    for r in summary["rows"]:
+        last = _local_time(r["last"]) if r["last"] else "-"
+        lines.append(
+            f"{r['user'][:32]:<32} {r['device']:<8} {r['ua'][:16]:<16} "
+            f"{r['first'][:10]:<11} {last[:11]:<12} {r['launches']:>4}"
+        )
+    lines.append(f"\naccounts: {summary['accounts']}   "
+                 f"guest launches: {summary['guest_launches']}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------- skills
 
 #: Row labels for turns that loaded no skill, and for turns logged before
