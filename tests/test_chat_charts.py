@@ -155,30 +155,57 @@ def test_a_book_question_with_nothing_to_measure_it_by_draws_nothing(message):
     assert not charts.wants(message)
 
 
-def _twr(n: int = 400, step: float = 0.001) -> tuple[pd.DataFrame, pd.Series]:
-    days = pd.bdate_range("2025-01-01", periods=n)
-    hist = pd.DataFrame({"value": range(n)}, index=days)
-    twr = pd.Series(step, index=days[1:])  # no return on the book's first day
-    return hist, twr
+def _book(n: int = 1300, late: int = 1200, step: float = 0.0005):
+    """A book that only ever held one index: ten units on its first day, ninety
+    more on day `late`. Returns (book, the index's closes)."""
+    days = pd.bdate_range("2021-01-04", periods=n)
+    price = pd.Series([100 * (1 + step) ** i for i in range(n)], index=days)
+    units = pd.Series([10.0 if i < late else 100.0 for i in range(n)], index=days)
+    flows = pd.Series([10 * price.iloc[0], 90 * price.iloc[late]],
+                      index=[days[0], days[late]])
+    return charts.Book(units * price, flows), price
 
 
-def test_the_book_s_line_compounds_to_the_figure_the_performance_tab_prints():
-    hist, twr = _twr()
-    level = charts.book_index(hist, twr, "6m")
-    clipped = twr[twr.index >= twr.index.max() - pd.Timedelta(days=182)]
-    assert level.iloc[0] == 100.0
-    # Opened on the last day before the window's first return, so that
-    # return is part of the line's change rather than its starting point.
-    assert level.index[0] == hist.index[hist.index < clipped.index[0]][-1]
-    assert level.iloc[-1] / level.iloc[0] - 1 == pytest.approx(
-        float((1 + clipped).prod() - 1))
-    whole = charts.book_index(hist, twr, "max")
-    assert len(whole) == len(twr) + 1 and whole.index[0] == hist.index[0]
-    assert charts.book_index(hist, pd.Series(dtype=float), "1y") is None
+def test_the_book_s_days_open_on_the_close_before_the_window():
+    book, _ = _book(n=400, late=300)
+    days = charts.book_days(book.value, "ytd", today=date(2022, 6, 1))
+    assert days[0] == pd.Timestamp("2021-12-31") and days[-1] == book.value.index[-1]
+    six = charts.book_days(book.value, "6m")
+    cut = book.value.index[-1] - pd.Timedelta(days=182)
+    assert six[0] == book.value.index[book.value.index <= cut][-1]
+    # Never before the first day anything was held.
+    late = pd.concat([pd.Series(0.0, index=pd.bdate_range("2020-06-01", "2020-12-31")),
+                      book.value])
+    assert charts.book_days(late, "max")[0] == book.value.index[0]
+    assert charts.book_days(pd.Series(dtype=float), "1y").empty
 
 
-def test_against_the_book_a_benchmark_is_in_its_currency_and_from_its_first_day():
-    hist, twr = _twr()
+def test_against_an_index_the_book_reads_what_its_money_made_as_asignacion_does():
+    """"Compárame con el S&P a 5 años": a book that held nothing but the index
+    and put nine tenths of its money in near the end made a tenth of what the
+    index's price did. The index fed the same buys reads the same as the book;
+    rebased to the window's first day it read +91 %, all of today's money at
+    work from five years back."""
+    book, price = _book()
+    chart = charts.build([charts.BOOK, "^GSPC"], "5y",
+                         closes=lambda *_: price, currency=lambda _s: "EUR",
+                         book=lambda: book, base="EUR")
+    assert chart is not None
+    mine, index = chart.lines
+    assert mine.index and index.fed and not index.index
+    invested = book.flows.sum()
+    made = book.value.iloc[-1] / invested - 1
+    assert mine.change == pytest.approx(made)
+    assert index.change == pytest.approx(made)
+    assert price.iloc[-1] / price.iloc[0] - 1 > made + 0.5
+    text = chart.line()
+    assert "the return on the money put in" in text
+    assert "^GSPC fed the same buys and sales on the same days" in text
+    assert "price only" in text and "time-weighted" not in text
+
+
+def test_against_the_book_a_benchmark_is_in_its_currency_and_never_intraday():
+    book, price = _book(n=400, late=300)
     converted: list[tuple[str, str]] = []
 
     def convert(closes, unit, base):
@@ -187,64 +214,67 @@ def test_against_the_book_a_benchmark_is_in_its_currency_and_from_its_first_day(
 
     def closes(symbol, window):
         assert window == "1m"  # a session of the book is one point: never 1d
-        return pd.Series(range(1, len(hist) + 1), index=hist.index, dtype=float)
+        return price
 
     chart = charts.build([charts.BOOK, "^GSPC", "EURUSD=X"], "1d",
                          closes=closes, currency=lambda _s: "USD",
-                         book=lambda window: charts.book_index(hist, twr, window),
-                         base="EUR", convert=convert)
+                         book=lambda: book, base="EUR", convert=convert)
     assert chart is not None and chart.window == "1m" and chart.rebased
-    book, index, pair = chart.lines
-    assert book.index and book.currency == "EUR"
+    mine, index, pair = chart.lines
+    assert mine.index and mine.currency == "EUR"
     # The index is drawn in euros; an exchange rate is left as it is.
     assert converted == [("USD", "EUR")]
     assert (index.currency, index.converted) == ("EUR", "USD")
     assert (pair.currency, pair.converted) == ("USD", "")
-    assert index.first_on >= book.first_on and pair.first_on >= book.first_on
-    text = chart.line()
-    assert "time-weighted return in EUR" in text
-    assert "converted from USD" in text and "price only" in text
+    assert index.first_on == mine.first_on == pair.first_on
+    assert "converted from USD" in chart.line()
 
 
 def test_a_converted_benchmark_carries_its_own_currency_s_change_and_the_fx_effect():
     """"¿Bato al S&P?" from Spain: the index is drawn in euros, and the
     currency's part of its move is worked out here, not guessed by the model
     (it once said 5.3 % for a 5.6 % dollar slide)."""
-    hist, twr = _twr()
-    n = len(hist)
-    rate = pd.Series([1.0 - 0.1 * i / (n - 1) for i in range(n)], index=hist.index)
+    book, price = _book(n=400, late=300)
+    n = len(price)
+    rate = pd.Series([1.0 - 0.1 * i / (n - 1) for i in range(n)], index=price.index)
 
     chart = charts.build(
-        [charts.BOOK, "^GSPC"], "1m",
-        closes=lambda s, w: pd.Series(range(1, n + 1), index=hist.index, dtype=float),
-        currency=lambda _s: "USD",
-        book=lambda window: charts.book_index(hist, twr, window),
+        [charts.BOOK, "^GSPC"], "max", closes=lambda *_: price,
+        currency=lambda _s: "USD", book=lambda: book,
         base="EUR", convert=lambda closes, unit, base: closes * rate)
-    _book, index = chart.lines
+    _mine, index = chart.lines
     assert index.converted == "USD"
-    raw = pd.Series(range(1, n + 1), index=hist.index, dtype=float)
-    first = raw[raw.index >= index.first_on].iloc[0]
-    assert index.own_change == pytest.approx(raw.iloc[-1] / first - 1)
+    # In dollars it is the book's own race, the book having held it.
+    assert index.own_change == pytest.approx(book.value.iloc[-1] / book.flows.sum() - 1)
+    assert index.change < index.own_change
     effect = (1 + index.change) / (1 + index.own_change) - 1
-    assert effect == pytest.approx(0.9 / rate[raw.index >= index.first_on].iloc[0] - 1)
     assert f"the currency effect is {effect:+.2%}" in chart.line()
     assert f"{index.own_change:+.2%} in USD" in chart.line()
+
+
+def test_a_benchmark_that_opens_late_races_from_its_own_first_day():
+    book, price = _book(n=400, late=300)
+    young = price[price.index >= price.index[200]]
+    chart = charts.build([charts.BOOK, "BTC-EUR"], "max",
+                         closes=lambda *_: young, currency=lambda _s: "EUR",
+                         book=lambda: book, base="EUR")
+    mine, coin = chart.lines
+    assert coin.first_on == str(young.index[0].date()) > mine.first_on
+    assert coin.first == pytest.approx(100.0)
 
 
 def test_without_a_ledger_the_book_drops_out_like_a_symbol_without_prices():
     chart = charts.build([charts.BOOK, "AAPL"], "1y", closes=lambda *_: _closes(),
                          currency=lambda _s: "USD")
     assert chart is not None and chart.symbols == ["AAPL"]
-    assert charts.build([charts.BOOK], "1y", book=lambda _w: None) is None
+    assert charts.build([charts.BOOK], "1y", book=lambda: None) is None
 
 
 def test_the_book_s_surface_names_it_and_draws_no_ticker_for_it():
-    hist, twr = _twr()
+    book, price = _book(n=400, late=300)
     chart = charts.build([charts.BOOK, "^GSPC"], "1y",
-                         closes=lambda *_: hist["value"].astype(float) + 1,
-                         currency=lambda _s: "USD",
-                         book=lambda window: charts.book_index(hist, twr, window),
-                         base="EUR", convert=lambda c, *_: c)
+                         closes=lambda *_: price, currency=lambda _s: "USD",
+                         book=lambda: book, base="EUR", convert=lambda c, *_: c)
     messages = charts.surface(chart, _say)
     a2ui.check(messages)
     parts = {c["id"]: c for c in messages[1]["updateComponents"]["components"]}
@@ -254,7 +284,9 @@ def test_the_book_s_surface_names_it_and_draws_no_ticker_for_it():
     assert parts["note"]["text"].startswith("chat.chart_note_book")
     data = messages[2]["updateDataModel"]["value"]
     assert data["chart"][0]["index"] and data["chart"][0]["label"] == "chat.chart_book"
-    assert "index" not in data["chart"][1]
+    # Raced against the book, the index is an index too: no price to print.
+    assert data["chart"][1]["index"] and "label" not in data["chart"][1]
+    assert data["view"]["m1"]["last"].startswith("chat.chart_fed_hint")
     assert data["view"]["title"].startswith("chat.chart_title_book_vs")
     assert parts["windows"]["action"]["event"]["context"]["symbols"] == [
         charts.BOOK, "^GSPC"]
