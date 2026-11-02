@@ -646,7 +646,8 @@ def holdings_rows(grid: list[list[str]]) -> list[dict]:
     ticker = max(named, key=lambda i: share(i, is_symbol), default=None)
     if ticker is None or not share(ticker, is_symbol):
         width = max((len(row) for row in sample), default=0)
-        ticker = _best_column(sample, width, is_symbol, {quantity, currency})
+        ticker = _best_column(sample, width, is_symbol,
+                              {i for i in (quantity, currency) if i is not None})
     isin = max((i for i in named if i != ticker), key=lambda i: share(i, is_isin),
                default=None)
     if isin is not None and not share(isin, is_isin):
