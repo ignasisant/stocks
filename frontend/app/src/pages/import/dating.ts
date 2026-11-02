@@ -77,7 +77,11 @@ export function dayProblem(text: string, now: string = today()): Problem | null 
   if (!DAY.test(text)) return "import.hold_bad_date";
   const [y, m, d] = text.split("-").map(Number);
   const day = new Date(Date.UTC(y!, m! - 1, d!));
-  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== m! - 1 || day.getUTCDate() !== d)
+  if (
+    day.getUTCFullYear() !== y ||
+    day.getUTCMonth() !== m! - 1 ||
+    day.getUTCDate() !== d
+  )
     return "import.hold_bad_date";
   if (text > now) return "import.hold_future";
   if (text < MIN_DAY) return "import.hold_old";

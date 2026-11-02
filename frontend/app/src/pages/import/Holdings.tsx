@@ -188,11 +188,16 @@ function HoldingLine({
               value={dating.currency}
             />
           </span>
-          <FieldError id={`${id}-money-error`} problem={wrong.price ?? wrong.currency} />
+          <FieldError
+            id={`${id}-money-error`}
+            problem={wrong.price ?? wrong.currency}
+          />
         </label>
         <button
           className="im-btn im-btn-outline"
-          disabled={price === null || wrong.currency !== null || asked.state === "loading"}
+          disabled={
+            price === null || wrong.currency !== null || asked.state === "loading"
+          }
           onClick={() => void ask()}
           type="button"
         >

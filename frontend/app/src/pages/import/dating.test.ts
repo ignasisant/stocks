@@ -40,7 +40,20 @@ describe("priceOf", () => {
   });
 
   it("is null for anything that is not one plain number", () => {
-    for (const text of ["1e5", "12abc", "1,2,3", "1.2.3", "Infinity", "NaN", "0x10", "+5", "€150", "150 €", ".", ","]) {
+    for (const text of [
+      "1e5",
+      "12abc",
+      "1,2,3",
+      "1.2.3",
+      "Infinity",
+      "NaN",
+      "0x10",
+      "+5",
+      "€150",
+      "150 €",
+      ".",
+      ",",
+    ]) {
       expect(priceOf(text), text).toBeNull();
     }
     expect(priceOf("0,0001")).toBe(0.0001);
@@ -81,7 +94,16 @@ describe("the field rules", () => {
   });
 
   it("refuses a day the calendar does not have, or not written as one", () => {
-    for (const text of ["2024-02-30", "2023-02-29", "2024-13-01", "2024-00-10", "2024-04-31", "01/03/2024", "2024-3-1", "yesterday"]) {
+    for (const text of [
+      "2024-02-30",
+      "2023-02-29",
+      "2024-13-01",
+      "2024-00-10",
+      "2024-04-31",
+      "01/03/2024",
+      "2024-3-1",
+      "yesterday",
+    ]) {
       expect(dayProblem(text, NOW), text).toBe("import.hold_bad_date");
     }
     expect(dayProblem("2024-02-29", NOW)).toBeNull();
