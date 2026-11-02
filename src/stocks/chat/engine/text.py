@@ -28,7 +28,9 @@ def strip_cite_marks(text: str) -> str:
 
 
 # A free model handed its research sometimes answers by asking for more, in
-# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]".
+# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]",
+# or a JSON object naming a tool, alone on its line ('{"tool": "search",
+# "query": …}', prod 2026-11-02, under any tool name the model made up).
 # The writing step has no tools, so that text reached the reader as the whole
 # answer. A call is scrubbed out of what is stored; an answer that was nothing
 # else is no answer, and the next provider is asked.
@@ -37,10 +39,12 @@ _WRITTEN_CALL = re.compile(
     rf"\{{\{{\s*(?:{_TOOL_NAMES})\s*\(.*?\)\s*\}}\}}"
     r"|<(?:function|tool_call)\b[^>]*>.*?(?:</(?:function|tool_call)>|$)"
     r"|\[TOOL_CALLS\].*?$"
-    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$",
+    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$"
+    r'|^[ \t]*(?:```(?:json)?\s*)?\{\s*"(?:tool|tool_name|function|name)"\s*:'
+    r'\s*"\w+"\s*,(?:[^{}\n]|\{[^{}\n]*\})*\}(?:\s*```)?[ \t]*$',
     re.S | re.M,
 )
-_CALL_OPENERS = ("{{", "<function", "<tool_call", "[TOOL_CALLS]",
+_CALL_OPENERS = ("{{", '{"', "```json", "<function", "<tool_call", "[TOOL_CALLS]",
                  *(f"{name}(" for name in toolbox.TOOLS))
 # How much of an answer's start is held back while it may still be a call.
 CALL_HOLD_CHARS = 600

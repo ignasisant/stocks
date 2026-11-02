@@ -622,6 +622,8 @@ def test_a_background_reply_thrown_away_counts_as_rejected(
 
 
 WRITTEN_CALL = '{{search_web(query: "Adyen ADYYF latest earnings vs consensus")}}'
+# Prod 2026-11-02, a tool name the model made up, as JSON.
+JSON_CALL = '{"tool": "search", "query": "TSM stock price NASDAQ", "max_results": 5}'
 
 
 @dataclass
@@ -632,21 +634,25 @@ class Streamer(FakeProvider):
             yield self.reply[i:i + 7]
 
 
-def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths):
+@pytest.mark.parametrize("written", [WRITTEN_CALL, JSON_CALL,
+                                     f"```json\n{JSON_CALL}\n```"])
+def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths,
+                                                           written):
     # Prod 2026-10-28: the free chain's whole answer was a search_web call
     # written as text; the writing step has no tools, so the reader got it.
-    providers["anthropic"].reply = WRITTEN_CALL
+    providers["anthropic"].reply = written
     reply = engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
                           message="ADYYF earnings vs consensus?", **paths)
     assert (reply.provider_id, reply.text) == ("free", "Free answer.")
 
 
+@pytest.mark.parametrize("written", [WRITTEN_CALL, JSON_CALL])
 def test_a_streamed_written_tool_call_never_reaches_the_reader(
-        providers, enc, paths, monkeypatch):
+        providers, enc, paths, monkeypatch, written):
     from stocks.web import llm
 
     streamers = {
-        "anthropic": Streamer("anthropic", reply=WRITTEN_CALL),
+        "anthropic": Streamer("anthropic", reply=written),
         "free": Streamer("free", reply="Adyen beat consensus."),
     }
     monkeypatch.setattr(llm, "PROVIDERS", {**providers, **streamers})
@@ -737,7 +743,8 @@ def test_a_tool_call_inside_an_answer_is_scrubbed_from_it(providers, paths):
 
 
 def test_prose_that_names_a_tool_is_not_a_call():
-    for text in ("Uso {{ en plantillas.", "Llama a search_web(…) en una frase."):
+    for text in ("Uso {{ en plantillas.", "Llama a search_web(…) en una frase.",
+                 '{"name": "Adyen"} es un objeto, no una llamada.'):
         assert engine.scrub_written_calls(text) == text
 
 
