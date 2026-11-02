@@ -24,6 +24,7 @@ import hashlib
 import json
 import sys
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -1591,3 +1592,227 @@ def test_only_the_first_real_import_is_flagged_as_the_activation(
     )
     flags = [f["first"] for name, f in seen if name == "import.committed"]
     assert flags == [True, False, False]
+
+
+# ------------------------------------------------------- dating a holdings report
+
+
+HOLDINGS = """Symbol,ISIN,Quantity,Average price,Currency
+AAPL,US0378331005,10,150.5,USD
+VWCE,IE00BK5BQT80,3,,EUR
+"""
+
+HISTORY = pd.DataFrame(
+    {"Low": [98.0, 120.0, 95.0], "High": [104.0, 130.0, 101.0],
+     "Close": [103.0, 125.0, 97.0]},
+    index=pd.DatetimeIndex(["2024-01-03", "2024-02-01", "2024-03-01"], name="Date"),
+)
+
+
+@pytest.fixture
+def market(monkeypatch):
+    from stocks.api.routes.import_statement import buy_dates as route
+    from stocks.data import profiles
+
+    asked: list[str] = []
+
+    def fetch_many(tickers, period="1y", auto_adjust=True, **_):
+        asked.extend(tickers)
+        assert (period, auto_adjust) == ("max", False)
+        return {t: HISTORY for t in tickers if t != "GONE"}
+
+    route._bars.cache_clear()
+    monkeypatch.setattr(fetch, "fetch_many", fetch_many)
+    monkeypatch.setattr(profiles, "known", lambda symbol: {"currency": "usd"})
+    monkeypatch.setattr(symbols, "symbol_for_isin", lambda isin: "AAPL")
+    return asked
+
+
+def test_the_preview_hands_back_what_a_holdings_report_holds(signed_in):
+    payload = signed_in.post("/v1/import/preview", json=body(HOLDINGS)).json()
+    assert payload["kind"] == "positions"
+    assert payload["importable"] == []
+    assert [(h["ticker"], h["quantity"], h["cost"]) for h in payload["holdings"]] == [
+        ("AAPL", 10.0, 150.5), ("VWCE", 3.0, None),
+    ]
+    assert payload["needs_broker"] is True
+
+
+def test_buy_dates_answers_with_the_stretches_and_the_listing(signed_in, market):
+    answer = signed_in.get(
+        "/v1/import/buy-dates",
+        params={"ticker": "Apple", "isin": "US0378331005", "price": 100},
+    )
+    assert answer.status_code == 200
+    payload = answer.json()
+    assert (payload["symbol"], payload["currency"], payload["first"]) == (
+        "AAPL", "USD", "2024-01-03",
+    )
+    assert [run["day"] for run in payload["runs"]] == ["2024-03-01", "2024-01-03"]
+    assert market == ["AAPL"]
+
+
+def test_a_listing_with_no_history_is_a_404_and_a_down_yahoo_a_503(
+    signed_in, market, monkeypatch
+):
+    gone = signed_in.get("/v1/import/buy-dates", params={"ticker": "GONE", "price": 1})
+    assert gone.status_code == 404
+
+    def down(*a, **k):
+        raise fetch.YFRateLimitError()
+
+    from stocks.api.routes.import_statement import buy_dates as route
+
+    route._bars.cache_clear()
+    monkeypatch.setattr(fetch, "fetch_many", down)
+    busy = signed_in.get("/v1/import/buy-dates", params={"ticker": "MSFT", "price": 1})
+    assert busy.status_code == 503
+
+
+@pytest.mark.parametrize(
+    "price", ["0", "-1", "abc", "inf", "-inf", "nan", "1e10", "", "150,25"]
+)
+def test_buy_dates_needs_a_share_price(signed_in, market, price):
+    answer = signed_in.get(
+        "/v1/import/buy-dates", params={"ticker": "AAPL", "price": price}
+    )
+    assert answer.status_code == 422
+    assert market == []
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"currency": "EU"},
+        {"currency": "EURO"},
+        {"currency": "E1R"},
+        {"isin": "US037833100"},
+        {"isin": "US03783310-5"},
+        {"ticker": ""},
+        {"ticker": "X" * 33},
+    ],
+)
+def test_buy_dates_refuses_a_malformed_line(signed_in, market, extra):
+    params = {"ticker": "AAPL", "price": 100, **extra}
+    answer = signed_in.get("/v1/import/buy-dates", params=params)
+    assert answer.status_code == 422
+    assert market == []
+
+
+def test_buy_dates_takes_a_lower_case_currency_and_no_isin(signed_in, market):
+    answer = signed_in.get(
+        "/v1/import/buy-dates",
+        params={"ticker": "AAPL", "price": "100.5", "currency": "usd", "isin": ""},
+    )
+    assert answer.status_code == 200
+
+
+def test_buy_dates_never_offers_a_day_after_the_last_session(signed_in, market):
+    payload = signed_in.get(
+        "/v1/import/buy-dates", params={"ticker": "AAPL", "price": 100}
+    ).json()
+    last = HISTORY.index[-1].date().isoformat()
+    for run in payload["runs"]:
+        assert run["start"] <= run["day"] <= run["end"] <= last
+
+
+def _dated(date: str, **extra) -> dict:
+    """A holdings line as the form sends it once dated."""
+    return {
+        "date": date, "ticker": "AAPL", "action": "buy", "quantity": 10,
+        "price": 150.5, "currency": "USD", "fee": 0, "note": "", **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    "date, key",
+    [
+        ("2999-01-01", "validate.future_date"),
+        ("1989-12-31", "validate.ancient_date"),
+        ("2024-02-30", "validate.bad_date"),
+        ("01/03/2024", "validate.bad_date"),
+    ],
+)
+def test_a_dated_holding_with_a_bad_day_is_never_written(
+    client, account, signed_in, date, key
+):
+    """The form refuses these too; the server does not take its word for it.
+    Beside a good line the bad one is named with its rule; alone, the whole
+    commit is refused."""
+    good = _dated("2024-03-01", ticker="MSFT")
+    mixed = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "holdings.csv", "broker": "ibkr", "rows": [good, _dated(date)]},
+    ).json()
+    assert mixed["imported"] == 1
+    [bad] = mixed["rejected"]
+    assert bad["ticker"] == "AAPL"
+    assert key in {issue["key"] for issue in bad["issues"]}
+    assert {t.ticker for t in all_transactions(account.db)} == {"MSFT"}
+
+    alone = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "holdings.csv", "broker": "ibkr", "rows": [_dated(date)]},
+    )
+    assert alone.status_code == 422
+    assert {t.ticker for t in all_transactions(account.db)} == {"MSFT"}
+
+
+def test_a_holding_dated_tomorrow_is_refused_and_today_is_written(
+    client, account, signed_in
+):
+    from datetime import date, timedelta
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    refused = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "holdings.csv", "broker": "ibkr", "rows": [_dated(tomorrow)]},
+    )
+    assert refused.status_code == 422
+    assert all_transactions(account.db) == []
+
+    written = signed_in.post(
+        "/v1/import/commit",
+        json={
+            "filename": "holdings.csv",
+            "broker": "ibkr",
+            "rows": [_dated(date.today().isoformat())],
+        },
+    )
+    assert written.status_code == 200, written.text
+    assert written.json()["imported"] == 1
+
+
+@pytest.mark.parametrize(
+    "extra, key",
+    [
+        ({"price": -5}, "validate.negative_price"),
+        ({"quantity": -10}, "validate.negative_quantity"),
+    ],
+)
+def test_a_dated_holding_with_a_negative_number_is_never_written(
+    client, account, signed_in, extra, key
+):
+    rows = [_dated("2024-03-01", ticker="MSFT"), _dated("2024-03-01", **extra)]
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "holdings.csv", "broker": "ibkr", "rows": rows},
+    ).json()
+    assert payload["imported"] == 1
+    [bad] = payload["rejected"]
+    assert key in {issue["key"] for issue in bad["issues"]}
+    assert {t.ticker for t in all_transactions(account.db)} == {"MSFT"}
+
+
+def test_a_buy_at_zero_is_still_a_free_share(client, account, signed_in):
+    """Zero is a real price (a broker's free share); only the form, which asks
+    what was paid for a holding, refuses it."""
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json={
+            "filename": "holdings.csv",
+            "broker": "ibkr",
+            "rows": [_dated("2024-03-01", price=0)],
+        },
+    ).json()
+    assert payload["imported"] == 1

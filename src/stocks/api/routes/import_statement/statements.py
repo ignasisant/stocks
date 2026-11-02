@@ -33,6 +33,7 @@ from stocks.api.routes.import_statement.validation import (
     _validated,
 )
 from stocks.api.schemas import (
+    ImportHolding,
     ImportPlatform,
     ImportPlatforms,
     ImportPreview,
@@ -142,7 +143,8 @@ def preview(
         duplicates=len(checked.duplicates),
         skipped=[_skipped(s) for s in found.result.skipped],
         broker=detected,
-        needs_broker=bool(importable) and not detected,
+        needs_broker=bool(importable or found.holdings) and not detected,
+        holdings=[ImportHolding(**held) for held in found.holdings],
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
     )
 

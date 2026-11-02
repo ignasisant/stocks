@@ -317,3 +317,32 @@ def test_a_file_no_parser_reads_waits_for_the_model(monkeypatch):
     monkeypatch.setattr(autodetect, "_model_read", slow)
     found = autodetect.read("odd.csv", UNKNOWN_CSV.encode(), _StubProvider(), "k")
     assert found.platform == autodetect.LLM_KEY and len(found.result.transactions) == 1
+
+
+# A hand-made holdings export (prod 10-31): what is held and what it is worth,
+# with no date and no buy or sell on any line.
+HOLDINGS_CSV = (
+    "Category,Symbol,Name,ISIN,Currency,Quantity,Price_Local,Value_Local,"
+    "FX_EURUSD,Value_EUR,Pct_of_Total\n"
+    "Stock,AAPL,Apple Inc,US0378331005,USD,10,180.5,1805,1.08,1671.3,0.6\n"
+    "ETF,VWCE,Vanguard FTSE All-World,IE00BK5BQT80,EUR,8,140,1120,1,1120,0.4\n"
+)
+
+
+class _NoModel:
+    id = "stub"
+    classifier_model = default_model = "stub"
+
+    def complete(self, *_args):
+        raise AssertionError("a holdings snapshot needs no model")
+
+
+def test_a_holdings_snapshot_reads_as_positions_under_a_preselected_broker():
+    """Revolut picked on the Import page used to win with one "unrecognised
+    type" per line; the file is a portfolio report and is now told as one."""
+    for provider in (None, _NoModel()):
+        found = autodetect.read("cartera.csv", HOLDINGS_CSV.encode(),
+                                provider, "k", prefer="revolut")
+        assert found.kind == "positions"
+        assert not found.result.transactions
+        assert not found.result.skipped

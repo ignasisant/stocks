@@ -107,6 +107,9 @@ class Detected:
     # the file's columns by name. Empty for a dedicated parser and for a PDF.
     mapping: dict | None = None
     columns: tuple[str, ...] = ()
+    # A holdings snapshot's lines (`llm_map.holdings_rows`): what the file
+    # says is held, undated — the reader dates each one before it is a buy.
+    holdings: tuple[dict, ...] = ()
 
     @property
     def recognised(self) -> bool:
@@ -205,7 +208,7 @@ def _parsers(filename: str, data: bytes, prefer: str | None = None,
 
 def _mapped(found: llm_map.Extraction) -> Detected:
     return Detected(found.result, LLM_KEY, found.label, found.kind,
-                    found.unavailable, found.mapping, found.columns)
+                    found.unavailable, found.mapping, found.columns, found.holdings)
 
 
 def _nothing() -> Detected:

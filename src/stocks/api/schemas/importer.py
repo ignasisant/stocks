@@ -80,6 +80,27 @@ class ImportRow(BaseModel):
     )
 
 
+class ImportHolding(BaseModel):
+    """One line of a holdings snapshot: held, but never dated."""
+
+    row: int
+    ticker: str = Field(
+        description="The symbol, else the ISIN when no symbol was printed."
+    )
+    isin: str = ""
+    quantity: float
+    currency: str = Field(
+        default="", description="As the file named it; empty when it did not."
+    )
+    cost: float | None = Field(
+        default=None,
+        description=(
+            "Average price paid per share, when a column says so. Null when the "
+            "file prints none: a bare price in a holdings report is today's."
+        ),
+    )
+
+
 class ImportPreview(BaseModel):
     """What a statement would do, having changed nothing.
 
@@ -156,6 +177,14 @@ class ImportPreview(BaseModel):
     )
     needs_broker: bool = Field(
         default=False, description="Whether a commit must supply `broker`."
+    )
+    holdings: list[ImportHolding] = Field(
+        default_factory=list,
+        description=(
+            "With `kind` `positions`, what the report says is held. Nothing to "
+            "commit as it is: each becomes a buy once dated, and "
+            "`/import/buy-dates` offers the days its price was on the board."
+        ),
     )
     unlisted: list[str] = Field(
         default_factory=list,

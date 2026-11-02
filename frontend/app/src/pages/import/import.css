@@ -1116,6 +1116,95 @@
   color: var(--ag-text-muted);
 }
 
+/* A holdings report's lines, each dated by the reader: the price paid, the
+   days it was on the board, the day picked. Same card as a venue row. */
+.im-holds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-hold {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+}
+
+.im-hold-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.im-hold-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.im-hold-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.im-hold-money {
+  display: flex;
+  gap: 6px;
+}
+
+.im-hold-price {
+  width: 8rem;
+  font-family: var(--ag-font-mono);
+}
+
+.im-hold-ccy {
+  width: 4.5rem;
+  font-family: var(--ag-font-mono);
+  text-transform: uppercase;
+}
+
+.im-hold-date {
+  width: 11rem;
+}
+
+.im-hold-days {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.im-hold-days:empty {
+  display: none;
+}
+
+.im-hold-days .im-chip {
+  padding: 0 12px;
+}
+
+.im-hold-error {
+  color: var(--ag-down);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-hold-error:empty {
+  display: none;
+}
+
+.im-hold .im-input[aria-invalid="true"] {
+  border-color: var(--ag-down);
+}
+
 .im-btn-sm {
   min-height: 30px;
   padding: 0 10px;
@@ -2128,6 +2217,26 @@
   .im-chip {
     padding: 0 11px 0 6px;
     font-size: var(--ag-fs-sm);
+  }
+
+  /* A holding's fields stack, each the column's width. */
+  .im-hold-fields,
+  .im-hold-field {
+    align-items: stretch;
+  }
+
+  .im-hold-field {
+    flex: 1 1 100%;
+  }
+
+  .im-hold-price {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .im-hold-date {
+    width: 100%;
   }
 
   /* The whole zone is the tap target; a button inside it is a second one. */

@@ -151,6 +151,8 @@ class Extraction:
     # Who the file turned out to be from ("Binance"), when it was read as a
     # crypto export (crypto_map); empty otherwise.
     label: str = ""
+    # A holdings snapshot's lines (`holdings_rows`): what is held, undated.
+    holdings: tuple[dict, ...] = ()
 
 
 # --------------------------------------------------------------- file to grid
@@ -565,6 +567,125 @@ def guess_mapping(grid: list[list[str]]) -> dict | None:
         "action_map": {},  # lexicon's vocabulary covers it
         "asset_class": "",  # decided from the symbols themselves
     }
+
+
+def holdings_only(grid: list[list[str]]) -> bool:
+    """Whether the file is a holdings snapshot: what is held, never when or how.
+
+    A column of symbols and one of quantities, and nothing that dates a row or
+    names a buy or a sell — not in the header and not in the cells, which is
+    what `guess_mapping` would have found them by. Such a file has nothing to
+    import, and saying "this is a portfolio report" beats handing it to a
+    parser that lists every line as an unrecognised type (prod 10-31, a
+    hand-made holdings CSV read under a preselected Revolut).
+    """
+    if len(grid) < 2:
+        return False
+    header_row = _guess_header_row(grid)
+    named = {_header_field(cell) for cell in grid[header_row]}
+    if not {"ticker", "quantity"} <= named or named & {"date", "action"}:
+        return False
+    width = max((len(row) for row in grid), default=0)
+    rows = [r for r in grid[header_row + 1:header_row + 1 + _SNIFF_ROWS] if any(r)]
+    if not rows:
+        return False
+    return all(
+        _best_column(rows, width, test, set()) is None
+        for test in (lambda cell: lexicon.readable_date(cell) is not None,
+                     lambda cell: lexicon.action_of(cell) is not None)
+    )
+
+
+# A holdings report prints today's price beside what was paid, so only a header
+# that says "average" or "cost" is the reader's own price: per share, or the
+# position's total.
+_UNIT_COST = ("average", "avg", "medio", "media", "pmc", "pmp", "unit cost",
+              "coste unitario", "cost per share")
+_TOTAL_COST = ("cost basis", "coste total", "costo total", "total cost",
+               "invested", "invertido", "coste de adquisicion", "book cost")
+_ISIN_CELL = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
+_CODE_CELL = re.compile(r"^[A-Za-z]{3}$")
+
+
+def holdings_rows(grid: list[list[str]]) -> list[dict]:
+    """A holdings snapshot's lines: {row, ticker, quantity, currency, cost}.
+
+    `ticker` is the symbol when the file prints one beside the ISIN — the
+    symbol is what prices. `cost` is the average price paid per share when a
+    column says so, else None: a bare "Price" in a holdings report is today's
+    quote, and offering it as what was paid would date every buy to this week.
+    """
+    if len(grid) < 2:
+        return []
+    header_row = _guess_header_row(grid)
+    header = grid[header_row]
+    fields = [_header_field(cell) for cell in header]
+    rows = [r for r in grid[header_row + 1:] if any(r)]
+
+    def cell(row: list[str], index: int | None) -> str:
+        return row[index].strip() if index is not None and index < len(row) else ""
+
+    sample = rows[:_SNIFF_ROWS]
+
+    def is_isin(text: str) -> bool:
+        return bool(_ISIN_CELL.match(text.upper()))
+
+    def is_symbol(text: str) -> bool:
+        return (bool(_SYMBOLISH.match(text)) and not is_isin(text)
+                and _number(text, ".", ",") is None
+                and lexicon.readable_date(text) is None)
+
+    def share(index: int, test) -> int:
+        return sum(1 for r in sample if test(cell(r, index)))
+
+    quantity = next((i for i, f in enumerate(fields) if f == "quantity"), None)
+    currency = next((i for i, f in enumerate(fields) if f == "currency"), None)
+    # "Valor" names a security and a value alike, so a named column still has
+    # to hold codes; the cells decide when none of them does.
+    named = [i for i, f in enumerate(fields) if f == "ticker"]
+    ticker = max(named, key=lambda i: share(i, is_symbol), default=None)
+    if ticker is None or not share(ticker, is_symbol):
+        width = max((len(row) for row in sample), default=0)
+        ticker = _best_column(sample, width, is_symbol, {quantity, currency})
+    isin = max((i for i in named if i != ticker), key=lambda i: share(i, is_isin),
+               default=None)
+    if isin is not None and not share(isin, is_isin):
+        isin = None
+    if ticker is None and isin is not None:
+        ticker, isin = isin, None
+    if ticker is None or quantity is None:
+        return []
+    plain = [" ".join(lexicon.plain(c).replace("_", " ").split()) for c in header]
+    unit = next((i for i, h in enumerate(plain)
+                 if any(w in h for w in _UNIT_COST)), None)
+    total = next((i for i, h in enumerate(plain)
+                  if any(w in h for w in _TOTAL_COST)), None)
+    decimal, thousands = _sniff_separators(sample, [quantity, unit, total])
+    out = []
+    for offset, row in enumerate(rows):
+        # A name in the symbol column ("Apple") prices nothing; the ISIN does.
+        code = cell(row, ticker)
+        if not code or (code != code.upper() and cell(row, isin)):
+            code = cell(row, isin)
+        held = _number(cell(row, quantity), decimal, thousands)
+        if not code or held is None or held <= 0:
+            continue
+        cost = _number(cell(row, unit), decimal, thousands) if unit is not None else None
+        if cost is None and total is not None:
+            paid = _number(cell(row, total), decimal, thousands)
+            cost = paid / held if paid else None
+        named_ccy = cell(row, currency)
+        ccy = (named_ccy.upper() if _CODE_CELL.match(named_ccy)
+               else lexicon.currency_of(named_ccy))
+        out.append({
+            "row": header_row + 2 + offset,
+            "ticker": code.upper(),
+            "isin": cell(row, isin).upper() if isin is not None else "",
+            "quantity": held,
+            "currency": ccy or "",
+            "cost": cost if cost and cost > 0 else None,
+        })
+    return out
 
 
 def map_columns(provider: Provider, api_key: str,
@@ -1097,7 +1218,8 @@ def extract(filename: str, data: bytes, provider: Provider | None,
     if mapping is not None and not filename.lower().endswith(".pdf"):
         return _remap(filename, data, provider, api_key, mapping)
     if not filename.lower().endswith(".pdf"):
-        found = _crypto(read_grid(filename, data), provider, api_key, fiat)
+        grid = read_grid(filename, data)
+        found = _crypto(grid, provider, api_key, fiat) or _holdings(grid)
         if found is not None:
             return found
     if provider is None:
@@ -1192,10 +1314,22 @@ def _crypto(grid: list[list[str]], provider: Provider | None, api_key: str,
 
 
 def preset_read(filename: str, data: bytes, fiat: str = "") -> Extraction | None:
-    """A crypto export whose header we know, read with no model; else None."""
+    """A crypto export whose header we know, or a holdings snapshot, read
+    with no model; else None."""
     if filename.lower().endswith(".pdf"):
         return None
-    return _crypto(read_grid(filename, data), None, "", fiat)
+    grid = read_grid(filename, data)
+    return _crypto(grid, None, "", fiat) or _holdings(grid)
+
+
+def _holdings(grid: list[list[str]]) -> Extraction | None:
+    """A holdings snapshot read as one, with no model asked; else None."""
+    if not holdings_only(grid):
+        return None
+    held = tuple(holdings_rows(grid))
+    obs.event("import.llm_map.holdings_only", rows=len(grid) - 1, held=len(held))
+    return Extraction(ParseResult(), KIND_POSITIONS,
+                      columns=columns(grid, _guess_header_row(grid)), holdings=held)
 
 
 def _remap(filename: str, data: bytes, provider: Provider | None,

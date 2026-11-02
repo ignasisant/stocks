@@ -151,6 +151,7 @@ from stocks.api.schemas.fundamentals import (
     ValuationWindow,
 )
 from stocks.api.schemas.importer import (
+    ImportHolding,
     ImportIssue,
     ImportPlatform,
     ImportPlatforms,
@@ -329,6 +330,7 @@ __all__ = [
     "Health",
     "HomeSlot",
     "ImpliedVol",
+    "ImportHolding",
     "ImportIssue",
     "ImportPlatform",
     "ImportPlatforms",
