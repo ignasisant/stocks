@@ -55,7 +55,7 @@ DESTINATIONS: tuple[Destination, ...] = (
 # The phone tab bar's four destinations, by path. The DS mobile spec replaces
 # the sidebar with a fixed bar, and four is what fits a 360px row with legible
 # labels; the rest of the pages stay reachable through the drawer.
-BOTTOM_NAV: tuple[str, ...] = ("", "today", "portfolio", "profile")
+BOTTOM_NAV: tuple[str, ...] = ("", "today", "portfolio", "ticker")
 
 # Every first path segment the React shell answers, for the server that has to
 # hand it the document. The menu's own paths, plus the shell's own names for
