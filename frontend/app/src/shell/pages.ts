@@ -159,7 +159,7 @@ export const PAGES: Page[] = [
  * rail entry is behind the bar's "More". `tests/test_frontend_nav_parity.py`
  * holds the two lists together.
  */
-export const BOTTOM = ["home", "today", "portfolio", "profile"];
+export const BOTTOM = ["home", "today", "portfolio", "ticker"];
 
 /**
  * The rail's entries under their headers, in registry order — the shape of
