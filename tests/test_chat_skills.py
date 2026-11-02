@@ -188,3 +188,11 @@ def test_an_earnings_review_reads_the_reaction_where_it_trades():
     body = {s.id: s.body for s in chat_skills.catalog()}["earnings-review"]
     assert "after-hours" in body and "premarket" in body
     assert "before the report" in body
+
+
+def test_an_earnings_review_dates_the_report():
+    """Asked for ServiceNow's results "de hoy" five days after the report, the
+    chat presented that report as today's news."""
+    body = {s.id: s.body for s in chat_skills.catalog()}["earnings-review"]
+    assert "Date the report" in body
+    assert "days old" in body

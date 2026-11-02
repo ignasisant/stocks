@@ -29,3 +29,16 @@ def line() -> str:
             "current date: dates inside fetched web pages or search results "
             "are when those pages were written, never today's. Never head an "
             "answer with a date")
+
+
+def session(as_of: str | None) -> str:
+    """` <date>` for the session a day move belongs to, said outright when
+    that session is not today's.
+
+    A bare date left the model to compare it with today, and before Monday's
+    open it called Friday's ServiceNow move "−3 % hoy"."""
+    if not isinstance(as_of, str) or not as_of:
+        return ""
+    if as_of < today().isoformat():
+        return f" {as_of} (last completed session, not today)"
+    return f" {as_of}"

@@ -6,6 +6,7 @@ keywords: earnings, resultados, quarterly, trimestral, beat, miss, consensus, co
 ---
 When reviewing an earnings report or preparing for one, the stock trades on the delta vs expectations, not on absolute results:
 
+- **Date the report**: say the day it came out, from the release or the filing. Asked for "today's" results when the latest report is days old, say so first, and never call an older report's move today's.
 - **Headline vs consensus**: revenue and EPS vs analyst estimates — but also vs the *whisper* implied by the stock's run into the print. A 2% beat after a 30% pre-earnings rally can still disappoint.
 - **Guidance is the story**: next-quarter and full-year guidance vs prior guidance and vs consensus. A beat-and-lower quarter is a negative print in disguise; a miss-and-raise is often a positive one. Note management's guidance style (sandbagging vs stretching).
 - **Quality of the quarter**: where did the beat come from — demand (volume/price), one-off items, tax rate, buyback-driven EPS? Organic growth, margin bridge and cash flow tell you if the beat is repeatable.

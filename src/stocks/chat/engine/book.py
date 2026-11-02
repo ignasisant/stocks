@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stocks import obs
+from stocks.chat import clock
 from stocks.config import currency_symbol
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ def _day_move(pct: float, as_of, basis) -> str:
     and the extended-hours print when that is what it runs to. Bare "today"
     was how the chat read ServiceNow's pre-report session as the reaction to
     a report that had it 18 % lower after the bell."""
-    day = f" {as_of}" if isinstance(as_of, str) and as_of else ""
+    day = clock.session(as_of)
     if basis == "pre":
         return f"premarket{day} {pct:+.1%}"
     if basis == "post":

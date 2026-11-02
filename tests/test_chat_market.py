@@ -307,7 +307,12 @@ def test_day_pct_drops_a_move_no_session_produces():
     assert Quote("XYZ", price=6.0, prev_close=3.0).day_pct == pytest.approx(1.0)
 
 
-def test_a_quote_says_which_session_its_move_belongs_to():
+def test_a_quote_says_which_session_its_move_belongs_to(monkeypatch):
+    from datetime import date
+
+    from stocks.chat import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 28))
     regular = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
                     as_of="2026-10-28")
     assert "last 150.13 USD | session 2026-10-28 -3.00%" in regular.line()
@@ -478,3 +483,20 @@ def test_a_watched_held_or_short_symbol_is_never_searched():
     assert market.unlisted("¿y GE?", search=search) == {}
     assert market.unlisted("¿qué tal la bolsa hoy?", search=search) == {}
     assert seen == []
+
+
+def test_a_move_from_an_earlier_session_says_it_is_not_today(monkeypatch):
+    """Before Monday's open the chat read Friday's ServiceNow move as
+    "−3 % hoy": the date was there, the comparison with today was not."""
+    from datetime import date
+
+    from stocks.chat import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 11, 2))
+    friday = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
+                   as_of="2026-10-30")
+    assert ("session 2026-10-30 (last completed session, not today) -3.00%"
+            in friday.line())
+    monday = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
+                   as_of="2026-11-02")
+    assert "session 2026-11-02 -3.00%" in monday.line()

@@ -31,6 +31,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
+from stocks.chat import clock
 from stocks.formatting import bound
 from stocks.portfolio import consistency
 
@@ -168,7 +169,7 @@ class Quote:
         head = f"{self.ticker}" + (f" ({self.name})" if self.name else "")
         bits = []
         pct = self.day_pct
-        day = f" {self.as_of}" if self.as_of else ""
+        day = clock.session(self.as_of)
         if self.price is not None and self.session == "pre":
             bits.append(f"premarket {n(self.price, 2)} {self.currency}".strip())
             if pct is not None and self.prev_close:
