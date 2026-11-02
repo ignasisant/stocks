@@ -58,11 +58,16 @@ def test_the_page_in_focus_is_quoted_only_when_the_message_points_at_it(monkeypa
                     "¿Cuánto rinde el S&P 500 este año?",
                     "¿A qué PER cotiza META?"):
         market.lookup_for(message, focus="BKNG")
+    # "su" is Spanish for "its": asked on ASML's page, "¿cuál es su margen
+    # operativo?" quoted nothing, so the page's margins never reached the
+    # model and it said the figure was not there (prod eval 2026-11-02).
     for message in ("y hoy cómo va?", "is it cheap?", "¿la compro?",
-                    "compara esta con AMD"):
+                    "compara esta con AMD", "¿cuál es su margen operativo?",
+                    "¿y sus márgenes?"):
         market.lookup_for(message, focus="BKNG")
     assert asked == [[], [], ["^GSPC"], ["META"],
-                     ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"]]
+                     ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"],
+                     ["BKNG"], ["BKNG"]]
 
 
 # Prod 2026-11-02, thread rated "made up": after an answer on TSM, NOW and

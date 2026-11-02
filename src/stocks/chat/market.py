@@ -78,7 +78,7 @@ NOT_TICKERS = {
 # exposición tengo por país?"), and quoting that ticker anyway pulled every
 # answer towards it. "este año" and "esta semana" are dates, not the page.
 _POINTS_RE = re.compile(
-    r"\b(?:this|it|its|it's|that one|here|the (?:stock|company|share)s?"
+    r"\b(?:this|it|its|it's|that one|here|the (?:stock|company|share)s?|sus?"
     r"|(?:est|es)[aeo]s?(?!\s+(?:año|mes|semana|trimestre|semestre|ejercicio"
     r"|lunes|martes|miércoles|jueves|viernes|vez|momento|tipo|tema)\b)"
     r"|aquí|aquest[ae]?s?|això"
