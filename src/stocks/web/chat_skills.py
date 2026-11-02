@@ -184,12 +184,14 @@ class SkillPick(structured.Contract):
 
     Unknown ids are dropped rather than rejected — a model inventing
     "semiconductors" when the catalog says "tech" has answered in the right
-    shape, and an empty list is a legitimate answer anyway. A missing or
-    non-list "skills" is the rejection. Capping is the caller's, so a caller
-    asking for a different limit still gets one.
+    shape, and an empty list is a legitimate answer anyway. So is a null or
+    absent "skills": the shape BAML shows reads `skills: string[] or null`,
+    and gemini took the offer ×30 in a week, each one a repair call and then a
+    turn with no lens. A non-list "skills" is the rejection. Capping is the
+    caller's, so a caller asking for a different limit still gets one.
     """
 
-    skills: list[str]
+    skills: list[str] = []
     #: Whether the answer takes reasoning; None when the reply did not say.
     hard: bool | None = None
 

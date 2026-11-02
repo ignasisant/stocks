@@ -158,6 +158,16 @@ def test_classify_does_not_spend_a_repair_call_on_a_good_reply():
     assert len(p.calls) == 1
 
 
+@pytest.mark.parametrize("reply", ['{"hard": false}', '{"skills": null, "hard": true}'])
+def test_classify_reads_a_left_out_skills_list_as_none(reply):
+    # Prod 2026-10-27→11-02: gemini answered without "skills" ×30, each one a
+    # repair call and then a turn with no lens. Null is a shape BAML offers.
+    p = _FakeProvider(reply=reply)
+    picked = chat_skills.classify(p, "k", "¿cómo va mi cartera?")
+    assert picked == [] and picked.hard == ("true" in reply)
+    assert len(p.calls) == 1
+
+
 def test_classify_reads_prose_when_the_repair_fails_too():
     p = _FakeProvider(reply="the tech lens is the one I would use here")
     assert chat_skills.classify(p, "k", "chips?") == ["tech"]
