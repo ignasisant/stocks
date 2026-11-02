@@ -1121,6 +1121,8 @@ def _replay_import(diagnostic_id: str) -> None:
     print("\nrecorded at the time:")
     for reason, n in (item.get("reasons") or {}).items():
         print(f"    {n:>5} rows  {reason}")
+    for rtype, n in (item.get("types") or {}).items():
+        print(f"    {n:>5} rows  type {rtype!r} not known")
 
 
 def cmd_feedback(args: argparse.Namespace) -> None:

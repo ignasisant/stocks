@@ -47,6 +47,26 @@ def test_map_action_keywords():
     assert _map_action("RETURN OF CAPITAL") == "capital"
 
 
+def test_map_action_reads_the_types_in_spanish():
+    assert _map_action("Compra - Mercado") == "buy"
+    assert _map_action("Venta - Límite") == "sell"
+    assert _map_action("Dividendo") == "dividend"
+    assert _map_action("Devolución de capital") == "capital"
+    # The DIVIDEND TAX rule holds in Spanish too.
+    assert _map_action("Retención dividendo") is None
+    assert _map_action("Impuesto sobre dividendos") is None
+    assert _map_action("Desdoblamiento") is None
+    assert _map_action("Comisión de custodia") is None
+    assert _map_action("Recarga de efectivo") is None
+
+
+def test_skip_reason_names_spanish_splits_and_fees():
+    assert "split" in revolut._skip_reason("Desdoblamiento")
+    assert "fee row" in revolut._skip_reason("Comisión de custodia")
+    assert "tax correction" in revolut._skip_reason("Retención dividendo")
+    assert revolut._skip_reason("Recarga").startswith("unrecognised type")
+
+
 def test_parse_csv_imports_trades_and_dividends():
     res = revolut.parse_csv(SAMPLE)
     actions = [t.action for t in res.transactions]

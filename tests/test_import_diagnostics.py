@@ -130,6 +130,33 @@ def test_reasons_is_a_histogram_not_a_row_list():
     assert diagnostics.reasons(result) == {"unrecognised date '99-99-9999'": 5}
 
 
+def test_unknown_types_name_the_words_a_parser_missed():
+    unknown = "unrecognised type — not imported"
+    result = ParseResult(skipped=[
+        *({"row": i, "type": "Compra - Mercado", "reason": unknown} for i in range(3)),
+        {"row": 4, "type": "", "reason": unknown},
+        {"row": 5, "type": "Pago a ana@example.com", "reason": unknown},
+        {"row": 6, "type": "Ref 12345", "reason": "unrecognised action — not imported"},
+        {"row": 7, "type": "CASH TOP-UP", "reason": "cash movement — not a position"},
+    ])
+    assert diagnostics.unknown_types(result) == {
+        "Compra - Mercado": 3,
+        "(empty)": 1,
+        "Aaaa a aaa@aaaaaaa.aaa": 1,
+        "Aaa 99999": 1,
+    }
+
+
+def test_the_fingerprint_carries_the_unknown_types_only_when_there_are_some():
+    data = b"Date,Ticker,Type,Quantity\n2024-01-02,AAPL,Compra,1\n"
+    missed = ParseResult(skipped=[
+        {"row": 2, "type": "Compra", "reason": "unrecognised type — not imported"}])
+    fp = diagnostics.fingerprint("revolut", "s.csv", data, missed)
+    assert fp["types"] == {"Compra": 1}
+    assert diagnostics._fields(fp)["top_type"] == "Compra"
+    assert "types" not in diagnostics.fingerprint("revolut", "s.csv", data, ParseResult())
+
+
 def test_reasons_keeps_only_the_commonest():
     result = ParseResult(skipped=[
         {"row": i, "type": "x", "reason": f"reason {chr(97 + i)}"}

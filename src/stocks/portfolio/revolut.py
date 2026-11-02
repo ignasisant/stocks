@@ -31,7 +31,9 @@ and only then commits (see the web Import page / ledger.add_many).
 
 from __future__ import annotations
 
-from stocks.portfolio import statement
+import re
+
+from stocks.portfolio import lexicon, statement
 from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import (
     CsvFormat,
@@ -75,18 +77,32 @@ def net_dividend(tx: Transaction) -> bool:
 def _map_action(rtype: str) -> str | None:
     """Revolut `Type` string to a ledger action; None means 'skip this row'."""
     t = rtype.upper()
+    taxed = "TAX" in t or bool(_TAX.search(lexicon.plain(rtype)))
     if t.startswith("BUY"):
         return "buy"
     if t.startswith("SELL"):
         return "sell"
     # "DIVIDEND TAX (CORRECTION)" must not import as a dividend: those rows are
     # withholding adjustments that arrive in +/- pairs which cancel out.
-    if "DIVIDEND" in t and "TAX" not in t:
+    if "DIVIDEND" in t and not taxed:
         return "dividend"
     if "RETURN OF CAPITAL" in t:
         return RETURN_OF_CAPITAL
+    # The app's own exports write these in English whatever the locale, but a
+    # statement retyped or re-saved in Spanish ("Compra - Mercado") is still
+    # this layout: the shared vocabulary reads it, for the same four actions.
+    action = lexicon.action_of(rtype)
+    if action == "dividend" and taxed:
+        return None
+    if action in ("buy", "sell", "dividend", RETURN_OF_CAPITAL):
+        return action
     # split / cash / fee / transfer / reward are intentionally not auto-imported.
     return None
+
+
+# A withholding row in the words lexicon reads ("Retención dividendo"): the
+# DIVIDEND TAX rule, in the languages action_of knows.
+_TAX = re.compile(r"\b(tax|impuesto|retencion|withholding|quellensteuer|ritenuta)\b")
 
 
 def _skip_reason(rtype: str) -> str:
@@ -101,6 +117,13 @@ def _skip_reason(rtype: str) -> str:
         return "fee row — add manually if you want it in cost basis"
     if any(k in t for k in ("TOP-UP", "TOP UP", "WITHDRAWAL", "TRANSFER", "CASH")):
         return "cash movement — not position-affecting"
+    named = lexicon.action_of(rtype)
+    if named == "split":
+        return "stock split — ratio derived at validation, or add manually"
+    if named == "fee":
+        return "fee row — add manually if you want it in cost basis"
+    if named == "dividend":
+        return "dividend tax correction — arrives in +/- pairs, review manually"
     return "unrecognised type — not imported"
 
 
