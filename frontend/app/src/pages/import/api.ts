@@ -131,7 +131,7 @@ export type Holding = {
 };
 
 /** A stretch of sessions whose low-high range held the price. */
-export type BuyRun = {
+type BuyRun = {
   start: string;
   end: string;
   /** The session whose close sat nearest: the date to offer. */
