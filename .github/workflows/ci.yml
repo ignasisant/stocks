@@ -58,21 +58,50 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ty check
 
-  test:
+  # The suite in two halves on two runners (PYTEST_SHARD, tests/conftest.py):
+  # one runner's four cores took ~100 s of the ~2 min the whole run waits on.
+  test-shard:
+    name: test ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - run: uv sync --frozen
+      # The built model, kept between runs: its download and cut are ~11 s
+      # on the critical path otherwise. embedding.py pins source, revision
+      # and vocabulary, so its hash is the whole recipe.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/stocks
+          key: embed-${{ runner.os }}-${{ hashFiles('src/stocks/chat/embedding.py') }}
       # The chat's embedding model (chat/embedding.py), built before any test
       # starts, as the image builds it before serving. Left to first use, its
       # download and cut run inside whichever test or e2e server asks first
       # and stall what runs beside it.
       - run: uv run python -c "from stocks.chat import hybrid; assert hybrid._model()"
       - run: uv run pytest -q
+
+  # The one check the ruleset requires (infra/github_ruleset.tf names "test"),
+  # green only when every shard is. `always()`: without it a failed shard
+  # skips this job, and a skipped required check counts as passed.
+  test:
+    if: always()
+    needs: test-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "$SHARDS" = success
+        env:
+          SHARDS: ${{ needs.test-shard.result }}
 
   # The React shell, and the one thing that can go wrong quietly about it: the
   # bundle it serves is committed inside the Python package (frontend/README.md
@@ -115,15 +144,32 @@ jobs:
   # the model and the network sealed off (tests/e2e/serve.py). Runs on the
   # committed bundle, which the frontend job proves is the one the sources build.
   e2e:
+    name: e2e ${{ matrix.shard }}/2
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      PYTEST_SHARD: ${{ matrix.shard }}/2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - run: uv sync --frozen
+      # Chromium itself; the system libraries it needs still come from apt
+      # on every run. uv.lock pins the playwright that names the build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - run: uv run playwright install --with-deps chromium
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/stocks
+          key: embed-${{ runner.os }}-${{ hashFiles('src/stocks/chat/embedding.py') }}
       # The chat's embedding model (chat/embedding.py), built before any test
       # starts, as the image builds it before serving. Left to first use, its
       # download and cut run inside whichever test or e2e server asks first
@@ -133,7 +179,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
-          name: playwright-traces
+          name: playwright-traces-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
 
