@@ -768,3 +768,91 @@
     min-height: 44px;
   }
 }
+
+/* ------------------------------------------------------- who moved the day */
+
+/* The day taken apart: what added and what took away side by side once the
+   column has room, the blocks under them; every figure right-aligned in
+   tabular digits so a column of money reads down. */
+.td-attr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.td-attr-sides {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.9rem;
+}
+
+@container ag-main (min-width: 38rem) {
+  .td-attr-sides {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.5rem;
+  }
+}
+
+.td-attr-head {
+  margin: 0 0 0.25rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-weight: 600;
+}
+
+.td-attr-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.td-attr-rows > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2rem;
+  font-size: var(--ag-fs-base, 0.875rem);
+}
+
+.td-attr-rows > li + li {
+  border-top: 1px solid var(--ag-rule-soft);
+}
+
+@media (pointer: coarse) {
+  .td-attr-rows > li {
+    min-height: 44px;
+  }
+}
+
+.td-attr-fig {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.td-attr-fig strong {
+  font-weight: 600;
+}
+
+.td-attr-fig small {
+  min-width: 4.5rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  text-align: right;
+}
+
+.td-attr-why {
+  font-variant-numeric: tabular-nums;
+}
+
+.td-attr-note {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}

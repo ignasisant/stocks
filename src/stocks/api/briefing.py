@@ -63,6 +63,7 @@ from stocks.chat import (
     signals,
     today_sections,
 )
+from stocks.chat.daily import attribution
 from stocks.data.crypto import is_crypto
 from stocks.formatting import finite
 from stocks.portfolio import plan as plans
@@ -372,6 +373,45 @@ def _day_move(tbl, hist) -> tuple[float, float] | None:
     return basket_change(hist, 1) if hist is not None and not hist.empty else None
 
 
+def _attribution(tbl, hist, year: dict, ccy: str, moved) -> dict | None:
+    """The day's move split by position and block, the movers past two sigma
+    set against their sector's ETF, and the last sessions against the index
+    (`attribution`), or None — a card without the breakdown still stands.
+
+    Off-session the card's day is these same rows summed (`_day_move`), so a
+    difference is a bug and goes to the inconsistency log; during a session
+    the day is the close-to-close basket and the difference is the quotes
+    the rows were re-read from, said as `gap` and nowhere else."""
+    if tbl is None or tbl.empty:
+        return None
+    try:
+        card = _card_closes()
+        meta = _meta(tuple(sorted(str(t) for t in tbl.index)))
+        stamps = tbl["day_asof"].dropna() if "day_asof" in tbl else []
+        session = max((str(s)[:10] for s in stamps), default=None)
+        sector_day = {
+            sector: pct
+            for sector, etf in sm.SECTOR_ETFS.items()
+            if (pct := attribution.session_pct(card.get(etf), session)) is not None
+        }
+        out = attribution.day(
+            tbl, meta,
+            total=moved[0] if moved else None,
+            year=year,
+            sector_day=sector_day,
+            report=not us_market_open(),
+        )
+        if out is not None:
+            beside = attribution.alpha(hist, index_in_base(card, ccy))
+            if beside:
+                out["alpha"] = beside
+        return out
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("daily_action.attribution_unavailable",
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return None
+
+
 def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     """What today's card is written from, or None when there is nothing to say.
 
@@ -435,12 +475,14 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     investor = plans.load(prefs)
     risk = (prefs.get("investor_profile") or {}).get("risk")
     against = _plan(investor, tbl, entries, rules, ccy, day)
+    moved = _day_move(tbl, hist)
 
     return daily.build_facts(
         tbl,
         hist,
         currency=ccy,
-        day=_day_move(tbl, hist),
+        day=moved,
+        attribution=_attribution(tbl, hist, closes, ccy, moved),
         earnings=events,
         extremes=extremes,
         index=_index(ccy, money) if positions else None,
