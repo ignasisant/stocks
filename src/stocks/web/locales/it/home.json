@@ -302,6 +302,7 @@
   "home.daily_short_repurchase_clear": "{ticker} ricomprabile {when}",
   "home.daily_short_book": "Portafoglio {pct} vs {index} {bench}",
   "home.daily_short_book_alone": "Portafoglio {pct}",
+  "home.daily_short_book_split": "Portafoglio {pct} · {index} {bench} {day}",
   "home.daily_edit": "Scegli cosa ti dice la scheda",
   "home.daily_brief_wait": "Cifre direttamente dal tuo portafoglio mentre l'assistente risponde a ciò che hai chiesto.",
   "home.daily_brief_missed": "Oggi l'assistente non ha potuto rispondere a ciò che hai chiesto, quindi questa è la scheda predefinita. Rigenera tra un po' per riprovare.",

@@ -1380,8 +1380,7 @@ def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, boo
     behind = today_market.stale(stored, today_market.expected_session(), now)
     card = today_market.card(stored, lang) if stored else None
     kind = "refetch" if behind else ("lang" if card is None else "")
-    if behind and stored and now - float(stored.get("built_at") or 0) \
-            > today_market.STALE_AFTER_S:
+    if behind and stored and today_market.cron_missed(stored, now):
         obs.warn_once("today.cron_absent", key=stored.get("session") or "")
     if not kind:
         return card, False

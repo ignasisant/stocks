@@ -742,6 +742,20 @@ def test_the_computed_card_opens_on_the_book_against_the_index():
     assert [i["key"] for i in card.items] == ["alert_hit:AAPL", "earnings:NVDA"]
 
 
+def test_the_index_from_another_session_is_named_not_compared():
+    # Monday before New York opens: the book's day is Europe's Monday, the
+    # index's is Friday's close.
+    facts = book_facts(
+        day={"pct": 0.56, "amount": 318.78, "as_of": "2026-11-02"},
+        index=dict(INDEX, day_pct=-2.01, as_of="2026-10-30"),
+    )
+    card = daily.computed(facts, "en", TODAY)
+    assert card.headline.startswith("Portfolio +0.56% · S&P 500 -2.01% on Friday")
+    same = book_facts(day={"pct": 0.8, "amount": 120.0, "as_of": "2026-10-30"},
+                      index=dict(INDEX, as_of="2026-10-30"))
+    assert "vs the" in daily.computed(same, "en", TODAY).headline
+
+
 def test_a_quiet_day_leaves_the_move_to_the_portfolio_section():
     card = daily.computed(book_facts(actions=[]), "en", TODAY)
     assert card.book
