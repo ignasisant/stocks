@@ -383,6 +383,29 @@ def security(isin: str) -> Security | None:
     return securities([isin]).get((isin or "").strip().upper())
 
 
+def known(isin: str) -> Security | None:
+    """What an earlier ask learned of `isin` — the memo only, no request.
+
+    For the bulk name routes, which may not reach the network per row.
+    """
+    key = (isin or "").strip().upper()
+    with _lock:
+        entry = _load().get(key)
+    return _security(key, entry or {}) if _fresh(entry, time.time()) else None
+
+
+def missed(isin: str) -> bool:
+    """Whether OpenFIGI answered that it has no such ISIN, lately.
+
+    `securities` says None both for that and for a call it could not make;
+    only this one is a verdict on the ISIN.
+    """
+    key = (isin or "").strip().upper()
+    with _lock:
+        entry = _load().get(key)
+    return bool(entry and entry.get("miss") and _fresh(entry, time.time()))
+
+
 # ------------------------------------------------------------------ choosing
 
 

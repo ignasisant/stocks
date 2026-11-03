@@ -25,10 +25,10 @@ the page loads, which is the point of putting the assistant on the dashboard.
 
 Three properties shape everything here:
 
-  - It changes once a day. `action_day()` turns the card over at 09:00 in the
-    reader's own zone (CUTOFF_HOUR), before the European open and while the US
-    premarket is quoting; until then the previous day's card stands, stamped
-    with its own date so nobody mistakes it for this morning's. One LLM call
+  - It changes once a day. `action_day()` turns the card over after the US
+    close (BRIEF_AT, New York time) to the next day's, written from settled
+    closes and read the next morning; it then stands through that day's
+    sessions, stamped with its own date. One LLM call
     writes every section, and the card spends at most FREE_UNITS of the
     account's free allowance a day (`spend_unit`): that is what makes an
     always-on card affordable on the free chain, so the stored copy
@@ -62,12 +62,13 @@ from stocks.chat.daily.card import (
     _WINDOW_KEYS,
     ALERTS,
     ALERTS_MAX,
+    BRIEF_AT,
     BRIEF_MISSED,
     BRIEF_PENDING,
     BRIEF_STATES,
     BRIEF_WRITTEN,
     BULLET_CHARS,
-    CUTOFF_HOUR,
+    CLOSE_ZONE,
     EARNINGS_DAYS,
     FOCUS_MAX,
     FREE_UNITS,
@@ -94,6 +95,7 @@ from stocks.chat.daily.card import (
     DailyAction,
     _clip,
     action_day,
+    card_session,
     is_fresh,
     keyed_actions,
     offered,
@@ -153,7 +155,8 @@ __all__ = [
     "BRIEF_STATES",
     "BRIEF_WRITTEN",
     "BULLET_CHARS",
-    "CUTOFF_HOUR",
+    "BRIEF_AT",
+    "CLOSE_ZONE",
     "DailyAction",
     "EARNINGS_DAYS",
     "FOCUS_MAX",
@@ -194,6 +197,7 @@ __all__ = [
     "_sourced",
     "_today_notes",
     "action_day",
+    "card_session",
     "audit",
     "build_facts",
     "card_path",
@@ -272,6 +276,8 @@ def generate(
         accept=lambda raw: parse(
             raw, day=day, lang=lang, known=known, facts=facts
         ),
+        # Built in the background, for every account at the schedule's hour.
+        patient=True,
     )
 
 

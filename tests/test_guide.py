@@ -174,7 +174,8 @@ def test_a_free_unit_spent_on_silence_is_handed_back(monkeypatch):
     prefs = {guide.PREF_STEP: guide.steps()[1].id}
     refunded: list[int] = []
 
-    def _attempts(p, system, msgs, timeout, *, spend_free, accept=None):
+    def _attempts(p, system, msgs, timeout, *, spend_free, accept=None,
+                  session_keys=None):
         spend_free(p)  # the free candidate charges before it is called
         return None  # …and then answers nothing
 

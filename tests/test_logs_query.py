@@ -613,3 +613,44 @@ def test_the_connector_funnel_counts_accounts_not_events():
 
 def test_no_connector_events_says_so():
     assert lq.render_connector(lq.connector([])) == "(no connector events in range)"
+
+
+# -------------------------------------------------------------------- installs
+
+
+def _launch(user: str, device: str, ts: str, ua: str = "safari/ios") -> dict:
+    return {"timestamp": ts, "jsonPayload": {
+        "event": "app.launch", "user": user, "device": device, "ua": ua}}
+
+
+def test_installs_are_one_row_per_account_and_device():
+    entries = [
+        _launch("ana", "ios", "2026-10-30T10:00:00Z"),
+        _launch("ana", "ios", "2026-11-02T08:00:00Z"),
+        _launch("ana", "ios", "2026-10-31T09:00:00Z"),
+        _launch("ana", "desktop", "2026-10-29T09:00:00Z", ua="chrome/windows"),
+        _launch("bo", "android", "2026-11-01T17:00:00Z", ua="chrome/android"),
+        _launch("guest", "ios", "2026-11-01T12:00:00Z"),
+        _launch("-", "ios", "2026-11-01T12:00:00Z"),
+        {"timestamp": "2026-11-01T12:00:00Z",
+         "jsonPayload": {"event": "client.vital", "user": "cy"}},
+    ]
+    got = lq.installs(entries)
+    assert got["accounts"] == 2
+    assert got["guest_launches"] == 2
+    rows = {(r["user"], r["device"]): r for r in got["rows"]}
+    assert set(rows) == {("ana", "ios"), ("ana", "desktop"), ("bo", "android")}
+    ana = rows[("ana", "ios")]
+    assert ana["launches"] == 3
+    assert ana["first"] == "2026-10-30T10:00:00Z"
+    assert ana["last"] == "2026-11-02T08:00:00Z"
+    # Newest launch first.
+    assert got["rows"][0]["user"] == "ana" and got["rows"][0]["device"] == "ios"
+    out = lq.render_installs(got)
+    assert "bo" in out and "chrome/android" in out and "accounts: 2" in out
+
+
+def test_no_launches_says_so():
+    assert lq.render_installs(lq.installs([])) == (
+        "(no launches from a Home Screen in range)"
+    )

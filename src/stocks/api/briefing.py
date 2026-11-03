@@ -63,6 +63,7 @@ from stocks.chat import (
     signals,
     today_sections,
 )
+from stocks.chat.daily import attribution
 from stocks.data.crypto import is_crypto
 from stocks.formatting import finite
 from stocks.portfolio import plan as plans
@@ -118,10 +119,9 @@ def running(paths) -> Job | None:
 def key_for(day: date, lang: str, session: str | None, brief: str = "") -> tuple:
     """What a card and its one generation attempt are keyed on.
 
-    The session is in it for the reason `daily.is_fresh` gives: a card written
-    before the open quotes the previous close, and when the next session lands
-    that card is stale hours before the 09:00 rollover. Rekeying retires the
-    "already tried" guard with it. So is the brief's wording
+    The session is the one the card is written from (`daily.card_session`);
+    it turns over with the day, and is in the key for the logs. So is the
+    brief's wording
     (`daily_routines.signature`): a reader who rewrites it wants the card
     they just asked for, not the one tried this morning.
     """
@@ -373,6 +373,45 @@ def _day_move(tbl, hist) -> tuple[float, float] | None:
     return basket_change(hist, 1) if hist is not None and not hist.empty else None
 
 
+def _attribution(tbl, hist, year: dict, ccy: str, moved) -> dict | None:
+    """The day's move split by position and block, the movers past two sigma
+    set against their sector's ETF, and the last sessions against the index
+    (`attribution`), or None — a card without the breakdown still stands.
+
+    Off-session the card's day is these same rows summed (`_day_move`), so a
+    difference is a bug and goes to the inconsistency log; during a session
+    the day is the close-to-close basket and the difference is the quotes
+    the rows were re-read from, said as `gap` and nowhere else."""
+    if tbl is None or tbl.empty:
+        return None
+    try:
+        card = _card_closes()
+        meta = _meta(tuple(sorted(str(t) for t in tbl.index)))
+        stamps = tbl["day_asof"].dropna() if "day_asof" in tbl else []
+        session = max((str(s)[:10] for s in stamps), default=None)
+        sector_day = {
+            sector: pct
+            for sector, etf in sm.SECTOR_ETFS.items()
+            if (pct := attribution.session_pct(card.get(etf), session)) is not None
+        }
+        out = attribution.day(
+            tbl, meta,
+            total=moved[0] if moved else None,
+            year=year,
+            sector_day=sector_day,
+            report=not us_market_open(),
+        )
+        if out is not None:
+            beside = attribution.alpha(hist, index_in_base(card, ccy))
+            if beside:
+                out["alpha"] = beside
+        return out
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("daily_action.attribution_unavailable",
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return None
+
+
 def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     """What today's card is written from, or None when there is nothing to say.
 
@@ -436,12 +475,14 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     investor = plans.load(prefs)
     risk = (prefs.get("investor_profile") or {}).get("risk")
     against = _plan(investor, tbl, entries, rules, ccy, day)
+    moved = _day_move(tbl, hist)
 
     return daily.build_facts(
         tbl,
         hist,
         currency=ccy,
-        day=_day_move(tbl, hist),
+        day=moved,
+        attribution=_attribution(tbl, hist, closes, ccy, moved),
         earnings=events,
         extremes=extremes,
         index=_index(ccy, money) if positions else None,
@@ -1150,13 +1191,10 @@ def start(
 
 
 def now_day(paths=None) -> tuple[datetime, date]:
-    """The reader's now and the action day it falls in.
-
-    In the account's zone (`timezone`, sent by the browser), turning over at
-    its own cutoff (`schedule.cutoff_hour`: earlier when its briefing is
-    scheduled earlier). With no account, or one whose settings do not read,
-    Madrid at `daily.CUTOFF_HOUR`. Not the server's clock: the host runs in
-    UTC, an hour or two behind the readers the cutoff was chosen for.
+    """The reader's now, in the account's zone (`timezone`, sent by the
+    browser; Madrid with no account or one whose settings do not read), and
+    the action day it falls in (`daily.action_day`: turned over at the US
+    close, the same moment for every reader).
     """
     from stocks.notify import schedule
 
@@ -1167,7 +1205,7 @@ def now_day(paths=None) -> tuple[datetime, date]:
         except Exception:  # noqa: BLE001 — read as the defaults
             prefs = {}
     now = datetime.now(schedule.zone(prefs))
-    return now, daily.action_day(now, schedule.cutoff_hour(prefs, daily.CUTOFF_HOUR))
+    return now, daily.action_day(now)
 
 
 # ------------------------------------------------------------------ analysis
@@ -1380,8 +1418,7 @@ def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, boo
     behind = today_market.stale(stored, today_market.expected_session(), now)
     card = today_market.card(stored, lang) if stored else None
     kind = "refetch" if behind else ("lang" if card is None else "")
-    if behind and stored and now - float(stored.get("built_at") or 0) \
-            > today_market.STALE_AFTER_S:
+    if behind and stored and today_market.cron_missed(stored, now):
         obs.warn_once("today.cron_absent", key=stored.get("session") or "")
     if not kind:
         return card, False

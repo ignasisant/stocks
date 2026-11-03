@@ -191,11 +191,14 @@ def fetch_history(ticker: str) -> DividendHistory:
     from stocks import obs
     from stocks.data.crypto import is_crypto
     from stocks.data.fetch import resolve, retired, throttle_remaining, trip_throttle
+    from stocks.data.symbols import is_isin
 
     if is_crypto(ticker):
         return DividendHistory(ticker)
     key = resolve(ticker)
-    if retired(key):
+    if retired(key) or is_isin(key):
+        # An unplaced ISIN: see `fetch.splits`. Not memoized, so the name is
+        # asked about once a lookup has placed it.
         return DividendHistory(ticker)
     with _history_lock:
         hit = _history_memo.get(key)

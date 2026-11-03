@@ -75,6 +75,71 @@ class DailyBookRow(BaseModel):
     )
 
 
+class DailyContribution(BaseModel):
+    ticker: str
+    amount: float = Field(description="The position's day in the card's currency.")
+    pct: float | None = Field(default=None, description="Its price move, %.")
+    pp: float | None = Field(
+        default=None, description="Its share of the book's day, percentage points."
+    )
+    weight_pct: float | None = None
+
+
+class DailyBlock(BaseModel):
+    kind: Literal["sector", "fund", "crypto"] = Field(
+        description="A sector of single names, one fund, or the coins."
+    )
+    label: str = Field(description="The sector's name, or the fund's ticker.")
+    amount: float
+    pp: float | None = None
+    tickers: list[str]
+
+
+class DailyExplained(BaseModel):
+    ticker: str
+    pct: float | None = None
+    sigmas: float = Field(description="The move in its own daily standard deviations.")
+    etf: str = Field(description="The sector ETF it is set against, e.g. `XLK`.")
+    etf_pct: float
+    verdict: Literal["sector", "company"] = Field(
+        description="`sector` when the ETF made at least half the move the same "
+        "way, else `company`."
+    )
+
+
+class DailyAlphaDay(BaseModel):
+    date: str
+    book: float = Field(description="The held names' day, %.")
+    index: float = Field(description="The index's day over the same stretch, %.")
+
+
+class DailyAlpha(BaseModel):
+    sessions: list[DailyAlphaDay]
+    ahead: int = Field(description="Sessions the book beat the index.")
+    excess_pp: float = Field(description="The days' differences summed, points.")
+
+
+class DailyAttribution(BaseModel):
+    """The day split by position and block: blocks sum to positions, and
+    positions to `amount` — `gap` is what the stated day adds on top."""
+
+    amount: float
+    up: list[DailyContribution] = Field(default_factory=list)
+    down: list[DailyContribution] = Field(default_factory=list)
+    blocks: list[DailyBlock] = Field(default_factory=list)
+    gap: float | None = Field(
+        default=None,
+        description="The card's day less the positions' sum, when a session "
+        "under way reads them from different prices.",
+    )
+    stale: list[str] = Field(
+        default_factory=list,
+        description="Positions whose bar the feed repeated from the session before.",
+    )
+    explained: list[DailyExplained] = Field(default_factory=list)
+    alpha: DailyAlpha | None = None
+
+
 class DailyBook(BaseModel):
     """The card's Portfolio section: the book against the index."""
 
@@ -84,6 +149,11 @@ class DailyBook(BaseModel):
     chart: list[DailyChartLine] = Field(
         default_factory=list,
         description="The month drawn, book and index rebased to 100.",
+    )
+    attribution: DailyAttribution | None = Field(
+        default=None,
+        description="What moved the book on the day; null on a card built "
+        "before it, or when the positions could not be priced.",
     )
 
 
@@ -194,11 +264,11 @@ class DailyCard(BaseModel):
     )
     action_day: str = Field(
         description=(
-            "Which day's card is current right now. Before the 09:00 cutoff "
-            "that is yesterday: at 07:40 the day has no numbers in it yet."
+            "Which day's card is current right now. It turns over at 16:45 "
+            "New York time, after the US close, to the next day's: the card "
+            "is written from settled closes and read the next morning."
         )
     )
-    cutoff_hour: int = Field(description="Local hour the action day rolls over.")
     fresh: bool = Field(
         default=False,
         description=(
@@ -402,7 +472,6 @@ class TodayCard(BaseModel):
     """
 
     action_day: str
-    cutoff_hour: int
     market: MarketCard | None = Field(
         default=None, description="Null until the first morning's read exists."
     )

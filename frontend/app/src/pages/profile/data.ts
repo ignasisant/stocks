@@ -68,7 +68,7 @@ export const LANGUAGES: Record<string, string> = { en: "English", es: "Español"
  * is the country its catalog is written for — the same glyph the residence
  * picker below it draws, which is what the eye matches the two rows by.
  */
-export const LANGUAGE_FLAGS: Record<string, string> = { en: "🇬🇧", es: "🇪🇸" };
+export const LANGUAGE_FLAGS: Record<string, string> = { en: "🇬🇧", es: "🇪🇸", it: "🇮🇹" };
 
 /**
  * `stocks.portfolio.tax.de.CHURCH_TAX_RATES` — stored as fractions.

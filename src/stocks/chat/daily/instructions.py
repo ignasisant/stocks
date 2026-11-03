@@ -301,6 +301,21 @@ _WHEN = (
     "session's move as today's, and never date a figure by any other means."
 )
 
+# The app draws the breakdown under the day's figure; the model only needs to
+# know it may name who made the day, and that a sector-wide move is not news
+# about one company.
+_ATTRIBUTION = (
+    "WHO MOVED THE DAY. `attribution` splits the book's day in money: `up` "
+    "and `down` (the largest contributions, each `amount` in the card's "
+    "currency and `pp` points of the book), `blocks` (by sector, each fund "
+    "alone), `alpha` (the last `sessions` against the index, `ahead` of them "
+    "won). `explained` sets an unusual move against its sector's ETF the same "
+    "session: with `verdict` sector, say the sector moved, not the company. "
+    "`stale` names a price the feed did not update — never call its 0 % a "
+    "quiet day. The app draws all of it; quote a figure from it only when "
+    "it is the reason for a line."
+)
+
 _GUARDRAILS = (
     "Every line must come from `actions`. Never invent a trigger, a price, a "
     "percentage, a date or a holding, never write about a ticker that is not "
@@ -463,7 +478,8 @@ def prompt(
             f"{_BRIEF_TASK} {engine.persona(profile or {})}"
             f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
             f"{memories}"
-            f"{_BRIEF_DATA}\n\n{_KINDS}\n\n{_WHEN}\n\n{_BRIEF_RULES}\n\n"
+            f"{_BRIEF_DATA}\n\n{_KINDS}\n\n{_WHEN}\n\n{_ATTRIBUTION}\n\n"
+            f"{_BRIEF_RULES}\n\n"
             f"{_BRIEF_SHAPE}"
         )
     else:
@@ -471,7 +487,8 @@ def prompt(
             f"{_TASK} {engine.persona(profile or {})}"
             f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
             f"{memories}"
-            f"{_KINDS}\n\n{_WHEN}\n\n{_GUARDRAILS}\n\n{_SHAPE}"
+            f"{_KINDS}\n\n{_WHEN}\n\n{_ATTRIBUTION}\n\n{_GUARDRAILS}\n\n"
+            f"{_SHAPE}"
         )
     if memories or talk:
         system += "\n\n" + engine.MEMORY_USE

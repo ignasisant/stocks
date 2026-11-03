@@ -213,3 +213,44 @@ def test_a_side_call_on_the_cheapest_model_thinks_minimally(monkeypatch):
     with llm.thinking("low"):
         gemini.complete("k", gemini.classifier_model, "s", [])
     assert _replies.levels == ["minimal", "", "low"]
+
+
+def test_listing_models_keeps_the_client_open_across_pages(monkeypatch):
+    """Prod 00144/00147: `models.list()` pages lazily, and the SDK's Client
+    closes its HTTP client when collected. A temporary Client died after the
+    first page: "Cannot send a request, as the client has been closed"."""
+    import gc
+
+    from google import genai
+
+    class _Api:
+        closed = False
+
+    class _Model:
+        def __init__(self, name):
+            self.name = f"models/{name}"
+            self.supported_actions = ["generateContent"]
+
+    class _Models:
+        def __init__(self, api):
+            self._api = api
+
+        def list(self):
+            yield _Model("gemini-3-pro")
+            gc.collect()
+            if self._api.closed:
+                raise RuntimeError(
+                    "Cannot send a request, as the client has been closed."
+                )
+            yield _Model("gemini-3-flash")
+
+    class _Client:
+        def __init__(self, api_key):
+            self._api = _Api()
+            self.models = _Models(self._api)
+
+        def __del__(self):
+            self._api.closed = True
+
+    monkeypatch.setattr(genai, "Client", _Client)
+    assert llm._gemini_models("key") == ["gemini-3-flash", "gemini-3-pro"]

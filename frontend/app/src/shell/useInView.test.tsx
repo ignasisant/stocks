@@ -8,7 +8,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { canObserve, useInView } from "./useInView";
+import { canObserve, covered, useInView } from "./useInView";
 
 function Probe({ eager }: { eager?: boolean }) {
   const [ref, seen] = useInView<HTMLDivElement>(eager);
@@ -31,6 +31,22 @@ describe("useInView", () => {
 
   it("draws an eager slot from the first frame", () => {
     vi.stubGlobal("IntersectionObserver", StillObserver);
+    expect(renderToStaticMarkup(<Probe eager />)).toContain("card");
+  });
+
+  it("holds even an eager slot while the assistant covers a phone's page", () => {
+    vi.stubGlobal("IntersectionObserver", StillObserver);
+    vi.stubGlobal("document", { documentElement: { dataset: { chat: "overlay" } } });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) });
+    expect(covered()).toBe(true);
+    expect(renderToStaticMarkup(<Probe eager />)).toContain("placeholder");
+  });
+
+  it("does not hold a slot beside a drawer that leaves the page on screen", () => {
+    vi.stubGlobal("IntersectionObserver", StillObserver);
+    vi.stubGlobal("document", { documentElement: { dataset: { chat: "open" } } });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });
+    expect(covered()).toBe(false);
     expect(renderToStaticMarkup(<Probe eager />)).toContain("card");
   });
 

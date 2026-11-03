@@ -150,5 +150,16 @@
   "today.book_chart": "Portfolio against the {index}, {window}",
   "today.book_empty": "No data for this period.",
   "today.book_failed": "Couldn't draw this period.",
-  "today.book_since": "Your book begins in {date}; nothing was held before."
+  "today.book_since": "Your book begins in {date}; nothing was held before.",
+  "today.sec_day": "Who moved the day",
+  "today.day_help": "What each position added or took away today, in your currency. The blocks add up to the day to the cent.",
+  "today.day_up": "Added",
+  "today.day_down": "Took away",
+  "today.day_blocks": "By block",
+  "today.day_explained": "{pct}, {sigmas}σ",
+  "today.day_verdict_sector": "the sector's move",
+  "today.day_verdict_company": "the company's own",
+  "today.day_alpha": "Against the {index}: ahead in {ahead} of {sessions} sessions,",
+  "today.day_stale": "No new price today: their 0% is yesterday's bar repeated.",
+  "today.day_gap": "Unassigned: {amount}. The session is still open and prices don't square yet."
 }

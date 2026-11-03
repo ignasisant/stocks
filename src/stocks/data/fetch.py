@@ -619,6 +619,12 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         return hit
     if retired(key):
         return []
+    if is_isin(key):
+        # An ISIN nothing has placed yet is no symbol: yfinance would run its
+        # own ISIN search and raise "Invalid ISIN number" when it finds none.
+        # Not a refusal either: asking again answers nothing new, and counting
+        # it kept the sweep from stamping a book that holds one.
+        return []
     if throttle_remaining():
         _not_answered()
         return []
@@ -715,6 +721,8 @@ def _close_fallback(ticker: str, symbol: str, day: str) -> float | None:
             close = twelvedata.close_on(symbol, day)
         except Exception as exc:  # noqa: BLE001
             obs.warn("twelvedata.close_on_failed", ticker=symbol, error=str(exc))
+    elif twelvedata.has_key():
+        obs.event("twelvedata.skipped", why="not_covered", asked=1, covered=0)
     if close is None:
         _not_answered()
     else:
@@ -942,8 +950,11 @@ def _eod_fallback(
         and twelvedata.covers(symbol_of[t])
     ]
     if whole and (len(ok) < len(tickers) or len(ok) > twelvedata.room()):
+        why = "not_covered" if len(ok) < len(tickers) else "no_room"
+        obs.event("twelvedata.skipped", why=why, asked=len(tickers), covered=len(ok))
         return None
     if not ok:
+        obs.event("twelvedata.skipped", why="not_covered", asked=len(tickers), covered=0)
         return {}
     try:
         got = twelvedata.daily(

@@ -21,7 +21,7 @@ import re
 from stocks.chat import engine
 
 _TTL = engine.BYOK_TTL  # the shared "remembered for 90 days" promise
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 MAX_CHARS = 300
 # How many alerts the narration call is shown. A watchlist that fires twenty
 # rules at once is a market-wide day, not twenty stories — the first few carry
@@ -290,6 +290,7 @@ def _complete(
         prefs, system, messages, timeout_s,
         spend_free=engine.spend_free_global,
         accept=_sanitize,
+        patient=True,  # a fan-out over the roster, read once pushed
     )
 
 

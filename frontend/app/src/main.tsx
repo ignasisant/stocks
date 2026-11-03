@@ -11,9 +11,15 @@ listen();
 watchVitals();
 watchInstall();
 
-// Outside the catalog, which is fetched by the tree that just failed: the two
+// Outside the catalog, which is fetched by the tree that just failed: the
 // languages the app speaks, chosen by the browser's own.
-const spanish = navigator.language?.toLowerCase().startsWith("es");
+const BROKEN: Record<string, readonly [string, string]> = {
+  es: ["Algo ha fallado al mostrar la app.", "Recargar"],
+  it: ["Qualcosa è andato storto nel mostrare l'app.", "Ricarica"],
+};
+const [brokenText, brokenAction] = BROKEN[
+  navigator.language?.slice(0, 2).toLowerCase() ?? ""
+] ?? ["Something broke showing the app.", "Reload"];
 
 createRoot(document.getElementById("root")!, {
   // A render error caught by a `Crash` boundary, and one nothing caught. Both
@@ -28,18 +34,7 @@ createRoot(document.getElementById("root")!, {
   },
 }).render(
   <StrictMode>
-    <Crash
-      fallback={
-        <Broken
-          text={
-            spanish
-              ? "Algo ha fallado al mostrar la app."
-              : "Something broke showing the app."
-          }
-          action={spanish ? "Recargar" : "Reload"}
-        />
-      }
-    >
+    <Crash fallback={<Broken text={brokenText} action={brokenAction} />}>
       <App />
     </Crash>
   </StrictMode>,

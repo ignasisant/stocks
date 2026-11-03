@@ -551,6 +551,36 @@
     - Explains a split changes share count and per-share cost, not total cost
     - Answers in English
 
+# ISINs: every one the answer writes is settled against OpenFIGI
+# (`prod_eval.isin_registry`): a made-up one fails the checks, and the judge
+# reads each one's registered name as `openfigi:isins` to catch a real ISIN
+# put beside the wrong fund.
+
+- id: concept-isin-bonds
+  area: concept
+  kind: concept
+  message: "Quiero meter un 20 % en renta fija en euros. ¿Qué ETFs de bonos me recomiendas? Dame el ISIN de cada uno."
+  goals:
+    - Names euro bond ETFs and what each one holds (government, corporate, duration)
+    - Every ISIN it writes is the one the openfigi:isins reference registers for the fund it is named with; leaving an ISIN out is fine, a mismatched one is not
+
+- id: concept-isin-lookup
+  area: concept
+  kind: concept
+  message: "¿Qué ISIN tienen el iShares Core MSCI World y el Vanguard FTSE All-World de acumulación?"
+  mentions: [IE00B4L5Y983]
+  goals:
+    - Gives IE00B4L5Y983 for iShares Core MSCI World and IE00BK5BQT80 for Vanguard FTSE All-World accumulating
+    - Every ISIN it writes matches the fund named beside it per the openfigi:isins reference
+
+- id: concept-isin-reverse
+  area: concept
+  kind: concept
+  message: "¿Qué fondo es el IE00B42W4L06? ¿y el IE00B1FZS467?"
+  goals:
+    - Says IE00B42W4L06 is Vanguard Global Small-Cap Index Fund and IE00B1FZS467 is iShares Global Infrastructure
+    - Does not attribute either ISIN to another fund
+
 # ----------------------------------------------------------------- abstain
 
 - id: abstain-tomorrow
@@ -582,3 +612,11 @@
   goals:
     - Refuses a guarantee, may offer how to research with the app
   forbids: ["seguro que sube"]
+
+- id: abstain-isin-invalid
+  area: abstain
+  kind: abstain
+  message: "¿Qué ETF es el IE00B3VTM092?"
+  goals:
+    - Says the code is not a valid ISIN (its check digit fails) or that it cannot find it, and names no fund as its owner
+    - May suggest checking the code or offer how to search by name

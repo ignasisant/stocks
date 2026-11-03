@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useLang, useT } from "../shell/i18n";
+import { shippedLang, useLang, useT } from "../shell/i18n";
 import {
   type PushState,
   enablePush,
@@ -84,7 +84,7 @@ export function PushOffer({ busy }: { busy: boolean }) {
   const accept = async () => {
     setPhase("asking");
     try {
-      const granted = await enablePush(key, lang.startsWith("es") ? "es" : "en");
+      const granted = await enablePush(key, shippedLang(lang));
       if (granted) {
         setState({ ...state, subscribed: true });
         setPhase("done");

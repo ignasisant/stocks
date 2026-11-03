@@ -83,10 +83,18 @@ Kind = Literal[
     # A day the whole book's value moved past `QUOTE_JUMP_SAID` net of its
     # flows — a price slip, or a flow the ledger never saw (replay).
     "twr_jump",
+    # A position's day breakdown that does not add up to the day the card
+    # states, off-session where both are the same rows (daily attribution).
+    "attribution_gap",
+    # A day move of exactly zero on a close equal to the session before: the
+    # feed repeated yesterday's bar instead of printing today's (card).
+    "stale_bar",
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 
-Source = Literal["import", "page", "doctor", "replay", "feed", "review", "sweep"]
+Source = Literal[
+    "import", "page", "doctor", "replay", "feed", "review", "sweep", "card"
+]
 SOURCES: tuple[Source, ...] = get_args(Source)
 
 # (kind, account, ticker, key) -> monotonic time it was last said. A book is

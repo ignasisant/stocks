@@ -58,11 +58,72 @@ def test_the_page_in_focus_is_quoted_only_when_the_message_points_at_it(monkeypa
                     "¿Cuánto rinde el S&P 500 este año?",
                     "¿A qué PER cotiza META?"):
         market.lookup_for(message, focus="BKNG")
+    # "su" is Spanish for "its": asked on ASML's page, "¿cuál es su margen
+    # operativo?" quoted nothing, so the page's margins never reached the
+    # model and it said the figure was not there (prod eval 2026-11-02).
     for message in ("y hoy cómo va?", "is it cheap?", "¿la compro?",
-                    "compara esta con AMD"):
+                    "compara esta con AMD", "¿cuál es su margen operativo?",
+                    "¿y sus márgenes?"):
         market.lookup_for(message, focus="BKNG")
     assert asked == [[], [], ["^GSPC"], ["META"],
-                     ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"]]
+                     ["BKNG"], ["BKNG"], ["BKNG"], ["BKNG", "AMD"],
+                     ["BKNG"], ["BKNG"]]
+
+
+# Prod 2026-11-02, thread rated "made up": after an answer on TSM, NOW and
+# ASML, "No me has dicho el precio exacto" names no symbol, so nothing was
+# quoted and the answer gave TSM at half its price.
+_KNOWN = {"TSM": "TSM", "NOW": "NOW", "SERVICENOW, INC.": "NOW",
+          "ASML": "ASML", "GOOG": "GOOG"}
+_CANDIDATES = [
+    {"role": "user",
+     "content": "Analiza las noticias de los candidatos y a qué precio comprar"},
+    {"role": "assistant", "content": "Para **TSM**, **NOW** y **ASML**: un P/E "
+     "por debajo de 18x, en USD y EUR."},
+]
+
+
+def test_a_price_follow_up_quotes_what_the_last_answer_was_about(monkeypatch):
+    asked = []
+    monkeypatch.setattr(market, "quotes", lambda tickers: asked.append(tickers) or [])
+    monkeypatch.setattr(market, "watchlist_names", lambda _path: _KNOWN)
+    monkeypatch.setattr(market, "_lookup", lambda _name: "")
+    market.lookup_for("No me has dicho el precio exacto", "wl", focus="GOOG",
+                      earlier=_CANDIDATES)
+    # A short reply keeps the subject: the prices were the last question.
+    market.lookup_for("Dámelos", "wl", earlier=[
+        *_CANDIDATES, {"role": "user", "content": "Los precios están mal"},
+        {"role": "assistant", "content": "Busco el precio de TSM y NOW."}])
+    # A symbol it names wins, and a question about something else carries none.
+    market.lookup_for("¿y el precio de GOOG?", "wl", earlier=_CANDIDATES)
+    market.lookup_for("¿Qué es el ROIC y cómo se calcula en una empresa?", "wl",
+                      earlier=_CANDIDATES)
+    assert asked == [["TSM", "NOW", "ASML"], ["TSM", "NOW"], ["GOOG"], []]
+
+
+def test_only_the_reader_s_own_symbols_carry_over():
+    # "USD", "EUR" and the "E" of P/E are shaped like tickers too.
+    assert market.carried("¿Y los precios?", _CANDIDATES, {"TSM": "TSM"}) == ["TSM"]
+    assert market.carried("¿Y los precios?", _CANDIDATES, {}) == []
+
+
+def test_a_central_bank_is_not_a_ticker_unless_the_reader_lists_it():
+    # Prod 2026-11-02: the daily card said "sin reuniones del BCE/Fed", and
+    # "¿Qué es BCE?" was answered as BCE Inc.
+    assert mentioned("Que es BCE", lookup=lambda n: "") == []
+    assert mentioned("¿Qué hará el ECB?", lookup=lambda n: "") == []
+    assert mentioned("Que es BCE", {"BCE": "BCE"}, lookup=_no_lookup) == ["BCE"]
+
+
+def test_each_quote_says_whether_the_reader_holds_it():
+    # Told "BCE Inc, last 20.39 USD", the answer said "sí, tienes BCE en
+    # cartera" with another position's shares and loss.
+    sent = augment("Que es BCE", [Quote("BCE", price=20.39, currency="USD"),
+                                  Quote("HMI", price=1303.5, currency="EUR")],
+                   held={"HMI"})
+    assert "BCE: last 20.39 USD | not held by the user" in sent
+    assert "HMI: last 1,303.50 EUR | held: figures in the book above" in sent
+    assert "held" not in augment("x", [Quote("BCE", price=20.39)])
 
 
 def test_unknown_company_name_falls_back_to_one_lookup():
@@ -251,7 +312,12 @@ def test_day_pct_drops_a_move_no_session_produces():
     assert Quote("XYZ", price=6.0, prev_close=3.0).day_pct == pytest.approx(1.0)
 
 
-def test_a_quote_says_which_session_its_move_belongs_to():
+def test_a_quote_says_which_session_its_move_belongs_to(monkeypatch):
+    from datetime import date
+
+    from stocks.chat import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 28))
     regular = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
                     as_of="2026-10-28")
     assert "last 150.13 USD | session 2026-10-28 -3.00%" in regular.line()
@@ -422,3 +488,20 @@ def test_a_watched_held_or_short_symbol_is_never_searched():
     assert market.unlisted("¿y GE?", search=search) == {}
     assert market.unlisted("¿qué tal la bolsa hoy?", search=search) == {}
     assert seen == []
+
+
+def test_a_move_from_an_earlier_session_says_it_is_not_today(monkeypatch):
+    """Before Monday's open the chat read Friday's ServiceNow move as
+    "−3 % hoy": the date was there, the comparison with today was not."""
+    from datetime import date
+
+    from stocks.chat import clock
+
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 11, 2))
+    friday = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
+                   as_of="2026-10-30")
+    assert ("session 2026-10-30 (last completed session, not today) -3.00%"
+            in friday.line())
+    monday = Quote("NOW", price=150.13, currency="USD", prev_close=154.78,
+                   as_of="2026-11-02")
+    assert "session 2026-11-02 -3.00%" in monday.line()

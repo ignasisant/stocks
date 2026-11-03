@@ -73,6 +73,9 @@ const LINK = /^\[([^\]\n]*)\]\(([^)\s]+)\)$/;
 /** Ticker-shaped: NVDA, S, BRK.B, ASML.AS, BTC-EUR. */
 const SYMBOL = /^[A-Z][A-Z0-9]{0,5}(?:[.-][A-Z0-9]{1,4})?$/;
 
+/** ISO 6166: country, nine letters or digits, check digit. IE00B4L5Y983. */
+const ISIN = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
+
 /** How a bold run lists several: "ESTC, MNDY y HUBS", "PDD and JD". */
 const JOIN = /(\s*,\s*|\s*\/\s*|\s+(?:y|e|o|and|or|&)\s+)/;
 
@@ -101,7 +104,7 @@ function symbols(text: string): string[] | null {
   const parts = (colon ? text.slice(0, -1) : text).split(JOIN);
   for (let n = 0; n < parts.length; n += 2) {
     const part = parts[n] ?? "";
-    if (!SYMBOL.test(part) || NOT_SYMBOLS.has(part)) return null;
+    if (!(SYMBOL.test(part) || ISIN.test(part)) || NOT_SYMBOLS.has(part)) return null;
   }
   return colon ? [...parts, ":"] : parts;
 }
@@ -115,6 +118,16 @@ function symbols(text: string): string[] | null {
 function Ticker({ ticker }: { ticker: string }) {
   const profile = useTickerProfile(ticker);
   if (!profile?.name) return ticker;
+  // Twelve characters say nothing to a reader: an ISIN keeps itself (what a
+  // broker's search wants) and says whose it is. The server has already taken
+  // out the ones the registry does not know (chat/isins.py).
+  if (ISIN.test(ticker))
+    return (
+      <TickerCell ticker={ticker} className="ag-chat-tick ag-chat-isin">
+        <span className="ag-tick-sym">{ticker}</span>
+        <span className="ag-tick-name"> — {profile.name}</span>
+      </TickerCell>
+    );
   return <TickerCell ticker={ticker} name={false} className="ag-chat-tick" />;
 }
 
@@ -183,6 +196,8 @@ export function Inline({ text }: { text: string }): ReactNode {
             </strong>
           );
         }
+        if (part.startsWith("`") && ISIN.test(part.slice(1, -1)))
+          return <Ticker ticker={part.slice(1, -1)} key={i} />;
         if (part.startsWith("`"))
           return (
             <code className="ag-chat-code" key={i}>

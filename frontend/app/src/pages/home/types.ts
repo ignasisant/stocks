@@ -19,7 +19,6 @@ export type DailyCard = {
   /** llm | computed — a computed card is built from triggers, not written. */
   source: string | null;
   action_day: string;
-  cutoff_hour: number;
   fresh: boolean;
   /** Epoch seconds it was written — the clock in "Today · 09:14". */
   generated: number | null;
@@ -91,6 +90,60 @@ export type DailyBook = {
   rows: DailyBookRow[];
   /** The month drawn: the book and the index as growth from 100. */
   chart: Line[];
+  /** Who made the day's move; absent on a card built before it existed. */
+  attribution?: DailyAttribution | null;
+};
+
+export type DailyContribution = {
+  ticker: string;
+  /** The position's day in the book's currency. */
+  amount: number;
+  /** Its price move, already ×100. */
+  pct: number | null;
+  /** Its share of the book's day, in percentage points. */
+  pp: number | null;
+  weight_pct: number | null;
+};
+
+export type DailyAttributionBlock = {
+  /** A sector of single names, a fund on its own, or the coins. */
+  kind: "sector" | "fund" | "crypto";
+  /** The sector's Yahoo spelling, the fund's ticker, or "Crypto". */
+  label: string;
+  amount: number;
+  pp: number | null;
+  tickers: string[];
+};
+
+type DailyExplained = {
+  ticker: string;
+  pct: number | null;
+  /** How many of its own daily standard deviations the move is. */
+  sigmas: number;
+  etf: string;
+  etf_pct: number;
+  verdict: "sector" | "company";
+};
+
+export type DailyAttribution = {
+  amount: number;
+  /** The largest contributions each way, up to three. */
+  up: DailyContribution[];
+  down: DailyContribution[];
+  /** Every block, the largest move first; they sum to `amount`. */
+  blocks: DailyAttributionBlock[];
+  /** The card's day minus the positions' sum, when they differ. */
+  gap: number | null;
+  /** Positions whose 0 % is yesterday's bar repeated. */
+  stale: string[];
+  /** Moves past two of their own deviations, against their sector ETF. */
+  explained: DailyExplained[];
+  /** The last sessions against the index, day by day. */
+  alpha: {
+    sessions: { date: string; book: number; index: number }[];
+    ahead: number;
+    excess_pp: number;
+  } | null;
 };
 
 export type DailySection = {

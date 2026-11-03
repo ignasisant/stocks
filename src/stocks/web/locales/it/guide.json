@@ -1,0 +1,14 @@
+{
+  "guide.thread_title": "Per iniziare",
+  "guide.progress": "Passo {n} di {total}",
+  "guide.goto": "Portami lì",
+  "guide.next": "Avanti",
+  "guide.done_it": "Fatto, avanti",
+  "guide.finish": "Fine",
+  "guide.skip": "Salta la guida",
+  "guide.step_done": ":material/check_circle: **{title}** è configurato. Si va avanti.",
+  "guide.finished": "Il giro è finito. Sono qui quando serve: chiedimi quello che vuoi sul tuo portafoglio, o trascina un estratto conto nel riquadro qui sotto per importarlo.",
+  "guide.strip_progress": "Guida {n}/{total} · {title}",
+  "guide.strip_open": "Apri la guida",
+  "guide.strip_exit": "Esci"
+}

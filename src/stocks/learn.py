@@ -36,7 +36,7 @@ from pathlib import Path
 import yaml
 
 LEARN_DIR = Path(__file__).resolve().parent / "web" / "learn"
-LANGS = ("en", "es")
+LANGS = ("en", "es", "it")
 FALLBACK = "en"
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)

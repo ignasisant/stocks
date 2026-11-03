@@ -25,10 +25,14 @@ _LOCALES = Path(__file__).parent / "locales"
 
 # code -> native language name (shown in the Profile selector). English is the
 # source catalog; add a code here and drop a locales/<code>/ folder to extend.
-LANGUAGES = {"en": "English", "es": "Español"}
+LANGUAGES = {"en": "English", "es": "Español", "it": "Italiano"}
 # code -> flag drawn beside it in that selector: the country the catalog is
 # written for, since a language has no flag of its own.
-LANGUAGE_FLAGS = {"en": "\U0001F1EC\U0001F1E7", "es": "\U0001F1EA\U0001F1F8"}
+LANGUAGE_FLAGS = {
+    "en": "\U0001F1EC\U0001F1E7",
+    "es": "\U0001F1EA\U0001F1F8",
+    "it": "\U0001F1EE\U0001F1F9",
+}
 DEFAULT_LANG = "en"
 
 

@@ -31,12 +31,14 @@ from __future__ import annotations
 #: breaks the same way; it writes one log line and nothing on disk. Both are
 #: unauthenticated writes, so each carries an IP rate limit of its own; see
 #: `routes/feedback.py` and `routes/client_error.py`. A page's timings
-#: (`routes/vitals.py`) are the same shape: one log line, metered by address.
+#: (`routes/vitals.py`) are the same shape: one log line, metered by address,
+#: and so is a launch from the Home Screen (`routes/launch.py`).
 OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("/v1/feedback", "POST"),
         ("/v1/client-error", "POST"),
         ("/v1/vitals", "POST"),
+        ("/v1/launch", "POST"),
     }
 )
 

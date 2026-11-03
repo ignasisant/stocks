@@ -55,7 +55,7 @@ _HOLD = 48
 NARRATE_TIMEOUT_S = 12.0
 NARRATE_MAX_CHARS = 280
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 # ------------------------------------------------------------------ the state
@@ -307,7 +307,7 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
         line = engine.complete_attempts(
             prefs, system, [{"role": "user", "content": account_facts}],
             NARRATE_TIMEOUT_S, spend_free=_spend, accept=accept,
-            **({"session_keys": session_keys} if session_keys else {}),
+            session_keys=session_keys or None,
         )
     except Exception as exc:  # complete_attempts never raises; belt and braces
         obs.warn("guide.narration_failed", error_type=type(exc).__name__,

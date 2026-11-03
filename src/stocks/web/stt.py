@@ -15,7 +15,6 @@ api/routes/chat_voice.py).
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import time
 import wave
@@ -69,7 +68,7 @@ def available() -> bool:
     installed and the operator's key is set. Nothing here reaches the network
     — this runs on every rail render.
     """
-    if importlib.util.find_spec("openai") is None:
+    if not llm.installed("openai"):
         return False
     return bool(llm.free_secret(_BACKEND))
 

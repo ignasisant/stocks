@@ -39,6 +39,9 @@ def client(monkeypatch):
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
     monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    # The sitemap test reads every guide in every language, more documents
+    # than one client may fetch a minute.
+    monkeypatch.setattr(server, "CLIENT_MAX_DOCS", 10_000)
     return TestClient(server.app, base_url=BASE)
 
 
@@ -105,7 +108,9 @@ def test_html_lang_matches_the_variants_language(variant, path):
     html, doc = _doc(code, jur)
     assert re.match(rf'<!doctype html><html lang="{code}">', html)
     assert doc.meta("property", "og:locale").split("_")[0] == code
-    other = {"en_US", "es_ES"} - {doc.meta("property", "og:locale")}
+    # The Italian page has no other-language twin to point at.
+    own = doc.meta("property", "og:locale")
+    other = set() if code == "it" else {"en_US", "es_ES"} - {own}
     alts = {a["content"] for a in doc.find("meta", property="og:locale:alternate")}
     assert alts == other
 
@@ -197,10 +202,12 @@ def test_hreflang_is_absolute_complete_and_reciprocal(variant, path):
     code, jur = variant
     _, doc = _doc(code, jur)
     mine = _hreflangs(doc)
-    assert set(mine) == {"en", "es", "x-default"}
+    # The Italian page argues Italy's case alone: no twin, itself the default.
+    alone = code == "it"
+    assert set(mine) == ({"it", "x-default"} if alone else {"en", "es", "x-default"})
     assert all(h.startswith(BASE + "/") for h in mine.values())
     assert mine[code] == f"{BASE}{path}", "a page lists itself"
-    assert mine["x-default"] == mine["en"]
+    assert mine["x-default"] == mine["it" if alone else "en"]
     # Every alternate must declare this page back with the same set, or search
     # engines discard the pair.
     by_url = {f"{BASE}{p}": k for k, p in landing.VARIANTS.items()}

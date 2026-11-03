@@ -1086,7 +1086,8 @@ def test_a_bearer_header_on_a_document_reads_as_a_guest(client, monkeypatch):
     [
         ("es-ES,es;q=0.9,en;q=0.5", "", "es"),
         ("ca-ES,ca;q=0.9", "", "es"),  # Catalan reads the Spanish catalog
-        ("it-IT,it;q=0.9", "", "en"),
+        ("it-IT,it;q=0.9", "", "it"),
+        ("fr-FR,fr;q=0.9", "", "en"),
         ("", "", "en"),
         ("en-GB", "?lang=es", "es"),  # the landing's call to action pins it
         ("en-GB", "?lang=xx", "en"),

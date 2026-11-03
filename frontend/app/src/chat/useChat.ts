@@ -680,9 +680,21 @@ export function useChat(live: boolean) {
     opened.current = true;
     let alive = true;
     let done = false;
+    // The state is read beside the thread, not in front of it: on a phone
+    // behind a loading Home it was the slow one, and the conversation the
+    // reader opened the drawer for waited on settings it does not draw.
+    readState().then(
+      (next) => {
+        if (alive) setState(next);
+      },
+      () => {
+        if (alive) setFailed(true);
+      },
+    );
     (async () => {
       try {
-        const list = await refresh();
+        const list = await readThreads();
+        if (alive) setThreads(list);
         const open = list.find((c) => c.active) ?? list[0];
         if (alive && open) {
           setActiveId(open.id);
@@ -705,7 +717,7 @@ export function useChat(live: boolean) {
       // again rather than leave a drawer that never loaded.
       if (!done) opened.current = false;
     };
-  }, [live, refresh, show]);
+  }, [live, show]);
 
   /**
    * Answer a proposal card: run the action (as edited) or drop it.

@@ -810,6 +810,8 @@ WRITES = {
     # A page's timings (LCP, INP, CLS…): the same shape as a client error, one
     # log line and nothing on disk — metered per address for the same reason.
     ("/v1/vitals", "post"),
+    # The app opened from a Home Screen: one log line, the same shape again.
+    ("/v1/launch", "post"),
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
     ("/v1/account", "delete"),

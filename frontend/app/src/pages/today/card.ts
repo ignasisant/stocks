@@ -21,15 +21,17 @@ import type {
 } from "./types";
 
 /**
- * "Today · 09:14" / "2 Sep" — the stamp under the badge.
+ * "Today · Monday's close" / "Today · 09:14" / "2 Sep" — the stamp under the
+ * badge.
  *
- * Before the 09:00 cutoff the page shows *yesterday's* card (see
- * `daily.action_day`), so the date is never decoration: it is how the reader
- * knows the briefing predates this morning. The clock is the browser's own,
- * which is the reader's zone.
+ * A day's card is written the evening before, after the US close it quotes
+ * (`daily.action_day`), so it is stamped with that close rather than a clock
+ * time from last night. One written the same day (a first visit, a retry)
+ * shows its time. A card from another day is dated: that is how the reader
+ * knows it is not today's. The clock is the browser's own, the reader's zone.
  */
 export function stampOf(
-  card: Pick<DailyCard, "day" | "action_day" | "generated">,
+  card: Pick<DailyCard, "day" | "action_day" | "generated" | "as_of">,
   t: Translate,
   now: Date = new Date(),
 ): string {
@@ -37,6 +39,10 @@ export function stampOf(
   if (stamp !== dayKey(now)) return monthDay(stamp, t) ?? stamp;
   if (!card.generated) return t("home.daily_today_no_time");
   const at = new Date(card.generated * 1000);
+  if (dayKey(at) !== stamp && card.as_of) {
+    const weekday = (new Date(`${card.as_of}T12:00:00`).getDay() + 6) % 7; // Monday = 0
+    return t("home.daily_today_close", { day: t(`home.weekday_${weekday}`) });
+  }
   const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
   return t("home.daily_today", { time: clock });
 }

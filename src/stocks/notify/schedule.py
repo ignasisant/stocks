@@ -1,7 +1,7 @@
 """Scheduled runs: the AI briefing, the day's numbers and the weekly review,
 each at the account's own time and filed in its chat.
 
-Three fixed jobs, each switched by its `notify_<job>` key and timed by
+Three jobs of the reader's, each switched by its `notify_<job>` key and timed by
 `schedules[job]` ({"time": "HH:MM", "days": [0-6, Monday = 0]}) in the
 account's `timezone`. Each run is filed as a chat thread of its own
 (`auth.save_scheduled_thread`; the briefing is the daily card's thread,
@@ -14,6 +14,11 @@ current one); a GitHub runner writing it would be overwritten by the next
 save, or overwrite one. So Cloud Scheduler calls `POST /v1/schedule/tick`
 with the API token every quarter of an hour (infra/cron.tf), and the tick
 runs whatever came due since — the request is the CPU, as for the warm.
+
+One more is the market's, not the reader's: the next day's card (`CARD`) is
+written after the US close, when `daily.action_day` turns over, so the
+morning's briefing files and pushes a card already written instead of
+waiting on a model at 08:30. It pushes nothing and is not a setting.
 
 **Due** is a local wall-clock time on a listed weekday, not yet run that
 local day, and at most `CATCH_UP` late: a tick missed by an outage still
@@ -41,6 +46,7 @@ if TYPE_CHECKING:
     from stocks.accounts import UserPaths
 
 JOBS = ("briefing", "digest", "weekly")
+CARD = "card"
 DEFAULTS: dict[str, dict] = {
     "briefing": {"time": "08:30", "days": [0, 1, 2, 3, 4]},
     "digest": {"time": "22:30", "days": [0, 1, 2, 3, 4]},
@@ -116,17 +122,6 @@ def slots(prefs: dict) -> dict[str, dict]:
     return {job: slot(prefs, job) for job in JOBS}
 
 
-def cutoff_hour(prefs: dict, default: int) -> int:
-    """Where the account's card day turns over: `default`, or earlier when its
-    briefing is scheduled earlier — a briefing sent at 08:30 is today's, and
-    under a nine o'clock turnover it would be yesterday's card again."""
-    mine = slot(prefs, "briefing")
-    at = parse_time(mine["time"])
-    if not mine["on"] or at is None:
-        return default
-    return min(default, at.hour)
-
-
 # ------------------------------------------------------------------ due
 
 
@@ -147,6 +142,20 @@ def due(job_slot: dict, tz: ZoneInfo, now: datetime, last: object) -> date | Non
         if when <= local <= when + CATCH_UP and str(last or "") < day.isoformat():
             return day
     return None
+
+
+def card_due(now: datetime, last: object) -> date | None:
+    """The US session whose close the card build is due for at `now`, or None:
+    `daily.BRIEF_AT` New York time on a weekday the market traded."""
+    from stocks.chat import daily
+    from stocks.data import market_holidays as mh
+
+    at = daily.BRIEF_AT.strftime("%H:%M")
+    day = due({"on": True, "time": at, "days": [0, 1, 2, 3, 4]},
+              daily.CLOSE_ZONE, now, last)
+    if day is None or mh.DAYS.get(mh.US, {}).get(day) == mh.CLOSED:
+        return None
+    return day
 
 
 def eligible(prefs: dict, devices: int, today: date) -> bool:
@@ -215,6 +224,8 @@ def plan(now: datetime) -> list[Account]:
             for job in JOBS
             if (day := due(slot(prefs, job), tz, now, last.get(job))) is not None
         ]
+        if (session := card_due(now, last.get(CARD))) is not None:
+            runs.insert(0, (CARD, session))
         if runs:
             out.append(Account(label, paths, prefs, runs))
     return out
@@ -378,24 +389,38 @@ def _weekly(account: Account, day: date) -> str:
     return _status(cid, took)
 
 
-def _briefing(account: Account, day: date) -> str:
-    """Home's daily card, asked for as Home asks for it (`daily_card.request`:
-    a card that already stands costs nothing), waited on, and its thread
-    marked as this run's."""
+def _current_card(account: Account):
+    """Home's daily card for the action day now, asked for as Home asks for it
+    (`daily_card.request`: a card that already stands costs nothing) and
+    waited on; None when none was stored for that day."""
     from stocks.api import briefing, daily_card
-    from stocks.chat import daily
-    from stocks.notify import render
-    from stocks.web import auth
 
-    lang = account.lang
-    daily_card.request(account.paths, lang, force=False)
+    daily_card.request(account.paths, account.lang, force=False)
     deadline = clock.monotonic() + BRIEFING_WAIT_S
     while (job := briefing.running(account.paths)) is not None and not job.done:
         if clock.monotonic() > deadline:
             break
         clock.sleep(1.0)
     card = daily_card.stored(account.paths)
-    if card is None or card.day != day.isoformat():
+    _, day = briefing.now_day(account.paths)
+    return card if card is not None and card.day == day.isoformat() else None
+
+
+def _card(account: Account, session: date) -> str:
+    """The next day's card, written once `session` has closed."""
+    card = _current_card(account)
+    return f"{card.source}: {card.day}" if card is not None else "skipped: no card"
+
+
+def _briefing(account: Account, day: date) -> str:
+    """The current card — written the evening before (`_card`), or now if
+    that run missed it — with its thread marked as this run's and pushed."""
+    from stocks.chat import daily
+    from stocks.notify import render
+    from stocks.web import auth
+
+    card = _current_card(account)
+    if card is None:
         return "skipped: no card"
     cid = card.thread or daily.record(account.paths.chat, card)
     if not cid or not auth.mark_scheduled(cid, "briefing", card.day, account.paths.chat):
@@ -408,4 +433,4 @@ def _briefing(account: Account, day: date) -> str:
     return _status(cid, _push(account, message, "briefing"))
 
 
-RUNNERS = {"briefing": _briefing, "digest": _digest, "weekly": _weekly}
+RUNNERS = {CARD: _card, "briefing": _briefing, "digest": _digest, "weekly": _weekly}

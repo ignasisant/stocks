@@ -28,7 +28,9 @@ def strip_cite_marks(text: str) -> str:
 
 
 # A free model handed its research sometimes answers by asking for more, in
-# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]".
+# its own syntax: "{{search_web(query: …)}}", "<function=…>", "[TOOL_CALLS]",
+# or a JSON object naming a tool, alone on its line ('{"tool": "search",
+# "query": …}', prod 2026-11-02, under any tool name the model made up).
 # The writing step has no tools, so that text reached the reader as the whole
 # answer. A call is scrubbed out of what is stored; an answer that was nothing
 # else is no answer, and the next provider is asked.
@@ -37,10 +39,12 @@ _WRITTEN_CALL = re.compile(
     rf"\{{\{{\s*(?:{_TOOL_NAMES})\s*\(.*?\)\s*\}}\}}"
     r"|<(?:function|tool_call)\b[^>]*>.*?(?:</(?:function|tool_call)>|$)"
     r"|\[TOOL_CALLS\].*?$"
-    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$",
+    rf"|^[ \t]*`?(?:{_TOOL_NAMES})\((?:[^()\n]|\([^()\n]*\))*\)`?[ \t]*$"
+    r'|^[ \t]*(?:```(?:json)?\s*)?\{\s*"(?:tool|tool_name|function|name)"\s*:'
+    r'\s*"\w+"\s*,(?:[^{}\n]|\{[^{}\n]*\})*\}(?:\s*```)?[ \t]*$',
     re.S | re.M,
 )
-_CALL_OPENERS = ("{{", "<function", "<tool_call", "[TOOL_CALLS]",
+_CALL_OPENERS = ("{{", '{"', "```json", "<function", "<tool_call", "[TOOL_CALLS]",
                  *(f"{name}(" for name in toolbox.TOOLS))
 # How much of an answer's start is held back while it may still be a call.
 CALL_HOLD_CHARS = 600
@@ -65,6 +69,22 @@ def _only_calls(text: str, provider: Provider, model: str) -> bool:
         return False
     obs.warn("chat.written_tool_call", provider=provider.id, model=model)
     return True
+
+
+# Gemini headed answers with the bare date ("2026-11-02", then the answer),
+# read off the prompt's own clock line (prod 2026-11-02, three in a day).
+_DATE_HEAD = re.compile(r"\A[\s*#]*\d{4}-\d{2}-\d{2}[ \t*]*(?:\n\s*|\Z)")
+
+
+def strip_date_head(text: str) -> str:
+    """The answer without a line that is nothing but a date at its top."""
+    return _DATE_HEAD.sub("", text, count=1)
+
+
+def may_head_with_date(text: str) -> bool:
+    """Whether an answer's first characters could still be a date line."""
+    head = text.lstrip(" \t\n*#")
+    return len(head) <= 10 and re.fullmatch(r"[\d-]*", head) is not None
 
 
 def close_markdown(text: str) -> str:

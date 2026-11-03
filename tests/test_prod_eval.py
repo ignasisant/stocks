@@ -220,6 +220,44 @@ def test_three_unsourced_figures_are_a_hallucination():
     assert "unsourced" not in prod_eval.checks(q, ans, {})
 
 
+def test_a_made_up_isin_is_a_hallucination_unless_the_reader_typed_it():
+    registry = {
+        "IE00B4L5Y983": "ISHARES CORE MSCI WORLD",
+        "IE00B3VTM092": prod_eval.MADE_UP,
+        "IT0005566440": prod_eval.UNSETTLED,
+    }
+    ans = prod_eval.Answer(text="IE00B4L5Y983, IE00B3VTM092, IT0005566440")
+    got = prod_eval.checks(_q(kind="concept"), ans, {}, isins=registry)
+    assert got["failed"] == ["made-up ISIN ['IE00B3VTM092']"]
+    assert got["isins"] == registry
+    assert prod_eval.verdict({"checks": got, "judged": None}) == "halluc"
+    asked = _q(kind="abstain", message="¿Qué ETF es el IE00B3VTM092?")
+    assert prod_eval.checks(asked, ans, {}, isins=registry)["failed"] == []
+
+
+def test_the_isin_registry_names_each_isin_the_answer_writes(monkeypatch):
+    from stocks.data import openfigi
+
+    world = openfigi.Security("IE00B4L5Y983", "ISHARES CORE MSCI WORLD", "", "", ())
+    monkeypatch.setattr(openfigi, "securities", lambda wanted: {
+        isin: world if isin == world.isin else None for isin in wanted})
+    monkeypatch.setattr(openfigi, "missed", lambda isin: isin == "IT0005566440")
+    text = "**IE00B4L5Y983**, `IE00B3VTM092`, IT0005566440 y IE00B66F4759"
+    assert prod_eval.isin_registry(text) == {
+        "IE00B4L5Y983": "ISHARES CORE MSCI WORLD",
+        "IE00B3VTM092": prod_eval.MADE_UP,
+        "IE00B66F4759": prod_eval.UNSETTLED,
+        "IT0005566440": prod_eval.MADE_UP,
+    }
+    assert prod_eval.isin_registry("sin códigos") == {}
+
+
+def test_the_catalog_asks_about_isins(catalog):
+    isin_cases = [q for q in catalog if "isin" in q.id]
+    assert {q.area for q in isin_cases} >= {"concept", "abstain"}
+    assert len(isin_cases) >= 4
+
+
 def test_a_saved_answer_reads_back():
     ans = prod_eval.Answer(
         text="hola", model="m", calls=[prod_eval.Call("t", {"a": 1}, "r")], seconds=3.0

@@ -621,7 +621,66 @@ def test_a_background_reply_thrown_away_counts_as_rejected(
                              "why": "gemini:rejected"}]
 
 
+
+def test_patient_callers_take_the_free_chain_one_at_a_time(providers):
+    # prod 2026-11-03 07:31: four 08:30 cards at once on groq's 8k tokens a
+    # minute — four 429s, groq rested, and the free models behind it too slow.
+    import threading
+
+    inside, most = 0, 0
+    lock = threading.Lock()
+
+    def complete(api_key, model, system, messages):
+        nonlocal inside, most
+        with lock:
+            inside += 1
+            most = max(most, inside)
+        time.sleep(0.05)
+        with lock:
+            inside -= 1
+        return "Free answer."
+
+    providers["free"].complete = complete
+    got = []
+
+    def card():
+        got.append(engine.complete_attempts(
+            {}, "sys", [{"role": "user", "content": "x"}], 5,
+            spend_free=lambda _p: True, patient=True))
+
+    workers = [threading.Thread(target=card) for _ in range(4)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    assert got == ["Free answer."] * 4
+    assert most == 1
+
+
+def test_a_patient_free_call_sits_out_a_longer_rate_limit(providers):
+    from stocks.web import llm
+
+    seen = []
+
+    def complete(api_key, model, system, messages):
+        seen.append(llm._short_wait(_Groq429("try again in 40.5s")))
+        return "Free answer."
+
+    providers["free"].complete = complete
+    for patient in (False, True):
+        engine.complete_attempts(
+            {}, "sys", [{"role": "user", "content": "x"}], 5,
+            spend_free=lambda _p: True, patient=patient)
+    assert seen == [None, 40.75]
+
+
+class _Groq429(Exception):
+    status_code = 429
+
+
 WRITTEN_CALL = '{{search_web(query: "Adyen ADYYF latest earnings vs consensus")}}'
+# Prod 2026-11-02, a tool name the model made up, as JSON.
+JSON_CALL = '{"tool": "search", "query": "TSM stock price NASDAQ", "max_results": 5}'
 
 
 @dataclass
@@ -632,21 +691,25 @@ class Streamer(FakeProvider):
             yield self.reply[i:i + 7]
 
 
-def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths):
+@pytest.mark.parametrize("written", [WRITTEN_CALL, JSON_CALL,
+                                     f"```json\n{JSON_CALL}\n```"])
+def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths,
+                                                           written):
     # Prod 2026-10-28: the free chain's whole answer was a search_web call
     # written as text; the writing step has no tools, so the reader got it.
-    providers["anthropic"].reply = WRITTEN_CALL
+    providers["anthropic"].reply = written
     reply = engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
                           message="ADYYF earnings vs consensus?", **paths)
     assert (reply.provider_id, reply.text) == ("free", "Free answer.")
 
 
+@pytest.mark.parametrize("written", [WRITTEN_CALL, JSON_CALL])
 def test_a_streamed_written_tool_call_never_reaches_the_reader(
-        providers, enc, paths, monkeypatch):
+        providers, enc, paths, monkeypatch, written):
     from stocks.web import llm
 
     streamers = {
-        "anthropic": Streamer("anthropic", reply=WRITTEN_CALL),
+        "anthropic": Streamer("anthropic", reply=written),
         "free": Streamer("free", reply="Adyen beat consensus."),
     }
     monkeypatch.setattr(llm, "PROVIDERS", {**providers, **streamers})
@@ -737,8 +800,48 @@ def test_a_tool_call_inside_an_answer_is_scrubbed_from_it(providers, paths):
 
 
 def test_prose_that_names_a_tool_is_not_a_call():
-    for text in ("Uso {{ en plantillas.", "Llama a search_web(…) en una frase."):
+    for text in ("Uso {{ en plantillas.", "Llama a search_web(…) en una frase.",
+                 '{"name": "Adyen"} es un objeto, no una llamada.'):
         assert engine.scrub_written_calls(text) == text
+
+
+# Prod 2026-11-02: gemini opened answers with the bare date of the clock line.
+DATED = "2026-11-02\n\nAnalizando TSM: margen bruto 59 %."
+
+
+def test_an_answer_headed_with_the_bare_date_loses_it(providers, paths):
+    providers["free"].reply = DATED
+    reply = engine.answer(prefs=dict(BASE_PREFS), message="TSM?", **paths)
+    assert reply.text == "Analizando TSM: margen bruto 59 %."
+
+
+def test_a_streamed_date_head_never_reaches_the_reader(
+        providers, enc, paths, monkeypatch):
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "PROVIDERS", {
+        **providers, "anthropic": Streamer("anthropic", reply=DATED)})
+    seen = list(engine.answer_stream(prefs={**BASE_PREFS, **enc("anthropic")},
+                                     message="TSM?", **paths))
+    shown = "".join(v for k, v in seen if k == "text")
+    assert shown == "Analizando TSM: margen bruto 59 %."
+    assert next(v for k, v in seen if k == "done").text == shown
+
+
+@pytest.mark.parametrize("text", [
+    "2026-11-02 es lunes y el mercado abre.",
+    "2025 fue un buen año.",
+    "Resultados del 2026-10-29:\n\n- BPA 1,20",
+    "42",
+])
+def test_a_date_inside_the_answer_stays(text):
+    assert engine.strip_date_head(text) == text
+
+
+def test_the_clock_line_asks_for_no_date_heading():
+    from stocks.chat import clock
+
+    assert "Never head an answer with a date" in clock.line()
 
 
 def test_answer_leaves_the_key_clock_alone(providers, enc, paths):
@@ -890,6 +993,36 @@ def test_answer_injects_live_quotes(providers, paths, monkeypatch):
     assert "last 227.98 USD" in sent
     # The stored turn keeps the user's own text, unaugmented.
     assert auth.load_chat(paths["chat_path"])[0]["content"] == "how is NVDA?"
+
+
+def test_a_gather_that_quoted_nothing_still_gets_the_live_quotes(
+        providers, paths, monkeypatch):
+    # Prod 2026-11-02: "Dámelos", asking for prices, went out with no tool
+    # called and four prices from memory.
+    from stocks.chat.market import Quote
+
+    patch_engine(monkeypatch, "gather_evidence",
+                 lambda *a, **k: engine.agent.Evidence())
+    seen = []
+    monkeypatch.setattr(engine.market, "lookup_for", lambda message, *a, **k: (
+        seen.append(k.get("earlier")) or [Quote("TSM", price=412.1, currency="USD")]))
+    auth.save_chat([{"role": "user", "content": "¿A qué precio compro TSM?"},
+                    {"role": "assistant", "content": "**TSM** cerca de soportes."}],
+                   paths["chat_path"])
+    reply = engine.answer(prefs=dict(BASE_PREFS), message="Dámelos", **paths)
+    _, _, _, messages = providers["free"].calls[0]
+    assert "last 412.10 USD" in messages[-1]["content"]
+    assert seen[0][-1]["content"] == "**TSM** cerca de soportes."
+    assert any(s["tool"] == "get_quotes" for s in reply.steps)
+
+
+def test_the_book_snapshot_names_what_is_held():
+    from stocks.chat.engine.book import held_in
+
+    book = ("Holdings (live market data, EUR). Total book 10 €:\n"
+            "- HMI: 1.69 sh | value 2 €\n- SAN.MC: 3 sh | value 8 €\n\n"
+            "Also on the watchlist (not held): ASML")
+    assert held_in(book) == {"HMI", "SAN.MC"}
 
 
 def test_a_made_up_symbol_skips_the_research_and_says_so(providers, paths,
@@ -1190,11 +1323,15 @@ def test_the_snapshot_dates_each_day_move_with_its_session(monkeypatch, tmp_path
     """"today" on a move from the last completed session is how the chat told
     a reader ServiceNow fell 3 % on its guidance: that was the session before
     the report, and the reaction was in the after-hours print."""
+    from datetime import date
+
     import pandas as pd
 
     from stocks.api import briefing
+    from stocks.chat import clock
 
     monkeypatch.setattr(briefing, "book_sectors", lambda tbl: pd.Series(dtype=float))
+    monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 29))
     tbl = pd.DataFrame(
         {"shares": [2.0, 1.0, 3.0], "value": [100.0] * 3, "cost": [80.0] * 3,
          "pnl": [20.0] * 3, "pnl_pct": [0.25] * 3, "weight": [1 / 3] * 3,
@@ -1207,7 +1344,8 @@ def test_the_snapshot_dates_each_day_move_with_its_session(monkeypatch, tmp_path
     watchlist.write_text("tickers: []\n")
     out = engine.book_snapshot(tbl, watchlist)
     assert "| today" not in out
-    assert "session 2026-10-28 incl. after-hours -18.6%" in out
+    assert ("session 2026-10-28 (last completed session, not today) "
+            "incl. after-hours -18.6%") in out
     assert "premarket 2026-10-29 -17.8%" in out
     assert "session 2026-10-29 +1.0%" in out
 

@@ -71,7 +71,7 @@ KNOWLEDGE = (
     ("pulse-risk-appetite", "Rotation, factor"),
 )
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 
 
 # ------------------------------------------------------------------- facts
@@ -396,7 +396,10 @@ _RULES = (
     "mention them, and write no source names, tickers of ETFs or dates in "
     "brackets."
 )
-_DECIMALS = {"es": "Use a decimal comma (4,2 %), as Spanish does."}
+_DECIMALS = {
+    "es": "Use a decimal comma (4,2 %), as Spanish does.",
+    "it": "Use a decimal comma (4,2%), as Italian does.",
+}
 
 
 def prompt(f: dict, lang: str) -> tuple[str, list[dict]]:
@@ -651,11 +654,27 @@ def expected_session(now: datetime | None = None) -> str:
 
 def stale(stored: dict, known_session: str | None, now: float | None = None) -> bool:
     """Whether the stored read is behind: none at all, older than the last
-    session the app has prices for, or older than STALE_AFTER_S."""
+    session the app has prices for, or — with no session to hold it to —
+    older than STALE_AFTER_S. Age alone never makes a read on the right
+    session stale: Saturday's build is Friday's close until Monday's settles,
+    and a weekend-old file there is the right one."""
     if not stored:
         return True
-    now = time.time() if now is None else now
-    if now - float(stored.get("built_at") or 0.0) > STALE_AFTER_S:
-        return True
     session = str(stored.get("session") or "")
-    return bool(known_session) and session < str(known_session)
+    if known_session:
+        return session < str(known_session)
+    now = time.time() if now is None else now
+    return now - float(stored.get("built_at") or 0.0) > STALE_AFTER_S
+
+
+# How long after a session settles the morning cron has to have written it
+# (the 06:30 UTC run, plus slack) before a read still behind means it missed.
+CRON_SLACK_S = 9 * 3600.0
+
+
+def cron_missed(stored: dict, now: float | None = None) -> bool:
+    """Whether the cron should have written a newer read than `stored` by now:
+    the session that had settled CRON_SLACK_S ago is newer than the file's."""
+    now = time.time() if now is None else now
+    due = expected_session(datetime.fromtimestamp(now - CRON_SLACK_S, UTC))
+    return str((stored or {}).get("session") or "") < due
