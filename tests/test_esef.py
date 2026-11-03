@@ -218,3 +218,15 @@ def test_overlay_never_raises(monkeypatch, web):
     monkeypatch.setattr(esef, "_merge", lambda *a: 1 / 0)
     raw = _yahoo()
     assert esef.overlay(raw) is raw
+
+
+def test_a_filing_too_big_to_read_is_not_downloaded_again(web, monkeypatch):
+    # prod 10-28→11-02: BNP's 32 MB facts file was fetched and refused ×7.
+    monkeypatch.setattr(esef, "MAX_DOC_BYTES", 10)
+    held = esef.refresh("ASML.AS", "ASML Holding N.V.", isin="NL0010273215")
+    assert held and held["years"] == {}
+    assert len([u for u in web if u.endswith(".json")]) == 2
+
+    web.clear()
+    esef.refresh("ASML.AS", "ASML Holding N.V.")
+    assert not [u for u in web if u.endswith(".json")]

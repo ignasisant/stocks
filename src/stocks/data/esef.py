@@ -501,13 +501,18 @@ def _read(lei: str) -> dict | None:
         return None
 
 
+class _TooBig(ValueError):
+    """A facts file past `MAX_DOC_BYTES`: refused, and the filing with it."""
+
+
 def _doc(url: str) -> dict | None:
     raw = _get(ROOT + url, gzip_ok=True)
     if raw[:2] == b"\x1f\x8b":
         raw = gzip.decompress(raw)
     if len(raw) > MAX_DOC_BYTES:
-        obs.warn("esef.too_big", url=url, bytes=len(raw))
-        return None
+        # INFO: the cap doing its job, the same few banks every time.
+        obs.event("esef.too_big", url=url, bytes=len(raw))
+        raise _TooBig(url)
     text = raw.decode("utf-8", "replace")
     del raw  # not both copies alive while the tree is built
     return json.loads(text)
@@ -528,7 +533,15 @@ def refresh(ticker: str, name: str = "", isin: str = "") -> dict | None:
         for filing in filings:
             if filing["period_end"] in done:
                 continue
-            doc = _doc(filing["json_url"])
+            try:
+                doc = _doc(filing["json_url"])
+            except _TooBig:
+                # Done with, so it is not fetched again: a filing never
+                # shrinks, and the refusal costs the whole download each time.
+                done[filing["period_end"]] = {
+                    k: filing[k] for k in ("period_end", "published")
+                } | {"skipped": "too_big"}
+                continue
             if doc is None:
                 continue
             for day, year in extract(doc).items():
