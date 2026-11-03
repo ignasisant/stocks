@@ -583,11 +583,21 @@ def _book_label(facts: dict, lang: str) -> str:
             "home.daily_short_book_alone", lang,
             pct=f"{fmt_num(own, 2, lang, signed=True)}%",
         )
-    return translate(
-        "home.daily_short_book", lang, pct=f"{fmt_num(own, 2, lang, signed=True)}%",
-        index=index.get("name") or daily_book.INDEX_NAME,
-        bench=f"{fmt_num(float(index['day_pct']), 2, lang, signed=True)}%",
-    )
+    words = {
+        "pct": f"{fmt_num(own, 2, lang, signed=True)}%",
+        "index": index.get("name") or daily_book.INDEX_NAME,
+        "bench": f"{fmt_num(float(index['day_pct']), 2, lang, signed=True)}%",
+    }
+    # Before New York opens, the book's day already has Europe's session in it
+    # while the index's is still the last US close: two days set side by side
+    # as one would read as a comparison that never happened.
+    theirs = str(index.get("as_of") or "")
+    ours = str((facts.get("day") or {}).get("as_of") or "")
+    if theirs and ours and theirs != ours:
+        weekday = date.fromisoformat(theirs).weekday()
+        return translate("home.daily_short_book_split", lang, **words,
+                         day=translate(f"home.weekday_{weekday}", lang))
+    return translate("home.daily_short_book", lang, **words)
 
 
 def dressed(

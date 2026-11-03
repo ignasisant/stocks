@@ -302,6 +302,7 @@
   "home.daily_short_repurchase_clear": "{ticker} free to rebuy {when}",
   "home.daily_short_book": "Portfolio {pct} vs the {index} {bench}",
   "home.daily_short_book_alone": "Portfolio {pct}",
+  "home.daily_short_book_split": "Portfolio {pct} · {index} {bench} on {day}",
   "home.daily_edit": "Choose what the card tells you",
   "home.daily_brief_wait": "Figures straight from your portfolio while the assistant answers what you asked for.",
   "home.daily_brief_missed": "The assistant could not answer what you asked for today, so this is the default card. Regenerate in a while to try again.",

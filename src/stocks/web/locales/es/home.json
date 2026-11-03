@@ -302,6 +302,7 @@
   "home.daily_short_repurchase_clear": "{ticker} recomprable {when}",
   "home.daily_short_book": "Cartera {pct} frente al {index} {bench}",
   "home.daily_short_book_alone": "Cartera {pct}",
+  "home.daily_short_book_split": "Cartera {pct} · {index} {bench} el {day}",
   "home.daily_edit": "Elegir qué te cuenta la tarjeta",
   "home.daily_brief_wait": "Cifras directas de tu cartera mientras el asistente responde a lo que pediste.",
   "home.daily_brief_missed": "Hoy el asistente no ha podido responder a lo que pediste, así que esta es la tarjeta por defecto. Regenera en un rato para volver a probar.",
