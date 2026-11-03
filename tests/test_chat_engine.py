@@ -621,6 +621,63 @@ def test_a_background_reply_thrown_away_counts_as_rejected(
                              "why": "gemini:rejected"}]
 
 
+
+def test_patient_callers_take_the_free_chain_one_at_a_time(providers):
+    # prod 2026-11-03 07:31: four 08:30 cards at once on groq's 8k tokens a
+    # minute — four 429s, groq rested, and the free models behind it too slow.
+    import threading
+
+    inside, most = 0, 0
+    lock = threading.Lock()
+
+    def complete(api_key, model, system, messages):
+        nonlocal inside, most
+        with lock:
+            inside += 1
+            most = max(most, inside)
+        time.sleep(0.05)
+        with lock:
+            inside -= 1
+        return "Free answer."
+
+    providers["free"].complete = complete
+    got = []
+
+    def card():
+        got.append(engine.complete_attempts(
+            {}, "sys", [{"role": "user", "content": "x"}], 5,
+            spend_free=lambda _p: True, patient=True))
+
+    workers = [threading.Thread(target=card) for _ in range(4)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    assert got == ["Free answer."] * 4
+    assert most == 1
+
+
+def test_a_patient_free_call_sits_out_a_longer_rate_limit(providers):
+    from stocks.web import llm
+
+    seen = []
+
+    def complete(api_key, model, system, messages):
+        seen.append(llm._short_wait(_Groq429("try again in 40.5s")))
+        return "Free answer."
+
+    providers["free"].complete = complete
+    for patient in (False, True):
+        engine.complete_attempts(
+            {}, "sys", [{"role": "user", "content": "x"}], 5,
+            spend_free=lambda _p: True, patient=patient)
+    assert seen == [None, 40.75]
+
+
+class _Groq429(Exception):
+    status_code = 429
+
+
 WRITTEN_CALL = '{{search_web(query: "Adyen ADYYF latest earnings vs consensus")}}'
 # Prod 2026-11-02, a tool name the model made up, as JSON.
 JSON_CALL = '{"tool": "search", "query": "TSM stock price NASDAQ", "max_results": 5}'

@@ -276,6 +276,8 @@ def generate(
         accept=lambda raw: parse(
             raw, day=day, lang=lang, known=known, facts=facts
         ),
+        # Built in the background, for every account at the schedule's hour.
+        patient=True,
     )
 
 

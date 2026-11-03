@@ -5,6 +5,8 @@ attempt sandboxed so an LLM failure degrades to None.
 from __future__ import annotations
 
 import sys
+import threading
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
@@ -23,6 +25,19 @@ if TYPE_CHECKING:
 
     pass
 
+# The free chain, one patient caller at a time. groq's 8k tokens a minute fit
+# about one card: four 08:30 cards at once (2026-11-03) were four 429s, groq
+# rested, and the free models behind it too slow to answer two of them. The
+# wait for the turn comes out of the caller's own timeout.
+_FREE_TURN = threading.Lock()
+
+
+def _patiently(complete, *args):
+    from stocks.web import llm
+
+    with llm.patient():
+        return complete(*args)
+
 
 def complete_attempts(
     prefs: dict,
@@ -33,6 +48,7 @@ def complete_attempts(
     spend_free: Callable[[dict], bool],
     accept: Callable[[str], object] | None = None,
     session_keys: dict[str, str] | None = None,
+    patient: bool = False,
 ):
     """First resolved provider whose reply `accept` keeps, or None. Never raises.
 
@@ -51,6 +67,11 @@ def complete_attempts(
     crons, which must not write that file) are both correct for their own
     caller and silently wrong for the other one.
 
+    `patient` is for a caller nobody is watching (a scheduled card, a digest
+    line): its free-chain attempt waits for `_FREE_TURN` and sits out the
+    chain's rate limits (`llm.patient`) rather than race other such callers
+    into them.
+
     The executor is deliberately unwrapped: `with` would block on shutdown
     waiting for a hung worker and defeat the timeout the call exists for.
     """
@@ -67,12 +88,24 @@ def complete_attempts(
     surface = sys._getframe(1).f_globals.get("__name__", "").rsplit(".", 1)[-1]
     missed: list[str] = []
     for provider, key, model in candidates:
-        if getattr(provider, "id", "") == "free" and not spend_free(prefs):
+        free = getattr(provider, "id", "") == "free"
+        if free and not spend_free(prefs):
             continue  # today's free allowance is gone — caller degrades
+        queued = patient and free
+        began = time.monotonic()
+        if queued and not _FREE_TURN.acquire(timeout=timeout_s):
+            obs.warn("chat.engine.free_turn_timeout", seconds=timeout_s)
+            missed.append("free:queued")
+            continue
         pool = ThreadPoolExecutor(max_workers=1)
         try:
-            future = pool.submit(provider.complete, key, model, system, messages)
-            raw = future.result(timeout=timeout_s)
+            if queued:
+                future = pool.submit(
+                    _patiently, provider.complete, key, model, system, messages
+                )
+            else:
+                future = pool.submit(provider.complete, key, model, system, messages)
+            raw = future.result(timeout=max(0.0, timeout_s - (time.monotonic() - began)))
             # Bound for `accept`, so a reply it rejects is logged against the
             # provider that sent it (structured.parse's llm.off_contract).
             with obs.context(provider=getattr(provider, "id", ""),
@@ -91,6 +124,8 @@ def complete_attempts(
             continue  # timeout, bad key, rate limit, unparseable — next one
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+            if queued:
+                _FREE_TURN.release()
     return None
 
 

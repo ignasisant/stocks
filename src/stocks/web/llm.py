@@ -976,6 +976,13 @@ _free_dead: set[str] = set()
 # groq's 429 says how long to wait ("Please try again in 1.6125s"). Up to this
 # is worth sitting out once on the same backend; past it, the next one's turn.
 _MAX_RETRY_WAIT_S = 5.0
+# What a caller nobody is watching (`patient()`: a scheduled card, a digest
+# line) sits out instead. groq's 8k tokens a minute fit about one card, so the
+# next card's 429 names most of a minute; past this wait, the free models
+# behind groq still get their turn.
+_PATIENT_WAIT_S = 60.0
+_PATIENT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "stocks_llm_free_patient", default=False)
 _RETRY_IN = re.compile(
     r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
 
@@ -1000,10 +1007,22 @@ def _retry_after(exc: Exception) -> float | None:
     return secs + 60 * int(m.group(1) or 0)
 
 
+@contextlib.contextmanager
+def patient() -> Generator[None]:
+    """Sit out the free chain's rate limits up to `_PATIENT_WAIT_S` in the
+    calls started in the block, rather than move on to a slower backend."""
+    token = _PATIENT.set(True)
+    try:
+        yield
+    finally:
+        _PATIENT.reset(token)
+
+
 def _short_wait(exc: Exception) -> float | None:
     """Seconds a rate-limited backend asked us to wait, when that is short."""
     secs = _retry_after(exc)
-    return secs + 0.25 if secs is not None and secs <= _MAX_RETRY_WAIT_S else None
+    most = _PATIENT_WAIT_S if _PATIENT.get() else _MAX_RETRY_WAIT_S
+    return secs + 0.25 if secs is not None and secs <= most else None
 
 
 def _note_dead(b: _FreeBackend, exc: Exception) -> None:
@@ -1015,7 +1034,7 @@ def _note_dead(b: _FreeBackend, exc: Exception) -> None:
 def _note_rest(b: _FreeBackend, exc: Exception) -> None:
     """A 429 the chain moves on from: skip `b` until the wait it named."""
     secs = _retry_after(exc)
-    if secs is not None and secs > _MAX_RETRY_WAIT_S:
+    if secs is not None and _short_wait(exc) is None:
         _free_resting[b.id] = time.monotonic() + min(secs, _MAX_REST_S)
         obs.warn("llm.free.backend_resting", backend=b.id,
                  seconds=round(secs, 1))

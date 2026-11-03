@@ -290,6 +290,7 @@ def _complete(
         prefs, system, messages, timeout_s,
         spend_free=engine.spend_free_global,
         accept=_sanitize,
+        patient=True,  # a fan-out over the roster, read once pushed
     )
 
 
