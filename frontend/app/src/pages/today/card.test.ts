@@ -50,7 +50,6 @@ function card(over: Partial<PersonalCard> = {}): PersonalCard {
     lang: "en",
     source: "llm",
     action_day: "2026-09-24",
-    cutoff_hour: 9,
     fresh: true,
     generated: null,
     pending: false,
@@ -191,6 +190,13 @@ describe("stampOf", () => {
 
   it("prints Today alone for a card from before the field existed", () => {
     expect(stampOf(card(), t, now)).toBe("home.daily_today_no_time");
+  });
+
+  it("stamps a card written the evening before with the close it quotes", () => {
+    const lastNight = new Date(2026, 8, 23, 22, 47).getTime() / 1000;
+    expect(stampOf(card({ generated: lastNight, as_of: "2026-09-23" }), t, now)).toBe(
+      "home.daily_today_close:home.weekday_2",
+    );
   });
 
   it("dates an older card instead of calling it today's", () => {

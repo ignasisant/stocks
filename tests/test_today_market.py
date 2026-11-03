@@ -304,4 +304,25 @@ def test_stale():
     assert today_market.stale(fresh, "2026-10-13", now)
     assert today_market.stale({}, "2026-10-12", now)
     old = {"session": "2026-10-12", "built_at": now - today_market.STALE_AFTER_S - 1}
-    assert today_market.stale(old, "2026-10-12", now)
+    assert today_market.stale(old, None, now)
+
+
+def test_a_weekend_old_read_on_the_right_session_is_not_stale():
+    # Saturday 06:30 UTC wrote Friday's close; Monday morning it is still the
+    # latest settled session, 51 hours later.
+    monday = datetime(2026, 11, 2, 9, 58, tzinfo=UTC).timestamp()
+    saturday = datetime(2026, 10, 31, 6, 28, tzinfo=UTC).timestamp()
+    stored = {"session": "2026-10-30", "built_at": saturday}
+    known = today_market.expected_session(datetime.fromtimestamp(monday, UTC))
+    assert not today_market.stale(stored, known, monday)
+    assert not today_market.cron_missed(stored, monday)
+
+
+@pytest.mark.parametrize(("now", "missed"), [
+    (datetime(2026, 11, 2, 23, 0, tzinfo=UTC), False),  # Mon close settled, cron not due
+    (datetime(2026, 11, 3, 6, 45, tzinfo=UTC), False),  # Tue cron running
+    (datetime(2026, 11, 3, 9, 0, tzinfo=UTC), True),  # Tue morning, Mon still missing
+])
+def test_cron_missed_waits_for_the_morning_run(now, missed):
+    stored = {"session": "2026-10-30"}
+    assert today_market.cron_missed(stored, now.timestamp()) is missed

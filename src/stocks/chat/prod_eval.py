@@ -81,6 +81,10 @@ NAVIGATE_TOOL = {
 # How much of a reference the judge reads: enough for a positions table.
 TRUTH_CHARS = 2500
 
+# What the registry made of an ISIN that has no name to give (`isin_registry`).
+MADE_UP = "made up"
+UNSETTLED = "not settled"
+
 # Figures in an answer that no reference states: this many make it a
 # hallucination without a judge (an invented RSI, a moving average, a target).
 # Below it they are only listed: a sum or a share the model worked out
@@ -477,14 +481,20 @@ def run_body(q: Question, thread: str) -> dict:
 
 
 def checks(
-    q: Question, ans: Answer, truth: dict[str, Any], pool: list[float] | None = None
+    q: Question,
+    ans: Answer,
+    truth: dict[str, Any],
+    pool: list[float] | None = None,
+    isins: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The rules a question names, read off the answer without a model.
 
     `figures` maps each numeric truth label to hit/off/absent; `unsourced`
     lists figures no reference in `pool` states (only when there is one);
-    `opens` is whether a navigate button pointed at the page (and tab, when
-    named); `mentions` / `forbids` are word checks; `failed` lists what broke."""
+    `isins` is the answer's `isin_registry`, and one MADE_UP the reader did
+    not type fails; `opens` is whether a navigate button pointed at the page
+    (and tab, when named); `mentions` / `forbids` are word checks; `failed`
+    lists what broke."""
     text = _fold(ans.text)
     out: dict[str, Any] = {"failed": []}
     if ans.error or not ans.text.strip():
@@ -504,6 +514,13 @@ def checks(
             out["unsourced"] = loose
         if len(loose) >= UNSOURCED_MAX:
             out["failed"].append(f"{len(loose)} figures no reference states")
+    if isins:
+        out["isins"] = isins
+        made_up = [
+            i for i, what in isins.items() if what == MADE_UP and i not in q.message
+        ]
+        if made_up:
+            out["failed"].append(f"made-up ISIN {made_up}")
     if q.opens:
         page, _, tab = q.opens.partition("/")
         hit = any(
@@ -524,6 +541,27 @@ def checks(
     if q.kind == "action" and not ans.proposal:
         out["failed"].append("no proposal")
     return out
+
+
+def isin_registry(text: str) -> dict[str, str]:
+    """Each ISIN `text` writes and what OpenFIGI says it is: the security's
+    name, MADE_UP (wrong check digit, or no record of it) or UNSETTLED (it
+    could not be asked).
+
+    The answer reaches the eval after `chat/isins.verify` already took out
+    what it could tell was made up, so a MADE_UP here is the guard missing;
+    the names are the judge's reference for the case it cannot catch, a real
+    ISIN written beside the wrong fund."""
+    from stocks.chat import isins
+
+    words = isins.found(text)
+    if not words:
+        return {}
+    made_up, real = isins.settle(words)
+    return {
+        w: real[w].name if w in real else MADE_UP if w in made_up else UNSETTLED
+        for w in sorted(words)
+    }
 
 
 def material(
@@ -565,12 +603,14 @@ class Model:
 
 def verdict(row: dict) -> str:
     """One run in a word: `fail` (no answer / a rule broke / a goal missed),
-    `halluc` (a figure off, UNSOURCED_MAX figures no reference states, or the
-    judge rated grounding 1-2), or `ok`."""
+    `halluc` (a figure off, UNSOURCED_MAX figures no reference states, an
+    ISIN the registry has no record of, or the judge rated grounding 1-2), or
+    `ok`."""
     judged = row.get("judged") or {}
     grounded = (judged.get("scores") or {}).get("grounded")
     off = any(v == "off" for v in (row["checks"].get("figures") or {}).values())
     off = off or len(row["checks"].get("unsourced") or ()) >= UNSOURCED_MAX
+    off = off or any(f.startswith("made-up ISIN") for f in row["checks"]["failed"])
     if off or (grounded is not None and grounded <= 2):
         return "halluc"
     goals = (judged.get("goals") or {}).values()

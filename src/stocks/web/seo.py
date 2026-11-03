@@ -78,15 +78,17 @@ FONTS_HREF = (
 # each other, while the English Spain-tax and English US-tax pages are two
 # different arguments and must not be declared as alternates. x-default is
 # where an unmatched locale lands, which is the source language of that pair.
+# A language with no page for the jurisdiction (Italian beside Spain's or the
+# US's case) is left out rather than pointed at a page arguing another country.
 def _alternates(jurisdiction: str) -> dict[str, str]:
-    en, es = (
-        landing.variant_path("en", jurisdiction),
-        landing.variant_path("es", jurisdiction),
-    )
-    return {"en": en, "es": es, "x-default": en}
+    pages = {
+        lang: path for (lang, jur), path in landing.VARIANTS.items()
+        if jur == jurisdiction
+    }
+    return {**pages, "x-default": pages.get(DEFAULT_LANG) or next(iter(pages.values()))}
 
 # Open Graph wants a locale, not a language code.
-_OG_LOCALE = {"en": "en_US", "es": "es_ES"}
+_OG_LOCALE = {"en": "en_US", "es": "es_ES", "it": "it_IT"}
 
 
 # Where the app's own machinery lives: the retired Streamlit app's prefix
@@ -284,8 +286,8 @@ def head(
     )
     other_locales = "".join(
         _prop("og:locale:alternate", _OG_LOCALE[code])
-        for code in sorted(LANGUAGES)
-        if code != lang
+        for code in sorted(_alternates(jur))
+        if code not in (lang, "x-default")
     )
 
     return (

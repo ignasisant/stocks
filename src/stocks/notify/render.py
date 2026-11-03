@@ -44,12 +44,15 @@ def date_line(d: date, lang: str) -> str:
 WEEKDAYS = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
     "es": ("lun", "mar", "mié", "jue", "vie", "sáb", "dom"),
+    "it": ("lun", "mar", "mer", "gio", "ven", "sab", "dom"),
 }
 MONTHS = {
     "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
     "es": ("ene", "feb", "mar", "abr", "may", "jun",
            "jul", "ago", "sep", "oct", "nov", "dic"),
+    "it": ("gen", "feb", "mar", "apr", "mag", "giu",
+           "lug", "ago", "set", "ott", "nov", "dic"),
 }
 
 

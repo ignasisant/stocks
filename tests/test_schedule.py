@@ -7,7 +7,7 @@ What is tested here:
   catch-up window that stops a missed run going out at midnight, never twice
   the same local day, and across a daylight-saving change;
 * the settings as the app applies them, a bad stored value read as the
-  default, and the card day turning over no later than the briefing;
+  default; the next day's card built after each US close, whoever reads it;
 * the tick: runs marked done even when they fail, and the ones it could not
   start left for the next tick;
 * each run's thread: listed with its job, replaced on a re-run of the same
@@ -113,13 +113,20 @@ def test_an_unknown_zone_is_the_default_one():
     assert schedule.zone({"timezone": "America/New_York"}) == ZoneInfo("America/New_York")
 
 
-def test_the_card_day_turns_over_no_later_than_the_briefing():
-    assert schedule.cutoff_hour({}, 9) == 8  # 08:30 by default
-    early = {"schedules": {"briefing": {"time": "06:15", "days": WEEKDAYS}}}
-    assert schedule.cutoff_hour(early, 9) == 6
-    late = {"schedules": {"briefing": {"time": "11:00", "days": WEEKDAYS}}}
-    assert schedule.cutoff_hour(late, 9) == 9
-    assert schedule.cutoff_hour({**early, "notify_briefing": False}, 9) == 9
+@pytest.mark.parametrize(
+    ("utc", "expected"),
+    [
+        ("2026-11-02T21:40", None),  # Monday 16:40 New York: not yet
+        ("2026-11-02T21:45", date(2026, 11, 2)),  # 16:45: Monday's close
+        ("2026-11-03T03:50", None),  # past the catch-up
+        ("2026-10-31T21:45", None),  # Saturday: no session
+        ("2026-11-26T21:45", None),  # Thanksgiving: no session
+        ("2026-07-06T20:45", date(2026, 7, 6)),  # summer time, same 16:45
+    ],
+)
+def test_the_card_is_built_after_each_us_close(utc, expected):
+    assert schedule.card_due(at(utc), None) == expected
+    assert schedule.card_due(at(utc), expected) is None  # once a session
 
 
 def test_runs_are_spent_on_accounts_somebody_reads():
@@ -192,9 +199,9 @@ def test_the_plan_takes_only_whats_due(account, monkeypatch):
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
     # Monday 08:45 Madrid: the briefing already went out, nothing else is due.
     assert schedule.plan(at("2026-11-02T07:45")) == []
-    # 22:45: the day's numbers.
+    # 22:45: the next day's card, after the US close, and the day's numbers.
     (due,) = schedule.plan(at("2026-11-02T21:45"))
-    assert due.runs == [("digest", date(2026, 11, 2))]
+    assert due.runs == [("card", date(2026, 11, 2)), ("digest", date(2026, 11, 2))]
 
 
 # ------------------------------------------------------------------ the thread
@@ -399,3 +406,26 @@ def test_a_reboot_restores_the_devices_it_pushes_to(tmp_path, monkeypatch):
     paths = accounts.paths_in(tmp_path / "jane")
     accounts.restore_account(paths, seed=False)
     assert {paths.push, paths.devices, paths.journal, paths.verdicts} <= set(restored)
+
+
+def test_the_briefing_files_the_card_the_evening_wrote(account, monkeypatch):
+    """The card job wrote Tuesday's card on Monday night; Tuesday's briefing
+    files it without asking a model again, and a card left from an older day
+    is not pushed as this one."""
+    from stocks.api import briefing, daily_card
+
+    card = daily.DailyAction(day="2026-11-03", headline="h", bullets=["x"],
+                             lang="en", as_of="2026-11-02")
+    asked: list[bool] = []
+    monkeypatch.setattr(daily_card, "request",
+                        lambda paths, lang, force: asked.append(force))
+    monkeypatch.setattr(daily_card, "stored", lambda paths: card)
+    monkeypatch.setattr(briefing, "running", lambda paths: None)
+    now = datetime(2026, 11, 3, 8, 30, tzinfo=MADRID)
+    day = {"d": date(2026, 11, 3)}
+    monkeypatch.setattr(briefing, "now_day", lambda paths=None: (now, day["d"]))
+    assert schedule._card(account, date(2026, 11, 2)) == "llm: 2026-11-03"
+    assert asked == [False]
+
+    day["d"] = date(2026, 11, 4)
+    assert schedule._briefing(account, date(2026, 11, 4)) == "skipped: no card"

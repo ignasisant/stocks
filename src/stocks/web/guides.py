@@ -32,12 +32,18 @@ from stocks.web.landing import (
     PATH_ES,
     PATH_GUIDES_EN,
     PATH_GUIDES_ES,
+    PATH_GUIDES_IT,
+    PATH_IT,
 )
 from stocks.web.markup import esc
 
-# Where each language's guides live. The Spanish ones sit under the Spanish
-# landing's `/es/`, which the gate and robots.txt already treat as public.
-PATHS = {"en": PATH_GUIDES_EN, "es": PATH_GUIDES_ES}
+# Where each language's guides live. The Spanish and Italian ones sit under
+# their landing's `/es/` and `/it/`, which the gate and robots.txt already
+# treat as public.
+PATHS = {"en": PATH_GUIDES_EN, "es": PATH_GUIDES_ES, "it": PATH_GUIDES_IT}
+# Each language's landing, where a guide's "TopStocks" link goes.
+_HOMES = {"en": PATH_EN, "es": PATH_ES, "it": PATH_IT}
+_OG_LOCALE = {"en": "en_US", "es": "es_ES", "it": "it_IT"}
 
 # The learn paths published here: the tax path is the one people search for.
 PUBLIC = ("tax-es",)
@@ -63,7 +69,7 @@ _UI = {
                     "each trade in euros and the two-month rule for you.",
         "cta_guest": "Try it with sample data",
         "cta_signin": "Sign in with Google",
-        "other_lang": "Leer en español",
+        "read_in": "Read in English",
     },
     "es": {
         "index_title": "Guías de fiscalidad para inversores en España",
@@ -78,7 +84,22 @@ _UI = {
                     "operación en euros y la regla de los dos meses.",
         "cta_guest": "Probar con datos de ejemplo",
         "cta_signin": "Entrar con Google",
-        "other_lang": "Read in English",
+        "read_in": "Leer en español",
+    },
+    "it": {
+        "index_title": "Guide al fisco spagnolo per investitori",
+        "index_body": "Guide brevi per dichiarare azioni, ETF e dividendi "
+                      "nella dichiarazione dei redditi spagnola, con esempi in euro.",
+        "home": "Guide",
+        "reviewed": "Rivisto",
+        "minutes": "{n} min di lettura",
+        "related": "Altre guide",
+        "cta_title": "Lascia fare i conti a TopStocks",
+        "cta_body": "Importa l'estratto conto del tuo broker: calcola FIFO, "
+                    "ogni operazione in euro e la regola dei due mesi.",
+        "cta_guest": "Provalo con dati di esempio",
+        "cta_signin": "Accedi con Google",
+        "read_in": "Leggi in italiano",
     },
 }
 
@@ -231,7 +252,7 @@ def _json_ld(data: list[dict]) -> str:
 
 def _app_href(page: str, lang: str, src: str, *, signin: bool = False) -> str:
     """A CTA into the app: the lesson's page as a guest, or the sign-in."""
-    tail = ("&lang=es" if lang == "es" else "") + f"&src={src}"
+    tail = ("" if lang == "en" else f"&lang={lang}") + f"&src={src}"
     if signin:
         return f"/?signin=1{tail}"
     sep = "&" if "?" in page else "?"
@@ -261,9 +282,14 @@ def _document(
         f'<link rel="alternate" hreflang="{code}" href="{esc(_abs(base_url, p))}">'
         for code, p in alternates.items()
     )
-    other = "en" if lang == "es" else "es"
-    legal_q = "?lang=es" if lang == "es" else ""
-    home = PATH_ES if lang == "es" else PATH_EN
+    legal_q = "" if lang == "en" else f"?lang={lang}"
+    home = _HOMES[lang]
+    other_langs = "".join(
+        f'<a href="{esc(alternates[code])}" hreflang="{code}">'
+        f'{esc(_UI[code]["read_in"])}</a>'
+        for code in PATHS
+        if code != lang
+    )
     og_image = f"{ASSET_BASE}og.png"
 
     def tr(key: str) -> str:
@@ -287,7 +313,7 @@ def _document(
         f'<meta property="og:description" content="{esc(desc)}">'
         f'<meta property="og:url" content="{esc(canonical)}">'
         '<meta property="og:site_name" content="TopStocks">'
-        f'<meta property="og:locale" content="{"es_ES" if lang == "es" else "en_US"}">'
+        f'<meta property="og:locale" content="{_OG_LOCALE[lang]}">'
         f'<meta property="og:image" content="{esc(_abs(base_url, og_image))}">'
         '<meta name="twitter:card" content="summary_large_image">'
         f"{_json_ld(ld)}"
@@ -296,8 +322,7 @@ def _document(
         f"{main}"
         "<footer><nav>"
         f'<a href="{home}">TopStocks</a>'
-        f'<a href="{esc(alternates[other])}" hreflang="{other}">'
-        f'{esc(_UI[lang]["other_lang"])}</a>'
+        f"{other_langs}"
         f'<a href="/legal/privacy{legal_q}">{esc(tr("landing.footer_privacy"))}</a>'
         f'<a href="/legal/terms{legal_q}">{esc(tr("landing.footer_terms"))}</a>'
         "</nav>"
@@ -309,7 +334,7 @@ def _document(
 def _crumbs(lang: str, base_url: str, lesson: learn.Lesson | None) -> tuple[str, dict]:
     """The visible trail and its BreadcrumbList."""
     ui = _UI[lang]
-    trail = [("TopStocks", PATH_ES if lang == "es" else PATH_EN),
+    trail = [("TopStocks", _HOMES[lang]),
              (ui["home"], PATHS[lang])]
     if lesson is not None:
         trail.append((lesson.title, href(lesson.id, lang)))

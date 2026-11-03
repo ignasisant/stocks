@@ -29,7 +29,6 @@ from stocks import accounts
 from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
-from stocks.chat import daily
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
@@ -229,9 +228,12 @@ def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
     assert payload["lang"] == "en"  # what is stored, said plainly
 
 
-def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypatch):
-    """Every figure in the card is a day behind, and the calendar date will not
-    move until the cutoff — so the date alone cannot see this."""
+def test_a_session_under_way_does_not_rewrite_the_evening_card(
+    client, account, monkeypatch
+):
+    """The card turns over after the US close, with the day. A European open
+    or a live US bar is half a day's figures: the card written from the last
+    close still stands under it."""
     day = briefing.now_day()[1]
     patch_loaders(monkeypatch, "stored_action", lambda path, mtime: today_card())
     patch_loaders(
@@ -241,17 +243,7 @@ def test_a_session_that_has_since_closed_stales_it_too(client, account, monkeypa
         },
     )
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
-    assert payload["fresh"] is False
-
-
-def test_the_cutoff_is_reported_so_a_client_need_not_hardcode_it(
-    client, account, monkeypatch
-):
-    patch_loaders(monkeypatch, "stored_action", lambda path, mtime: {})
-    patch_loaders(monkeypatch, "held_closes", lambda db, mtime: {})
-    patch_loaders(monkeypatch, "held_printed_closes", lambda db, mtime: {})
-    payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
-    assert payload["cutoff_hour"] == daily.CUTOFF_HOUR
+    assert payload["fresh"] is True
 
 
 # ----------------------------------------------------------------- the movers

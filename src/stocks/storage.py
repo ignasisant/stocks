@@ -95,6 +95,11 @@ def enabled() -> bool:
     return _config() is not None
 
 
+def bucket() -> str:
+    """The bucket this process mirrors to, "" when persistence is off."""
+    return (_config() or {}).get("bucket", "")
+
+
 def _client():
     """One boto3 S3 client per process."""
     if "client" not in _cached:

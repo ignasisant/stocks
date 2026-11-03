@@ -205,3 +205,39 @@ def test_close_on_unanswered_when_the_fallback_is_silent():
     before = fetch.unanswered()
     assert fetch.close_on("AAPL", "2026-10-26") is None
     assert fetch.unanswered() == before + 1
+
+
+@pytest.fixture
+def seen(monkeypatch):
+    out = []
+    monkeypatch.setattr(fetch.obs, "event", lambda name, **f: out.append((name, f)))
+    return out
+
+
+def _named(seen, name):
+    return [f for n, f in seen if n == name]
+
+
+def test_a_skipped_rescue_says_why(keyed, monkeypatch, seen):
+    def refused(*a, **k):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(fetch.yf, "download", refused)
+    monkeypatch.setattr(fetch, "retry", lambda fn, *a, **k: fn())
+    with pytest.raises(YFRateLimitError):
+        fetch.fetch_many(["AAPL", "SAN.MC"], period="1mo")
+    many = [f"T{c}" for c in "ABCDEFGH"]  # one more than a minute allows
+    with pytest.raises(YFRateLimitError):
+        fetch.fetch_many(many, period="1mo")
+    whys = [f["why"] for f in _named(seen, "twelvedata.skipped")]
+    assert whys == ["not_covered", "no_room"]
+    assert keyed == []
+
+
+def test_a_consult_that_found_nothing_is_still_logged(monkeypatch, seen):
+    monkeypatch.setattr(td, "api_key", lambda: "k")
+    refusal = {"status": "error", "code": 404}
+    monkeypatch.setattr(td, "get_json", lambda url, **kw: refusal)
+    assert td.daily(["ZZZZ"]) == {}
+    assert _named(seen, "twelvedata.daily") == [{"asked": 1, "answered": 0}]
+    assert _named(seen, "twelvedata.refused") == [{"symbol": "ZZZZ", "code": 404}]

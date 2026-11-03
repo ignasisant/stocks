@@ -21,6 +21,7 @@ from stocks.web.landing import (
     PATH_EN_ES,
     PATH_ES,
     PATH_ES_US,
+    PATH_IT,
 )
 
 BASE = "https://topstocks.example"
@@ -74,21 +75,19 @@ def test_canonical_differs_per_language():
 @pytest.mark.parametrize("lang", sorted(LANGUAGES))
 def test_both_languages_declare_each_other_and_a_default(lang):
     head = seo.head(lang, BASE)
-    # The pair is per jurisdiction: the English US-tax page's Spanish
+    # The set is per jurisdiction: the English US-tax page's Spanish
     # alternate is the Spanish US-tax page, not the Spanish-tax one (different
     # content, and declaring it an alternate would be a lie to the crawler).
+    # The Italian page argues Italy's case alone, so it has no alternate.
     expected = {
-        "en": ("/", PATH_EN_ES),
-        "es": (PATH_ES_US, PATH_ES),
+        "en": ({"en": "/", "es": PATH_ES_US}, "/"),
+        "es": ({"en": PATH_EN_ES, "es": PATH_ES}, PATH_EN_ES),
+        "it": ({"it": PATH_IT}, PATH_IT),
     }
-    jur = "US" if lang == "en" else "ES"
-    for code, paths in expected.items():
-        path = paths[0] if jur == "US" else paths[1]
-        assert f'<link rel="alternate" hreflang="{code}" href="{BASE}{path}">' in head
-    default = "/" if jur == "US" else PATH_EN_ES
-    assert (
-        f'<link rel="alternate" hreflang="x-default" href="{BASE}{default}">' in head
-    )
+    alternates, default = expected[lang]
+    declared = dict(re.findall(r'hreflang="([^"]+)" href="([^"]+)"', head))
+    assert declared == {code: f"{BASE}{path}" for code, path in
+                        {**alternates, "x-default": default}.items()}
 
 
 @pytest.mark.parametrize("lang", sorted(LANGUAGES))
@@ -232,7 +231,8 @@ def test_sitemap_is_well_formed_and_lists_every_variant():
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     locs = [e.text for e in root.findall(".//s:loc", ns)]
     assert locs == [
-        f"{BASE}/", f"{BASE}{PATH_ES}", f"{BASE}{PATH_EN_ES}", f"{BASE}{PATH_ES_US}"
+        f"{BASE}/", f"{BASE}{PATH_ES}", f"{BASE}{PATH_EN_ES}", f"{BASE}{PATH_ES_US}",
+        f"{BASE}{PATH_IT}",
     ]
     assert all(e.text == "2026-08-31" for e in root.findall(".//s:lastmod", ns))
 
@@ -245,7 +245,8 @@ def test_every_sitemap_url_carries_the_full_alternate_set():
           "xhtml": "http://www.w3.org/1999/xhtml"}
     for url in root.findall("s:url", ns):
         langs = {e.get("hreflang") for e in url.findall("xhtml:link", ns)}
-        assert langs == {"en", "es", "x-default"}
+        alone = url.find("s:loc", ns).text == f"{BASE}{PATH_IT}"
+        assert langs == ({"it", "x-default"} if alone else {"en", "es", "x-default"})
 
 
 def test_sitemap_without_a_lastmod_omits_the_element():

@@ -1,0 +1,1 @@
+import{$t as e,An as t,Sn as n}from"./app-Z1icohpW.js";var r=t();function i({className:t=`ag-btn`}){let i=n();return(0,r.jsx)(`button`,{className:t,onClick:()=>e(i(`import.type_prompt`)),type:`button`,children:i(`import.type_button`)})}export{i as t};

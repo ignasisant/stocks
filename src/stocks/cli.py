@@ -991,6 +991,8 @@ def cmd_logs(args: argparse.Namespace) -> None:
             entries += fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
         elif args.logs_command == "connector" and not files:
             entries = fetch(args.limit, http=False, extra=lq.CONNECTOR_EXTRA)
+        elif args.logs_command == "installs" and not files:
+            entries = fetch(args.limit, http=False, extra=lq.INSTALLS_EXTRA)
         elif args.logs_command == "stats" and getattr(args, "http", False) and not files:
             # Per-route latency: the access log minus the probe and the assets,
             # which are not routes anyone sits waiting on.
@@ -1018,6 +1020,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
         return
     if args.logs_command == "connector":
         print(lq.render_connector(lq.connector(entries)))
+        return
+    if args.logs_command == "installs":
+        print(lq.render_installs(lq.installs(entries)))
         return
     if args.logs_command == "skills":
         from stocks.web import feedback
@@ -1127,8 +1132,13 @@ def _replay_import(diagnostic_id: str) -> None:
 
 def cmd_feedback(args: argparse.Namespace) -> None:
     """Print stored user feedback (local files + the bucket's copies)."""
+    from stocks import storage
     from stocks.web import feedback
 
+    # Which bucket was read: a local [storage] that is not prod's reads a
+    # handful of old submissions and looks like a quiet week.
+    print(f"read: local data/feedback + bucket {storage.bucket()}"
+          if storage.bucket() else "read: local data/feedback only (no [storage])")
     items = feedback.stored()
     if not items:
         print("(no feedback yet)")
@@ -1347,7 +1357,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="write the Today page's shared market read (morning cron)",
     )
     p_today.add_argument(
-        "--lang", action="append", choices=("es", "en"),
+        "--lang", action="append", choices=("es", "en", "it"),
         help="only this language (repeatable; default: es and en)",
     )
     p_today.add_argument(
@@ -1652,6 +1662,12 @@ def build_parser() -> argparse.ArgumentParser:
              "-> approved -> first tool call, in accounts")
     _common(p_con, with_output=False)
     p_con.set_defaults(since="30d", limit=20000)
+    p_ins = logs_sub.add_parser(
+        "installs",
+        help="accounts that opened the app from a Home Screen: device, "
+             "first and last launch")
+    _common(p_ins, with_output=False)
+    p_ins.set_defaults(since="30d", limit=20000)
     p_skl = logs_sub.add_parser(
         "skills",
         help="per chat skill: answers, total and mean cost, thumbs up/down "

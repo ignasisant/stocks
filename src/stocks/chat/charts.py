@@ -19,10 +19,13 @@ symbols; two or more are drawn rebased, as change since the window opened,
 because a 180-dollar share and a 1.1 exchange rate share no axis.
 
 The reader's own book can be one of them ("¿cómo voy contra el S&P?", "gráfico
-de mi cartera"): `BOOK`, drawn as its time-weighted return off the same daily
-series the Rendimiento tab compounds, so a deposit is not a gain. Against it,
-every other line is converted into the book's currency — a Spanish reader beat
-the S&P or not in euros — and opens on the book's first day.
+de mi cartera"): `BOOK`, drawn as Asignación draws it (`flow_matched_curves`)
+— what the money put in became, value over net deposits, so a deposit is not
+a gain. Against it, every other line is converted into the book's currency (a
+Spanish reader beat the S&P or not in euros) and fed the book's own buys and
+sales on their own days: an index rebased to the window's first day would
+have had all of today's money at work from then, which over five years of a
+book built up along the way is a race the account never ran.
 """
 
 from __future__ import annotations
@@ -345,6 +348,9 @@ class Line:
     sessions: int
     along: tuple[tuple[str, float], ...]  # PROMPT_POINTS closes, for the prompt
     index: bool = False  # the book: a growth index from 100, not a price
+    # A symbol raced against the book: its index from 100, fed the book's
+    # flows (`flow_matched_curves`), not its closes.
+    fed: bool = False
     converted: str = ""  # the currency it trades in, when drawn in another
     # Its change over the same days in that currency, beside the drawn one.
     own_change: float | None = None
@@ -380,18 +386,6 @@ class Chart:
         rows = []
         for ln in self.lines:
             ccy = f" {ln.currency}" if ln.currency else ""
-            if ln.index:
-                rows.append(
-                    f"- the reader's portfolio (its time-weighted return in "
-                    f"{ln.currency}, so deposits and withdrawals do not move it): "
-                    f"{ln.change:+.2%} from {ln.first_on} to {ln.last_on}; best "
-                    f"{ln.since(ln.high):+.2%} on {ln.high_on}, worst "
-                    f"{ln.since(ln.low):+.2%} on {ln.low_on}\n"
-                    "  along the way: "
-                    + ", ".join(f"{day} {ln.since(value):+.2%}"
-                                for day, value in ln.along)
-                )
-                continue
             fx = (f" (converted from {ln.converted} at each day's rate)"
                   if ln.converted else "")
             own = ""
@@ -399,6 +393,21 @@ class Chart:
                 effect = (1 + ln.change) / (1 + ln.own_change) - 1
                 own = (f", {ln.own_change:+.2%} in {ln.converted}: the currency "
                        f"effect is {effect:+.2%} — quote it, never estimate one")
+            if ln.index or ln.fed:
+                who = (f"the reader's portfolio (the return on the money put in, "
+                       f"in {ln.currency}: value over net deposits, as the "
+                       f"Allocation tab's curve reads it)" if ln.index else
+                       f"{ln.symbol} fed the same buys and sales on the same "
+                       f"days{fx}")
+                rows.append(
+                    f"- {who}: {ln.change:+.2%}{own} from {ln.first_on} to "
+                    f"{ln.last_on}; best {ln.since(ln.high):+.2%} on {ln.high_on}, "
+                    f"worst {ln.since(ln.low):+.2%} on {ln.low_on}\n"
+                    "  along the way: "
+                    + ", ".join(f"{day} {ln.since(value):+.2%}"
+                                for day, value in ln.along)
+                )
+                continue
             rows.append(
                 f"- {ln.symbol}{fx}: {_num(ln.first)}{ccy} on {ln.first_on} -> "
                 f"{_num(ln.last)}{ccy} on {ln.last_on} ({ln.change:+.2%}{own}); high "
@@ -409,8 +418,10 @@ class Chart:
         how = (" as change since the window opened" if self.rebased else "")
         versus = ""
         if self.book is not None and len(self.lines) > 1:
-            versus = (" The gap between the portfolio's change and another "
-                      "line's is how far ahead or behind it the reader is.")
+            versus = (" Every other line got the portfolio's own deposits and "
+                      "sales on the days it got them, so the gap between the "
+                      "portfolio's return and another line's is how far ahead or "
+                      "behind that same money would be there.")
             if any(ln.symbol.startswith("^") for ln in self.lines):
                 versus += " An index (^) is price only, without dividends."
         return (
@@ -461,57 +472,101 @@ def _picks(n: int, k: int, keep: tuple[int, ...] = ()) -> list[int]:
 
 # The book's windows in calendar days, as `/portfolio/history` cuts them.
 _BOOK_DAYS = {"1m": 30, "3m": 91, "6m": 182, "1y": 365, "2y": 730, "5y": 1825}
+# How late a symbol's first close may come after the book's first day and
+# still be raced from it, its first returns read as flat: a 5y download
+# counted from today opens a day or two after a book cut five years back.
+_LATE = pd.Timedelta(days=7)
 
 
-def book_index(hist: pd.DataFrame | None, twr: pd.Series | None, window: str,
-               today: date | None = None) -> pd.Series | None:
-    """The book's time-weighted growth over `window`, as an index from 100.
+@dataclass(frozen=True)
+class Book:
+    """The reader's book as `build` races it, in its own currency: what it was
+    worth each day (`loaders.history`) and the cash that went in or out
+    (`flow_series`), the two Asignación's curves are read off."""
 
-    Off the daily returns `/portfolio/performance` compounds, so the line's
-    change is the figure the Rendimiento tab prints and a deposit moves the
-    book's value but not this. Counted back from the series' own last day, as
-    `/portfolio/history` counts its windows, and opened at 100 on the last day
-    before the window's first return, so that return is in the line rather
-    than spent as its starting point. A day the TWR dropped is skipped, not
-    drawn flat.
-    """
+    value: pd.Series
+    flows: pd.Series
+
+
+def book_days(value: pd.Series, window: str,
+              today: date | None = None) -> pd.DatetimeIndex:
+    """The book's days over `window`, opened on the last close at or before
+    its start — Dec 31 for the year to date — so the first day's move is in
+    the line rather than spent as its starting point. Counted back from the
+    series' own last day, as `/portfolio/history` counts its windows, and
+    never before the first day anything was held."""
     from stocks.analysis import naive_dates
 
-    returns = twr.dropna() if twr is not None else pd.Series(dtype=float)
-    if returns.empty:
-        return None
-    returns.index = naive_dates(returns.index)
+    value = value.dropna()
+    value.index = naive_dates(value.index)
+    held = value.index[np.asarray(value > 0)]
+    if held.empty:
+        return pd.DatetimeIndex([])
+    days = value.index[np.asarray(value.index >= held[0])]
     if window in _BOOK_DAYS:
-        last = cast(pd.Timestamp, returns.index.max())
-        cut = last - pd.Timedelta(days=_BOOK_DAYS[window])
-        returns = returns[returns.index >= cut]
+        cut = cast(pd.Timestamp, days.max()) - pd.Timedelta(days=_BOOK_DAYS[window])
     elif window == "ytd":
-        year = (today or date.today()).year
-        returns = returns[returns.index >= pd.Timestamp(year, 1, 1)]
-    if returns.empty:
-        return None
-    days = (naive_dates(hist.index) if hist is not None and len(hist)
-            else returns.index)
-    earlier = days[np.asarray(days < returns.index[0])]
-    opened = earlier[-1] if len(earlier) else returns.index[0] - pd.Timedelta(days=1)
-    levels = 100 * (1 + returns).cumprod()
-    return pd.concat([pd.Series([100.0], index=pd.DatetimeIndex([opened])), levels])
+        cut = pd.Timestamp((today or date.today()).year, 1, 1) - pd.Timedelta(days=1)
+    else:
+        return days
+    before = days[np.asarray(days <= cut)]
+    return days[days >= (before[-1] if len(before) else days[0])]
 
 
-def book_for(db, base: str) -> Callable[[str], pd.Series | None]:
-    """The reader's book as `build` takes it: a window in, its index out."""
+def book_for(db, base: str) -> Callable[[], Book | None]:
+    """The reader's book as `build` takes it."""
     from pathlib import Path
 
-    def fetch(window: str) -> pd.Series | None:
+    def fetch() -> Book | None:
+        from stocks.analysis.portfolio import flow_series
         from stocks.api import loaders
 
         path = str(db)
         if not Path(path).exists():
             return None
-        hist, twr, _missing = loaders.history(path, loaders.db_mtime(path), base)
-        return book_index(hist, twr, window)
+        mtime = loaders.db_mtime(path)
+        hist, _twr, _missing = loaders.history(path, mtime, base)
+        if hist is None or "value" not in hist:
+            return None
+        flows = flow_series(loaders.ledger_state(path, mtime, base)[0], base=base)
+        return Book(hist["value"], flows)
 
     return fetch
+
+
+def race(book: Book, axis: pd.DatetimeIndex,
+         closes: dict[str, pd.Series]) -> tuple[pd.Series, dict[str, pd.Series]]:
+    """The book and each of `closes` over `axis` as Asignación draws them:
+    indexes from 100 of value over the money put in, every symbol fed the
+    book's own flows on their own days (`flow_matched_curves`). A symbol
+    whose closes open more than `_LATE` after the book's first day races from
+    its own first day instead; one with no close on the axis is left out.
+    Days with nothing in are dropped."""
+    from stocks.analysis import naive_dates
+    from stocks.analysis.portfolio import flow_matched_curves
+
+    def level(path: pd.Series) -> pd.Series:
+        return (100 * (1 + path)).dropna()
+
+    _invested, mine, _ = flow_matched_curves(book.value, book.flows, axis, {})
+    out: dict[str, pd.Series] = {}
+    for symbol, series in closes.items():
+        series = series.dropna()
+        series.index = naive_dates(series.index).normalize()
+        series = series[~series.index.duplicated(keep="last")]
+        if series.empty:
+            continue
+        lane = (axis if series.index[0] <= axis[0] + _LATE
+                else axis[axis >= series.index[0]])
+        if len(lane) < 2:
+            continue
+        on = series.reindex(series.index.union(lane)).ffill().reindex(lane).bfill()
+        _inv, _book, shadows = flow_matched_curves(
+            book.value, book.flows, lane, {symbol: on / on.shift() - 1})
+        drawn = level(shadows[symbol])
+        if len(drawn) >= 2:
+            out[symbol] = drawn
+    return level(mine), out
 
 
 def _to_base(closes: pd.Series, currency: str, base: str) -> pd.Series | None:
@@ -525,16 +580,8 @@ def _to_base(closes: pd.Series, currency: str, base: str) -> pd.Series | None:
     return out if len(out) >= 2 else None
 
 
-def _since(closes: pd.Series, start: pd.Timestamp) -> pd.Series | None:
-    """`closes` from the last one at or before `start`, the book's first day:
-    a benchmark shut that day opens on its close before it."""
-    before = closes.index[np.asarray(closes.index <= start)]
-    out = closes[closes.index >= (before[-1] if len(before) else start)]
-    return out if len(out) >= 2 else None
-
-
 def _line(symbol: str, closes: pd.Series, currency: str, window: str, *,
-          index: bool = False, converted: str = "",
+          index: bool = False, fed: bool = False, converted: str = "",
           own_change: float | None = None) -> Line:
     intraday = window in ("1d", "1w")
     values = [float(v) for v in closes.to_numpy()]
@@ -551,14 +598,14 @@ def _line(symbol: str, closes: pd.Series, currency: str, window: str, *,
         high=values[hi], high_on=days[hi], low=values[lo], low_on=days[lo],
         sessions=len(values),
         along=tuple((days[i], values[i]) for i in quoted[1:-1]),
-        index=index, converted=converted, own_change=own_change,
+        index=index, fed=fed, converted=converted, own_change=own_change,
     )
 
 
 def build(symbols: list[str], window: str = DEFAULT, *,
           closes: Callable[[str, str], pd.Series | None] | None = None,
           currency: Callable[[str], str] | None = None,
-          book: Callable[[str], pd.Series | None] | None = None,
+          book: Callable[[], Book | None] | None = None,
           base: str = "",
           convert: Callable[[pd.Series, str, str], pd.Series | None] | None = None,
           timeout: float = FETCH_TIMEOUT) -> Chart | None:
@@ -571,7 +618,8 @@ def build(symbols: list[str], window: str = DEFAULT, *,
     `BOOK` among the symbols is the reader's book, from `book` (`book_for`) in
     `base`; without one it drops out like any symbol without prices. Beside
     it the other lines are converted into `base` (an exchange rate is left
-    as it is: its currencies are the point) and cut to the book's first day.
+    as it is: its currencies are the point) and raced against it over the
+    book's days (`race`), each fed the book's own flows.
     """
     closes = closes or _closes
     currency = currency or _currency
@@ -587,9 +635,9 @@ def build(symbols: list[str], window: str = DEFAULT, *,
         return None
     base = (base or "").upper()
 
-    def fetch(symbol: str) -> pd.Series | None:
+    def fetch(symbol: str) -> pd.Series | Book | None:
         if book is not None and symbol == BOOK:
-            return book(window)
+            return book()
         return closes(symbol, window)
 
     def code(symbol: str) -> str:
@@ -599,7 +647,7 @@ def build(symbols: list[str], window: str = DEFAULT, *,
     try:
         bars = [pool.submit(fetch, s) for s in names]
         ccys = [pool.submit(code, s) for s in names]
-        priced: list[tuple[str, pd.Series, str]] = []
+        priced: list[tuple[str, pd.Series | Book, str]] = []
         for symbol, got, ccy in zip(names, bars, ccys, strict=True):
             try:
                 series = got.result(timeout=timeout)
@@ -616,12 +664,18 @@ def build(symbols: list[str], window: str = DEFAULT, *,
             priced.append((symbol, series, unit))
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
-    start = next((series.index[0] for symbol, series, _ in priced if symbol == BOOK),
-                 None)
-    lines = []
-    for symbol, series, unit in priced:
-        native, raw, own = "", series, None
-        if start is not None and symbol != BOOK:
+    mine = next((got for symbol, got, _ in priced if symbol == BOOK), None)
+    axis = book_days(mine.value, window) if isinstance(mine, Book) else None
+    if not isinstance(mine, Book) or axis is None or len(axis) < 2:
+        lines = [_line(symbol, series, unit, window) for symbol, series, unit in priced
+                 if isinstance(series, pd.Series)]
+    else:
+        drawn: dict[str, pd.Series] = {}
+        units: dict[str, str] = {}
+        natives: dict[str, tuple[str, pd.Series]] = {}
+        for symbol, series, unit in priced:
+            if not isinstance(series, pd.Series):
+                continue
             if base and unit and unit.upper() != base and not symbol.endswith("=X"):
                 try:
                     moved = convert(series, unit, base)
@@ -630,16 +684,28 @@ def build(symbols: list[str], window: str = DEFAULT, *,
                              error_type=type(exc).__name__, error=str(exc)[:200])
                     moved = None
                 if moved is not None:
-                    series, native, unit = moved, unit, base
-            series = _since(series, start)
-            if series is None:
+                    natives[symbol] = (unit, series)
+                    series, unit = moved, base
+            drawn[symbol], units[symbol] = series, unit
+        level, raced = race(mine, axis, drawn)
+        # The same race in the symbol's own currency: what is left of its
+        # line's gap to this one is the exchange rate's.
+        _, own = race(mine, axis, {s: raw for s, (_, raw) in natives.items()})
+        lines = []
+        for symbol, _series, _unit in priced:
+            if symbol == BOOK:
+                if len(level) >= 2:
+                    lines.append(_line(BOOK, level, base, window, index=True))
                 continue
-            if native:
-                ends = raw.reindex([series.index[0], series.index[-1]])
-                if ends.notna().all() and ends.iloc[0]:
-                    own = float(ends.iloc[-1] / ends.iloc[0] - 1)
-        lines.append(_line(symbol, series, unit, window, index=symbol == BOOK,
-                           converted=native, own_change=own))
+            if symbol not in raced:
+                continue
+            native = natives.get(symbol, ("", None))[0]
+            theirs = own.get(symbol)
+            lines.append(_line(
+                symbol, raced[symbol], units[symbol], window, fed=True,
+                converted=native,
+                own_change=(float(theirs.iloc[-1] / theirs.iloc[0] - 1)
+                            if native and theirs is not None else None)))
     if not lines:
         return None
     obs.event("chat.chart", window=window, series=len(lines))
@@ -686,7 +752,9 @@ def view(c: Chart, translate, lang: str = "en") -> dict:
         ccy = f" {ln.currency}" if ln.currency else ""
         out[f"m{i}"] = {
             "last": (translate("chat.chart_book_hint", currency=ln.currency)
-                     if ln.index else _num(ln.last, lang) + ccy),
+                     if ln.index else
+                     translate("chat.chart_fed_hint", currency=ln.currency)
+                     if ln.fed else _num(ln.last, lang) + ccy),
             "last_hint": ln.last_on[:10],
             "change": fmt_pct(ln.change, 2, lang, signed=True),
             "tone": _tone(ln.change),
@@ -700,13 +768,15 @@ def view(c: Chart, translate, lang: str = "en") -> dict:
 
 def series(c: Chart, translate=None) -> list[dict]:
     """What the Chart component draws: its `/chart` data. The book's line is
-    named and marked as an index, which the drawer reads as change only."""
+    named and marked as an index, which the drawer reads as change only, and
+    so is every line raced against it: an index from 100 has no price."""
     out = []
     for ln in c.lines:
         row = {"symbol": ln.symbol, "currency": ln.currency,
                "dates": list(ln.dates), "values": list(ln.values)}
-        if ln.index:
+        if ln.index or ln.fed:
             row["index"] = True
+        if ln.index:
             if translate is not None:
                 row["label"] = _name(ln, translate)
         out.append(row)

@@ -42,7 +42,8 @@ def web_enabled() -> bool:
 
 
 def plan_web(prefs: dict, provider: Provider, api_key: str,
-             history: list[dict], context: str = "") -> list[str]:
+             history: list[dict], context: str = "",
+             known: dict[str, str] | None = None) -> list[str]:
     """Search queries for the pending answer ([] = none needed / web off).
 
     Same planner as the web panel (chat_web.plan on the provider's cheapest
@@ -51,17 +52,29 @@ def plan_web(prefs: dict, provider: Provider, api_key: str,
     if not web_enabled():
         return []
     return chat_web.plan(provider, api_key, history[-1]["content"],
-                         web_context(history, context))
+                         web_context(history, context, known))
 
 
-def web_context(history: list[dict], context: str = "") -> str:
+def web_context(history: list[dict], context: str = "",
+                known: dict[str, str] | None = None) -> str:
     """What a search plan is written against: the date, where the reader is,
-    the last user turns and the ticker the conversation is about."""
+    the last user turns and the ticker the conversation is about.
+
+    A price follow-up that names nothing is about the reader's own tickers
+    the last answer named (`market.carried`, `known` = their list), ahead of
+    the page behind the drawer: "No me has dicho el precio exacto" after an
+    answer on TSM, NOW and ASML searched "Alphabet GOOG stock price" from the
+    GOOG page (prod 2026-11-02)."""
     prior = [m["content"][:200] for m in history[:-1] if m["role"] == "user"][-2:]
     ctx = f"{clock.line()}." + (
         "\n" + context.strip() if context.strip() else "")
     if prior:
         ctx += "\nEarlier user messages (topic continuity): " + " | ".join(prior)
+    follows = market.carried(history[-1]["content"], history[:-1], known or {})
+    if follows:
+        ctx += (f"\nThe conversation is about {', '.join(follows)}: the message"
+                " follows up on them, not on the ticker in focus.")
+        return ctx
     topic = topic_ticker(history[:-1])
     if topic and "ticker in focus is" not in ctx:
         ctx += f"\nThe conversation is about {topic}."
@@ -100,15 +113,17 @@ def topic_ticker(history: list[dict], window: int = 6) -> str:
 
 
 def ground_web(prefs: dict, provider: Provider, api_key: str,
-               history: list[dict], context: str = "") -> list[chat_web.Result]:
+               history: list[dict], context: str = "",
+               known: dict[str, str] | None = None) -> list[chat_web.Result]:
     """The pages this turn reads: planned searches plus any pasted links.
 
     No working search install means no internet at all, pasted links
     included."""
     if not web_enabled():
         return []
-    return chat_web.collect(plan_web(prefs, provider, api_key, history, context),
-                            history[-1]["content"])
+    return chat_web.collect(
+        plan_web(prefs, provider, api_key, history, context, known),
+        history[-1]["content"])
 
 
 def gather_evidence(prefs: dict, provider: Provider, api_key: str,

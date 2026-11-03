@@ -237,9 +237,10 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
     accounts least likely to be read. Two passes in that order: Home's memos
     for every account first (`warm_account`), then the rest of the pages'
     (`warm_more`), so the second pass on one account never costs another
-    its Home. Never raises — a throttled Yahoo or an unreadable ledger is
-    logged and skipped, and the next reader simply pays what they would
-    have paid anyway.
+    its Home. Then the split sweep of every account not seen lately. Never
+    raises — a throttled Yahoo or an unreadable ledger is logged and
+    skipped, and the next reader simply pays what they would have paid
+    anyway.
     """
     from stocks.notify.fanout import iter_all_users
 
@@ -304,10 +305,23 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
                     account=user.label,
                     error_type=type(exc).__name__,
                 )
+    # A book nobody opened lately is still read: the morning card, the digest
+    # and the alerts price it every day, and a split it lacks is wrong in each
+    # (a dormant book's BYND 1:30, triage 2026-11-03). Last and under the same
+    # budget; the sweep's stamp makes an unchanged book a file read, and the
+    # rest one Yahoo round a week.
+    swept = 0
+    dormant = [u for u in users if u not in recent]
+    for i, user in enumerate(dormant):
+        if spent(swept, len(dormant) - i, "splits"):
+            break
+        repair_splits(str(user.db))
+        swept += 1
     obs.event(
         "api.warm_run",
         warmed=warmed,
         more=more,
+        swept=swept,
         accounts=len(recent),
         seconds=round(time.monotonic() - started, 1),
     )

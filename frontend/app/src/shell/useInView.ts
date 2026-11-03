@@ -16,9 +16,16 @@
  * Where nothing can watch the viewport — a server render, a test, a browser
  * without the observer — everything is seen at once: the page then loads the
  * way it always did, and nothing is left blank.
+ *
+ * Near the viewport is not on screen while the assistant covers the page —
+ * a phone's drawer is the whole screen. A slot that comes near then waits for
+ * the drawer to close: the reader went to the assistant to read an answer,
+ * and the cards underneath would be asking the same one server for figures
+ * nobody can see.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isPhone } from "../chat/phone";
 
 /** How far outside the viewport counts as "in view": half a viewport below
  * and above, so a slot loads a scroll ahead of the reader. */
@@ -27,6 +34,28 @@ const AHEAD = "50% 0px";
 /** Whether this runtime can watch the viewport at all. */
 export function canObserve(): boolean {
   return typeof IntersectionObserver !== "undefined";
+}
+
+/** Whether the open assistant covers the whole page (`Drawer.tsx` marks it). */
+export function covered(): boolean {
+  return (
+    typeof document !== "undefined" &&
+    !!document.documentElement.dataset.chat &&
+    isPhone()
+  );
+}
+
+function useCovered(): boolean {
+  const [now, setNow] = useState(covered);
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const follow = () => setNow(covered());
+    follow();
+    const watch = new MutationObserver(follow);
+    watch.observe(document.documentElement, { attributeFilter: ["data-chat"] });
+    return () => watch.disconnect();
+  }, []);
+  return now;
 }
 
 /**
@@ -38,11 +67,13 @@ export function canObserve(): boolean {
 export function useInView<T extends Element>(
   eager = false,
 ): [(node: T | null) => void, boolean] {
-  const [seen, setSeen] = useState(() => eager || !canObserve());
-  const watcher = useRef<IntersectionObserver | null>(null);
+  const [near, setNear] = useState(() => eager || !canObserve());
+  const hidden = useCovered();
+  const [seen, setSeen] = useState(() => near && !covered());
   useEffect(() => {
-    if (eager) setSeen(true);
-  }, [eager]);
+    if ((eager || near) && !hidden) setSeen(true);
+  }, [eager, near, hidden]);
+  const watcher = useRef<IntersectionObserver | null>(null);
   // A callback ref rather than an object one: the observer attaches the
   // moment the node mounts, and lets go the moment it leaves, with no effect
   // ordering to get right.
@@ -50,20 +81,20 @@ export function useInView<T extends Element>(
     (node: T | null) => {
       watcher.current?.disconnect();
       watcher.current = null;
-      if (node === null || seen) return;
+      if (node === null || near) return;
       const io = new IntersectionObserver(
         (entries) => {
           if (!entries.some((entry) => entry.isIntersecting)) return;
           io.disconnect();
           watcher.current = null;
-          setSeen(true);
+          setNear(true);
         },
         { rootMargin: AHEAD },
       );
       io.observe(node);
       watcher.current = io;
     },
-    [seen],
+    [near],
   );
   useEffect(() => () => watcher.current?.disconnect(), []);
   return [ref, seen];

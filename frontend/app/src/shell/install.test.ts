@@ -7,6 +7,7 @@ import {
   install,
   installWay,
   iosSafari,
+  launchDevice,
   markAsked,
   recordVisit,
   visitDays,
@@ -41,6 +42,8 @@ const CHROME_IPHONE =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1";
 const IPAD_DESKTOP =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+const CHROME_ANDROID =
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
 
 describe("which device", () => {
   it("reads an iPad asking for the desktop site as one, by its touchscreen", () => {
@@ -53,6 +56,14 @@ describe("which device", () => {
     expect(iosSafari(SAFARI_IPHONE, 5)).toBe(true);
     expect(iosSafari(CHROME_IPHONE, 5)).toBe(false);
     expect(iosSafari(`${SAFARI_IPHONE} Instagram 300.0`, 5)).toBe(false);
+  });
+
+  it("files a launch under the device, an iPad as iOS and not as a Mac", () => {
+    expect(launchDevice(SAFARI_IPHONE, 5)).toBe("ios");
+    expect(launchDevice(IPAD_DESKTOP, 5)).toBe("ios");
+    expect(launchDevice(IPAD_DESKTOP, 0)).toBe("desktop");
+    expect(launchDevice(CHROME_ANDROID, 5)).toBe("android");
+    expect(launchDevice("curl/8.0", 0)).toBe("other");
   });
 });
 

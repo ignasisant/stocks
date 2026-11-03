@@ -16,10 +16,14 @@
  * When to ask is per device, not per account, because installing is: a no on
  * the laptop says nothing about the phone. Asked once, on the `VISIT_DAYS`th
  * day this browser opened the app; the Profile keeps the offer for later.
+ *
+ * Once installed, every cold start from the Home Screen posts `/launch`, so
+ * the server log can say which accounts have the app (`api/routes/launch.py`).
  */
 
 import { useSyncExternalStore } from "react";
 
+import { BASE } from "./api";
 import { isStandalone } from "./resume";
 
 type InstallEvent = Event & {
@@ -29,6 +33,9 @@ type InstallEvent = Event & {
 
 /** How this device installs: the browser's own dialog, the Share sheet, or not. */
 export type InstallWay = "prompt" | "ios" | null;
+
+/** The device a launch is filed under, as `routes/launch.py` takes it. */
+export type LaunchDevice = "ios" | "android" | "desktop" | "other";
 
 /** The days of use before the nudge: somebody who came back, not a first look. */
 export const VISIT_DAYS = 3;
@@ -52,7 +59,19 @@ export function watchInstall(): void {
     markAsked();
     changed();
   });
-  if (!isStandalone()) recordVisit();
+  if (isStandalone()) reportLaunch();
+  else recordVisit();
+}
+
+/** Best effort: a launch that does not arrive is one line fewer in the log. */
+function reportLaunch(): void {
+  if (typeof fetch !== "function") return;
+  fetch(`${BASE}/launch`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device: launchDevice() }),
+  }).catch(() => undefined);
 }
 
 /** iPhone, iPad, iPod. iPadOS reports a Mac, so a Mac with a touchscreen is one. */
@@ -72,6 +91,16 @@ export function iosSafari(
     appleMobile(ua, touches) &&
     !/CriOS|FxiOS|EdgiOS|GSA\/|FBAN|FBAV|Instagram|Line\//.test(ua)
   );
+}
+
+export function launchDevice(
+  ua = navigator.userAgent,
+  touches = navigator.maxTouchPoints,
+): LaunchDevice {
+  if (appleMobile(ua, touches)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  if (/Windows|Macintosh|CrOS|Linux/.test(ua)) return "desktop";
+  return "other";
 }
 
 export function installWay(): InstallWay {

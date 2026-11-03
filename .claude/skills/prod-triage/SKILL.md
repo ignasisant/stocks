@@ -104,7 +104,7 @@ Prints every submission, oldest first: `[bug|idea|other]`, slug, page (with
 query, e.g. `ticker?symbol=AMZN&tab=fees`), the text, and `[screenshot] <path>`
 (fetched from the bucket on demand; open it with Read). It reads local
 `data/feedback/` plus the bucket, which needs `[storage]` pointing at the
-**prod** bucket. If the count looks too low, the local `[storage]` is not prod:
+**prod** bucket. Its first line names the bucket it read; if that is not prod's or the count looks too low:
 ask the user before exporting the prod `STOCKS_STORAGE_*` from
 `terraform -chdir=infra output -json deploy_secrets_reminder` inline in the
 command. Never write them to a file.
@@ -121,7 +121,7 @@ Browser reviews from Claude in Chrome are not feedback: they are the
 - **Ratings**: the `[rating]` entries of `stocks feedback`. Each one shows the
   vote, the reason, the provider, the earlier turns (`U:`/`A:`), the question
   `Q:`, the answer `A:`, the tool steps `·` and the pages read `↳`. Only the
-  last rating per conversation counts (the command already collapses them). A
+  last rating per answer counts (the command already collapses them). A
   thumbs-down with a reason is a task. One without a reason is a task only if the
   Q/A shows the miss.
 - **Volume and votes**: `stocks logs stats --since 7d --event chat.rated --by vote`,

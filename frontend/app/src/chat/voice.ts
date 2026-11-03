@@ -155,7 +155,7 @@ type Recognisers = {
 };
 
 /** The recogniser wants a region; the app knows a language. */
-const LOCALES: Record<string, string> = { es: "es-ES", en: "en-US" };
+const LOCALES: Record<string, string> = { es: "es-ES", en: "en-US", it: "it-IT" };
 
 export type Listening = {
   /** Everything heard so far, the phrase still being said included. */

@@ -27,8 +27,9 @@
  * guided tour, and with them the page's "Analyse with AI" button.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useApi } from "../../shell/useApi";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type Query, useApi } from "../../shell/useApi";
+import { useInView } from "../../shell/useInView";
 import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useCurrency, useGuest } from "../../shell/session";
@@ -78,7 +79,7 @@ import {
   MetricsSection,
   MoatSection,
 } from "./Sections";
-import { Empty, useMobile } from "./ui";
+import { Card, Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 import { Badge } from "../../ui/Badge";
@@ -289,45 +290,91 @@ export default function Page() {
   // "Money market" as the page loads is a wrong answer shown first.
   const named = drawn && !absent ? ASSETS[kind] : null;
 
+  // The sections a reader could see so far on this company (`Slot`). The rest
+  // are not asked for: on a phone they are folded headings, and on any screen
+  // they are pages down — a dozen requests queued ahead of what the reader
+  // went to next.
+  const [seen, setSeen] = useState<{ ticker: string | null; ids: ReadonlySet<SlotId> }>(
+    () => ({ ticker: null, ids: new Set() }),
+  );
+  const onSeen = useCallback(
+    (id: SlotId) =>
+      setSeen((prev) =>
+        prev.ticker !== ticker
+          ? { ticker, ids: new Set([id]) }
+          : prev.ids.has(id)
+            ? prev
+            : { ticker, ids: new Set(prev.ids).add(id) },
+      ),
+    [ticker],
+  );
+  const wanted = (id: SlotId) => seen.ticker === ticker && seen.ids.has(id);
+  const wantsMetrics = wanted("fundamentals") || wanted("valuation");
+  const wantsFinancials = wanted("results");
+  const wantsDcf = wanted("dcf");
+  const wantsMoat = wanted("moat");
+  const wantsInsiders = wanted("insiders");
+  const wantsShorts = wanted("shorts");
+  const wantsAnalysts = wanted("analysts");
+  const wantsCycle = wanted("cycle");
+  const wantsPositioning = wanted("positioning");
+
+  // `undefined` is "not asked yet" and `null` the server's "nothing": a slot
+  // holds its heading on the first and gives way on the second (`settled`).
   const metrics = useApi(
-    () => (ticker && company ? getMetrics(ticker, base) : Promise.resolve(null)),
-    [ticker, base, company],
+    () =>
+      ticker && company && wantsMetrics
+        ? getMetrics(ticker, base)
+        : Promise.resolve(undefined),
+    [ticker, base, company, wantsMetrics],
   );
   const financials = useApi(
-    () => (ticker && company ? getFinancials(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsFinancials
+        ? getFinancials(ticker)
+        : Promise.resolve(undefined),
+    [ticker, company, wantsFinancials],
   );
   const valuation = useApi(
     () => (ticker && company ? getValuation(ticker) : Promise.resolve(null)),
     [ticker, company],
   );
   const dcf = useApi(
-    () => (ticker && company ? getDcf(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () => (ticker && company && wantsDcf ? getDcf(ticker) : Promise.resolve(undefined)),
+    [ticker, company, wantsDcf],
   );
   const moat = useApi(
-    () => (ticker && company ? getMoat(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsMoat ? getMoat(ticker) : Promise.resolve(undefined),
+    [ticker, company, wantsMoat],
   );
   const insiders = useApi(
-    () => (ticker && company ? getInsiders(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsInsiders
+        ? getInsiders(ticker)
+        : Promise.resolve(undefined),
+    [ticker, company, wantsInsiders],
   );
   // Beside the insiders, not after them: its own request, painted when it lands.
   const shorts = useApi(
-    () => (ticker && company ? getShorts(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsShorts ? getShorts(ticker) : Promise.resolve(undefined),
+    [ticker, company, wantsShorts],
   );
   const analysts = useApi(
-    () => (ticker && company ? getAnalysts(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsAnalysts
+        ? getAnalysts(ticker)
+        : Promise.resolve(undefined),
+    [ticker, company, wantsAnalysts],
   );
 
-  // Its own slot: cold it is a handful of option chains, and the card draws
-  // without it.
+  // Its own request: cold it is a handful of option chains, and the card
+  // draws without it.
   const options = useApi(
-    () => (ticker && company ? getOptions(ticker) : Promise.resolve(null)),
-    [ticker, company],
+    () =>
+      ticker && company && wantsAnalysts ? getOptions(ticker) : Promise.resolve(null),
+    [ticker, company, wantsAnalysts],
   );
 
   const stats = useApi(
@@ -336,15 +383,17 @@ export default function Page() {
   );
   const cycle = useApi(
     () =>
-      ticker && shape.sections.cycle ? getCryptoCycle(ticker) : Promise.resolve(null),
-    [ticker, shape.sections.cycle],
+      ticker && shape.sections.cycle && wantsCycle
+        ? getCryptoCycle(ticker)
+        : Promise.resolve(undefined),
+    [ticker, shape.sections.cycle, wantsCycle],
   );
   const positioning = useApi(
     () =>
-      ticker && shape.sections.positioning
+      ticker && shape.sections.positioning && wantsPositioning
         ? getCryptoPositioning(ticker)
-        : Promise.resolve(null),
-    [ticker, shape.sections.positioning],
+        : Promise.resolve(undefined),
+    [ticker, shape.sections.positioning, wantsPositioning],
   );
   // Only for a coin the book holds: `/position` answers first, and a coin
   // nobody holds costs no replay.
@@ -484,7 +533,16 @@ export default function Page() {
               the index" closes the read. A fund and an index have one card
               under the price, so there it is the card after the price. */}
           {shape.compare && !shape.sections.company && !crypto ? (
-            <CompareSection key={ticker} ticker={ticker} base={base} />
+            <Slot
+              key={`compare:${ticker}`}
+              id="compare"
+              title={t("ticker.compare")}
+              note={t("ticker.compare_note", { base })}
+              ready={wanted("compare")}
+              onSeen={onSeen}
+            >
+              <CompareSection ticker={ticker} base={base} />
+            </Slot>
           ) : null}
 
           {/* A fund stops here. */}
@@ -498,14 +556,43 @@ export default function Page() {
           {coinHolding.state === "loaded" && coinHolding.data ? (
             <HoldingSection holding={coinHolding.data} coin={coin} />
           ) : null}
-          {cycle.state === "loaded" && cycle.data ? (
-            <CycleSection cycle={cycle.data} coin={coin} />
+          {shape.sections.cycle ? (
+            <Slot
+              key={`cycle:${ticker}`}
+              id="cycle"
+              title={t("ticker.cycle_title")}
+              ready={settled(cycle)}
+              onSeen={onSeen}
+            >
+              {cycle.state === "loaded" && cycle.data ? (
+                <CycleSection cycle={cycle.data} coin={coin} />
+              ) : null}
+            </Slot>
           ) : null}
-          {positioning.state === "loaded" && positioning.data ? (
-            <PositioningSection data={positioning.data} coin={coin} />
+          {shape.sections.positioning ? (
+            <Slot
+              key={`positioning:${ticker}`}
+              id="positioning"
+              title={t("ticker.positioning_title")}
+              ready={settled(positioning)}
+              onSeen={onSeen}
+            >
+              {positioning.state === "loaded" && positioning.data ? (
+                <PositioningSection data={positioning.data} coin={coin} />
+              ) : null}
+            </Slot>
           ) : null}
           {shape.compare && crypto ? (
-            <CompareSection key={ticker} ticker={ticker} base={base} />
+            <Slot
+              key={`compare:${ticker}`}
+              id="compare"
+              title={t("ticker.compare")}
+              note={t("ticker.compare_note", { base })}
+              ready={wanted("compare")}
+              onSeen={onSeen}
+            >
+              <CompareSection ticker={ticker} base={base} />
+            </Slot>
           ) : null}
           {crypto && stats.state === "loaded" && stats.data ? (
             <AssetStatsSection stats={stats.data} />
@@ -513,44 +600,115 @@ export default function Page() {
 
           {/* A company: annual results, then the KPI grid, then the multiple
               against its own history. */}
-          {financials.state === "loaded" && financials.data ? (
-            <FinancialsChart data={financials.data} />
-          ) : null}
+          {company ? (
+            <>
+              <Slot
+                key={`results:${ticker}`}
+                id="results"
+                title={t("ticker.chart_annual_title")}
+                ready={settled(financials)}
+                onSeen={onSeen}
+              >
+                {financials.state === "loaded" && financials.data ? (
+                  <FinancialsChart data={financials.data} />
+                ) : null}
+              </Slot>
 
-          {metrics.state === "loaded" && metrics.data ? (
-            <MetricsSection metrics={metrics.data} />
-          ) : null}
+              <Slot
+                key={`fundamentals:${ticker}`}
+                id="fundamentals"
+                title={t("ticker.fundamentals")}
+                ready={settled(metrics)}
+                onSeen={onSeen}
+              >
+                {metrics.state === "loaded" && metrics.data ? (
+                  <MetricsSection metrics={metrics.data} />
+                ) : null}
+              </Slot>
 
-          {valuation.state === "loaded" && valuation.data ? (
-            <ValuationChart
-              data={valuation.data}
-              fundamentalPe={gridPe}
-              trades={held?.trades ?? []}
-            />
-          ) : null}
+              {/* Its figures are the price card's too, so they are already
+                  here; the slot waits for the grid's P/E it is checked
+                  against. */}
+              <Slot
+                key={`valuation:${ticker}`}
+                id="valuation"
+                title={t("ticker.valuation_history")}
+                ready={wanted("valuation") && settled(metrics) && settled(valuation)}
+                onSeen={onSeen}
+              >
+                {valuation.state === "loaded" && valuation.data ? (
+                  <ValuationChart
+                    data={valuation.data}
+                    fundamentalPe={gridPe}
+                    trades={held?.trades ?? []}
+                  />
+                ) : null}
+              </Slot>
 
-          {dcf.state === "loaded" && dcf.data ? (
-            <DcfSection key={`dcf:${ticker}`} dcf={dcf.data} />
-          ) : null}
+              <Slot
+                key={`dcf:${ticker}`}
+                id="dcf"
+                title={t("ticker.dcf")}
+                ready={settled(dcf)}
+                onSeen={onSeen}
+              >
+                {dcf.state === "loaded" && dcf.data ? (
+                  <DcfSection dcf={dcf.data} />
+                ) : null}
+              </Slot>
 
-          {/* What the street makes of it, right after what it is priced at. */}
-          {analysts.state === "loaded" && analysts.data ? (
-            <AnalystsSection
-              data={analysts.data}
-              options={options.state === "loaded" ? options.data : null}
-            />
-          ) : null}
+              {/* What the street makes of it, right after what it is priced at. */}
+              <Slot
+                key={`analysts:${ticker}`}
+                id="analysts"
+                title={t("ticker.analysts")}
+                ready={settled(analysts)}
+                onSeen={onSeen}
+              >
+                {analysts.state === "loaded" && analysts.data ? (
+                  <AnalystsSection
+                    data={analysts.data}
+                    options={options.state === "loaded" ? options.data : null}
+                  />
+                ) : null}
+              </Slot>
 
-          {moat.state === "loaded" && moat.data ? (
-            <MoatSection moat={moat.data} />
-          ) : null}
+              <Slot
+                key={`moat:${ticker}`}
+                id="moat"
+                title={t("ticker.moat")}
+                ready={settled(moat)}
+                onSeen={onSeen}
+              >
+                {moat.state === "loaded" && moat.data ? (
+                  <MoatSection moat={moat.data} />
+                ) : null}
+              </Slot>
 
-          {insiders.state === "loaded" && insiders.data ? (
-            <InsidersSection insiders={insiders.data} />
-          ) : null}
+              <Slot
+                key={`insiders:${ticker}`}
+                id="insiders"
+                title={t("ticker.insider_activity")}
+                ready={settled(insiders)}
+                onSeen={onSeen}
+              >
+                {insiders.state === "loaded" && insiders.data ? (
+                  <InsidersSection insiders={insiders.data} />
+                ) : null}
+              </Slot>
 
-          {shorts.state === "loaded" && shorts.data ? (
-            <ShortsSection shorts={shorts.data} />
+              <Slot
+                key={`shorts:${ticker}`}
+                id="shorts"
+                title={t("ticker.shorts_title")}
+                ready={settled(shorts)}
+                onSeen={onSeen}
+              >
+                {shorts.state === "loaded" && shorts.data ? (
+                  <ShortsSection shorts={shorts.data} />
+                ) : null}
+              </Slot>
+            </>
           ) : null}
 
           {company ? (
@@ -564,12 +722,89 @@ export default function Page() {
             </ComparablesSection>
           ) : null}
 
-          {shape.compare && shape.sections.company ? (
-            <CompareSection key={ticker} ticker={ticker} base={base} />
+          {/* Not before the profile answers: alone under the price card it
+              would count as seen, and be asked for before the sections that
+              then come in above it. */}
+          {shape.compare && company ? (
+            <Slot
+              key={`compare:${ticker}`}
+              id="compare"
+              title={t("ticker.compare")}
+              note={t("ticker.compare_note", { base })}
+              ready={wanted("compare")}
+              onSeen={onSeen}
+            >
+              <CompareSection ticker={ticker} base={base} />
+            </Slot>
           ) : null}
 
           {company ? <KpiSourcesSection /> : null}
         </>
+      )}
+    </div>
+  );
+}
+
+/** The sections below the price that wait to be seen; each is its card's fold id. */
+type SlotId =
+  | "results"
+  | "fundamentals"
+  | "valuation"
+  | "dcf"
+  | "analysts"
+  | "moat"
+  | "insiders"
+  | "shorts"
+  | "compare"
+  | "cycle"
+  | "positioning";
+
+/** Answered or failed — not a query still waiting to be asked or to answer. */
+function settled(query: Query<unknown>): boolean {
+  return query.state === "loaded"
+    ? query.data !== undefined
+    : query.state !== "loading";
+}
+
+/**
+ * A section below the price, asked for once a reader could see it: near the
+ * viewport (`useInView`, which also waits while a phone's assistant covers the
+ * page) and on show — on a phone the cards fold to their headings, and a
+ * folded one shows nothing to fetch for.
+ *
+ * Until it is `ready` it holds its own card, folded under the same id and
+ * heading, so a phone's index of headings is there from the start and the
+ * section opens where the reader opened it.
+ */
+function Slot({
+  id,
+  title,
+  note,
+  ready,
+  onSeen,
+  children,
+}: {
+  id: SlotId;
+  title: string;
+  note?: string;
+  ready: boolean;
+  onSeen: (id: SlotId) => void;
+  children: ReactNode;
+}) {
+  const [ref, near] = useInView<HTMLDivElement>();
+  const [shown, setShown] = useState(false);
+  const show = useCallback(() => setShown(true), []);
+  useEffect(() => {
+    if (near && shown) onSeen(id);
+  }, [near, shown, id, onSeen]);
+  return (
+    <div ref={ref} className="tk-slot">
+      {ready ? (
+        children
+      ) : (
+        <Card fold={id} title={title} note={note} onShown={show}>
+          <Skeleton rows={4} />
+        </Card>
       )}
     </div>
   );

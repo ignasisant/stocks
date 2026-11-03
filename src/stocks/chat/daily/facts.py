@@ -63,6 +63,7 @@ def build_facts(
     brief: dict | None = None,
     money=None,
     plan: dict | None = None,
+    attribution: dict | None = None,
 ) -> dict:
     """What the card is written from: the candidate actions, plus context.
 
@@ -98,6 +99,8 @@ def build_facts(
         plan: the book against a saved plan (`briefing.plan_fact`): whether
             it holds and when the next contribution is — what a day with
             nothing else to say can close on. None without a plan.
+        attribution: the day split by position and block, and the last
+            sessions against the index (`daily.attribution.day`).
     """
     from stocks.analysis.portfolio import basket_change, money_change, priced_totals
 
@@ -115,6 +118,8 @@ def build_facts(
         facts["brief"] = dict(brief)
     if plan:
         facts["plan"] = dict(plan)
+    if attribution:
+        facts["attribution"] = dict(attribution)
     if tbl is not None and not tbl.empty:
         # Cost over the priced rows only: against the full basis a partly
         # priced book reads as a crash, and the briefing would open on it.

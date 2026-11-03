@@ -132,3 +132,28 @@ def test_shot_path_pulls_a_bucket_only_picture_down(sandbox, monkeypatch):
     monkeypatch.setattr(feedback.storage, "restore", _restore)
     got = feedback.shot_path("2020-01-01T00-00-00Z-aaaaaa.jpg")
     assert got is not None and got.read_bytes() == raw
+
+
+def test_each_answer_keeps_its_own_last_thumbs():
+    """Prod triage 2026-11-02: a thread with three answers voted down showed
+    one, because ratings were reduced per conversation."""
+    rating = {"kind": "rating", "user": "u1", "thread": "t1"}
+    items = [
+        {**rating, "turn": "a1", "vote": "down"},
+        {**rating, "turn": "a1", "vote": "down", "reason": "wrong"},
+        {**rating, "turn": "a2", "vote": "down"},
+        {**rating, "turn": "a3", "vote": "up"},
+        {"kind": "bug", "user": "u1", "text": "x"},
+    ]
+    kept = feedback.latest_ratings(items)
+    assert [(it.get("turn"), it.get("reason")) for it in kept] == [
+        ("a1", "wrong"), ("a2", None), ("a3", None), (None, None)]
+
+
+def test_the_feedback_command_says_which_bucket_it_read(sandbox, capsys):
+    from argparse import Namespace
+
+    from stocks import cli
+
+    cli.cmd_feedback(Namespace())
+    assert "local data/feedback only" in capsys.readouterr().out

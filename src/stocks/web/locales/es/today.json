@@ -150,5 +150,16 @@
   "today.book_chart": "Cartera frente al {index}, {window}",
   "today.book_empty": "Sin datos para este periodo.",
   "today.book_failed": "No se pudo dibujar este periodo.",
-  "today.book_since": "Tu cartera empieza en {date}; antes no había posiciones."
+  "today.book_since": "Tu cartera empieza en {date}; antes no había posiciones.",
+  "today.sec_day": "Quién movió el día",
+  "today.day_help": "Lo que sumó o restó cada posición hoy, en tu moneda. Los bloques suman el día al céntimo.",
+  "today.day_up": "Sumaron",
+  "today.day_down": "Restaron",
+  "today.day_blocks": "Por bloque",
+  "today.day_explained": "{pct}, {sigmas}σ",
+  "today.day_verdict_sector": "es el sector",
+  "today.day_verdict_company": "es la empresa",
+  "today.day_alpha": "Frente al {index}: por delante en {ahead} de {sessions} sesiones,",
+  "today.day_stale": "Sin precio nuevo hoy: su 0 % es la barra de ayer repetida.",
+  "today.day_gap": "Sin repartir: {amount}. La sesión sigue abierta y los precios aún no cuadran."
 }

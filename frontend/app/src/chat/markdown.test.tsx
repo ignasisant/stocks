@@ -227,6 +227,7 @@ describe("tickers", () => {
     { ticker: "MNDY", name: "monday.com", logo: null },
     { ticker: "HUBS", name: "HubSpot", logo: null },
     { ticker: "FCF", name: "First Commonwealth", logo: null },
+    { ticker: "IE00B66F4759", name: "iShares € High Yield Corp Bond", logo: null },
   ]);
 
   it("links a bold ticker the account knows, behind its mark", () => {
@@ -262,6 +263,22 @@ describe("tickers", () => {
     expect(html("**SNPS:**\n\nThe duopoly.")).toMatch(
       /<div class="ag-chat-h"><strong><a [^>]*ticker=SNPS/,
     );
+  });
+
+  it("names the fund behind an ISIN, bold or in backticks, and keeps the code", () => {
+    for (const text of ["**IE00B66F4759** pays 5.5%", "`IE00B66F4759` pays 5.5%"]) {
+      const out = html(text);
+      expect(out).toContain('href="/ticker?ticker=IE00B66F4759"');
+      expect(out).toContain(
+        '<span class="ag-tick-sym">IE00B66F4759</span><span class="ag-tick-name"> — iShares € High Yield Corp Bond</span>',
+      );
+      expect(out).not.toContain("<code");
+    }
+  });
+
+  it("leaves an ISIN nobody here can name as written", () => {
+    expect(html("`IE00B3VTMJ91`")).not.toContain("<a ");
+    expect(html("**IE00B3VTMJ91**")).toContain("<strong>IE00B3VTMJ91</strong>");
   });
 
   it("links a table cell that is only a ticker", () => {

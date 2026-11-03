@@ -8,13 +8,15 @@ code path serves both runtimes. With no file at all (bare CI run), or one that
 is not valid TOML, the fallback is simply empty.
 
 The file is read relative to the working directory, parsed with the standard
-library, and re-read only when its mtime moves.
+library, and re-read only when its mtime moves — looked at no more often than
+every `RECHECK_S`.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 import tomllib
 from pathlib import Path
 
@@ -24,11 +26,31 @@ log = logging.getLogger(__name__)
 #: project root, and a test that `chdir`s somewhere else gets no secrets.
 SECRETS_FILE = Path("secrets.toml")
 
+#: How long one look at the file answers for. A request reads a dozen
+#: secrets, and each look is a resolve and two stats — syscalls that hand the
+#: GIL away. Behind a page's worth of busy loaders every hand-back waits for
+#: the lock again, and a read that costs a millisecond took seconds (the chat
+#: drawer's opening read, 8 s on a phone while Home was still loading).
+RECHECK_S = 5.0
+
 _parsed: dict[tuple[str, int], dict] = {}
+#: The file last looked at, when, and what it held.
+_looked: tuple[Path, float, dict] | None = None
 
 
 def _load() -> dict:
     """The whole file as a dict, {} when it is missing or unreadable."""
+    global _looked
+    now = time.monotonic()
+    looked = _looked
+    if looked is not None and looked[0] == SECRETS_FILE and now - looked[1] < RECHECK_S:
+        return looked[2]
+    data = _read()
+    _looked = (SECRETS_FILE, now, data)
+    return data
+
+
+def _read() -> dict:
     path = SECRETS_FILE.resolve()
     try:
         stamp = (str(path), path.stat().st_mtime_ns)

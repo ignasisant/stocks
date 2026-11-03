@@ -185,15 +185,15 @@ def stored(prefix: str = "data/feedback/") -> list[dict]:
 
 
 def latest_ratings(items: list[dict]) -> list[dict]:
-    """The submissions with each conversation's thumbs reduced to its last.
+    """The submissions with each answer's thumbs reduced to its last.
 
     A thumbs-down is sent on the press and again with its reason, and a reader
-    may change their mind: a conversation is rated once, so its last rating is
-    its verdict (one stored before ratings named their thread falls back to
-    its answer). Everything that is not a rating passes through."""
+    may change their mind: an answer's last rating is its verdict. Per answer,
+    not per conversation: a thread with three answers voted down showed one
+    (prod triage 2026-11-02). Everything that is not a rating passes through."""
 
     def rated(it: dict) -> tuple:
-        return (it.get("user"), it.get("thread") or it.get("turn"))
+        return (it.get("user"), it.get("turn"))
 
     last = {
         rated(it): i

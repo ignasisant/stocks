@@ -151,6 +151,12 @@ GOLDEN = [
     ("which share matching does the UK use", {"tax-engine"}),
     ("how do I import my DEGIRO account", {"importing", "tour:import"}),
     ("mi extracto de DEGIRO no se importa", {"importing", "tour:import"}),
+    # Prod eval 2026-11-02: "fichero" and "subo" were nowhere in the index, so
+    # half the question was unknown, the search abstained, and the chat sent
+    # the reader to DEGIRO's account statement, the one file the app refuses.
+    ("tengo las acciones en DEGIRO, ¿qué fichero subo?",
+     {"importing", "tour:import"}),
+    ("¿qué archivo tengo que subir de Trading 212?", {"importing", "tour:import"}),
     ("can I import from Binance", {"importing", "tour:import"}),
     ("why is a position held at cost", {"cost-basis-and-currency", "importing"}),
     ("what exchange rate is used to convert my trades",

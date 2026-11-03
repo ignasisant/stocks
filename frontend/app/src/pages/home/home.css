@@ -181,6 +181,15 @@
   display: none;
 }
 
+/* Waiting — not yet in view, or in view and still loading — a slot holds
+   about a card's room. Left at a skeleton's height, ten of them fit in the
+   first screen and a half on a phone, so every card was "near the viewport"
+   on arrival and Home asked for all of them at once, the ones four screens
+   down included (`useInView`). */
+.hm-slot:has(.ag-skeleton) {
+  min-height: 24rem;
+}
+
 /* Two halves side by side end level, whichever has more rows. */
 .hm-slot-half > .hm-card:last-child {
   flex: 1 0 auto;
