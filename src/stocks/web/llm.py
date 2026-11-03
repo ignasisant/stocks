@@ -1040,6 +1040,12 @@ def _resting(b: _FreeBackend) -> bool:
 # under 2 s and dots in ~5 s on a 10k-token prompt.
 _FIRST_TEXT_S = 20.0
 
+# The last one left may think longer, since a slow answer beats none, but not
+# past the longest any caller waits (the daily card's 180 s). A caller that
+# timed out leaves its worker thread streaming: on 2026-11-03
+# nemotron-3.5-lightning wrote its first word at 585 s, to nobody.
+_LAST_FIRST_TEXT_S = 180.0
+
 # A model cut for that sits out this long, per backend and model — the shared
 # free pool that made it slow does not clear in a turn. Per process.
 _free_slow: dict[tuple[str, str], float] = {}  # (backend, model) -> lifts at
@@ -1047,7 +1053,7 @@ _SLOW_REST_S = 600.0
 
 
 class _Slow(TimeoutError):
-    """A free model that wrote nothing within `_FIRST_TEXT_S`."""
+    """A free model that wrote nothing before its first-text deadline."""
 
 
 def _slow(b: _FreeBackend) -> bool:
@@ -1234,20 +1240,19 @@ def _free_stream(api_key, model, system, messages):
         while candidates:
             model = candidates.pop(0)
             t0 = _clock()
-            # The last one left may think as long as it likes: a slow answer
-            # beats none.
-            late = (t0 + _FIRST_TEXT_S
-                    if candidates or attempt + 1 < len(plan) else None)
+            limit = (_FIRST_TEXT_S if candidates or attempt + 1 < len(plan)
+                     else _LAST_FIRST_TEXT_S)
+            late = t0 + limit
             first_ms = chunks = None
             try:
                 got = False
                 chunks = b.stream(b.api_key, model, system, thread)
                 for chunk in chunks:
                     if isinstance(chunk, Idle):
-                        if not got and late and _clock() > late:
+                        if not got and _clock() > late:
                             _free_slow[(b.id, model)] = (time.monotonic()
                                                          + _SLOW_REST_S)
-                            raise _Slow(f"no text after {_FIRST_TEXT_S:.0f} s")
+                            raise _Slow(f"no text after {limit:.0f} s")
                         continue
                     if first_ms is None:
                         first_ms = round((_clock() - t0) * 1000)
