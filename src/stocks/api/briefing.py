@@ -118,10 +118,9 @@ def running(paths) -> Job | None:
 def key_for(day: date, lang: str, session: str | None, brief: str = "") -> tuple:
     """What a card and its one generation attempt are keyed on.
 
-    The session is in it for the reason `daily.is_fresh` gives: a card written
-    before the open quotes the previous close, and when the next session lands
-    that card is stale hours before the 09:00 rollover. Rekeying retires the
-    "already tried" guard with it. So is the brief's wording
+    The session is the one the card is written from (`daily.card_session`);
+    it turns over with the day, and is in the key for the logs. So is the
+    brief's wording
     (`daily_routines.signature`): a reader who rewrites it wants the card
     they just asked for, not the one tried this morning.
     """
@@ -1150,13 +1149,10 @@ def start(
 
 
 def now_day(paths=None) -> tuple[datetime, date]:
-    """The reader's now and the action day it falls in.
-
-    In the account's zone (`timezone`, sent by the browser), turning over at
-    its own cutoff (`schedule.cutoff_hour`: earlier when its briefing is
-    scheduled earlier). With no account, or one whose settings do not read,
-    Madrid at `daily.CUTOFF_HOUR`. Not the server's clock: the host runs in
-    UTC, an hour or two behind the readers the cutoff was chosen for.
+    """The reader's now, in the account's zone (`timezone`, sent by the
+    browser; Madrid with no account or one whose settings do not read), and
+    the action day it falls in (`daily.action_day`: turned over at the US
+    close, the same moment for every reader).
     """
     from stocks.notify import schedule
 
@@ -1167,7 +1163,7 @@ def now_day(paths=None) -> tuple[datetime, date]:
         except Exception:  # noqa: BLE001 — read as the defaults
             prefs = {}
     now = datetime.now(schedule.zone(prefs))
-    return now, daily.action_day(now, schedule.cutoff_hour(prefs, daily.CUTOFF_HOUR))
+    return now, daily.action_day(now)
 
 
 # ------------------------------------------------------------------ analysis

@@ -7,14 +7,19 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from datetime import time as wall
 from typing import Final, Literal
+from zoneinfo import ZoneInfo
 
 from stocks.chat import signals
 
-# Where the day turns over, in the reader's local time. 09:00 CET is after the
-# US premarket has been quoting for hours and just before the European open —
-# early enough to be a plan for the day, late enough to have something to say.
-CUTOFF_HOUR = 9
+# Where the day turns over: after the US close, New York time, so the card is
+# written from settled closes and read the next morning. 45 minutes past the
+# bell lets the day's bars land; New York's own zone keeps the hour across
+# daylight-saving changes, which a fixed UTC hour does not (3 weeks a year
+# Europe and the US are an hour apart from usual).
+CLOSE_ZONE = ZoneInfo("America/New_York")
+BRIEF_AT = wall(16, 45)
 
 MIN_BULLETS = 1
 MAX_BULLETS = 4  # "To watch" lines; the day's alerts are listed on their own
@@ -351,15 +356,31 @@ def _items(raw) -> list[dict]:
     return out
 
 
-def action_day(now: datetime, cutoff: int = CUTOFF_HOUR) -> date:
-    """Which day's card is current at `now` — already in the reader's zone.
+def action_day(now: datetime) -> date:
+    """Which day's card is current at `now` (zone-aware, any zone).
 
-    Before the cutoff the answer is *yesterday*: at 07:40 the day has no numbers
-    yet, and a card regenerated then would be a briefing about nothing. The
-    stored card keeps its own date on screen, so a stale one reads as stale.
-    `cutoff` is earlier for a reader whose briefing is scheduled earlier.
+    The card for a day is written the evening before, `BRIEF_AT` New York
+    time: Monday's close turns the card over to Tuesday, which a reader in
+    Madrid opens at 08:00 with every figure settled. Through Tuesday the card
+    stands — the European open and the US session do not rewrite it — until
+    Tuesday's close turns it over to Wednesday. Weekends turn over too, with
+    Friday's figures, so "today" on the card is always the day it is read.
     """
-    return now.date() if now.hour >= cutoff else now.date() - timedelta(days=1)
+    ny = now.astimezone(CLOSE_ZONE)
+    return ny.date() + timedelta(days=1) if ny.time() >= BRIEF_AT else ny.date()
+
+
+def card_session(day: date) -> date:
+    """The US session the card for action day `day` is written from: the last
+    weekday before it that New York traded. Monday's card is Friday's close;
+    the card after Thanksgiving is the Wednesday's."""
+    from stocks.data import market_holidays as mh
+
+    shut = mh.DAYS.get(mh.US, {})
+    day -= timedelta(days=1)
+    while day.weekday() >= 5 or shut.get(day) == mh.CLOSED:
+        day -= timedelta(days=1)
+    return day
 
 
 def is_fresh(
@@ -371,13 +392,10 @@ def is_fresh(
     the app to Spanish should not be left with yesterday's English briefing
     until tomorrow.
 
-    So is the session. A card written at 10:00 quotes the last completed
-    session; when the next one closes that evening its every figure is a day
-    behind, and the calendar date does not change until the 09:00 cutoff — so
-    a card whose `as_of` is older than the session now on screen is stale, and
-    the dashboard must not go on showing Tuesday's moves under Thursday's KPI
-    row. A stored card with no `as_of` at all (written before the field
-    existed) cannot be shown to be current, so it is rewritten once.
+    So is the session, when one is given: a card whose `as_of` is older than
+    it quotes a session that has since closed. A stored card with no `as_of`
+    at all (written before the field existed) cannot be shown to be current,
+    so it is rewritten once.
     """
     if not (action and action.day == day.isoformat() and action.lang == lang):
         return False
