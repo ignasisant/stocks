@@ -393,6 +393,33 @@ def test_warm_recent_runs_the_second_pass_after_every_home(monkeypatch):
     assert order == ["home:today.db", "home:yesterday.db", "more:today.db"]
 
 
+def test_a_book_nobody_opened_lately_still_gets_its_splits_swept(monkeypatch):
+    # Triage 2026-11-03: a dormant book held BYND across its 1:30 for weeks,
+    # priced at cost by every morning card, and the sweep never saw it again.
+    from types import SimpleNamespace
+
+    users = [_user("today", "2026-09-27"), _user("dormant", "2026-08-01")]
+    monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
+    monkeypatch.setattr(warm, "warm_shared", lambda: None)
+    order: list[str] = []
+    clock = [0.0]
+    monkeypatch.setattr(warm, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def account(db, watchlist, base):
+        order.append(f"home:{db}")
+        clock[0] += 50
+
+    monkeypatch.setattr(warm, "warm_account", account)
+    monkeypatch.setattr(warm, "warm_more", lambda db, w, b: order.append(f"more:{db}"))
+    monkeypatch.setattr(warm, "repair_splits", lambda db: order.append(f"splits:{db}"))
+    assert warm.warm_recent(today=TODAY) == 1
+    assert order == ["home:today.db", "more:today.db", "splits:dormant.db"]
+    order.clear()
+    # Last in line: the readers' own pages come first.
+    warm.warm_recent(today=TODAY, budget_s=40)
+    assert order == ["home:today.db"]
+
+
 def test_warm_shared_reads_the_market_memos_once_and_survives_one(monkeypatch):
     reads: list[str] = []
     patch_loaders(monkeypatch, "today_market", lambda: reads.append("today") or {})
