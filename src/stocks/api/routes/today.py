@@ -23,7 +23,7 @@ from stocks.api import briefing, daily_card
 from stocks.api.deps import Account, Writer
 from stocks.api.schemas import BookCompare, DailyChartLine, MarketCard, TodayCard
 from stocks.api.security import Who
-from stocks.chat import daily, daily_book
+from stocks.chat import daily_book
 from stocks.web.i18n import supported
 
 router = APIRouter(tags=["glance"])
@@ -79,7 +79,6 @@ def today(account: Account, who: Who, lang: Lang = "en") -> TodayCard:
     personal = None if who.kind == "guest" else daily_card.status(account, lang)
     return TodayCard(
         action_day=day.isoformat(),
-        cutoff_hour=daily.CUTOFF_HOUR,
         market=market,
         market_stale=stale,
         personal=personal,
@@ -107,7 +106,6 @@ def write_today(
     personal = daily_card.request(account, lang, force=force, patient=True)
     return TodayCard(
         action_day=day.isoformat(),
-        cutoff_hour=daily.CUTOFF_HOUR,
         market=market,
         market_stale=stale,
         personal=personal,

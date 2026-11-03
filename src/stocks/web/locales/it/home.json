@@ -169,6 +169,7 @@
   "home.daily_badge_computed": "Azione del giorno · senza AI",
   "home.daily_today": "Oggi · {time}",
   "home.daily_today_no_time": "Oggi",
+  "home.daily_today_close": "Oggi · chiusura di {day}",
   "home.daily_ask": "Chiedi all'assistente",
   "home.daily_refresh": "Rigenera",
   "home.daily_disclaimer": "Analisi AI dei tuoi dati — non è consulenza finanziaria.",

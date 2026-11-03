@@ -193,6 +193,7 @@ def _one(symbol: str, start: str, adjust: str, key: str) -> pd.DataFrame | None:
         code = int(body.get("code") or 0)
         _refusal(code)
         if code in (400, 404):  # not on the free plan / no such symbol
+            obs.event("twelvedata.refused", symbol=symbol, code=code)
             with _lock:
                 _memo[memo_key] = (time.monotonic(), None)
         return None
@@ -226,8 +227,9 @@ def daily(
     with ThreadPoolExecutor(min(WORKERS, len(asked))) as pool:
         frames = list(pool.map(lambda s: _one(s, start, adjust, key), asked))
     out = {s: f for s, f in zip(asked, frames, strict=True) if f is not None}
-    if out:
-        obs.event("twelvedata.daily", asked=len(asked), answered=len(out))
+    # Logged even when nothing came back: "consulted and empty" and "never
+    # consulted" must read differently in the logs.
+    obs.event("twelvedata.daily", asked=len(asked), answered=len(out))
     return out
 
 

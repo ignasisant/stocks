@@ -10,7 +10,6 @@ generations for one reader.
 
 from __future__ import annotations
 
-import pandas as pd
 from pydantic import ValidationError
 
 from stocks.api import briefing, loaders
@@ -32,7 +31,7 @@ def stored(account) -> daily.DailyAction | None:
 
 def empty(day) -> DailyCard:
     return DailyCard(
-        action_day=day.isoformat(), cutoff_hour=daily.CUTOFF_HOUR, fresh=False
+        action_day=day.isoformat(), fresh=False
     )
 
 
@@ -46,7 +45,6 @@ def answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Dai
         lang=action.lang,
         source=action.source,
         action_day=day.isoformat(),
-        cutoff_hour=daily.CUTOFF_HOUR,
         fresh=fresh,
         generated=action.generated or None,
         pending=pending,
@@ -167,8 +165,8 @@ def request(account, lang: str, *, force: bool, patient: bool = False) -> DailyC
 
 
 def key_now(account, day, lang: str) -> tuple:
-    """`briefing.key_for` this account now: its last session and the wording
-    of its brief."""
+    """`briefing.key_for` this account now: the session its card is written
+    from and the wording of its brief."""
     from stocks.web import auth
 
     try:
@@ -176,7 +174,7 @@ def key_now(account, day, lang: str) -> tuple:
         sig = daily_routines.signature(daily_routines.load(prefs, account.chat))
     except Exception:  # noqa: BLE001 — read as no brief
         sig = ""
-    return briefing.key_for(day, lang, last_session(account), sig)
+    return briefing.key_for(day, lang, daily.card_session(day).isoformat(), sig)
 
 
 def stands(card, day, lang: str, key: tuple) -> bool:
@@ -184,19 +182,10 @@ def stands(card, day, lang: str, key: tuple) -> bool:
     saved, reworded or dropped since — here, in the chat or by switching
     memory off — rewrites the card. So is a card with no book shape: it was
     written before the Today page's sections existed, and would leave that
-    page without them until tomorrow."""
-    return daily.is_fresh(card, day, lang, key[2] or None) and (
+    page without them until tomorrow.
+
+    Not the book's newest bar: the card turns over with the day, after the US
+    close, and a European open or a US session under way must not rewrite the
+    evening's card with half a day's figures."""
+    return daily.is_fresh(card, day, lang) and (
         card.brief_sig == key[3]) and bool(card.shape)
-
-
-def last_session(account) -> str | None:
-    """The newest close date across this account's holdings, ISO, or None.
-
-    A card is stale the moment a session it does not quote has closed, and the
-    calendar cannot see that. Read off the book's own shared price download, so
-    it costs nothing a portfolio read has not already paid for.
-    """
-    db = str(account.db)
-    closes = loaders.held_closes(db, loaders.db_mtime(db))
-    latest = [s.index[-1] for s in closes.values() if not s.empty]
-    return str(pd.Timestamp(max(latest)).date()) if latest else None

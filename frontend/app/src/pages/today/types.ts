@@ -132,7 +132,6 @@ export type PersonalCard = DailyCard & {
 
 export type TodayCard = {
   action_day: string;
-  cutoff_hour: number;
   /** Null until the first morning's read exists. */
   market: MarketCard | null;
   /** Older than the last session; a newer read is on its way. */

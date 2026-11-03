@@ -19,7 +19,6 @@ export type DailyCard = {
   /** llm | computed — a computed card is built from triggers, not written. */
   source: string | null;
   action_day: string;
-  cutoff_hour: number;
   fresh: boolean;
   /** Epoch seconds it was written — the clock in "Today · 09:14". */
   generated: number | null;

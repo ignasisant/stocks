@@ -194,11 +194,11 @@ class DailyCard(BaseModel):
     )
     action_day: str = Field(
         description=(
-            "Which day's card is current right now. Before the 09:00 cutoff "
-            "that is yesterday: at 07:40 the day has no numbers in it yet."
+            "Which day's card is current right now. It turns over at 16:45 "
+            "New York time, after the US close, to the next day's: the card "
+            "is written from settled closes and read the next morning."
         )
     )
-    cutoff_hour: int = Field(description="Local hour the action day rolls over.")
     fresh: bool = Field(
         default=False,
         description=(
@@ -402,7 +402,6 @@ class TodayCard(BaseModel):
     """
 
     action_day: str
-    cutoff_hour: int
     market: MarketCard | None = Field(
         default=None, description="Null until the first morning's read exists."
     )

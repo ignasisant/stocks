@@ -12,12 +12,15 @@ import json
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
 from stocks.chat import daily, signals
 from tests.patching import patch_engine
+
+MADRID = ZoneInfo("Europe/Madrid")
 
 
 @dataclass
@@ -130,11 +133,38 @@ def facts(actions=ACTIONS) -> dict:
 
 
 @pytest.mark.parametrize(
-    ("hour", "expected"),
-    [(0, date(2026, 9, 2)), (8, date(2026, 9, 2)), (9, DAY), (23, DAY)],
+    ("madrid", "expected"),
+    [
+        # Wednesday 2 Sep's close (16:00 New York, 22:00 Madrid) turns the card
+        # over to Thursday's at 22:45, and that card stands through Thursday's
+        # European open and US session.
+        ("2026-09-02T22:30", date(2026, 9, 2)),
+        ("2026-09-02T22:45", DAY),
+        ("2026-09-03T08:00", DAY),
+        ("2026-09-03T18:00", DAY),
+        ("2026-09-03T22:45", date(2026, 9, 4)),
+        # Europe has left summer time and New York has not: the turnover
+        # follows New York, an hour earlier in Madrid.
+        ("2026-10-26T21:44", date(2026, 10, 26)),
+        ("2026-10-26T21:45", date(2026, 10, 27)),
+    ],
 )
-def test_action_day_turns_over_at_the_cutoff(hour, expected):
-    assert daily.action_day(datetime(2026, 9, 3, hour, 30)) == expected
+def test_action_day_turns_over_after_the_us_close(madrid, expected):
+    now = datetime.fromisoformat(madrid).replace(tzinfo=MADRID)
+    assert daily.action_day(now) == expected
+
+
+@pytest.mark.parametrize(
+    ("day", "session"),
+    [
+        (date(2026, 9, 3), date(2026, 9, 2)),  # Thursday: Wednesday's close
+        (date(2026, 11, 2), date(2026, 10, 30)),  # Monday: Friday's
+        (date(2026, 11, 1), date(2026, 10, 30)),  # Sunday: Friday's
+        (date(2026, 11, 27), date(2026, 11, 25)),  # after Thanksgiving
+    ],
+)
+def test_the_card_is_written_from_the_last_session_before_its_day(day, session):
+    assert daily.card_session(day) == session
 
 
 def test_stored_card_is_fresh_only_for_its_day_and_language():

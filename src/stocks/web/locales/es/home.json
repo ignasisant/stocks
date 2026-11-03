@@ -169,6 +169,7 @@
   "home.daily_badge_computed": "Acción diaria · sin IA",
   "home.daily_today": "Hoy · {time}",
   "home.daily_today_no_time": "Hoy",
+  "home.daily_today_close": "Hoy · cierre del {day}",
   "home.daily_ask": "Preguntar al asistente",
   "home.daily_refresh": "Regenerar",
   "home.daily_disclaimer": "Análisis IA con tus cifras — no es asesoramiento.",
