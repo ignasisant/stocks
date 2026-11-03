@@ -42,6 +42,7 @@ import { Status } from "../../ui/Status";
 import { BriefEditor } from "../home/BriefEditor";
 import { monthDay, parseDay } from "../home/format";
 import { stampKey, useAnalyses } from "./Analysis";
+import { DayAttribution } from "./Attribution";
 import { BookChart, BookKpis, IndexKpis, SectionChart } from "./Book";
 import {
   TAB_LABELS,
@@ -263,6 +264,15 @@ export default function Today() {
       {shows(active, "book") && book ? (
         <Block id="book" title={t("home.daily_sec_book")} help={t("today.book_help")}>
           <BookChart book={book} />
+        </Block>
+      ) : null}
+      {shows(active, "book") && book?.attribution ? (
+        <Block id="day" title={t("today.sec_day")} help={t("today.day_help")}>
+          <DayAttribution
+            data={book.attribution}
+            currency={book.currency}
+            index={book.index}
+          />
         </Block>
       ) : null}
       {shows(active, "book") && !brief.length && watch.length ? (

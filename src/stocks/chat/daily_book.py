@@ -196,11 +196,15 @@ def section(facts: dict) -> dict:
     found = rows(facts) if index else []
     if not found:
         return {}
-    return {
+    out = {
         "index": index.get("name") or INDEX_NAME,
         "currency": str((facts or {}).get("currency") or ""),
         "rows": found,
     }
+    # What moved the day (`daily.attribution`), under the day it splits.
+    if attribution := facts.get("attribution"):
+        out["attribution"] = attribution
+    return out
 
 
 def versus(

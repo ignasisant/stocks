@@ -142,8 +142,8 @@ class DailyAction:
     # opens. "" for a card that was never filed.
     thread: str = ""
     # The Portfolio section (`daily_book.section`): {"index", "currency",
-    # "rows": [{"window", "pct", "amount", "index_pct"}]}, and the month drawn
-    # under "chart" once the caller has attached it (`dressed`).
+    # "rows": [{"window", "pct", "amount", "index_pct"}], "attribution"}, and
+    # the month drawn under "chart" once the caller has attached it (`dressed`).
     book: dict = field(default_factory=dict)
     # The reader's brief, answered: {"title", "asks", "lines", "chart"}, each
     # line an item like `items`' and `chart` the one drawn for an ask the

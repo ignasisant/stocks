@@ -150,5 +150,16 @@
   "today.book_chart": "Portafoglio contro {index}, {window}",
   "today.book_empty": "Nessun dato per questo periodo.",
   "today.book_failed": "Impossibile disegnare questo periodo.",
-  "today.book_since": "Il tuo portafoglio inizia il {date}; prima non c'era nulla."
+  "today.book_since": "Il tuo portafoglio inizia il {date}; prima non c'era nulla.",
+  "today.sec_day": "Chi ha mosso la giornata",
+  "today.day_help": "Quanto ha aggiunto o tolto ogni posizione oggi, nella tua valuta. I blocchi sommano la giornata al centesimo.",
+  "today.day_up": "Hanno aggiunto",
+  "today.day_down": "Hanno tolto",
+  "today.day_blocks": "Per blocco",
+  "today.day_explained": "{pct}, {sigmas}σ",
+  "today.day_verdict_sector": "è il settore",
+  "today.day_verdict_company": "è l'azienda",
+  "today.day_alpha": "Rispetto all'{index}: avanti in {ahead} sedute su {sessions},",
+  "today.day_stale": "Nessun prezzo nuovo oggi: il loro 0% è la barra di ieri ripetuta.",
+  "today.day_gap": "Non ripartito: {amount}. La seduta è ancora aperta e i prezzi non quadrano."
 }

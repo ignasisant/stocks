@@ -71,6 +71,11 @@ def _book(raw: dict) -> DailyBook | None:
     try:
         return DailyBook(**raw) if raw else None
     except ValidationError:
+        pass
+    # A breakdown that does not fit costs the breakdown, not the section.
+    try:
+        return DailyBook.model_validate({**raw, "attribution": None})
+    except ValidationError:
         return None
 
 

@@ -21,6 +21,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from stocks.analysis.portfolio import money_weighted_return, time_weighted_returns
+from stocks.chat.daily import attribution
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.positions import build, open_lots
 
@@ -230,3 +231,56 @@ def test_trend_reads_do_not_depend_on_the_price_unit(path, bench, scale):
     assert excess_return(path, bench * scale, 12) == pytest.approx(
         excess_return(path, bench, 12)
     )
+
+
+SECTORS = ["Technology", "Healthcare", "Energy", None]
+AMOUNT = st.floats(min_value=-5000.0, max_value=5000.0, allow_nan=False)
+
+
+@st.composite
+def day_book(draw):
+    """A priced book's day: positions in sectors, funds and coins, some with
+    no day at all."""
+    n = draw(st.integers(min_value=1, max_value=12))
+    rows, meta = {}, {}
+    for i in range(n):
+        kind = draw(st.sampled_from(["stock", "fund", "coin"]))
+        ticker = f"C{i}-EUR" if kind == "coin" else f"T{i}"
+        if kind == "fund":
+            meta[ticker] = {"sector_weights": {"Technology": 0.6, "Energy": 0.4}}
+        elif kind == "stock":
+            meta[ticker] = {"sector": draw(st.sampled_from(SECTORS))}
+        value = draw(st.floats(min_value=10.0, max_value=50_000.0))
+        moved = draw(st.one_of(st.just(float("nan")), AMOUNT))
+        rows[ticker] = (value, moved, moved / value if moved == moved else None)
+    tbl = pd.DataFrame(
+        {
+            "value": {t: v for t, (v, _, _) in rows.items()},
+            "day": {t: d for t, (_, d, _) in rows.items()},
+            "day_pct": {t: p for t, (_, _, p) in rows.items()},
+        }
+    )
+    tbl["weight"] = tbl["value"] / tbl["value"].sum()
+    return tbl, meta
+
+
+@given(day_book())
+def test_the_days_blocks_add_up_to_its_positions_and_its_positions_to_the_day(book):
+    tbl, meta = book
+    out = attribution.day(tbl, meta)
+    moved = tbl["day"].dropna()
+    if moved.empty:
+        assert out is None
+        return
+    assert out["amount"] == pytest.approx(float(moved.sum()), abs=0.01)
+    blocks = sum(b["amount"] for b in out["blocks"])
+    assert blocks == pytest.approx(out["amount"], abs=0.05)
+    # Every position that moved is in exactly one block.
+    held = [t for b in out["blocks"] for t in b["tickers"]]
+    assert sorted(held) == sorted(str(t) for t in moved.index)
+    # The points are shares of the same opening value, so they sum to the
+    # book's day in percent.
+    if out["start"] > 0:
+        pp = sum(b["pp"] for b in out["blocks"])
+        whole = out["amount"] / out["start"] * 100
+        assert pp == pytest.approx(whole, abs=0.01 * len(out["blocks"]))
