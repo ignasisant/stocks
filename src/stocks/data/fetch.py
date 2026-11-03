@@ -619,6 +619,12 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         return hit
     if retired(key):
         return []
+    if is_isin(key):
+        # An ISIN nothing has placed yet is no symbol: yfinance would run its
+        # own ISIN search and raise "Invalid ISIN number" when it finds none.
+        # Not a refusal either: asking again answers nothing new, and counting
+        # it kept the sweep from stamping a book that holds one.
+        return []
     if throttle_remaining():
         _not_answered()
         return []

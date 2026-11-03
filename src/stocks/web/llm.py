@@ -976,6 +976,13 @@ _free_dead: set[str] = set()
 # groq's 429 says how long to wait ("Please try again in 1.6125s"). Up to this
 # is worth sitting out once on the same backend; past it, the next one's turn.
 _MAX_RETRY_WAIT_S = 5.0
+# What a caller nobody is watching (`patient()`: a scheduled card, a digest
+# line) sits out instead. groq's 8k tokens a minute fit about one card, so the
+# next card's 429 names most of a minute; past this wait, the free models
+# behind groq still get their turn.
+_PATIENT_WAIT_S = 60.0
+_PATIENT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "stocks_llm_free_patient", default=False)
 _RETRY_IN = re.compile(
     r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
 
@@ -1000,10 +1007,22 @@ def _retry_after(exc: Exception) -> float | None:
     return secs + 60 * int(m.group(1) or 0)
 
 
+@contextlib.contextmanager
+def patient() -> Generator[None]:
+    """Sit out the free chain's rate limits up to `_PATIENT_WAIT_S` in the
+    calls started in the block, rather than move on to a slower backend."""
+    token = _PATIENT.set(True)
+    try:
+        yield
+    finally:
+        _PATIENT.reset(token)
+
+
 def _short_wait(exc: Exception) -> float | None:
     """Seconds a rate-limited backend asked us to wait, when that is short."""
     secs = _retry_after(exc)
-    return secs + 0.25 if secs is not None and secs <= _MAX_RETRY_WAIT_S else None
+    most = _PATIENT_WAIT_S if _PATIENT.get() else _MAX_RETRY_WAIT_S
+    return secs + 0.25 if secs is not None and secs <= most else None
 
 
 def _note_dead(b: _FreeBackend, exc: Exception) -> None:
@@ -1015,7 +1034,7 @@ def _note_dead(b: _FreeBackend, exc: Exception) -> None:
 def _note_rest(b: _FreeBackend, exc: Exception) -> None:
     """A 429 the chain moves on from: skip `b` until the wait it named."""
     secs = _retry_after(exc)
-    if secs is not None and secs > _MAX_RETRY_WAIT_S:
+    if secs is not None and _short_wait(exc) is None:
         _free_resting[b.id] = time.monotonic() + min(secs, _MAX_REST_S)
         obs.warn("llm.free.backend_resting", backend=b.id,
                  seconds=round(secs, 1))
@@ -1040,6 +1059,12 @@ def _resting(b: _FreeBackend) -> bool:
 # under 2 s and dots in ~5 s on a 10k-token prompt.
 _FIRST_TEXT_S = 20.0
 
+# The last one left may think longer, since a slow answer beats none, but not
+# past the longest any caller waits (the daily card's 180 s). A caller that
+# timed out leaves its worker thread streaming: on 2026-11-03
+# nemotron-3.5-lightning wrote its first word at 585 s, to nobody.
+_LAST_FIRST_TEXT_S = 180.0
+
 # A model cut for that sits out this long, per backend and model — the shared
 # free pool that made it slow does not clear in a turn. Per process.
 _free_slow: dict[tuple[str, str], float] = {}  # (backend, model) -> lifts at
@@ -1047,7 +1072,7 @@ _SLOW_REST_S = 600.0
 
 
 class _Slow(TimeoutError):
-    """A free model that wrote nothing within `_FIRST_TEXT_S`."""
+    """A free model that wrote nothing before its first-text deadline."""
 
 
 def _slow(b: _FreeBackend) -> bool:
@@ -1234,20 +1259,19 @@ def _free_stream(api_key, model, system, messages):
         while candidates:
             model = candidates.pop(0)
             t0 = _clock()
-            # The last one left may think as long as it likes: a slow answer
-            # beats none.
-            late = (t0 + _FIRST_TEXT_S
-                    if candidates or attempt + 1 < len(plan) else None)
+            limit = (_FIRST_TEXT_S if candidates or attempt + 1 < len(plan)
+                     else _LAST_FIRST_TEXT_S)
+            late = t0 + limit
             first_ms = chunks = None
             try:
                 got = False
                 chunks = b.stream(b.api_key, model, system, thread)
                 for chunk in chunks:
                     if isinstance(chunk, Idle):
-                        if not got and late and _clock() > late:
+                        if not got and _clock() > late:
                             _free_slow[(b.id, model)] = (time.monotonic()
                                                          + _SLOW_REST_S)
-                            raise _Slow(f"no text after {_FIRST_TEXT_S:.0f} s")
+                            raise _Slow(f"no text after {limit:.0f} s")
                         continue
                     if first_ms is None:
                         first_ms = round((_clock() - t0) * 1000)
@@ -1439,8 +1463,11 @@ def _openai_models(api_key: str) -> list[str]:
 def _gemini_models(api_key: str) -> list[str]:
     from google import genai
 
+    # Held for the whole loop: the pager fetches later pages through this
+    # client, and a collected Client closes its HTTP client under the pager.
+    client = genai.Client(api_key=api_key)
     out = []
-    for m in genai.Client(api_key=api_key).models.list():
+    for m in client.models.list():
         actions = getattr(m, "supported_actions", None) or []
         name = (getattr(m, "name", "") or "").removeprefix("models/")
         if "gemini" in name and "generateContent" in actions:

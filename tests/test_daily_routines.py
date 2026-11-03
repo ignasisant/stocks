@@ -722,8 +722,10 @@ def test_generate_routes_every_unit_through_the_card_s_share(monkeypatch):
     prefs = {daily.UNITS_KEY: {"day": TODAY.isoformat(), "used": daily.FREE_UNITS}}
     asked = []
 
-    def complete(prefs, system, messages, timeout_s, *, spend_free, accept):
+    def complete(prefs, system, messages, timeout_s, *, spend_free, accept,
+                 patient=False):
         asked.append(spend_free(prefs))
+        assert patient  # built in the background: waits its turn on the free chain
         return None
 
     monkeypatch.setattr(daily.engine, "complete_attempts", complete)

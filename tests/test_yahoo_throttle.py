@@ -518,3 +518,21 @@ def test_splits_are_read_off_the_bars(monkeypatch):
     before = fetch.unanswered()
     assert fetch.splits("BYND") == [("2026-08-14", pytest.approx(1 / 30))]
     assert fetch.unanswered() == before
+
+
+def test_an_unplaced_isin_is_not_sent_to_yahoo(blank_yahoo, monkeypatch):
+    """Prod 10-30→11-03, ×12: yfinance runs its own ISIN search for an
+    ISIN-shaped symbol and raises "Invalid ISIN number" when that finds
+    nothing. A label `resolve` could not place is no symbol to ask about,
+    and asking again changes nothing, so it does not hold the split sweep's
+    stamp back either: that re-asked Yahoo for every other name each warm."""
+    from stocks.data import dividends
+
+    monkeypatch.setattr(fetch, "code_symbol", lambda key: None)
+    monkeypatch.setattr(fetch, "cached_isin_symbol", lambda key: None)
+    dividends.clear_history_cache()
+    before = fetch.unanswered()
+    assert fetch.splits("US9344231041") == []
+    assert dividends.fetch_history("US9344231041").payments == ()
+    assert blank_yahoo == []
+    assert fetch.unanswered() == before

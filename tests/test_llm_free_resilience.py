@@ -243,13 +243,26 @@ def test_thinking_frames_never_reach_the_reader(monkeypatch):
     assert not llm._free_slow
 
 
-def test_the_last_model_left_may_think_as_long_as_it_likes(monkeypatch):
+def test_the_last_model_left_may_think_longer(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(llm, "_clock", clock)
     monkeypatch.setattr(llm, "_free_backends", lambda: [
-        _thinking("openrouter", clock, 300)])
+        _thinking("openrouter", clock, 150)])
 
     assert "".join(llm._free_stream("", "", "sys", [])) == "late"
+
+
+def test_the_last_model_left_still_stops_once_every_caller_has_gone(monkeypatch):
+    # prod 2026-11-03: nemotron-3.5-lightning wrote its first word at 585 s,
+    # in a worker thread whose caller had timed out minutes before.
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 585)])
+
+    with pytest.raises(FreeTierExhausted):
+        "".join(llm._free_stream("", "", "sys", []))
+    assert clock.now == pytest.approx(llm._LAST_FIRST_TEXT_S + 1)
 
 
 def test_a_model_that_only_thinks_is_no_answer(monkeypatch):
