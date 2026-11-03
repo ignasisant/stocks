@@ -1439,8 +1439,11 @@ def _openai_models(api_key: str) -> list[str]:
 def _gemini_models(api_key: str) -> list[str]:
     from google import genai
 
+    # Held for the whole loop: the pager fetches later pages through this
+    # client, and a collected Client closes its HTTP client under the pager.
+    client = genai.Client(api_key=api_key)
     out = []
-    for m in genai.Client(api_key=api_key).models.list():
+    for m in client.models.list():
         actions = getattr(m, "supported_actions", None) or []
         name = (getattr(m, "name", "") or "").removeprefix("models/")
         if "gemini" in name and "generateContent" in actions:
