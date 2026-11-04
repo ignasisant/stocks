@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from stocks.portfolio import demo, platforms
+from stocks.portfolio import demo, platforms, positions
 from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.web import onboarding
@@ -82,6 +82,16 @@ def test_the_numbers_are_plausible_enough_to_learn_from():
             assert t.quantity > 0
         if t.action == "dividend":
             assert 0 < t.price < 100  # a total amount, not a per-share price
+
+
+def test_a_split_since_the_buy_is_in_the_book():
+    """ServiceNow split 5:1 on 2025-12-18. Without the row, 3 shares at 921.50
+    against a post-split quote read as -88 %, and the assistant proposed
+    harvesting the loss."""
+    lots = positions.open_lots(demo.transactions(), lambda amount, *_: amount)
+    now = [lot for lot in lots if lot.ticker == "NOW"]
+    assert sum(lot.quantity for lot in now) == 15
+    assert all(demo.is_demo(t) for t in demo.transactions() if t.action == "split")
 
 
 # ------------------------------------------------------------ seed and wipe

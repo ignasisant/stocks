@@ -270,14 +270,17 @@ _TICKER_PATH = re.compile(r"^/ticker/([^/]+)/")
 def reference_paths(q: Question) -> list[str]:
     """Every API read whose figures count as a source for this question's
     answer: its truths and `refs`, the quote and metrics of each ticker they
-    or the page focus name, and the book itself for a book question."""
+    or the page focus name, and the book itself. The book goes in for every
+    question that reads anything: the chat holds it on every turn, so "you
+    hold 50 NVDA" in a price answer is quoted, not invented. A question that
+    reads nothing gets no references, and so no figure check."""
     paths = [t.get for t in q.truth] + list(q.refs)
     tickers = [m.group(1) for p in paths if (m := _TICKER_PATH.match(p))]
     if q.focus:
         tickers.append(q.focus)
     for t in tickers:
         paths += [f"/ticker/{t}/quote", f"/ticker/{t}/metrics"]
-    if q.kind == "book":
+    if paths or q.kind == "book":
         paths += ["/portfolio/summary", "/portfolio/positions"]
     return list(dict.fromkeys(paths))
 
@@ -308,17 +311,23 @@ _SPAN = re.compile(
 )
 
 
+_URL = re.compile(r"https?://\S+")
+
+
 def unsourced(text: str, pool: Iterable[float], message: str = "") -> list[float]:
     """The figures in `text` that neither the references nor the question
-    state. A share may be written as a percent of a ratio (27 % for 0.27);
-    years, small counts and windows ("50 días") are skipped."""
+    state. A share may be written as a percent of a ratio (27 % for 0.27),
+    a loss as a positive figure ("2.249 € de pérdida" for -2249) and a big
+    amount in millions or billions ("147.500 millones" for 1.475e11); years,
+    small counts, windows ("50 días") and links are skipped."""
     known = [*pool, *numbers(message)]
     known += [k * 100 for k in known if abs(k) < 2]
+    known += [k / s for k in known if abs(k) >= 1e6 for s in (1e3, 1e6, 1e9, 1e12)]
     out = []
-    for n in numbers(_SPAN.sub(" ", text or "")):
+    for n in numbers(_SPAN.sub(" ", _URL.sub(" ", text or ""))):
         if abs(n) < UNSOURCED_FLOOR or (n == int(n) and 1900 <= n <= 2100):
             continue
-        if not any(abs(n - k) <= abs(k) * UNSOURCED_TOL for k in known):
+        if not any(abs(abs(n) - abs(k)) <= abs(k) * UNSOURCED_TOL for k in known):
             out.append(n)
     return out
 
