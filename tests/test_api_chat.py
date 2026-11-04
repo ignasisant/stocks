@@ -18,6 +18,7 @@ tested here is the HTTP shape put on top:
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 
@@ -577,6 +578,24 @@ def test_an_exhausted_chain_still_ends_the_stream(
     stream = events(signed_in.post("/v1/chat/runs", json=run("hola")).text)
     assert kinds(stream) == ["RUN_STARTED", "RUN_ERROR"]
     assert finished(stream)["code"] == "chat.free_exhausted"
+
+
+def test_a_turn_that_breaks_is_logged_with_its_cause(
+    client, account, signed_in, monkeypatch, caplog
+):
+    def boom(*a, **k):
+        raise RuntimeError("frame went missing")
+        yield
+
+    monkeypatch.setattr(engine, "answer_stream", boom)
+    caplog.set_level(logging.ERROR)
+    stream = events(signed_in.post("/v1/chat/runs", json=run("hola")).text)
+    assert finished(stream)["code"] == "chat.api_error"
+    logged = [r for r in caplog.records
+              if getattr(r, "event", "") == "chat.stream_failed"]
+    assert len(logged) == 1
+    assert logged[0].error == "frame went missing"
+    assert logged[0].exc_info
 
 
 def test_a_turn_can_be_aimed_at_a_named_thread(

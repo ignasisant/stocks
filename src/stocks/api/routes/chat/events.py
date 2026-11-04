@@ -30,6 +30,7 @@ from ag_ui.core import (
 )
 from ag_ui.encoder import EventEncoder
 
+from stocks import obs
 from stocks.accounts import UserPaths
 from stocks.api.routes.chat.messages import CONFIRM_TOOL, _activities, _call_args
 from stocks.chat import engine, guide_ai, navigate
@@ -352,7 +353,10 @@ def _events(
                         else None
                     ),
                 ))
-    except Exception:  # pragma: no cover - the engine already swallows its own
+    except Exception as exc:
+        # The engine swallows its own; what lands here is a bug, and the reader
+        # only sees "chat.api_error", so the cause has to be in the log.
+        obs.error("chat.stream_failed", exc)
         yield _frame(RunErrorEvent(message="chat.api_error", code="chat.api_error"))
     finally:
         # Not on a process that dies mid-run, which is the point: the file
