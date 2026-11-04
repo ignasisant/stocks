@@ -142,6 +142,10 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/learn", "GET"),
         ("/v1/learn/lessons/{lesson_id}", "GET"),
         ("/v1/learn/glossary", "GET"),
+        # --- A chat answer somebody shared by link ------------------------
+        # A frozen copy, cut before it was published (`web/shares.py`): the
+        # link is sent to people with no account, so it is read without one.
+        ("/v1/shares/{share_id}", "GET"),
         *OPEN_WRITES,
     }
 )
@@ -149,6 +153,7 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
 # Deliberately absent, each for its own reason:
 #
 #   /v1/chat/*            spends the operator's API keys and writes chat.json.
+#                         A shared answer is read at /v1/shares/ for that reason.
 #   /v1/import/*          including `platforms` and `sample`: a guest has no
 #                         book to import into, and the shared one is not it.
 #   /v1/profile           the assistant's persona; there is no assistant.

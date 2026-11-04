@@ -396,6 +396,73 @@ def ticker_head(
     return title, tags
 
 
+# A chat answer shared by link (`web/shares.py`) opens the app at
+# `/?share=<id>`, and that link is pasted into chats far more than any page.
+SHARE_PARAM = "share"
+# How much of the question titles the card, and of the answer describes it:
+# about what a preview shows before it cuts the line itself.
+SHARE_TITLE_MAX = 70
+SHARE_DESCRIPTION_MAX = 150
+
+
+def _clip(text: str, cap: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= cap else text[: cap - 1].rstrip() + "…"
+
+
+def _unmarked(text: str) -> str:
+    """Markdown read as the words it shows: links keep their text, and the
+    emphasis, headings, quotes and code marks go."""
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    return re.sub(r"[*_`#>|]+", "", text)
+
+
+def share_head(share: dict, base_url: str, lang: str) -> tuple[str, str]:
+    """(title, meta tags) for a shared answer's link preview.
+
+    The share is the stored copy, already cut (`chat/share_mask.py`), so the
+    card can say no more than the page: the question for a title — it is the
+    hook — and for a description who asked and where, then the first words of
+    the answer. A link from an unknown domain reads as spam until it says
+    whose it is; a forwarded message or a group has lost the sender, and a
+    post on X shows the card without the person who wrote it. The card is in
+    the sharer's language, the one the question and answer are written in,
+    not the crawler's. Same image and same rules as the ticker card — Open
+    Graph and Twitter only, the shell stays noindex."""
+    lang = str(share.get("lang") or lang)
+    lang = lang if lang in LANGUAGES else DEFAULT_LANG
+    question = _clip(str(share.get("question") or ""), SHARE_TITLE_MAX)
+    title = f"{question} · {SITE_NAME}" if question else SITE_NAME
+    by = str(share.get("by") or "")
+    lead = (translate("landing.share_card_by", lang, name=by) if by
+            else translate("landing.share_card", lang))
+    description = _clip(f"{lead} {_unmarked(str(share.get('content') or ''))}",
+                        SHARE_DESCRIPTION_MAX)
+    url = _abs(base_url, f"/?{SHARE_PARAM}={share.get('id', '')}")
+    image = _abs(base_url, OG_IMAGE)
+    image_alt = translate("landing.seo_image_alt", lang)
+    tags = (
+        _meta("description", description)
+        + _prop("og:type", "article")
+        + _prop("og:site_name", SITE_NAME)
+        + _prop("og:locale", _OG_LOCALE.get(lang, "en_US"))
+        + _prop("og:title", title)
+        + _prop("og:description", description)
+        + _prop("og:url", url)
+        + _prop("og:image", image)
+        + _prop("og:image:type", OG_IMAGE_TYPE)
+        + _prop("og:image:width", OG_IMAGE_W)
+        + _prop("og:image:height", OG_IMAGE_H)
+        + _prop("og:image:alt", image_alt)
+        + _meta("twitter:card", "summary_large_image")
+        + _meta("twitter:title", title)
+        + _meta("twitter:description", description)
+        + _meta("twitter:image", image)
+        + _meta("twitter:image:alt", image_alt)
+    )
+    return title, tags
+
+
 # Crawlers that collect text to train or ground models rather than to send
 # readers back. Blocking them is a request, not a control — robots.txt is
 # voluntary and only the well-behaved ones honour it — but the well-behaved
@@ -460,9 +527,10 @@ def robots_txt(base_url: str) -> str:
     ]
     disallow = app_page_paths() + APP_PATHS + APP_PREFIXES
     # A group never inherits from `*`, so the preview bots repeat it with
-    # the ticker page taken out of the disallow list.
+    # the ticker page taken out of the disallow list, and a shared answer
+    # named: `/` is not disallowed, but "/$" alone reads as if it were.
     lines += [f"User-agent: {agent}" for agent in PREVIEW_BOTS]
-    lines += [f"Allow: {p}" for p in [*allow, TICKER_PATH]]
+    lines += [f"Allow: {p}" for p in [*allow, TICKER_PATH, f"/?{SHARE_PARAM}="]]
     lines += [f"Disallow: {p}" for p in disallow if p != TICKER_PATH]
     lines += ["", "User-agent: *"]
     lines += [f"Allow: {p}" for p in allow]

@@ -59,9 +59,13 @@ class Thread(BaseModel):
 
 
 class NewThread(BaseModel):
+    """`from_share` starts the thread from a shared answer (`/?share=<id>`):
+    its question and answer, as the reader's own, to carry on from."""
+
     model_config = {"extra": "forbid"}
 
     title: str = Field(default="", max_length=80)
+    from_share: str = Field(default="", max_length=24)
 
 
 class EditThread(BaseModel):
@@ -149,11 +153,21 @@ def thread(cid: str, paths: Account, request: Request) -> Thread:
 def start(body: NewThread, paths: Writer) -> Conversation:
     """New thread, activated. An active thread that is still empty is reused,
     so pressing New twice cannot stack blank threads (`auth.new_conversation`).
+    One started `from_share` is always new; 404 when that link is gone.
     """
-    from stocks.web import auth
+    from stocks.web import auth, shares
 
-    cid = auth.new_conversation(paths.chat, body.title,
-                                busy=runs.live_threads(str(paths.chat)))
+    if body.from_share:
+        found = shares.load(body.from_share)
+        if found is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"no share {body.from_share}",
+            )
+        cid = shares.continue_from(paths, found)
+    else:
+        cid = auth.new_conversation(paths.chat, body.title,
+                                    busy=runs.live_threads(str(paths.chat)))
     return next(
         Conversation(**c)
         for c in auth.list_conversations(paths.chat)

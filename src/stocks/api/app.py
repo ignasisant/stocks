@@ -391,6 +391,8 @@ _private.include_router(home.router)
 _private.include_router(guide.router)
 _private.include_router(reference.router)
 _private.include_router(chat.router)
+# A shared answer is read outside /chat: guests open the link (`api/guest.py`).
+_private.include_router(chat.shared)
 _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
 _private.include_router(chat_memory.router)

@@ -44,6 +44,17 @@ export function stamp(iso: string, lang: string): string {
   return when.toLocaleDateString(lang, { day: "2-digit", month: "short" });
 }
 
+/**
+ * When a background answer was filed: `stamp`, with the time too once it is
+ * not today's — a run is read for which morning it spoke of.
+ */
+export function filed(iso: string, lang: string): string {
+  const day = stamp(iso, lang);
+  const old = days(iso);
+  if (old === null || old <= 0) return day;
+  return `${day} ${clock(Date.parse(iso), lang)}`;
+}
+
 /** The heading a thread sits under: today, this week, or its month. */
 export function group(iso: string, t: T, lang: string): string {
   const old = days(iso);

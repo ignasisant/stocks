@@ -65,6 +65,9 @@ _BOTS = (
     "httpx", "http-client", "headlesschrome", "phantomjs", "lighthouse",
     "pagespeed", "googlehc", "uptime", "pingdom", "monitor", "probe",
     "facebookexternalhit", "preview", "scan", "fetcher", "feed",
+    # WhatsApp's link unfurler ("WhatsApp/2.x"). Its readers open links in the
+    # phone's own browser, whose User-Agent never names WhatsApp.
+    "whatsapp",
 )
 
 

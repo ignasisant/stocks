@@ -778,6 +778,9 @@ WRITES = {
     ("/v1/chat/settings", "patch"),
     # A thumbs on an answer copies the question and answer to the operator.
     ("/v1/chat/turns/{tid}/rating", "put"),
+    # A shared answer is a public file: publishing one, and taking it down.
+    ("/v1/chat/turns/{tid}/share", "post"),
+    ("/v1/chat/shares/{share_id}", "delete"),
     # The saved memories. They ride in every system prompt, so a token that
     # could add one could tell the account's assistant what to believe about
     # its user.

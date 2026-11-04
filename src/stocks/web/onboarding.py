@@ -571,6 +571,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="scheduled", icon="schedule", step="notify"),
         ),
     ),
+    Release(
+        version="2026.11",
+        date="2026-11",
+        items=(
+            # A capability there was none of: an answer sent out as a link
+            # (amounts hidden by default) that opens the app with the chat on
+            # it, for a guest too. Lives in the chat, so it rides on the
+            # assistant step.
+            News(slug="share", icon="share", step="assistant"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

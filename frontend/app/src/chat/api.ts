@@ -33,6 +33,7 @@ import type {
   RatingReason,
   Recalled,
   SettingsPatch,
+  SharedAnswer,
   Thread,
   ToolCall,
 } from "./types";
@@ -246,6 +247,25 @@ export const rateTurn = (
   tid: string,
   body: { vote: Rating | null; reason?: RatingReason; note?: string; lang?: string },
 ) => send<{ vote: Rating | null }>("PUT", `/chat/turns/${id(tid)}/rating`, body, CHAT);
+
+/**
+ * Publish an answer at `/?share=<id>`, or with `preview` see what that page
+ * would hold. The same answer cut the same way is the same link.
+ */
+export const shareTurn = (tid: string, body: { masked: boolean; preview?: boolean }) =>
+  send<SharedAnswer>("POST", `/chat/turns/${id(tid)}/share`, body, CHAT);
+
+/** Take a link down, and every other link its answer went out under. */
+export const unshare = (shareId: string) =>
+  send<void>("DELETE", `/chat/shares/${id(shareId)}`, undefined, CHAT);
+
+/** A shared answer, to anybody with the link (a guest too). 404 once taken down. */
+export const readShare = (shareId: string) =>
+  get<SharedAnswer>(`/shares/${id(shareId)}`);
+
+/** A new thread that starts from a shared answer, as the reader's own. */
+export const continueShare = (shareId: string) =>
+  send<Conversation>("POST", "/chat/conversations", { from_share: shareId }, CHAT);
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>

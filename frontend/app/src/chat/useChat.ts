@@ -66,6 +66,7 @@ import type {
   Meta,
   PlanStep,
   Rating,
+  ShareLink,
   Recalled,
   SettingsPatch,
   Thread,
@@ -959,6 +960,13 @@ export function useChat(live: boolean) {
     );
   }, []);
 
+  /** The links `tid` went out under changed (`[]`: taken down). */
+  const shared = useCallback((tid: string, links: ShareLink[]) => {
+    setTurns((list) =>
+      list.map((turn) => (turn.id === tid ? { ...turn, shares: links } : turn)),
+    );
+  }, []);
+
   const open = useCallback(
     async (cid: string) => {
       // Already on it, and an answer is being written into it: stay.
@@ -1226,6 +1234,7 @@ export function useChat(live: boolean) {
     press,
     drop,
     rated,
+    shared,
     open,
     create,
     rename,
