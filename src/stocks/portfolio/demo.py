@@ -55,7 +55,9 @@ TICKERS = ("AAPL", "MSFT", "NVDA", "GOOGL", "META", "TSLA", "NOW")
 
 # date, ticker, action, quantity, price, fee, name
 # Prices are approximately the real closes on those dates; a dividend's total
-# amount rides in `price`, which is the ledger's own convention.
+# amount rides in `price`, which is the ledger's own convention. A split since
+# a buy needs its row: without it the price feed's post-split quote reads as a
+# loss the book never had, and the assistant offers to harvest it.
 _ROWS: tuple[tuple[str, str, str, float, float, float, str], ...] = (
     ("2024-03-12", "AAPL",  "buy",      20,  173.20, 0.99, "Apple"),
     ("2024-04-18", "MSFT",  "buy",       8,  404.30, 0.99, "Microsoft"),
@@ -78,6 +80,7 @@ _ROWS: tuple[tuple[str, str, str, float, float, float, str], ...] = (
     ("2025-09-16", "MSFT",  "buy",       4,  509.20, 0.99, "Microsoft"),
     ("2025-09-16", "META",  "dividend",  0,    3.15, 0.00, "Meta dividend"),
     ("2025-12-11", "MSFT",  "dividend",  0,    9.96, 0.00, "Microsoft dividend"),
+    ("2025-12-18", "NOW",   "split",     5,    0.00, 0.00, "ServiceNow 5:1 split"),
     ("2026-02-12", "AAPL",  "dividend",  0,    8.10, 0.00, "Apple dividend"),
     ("2026-03-12", "MSFT",  "dividend",  0,   10.16, 0.00, "Microsoft dividend"),
     ("2026-05-14", "NVDA",  "sell",     15,  235.70, 0.99, "NVIDIA"),

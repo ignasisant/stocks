@@ -284,6 +284,7 @@
     - Gives a qualified verdict, not a recommendation to buy
   truth:
     - {get: /ticker/BKNG/metrics, pick: "kpis[key=pe_ttm].value", label: "BKNG trailing P/E", tol: 0.1}
+  refs: [/ticker/BKNG/valuation, /ticker/BKNG/dcf]
 
 - id: ticker-analysts
   area: ticker

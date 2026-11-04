@@ -196,6 +196,17 @@ def test_references_cover_the_named_tickers_and_the_book():
     assert len(paths) == len(set(paths))
 
 
+def test_the_book_is_a_reference_for_every_question():
+    # The chat holds the book on every turn: a price answer may quote it.
+    price = prod_eval.Truth("/ticker/NVDA/quote", "price", "price")
+    q = _q(kind="data", truth=(price,))
+    paths = prod_eval.reference_paths(q)
+    assert "/portfolio/positions" in paths
+    assert "/portfolio/summary" in paths
+    # A question that reads nothing is not figure-checked at all.
+    assert prod_eval.reference_paths(_q(kind="howto")) == []
+
+
 def test_harvest_reads_values_and_figures_in_text():
     data = {"price": 22.11, "ok": True, "rows": [{"w": 0.27}, {"note": "rango 17,39"}]}
     assert sorted(prod_eval.harvest(data)) == [0.27, 17.39, 22.11]
@@ -209,6 +220,19 @@ def test_invented_technicals_are_unsourced_but_the_quote_is_not():
     )
     assert prod_eval.unsourced(text, pool + [0.27]) == [380.0, 62.0, 425.0]
     assert prod_eval.unsourced("vendí a 26,51", pool, "he vendido a 26,51") == []
+
+
+def test_a_loss_written_positive_is_sourced():
+    text = "NOW está un 88,6 % bajo coste, una pérdida de 2.249 €."
+    assert prod_eval.unsourced(text, [-0.886, -2249.0]) == []
+
+
+def test_links_and_amounts_in_millions_are_not_unsourced():
+    text = (
+        "Capitalización de 147.500 millones "
+        "([IBE.MC](https://x.es/20261103/valores/1003744443702_0.html))"
+    )
+    assert prod_eval.unsourced(text, [147_500_000_000.0]) == []
 
 
 def test_three_unsourced_figures_are_a_hallucination():
