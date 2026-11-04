@@ -259,6 +259,10 @@ def load(path: Path) -> list[Entry]:
         obs.warn("journal.read_failed", error_type=type(exc).__name__,
                  error=str(exc)[:200])
         return []
+    return _parse(raw)
+
+
+def _parse(raw) -> list[Entry]:
     out = []
     for item in (raw.get("entries") if isinstance(raw, dict) else None) or []:
         if not isinstance(item, dict) or not item.get("id") or not item.get("subject"):
@@ -309,6 +313,7 @@ def _save(path: Path, entries: list[Entry]) -> None:
     from stocks import accounts
 
     accounts.writable(path)
+    entries = _merged(path, entries)
     if len(entries) > MAX_ENTRIES:
         settled = [e for e in entries if e.state not in LIVE]
         drop = {e.id for e in settled[: len(entries) - MAX_ENTRIES]}
@@ -320,6 +325,40 @@ def _save(path: Path, entries: list[Entry]) -> None:
     except Exception as exc:  # noqa: BLE001 — the local copy is good
         obs.warn("journal.persist_failed", error_type=type(exc).__name__,
                  error=str(exc)[:200])
+
+
+def _merged(path: Path, entries: list[Entry]) -> list[Entry]:
+    """`entries` with what the bucket's copy has that they lack.
+
+    The local file is only restored once per process, so another process
+    that wrote the journal since (a second instance, a scheduled job) left
+    the bucket ahead of it, and writing the local list straight back would
+    drop those entries — a week of exit rules went that way. Per id the
+    later `updated` wins, local on a tie; an entry only the bucket has is
+    kept. Unreadable bucket: the local list as it is, like before."""
+    try:
+        body = storage.read(path)
+        theirs = _parse(json.loads(body)) if body else []
+    except Exception as exc:  # noqa: BLE001 — the local copy still gets written
+        obs.warn("journal.merge_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        return entries
+    out = list(entries)
+    at = {e.id: i for i, e in enumerate(out)}
+    added = newer = 0
+    for e in theirs:
+        i = at.get(e.id)
+        if i is None:
+            out.append(e)
+            added += 1
+        elif e.updated > out[i].updated:
+            out[i] = e
+            newer += 1
+    if added:
+        out.sort(key=lambda e: e.day)
+    if added or newer:
+        obs.event("journal.merged", added=added, newer=newer)
+    return out
 
 
 def _lapse(entry: Entry, now: str, link: str = "") -> Entry:
