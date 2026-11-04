@@ -589,16 +589,19 @@ def _attribution(request: Request) -> dict:
 def _entry_kind(request: Request) -> str:
     """Which door this browser came through on its first app document.
 
-    "guest" and "signin" are the landing's two calls to action; "link" is a URL
-    somebody shared with a source token on it (including the return leg of a
-    sign-in, which carries the token home); "direct" is everything else — a
-    bookmark, a typed address, a deep link from a chat window.
+    "guest" and "signin" are the landing's two calls to action; "share" a chat
+    answer somebody sent (`/?share=`); "link" is a URL somebody shared with a
+    source token on it (including the return leg of a sign-in, which carries
+    the token home); "direct" is everything else — a bookmark, a typed
+    address, a deep link from a chat window.
     """
     params = request.query_params
     if landing.PARAM_GUEST in params:
         return "guest"
     if landing.PARAM_SIGNIN in params:
         return "signin"
+    if seo.SHARE_PARAM in params:
+        return "share"
     return "link" if attribution.source(params) else "direct"
 
 
@@ -983,6 +986,8 @@ def _with_card(request: Request, document: bytes) -> bytes:
     validated before it is written anywhere, and the company name is the
     profiles memo's or nothing — never a fetch on a document request.
     """
+    if seo.SHARE_PARAM in request.query_params:
+        return _with_share_card(request, document)
     if request.url.path.rstrip("/") != seo.TICKER_PATH:
         return document
     symbol = seo.ticker_symbol(request.query_params.get("ticker"))
@@ -995,6 +1000,29 @@ def _with_card(request: Request, document: bytes) -> bytes:
     title, tags = seo.ticker_head(
         symbol, base_url(request), _shell_lang(request), name=known.get("name")
     )
+    html = document.decode("utf-8")
+    html = html.replace("<title>TopStocks</title>", f"<title>{esc(title)}</title>", 1)
+    return html.replace("</head>", tags + "</head>", 1).encode("utf-8")
+
+
+def _with_share_card(request: Request, document: bytes) -> bytes:
+    """`document` with the link preview of the chat answer `?share=` names.
+
+    Read from the stored copy (`web/shares.py`), which was cut before it was
+    published, so the card can quote nothing the page does not. A link taken
+    down, or an id that is not one, keeps the shell's own card. Opening one is
+    logged here, the only request every reader of the link makes; the preview
+    bots that unfurl it are not readers."""
+    from stocks.web import shares
+    from stocks.web.markup import esc
+
+    share = shares.load(request.query_params.get(seo.SHARE_PARAM, ""))
+    if share is None:
+        return document
+    agent = request.headers.get("user-agent")
+    if not attribution.is_bot(agent):
+        obs.event("share.opened", share=share["id"], **_attribution(request))
+    title, tags = seo.share_head(share, base_url(request), _shell_lang(request))
     html = document.decode("utf-8")
     html = html.replace("<title>TopStocks</title>", f"<title>{esc(title)}</title>", 1)
     return html.replace("</head>", tags + "</head>", 1).encode("utf-8")

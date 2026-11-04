@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { useLang, useT } from "../shell/i18n";
-import { group, stamp } from "./format";
+import { filed, group, stamp } from "./format";
 import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import { Scheduled } from "./Scheduled";
@@ -154,7 +154,10 @@ function Row({
             </span>
           ) : null}
           {t("chat.thread_meta", {
-            when: stamp(conv.updated, lang),
+            // A run is found by when it went out, not by when it was last read.
+            when: conv.scheduled
+              ? filed(conv.created, lang)
+              : stamp(conv.updated, lang),
             n: conv.messages,
           })}
         </span>

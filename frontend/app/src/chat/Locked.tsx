@@ -18,6 +18,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../shell/i18n";
 import { useAssistantAsks } from "../shell/assistant";
+import { useRoute } from "../shell/router";
 import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
 import { Glyph } from "./icons";
 import { keepDraft } from "./draft";
@@ -38,6 +39,25 @@ export function LockedDrawer() {
     setOpen(true);
   }, []);
   useAssistantAsks(onAsk);
+
+  // `?share=<id>`: an answer somebody sent, read in place of the sample. The
+  // parameter stays through the sign-in (`next=` carries it), so the reader
+  // comes back to the same answer, signed in, with the offer to carry on.
+  const { params, setParams } = useRoute();
+  // Held apart from the URL so the drawer, shut on the first render, does not
+  // read as closed on the answer and take the parameter off before it opens.
+  const linked = params.get("share");
+  const [shared, setShared] = useState<string | null>(null);
+  useEffect(() => {
+    if (!linked) return;
+    setShared(linked);
+    setOpen(true);
+  }, [linked]);
+  useEffect(() => {
+    if (open || !shared) return;
+    setShared(null);
+    setParams({ share: undefined });
+  }, [open, shared, setParams]);
 
   useEffect(() => {
     if (!open) return;
@@ -101,7 +121,7 @@ export function LockedDrawer() {
           tabIndex={-1}
         >
           <Suspense fallback={<div className="ag-chat-body" />}>
-            <LockedPanel asked={asked} onClose={() => setOpen(false)} />
+            <LockedPanel asked={asked} shared={shared} onClose={() => setOpen(false)} />
           </Suspense>
         </aside>
       )}

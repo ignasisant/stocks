@@ -37,6 +37,8 @@ import { Tabs } from "./Tabs";
 import { close as closeTab, fit, readTabs, same, saveTabs } from "./strip";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
+import { SharedPanel } from "./SharedPanel";
+import { ShareSheet } from "./ShareSheet";
 import { rates, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
 import type { Jump } from "./types";
@@ -120,16 +122,15 @@ function Grip() {
 }
 
 /**
- * The phone header's ⋮: what the desktop header lays out as icons, in a list
- * that opens under the button. Pointerdown outside closes it, Esc hands the
+ * The phone header's ⋮: the list and settings, which the desktop header lays
+ * out as icons, in a list that opens under the button. New stays out of it,
+ * an icon of its own beside it: the one a reader reaches for most. Pointerdown outside closes it, Esc hands the
  * focus back to the button, and the arrows walk it (`AiAsk`'s menu).
  */
 function HeadMenu({
-  onNew,
   onThreads,
   onSettings,
 }: {
-  onNew: () => void;
   onThreads: () => void;
   onSettings: () => void;
 }) {
@@ -171,7 +172,6 @@ function HeadMenu({
     list[next]?.focus();
   };
   const entries: { key: string; glyph: string; run: () => void }[] = [
-    { key: "chat.new", glyph: "add", run: onNew },
     { key: "chat.threads_title", glyph: "forum", run: onThreads },
     { key: "chat.settings_short", glyph: "settings", run: onSettings },
   ];
@@ -228,6 +228,8 @@ export default function Panel({
   onJumpTaken,
   thread = null,
   onThreadTaken,
+  share = null,
+  onShareDone,
   onClose,
   onPark,
 }: {
@@ -242,6 +244,10 @@ export default function Panel({
   /** Sent here to one conversation (the daily card's "Ask"). */
   thread?: string | null;
   onThreadTaken?: () => void;
+  /** Opened from a shared link (`?share=`): that answer, over the thread. */
+  share?: string | null;
+  /** The shared answer was left, or carried on from. */
+  onShareDone?: () => void;
   onClose: () => void;
   /**
    * Step aside for a page the walkthrough sent the reader to, on a phone —
@@ -251,9 +257,14 @@ export default function Panel({
   onPark?: () => void;
 }) {
   const t = useT();
-  const [view, setView] = useState<"thread" | "threads" | "settings" | "memory">(
-    "thread",
-  );
+  const [view, setView] = useState<
+    "thread" | "threads" | "settings" | "memory" | "shared"
+  >(() => (share ? "shared" : "thread"));
+  useEffect(() => {
+    if (share) setView("shared");
+  }, [share]);
+  // The answer whose share sheet is open.
+  const [sharing, setSharing] = useState<string | null>(null);
   // The reader left from the key section and comes back to it: the settings
   // view is where the sign-in is finished and where its outcome is said.
   useEffect(() => {
@@ -429,7 +440,7 @@ export default function Panel({
         </button>
         <button
           type="button"
-          className="ag-chat-icon ag-chat-head-wide"
+          className="ag-chat-icon"
           title={t("chat.new")}
           aria-label={t("chat.new")}
           onClick={() => {
@@ -451,14 +462,10 @@ export default function Panel({
         >
           <Glyph name="settings" size={18} />
         </button>
-        {/* A phone keeps one control in the header, at 44px: this menu
-            (new conversation, the list, settings). Close is desktop-only:
-            there the tab bar's other items and the handle's swipe leave. */}
+        {/* A phone keeps two controls in the header, at 44px: New above,
+            and this menu (the list, settings). Close is desktop-only: there
+            the tab bar's other items and the handle's swipe leave. */}
         <HeadMenu
-          onNew={() => {
-            setView("thread");
-            void chat.create();
-          }}
           onThreads={() => setView("threads")}
           onSettings={() => setView("settings")}
         />
@@ -510,7 +517,7 @@ export default function Panel({
 
       {chat.failed && <p className="ag-chat-note">{t("chat.api_error")}</p>}
 
-      {!state && !early && !chat.failed && (
+      {!state && !early && !chat.failed && view !== "shared" && (
         <div className="ag-chat-body">
           <Skeleton rows={4} />
         </div>
@@ -542,6 +549,22 @@ export default function Panel({
           connect={connect}
           onConnectTaken={onConnectTaken}
           onMemory={() => setView("memory")}
+          onLeave={onPark ?? onClose}
+        />
+      )}
+
+      {view === "shared" && share && (
+        <SharedPanel
+          id={share}
+          signedIn
+          onClose={() => {
+            setView("thread");
+            onShareDone?.();
+          }}
+          onContinue={(cid) => {
+            onShareDone?.();
+            openThread(cid);
+          }}
           onLeave={onPark ?? onClose}
         />
       )}
@@ -647,6 +670,7 @@ export default function Panel({
                       onRegenerate={
                         regen && i === all.length - 1 ? chat.regenerate : undefined
                       }
+                      onShare={turn.id ? () => setSharing(turn.id ?? null) : undefined}
                     />
                   ))
                 ) : chat.opening ? (
@@ -743,6 +767,14 @@ export default function Panel({
             </div>
           )}
         </>
+      )}
+      {sharing && (
+        <ShareSheet
+          tid={sharing}
+          links={chat.turns.find((turn) => turn.id === sharing)?.shares ?? []}
+          onShared={(links) => chat.shared(sharing, links)}
+          onClose={() => setSharing(null)}
+        />
       )}
     </>
   );

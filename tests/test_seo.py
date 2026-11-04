@@ -7,6 +7,7 @@ budgets and the JSON-LD/FAQ agreement are the checks that would otherwise need
 an external validator.
 """
 
+import html
 import json
 import re
 from xml.etree import ElementTree
@@ -332,3 +333,19 @@ def test_a_long_or_hostile_name_is_cut_and_escaped():
 )
 def test_only_a_symbol_gets_a_card(raw, want):
     assert seo.ticker_symbol(raw) == want
+
+
+def test_a_shared_answer_card_says_who_asked_in_the_language_they_asked_in():
+    """The question titles it; the description names the sharer and the app
+    before the answer, in the share's language whatever the crawler sent."""
+    share = {"id": "AbCdEfGh123", "question": "¿Vendo NVDA?", "by": "Ana",
+             "lang": "es", "content": "**Sí**: con ••• € de ganancia. " * 20}
+    title, tags = seo.share_head(share, BASE, "en")
+    assert title == "¿Vendo NVDA? · TopStocks"
+    description = re.search(r'property="og:description" content="([^"]*)"', tags).group(1)
+    assert description.startswith("Ana se lo preguntó a la IA de TopStocks: Sí: con")
+    assert len(html.unescape(description)) <= seo.SHARE_DESCRIPTION_MAX
+    assert 'property="og:locale" content="es_ES"' in tags
+
+    _, tags = seo.share_head({**share, "by": "", "lang": ""}, BASE, "en")
+    assert 'content="TopStocks&#x27; AI answers: Sí' in tags

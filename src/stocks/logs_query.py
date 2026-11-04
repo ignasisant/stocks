@@ -430,7 +430,7 @@ def _epoch(ts: str) -> float:
 
 
 _USAGE_COUNTS = ("views", "chat", "logins", "signups", "imports", "first_imports",
-                 "feedback")
+                 "feedback", "shares", "share_opens")
 
 
 def usage(entries: Iterable[dict]) -> dict:
@@ -440,7 +440,9 @@ def usage(entries: Iterable[dict]) -> dict:
     account slug on any line that day (the request middleware stamps every
     event with it), a chat turn is `chat.answered`, a login `auth.login`, a
     signup `auth.signup`, an import `import.committed` (`first` marks the one
-    that replaced the demo book), feedback the widget. The access log says
+    that replaced the demo book), feedback the widget, a share a chat answer
+    published by link (`share.created`) and a share open somebody following
+    one (`share.opened`). The access log says
     what was looked at: a "visitor" is an address that called a page's API
     from a browser (`page_of`, `_is_person`), and a "view" is one address on
     one page, counted again only after `VIEW_WINDOW_S` of silence.
@@ -499,6 +501,10 @@ def usage(entries: Iterable[dict]) -> dict:
                 d["first_imports"] += 1
         elif event == "feedback":
             d["feedback"] += 1
+        elif event == "share.created":
+            d["shares"] += 1
+        elif event == "share.opened":
+            d["share_opens"] += 1
     rows = [
         {**d, "users": len(d["users"]), "visitors": len(d["visitors"])}
         for _, d in sorted(days.items())
@@ -515,7 +521,8 @@ def render_usage(summary: dict) -> str:
     if not summary["days"]:
         return "(no entries in range)"
     cols = (("day", 12), ("users", 6), ("visitors", 9), ("views", 6), ("chat", 5),
-            ("logins", 7), ("signups", 8), ("imports", 8), ("feedback", 9))
+            ("logins", 7), ("signups", 8), ("imports", 8), ("feedback", 9),
+            ("shares", 7), ("share_opens", 12))
     head = " ".join(
         f"{name:<{width}}" if name == "day" else f"{name:>{width}}"
         for name, width in cols

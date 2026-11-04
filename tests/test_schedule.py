@@ -236,6 +236,30 @@ def test_the_same_run_again_replaces_its_turn(chat, monkeypatch):
     assert turn["content"] == "two" and turn["scheduled"] == "digest"
 
 
+def test_a_run_can_be_rated_and_says_when_it_was_filed(chat, monkeypatch):
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    cid = auth.save_scheduled_thread("digest", "2026-11-02", "t", "one", chat)
+    (turn,) = auth.load_chat(chat, cid)
+    assert turn["id"] and turn["at"]
+    assert auth.rate_turn(turn["id"], "up", chat)["thread"] == cid
+    (turn,) = auth.load_chat(chat, cid)
+    assert turn["rating"] == "up"
+
+
+def test_a_run_filed_before_ids_gets_a_stable_one(chat, monkeypatch):
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    cid = auth.save_scheduled_thread("digest", "2026-11-02", "t", "one", chat)
+    book = json.loads(chat.read_text())
+    for conv in book["conversations"]:
+        for m in conv["messages"]:
+            m.pop("id", None)
+    chat.write_text(json.dumps(book))
+    (turn,) = auth.load_chat(chat, cid)
+    assert turn["id"] == f"{cid}-0"
+    assert auth.load_chat(chat, cid)[0]["id"] == turn["id"]
+    assert auth.rate_turn(turn["id"], "down", chat) is not None
+
+
 def test_the_model_is_told_what_the_thread_opened_with():
     history = [
         {

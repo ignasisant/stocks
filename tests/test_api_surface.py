@@ -181,7 +181,9 @@ def test_the_guest_list_is_not_silently_growing():
     # `/bars`; no account goes into it.
     # 70: `POST /launch` — the app opened from a guest's Home Screen: one log
     # line, nothing on disk, metered per address like `/vitals`.
-    assert len(guest.OPEN) == 70
+    # 71: `GET /shares/{share_id}` — a chat answer somebody shared by link: a
+    # copy cut before it was published, read by people with no account.
+    assert len(guest.OPEN) == 71
 
 
 def test_every_route_a_guest_may_read_is_a_read():

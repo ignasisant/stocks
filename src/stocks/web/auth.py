@@ -92,6 +92,11 @@ def delete_account(paths: UserPaths) -> None:
     from stocks.connector import store
 
     store.revoke_account(paths)
+    # Shared answers live outside the account dir (anybody may read them),
+    # so the sweep below would miss them.
+    from stocks.web import shares
+
+    shares.purge_owner(shares.owner_of(paths))
 
     if storage.enabled():
         prefix = root.relative_to(PROJECT_ROOT.resolve()).as_posix()
@@ -386,6 +391,12 @@ def load_book(path: Path) -> dict:
         c.setdefault("created", _now())
         c.setdefault("updated", c["created"])
         c["messages"] = [m for m in (c.get("messages") or []) if isinstance(m, dict)]
+        # A daily card or scheduled run filed before those turns had ids: one
+        # derived from its place, the same on every read, so it can be rated.
+        for i, m in enumerate(c["messages"]):
+            if (m.get("role") == "assistant" and not m.get("id")
+                    and (m.get("daily") or m.get("scheduled"))):
+                m["id"] = f"{c['id']}-{i}"
     if not convs:
         return _empty_book()
 
@@ -657,6 +668,62 @@ def rate_turn(tid: str, vote: str | None, path: Path) -> dict | None:
     return None
 
 
+def find_answer(tid: str, path: Path) -> dict | None:
+    """The answer `tid` names and the question above it, read only:
+    {"answer": entry, "question": text, "thread": id}, or None."""
+    if not tid:
+        return None
+    for conv in load_book(path)["conversations"]:
+        msgs = conv["messages"]
+        for i, m in enumerate(msgs):
+            if m.get("role") != "assistant" or m.get("id") != tid:
+                continue
+            asked = next((str(msgs[j].get("content") or "")
+                          for j in range(i - 1, -1, -1)
+                          if msgs[j].get("role") == "user"), "")
+            return {"answer": dict(m), "question": asked, "thread": conv["id"]}
+    return None
+
+
+@_locked
+def stamp_share(tid: str, links: list[dict], path: Path) -> None:
+    """Note on the answer the links it was shared under (`web/shares.py`);
+    an empty list takes them off. `updated` is left alone, as a rating leaves
+    it: sharing an answer is not writing in its thread."""
+    book = load_book(path)
+    for conv in book["conversations"]:
+        for m in conv["messages"]:
+            if m.get("role") == "assistant" and m.get("id") == tid:
+                m.pop("shares", None)
+                if links:
+                    m["shares"] = links
+                save_book(book, path)
+                return
+
+
+@_locked
+def seed_conversation(title: str, messages: list[dict], path: Path) -> str:
+    """A new active thread that starts with `messages`; returns its id. How a
+    shared answer becomes the reader's own to carry on (`web/shares.py`)."""
+    book = load_book(path)
+    conv = _blank_conversation(title[:_TITLE_MAX])
+    conv["title_auto"] = False
+    conv["messages"] = list(messages)
+    book["conversations"].append(conv)
+    book["active"] = conv["id"]
+    save_book(book, path)
+    index = memory_path(path)
+    if memory.remember(index, conv["messages"], conv["id"]):
+        _persist(index)
+    return conv["id"]
+
+
+def _filed() -> dict:
+    """What a turn written in the background carries: the id a thumbs names
+    it by, and when it was written — no session watched it arrive."""
+    return {"id": uuid.uuid4().hex[:12], "at": _now()}
+
+
 @_locked
 def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     """File a daily card in the chat as a thread of its own; returns its id.
@@ -680,7 +747,7 @@ def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
         conv["title_auto"] = False
         conv["daily"] = day
         book["conversations"].append(conv)
-    turn = {"role": "assistant", "content": text, "daily": day}
+    turn = {"role": "assistant", "content": text, "daily": day, **_filed()}
     msgs = conv["messages"]
     if msgs and msgs[-1].get("daily") == day:
         if msgs[-1].get("content") == text:
@@ -716,7 +783,8 @@ def save_scheduled_thread(job: str, run: str, title: str, text: str, path: Path)
         conv["scheduled"] = job
         conv["run"] = run
         book["conversations"].append(conv)
-    turn = {"role": "assistant", "content": text, "scheduled": job, "run": run}
+    turn = {"role": "assistant", "content": text, "scheduled": job, "run": run,
+            **_filed()}
     msgs = conv["messages"]
     if msgs and msgs[-1].get("scheduled") == job and msgs[-1].get("run") == run:
         if msgs[-1].get("content") == text:

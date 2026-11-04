@@ -23,15 +23,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from stocks.api.routes.chat import actions, preferences, threads, turns
+from stocks.api.routes.chat import actions, preferences, shares, threads, turns
 from stocks.api.routes.chat.preferences import session_keys
+from stocks.api.routes.chat.shares import shared
 from stocks.api.routes.chat.turns import Run, holds
 
-__all__ = ["holds", "Run", "session_keys"]
+__all__ = ["holds", "Run", "session_keys", "shared"]
 
 # Each leaf carries the "/chat" prefix itself: an included router is not
 # flattened, and the guest gate reads the innermost route's path, which must
 # still say "/chat/...".
 router = APIRouter()
-for _leaf in (threads, preferences, turns, actions):
+for _leaf in (threads, preferences, turns, actions, shares):
     router.include_router(_leaf.router)

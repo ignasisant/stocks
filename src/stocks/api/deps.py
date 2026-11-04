@@ -321,3 +321,6 @@ SurfaceAction = Annotated[UserPaths, Depends(_burst("surface"))]
 # fetches with a model call (`routine_plan`), so a client looping on it has to
 # hit the same kind of wall a chat turn does — its own, not the chat's.
 RoutineSave = Annotated[UserPaths, Depends(_burst("routine"))]
+# A chat answer published by link (`web/shares.py`): no model call, but every
+# one writes a public file, and a client looping on it would fill the bucket.
+ShareWrite = Annotated[UserPaths, Depends(_burst("share"))]

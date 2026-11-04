@@ -157,6 +157,36 @@ type Message = {
   id?: string;
   /** The reader's thumbs on this answer. */
   rating?: Rating | null;
+  /** When an answer written in the background (a daily card, a scheduled
+   *  run) was filed. Absent on the rest. */
+  at?: string;
+  /** The public links the answer went out under, one per cut (`/?share=`). */
+  shares?: ShareLink[];
+  /** On an answer carried on from a link: that share's id. */
+  shared_from?: string;
+};
+
+/** One public link to an answer: `masked` when the amounts were hidden on it. */
+export type ShareLink = { id: string; masked: boolean };
+
+/**
+ * A shared answer as its link shows it (`/shares/{id}`), or as it would
+ * (a preview: `id` and `created` empty). Already cut on the server.
+ */
+export type SharedAnswer = {
+  id: string;
+  question: string;
+  content: string;
+  web: Source[];
+  skills: string[];
+  activities: Activity[];
+  masked: boolean;
+  /** The sharer's first name; "" on a link made before it was kept. */
+  by: string;
+  lang: string;
+  created: string;
+  /** The reader is the account that shared it. */
+  mine: boolean;
 };
 
 /**

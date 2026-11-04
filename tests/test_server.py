@@ -1181,3 +1181,46 @@ def test_a_page_without_a_chunk_and_a_build_without_a_manifest_preload_nothing(
     (server._APP_BUILD / ".vite" / "manifest.json").unlink()
     server._manifest.cache_clear()
     assert "modulepreload" not in client.get("/portfolio").text
+
+
+# ------------------------------------------------------------ shared answer card
+
+
+def test_a_shared_answer_opens_the_app_with_its_own_link_preview(client, monkeypatch):
+    """`/?share=` is pasted into chats more than any page: the unfurl is the
+    question and the first words of the stored (already cut) answer, and the
+    link opens the app even for a browser that has never been there."""
+    from stocks.web import shares
+
+    stored = {"id": "AbCdEfGh123", "question": "¿Vendo NVDA?",
+              "content": "**Sí**: con ••• € de ganancia y un 12 % sobre coste."}
+    monkeypatch.setattr(shares, "load",
+                        lambda sid: stored if sid == stored["id"] else None)
+    events = []
+    monkeypatch.setattr(server.obs, "event",
+                        lambda name, **f: events.append((name, f)))
+    text = client.get(f"/?share={stored['id']}&src=share",
+                      headers={"User-Agent": "Mozilla/5.0 Safari"}).text
+    assert STUB in text, "the app, not the landing"
+    assert 'property="og:title" content="¿Vendo NVDA? · TopStocks"' in text
+    assert ('property="og:description" content="TopStocks&#x27; AI answers: '
+            'Sí: con ••• € de ganancia') in text
+    assert ("share.opened", {"share": stored["id"]}) == (
+        events[0][0], {"share": events[0][1]["share"]})
+    assert any(n == "landing.cta" and f["kind"] == "share" for n, f in events)
+
+    events.clear()
+    bot = client.get(f"/?share={stored['id']}", headers={"User-Agent": "WhatsApp/2.23"})
+    assert "¿Vendo NVDA?" in bot.text
+    assert not any(n == "share.opened" for n, _ in events), "an unfurl is no reader"
+
+    gone = client.get("/?share=missing1234").text
+    assert "¿Vendo" not in gone and STUB in gone
+
+
+def test_preview_bots_may_fetch_a_shared_answer():
+    from stocks.web import seo
+
+    robots = seo.robots_txt("https://topstocks.example")
+    bots = robots.split("User-agent: *")[0].split("User-agent: Slackbot")[1]
+    assert "Allow: /?share=" in bots

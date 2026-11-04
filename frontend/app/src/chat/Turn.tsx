@@ -29,7 +29,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { NumbersIn, useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
-import { href, Markdown } from "./markdown";
+import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
 import { addMemory, dropMemory, editMemory, rateTurn, replaceMemory } from "./api";
@@ -37,7 +37,7 @@ import {
   capMessage,
   clock,
   figuresIn,
-  host,
+  filed,
   providerLabel,
   skillName,
   stamp,
@@ -46,7 +46,8 @@ import {
 import { ActionCard } from "./ActionCard";
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
-import { AppSource, PageLink, type Source } from "./links";
+import { PageLink } from "./links";
+import { Sources } from "./Sources";
 import { Surfaces } from "./Surfaces";
 import { Debate } from "./Debate";
 import type { A2uiAction } from "./a2ui";
@@ -228,49 +229,6 @@ function Plan({ steps }: { steps: PlanStep[] }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function Sources({ web, onLeave }: { web: Source[]; onLeave: () => void }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  // The list is drawn closed rather than left unmounted, so that the button's
-  // `aria-controls` points at something that exists: an id that resolves to
-  // nothing is the same as no id at all.
-  const uid = useId();
-  const listId = `${uid}-sources`;
-  return (
-    <>
-      <button
-        type="button"
-        className="ag-chat-meta-btn"
-        aria-expanded={open}
-        aria-controls={listId}
-        onClick={() => setOpen((was) => !was)}
-      >
-        <Glyph name="link" size={12} />
-        {t("chat.sources_n", { n: web.length })}
-      </button>
-      <ul className="ag-chat-sources" id={listId} hidden={!open}>
-        {web.map((source, i) => (
-          <li key={i}>
-            {href(source.url) === null ? (
-              <AppSource source={source} onLeave={onLeave} />
-            ) : (
-              <a
-                className="ag-chat-a"
-                href={href(source.url) ?? undefined}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                title={source.title}
-              >
-                {host(source.url)}
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
-    </>
   );
 }
 
@@ -962,6 +920,7 @@ export function Turn({
   askRating,
   onRated,
   onRegenerate,
+  onShare,
   walk,
   fresh,
 }: {
@@ -1006,6 +965,8 @@ export function Turn({
   onRated?: (vote: Rating | null) => void;
   /** Ask again: only the newest finished answer gets one. */
   onRegenerate?: () => void;
+  /** Open the share sheet for this answer. Absent: a guest, or nothing to name. */
+  onShare?: () => void;
   /** Part of the exchange being asked now: it comes in rather than appears. */
   fresh?: boolean;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
@@ -1026,13 +987,17 @@ export function Turn({
           .join(" · "),
       })
     : "";
-  const when = clock(turn.ts, lang);
+  // A turn this session watched has its clock; a background one, its filing.
+  const when = turn.ts ? clock(turn.ts, lang) : turn.at ? filed(turn.at, lang) : "";
   const spent = took(turn.took);
   const rate = useRate(turn, onRated);
   // The thread decides which turns ask (`rates`); this only refuses one that
   // could not be named.
   const rateable = !!askRating && !mine && !turn.pending && !!turn.id && !turn.guide;
   const copyable = !mine && !turn.pending && !turn.guide && !!turn.content;
+  // A link names the answer by its id, so one stored before answers had ids
+  // cannot go out; nor can a refusal, which never reaches here.
+  const shareable = copyable && !!turn.id && !!onShare;
   // One provider answered for another. Session-only: a stored turn records
   // neither, so a reloaded thread names nobody rather than naming today's
   // head of the chain.
@@ -1187,6 +1152,19 @@ export function Turn({
           {(copyable || rateable || onRegenerate) && (
             <span className="ag-chat-thumbs">
               {copyable && <CopyAnswer text={turn.content} />}
+              {shareable && (
+                <button
+                  type="button"
+                  className={`ag-chat-meta-btn ag-chat-thumb${turn.shares?.length ? " ag-chat-thumb-on" : ""}`}
+                  aria-label={t(
+                    turn.shares?.length ? "chat.share_shared" : "chat.share",
+                  )}
+                  title={t(turn.shares?.length ? "chat.share_shared" : "chat.share")}
+                  onClick={onShare}
+                >
+                  <Glyph name="share" size={14} />
+                </button>
+              )}
               {rateable && <Thumbs rate={rate} />}
               {onRegenerate && (
                 <button

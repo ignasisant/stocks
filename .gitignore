@@ -127,6 +127,8 @@ wheels/
 /.agents/
 .notify_secrets.env
 /data/feedback/
+# Shared chat answers (stocks.web.shares): one account's words, synced to R2.
+/data/shares/
 # Anonymised import fingerprints: no statement data, but they carry account
 # slugs, same as /data/logs/.
 /data/imports/

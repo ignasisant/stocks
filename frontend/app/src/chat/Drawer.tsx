@@ -300,6 +300,27 @@ export function Drawer() {
     onThread(pushed);
   }, [pushed]);
 
+  // `?share=<id>` — somebody sent the reader one answer (`SharedPanel`). The
+  // drawer opens on it, on a phone too, over whatever page the link named.
+  // Unlike the others the parameter stays on the URL while the answer is on
+  // screen, so a reload shows it again; it comes off once the reader leaves
+  // it, carries on from it, or shuts the drawer.
+  const linked = params.get("share");
+  const [shared, setShared] = useState<string | null>(null);
+  useEffect(() => {
+    if (!linked) return;
+    setShared(linked);
+    show(true);
+  }, [linked]);
+  const leaveShared = useCallback(() => {
+    setShared(null);
+    setParams({ share: undefined });
+  }, [setParams]);
+  // Every way the drawer shuts — Close, Escape, a swipe, the nav — leaves it.
+  useEffect(() => {
+    if (!open && shared) leaveShared();
+  }, [open, shared, leaveShared]);
+
   // While an answer is being written, say whether the app is on screen: a
   // finished answer is pushed to the reader's devices only when it is not.
   useOnScreenBeat(working);
@@ -482,6 +503,8 @@ export function Drawer() {
               onJumpTaken={() => setJump(null)}
               thread={thread}
               onThreadTaken={() => setThread(null)}
+              share={shared}
+              onShareDone={leaveShared}
               onClose={() => show(false)}
               onPark={() => {
                 show(false);

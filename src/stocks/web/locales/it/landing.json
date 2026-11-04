@@ -172,6 +172,8 @@
   "landing.seo_title": "TopStocks — assistente IA per il portafoglio, FIFO e imposte",
   "landing.seo_description": "Assistente IA gratuito e open source che legge il tuo portafoglio: chiedi di rischio, concentrazione o imposte. Lotti FIFO e P/L in euro al cambio BCE.",
   "landing.seo_image_alt": "Dashboard di TopStocks: valore del portafoglio in euro con posizioni FIFO e P/L",
+  "landing.share_card_by": "{name} l'ha chiesto all'IA di TopStocks:",
+  "landing.share_card": "L'IA di TopStocks risponde:",
   "landing.footer_guides": "Guide fiscali",
   "landing.footer_privacy": "Privacy",
   "landing.footer_terms": "Condizioni",

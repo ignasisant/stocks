@@ -96,6 +96,14 @@ class Recalled(BaseModel):
     snippet: str = ""
 
 
+class ShareLink(BaseModel):
+    """One public link an answer went out under (`web/shares.py`): `masked`
+    when the reader's amounts were hidden on it."""
+
+    id: str
+    masked: bool
+
+
 class Message(BaseModel):
     """One stored turn. `skills`, `web` and `steps` are what the answer was
     built from — the lens, the pages, and the tool trace."""
@@ -128,6 +136,14 @@ class Message(BaseModel):
     # "" on the user's turns and on answers written before turns had ids.
     id: str = ""
     rating: str | None = None
+    # When a turn written in the background (a daily card, a scheduled run)
+    # was filed; "" on the rest, whose clock only the session that wrote
+    # them knew.
+    at: str = ""
+    # The links the answer was shared under, one per cut; and on an answer
+    # that came in by a link (`from_share`), that share's id.
+    shares: list[ShareLink] = []
+    shared_from: str = ""
 
 
 def _turn(raw: dict, lang: str = "en") -> Message:
@@ -180,6 +196,11 @@ def _turn(raw: dict, lang: str = "en") -> Message:
         ],
         id=str(raw.get("id") or ""),
         rating=raw.get("rating") if raw.get("rating") in ("up", "down") else None,
+        at=str(raw.get("at") or ""),
+        shares=[ShareLink(id=str(k["id"]), masked=k.get("masked") is True)
+                for k in (raw.get("shares") or [])
+                if isinstance(k, dict) and k.get("id")],
+        shared_from=str(raw.get("shared_from") or ""),
     )
 
 

@@ -2799,7 +2799,7 @@ a.ag-chat-btn {
      on a phone there is little to take from. The header tightens, the
      status row goes — its counter moves up into the header, the provider's
      name is in Settings — and the composer loses its spare padding. */
-  /* The header is the thread's name over its status, then ⋮ and Close at
+  /* The header is the thread's name over its status, then New and ⋮ at
      44px: no "Assistant" — the lit tab already says where this is. */
   .ag-chat-head {
     gap: 4px;
@@ -2825,8 +2825,8 @@ a.ag-chat-btn {
     height: 44px;
     place-items: center;
   }
-  /* After the icon rule, which would draw them again: new and settings live
-     in the ⋮ menu on a phone, and Close is the tab bar or the swipe. */
+  /* After the icon rule, which would draw them again: settings lives in the
+     ⋮ menu on a phone, and Close is the tab bar or the swipe. */
   .ag-chat-head > .ag-chat-thread-btn > svg,
   .ag-chat-head .ag-chat-head-wide {
     display: none;
@@ -3559,5 +3559,189 @@ a.ag-chat-btn {
 @media (forced-colors: active) {
   .ag-sched-day[aria-pressed="true"] {
     border-color: Highlight;
+  }
+}
+
+/* ---------------------------------------------------------- a shared answer */
+
+/* Read from a link (`SharedPanel.tsx`): a line saying whose and when, with
+   the way back beside it, over the exchange itself. */
+.ag-chat-shared-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.ag-chat-shared-head .ag-chat-locked-label {
+  margin: 0;
+}
+
+.ag-chat-share-masked {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+/* The share sheet (`ShareSheet.tsx`): over the drawer, so above its 70. A
+   sheet from the bottom on a phone, a card in the middle elsewhere. */
+.ag-share-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  background: var(--ag-surface-page-veil);
+}
+
+.ag-share {
+  display: flex;
+  width: 100%;
+  max-width: 34rem;
+  max-height: 90dvh;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+.ag-share:focus {
+  outline: none;
+}
+
+.ag-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ag-share-title {
+  margin: 0;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.ag-share-mask {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+.ag-share-mask input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--ag-brand-accent);
+}
+
+.ag-share-mask > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* What the link will show, framed as a page of its own: a reader should see
+   at a glance that this is the preview and not the thread behind it. */
+.ag-share-preview {
+  max-height: 40dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-share-preview .ag-chat-turn:last-child {
+  margin-bottom: 0;
+}
+
+.ag-share-out {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ag-share-link {
+  display: flex;
+  gap: 8px;
+}
+
+.ag-share-url {
+  min-width: 0;
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs, 4px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-share-link .ag-btn,
+.ag-share-to .ag-btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ag-fs-sm);
+  white-space: nowrap;
+}
+
+.ag-share-to {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A platform is its mark alone: the name is the label and the tooltip. */
+.ag-share-to .ag-share-brand {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.ag-share-make {
+  align-self: flex-start;
+}
+
+.ag-share-stop {
+  align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+  .ag-share-scrim {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .ag-share {
+    max-width: none;
+    max-height: 92dvh;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    border-radius: var(--ag-radius-md) var(--ag-radius-md) 0 0;
+  }
+
+  .ag-share-make {
+    align-self: stretch;
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-share-stop {
+    min-height: 44px;
   }
 }
