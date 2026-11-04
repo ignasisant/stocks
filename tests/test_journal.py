@@ -197,6 +197,42 @@ def test_settled_entries_are_pruned_first(monkeypatch, path):
     assert sorted(e.subject for e in journal.load(path)) == ["b", "c"]
 
 
+def _bucket_holds(monkeypatch, path):
+    """A bucket copy written by another process: whatever `path` holds now."""
+    body = path.read_bytes()
+    path.unlink()
+    monkeypatch.setattr("stocks.storage.read", lambda p: body if p == path else None)
+
+
+def test_a_stale_process_keeps_the_rules_another_one_wrote(monkeypatch, path):
+    # The 2026-10-29 loss: rules written on one instance, the journal then
+    # saved by a process that never saw them.
+    journal.add_criteria(path, "UBER", [{"rule": "below", "level": 51.23}], DAY)
+    _bucket_holds(monkeypatch, path)
+    journal.record(path, [_shown()], DAY)
+    entries = journal.load(path)
+    assert [e.subject for e in journal.criteria(entries)] == ["criterion:UBER:below"]
+    assert any(e.subject == "review:AMD" for e in entries)
+
+
+def test_the_later_change_to_one_entry_wins(monkeypatch, path):
+    monkeypatch.setattr(journal, "_now", lambda: "2026-10-01T09:00:00+00:00")
+    [rule] = journal.add_criteria(path, "UBER", [{"rule": "below", "level": 50}], DAY)
+    stale = path.read_bytes()
+    monkeypatch.setattr(journal, "_now", lambda: "2026-10-01T10:00:00+00:00")
+    assert journal.retire(path, rule.id)
+    _bucket_holds(monkeypatch, path)
+    path.write_bytes(stale)
+    journal.record(path, [_shown()], DAY)
+    assert {e.id: e.state for e in journal.load(path)}[rule.id] == "retired"
+
+
+def test_an_unreadable_bucket_still_writes_locally(monkeypatch, path):
+    monkeypatch.setattr("stocks.storage.read", lambda p: 1 / 0)
+    assert journal.record(path, [_shown()], DAY) == 1
+    assert len(journal.load(path)) == 1
+
+
 def test_the_account_carries_and_syncs_its_journal(tmp_path):
     paths = accounts.paths_for(EMAIL, None, users_dir=tmp_path)
     assert paths.journal == paths.chat.with_name("decisions.json")
