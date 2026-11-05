@@ -490,6 +490,17 @@ def test_a_blank_split_answer_is_asked_again_and_counted(blank_yahoo):
     assert fetch.unanswered() == before + 2
 
 
+def test_a_disowned_name_is_not_asked_for_its_splits(blank_yahoo, monkeypatch):
+    """ERR-04 (triage 2026-11-05): each blank counted, so the warm's sweep
+    never stamped a book holding ORGN and asked for it on every tick."""
+    monkeypatch.setattr(fetch, "_unlisted", {"ORGN": time.time()})
+    monkeypatch.setattr(fetch, "_unlisted_loaded", True)
+    before = fetch.unanswered()
+    assert fetch.splits("ORGN") == []
+    assert blank_yahoo == []
+    assert fetch.unanswered() == before
+
+
 def test_a_blank_close_is_asked_again_and_counted(blank_yahoo):
     before = fetch.unanswered()
     assert fetch.close_on("BYND", "2026-08-04") is None

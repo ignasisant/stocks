@@ -617,7 +617,11 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         hit = _splits_memo.get(key)
     if hit is not None:
         return hit
-    if retired(key):
+    if retired(key) or unlisted({ticker, key}):
+        # Yahoo said this week it has no such symbol: asking for its bars
+        # gets a blank, counted as unanswered, so the warm's sweep never
+        # stamped a book that holds one and asked again on every tick
+        # (ORGN, 19 times in three days).
         return []
     if is_isin(key):
         # An ISIN nothing has placed yet is no symbol: yfinance would run its
