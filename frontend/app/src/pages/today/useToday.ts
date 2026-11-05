@@ -10,7 +10,8 @@
  *   half stays on screen and a status line says the reader's half is coming.
  * - While the card says `pending` the page polls `GET /today` every
  *   `POLL_MS`; while the market read is a session behind and a newer one is
- *   being built, every `MARKET_POLL_MS`. One request at a time, capped.
+ *   being built, every `MARKET_POLL_MS`. One request at a time, capped: a
+ *   card still pending at the cap is `stalled`, and the page offers a retry.
  * - Regenerate is `POST /today?force=true`: the old card goes the instant it
  *   is pressed, and the poll stands down until the server has the new job.
  *
@@ -19,7 +20,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, send } from "../../shell/api";
-import { nextPoll, wantsWriting } from "./card";
+import { nextPoll, stalledAt, wantsWriting } from "./card";
 import type { PersonalCard, TodayCard } from "./types";
 
 export type TodayState =
@@ -96,9 +97,13 @@ export function useToday(lang: string, guest: boolean) {
   // answered, and none once the card and the market read both stand.
   const view = state.kind === "ready" && !state.writing ? state.view : null;
   const delay = view ? nextPoll(view, polls.current) : null;
+  // The cap reached with the card still pending: the job is not coming back
+  // on its own. The count stays at the cap so a stray render does not start
+  // polling again; `restart` reads afresh.
+  const stalled = view ? stalledAt(view, polls.current) : false;
   useEffect(() => {
     if (delay === null) {
-      polls.current = 0;
+      if (!stalled) polls.current = 0;
       return;
     }
     let live = true;
@@ -118,7 +123,7 @@ export function useToday(lang: string, guest: boolean) {
       live = false;
       window.clearTimeout(timer);
     };
-  }, [delay, lang, state]);
+  }, [delay, stalled, lang, state]);
 
   const regenerate = useCallback(() => {
     setState((current) =>
@@ -153,5 +158,5 @@ export function useToday(lang: string, guest: boolean) {
     setReload((n) => n + 1);
   }, []);
 
-  return { state, regenerate, restart };
+  return { state, stalled, regenerate, restart };
 }

@@ -43,3 +43,23 @@ read badly wide (a paragraph of copy, an empty state, a modal).
 
 Guarded by `tests/test_frontend_layout.py`.
 
+
+## Index comparisons start where the book starts
+
+Whenever the book or a position is set against an index (S&P 500, Nasdaq,
+MSCI World, IBEX…), the comparison also runs from the book's first day, and
+that is the span the screen opens on. Shorter windows (1 m, 6 m, 1 y) may sit
+beside it, never replace it: a window that opens later forgives whatever the
+picks lost before it.
+
+- The book against an index is on the **same money**: the index bought with
+  the book's own deposits on the same days (`portfolio.same_money`,
+  `index_change` beside `money_change`), never a price move of the index set
+  against the book's return.
+- A position against an index is both price moves over one window: from the
+  book's first day, or from the name's listing if later (and said so).
+- Everything in the reader's currency; a series that cannot be converted
+  has no gap rather than a gap that is the exchange rate's.
+
+Today's comparisons implement it (`today_sections.INCEPTION`, `since`). Any
+new comparison surface follows the same rule.

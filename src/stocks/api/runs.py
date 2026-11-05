@@ -140,14 +140,25 @@ def start(*, owner: str, rid: str, thread: str, question: str,
                 raise Busy(thread)
             del _runs[_key(owner, ended[0].id)]
         _runs[_key(owner, rid)] = run
-    threading.Thread(target=_work, args=(run, events, stopped, failed, done),
+    # A new thread starts with an empty context: without the request's log
+    # fields every chat.* event the turn writes would be logged `user="-"`.
+    threading.Thread(target=_work,
+                     args=(run, events, stopped, failed, done, obs.current()),
                      name=f"chat-run-{rid[:8]}", daemon=True).start()
     return run
 
 
 def _work(run: Run, events: Callable[[Run], Generator[str]], stopped: str,
           failed: Callable[[str], bool],
-          done: Callable[[Run], object] | None = None) -> None:
+          done: Callable[[Run], object] | None = None,
+          fields: dict | None = None) -> None:
+    with obs.context(**(fields or {})):
+        _drive(run, events, stopped, failed, done)
+
+
+def _drive(run: Run, events: Callable[[Run], Generator[str]], stopped: str,
+           failed: Callable[[str], bool],
+           done: Callable[[Run], object] | None) -> None:
     stream = events(run)
     refused = False
     try:

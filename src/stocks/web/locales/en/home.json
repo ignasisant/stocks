@@ -621,5 +621,7 @@
   "home.chart_band_gain": "Gain",
   "home.chart_band_loss": "Loss",
   "home.chart_summary": "Value {value}, {gap} against {injected} contributed, {range}",
-  "home.chart_spoken": "{date}: value {value}, contributed {injected}, {gap}"
+  "home.chart_spoken": "{date}: value {value}, contributed {injected}, {gap}",
+  "home.chart_index": "S&P 500",
+  "home.chart_index_note": "Your own money in the S&P 500 since your first trade: every contribution and sale on the same day."
 }

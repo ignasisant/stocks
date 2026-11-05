@@ -799,6 +799,128 @@ def render_connector(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------- shares
+
+#: The share funnel's events, fetched together (`stocks logs shares`).
+SHARES_EXTRA = (
+    'jsonPayload.event=("share.created" OR "share.opened" OR "share.continued"'
+    ' OR "auth.signup" OR "import.committed" OR "invite.asked"'
+    ' OR "landing.view" OR "landing.cta")'
+)
+
+#: An invite link's source token (`accounts.INVITE_PREFIX`), as logged.
+_INVITE = "inv-"
+
+_SHARE_STEPS = ("opens", "continues", "signups", "imports")
+
+
+def shares(entries: Iterable[dict]) -> dict:
+    """Answer shared -> link opened -> kept asking -> signup -> first import.
+
+    Per share id, since a share is the unit somebody chose to send. `opens`
+    is `share.opened`, which the server logs for people only (never for the
+    preview bots that unfurl the link); `continues` is a signed-in reader
+    turning the answer into a thread of their own. A signup counts for the
+    share it started from (`share` on `auth.signup`, `oidc._share`), and that
+    account's first real import counts for the same share — the activation
+    the share bought, the same rule as `funnel`'s import step.
+
+    Invites ride beside them, read off their source token (`src=inv-<code>`):
+    how many accounts asked for their link, the visits the links brought (the
+    landing, or the app for a browser that had been before), the signups and
+    their first imports.
+    """
+    rows: dict[str, dict] = {}
+    created = masked = 0
+    signed: dict[str, str] = {}  # account slug -> share it signed up from
+    activated: set[str] = set()
+    asked: set[str] = set()
+    invites = {"visits": 0, "signups": 0, "imports": 0}
+    invited: set[str] = set()
+
+    def row(share_id: str) -> dict:
+        return rows.setdefault(
+            share_id, {"share": share_id, **dict.fromkeys(_SHARE_STEPS, 0)})
+
+    for entry in sorted(entries, key=lambda e: str(e.get("timestamp") or "")):
+        body = payload(entry)
+        if body.get("bot"):
+            continue
+        name = str(body.get("event") or "")
+        share_id = str(body.get("share") or "")
+        user = str(body.get("user") or "")
+        src = str(body.get("src") or "")
+        if name == "invite.asked":
+            asked.add(str(body.get("code") or ""))
+        elif name in ("landing.view", "landing.cta") and src.startswith(_INVITE):
+            invites["visits"] += 1
+        elif name == "auth.signup" and src.startswith(_INVITE):
+            invites["signups"] += 1
+            if user not in _NO_ACCOUNT:
+                invited.add(user)
+        elif name == "import.committed" and user in invited:
+            if body.get("first") is not False and user not in activated:
+                activated.add(user)
+                invites["imports"] += 1
+        if name == "share.created":
+            created += 1
+            masked += body.get("masked") is True
+        elif name == "share.opened" and share_id:
+            row(share_id)["opens"] += 1
+        elif name == "share.continued" and share_id:
+            row(share_id)["continues"] += 1
+        elif name == "auth.signup" and share_id:
+            row(share_id)["signups"] += 1
+            if user not in _NO_ACCOUNT:
+                signed.setdefault(user, share_id)
+        elif name == "import.committed" and user in signed:
+            if body.get("first") is False or user in activated:
+                continue
+            activated.add(user)
+            row(signed[user])["imports"] += 1
+    ranked = sorted(rows.values(),
+                    key=lambda r: (r["signups"], r["continues"], r["opens"]),
+                    reverse=True)
+    return {
+        "created": created,
+        "masked": masked,
+        "totals": {step: sum(r[step] for r in ranked) for step in _SHARE_STEPS},
+        "shares": ranked,
+        "invites": {"asked": len(asked), **invites},
+    }
+
+
+def render_shares(summary: dict, top: int = 15) -> str:
+    t = summary["totals"]
+    inv = summary["invites"]
+    if not summary["created"] and not any(t.values()) and not any(inv.values()):
+        return "(no share events in range)"
+    lines = [
+        f"shared: {summary['created']} links ({summary['masked']} masked)",
+        f"opened {t['opens']} -> kept asking {t['continues']} "
+        f"({_rate(t['continues'], t['opens'])}) -> signups {t['signups']} "
+        f"({_rate(t['signups'], t['opens'])}) -> first imports {t['imports']} "
+        f"({_rate(t['imports'], t['signups'])})",
+    ]
+    if summary["shares"]:
+        head = (f"{'share':<16} {'opens':>6} {'asked':>6} {'signups':>8} "
+                f"{'imports':>8}")
+        lines += ["\nby share:", head, "-" * len(head)]
+        for r in summary["shares"][:top]:
+            lines.append(
+                f"{r['share'][:16]:<16} {r['opens']:>6} {r['continues']:>6} "
+                f"{r['signups']:>8} {r['imports']:>8}"
+            )
+    if any(inv.values()):
+        lines.append(
+            f"\ninvites: {inv['asked']} accounts took their link -> visits "
+            f"{inv['visits']} -> signups {inv['signups']} "
+            f"({_rate(inv['signups'], inv['visits'])}) -> first imports "
+            f"{inv['imports']} ({_rate(inv['imports'], inv['signups'])})"
+        )
+    return "\n".join(lines)
+
+
 # -------------------------------------------------------------------- installs
 
 INSTALLS_EXTRA = 'jsonPayload.event="app.launch"'

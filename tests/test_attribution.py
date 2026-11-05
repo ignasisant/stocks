@@ -176,6 +176,11 @@ def test_the_token_does_not_follow_the_reader_home_from_google():
     assert attribution.clean_target("/?src=rankia&lang=es") == "/?lang=es"
     assert attribution.clean_target("/?utm_source=rankia&gclid=x") == "/"
     assert attribution.clean_target("/portfolio?tab=fees") == "/portfolio?tab=fees"
+    # A guest's "Keep asking" on a shared answer: the request outlives the
+    # round trip, only the credit comes off.
+    assert attribution.clean_target("/?share=AbCdEfGh123&src=share&continue=1") == (
+        "/?share=AbCdEfGh123&continue=1")
+    assert not attribution.is_passive("continue")
 
 
 def test_a_crawler_is_counted_as_one(client, events):
@@ -255,6 +260,19 @@ def test_a_later_visit_through_another_link_does_not_rewrite_the_origin(tmp_path
     accounts.stamp_login(p, seeded=True, source="rankia")
     accounts.stamp_login(p, seeded=False, source="hn")
     assert load_prefs(p.prefs)["first_source"] == "rankia"
+
+
+def test_a_signup_keeps_the_shared_answer_it_started_from(tmp_path):
+    p = _account(tmp_path)
+    accounts.stamp_login(p, seeded=True, source="share", share="AbCdEfGh123")
+    accounts.stamp_login(p, seeded=False, source="share", share="ZzZzZzZz999")
+    assert load_prefs(p.prefs)["first_share"] == "AbCdEfGh123"
+
+
+def test_the_callback_reads_the_shared_answer_out_of_next():
+    assert oidc._share("/?share=AbCdEfGh123&src=share") == "AbCdEfGh123"
+    assert oidc._share("/?share=../../etc") == ""
+    assert oidc._share("/") == ""
 
 
 def test_an_account_that_arrived_without_a_campaign_stores_none(tmp_path):

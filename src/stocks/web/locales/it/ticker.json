@@ -559,5 +559,8 @@
   "ticker.shorts_holders": "Detentori",
   "ticker.shorts_col_holder": "Detentore",
   "ticker.shorts_col_pct": "Short netto",
-  "ticker.shorts_no_holders": "{source} pubblica solo il totale, non chi lo detiene."
+  "ticker.shorts_no_holders": "{source} pubblica solo il totale, non chi lo detiene.",
+  "ticker.share": "Condividi {ticker}",
+  "ticker.share_link": "Link a {ticker}",
+  "ticker.share_text": "{name} ({ticker}) su TopStocks"
 }

@@ -485,6 +485,24 @@ def test_the_signup_says_which_prompt_was_pressed(client, google, monkeypatch):
     assert fields["via"] == "oidc"
 
 
+def test_the_signup_says_which_shared_answer_it_started_from(
+    client, google, monkeypatch
+):
+    """A reader who signs in from `/?share=<id>` keeps the link home and the
+    signup names the share, so `stocks logs shares` can credit it."""
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(oidc.obs, "event", lambda name, **f: seen.append((name, f)))
+    google.install()
+    client.get(f"{session.LOGIN_PATH}?next=/%3Fshare%3DAbCdEfGh123%26src%3Dshare"
+               "&wall=share")
+    response = client.get(f"{session.CALLBACK_PATH}?state=st-1&code=c")
+    assert signed_in_as(response) == EMAIL
+    assert "share=AbCdEfGh123" in response.headers["location"]
+    _, fields = next(e for e in seen if e[0] == "auth.signup")
+    assert fields["share"] == "AbCdEfGh123"
+    assert fields["src"] == "share"
+
+
 @pytest.mark.parametrize("hostile", ["<script>", "Chat", "a" * 40, "chat%0Aevil"])
 def test_a_prompt_name_the_app_does_not_write_is_dropped(hostile):
     assert oidc._wall(hostile) == ""

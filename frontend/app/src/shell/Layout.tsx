@@ -31,6 +31,7 @@ import { openAssistant, useAssistantUnread, useAssistantWorking } from "./assist
 import { Search } from "./Search";
 import { InstallNudge } from "./InstallNudge";
 import { ProfilePrompt } from "./ProfilePrompt";
+import { RatePrompt } from "./RatePrompt";
 import { Tour } from "./Tour";
 import { Link, depth, useRoute } from "./router";
 import { BOTTOM, PAGES, sections } from "./pages";
@@ -459,6 +460,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {!guest ? <Drawer /> : GUEST_CHROME.chat === "locked" ? <LockedDrawer /> : null}
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
       {!guest || GUEST_CHROME.installNudge ? <InstallNudge /> : null}
+      {!guest || GUEST_CHROME.ratePrompt ? <RatePrompt /> : null}
       <ActivityBanner />
       <PullRefresh />
       <Toaster />

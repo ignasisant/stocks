@@ -859,7 +859,8 @@ body {
       .tk-ai-more,
       .tk-ai-item,
       .ag-sched-day,
-      .ag-sched-more
+      .ag-sched-more,
+      .ag-rate-star
     ):active:not(:disabled) {
     scale: 0.97;
   }

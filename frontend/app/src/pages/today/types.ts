@@ -43,6 +43,27 @@ export type TodaySection = {
   note: string;
   /** Sources that did not answer: yahoo, edgar, sec, bafin, prices, review. */
   missing: string[];
+  /** Comparisons only: the book and the indexes over each span. */
+  benchmarks?: TodayBenchmark[];
+  /** Comparisons only: the currency every move is in; "" on older cards. */
+  currency?: string;
+  /** Comparisons only: the book's first day, where `all` starts; "" without. */
+  since?: string;
+};
+
+/** An index the comparisons are laid against; `@BOOK` is the book itself. */
+export type TodayBenchmark = {
+  symbol: string;
+  /** Empty for `@BOOK`. */
+  name: string;
+  /** What its moves are in: the section's, unless a rate failed. */
+  currency: string | null;
+  m1: number | null;
+  m6: number | null;
+  y1: number | null;
+  /** Since the book's first day: the book's own money for `@BOOK`, that
+   *  same money bought into the index for the rest. Absent on older cards. */
+  all?: number | null;
 };
 
 export type MarketLine = {

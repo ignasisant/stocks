@@ -46,6 +46,9 @@ dependencies = [
     "pandas>=3.0.5",
     "pdfminer-six>=20260107",
     "pdfplumber>=0.11.10",
+    # Draws the link-preview images (`web/og_image.py`); pdfplumber brings it
+    # too, but that is no reason to rely on it.
+    "pillow>=13.0",
     # pandas 3 stores the default `str` dtype in Arrow when pyarrow is there and
     # falls back to Python objects when it is not — slower, and a different
     # dtype under the same name. Streamlit used to bring it; nothing else does.

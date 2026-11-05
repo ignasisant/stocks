@@ -91,6 +91,7 @@ class PrefsPatch(BaseModel):
     setup_card_dismissed: bool | None = None
     onboarding_dismissed: bool | None = None
     profile_prompt_off: bool | None = None
+    rate_prompt_done: bool | None = None
     # The whole list every time: a PATCH replaces the key, it does not merge
     # into it. null puts the default layout back.
     home_layout: list[HomeSlot] | None = None
@@ -199,6 +200,7 @@ def _view(stored: dict) -> Prefs:
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),
+        rate_prompt_done=bool(stored.get("rate_prompt_done", False)),
         notify_alerts=bool(stored.get("notify_alerts")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
         home_layout=_layout(stored.get("home_layout")),

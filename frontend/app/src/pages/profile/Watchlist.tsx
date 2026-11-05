@@ -23,6 +23,7 @@ import { useApi } from "../../shell/useApi";
 import { describe } from "./errors";
 import { Card, Failure, Prose } from "./ui";
 import { WatchlistAdd } from "./WatchlistAdd";
+import { WatchlistShare } from "./WatchlistShare";
 import { TickerCell } from "../../shell/tickers";
 import { ToggleChip } from "../../ui/Toggle";
 
@@ -550,6 +551,10 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
               <span className="pr-hint">
                 {t("watchlist.count", { n: held.length })}
               </span>
+              <WatchlistShare
+                tickers={shown.map((entry) => entry.ticker)}
+                title={keep.length === 1 ? keep[0]! : ""}
+              />
               <details className="pr-more">
                 <summary>{t("watchlist.how_open")}</summary>
                 <div>

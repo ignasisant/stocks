@@ -297,8 +297,8 @@ export function SignInWall({
  * operator's API keys and writes a file every visitor would share — so a guest
  * gets it `"locked"`: the launcher and a sample answer, with the sign-in where
  * the composer would be (`chat/Locked.tsx`). The
- * investor-profile nudge is an account's, the install nudge is for somebody
- * coming back to their own book, and voice dictation in feedback
+ * investor-profile nudge is an account's, the install nudge and the rating
+ * prompt are for somebody coming back to their own book, and voice dictation in feedback
  * spends the transcription key a `Writer` route guards.
  */
 export const GUEST_CHROME = {
@@ -310,5 +310,6 @@ export const GUEST_CHROME = {
   chat: "locked",
   profilePrompt: false,
   installNudge: false,
+  ratePrompt: false,
   dictation: false,
 } as const;

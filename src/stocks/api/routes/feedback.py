@@ -165,3 +165,31 @@ def submit(body: Feedback, from_: Sender) -> Sent:
         lang=body.lang or "",
     )
     return Sent()
+
+
+class AppRating(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    stars: int = Field(ge=1, le=5)
+    text: str = Field(default="", max_length=store.MAX_CHARS)
+    page: str = Field(default="", max_length=120)
+    lang: str | None = None
+
+
+@router.post(
+    "/feedback/rating",
+    response_model=Sent,
+    status_code=status.HTTP_201_CREATED,
+    summary="Score the app, with an optional comment",
+)
+def rate_app(body: AppRating, from_: Sender) -> Sent:
+    """The answer to the one-time rating prompt (`shell/RatePrompt`).
+
+    Signed-in only: unlike `/feedback` it is not in `guest.OPEN_WRITES`, since
+    the shell never asks a guest and a score from nobody in particular is
+    noise. `sender` still refuses a token.
+    """
+    store.rate_app(
+        body.stars, body.text, page=body.page, sender=from_, lang=body.lang or ""
+    )
+    return Sent()

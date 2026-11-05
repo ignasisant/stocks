@@ -135,6 +135,33 @@ def test_a_token_cannot_erase_an_account(client, account):
     assert account.watchlist.exists()
 
 
+# ------------------------------------------------------------------- invite
+
+
+def test_the_invite_link_is_made_once_and_kept(signed_in, account):
+    first = signed_in.post("/v1/invite")
+    assert first.status_code == 200
+    code = first.json()["code"]
+    assert accounts.INVITE_RE.fullmatch(code)
+    assert first.json()["path"] == f"/?src=inv-{code}"
+    assert prefs_of(account)["invite_code"] == code
+    # A link already sent keeps counting for its sender.
+    assert signed_in.post("/v1/invite").json()["code"] == code
+    # Nothing in it names the account.
+    assert accounts.slug(EMAIL) not in first.json()["path"]
+
+
+def test_a_token_gets_no_invite(client, account):
+    response = client.post("/v1/invite", params={"account": EMAIL}, headers=AUTH)
+    assert response.status_code == 403
+    assert "invite_code" not in prefs_of(account)
+
+
+def test_the_invite_code_is_not_a_setting(signed_in, account):
+    response = signed_in.patch("/v1/prefs", json={"invite_code": "aaaaaaaaaa"})
+    assert response.status_code == 422
+
+
 # ------------------------------------------------------------------- export
 
 
@@ -263,6 +290,32 @@ def test_a_screenshot_that_is_not_a_jpeg_is_refused(
 
 def test_empty_feedback_is_not_a_submission(client, account, signed_in):
     assert signed_in.post("/v1/feedback", json={"text": ""}).status_code == 422
+
+
+def test_an_app_rating_is_stored_against_this_account(
+    client, account, signed_in, monkeypatch
+):
+    filed: list = []
+    monkeypatch.setattr(
+        "stocks.web.feedback.rate_app",
+        lambda stars, text="", page="", sender=None, lang="": filed.append(
+            (stars, text, page, sender, lang)
+        ),
+    )
+    response = signed_in.post(
+        "/v1/feedback/rating",
+        json={"stars": 4, "text": "", "page": "home", "lang": "es"},
+    )
+    assert response.status_code == 201
+    assert filed == [(4, "", "home", account.root.name, "es")]
+
+
+@pytest.mark.parametrize("stars", [0, 6])
+def test_an_app_rating_outside_one_to_five_is_refused(
+    client, account, signed_in, stars
+):
+    response = signed_in.post("/v1/feedback/rating", json={"stars": stars})
+    assert response.status_code == 422
 
 
 def test_a_token_cannot_file_feedback_for_somebody_else(client, account):

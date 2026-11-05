@@ -25,7 +25,7 @@ import { useEffect, useRef, useState } from "react";
 import { get, send } from "./api";
 import { useT } from "./i18n";
 import { useGuest, useSession } from "./session";
-import { whenFirstLoadDecided } from "./tourPark";
+import { claimNudge, whenFirstLoadDecided } from "./tourPark";
 import { useDialog } from "./useDialog";
 import { useExitGhost } from "./useSheet";
 import { Help } from "../ui/Kpi";
@@ -84,7 +84,7 @@ export function ProfilePrompt() {
           get<Options>("/profile-options"),
           get<Profile>("/profile"),
         ]);
-        if (!alive || profile.set) return;
+        if (!alive || profile.set || !claimNudge()) return;
         // Stamped when it is shown, not when it is answered: a reload with the
         // dialog open is a "skip", as closing the tab would be.
         markSeen();

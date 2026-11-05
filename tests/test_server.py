@@ -1224,3 +1224,51 @@ def test_preview_bots_may_fetch_a_shared_answer():
     robots = seo.robots_txt("https://topstocks.example")
     bots = robots.split("User-agent: *")[0].split("User-agent: Slackbot")[1]
     assert "Allow: /?share=" in bots
+
+
+# ------------------------------------------------------------ preview images
+
+
+def test_a_shared_answers_image_is_drawn_and_gone_with_the_link(client, monkeypatch):
+    """`/og/share/<id>.png` is looked up on every request, the drawing cached
+    or not: a link taken down has no picture either."""
+    from stocks.web import og_image, shares
+
+    stored = {"id": "ImgShare123", "question": "¿Vendo NVDA?", "content": "Sí."}
+    live = {stored["id"]: stored}
+    monkeypatch.setattr(shares, "load", lambda sid: live.get(sid))
+    drawn = []
+    monkeypatch.setattr(og_image, "share_png",
+                        lambda share: drawn.append(share["id"]) or b"\x89PNG-fake")
+
+    r = client.get(f"/og/share/{stored['id']}.png")
+    assert r.status_code == 200 and r.content == b"\x89PNG-fake"
+    assert r.headers["content-type"] == "image/png"
+    assert r.headers["cache-control"].startswith("public")
+    assert r.headers["x-robots-tag"] == "noindex"
+    assert "set-cookie" not in r.headers, "an unfurl has not been to the app"
+    client.get(f"/og/share/{stored['id']}.png")
+    assert drawn == [stored["id"]], "drawn once, then kept"
+
+    live.clear()
+    assert client.get(f"/og/share/{stored['id']}.png").status_code == 404
+    assert client.get("/og/share/nope.png").status_code == 404
+
+
+def test_a_tickers_image_only_for_a_name_the_memo_holds(client, monkeypatch):
+    from stocks.web import og_image
+
+    monkeypatch.setattr(
+        "stocks.data.profiles.known",
+        lambda symbol: {"name": "S&P 500"} if symbol == "^GSPC" else None,
+    )
+    monkeypatch.setattr(og_image, "ticker_png",
+                        lambda symbol, name: f"{symbol}|{name}".encode())
+
+    r = client.get("/og/ticker/%5EGSPC.png")
+    assert r.status_code == 200 and r.content == b"^GSPC|S&P 500"
+    assert r.headers["content-type"] == "image/png"
+    # A valid symbol nobody named: the landing's card, not a drawn string.
+    other = client.get("/og/ticker/ZZZZ.png")
+    assert other.status_code == 200 and other.content.startswith(b"\x89PNG")
+    assert client.get("/og/ticker/%3Cscript%3E.png").status_code == 404

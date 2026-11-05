@@ -1173,6 +1173,7 @@
 
 /* ------------------------------------------------------- actions and peers */
 
+.tk-tools,
 .tk-actions {
   display: flex;
   align-items: center;
@@ -1180,6 +1181,7 @@
 }
 
 .tk-star,
+.tk-share,
 .tk-pop-btn {
   height: 32px;
   padding: 0 10px;
@@ -1193,10 +1195,17 @@
   white-space: nowrap;
 }
 
-.tk-star {
+.tk-star,
+.tk-share {
   width: 32px;
   padding: 0;
   line-height: 1;
+}
+
+.tk-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tk-star:disabled {
@@ -1220,6 +1229,7 @@
 }
 
 @media (hover: hover) {
+  .tk-share:hover,
   .tk-pop-btn:hover {
     background: var(--ag-surface-hover);
     color: var(--ag-text-primary);
@@ -1447,11 +1457,13 @@
   }
 
   .tk-star,
+  .tk-share,
   .tk-pop-btn {
     height: 44px;
   }
 
-  .tk-star {
+  .tk-star,
+  .tk-share {
     width: 44px;
   }
 

@@ -162,6 +162,7 @@ __all__ = [
     "us_market_open",
     "value_weights",
     "weights_from_holdings",
+    "window_span",
 ]
 
 # Default benchmarks: US large-cap, US tech, emerging markets.
@@ -932,20 +933,14 @@ def basket_change(values: pd.DataFrame, days: int) -> tuple[float, float] | None
     """(change, pct change) of the basket over the last ~`days` calendar days.
 
     `days=1` compares the last two rows (previous trading day); longer windows
-    anchor on the last row at or before `end - days`. Only tickers priced at
+    open where `_window` opens them. Only tickers priced at
     both endpoints count, so a name quoted only mid-window doesn't read as a
     gain. None when the frame doesn't cover the window.
     """
-    if len(values) < 2:
+    window = _window(values.index, days)
+    if window is None:
         return None
-    end = values.index[-1]
-    if days <= 1:
-        start = values.index[-2]
-    else:
-        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
-        if prior.empty:
-            return None
-        start = prior[-1]
+    start, end = window
     both = values.loc[start].notna() & values.loc[end].notna()
     v0 = float(values.loc[start, both].sum())
     v1 = float(values.loc[end, both].sum())
@@ -954,16 +949,47 @@ def basket_change(values: pd.DataFrame, days: int) -> tuple[float, float] | None
     return v1 - v0, v1 / v0 - 1
 
 
-def _window(idx: pd.DatetimeIndex, days: int):
-    """(start, end) of a ~`days` calendar-day window on `idx`, anchored as
-    `basket_change` anchors it; None when `idx` does not reach that far."""
+# How far behind today a frame's last row may sit and still be read as
+# today's book: a long weekend, a feed a day late. Older, it is history, and its
+# windows count back from its own last row.
+_FRESH = pd.Timedelta(days=4)
+
+
+def _reference(end: pd.Timestamp) -> pd.Timestamp:
+    """The day a window counts back from: today, while `end` is recent.
+
+    Not the frame's last row. That row turns from yesterday to today the
+    moment anything prices today (a coin at midnight, Europe at nine), and a
+    week counted back from it opens a day later than it did at breakfast —
+    one ugly session in or out of "this week", thousands on a big book, with
+    nothing having traded. Counted from the calendar, every screen that asks
+    for a week the same day opens it on the same close.
+    """
+    tz = getattr(end, "tz", None)
+    today = pd.Timestamp.now(tz=tz).normalize()
+    return today if end <= today < end + _FRESH else end
+
+
+def _window(idx: pd.Index, days: int):
+    """(start, end) of a ~`days` calendar-day window on `idx`; None when `idx`
+    does not reach that far.
+
+    One session for `days <= 1` (the last two rows); longer windows open on
+    the last row at or before `days` before today (`_reference`) and end on
+    the newest. Every book figure over a window — `basket_change`,
+    `money_change`, `index_change`, the per-name changes, the Today card's
+    index — opens here, so two screens never disagree about where a week
+    began."""
     if len(idx) < 2:
         return None
     end = idx[-1]
     if days <= 1:
         return idx[-2], end
-    prior = idx[idx <= end - pd.Timedelta(days=days)]
+    prior = idx[np.asarray(idx <= _reference(end) - pd.Timedelta(days=days))]
     return None if prior.empty else (prior[-1], end)
+
+
+window_span = _window
 
 
 def _naive_index(series: pd.Series) -> pd.Series:
@@ -1068,21 +1094,14 @@ def ticker_changes(values: pd.DataFrame, days: int) -> pd.Series:
     """Per-ticker % change over the last ~`days` calendar days.
 
     The per-name counterpart of `basket_change`, read off the same frame with
-    the same anchoring: `days<=1` compares the last two rows, longer windows
-    anchor on the last row at or before `end - days`. A ticker priced at only
+    the same window (`_window`). A ticker priced at only
     one endpoint (or starting from zero) is dropped rather than reported as an
     infinite move. Empty Series when the frame doesn't cover the window.
     """
-    if len(values) < 2:
+    span = _window(values.index, days)
+    if span is None:
         return pd.Series(dtype=float)
-    end = values.index[-1]
-    if days <= 1:
-        start = values.index[-2]
-    else:
-        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
-        if prior.empty:
-            return pd.Series(dtype=float)
-        start = prior[-1]
+    start, end = span
     first, last = values.loc[start], values.loc[end]
     both = first.notna() & last.notna() & (first != 0)
     return last[both] / first[both] - 1
@@ -1148,16 +1167,10 @@ def ticker_money_changes(values: pd.DataFrame, days: int) -> pd.Series:
     `basket_change` reports for the same window. A ticker priced at only one
     endpoint is dropped (it contributed nothing measurable, not a windfall).
     """
-    if len(values) < 2:
+    span = _window(values.index, days)
+    if span is None:
         return pd.Series(dtype=float)
-    end = values.index[-1]
-    if days <= 1:
-        start = values.index[-2]
-    else:
-        prior = values.index[np.asarray(values.index <= end - pd.Timedelta(days=days))]
-        if prior.empty:
-            return pd.Series(dtype=float)
-        start = prior[-1]
+    start, end = span
     first, last = values.loc[start], values.loc[end]
     both = first.notna() & last.notna()
     return last[both] - first[both]

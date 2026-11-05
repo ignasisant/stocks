@@ -1332,3 +1332,39 @@ def test_an_injected_clock_is_the_time_table_alone(monkeypatch):
     )
     assert not us_market_open(_utc(1, 6, 12))  # Saturday
     assert us_extended_session(_utc(1, 3, 22)) == "post"
+
+
+from stocks.analysis.portfolio import basket_change as _basket_change  # noqa: E402
+from stocks.analysis.portfolio import money_change as _money_change  # noqa: E402
+
+
+def _days_to(end: pd.Timestamp, n: int = 40) -> pd.DatetimeIndex:
+    return pd.date_range(end=end, periods=n, freq="D")
+
+
+def test_a_week_opens_on_the_same_day_with_or_without_todays_row():
+    """The week counts back from today, not from the newest row: the card
+    built at breakfast (no row for today yet) and Home at noon (one there)
+    must open on the same close, or they print two weeks a day apart."""
+    today = pd.Timestamp.now().normalize()
+    whole = pd.DataFrame({"A": np.arange(1.0, 41.0)}, index=_days_to(today))
+    morning = whole.iloc[:-1]
+    opens = today - pd.Timedelta(days=7)
+    noon = _basket_change(whole, 7)
+    breakfast = _basket_change(morning, 7)
+    assert noon is not None and breakfast is not None
+    assert noon[0] == pytest.approx(whole.loc[today, "A"] - whole.loc[opens, "A"])
+    assert breakfast[0] == pytest.approx(
+        morning["A"].iloc[-1] - whole.loc[opens, "A"])
+
+
+def test_a_book_gone_quiet_counts_back_from_its_last_row():
+    """A frame that stopped weeks ago (prices gone, an old export) has no
+    "today" to count from: its week is its own last seven days."""
+    end = pd.Timestamp.now().normalize() - pd.Timedelta(days=30)
+    hist = pd.DataFrame(
+        {"value": np.arange(100.0, 140.0), "injected": [100.0] * 40},
+        index=_days_to(end),
+    )
+    gain, _pct = _money_change(hist, 7)
+    assert gain == pytest.approx(7.0)

@@ -320,6 +320,14 @@
   overflow-x: auto;
 }
 
+/* Two five-column tables side by side only while each half fits all five:
+   the sideways scroll above has no visible bar on a Mac, so a half narrower
+   than its table read as Weight and Value cut off. Below that the tables
+   stack, each the card's full width. */
+.hm-split-tables {
+  grid-template-columns: repeat(auto-fit, minmax(min(25rem, 100%), 1fr));
+}
+
 .hm-table {
   width: 100%;
   border-collapse: collapse;
@@ -1259,6 +1267,11 @@ a.hm-step {
 
 .hm-spark-max {
   border-top: 2px dashed var(--ag-text-muted);
+}
+
+/* Colour set inline: the SPY slot `seriesColors` gives every chart. */
+.hm-spark-index {
+  border-top: 2px dashed;
 }
 
 /* The band's two signs: a swatch of the fill, so colour is not the only

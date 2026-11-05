@@ -1,0 +1,106 @@
+/* Every share dialog (`ShareDialog.tsx`): over the chat drawer, so above
+   its 70. A sheet from the bottom on a phone, a card in the middle elsewhere. */
+.ag-share-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  background: var(--ag-surface-page-veil);
+}
+
+.ag-share {
+  display: flex;
+  width: 100%;
+  max-width: 34rem;
+  max-height: 90dvh;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+.ag-share:focus {
+  outline: none;
+}
+
+.ag-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ag-share-title {
+  margin: 0;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.ag-share-out {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ag-share-link {
+  display: flex;
+  gap: 8px;
+}
+
+.ag-share-url {
+  min-width: 0;
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs, 4px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-share-link .ag-btn,
+.ag-share-to .ag-btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ag-fs-sm);
+  white-space: nowrap;
+}
+
+.ag-share-to {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* A platform is its mark alone: the name is the label and the tooltip. */
+.ag-share-to .ag-share-brand {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+@media (max-width: 640px) {
+  .ag-share-scrim {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .ag-share {
+    max-width: none;
+    max-height: 92dvh;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    border-radius: var(--ag-radius-md) var(--ag-radius-md) 0 0;
+  }
+}

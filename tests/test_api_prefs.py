@@ -613,3 +613,13 @@ def test_a_contribution_on_no_plan_sets_one(account, signed_in, no_book):
 def test_a_token_cannot_write_a_plan(client, account):
     response = client.put("/v1/plan", params=WHO, headers=AUTH, json={})
     assert response.status_code in (401, 403)
+
+
+def test_the_rating_prompt_is_asked_once_per_account(client, account, signed_in):
+    """Stamped on the account, not the browser: the phone must not ask what the
+    laptop already asked (`shell/RatePrompt`)."""
+    assert signed_in.get("/v1/prefs").json()["rate_prompt_done"] is False
+    response = signed_in.patch("/v1/prefs", json={"rate_prompt_done": True})
+    assert response.status_code == 200
+    assert response.json()["rate_prompt_done"] is True
+    assert json.loads(account.prefs.read_text())["rate_prompt_done"] is True

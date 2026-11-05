@@ -231,6 +231,35 @@ def add_entry(
     update_entry(path, ticker, _set, persist=persist)
 
 
+def add_entries(
+    path: Path, tickers: list[str], tag: str = "", *, persist: Persist | None = None
+) -> list[str]:
+    """Put every one of `tickers` on the watchlist in one write, each also
+    under `tag` when one is given; returns the ones that were not there.
+
+    One read and one write for the lot: following a shared list of thirty is
+    one request, and thirty rewrites of the file (each a bucket upload) would
+    make it the slowest press in the app.
+    """
+    raw = yaml_load(path.read_text()) if path.exists() else {}
+    items: list[dict] = raw.get("watchlist") or []
+    by_symbol = {str(i.get("ticker", "")).upper(): i for i in items}
+    added: list[str] = []
+    for ticker in tickers:
+        symbol = ticker.strip().upper()
+        entry: dict | None = by_symbol.get(symbol)
+        if entry is None:
+            entry = by_symbol[symbol] = {"ticker": symbol}
+            items.append(entry)
+            added.append(symbol)
+        if tag.strip():
+            entry["tags"] = clean_tags([*(entry.get("tags") or []), tag])
+    raw["watchlist"] = items
+    atomic.write_text(path, yaml_dump(raw))
+    _persist(persist, path)
+    return added
+
+
 def remove_entry(
     path: Path, ticker: str, *, persist: Persist | None = None
 ) -> bool:

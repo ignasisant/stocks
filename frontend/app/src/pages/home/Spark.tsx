@@ -5,7 +5,9 @@
  * answers one question — is the gap opening or closing — without asking anyone
  * to read an axis. The band between them carries the sign, which is the whole
  * reading at this size: green means the book is worth more than what was put
- * into it.
+ * into it. A third, dashed in the index's hue, is the same money in the
+ * S&P 500 since the book's first day (`benchLine`): above the value line, the
+ * index would have done better with it.
  *
  * A held finger slid along, two fingers, a mouse drag (as the ticker chart
  * brushes), or a secondary click (`useSpan`) compare two days: how much the
@@ -20,7 +22,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import { token } from "../../shell/theme";
+import { seriesColors, token } from "../../shell/theme";
 import { useSpan } from "../../shell/useSpan";
 import { BASELINE_DASH, LINE } from "../../ui/chart/marks";
 import { Tip } from "../../ui/chart/Tip";
@@ -87,6 +89,25 @@ export function slice(history: History, range: Range): History["points"] {
   return history.points.filter((point) => point.date >= cutoff);
 }
 
+/**
+ * The same money in the S&P 500 over `days`, or null.
+ *
+ * The server races it from the book's first day (`in_index`), so like the
+ * level lines it is absolute and survives slicing: a window is a stretch of
+ * one race, and the gap where the window opens is what came before it. Null
+ * unless every day has it — a line that stops halfway reads as the index
+ * falling to nothing.
+ */
+export function benchLine(days: { inIndex: number | null }[]): number[] | null {
+  if (days.length < 2) return null;
+  const out: number[] = [];
+  for (const day of days) {
+    if (day.inIndex === null) return null;
+    out.push(day.inIndex);
+  }
+  return out;
+}
+
 export function Spark({ history }: { history: History | null }) {
   const t = useT();
   const lang = useLang();
@@ -112,12 +133,23 @@ export function Spark({ history }: { history: History | null }) {
   // Both legs or the day is not comparable: a value with no reference line has
   // nothing to be shaded against. Built before the early returns because the
   // key walk below is a hook and needs the day count.
-  const days: { date: string; injected: number; value: number }[] = [];
+  const days: {
+    date: string;
+    injected: number;
+    value: number;
+    inIndex: number | null;
+  }[] = [];
   for (const point of history ? slice(history, range) : []) {
     if (point.injected !== null && point.value !== null) {
-      days.push({ date: point.date, injected: point.injected, value: point.value });
+      days.push({
+        date: point.date,
+        injected: point.injected,
+        value: point.value,
+        inIndex: point.in_index ?? null,
+      });
     }
   }
+  const bench = benchLine(days);
   const walk = useScrub({
     plot: wrap,
     at: hoverIndex,
@@ -164,7 +196,11 @@ export function Spark({ history }: { history: History | null }) {
     );
   }
 
-  const levels = days.flatMap((day) => [day.injected, day.value]);
+  const levels = [
+    ...days.flatMap((day) => [day.injected, day.value]),
+    ...(bench ?? []),
+  ];
+  const benchColor = seriesColors(["SPY"]).SPY!;
   const floor = Math.min(...levels);
   const span = Math.max(...levels) - floor || Math.abs(floor) || 1;
   const x = (index: number) => (index / (days.length - 1)) * WIDTH;
@@ -202,7 +238,7 @@ export function Spark({ history }: { history: History | null }) {
    * gain or loss), what went in, and the gap between them as an amount and a
    * percent.
    */
-  const tipRows = (day: (typeof days)[number]) => {
+  const tipRows = (day: (typeof days)[number], at: number) => {
     const gain = day.value >= day.injected;
     const pnl = day.value - day.injected;
     const pct = day.injected
@@ -219,6 +255,15 @@ export function Spark({ history }: { history: History | null }) {
         label: "",
         value: `${money(pnl, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`,
       },
+      ...(bench
+        ? [
+            {
+              label: t("home.chart_index"),
+              value: money(bench[at]!, base, lang),
+              color: benchColor,
+            },
+          ]
+        : []),
     ];
   };
 
@@ -248,7 +293,9 @@ export function Spark({ history }: { history: History | null }) {
       : null;
 
   /** What the label says between the two days being compared. */
-  const spanRows = (from: (typeof days)[number], to: (typeof days)[number]) => {
+  const spanRows = (fromAt: number, toAt: number) => {
+    const from = days[fromAt]!;
+    const to = days[toAt]!;
     const moved = to.value - from.value;
     const put = to.injected - from.injected;
     const signed = (value: number) => money(value, base, lang, { signed: true });
@@ -260,12 +307,23 @@ export function Spark({ history }: { history: History | null }) {
       },
       { label: t("home.chart_injected"), value: signed(put) },
       { label: t("home.chart_market"), value: signed(moved - put) },
+      // What the same flows made in the index over the same days: the row to
+      // read "Mercado" against.
+      ...(bench
+        ? [
+            {
+              label: t("home.chart_index"),
+              value: signed(bench[toAt]! - bench[fromAt]! - put),
+              color: benchColor,
+            },
+          ]
+        : []),
     ];
   };
   const rows = compared
-    ? spanRows(days[compared.from]!, days[compared.to]!)
-    : hovered
-      ? tipRows(hovered)
+    ? spanRows(compared.from, compared.to)
+    : hovered && hoverIndex !== null
+      ? tipRows(hovered, hoverIndex)
       : null;
   const indexAt = (event: { clientX: number }) => dayAt(event.clientX) ?? 0;
 
@@ -341,6 +399,15 @@ export function Spark({ history }: { history: History | null }) {
             <li>
               <span className="hm-spark-key hm-spark-band hm-spark-band-loss" />
               {t("home.chart_band_loss")}
+            </li>
+          ) : null}
+          {bench ? (
+            <li title={t("home.chart_index_note")}>
+              <span
+                className="hm-spark-key hm-spark-index"
+                style={{ borderColor: benchColor }}
+              />
+              {t("home.chart_index")}
             </li>
           ) : null}
           <li>
@@ -442,6 +509,18 @@ export function Spark({ history }: { history: History | null }) {
                 strokeDasharray={BASELINE_DASH}
                 vectorEffect="non-scaling-stroke"
               />
+              {bench ? (
+                <polyline
+                  points={bench
+                    .map((level, index) => `${x(index)},${y(level)}`)
+                    .join(" ")}
+                  fill="none"
+                  stroke={benchColor}
+                  strokeWidth={LINE.overlay}
+                  strokeDasharray={BASELINE_DASH}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
               <polyline
                 points={line((day) => day.value)}
                 fill="none"
@@ -495,6 +574,7 @@ export function Spark({ history }: { history: History | null }) {
                   pointerEvents="none"
                 />
                 {dot(hoverIndex, hovered.injected, token("text-muted"), 5)}
+                {bench ? dot(hoverIndex, bench[hoverIndex]!, benchColor, 5) : null}
                 {dot(hoverIndex, hovered.value, token("brand-accent"), 6)}
               </>
             ) : null}

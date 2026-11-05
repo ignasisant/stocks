@@ -51,8 +51,11 @@
   text-transform: uppercase;
 }
 
+/* The session wraps whole onto its own line, never inside: a phone split
+   "4 nov" over two. The day before it may break; it alone outgrows 320px. */
 .td-session {
   color: var(--ag-text-muted);
+  white-space: nowrap;
 }
 
 .td-byline {
@@ -586,6 +589,71 @@
   font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
+/* The indexes over the span picked, each a button: the pressed one is what
+   the rows' last gap is to. Tiles fill the row the column has and wrap; a
+   phone gets two to a row. */
+.td-bench {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+@container ag-main (max-width: 38rem) {
+  .td-bench {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.td-bench-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (hover: hover) {
+  .td-bench-item:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+.td-bench-item[aria-pressed="true"] {
+  border-color: var(--ag-brand-accent);
+  box-shadow: inset 0 0 0 1px var(--ag-brand-accent);
+}
+
+.td-bench-item:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+.td-bench-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-bench-ccy {
+  grid-column: 1 / -1;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+}
+
 /* ----------------------------------------------------------------- market */
 
 .td-rotation {
@@ -765,6 +833,10 @@
   }
 
   .td-more-btn {
+    min-height: 44px;
+  }
+
+  .td-bench-item {
     min-height: 44px;
   }
 }

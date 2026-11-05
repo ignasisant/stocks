@@ -52,6 +52,8 @@ export type Prefs = {
   onboarding_dismissed: boolean;
   /** "Don't ask again" on the investor-profile nudge. */
   profile_prompt_off: boolean;
+  /** The one-time rating prompt was shown, answered or not (`RatePrompt`). */
+  rate_prompt_done?: boolean;
   /** Home's cards in the reader's order; null is the default page. */
   home_layout: { id: string; hidden: boolean }[] | null;
   notify_briefing?: boolean;

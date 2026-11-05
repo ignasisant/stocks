@@ -559,5 +559,8 @@
   "ticker.shorts_holders": "Titulares",
   "ticker.shorts_col_holder": "Titular",
   "ticker.shorts_col_pct": "Corto neto",
-  "ticker.shorts_no_holders": "{source} publica solo el total, no quién lo tiene."
+  "ticker.shorts_no_holders": "{source} publica solo el total, no quién lo tiene.",
+  "ticker.share": "Compartir {ticker}",
+  "ticker.share_link": "Enlace a {ticker}",
+  "ticker.share_text": "{name} ({ticker}) en TopStocks"
 }

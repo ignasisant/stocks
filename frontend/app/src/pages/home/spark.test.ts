@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { slice } from "./Spark";
+import { benchLine, slice } from "./Spark";
 import type { History } from "./types";
 
 function history(dates: string[]): History {
@@ -56,5 +56,16 @@ describe("slice", () => {
 
   it("is empty for an empty history", () => {
     expect(slice(history([]), "1y")).toEqual([]);
+  });
+});
+
+describe("benchLine", () => {
+  it("is the server's race, sliced as it came", () => {
+    expect(benchLine([{ inIndex: 120 }, { inIndex: 132 }])).toEqual([120, 132]);
+  });
+
+  it("draws nothing when a day is missing it", () => {
+    expect(benchLine([{ inIndex: 120 }, { inIndex: null }])).toBeNull();
+    expect(benchLine([{ inIndex: 120 }])).toBeNull();
   });
 });

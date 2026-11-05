@@ -991,6 +991,8 @@ def cmd_logs(args: argparse.Namespace) -> None:
             entries += fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
         elif args.logs_command == "connector" and not files:
             entries = fetch(args.limit, http=False, extra=lq.CONNECTOR_EXTRA)
+        elif args.logs_command == "shares" and not files:
+            entries = fetch(args.limit, http=False, extra=lq.SHARES_EXTRA)
         elif args.logs_command == "installs" and not files:
             entries = fetch(args.limit, http=False, extra=lq.INSTALLS_EXTRA)
         elif args.logs_command == "stats" and getattr(args, "http", False) and not files:
@@ -1020,6 +1022,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
         return
     if args.logs_command == "connector":
         print(lq.render_connector(lq.connector(entries)))
+        return
+    if args.logs_command == "shares":
+        print(lq.render_shares(lq.shares(entries)))
         return
     if args.logs_command == "installs":
         print(lq.render_installs(lq.installs(entries)))
@@ -1153,6 +1158,8 @@ def cmd_feedback(args: argparse.Namespace) -> None:
             if it.get("reason"):
                 head += f" ({it['reason']})"
             head += f"  via {it.get('provider') or '?'}"
+        if it.get("kind") == feedback.APP_RATING:
+            head += f"  {'★' * int(it.get('stars') or 0)}"
         print(head)
         for line in str(it.get("text", "")).splitlines():
             print(f"    {line}")
@@ -1174,6 +1181,10 @@ def cmd_feedback(args: argparse.Namespace) -> None:
             print(f"    [screenshot] {shot}")
         print()
     print(f"{len(items)} submissions")
+    scores = [int(it["stars"]) for it in items
+              if it.get("kind") == feedback.APP_RATING and it.get("stars")]
+    if scores:
+        print(f"app rating: {sum(scores) / len(scores):.1f}★ from {len(scores)}")
 
 
 def cmd_users(args: argparse.Namespace) -> None:
@@ -1662,6 +1673,12 @@ def build_parser() -> argparse.ArgumentParser:
              "-> approved -> first tool call, in accounts")
     _common(p_con, with_output=False)
     p_con.set_defaults(since="30d", limit=20000)
+    p_shr = logs_sub.add_parser(
+        "shares",
+        help="shared answers: links made -> opened -> kept asking -> signup "
+             "-> first import, per share")
+    _common(p_shr, with_output=False)
+    p_shr.set_defaults(since="30d", limit=20000)
     p_ins = logs_sub.add_parser(
         "installs",
         help="accounts that opened the app from a Home Screen: device, "

@@ -1,7 +1,7 @@
 """`GET/POST /v1/today` — the Today page's two layers.
 
 * the GET composes the stored market read and the stored personal card, and
-  never fetches, spends or writes;
+  never spends or writes (only the book rows are redone, off cached prices);
 * a read that is missing, a session behind or without the reader's language
   starts ONE background build, however many readers ask, and a failed one is
   not retried before `MIN_REBUILD_S`;
@@ -323,6 +323,24 @@ def test_the_post_never_abandons_a_running_job(account, current, monkeypatch):
     assert len(started) == 1
 
 
+def test_a_card_whose_comparisons_predate_the_readers_currency_is_rewritten():
+    from stocks.chat.daily import DailyAction
+
+    day = date(2026, 11, 5)
+    key = ("", "", "", "sig")
+    compare = {"id": "compare", "rows": [{"key": "compare:NVDA"}]}
+
+    def card(*sections):
+        return DailyAction(day=day.isoformat(), headline="h", bullets=[], lang="en",
+                           brief_sig="sig", shape="mixed", today=list(sections))
+
+    assert daily_card.stands(card({**compare, "currency": "EUR"}), day, "en", key)
+    assert not daily_card.stands(card(compare), day, "en", key)
+    # Nothing compared, nothing measured in the wrong money.
+    assert daily_card.stands(card({"id": "compare", "rows": []}), day, "en", key)
+    assert daily_card.stands(card({"id": "news", "rows": [{"key": "n"}]}), day, "en", key)
+
+
 def test_expected_session_is_settled_us_close():
     assert today_market.expected_session(
         datetime(2026, 10, 12, 21, 0, tzinfo=UTC)) == "2026-10-09"
@@ -344,6 +362,7 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     patch_loaders(monkeypatch, "insiders", lambda t: [])
     patch_loaders(monkeypatch, "eu_insiders", lambda t: [])
     monkeypatch.setattr(briefing, "_card_closes", lambda: {})
+    monkeypatch.setattr(briefing, "_bench_closes", lambda: {})
     row = SimpleNamespace(ticker="AAPL", verdict="trim", sector="Technology",
                           quality=70.0, cheapness=20.0)
     monkeypatch.setattr(briefing, "_review_rows", lambda paths: [row])
@@ -375,3 +394,51 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     assert print_row["key"] == "print:AAPL:2026-10-12"
     assert print_row["line"].startswith(
         "AAPL reported: EPS 1.05 vs 0.98 expected (+7.1%), revenue $35.1B (+12.0% y/y)")
+
+
+def test_today_weighs_a_name_the_price_pass_missed_at_its_cost():
+    """2026-11-04: the ECB rate host failed, every dollar name read NaN, and
+    the comparisons covered the seven euro names as if they were the book."""
+    tbl = pd.DataFrame({"value": [600.0, float("nan")], "cost": [500.0, 400.0]},
+                       index=["SOL-EUR", "GOOG"])
+    weights, unpriced = briefing._today_weights(tbl)
+    assert weights == {"SOL-EUR": 0.6, "GOOG": 0.4}
+    assert unpriced == ["GOOG"]
+
+
+def _card_with_book() -> daily_card.DailyCard:
+    from stocks.api.schemas import DailyBook, DailyBookRow, DailyCard
+
+    rows = [DailyBookRow(window="day", pct=3.43, amount=4613.0, index_pct=1.0),
+            DailyBookRow(window="week", pct=0.29, amount=402.0, index_pct=0.5)]
+    return DailyCard(action_day="2026-11-05", fresh=True, headline="Written at 07:26",
+                     book=DailyBook(index="S&P 500", currency="EUR", rows=rows))
+
+
+def test_the_book_rows_are_the_ones_home_prints_now(account, monkeypatch):
+    """The card is the morning's; its rows are figures Home's tiles print
+    live. Served together they would read +402 € and −110 € for one week."""
+    from stocks.api import book_moves
+
+    monkeypatch.setattr(book_moves, "moves", lambda db, mtime, ccy: {
+        "day": (3835.0, 0.0284), "week": (-110.0, -0.0008), "month": None})
+    patch_loaders(monkeypatch, "history",
+                  lambda db, mtime, base="EUR": (pd.DataFrame(), None, []))
+    monkeypatch.setattr(briefing, "_card_closes", lambda: {})
+    monkeypatch.setattr(daily_book, "index_facts", lambda closes, ccy, hist=None: {
+        "day_pct": 1.2, "week_pct": -0.4, "month_pct": 2.0})
+    card = daily_card.live_book(account, _card_with_book())
+    assert card.headline == "Written at 07:26"
+    assert [(r.window, r.amount, r.pct, r.index_pct) for r in card.book.rows] == [
+        ("day", 3835.0, 2.84, 1.2), ("week", -110.0, -0.08, -0.4)]
+
+
+def test_rows_that_cannot_be_redone_stay_as_written(account, monkeypatch):
+    from stocks.api import book_moves
+
+    def boom(*a, **k):
+        raise RuntimeError("prices down")
+
+    monkeypatch.setattr(book_moves, "moves", boom)
+    card = _card_with_book()
+    assert daily_card.live_book(account, card) is card

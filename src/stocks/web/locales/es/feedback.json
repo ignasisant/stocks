@@ -24,5 +24,13 @@
   "feedback.empty": "Escribe algo primero.",
   "feedback.rate_limited": "Suficiente por ahora — inténtalo más tarde.",
   "feedback.failed": "No se pudo guardar tu comentario. Inténtalo más tarde.",
-  "feedback.unsent": "No se ha enviado — cópialo antes de cerrar."
+  "feedback.unsent": "No se ha enviado — cópialo antes de cerrar.",
+  "feedback.rate_title": "¿Qué te parece TopStocks?",
+  "feedback.rate_intro": "Con un toque basta. Llega directo al desarrollador.",
+  "feedback.rate_star": "{n} de 5 estrellas",
+  "feedback.rate_low": "¿Qué deberíamos arreglar primero? (opcional)",
+  "feedback.rate_high": "¿Qué te gusta, o qué echas en falta? (opcional)",
+  "feedback.rate_pick": "Elige una puntuación primero.",
+  "feedback.rate_later": "Ahora no",
+  "feedback.rate_send": "Enviar"
 }

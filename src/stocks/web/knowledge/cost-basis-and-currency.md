@@ -1,10 +1,10 @@
 ---
 id: cost-basis-and-currency
 title: Cost basis, currency conversion and missing prices
-as_of: 2026-10-11
+as_of: 2026-11-04
 step: positions
 related: tax-engine, importing, returns-and-risk
-tags: coste, precio medio, base de coste, FIFO, lotes, cost basis, lots, divisa, moneda de referencia, reporting currency, tipo de cambio, FX, BCE, ECB, sin precio, unpriced, held at cost, pérdidas y ganancias, P/L, unrealised, plusvalía latente, peso, weight, demo, datos de demostración
+tags: coste, precio medio, base de coste, FIFO, lotes, cost basis, lots, divisa, moneda de referencia, reporting currency, tipo de cambio, FX, BCE, ECB, sin precio, unpriced, held at cost, pérdidas y ganancias, P/L, unrealised, plusvalía latente, peso, weight, demo, datos de demostración, bróker, broker, Revolut, comisión, comisiones, commission, no cuadra, no coincide, diferente, different, distinto, discrepancia, mismatch
 ---
 How the Portfolio page values what you hold: the cost of each position, the currency everything is shown in, and what happens when a live price is missing.
 
@@ -19,6 +19,9 @@ The reporting currency is the currency in which TopStocks shows all your money: 
 
 ## How foreign currencies are converted
 When a trade is in a currency other than your reporting currency, TopStocks converts its amount (including the commission) at the European Central Bank (ECB) reference rate for the trade's date, served by the frankfurter service. Weekends and holidays use the previous published business day's rate. So the cost of a US stock bought in dollars is fixed in your reporting currency at the rate of the purchase day and does not change afterwards. The current value of a position is its latest price converted at the latest daily rate. Cost uses the trade-date rate and value uses today's rate, so the gain on a foreign position includes the currency move as well as the price move. UK prices quoted in pence are scaled to pounds first.
+
+## Why your broker shows a different cost or gain
+Your broker's app and TopStocks often disagree on the same position, and usually both are right. Three causes explain nearly every gap. Commissions: TopStocks adds each buy commission to the cost, as the tax rules do, while many brokers (Revolut among them) show an average price without it, so their cost is a little lower and their gain a little higher. Currency: a broker shows a US stock's gain in dollars, while TopStocks shows it in your reporting currency, with the cost at each purchase day's rate and the value at today's rate, so a dollar that rose against the euro adds to the euro gain. Timing: each app takes its price at a different moment, which matters on a day the stock moves a lot. To compare like with like, take the trades with their fees and work out the gain in the trade's own currency.
 
 ## Positions with no live price
 A position is unpriced when no usable price could be found for it, for example because the price provider is throttling requests, does not know the symbol or a broker code has no alias yet. On the Portfolio page, the totals "what you paid" and "value today", and the unsold gain percentage, are taken only over the positions that have a price, on both sides, so an intact book is never shown with a false loss. The page says how many positions were left out ("Positions with no live price: n of total"). An unpriced position shows no value or gain of its own. The daily value history behind the charts and the return figures instead carries an unpriced position at its cost: no invented loss and no mark-to-market, and the names are listed in a note under the return charts.

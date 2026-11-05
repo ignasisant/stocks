@@ -174,6 +174,8 @@
   "landing.seo_image_alt": "Dashboard di TopStocks: valore del portafoglio in euro con posizioni FIFO e P/L",
   "landing.share_card_by": "{name} l'ha chiesto all'IA di TopStocks:",
   "landing.share_card": "L'IA di TopStocks risponde:",
+  "landing.share_list_by": "{name} ha condiviso una lista su TopStocks:",
+  "landing.share_list": "Una lista su TopStocks:",
   "landing.footer_guides": "Guide fiscali",
   "landing.footer_privacy": "Privacy",
   "landing.footer_terms": "Condizioni",

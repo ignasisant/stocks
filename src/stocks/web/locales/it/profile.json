@@ -265,6 +265,13 @@
   "profile.sessions_end": "Esci",
   "profile.sessions_end_others": "Esci da tutti gli altri",
   "profile.sessions_failed": "Impossibile disconnetterlo — riprova.",
+  "profile.shares_title": "Link condivisi",
+  "profile.shares_help": "Chiunque abbia uno di questi link può vedere ciò che mostra. Smetti di condividere e il link non funziona più.",
+  "profile.shares_on": "Condivisa il {date}",
+  "profile.shares_masked": "Importi nascosti",
+  "profile.shares_list": "Lista",
+  "profile.shares_stop": "Smetti di condividere",
+  "profile.shares_failed": "Impossibile rimuoverla — riprova.",
   "profile.push_title": "Questo dispositivo",
   "profile.push_sub": "Il digest, la revisione settimanale, gli avvisi di prezzo, i promemoria e le risposte pronte, come notifiche qui.",
   "profile.push_answers": "Notifiche su questo dispositivo",
@@ -281,5 +288,10 @@
   "profile.install_help": "Una scorciatoia che si apre senza la barra del browser.",
   "profile.install_button": "Installa",
   "profile.install_ios": "In Safari, tocca Condividi › Aggiungi alla schermata Home. Si apre a schermo intero e può avvisarti quando l'assistente ha finito.",
-  "profile.notify_no_devices": "Nessun dispositivo riceve ancora notifiche. Attivale qui sopra."
+  "profile.notify_no_devices": "Nessun dispositivo riceve ancora notifiche. Attivale qui sopra.",
+  "profile.invite_title": "Invita un amico",
+  "profile.invite_note": "Mandagli l'app. Il tuo link non mostra nulla del tuo portafoglio.",
+  "profile.invite_send": "Invia invito",
+  "profile.invite_link": "Il tuo link di invito",
+  "profile.invite_text": "Seguo il mio portafoglio con TopStocks. Dai un'occhiata:"
 }

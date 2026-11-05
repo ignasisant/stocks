@@ -159,7 +159,8 @@ def start(body: NewThread, paths: Writer) -> Conversation:
 
     if body.from_share:
         found = shares.load(body.from_share)
-        if found is None:
+        # A shared list has no exchange to carry on from.
+        if found is None or shares.kind_of(found) != "answer":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"no share {body.from_share}",

@@ -389,6 +389,8 @@ export type History = {
     value: number | null;
     pnl_pct: number | null;
     twr: number | null;
+    /** The book's own money in SPY since its first day, with `index=true`. */
+    in_index?: number | null;
   }[];
   missing: string[];
 };

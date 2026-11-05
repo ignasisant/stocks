@@ -229,6 +229,7 @@ export default function Panel({
   thread = null,
   onThreadTaken,
   share = null,
+  shareCarryOn = false,
   onShareDone,
   onClose,
   onPark,
@@ -246,6 +247,8 @@ export default function Panel({
   onThreadTaken?: () => void;
   /** Opened from a shared link (`?share=`): that answer, over the thread. */
   share?: string | null;
+  /** Back from a guest's sign-in on it (`&continue=1`): carry on at once. */
+  shareCarryOn?: boolean;
   /** The shared answer was left, or carried on from. */
   onShareDone?: () => void;
   onClose: () => void;
@@ -557,6 +560,7 @@ export default function Panel({
         <SharedPanel
           id={share}
           signedIn
+          carryOnNow={shareCarryOn}
           onClose={() => {
             setView("thread");
             onShareDone?.();

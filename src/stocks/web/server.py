@@ -156,7 +156,7 @@ API_PREFIX = f"{api.MOUNT_PATH}/"
 _MARKETING_PREFIXES = (
     *(p for p in LANDING_PATHS if p != PATH_EN),
     ASSET_BASE, "/robots.txt", "/sitemap.xml", "/livez", "/healthz",
-    "/status", "/legal/", landing.PATH_GUIDES_EN,
+    "/status", "/legal/", landing.PATH_GUIDES_EN, seo.OG_PREFIX,
 )
 
 # A Host header ends up inside canonical and Open Graph URLs, so it is checked
@@ -1321,6 +1321,48 @@ async def asset(request: Request) -> Response:
     )
 
 
+def _png(png: bytes, max_age: int) -> Response:
+    return Response(png, media_type="image/png", headers={
+        "Cache-Control": f"public, max-age={max_age}",
+        # The page it previews is out of the index; so is its picture.
+        "X-Robots-Tag": "noindex",
+    })
+
+
+async def og_share(request: Request) -> Response:
+    """`/og/share/<id>.png` — the preview image of a shared answer.
+
+    Looked up before every serve, the drawn one kept or not: a link taken
+    down has no picture either. An hour of caching is how long a browser may
+    still show it after; the apps that unfurled it keep theirs regardless.
+    """
+    from stocks.web import og_image, shares
+
+    share = await run_in_threadpool(shares.load, request.path_params["id"])
+    if share is None:
+        return Response("Not found", status_code=404, media_type="text/plain")
+    return _png(await run_in_threadpool(og_image.share_image, share), 3600)
+
+
+async def og_ticker(request: Request) -> Response:
+    """`/og/ticker/<SYMBOL>.png` — a ticker's preview image, for a symbol
+    the profiles memo names (`seo.ticker_head` links no other); any other
+    valid symbol gets the landing's card rather than a drawing of a string
+    a stranger chose."""
+    from stocks.data import profiles
+    from stocks.web import og_image
+
+    symbol = seo.ticker_symbol(request.path_params["symbol"])
+    if symbol is None:
+        return Response("Not found", status_code=404, media_type="text/plain")
+    name = str((profiles.known(symbol) or {}).get("name") or "")
+    if not name:
+        return FileResponse(_ASSETS / "og.png",
+                            headers={"Cache-Control": "public, max-age=3600"})
+    png = await run_in_threadpool(og_image.ticker_image, symbol, name)
+    return _png(png, 86400)
+
+
 routes = [
     *(
         Route(p, variant_landing, methods=["GET", "HEAD"])
@@ -1343,6 +1385,9 @@ routes = [
     *(Route(f"{p}{{slug:str}}", guide_page, methods=["GET", "HEAD"])
       for p in guides.PATHS.values()),
     Route(f"{ASSET_BASE}{{path:path}}", asset, methods=["GET", "HEAD"]),
+    Route(f"{seo.OG_PREFIX}share/{{id:str}}.png", og_share, methods=["GET", "HEAD"]),
+    Route(f"{seo.OG_PREFIX}ticker/{{symbol:str}}.png", og_ticker,
+          methods=["GET", "HEAD"]),
     Route(f"{APP_ASSETS}{{path:path}}", app_asset, methods=["GET", "HEAD"]),
     Route(f"{STATIC_PATH}{{path:path}}", static_file, methods=["GET", "HEAD"]),
     *oidc.routes(),

@@ -3,14 +3,16 @@
  *
  * The link carries `src=share` so the signup it leads to is credited, and each
  * platform gets the URL its own share button opens. The reader's copy says
- * when amounts were hidden, so a "•••" reads as deliberate, not as a bug.
+ * when amounts were hidden, so a "•••" reads as deliberate, not as a bug. A
+ * shared list draws as its symbols, each one a link to its page.
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { destinations, shareUrl } from "./ShareSheet";
-import { SharedBody } from "./SharedPanel";
+import { destinations } from "../share/link";
+import { shareUrl } from "./ShareSheet";
+import { SharedBody, SharedList, carriesOn, guestHrefs } from "./SharedPanel";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -68,5 +70,58 @@ describe("the shared answer", () => {
       <SharedBody share={{ ...share, masked: false }} onLeave={() => {}} />,
     );
     expect(html).not.toContain("ag-chat-share-masked");
+  });
+});
+
+describe("a guest reading it", () => {
+  it("keeps asking through a sign-in that comes back to the answer", () => {
+    const to = guestHrefs("/auth/login", "ab_c-1", { pathname: "/portfolio" });
+    expect(to?.keep).toBe(
+      "/auth/login?next=" +
+        encodeURIComponent("/portfolio?share=ab_c-1&src=share&continue=1") +
+        "&wall=share",
+    );
+  });
+
+  it("can import instead, still credited to the link but without it", () => {
+    const to = guestHrefs("/auth/login", "ab_c-1", { pathname: "/" });
+    expect(to?.importer).toBe(
+      `/auth/login?next=${encodeURIComponent("/import?src=share")}&wall=share`,
+    );
+  });
+
+  it("is offered nothing where there is no sign-in", () => {
+    expect(guestHrefs(null, "ab_c-1")).toBeNull();
+  });
+
+  it("starts the thread back from the sign-in, never on the sharer's own link", () => {
+    expect(carriesOn(true, true, { mine: false })).toBe(true);
+    expect(carriesOn(true, true, { mine: true })).toBe(false);
+    expect(carriesOn(false, true, { mine: false })).toBe(false);
+    expect(carriesOn(true, false, { mine: false })).toBe(false);
+    expect(carriesOn(true, true, null)).toBe(false);
+  });
+});
+
+describe("a shared list", () => {
+  it("draws its name, how many, and each symbol as a link to its page", () => {
+    const html = renderToStaticMarkup(
+      <SharedList
+        share={{ title: "Semis", tickers: ["NVDA", "ASML"] }}
+        onLeave={() => {}}
+      />,
+    );
+    expect(html).toContain("Semis");
+    expect(html).toContain('<span class="ag-chat-shared-list-n">2</span>');
+    expect(html.match(/<li>/g)).toHaveLength(2);
+    expect(html).toContain("ticker=NVDA");
+    expect(html).toContain("ticker=ASML");
+  });
+
+  it("is called a list when it has no name", () => {
+    const html = renderToStaticMarkup(
+      <SharedList share={{ title: "", tickers: ["NVDA"] }} onLeave={() => {}} />,
+    );
+    expect(html).toMatch(/<h3 class="ag-chat-shared-list-title">[^<]+</);
   });
 });

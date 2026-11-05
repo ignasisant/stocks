@@ -22,6 +22,7 @@ import type {
   Done,
   ImportRow,
   Learned,
+  ListedShare,
   LiveStep,
   Memories,
   Memory,
@@ -255,6 +256,9 @@ export const rateTurn = (
 export const shareTurn = (tid: string, body: { masked: boolean; preview?: boolean }) =>
   send<SharedAnswer>("POST", `/chat/turns/${id(tid)}/share`, body, CHAT);
 
+/** Every link this account has up, newest first; the question as the link shows it. */
+export const listShares = () => get<ListedShare[]>("/chat/shares");
+
 /** Take a link down, and every other link its answer went out under. */
 export const unshare = (shareId: string) =>
   send<void>("DELETE", `/chat/shares/${id(shareId)}`, undefined, CHAT);
@@ -266,6 +270,16 @@ export const readShare = (shareId: string) =>
 /** A new thread that starts from a shared answer, as the reader's own. */
 export const continueShare = (shareId: string) =>
   send<Conversation>("POST", "/chat/conversations", { from_share: shareId }, CHAT);
+
+/** Publish a list of tickers by link, or with `preview` see what it would
+ *  show. The same list under the same title is the same link. */
+export const shareList = (tickers: string[], title: string, preview = false) =>
+  send<SharedAnswer>("POST", "/shares", { tickers, title, preview }, CHAT);
+
+/** Put a shared list on the reader's watchlist; answers the symbols it added.
+ *  Touches everything: the watchlist feeds most pages. */
+export const followShare = (shareId: string) =>
+  send<{ added: string[] }>("POST", `/shares/${id(shareId)}/follow`);
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>

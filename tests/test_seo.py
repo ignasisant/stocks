@@ -288,7 +288,10 @@ def test_a_ticker_card_names_the_symbol_and_fits_a_preview():
     assert len(title) <= 60
     assert f'property="og:title" content="{title}"' in tags
     assert f'property="og:url" content="{BASE}/ticker?ticker=NVDA"' in tags
-    assert f'property="og:image" content="{BASE}{seo.OG_IMAGE}"' in tags
+    # Its own drawing (`og_image.ticker_png`), for a name the memo holds.
+    assert f'property="og:image" content="{BASE}/og/ticker/NVDA.png"' in tags
+    assert f'name="twitter:image" content="{BASE}/og/ticker/NVDA.png"' in tags
+    assert 'property="og:image:alt" content="NVDA · NVIDIA Corporation"' in tags
     assert 'name="twitter:card" content="summary_large_image"' in tags
     description = re.search(r'name="description" content="([^"]*)"', tags).group(1)
     assert "NVDA" in description and "NVIDIA" in description
@@ -299,6 +302,8 @@ def test_a_ticker_card_without_a_name_is_the_symbol_in_the_readers_language():
     title, tags = seo.ticker_head("BTC-EUR", BASE, "es")
     assert title == "BTC-EUR · TopStocks"
     assert 'property="og:locale" content="es_ES"' in tags
+    # No name, no drawing: the route would serve the landing's card anyway.
+    assert f'property="og:image" content="{BASE}{seo.OG_IMAGE}"' in tags
     wanted = markup.esc(translate("ticker.seo_description", "es", name="BTC-EUR"))
     assert f'property="og:description" content="{wanted}"' in tags
 
@@ -335,6 +340,16 @@ def test_only_a_symbol_gets_a_card(raw, want):
     assert seo.ticker_symbol(raw) == want
 
 
+def test_a_symbol_is_escaped_in_its_image_path():
+    assert seo.ticker_image_path("^GSPC") == "/og/ticker/%5EGSPC.png"
+    assert seo.ticker_image_path("EURUSD=X") == "/og/ticker/EURUSD%3DX.png"
+
+
+def test_preview_bots_may_fetch_the_images_and_search_crawlers_not():
+    assert f"Allow: {seo.OG_PREFIX}" in _robots_group("Slackbot")
+    assert f"Disallow: {seo.OG_PREFIX}" in _robots_group("*")
+
+
 def test_a_shared_answer_card_says_who_asked_in_the_language_they_asked_in():
     """The question titles it; the description names the sharer and the app
     before the answer, in the share's language whatever the crawler sent."""
@@ -346,6 +361,28 @@ def test_a_shared_answer_card_says_who_asked_in_the_language_they_asked_in():
     assert description.startswith("Ana se lo preguntó a la IA de TopStocks: Sí: con")
     assert len(html.unescape(description)) <= seo.SHARE_DESCRIPTION_MAX
     assert 'property="og:locale" content="es_ES"' in tags
+    # A re-share of the canonical URL is still counted as a share.
+    assert ('property="og:url" content="https://topstocks.example/'
+            '?share=AbCdEfGh123&amp;src=share"') in tags
+
+    # The picture is the answer's own, named by the same id.
+    assert ('property="og:image" content="https://topstocks.example/'
+            'og/share/AbCdEfGh123.png"') in tags
+    assert ('property="og:image:alt" content="Ana se lo preguntó a la IA de '
+            'TopStocks: ¿Vendo NVDA?"') in tags
 
     _, tags = seo.share_head({**share, "by": "", "lang": ""}, BASE, "en")
     assert 'content="TopStocks&#x27; AI answers: Sí' in tags
+
+
+def test_a_shared_list_card_names_the_list_and_its_symbols():
+    share = {"id": "AbCdEfGh123", "kind": "watchlist", "title": "Semis",
+             "tickers": ["NVDA", "ASML"], "by": "Ana", "lang": "es"}
+    title, tags = seo.share_head(share, BASE, "en")
+    assert title == "Semis · TopStocks"
+    description = re.search(r'property="og:description" content="([^"]*)"', tags).group(1)
+    assert html.unescape(description) == (
+        "Ana ha compartido una lista en TopStocks: NVDA, ASML")
+    untitled, tags = seo.share_head({**share, "title": "", "by": ""}, BASE, "en")
+    assert untitled == "NVDA, ASML · TopStocks"
+    assert "Una lista en TopStocks: NVDA, ASML" in html.unescape(tags)

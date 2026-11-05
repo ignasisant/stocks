@@ -24,11 +24,13 @@ import {
 import type { Jurisdictions } from "./data";
 import { ConnectorCard } from "./ConnectorCard";
 import { Sessions } from "./Sessions";
+import { SharedLinks } from "./SharedLinks";
 import { DeleteAccount } from "./DeleteAccount";
 import { InstallCard } from "./InstallCard";
 import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
 import { TourCard } from "./TourCard";
+import { InviteCard } from "./InviteCard";
 import { Card, Chips, Failure, Row, Select, Toggle } from "./ui";
 import { calendarDay } from "../../shell/dates";
 
@@ -414,6 +416,9 @@ export function Preferences({
           {/* Which browsers are signed in, each endable; draws nothing until
               the list answers. */}
           <Sessions />
+          {/* The answers out by link, each one stoppable; nothing until there
+              is one. */}
+          <SharedLinks />
           {/* The other half of the promise the privacy policy makes: the data
               can be taken out, and it can be erased. Never offered to the
               owner: that "account" is the repo-root files the CLI shares, and
@@ -429,6 +434,7 @@ export function Preferences({
 
       <aside className="pr-rail">
         <TourCard />
+        <InviteCard />
         <MemoryCard />
         <Card>
           <div className="pr-sum">

@@ -12,6 +12,7 @@ from typing import Final, Literal
 from zoneinfo import ZoneInfo
 
 from stocks.chat import signals
+from stocks.formatting import finite
 
 # Where the day turns over: after the US close, New York time, so the card is
 # written from settled closes and read the next morning. 45 minutes past the
@@ -331,6 +332,15 @@ def _today(raw) -> list[dict]:
             "rows": rows,
             "note": str(sec.get("note") or ""),
             "missing": [str(m) for m in (sec.get("missing") or [])],
+            "benchmarks": [
+                {"symbol": str(b["symbol"]), "name": str(b.get("name") or ""),
+                 "currency": b.get("currency") or None,
+                 **{span: finite(b.get(span)) for span in ("m1", "m6", "y1", "all")}}
+                for b in (sec.get("benchmarks") or [])
+                if isinstance(b, dict) and b.get("symbol")
+            ],
+            "currency": str(sec.get("currency") or ""),
+            "since": str(sec.get("since") or ""),
         })
     return out
 

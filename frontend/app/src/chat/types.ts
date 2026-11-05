@@ -169,12 +169,28 @@ type Message = {
 /** One public link to an answer: `masked` when the amounts were hidden on it. */
 export type ShareLink = { id: string; masked: boolean };
 
+/** A link the account has up, as Profile lists it (`GET /chat/shares`). */
+export type ListedShare = {
+  id: string;
+  /** "watchlist" for a list of tickers; its `question` is its name. */
+  kind: "answer" | "watchlist";
+  answer_id: string;
+  question: string;
+  masked: boolean;
+  created: string;
+};
+
 /**
- * A shared answer as its link shows it (`/shares/{id}`), or as it would
- * (a preview: `id` and `created` empty). Already cut on the server.
+ * A shared answer or list as its link shows it (`/shares/{id}`), or as it
+ * would (a preview: `id` and `created` empty). Already cut on the server. A
+ * list (`kind` "watchlist") has `title` and `tickers`, an empty question and
+ * answer.
  */
 export type SharedAnswer = {
   id: string;
+  kind: "answer" | "watchlist";
+  title: string;
+  tickers: string[];
   question: string;
   content: string;
   web: Source[];

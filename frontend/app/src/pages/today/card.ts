@@ -15,6 +15,7 @@ import type {
   MarketLine,
   MarketSector,
   PersonalCard,
+  TodayBenchmark,
   TodayCard,
   TodayRow,
   TodaySection,
@@ -285,12 +286,22 @@ const ACTING = new Set(["sell", "trim", "add"]);
 
 /** The gap to the sector the server calls notable, in percentage points. */
 const NOTABLE_PP = 5;
+/** ...on a position at least this big, in percent (`NOTABLE_WEIGHT`). */
+const NOTABLE_WEIGHT = 1;
 
-/** The spans a comparison is measured over (`today_sections.SPANS`). */
-export const SPANS = ["m1", "m6", "y1"] as const;
+/** The spans a comparison is measured over (`today_sections.SPANS`), and
+ *  since the book's first day (`today_sections.INCEPTION`). */
+export const SPANS = ["m1", "m6", "y1", "all"] as const;
 export type Span = (typeof SPANS)[number];
 /** The span the server's line and the model's note read. */
-export const LINE_SPAN: Span = "m6";
+const LINE_SPAN: Span = "m6";
+/** From the book's first day: the span every comparison opens on. */
+export const INCEPTION: Span = "all";
+
+/** The book's own basket among the benchmarks (`today_sections.BOOK`). */
+export const BOOK = "@BOOK";
+/** The index a row is set against until the reader picks another. */
+const DEFAULT_INDEX = "SPY";
 
 /** A comparison's figures over one span, read off its row. */
 export type CompareData = {
@@ -300,6 +311,8 @@ export type CompareData = {
   sector_etf: string | null;
   vs_sector: number | null;
   vs_index: number | null;
+  /** False when the row is the index it would be set against. */
+  vs_index_applies: boolean;
   verdict: string | null;
 };
 
@@ -308,24 +321,84 @@ const num = (value: unknown): number | null =>
 const str = (value: unknown): string | null =>
   typeof value === "string" && value ? value : null;
 
-export function compareData(row: TodayRow, span: Span = LINE_SPAN): CompareData {
+/**
+ * The row's gap to `bench` over `span`, in points: null when either side has
+ * no figure, or when the two are in different money (a rate that failed on
+ * the server) — the gap would be the exchange rate's.
+ */
+function gapTo(row: TodayRow, span: Span, bench: TodayBenchmark): number | null {
+  const own = num(row.data[span]);
+  const theirs = num(bench[span]);
+  const unit = str(row.data.currency);
+  if (own === null || theirs === null) return null;
+  if (unit && bench.currency && unit !== bench.currency) return null;
+  return Math.round((own - theirs) * 10) / 10;
+}
+
+/**
+ * A comparison's figures over `span`. With `bench` (one of the section's
+ * benchmarks) the index gap is to it; without — a card stored before the
+ * benchmarks were — it is the server's own, to the S&P 500.
+ *
+ * Since inception the server measures each gap itself (`vs_all:<symbol>`):
+ * the benchmark's own `all` is the book's money bought into it, not a price
+ * move a position can be set against. The book has no such gap — its `all`
+ * is money, a row's is a price.
+ */
+export function compareData(
+  row: TodayRow,
+  span: Span = LINE_SPAN,
+  bench?: TodayBenchmark,
+): CompareData {
   const d = row.data;
+  const self = row.tickers[0] === (bench?.symbol ?? DEFAULT_INDEX);
+  const book = span === INCEPTION && bench?.symbol === BOOK;
   return {
     weight: num(d.weight),
     move: num(d[span]),
     sector: str(d.sector),
     sector_etf: str(d.sector_etf),
     vs_sector: num(d[`vs_sector_${span}`]),
-    vs_index: num(d[`vs_index_${span}`]),
+    vs_index:
+      self || book
+        ? null
+        : !bench
+          ? num(d[`vs_index_${span}`])
+          : span === INCEPTION
+            ? num(d[`vs_all:${bench.symbol}`])
+            : gapTo(row, span, bench),
+    vs_index_applies: !self && !book,
     verdict: str(d.verdict),
   };
 }
 
-/** The same test as `today_sections.notable`: a wide gap or a proposed move. */
+/** The span the table opens on: since the book's first day when the card
+ *  carries it, else the span the server's line reads. */
+export function openingSpan(section: Pick<TodaySection, "since">): Span {
+  return section.since ? INCEPTION : LINE_SPAN;
+}
+
+/**
+ * The same test as `today_sections.notable`: a wide gap or a proposed move,
+ * on a position big enough for either to matter.
+ */
 export function notable(data: CompareData): boolean {
+  if (data.weight !== null && data.weight < NOTABLE_WEIGHT) return false;
   return (
     (data.vs_sector !== null && Math.abs(data.vs_sector) >= NOTABLE_PP) ||
     (data.verdict !== null && ACTING.has(data.verdict))
+  );
+}
+
+/** The benchmark picked, else the S&P 500, else the first index listed. */
+export function pickBench(
+  benchmarks: TodayBenchmark[],
+  picked: string | null,
+): TodayBenchmark | undefined {
+  return (
+    benchmarks.find((b) => b.symbol === picked) ??
+    benchmarks.find((b) => b.symbol === DEFAULT_INDEX) ??
+    benchmarks.find((b) => b.symbol !== BOOK)
   );
 }
 
@@ -390,6 +463,17 @@ export function nextPoll(
   if (view.personal?.pending) return POLL_MS;
   if (view.market_stale) return MARKET_POLL_MS;
   return null;
+}
+
+/**
+ * Whether the poll gave up on a card still being written: the server's job
+ * outlived the cap, and only the reader asking again moves it on.
+ */
+export function stalledAt(
+  view: Pick<TodayCard, "market_stale" | "personal">,
+  polls: number,
+): boolean {
+  return Boolean(view.personal?.pending) && nextPoll(view, polls) === null;
 }
 
 /**

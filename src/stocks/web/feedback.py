@@ -139,6 +139,37 @@ def rate(vote: str, turn: dict, question: str, *, reason: str = "",
     return path
 
 
+# The once-per-account "how is TopStocks for you" prompt (shell/RatePrompt).
+# Its own kind rather than a widget submission: a score with no comment is a
+# complete answer here, and the widget's route requires text.
+APP_RATING = "app_rating"
+STARS = range(1, 6)
+
+
+def rate_app(stars: int, text: str = "", *, page: str = "",
+             sender: str = "guest", lang: str = "") -> Path:
+    """Persist one score of the app as a whole (disk + bucket) and log it."""
+    if stars not in STARS:
+        raise ValueError(f"stars must be 1–5, not {stars!r}")
+    text = text.strip()[:MAX_CHARS]
+    stamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
+    path = FEEDBACK_DIR / f"{stamp}-{uuid.uuid4().hex[:6]}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "ts": stamp,
+        "kind": APP_RATING,
+        "stars": stars,
+        "text": text,
+        "page": page,
+        "user": sender,
+        "lang": lang or DEFAULT_LANG,
+    }
+    atomic.write_json(path, payload, ensure_ascii=False, indent=2)
+    storage.persist(path)
+    obs.event("app.rated", stars=stars, chars=len(text))
+    return path
+
+
 def _store_shot(path: Path, shot: bytes) -> str:
     """Write the screenshot beside its submission; "" if it could not be kept.
 

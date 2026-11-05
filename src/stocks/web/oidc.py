@@ -173,6 +173,7 @@ async def callback(request: Request) -> Response:
     flow = session.open_flow(request.cookies) or {}
     target = _safe_next(str(flow.get("next") or "/"))
     source = _source(target)
+    share = _share(target)
     wall = _wall(str(flow.get("wall") or ""))
     # The browser goes home to a clean URL: the token is recorded on the event
     # and on the account, and a campaign parameter left in the address bar is
@@ -224,7 +225,7 @@ async def callback(request: Request) -> Response:
         return response
     if session.verified(claims.get("email_verified")):
         email = str(claims["email"]).strip().lower()
-        await run_in_threadpool(_provision, email, source, wall)
+        await run_in_threadpool(_provision, email, source, wall, share)
         await run_in_threadpool(
             _record_device, cookie, email, request.headers.get("user-agent", "")
         )
@@ -264,6 +265,19 @@ def _source(target: str) -> str:
     return attribution.source(dict(parse_qsl(urlsplit(target).query)))
 
 
+def _share(target: str) -> str:
+    """The shared answer the sign-in started from (`/?share=<id>`), or "".
+
+    Unlike `src` it is not a campaign token and stays on the URL home: the
+    reader came to read that answer. Kept on the signup too, so a share that
+    brought an account can be told from one that only brought readers.
+    """
+    from stocks.web import shares
+
+    value = dict(parse_qsl(urlsplit(target).query)).get("share", "")
+    return value if shares.ID_RE.match(value) else ""
+
+
 #: A prompt's name as the app writes it (`shell/guest.tsx` `signInHref`): a
 #: page slug, or "chat" / "nav" / "tour". Anything else is dropped rather than
 #: cleaned — it is a label to group signups by, and a query parameter is the
@@ -277,7 +291,9 @@ def _wall(raw: str | None) -> str:
     return value if _WALL.fullmatch(value) else ""
 
 
-def _provision(email: str, source: str = "", wall: str = "") -> None:
+def _provision(
+    email: str, source: str = "", wall: str = "", share: str = ""
+) -> None:
     """Create the account this sign-in names, and date the sign-in.
 
     Done here, at the one moment a new address is known to be real: without
@@ -295,19 +311,22 @@ def _provision(email: str, source: str = "", wall: str = "") -> None:
     try:
         paths, seeded = accounts.provision(email, accounts.configured_owner())
         kind = accounts.stamp_login(
-            paths, seeded=seeded, email=email, source=source
+            paths, seeded=seeded, email=email, source=source, share=share
         )
     except Exception as exc:  # noqa: BLE001 — see the docstring
         obs.error("auth.provision_failed", exc)
         return
     # `auth.signup` is the funnel's signup step (`logs_query.FUNNEL_STEPS`)
-    # and carries the campaign token and the in-app prompt that was pressed
-    # (`wall`); `auth.login` dates a returning visit.
+    # and carries the campaign token, the in-app prompt that was pressed
+    # (`wall`) and the shared answer it started from (`share`); `auth.login`
+    # dates a returning visit.
     user = accounts.slug(email)
     obs.event("session.start", logged_in=True, user=user, via="oidc")
     extra: dict[str, Any] = {"src": source} if source else {}
     if wall:
         extra["wall"] = wall
+    if share:
+        extra["share"] = share
     obs.event(f"auth.{kind}", user=user, via="oidc", **extra)
 
 

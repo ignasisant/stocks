@@ -702,5 +702,14 @@
   "chat.shared_gone": "This link is no longer available.",
   "chat.shared_mine": "This is your link.",
   "chat.shared_continue": "Keep asking",
-  "chat.shared_guest": "Sign in to ask about your own portfolio."
+  "chat.shared_guest": "Sign in to ask about your own portfolio.",
+  "chat.shared_guest_free": "Free, with a daily limit. No API key needed.",
+  "chat.shared_guest_import": "Or import your statement first",
+  "chat.shared_list_title": "Shared list",
+  "chat.shared_follow": "Follow all",
+  "chat.shared_list_guest": "Sign in to add them to your watchlist.",
+  "chat.shared_followed_one": "1 added to your watchlist.",
+  "chat.shared_followed_n": "{n} added to your watchlist.",
+  "chat.shared_followed_none": "You already follow all of them.",
+  "chat.shared_followed_open": "Open watchlist"
 }
