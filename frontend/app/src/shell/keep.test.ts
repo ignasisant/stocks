@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromKept, get, invalidate, withMemo } from "./api";
-import { setShelf, type Kept, type Shelf } from "./keep";
+import { forgetKept, setShelf, type Kept, type Shelf } from "./keep";
 
 function ok(body: unknown): Response {
   return {
@@ -154,6 +154,49 @@ describe("kept answers", () => {
     const first = fromKept(() => get("/me"));
     expect(await first.answer).toEqual({ kind: "session", email: "a@x" });
     expect(first.keptAt()).toBeNull();
+  });
+
+  it("empties the shelf when a screen painted from it crashed", async () => {
+    // The crash cancels the live request that would have replaced the kept
+    // answer, so without this every launch repaints the one that threw.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        ok(url.endsWith("/me") ? { kind: "session", email: "a@x" } : { tiles: [] }),
+      ),
+    );
+    await signIn();
+    store.answers.set("/api/v1/home/market", {
+      url: "/api/v1/home/market",
+      at: Date.now(),
+      body: { score: 50 },
+    });
+    expect(await fromKept(() => get("/home/market")).answer).toEqual({ score: 50 });
+
+    forgetKept();
+    await flush();
+    expect(store.answers.size).toBe(0);
+
+    invalidate();
+    await signIn();
+    const next = fromKept(() => get("/home/market"));
+    expect(await next.answer).toEqual({ tiles: [] });
+    expect(next.keptAt()).toBeNull();
+  });
+
+  it("keeps the shelf through a crash it played no part in", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        ok(url.endsWith("/me") ? { kind: "guest" } : { n: 3 }),
+      ),
+    );
+    await signIn();
+    await withMemo(() => get("/book"));
+    await flush();
+    forgetKept();
+    await flush();
+    expect(store.answers.has("/api/v1/book")).toBe(true);
   });
 
   it("ignores an answer older than a week", async () => {

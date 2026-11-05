@@ -118,6 +118,11 @@ describe("the Market card", () => {
     expect(html).toContain("home.market_breadth");
     expect(html).toContain("home.market_as_of");
   });
+
+  it("draws an empty strip, not a crash, for a body without tiles", () => {
+    const bare = { ...glance, tiles: undefined } as unknown as MarketGlance;
+    expect(() => renderToStaticMarkup(<Market data={bare} />)).not.toThrow();
+  });
 });
 
 describe("the editor", () => {

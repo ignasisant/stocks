@@ -1,5 +1,7 @@
 import { Component, type ReactNode } from "react";
 
+import { forgetKept } from "./keep";
+
 /**
  * What a screen shows when it threw while rendering, instead of a blank page.
  *
@@ -20,6 +22,12 @@ export class Crash extends Component<
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidCatch() {
+    // It may have been last visit's answer it threw on: a reload asks the
+    // network instead of painting the same one again.
+    forgetKept();
   }
 
   componentDidUpdate(previous: { resetKey?: string }) {

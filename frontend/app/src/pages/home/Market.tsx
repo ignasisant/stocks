@@ -108,7 +108,9 @@ export function Market({ data }: { data: MarketGlance }) {
     setRange(key);
     remember(key);
   };
-  const tiles = data.tiles.filter((tile) => LABELS[tile.key]);
+  // `?? []`: a body without the list was once painted from the kept shelf
+  // and took the whole Home down with it; an empty strip is the honest read.
+  const tiles = (data.tiles ?? []).filter((tile) => LABELS[tile.key]);
   return (
     <Card className="hm-market">
       {/* The head every card with a range draws: title, the picker beside it.
