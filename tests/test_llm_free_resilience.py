@@ -102,9 +102,31 @@ def test_a_long_rate_limit_rests_the_backend_until_the_wait_it_named(
     assert calls == ["groq", "groq"]
 
 
+def test_a_rate_limited_model_leaves_the_backends_next_model_awake(monkeypatch):
+    """groq counts tokens per model: its 120b waiting a minute says nothing
+    about its qwen, which used to rest with it (ERR-03, triage 2026-11-05)."""
+    calls = []
+
+    def groq(api_key, model, system, messages):
+        calls.append(model)
+        if model == "gpt-oss-120b":
+            raise _HttpError(429, _GROQ_429.format("40s"))
+        yield model
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "gpt-oss-120b", groq),
+        _FreeBackend("groq", "k", "qwen3.8-27b", groq, primary=False),
+        _ok("openrouter", ["x"])])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["qwen3.8-27b"]
+    # The next turn skips the resting model, not the backend.
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["qwen3.8-27b"]
+    assert calls == ["gpt-oss-120b", "qwen3.8-27b", "qwen3.8-27b"]
+
+
 def test_a_resting_backend_is_still_tried_when_it_is_the_last_awake(
         monkeypatch):
-    monkeypatch.setattr(llm, "_free_resting", {"groq": float("inf")})
+    monkeypatch.setattr(llm, "_free_resting",
+                        {("groq", "model-groq"): float("inf")})
     monkeypatch.setattr(llm, "_free_backends", lambda: [_ok("groq", ["g"])])
     assert list(llm._free_stream("", "auto", "sys", [])) == ["g"]
 

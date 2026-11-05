@@ -989,10 +989,12 @@ _RETRY_IN = re.compile(
 _sleep = time.sleep  # a name of its own so tests need not wait
 _clock = time.perf_counter  # and one tests can move by hand
 
-# Past the short wait, a 429 rests its backend for the wait it named (capped):
+# Past the short wait, a 429 rests its model for the wait it named (capped):
 # every turn in that window would otherwise pay the SDK's own retry-after on it
-# before the next backend got its turn. Per process, like `_free_dead`.
-_free_resting: dict[str, float] = {}  # backend id -> monotonic time it lifts
+# before the next one got its turn. The model, not the backend: groq counts
+# tokens per model, so its next model is awake while the first one waits.
+# Per process, like `_free_dead`.
+_free_resting: dict[tuple[str, str], float] = {}  # (backend, model) -> lifts at
 _MAX_REST_S = 60.0
 
 
@@ -1035,19 +1037,20 @@ def _note_rest(b: _FreeBackend, exc: Exception) -> None:
     """A 429 the chain moves on from: skip `b` until the wait it named."""
     secs = _retry_after(exc)
     if secs is not None and _short_wait(exc) is None:
-        _free_resting[b.id] = time.monotonic() + min(secs, _MAX_REST_S)
-        obs.warn("llm.free.backend_resting", backend=b.id,
+        _free_resting[(b.id, b.model)] = (time.monotonic()
+                                          + min(secs, _MAX_REST_S))
+        obs.warn("llm.free.backend_resting", backend=b.id, model=b.model,
                  seconds=round(secs, 1))
 
 
 def _resting(b: _FreeBackend) -> bool:
     if _slow(b):
         return True
-    until = _free_resting.get(b.id)
+    until = _free_resting.get((b.id, b.model))
     if until is None:
         return False
     if time.monotonic() >= until:
-        _free_resting.pop(b.id, None)
+        _free_resting.pop((b.id, b.model), None)
         return False
     return True
 
