@@ -541,10 +541,12 @@ def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
             "gap_pct": _round(abs(finite(row.get("gap_pct")) or 0.0)),
             "held": str(row["ticker"]) in held,
             "hit_day": str(row.get("hit_day") or ""),
-            # A fundamental rule's run, an event rule's passage.
+            # A fundamental rule's run, an event or thesis rule's passage
+            # and, for a thesis, the pillar it went against.
             **({"quarters": int(row["quarters"])}
                if int(row.get("quarters") or 1) > 1 else {}),
-            **{k: str(row[k])[:200] for k in ("quote", "source") if row.get(k)},
+            **{k: str(row[k])[:200] for k in ("quote", "source", "pillar",
+                                               "verdict") if row.get(k)},
         }
         if row.get("state") == "hit":
             if data["hit_day"] and data["hit_day"] >= fresh:

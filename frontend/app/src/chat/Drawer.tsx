@@ -304,8 +304,10 @@ export function Drawer() {
   // drawer opens on it, on a phone too, over whatever page the link named.
   // Unlike the others the parameter stays on the URL while the answer is on
   // screen, so a reload shows it again; it comes off once the reader leaves
-  // it, carries on from it, or shuts the drawer.
+  // it, carries on from it, or shuts the drawer. `&continue=1` is a guest's
+  // "Keep asking" back from the sign-in: the thread is started for them.
   const linked = params.get("share");
+  const carryOn = params.get("continue") === "1";
   const [shared, setShared] = useState<string | null>(null);
   useEffect(() => {
     if (!linked) return;
@@ -314,7 +316,7 @@ export function Drawer() {
   }, [linked]);
   const leaveShared = useCallback(() => {
     setShared(null);
-    setParams({ share: undefined });
+    setParams({ share: undefined, continue: undefined });
   }, [setParams]);
   // Every way the drawer shuts — Close, Escape, a swipe, the nav — leaves it.
   useEffect(() => {
@@ -504,6 +506,7 @@ export function Drawer() {
               thread={thread}
               onThreadTaken={() => setThread(null)}
               share={shared}
+              shareCarryOn={carryOn}
               onShareDone={leaveShared}
               onClose={() => show(false)}
               onPark={() => {

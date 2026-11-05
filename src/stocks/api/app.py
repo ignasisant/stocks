@@ -56,6 +56,7 @@ from stocks.api.routes import (
     home,
     i18n,
     import_statement,
+    invite,
     journal,
     launch,
     learn,
@@ -406,6 +407,7 @@ _private.include_router(client_error.router)
 _private.include_router(vitals.router)
 _private.include_router(launch.router)
 _private.include_router(account.router)
+_private.include_router(invite.router)
 _private.include_router(connections.router)
 _private.include_router(bank.router)
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable
+from urllib.parse import quote
 
 from stocks import navigation
 from stocks.web import landing
@@ -51,6 +52,9 @@ OG_IMAGE = f"{ASSET_BASE}og.png"
 OG_IMAGE_W = 1200
 OG_IMAGE_H = 630
 OG_IMAGE_TYPE = "image/png"
+# A shared answer's and a known ticker's own preview, drawn by
+# `web/og_image.py` in the static card's size and type.
+OG_PREFIX = "/og/"
 
 ICON_SVG = f"{ASSET_BASE}topstocks-icon.svg"
 APPLE_ICON = f"{ASSET_BASE}apple-touch-icon.png"
@@ -346,6 +350,14 @@ TICKER_PATH = "/ticker"
 NAME_MAX = 48
 
 
+def share_image_path(share_id: str) -> str:
+    return f"{OG_PREFIX}share/{share_id}.png"
+
+
+def ticker_image_path(symbol: str) -> str:
+    return f"{OG_PREFIX}ticker/{quote(symbol, safe='')}.png"
+
+
 def ticker_symbol(raw: str | None) -> str | None:
     """`raw` as the symbol of a share card, or None when it is not one."""
     symbol = (raw or "").strip().upper()
@@ -372,8 +384,12 @@ def ticker_head(
     title = f"{who} · {SITE_NAME}"
     description = translate("ticker.seo_description", lang, name=who)
     canonical = _abs(base_url, f"{TICKER_PATH}?ticker={symbol}")
-    image = _abs(base_url, OG_IMAGE)
-    image_alt = translate("landing.seo_image_alt", lang)
+    # Its own image only for a name the memo holds: the route draws no other.
+    if name:
+        image, image_alt = _abs(base_url, ticker_image_path(symbol)), who
+    else:
+        image = _abs(base_url, OG_IMAGE)
+        image_alt = translate("landing.seo_image_alt", lang)
     tags = (
         _meta("description", description)
         + _prop("og:type", "website")
@@ -427,20 +443,31 @@ def share_head(share: dict, base_url: str, lang: str) -> tuple[str, str]:
     whose it is; a forwarded message or a group has lost the sender, and a
     post on X shows the card without the person who wrote it. The card is in
     the sharer's language, the one the question and answer are written in,
-    not the crawler's. Same image and same rules as the ticker card — Open
-    Graph and Twitter only, the shell stays noindex."""
+    not the crawler's. Its image is the same words drawn (`web/og_image.py`);
+    same rules as the ticker card — Open Graph and Twitter only, the shell
+    stays noindex."""
     lang = str(share.get("lang") or lang)
     lang = lang if lang in LANGUAGES else DEFAULT_LANG
-    question = _clip(str(share.get("question") or ""), SHARE_TITLE_MAX)
-    title = f"{question} · {SITE_NAME}" if question else SITE_NAME
     by = str(share.get("by") or "")
-    lead = (translate("landing.share_card_by", lang, name=by) if by
-            else translate("landing.share_card", lang))
-    description = _clip(f"{lead} {_unmarked(str(share.get('content') or ''))}",
-                        SHARE_DESCRIPTION_MAX)
-    url = _abs(base_url, f"/?{SHARE_PARAM}={share.get('id', '')}")
-    image = _abs(base_url, OG_IMAGE)
-    image_alt = translate("landing.seo_image_alt", lang)
+    if share.get("kind") == "watchlist":
+        # A list: its name for a title, who sent it and the symbols after.
+        symbols = ", ".join(str(t) for t in share.get("tickers") or [])
+        question = _clip(str(share.get("title") or "") or symbols, SHARE_TITLE_MAX)
+        lead = (translate("landing.share_list_by", lang, name=by) if by
+                else translate("landing.share_list", lang))
+        body = symbols
+    else:
+        question = _clip(str(share.get("question") or ""), SHARE_TITLE_MAX)
+        lead = (translate("landing.share_card_by", lang, name=by) if by
+                else translate("landing.share_card", lang))
+        body = _unmarked(str(share.get("content") or ""))
+    title = f"{question} · {SITE_NAME}" if question else SITE_NAME
+    description = _clip(f"{lead} {body}", SHARE_DESCRIPTION_MAX)
+    # `src=share` as the app's own link spells it (`ShareSheet.shareUrl`): an
+    # app that re-shares the canonical URL keeps the visit counted as a share.
+    url = _abs(base_url, f"/?{SHARE_PARAM}={share.get('id', '')}&src=share")
+    image = _abs(base_url, share_image_path(str(share.get("id") or "")))
+    image_alt = _clip(f"{lead} {question}", SHARE_DESCRIPTION_MAX)
     tags = (
         _meta("description", description)
         + _prop("og:type", "article")
@@ -530,11 +557,13 @@ def robots_txt(base_url: str) -> str:
     # the ticker page taken out of the disallow list, and a shared answer
     # named: `/` is not disallowed, but "/$" alone reads as if it were.
     lines += [f"User-agent: {agent}" for agent in PREVIEW_BOTS]
-    lines += [f"Allow: {p}" for p in [*allow, TICKER_PATH, f"/?{SHARE_PARAM}="]]
+    lines += [f"Allow: {p}" for p in
+              [*allow, TICKER_PATH, f"/?{SHARE_PARAM}=", OG_PREFIX]]
     lines += [f"Disallow: {p}" for p in disallow if p != TICKER_PATH]
     lines += ["", "User-agent: *"]
     lines += [f"Allow: {p}" for p in allow]
-    lines += [f"Disallow: {p}" for p in disallow]
+    # The preview images quote pages that are out of the index themselves.
+    lines += [f"Disallow: {p}" for p in [*disallow, OG_PREFIX]]
     lines += ["", f"Sitemap: {_abs(base_url, '/sitemap.xml')}", ""]
     return "\n".join(lines)
 

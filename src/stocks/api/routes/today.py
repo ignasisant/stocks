@@ -4,7 +4,8 @@ reader's own card (alerts, their book, news, insiders, comparisons).
 Two layers with two lifetimes. The market read is written once a morning by
 cron for everyone (`chat/today_market.py`); the personal card is the daily
 card Home's teaser shows, written on open by `api/briefing.py`. `GET /today`
-composes both and never fetches or spends; `POST /today` asks for the
+composes both and never spends — only the book rows are redone live, off
+cached prices (`daily_card.live_book`); `POST /today` asks for the
 personal card, sharing its job with `POST /daily` so the teaser and the page
 can never start two generations for one reader.
 """
@@ -76,7 +77,10 @@ def today(account: Account, who: Who, lang: Lang = "en") -> TodayCard:
     """
     _, day = briefing.now_day(account)
     market, stale = _market(lang)
-    personal = None if who.kind == "guest" else daily_card.status(account, lang)
+    personal = (
+        None if who.kind == "guest"
+        else daily_card.live_book(account, daily_card.status(account, lang))
+    )
     return TodayCard(
         action_day=day.isoformat(),
         market=market,
@@ -103,7 +107,9 @@ def write_today(
     """
     _, day = briefing.now_day(account)
     market, stale = _market(lang)
-    personal = daily_card.request(account, lang, force=force, patient=True)
+    personal = daily_card.live_book(
+        account, daily_card.request(account, lang, force=force, patient=True)
+    )
     return TodayCard(
         action_day=day.isoformat(),
         market=market,

@@ -702,5 +702,14 @@
   "chat.shared_gone": "Este enlace ya no está disponible.",
   "chat.shared_mine": "Es tu enlace.",
   "chat.shared_continue": "Seguir preguntando",
-  "chat.shared_guest": "Entra para preguntar sobre tu cartera."
+  "chat.shared_guest": "Entra para preguntar sobre tu cartera.",
+  "chat.shared_guest_free": "Gratis, con límite diario. Sin clave de API.",
+  "chat.shared_guest_import": "O importa antes tu extracto",
+  "chat.shared_list_title": "Lista compartida",
+  "chat.shared_follow": "Seguir todos",
+  "chat.shared_list_guest": "Inicia sesión para añadirlos a tu lista.",
+  "chat.shared_followed_one": "1 añadido a tu lista de seguimiento.",
+  "chat.shared_followed_n": "{n} añadidos a tu lista de seguimiento.",
+  "chat.shared_followed_none": "Ya los sigues todos.",
+  "chat.shared_followed_open": "Ver lista"
 }

@@ -58,5 +58,14 @@
   "watchlist.group_delete_help": "Removes the group from its members. The tickers stay on the watchlist.",
   "watchlist.group_deleted": "Group {group} dissolved — {n} entries kept.",
   "watchlist.how_open": "How it works",
-  "watchlist.how": "- Every edit saves immediately.\n- `Shares` + `Avg cost` make a fallback position; the real book comes from imported transactions.\n- Crypto goes in as a Yahoo pair (`BTC-USD`, `ETH-EUR`); the search does this for you.\n- A ticker can sit in several groups."
+  "watchlist.how": "- Every edit saves immediately.\n- `Shares` + `Avg cost` make a fallback position; the real book comes from imported transactions.\n- Crypto goes in as a Yahoo pair (`BTC-USD`, `ETH-EUR`); the search does this for you.\n- A ticker can sit in several groups.",
+  "watchlist.share": "Share",
+  "watchlist.share_title": "Share this list",
+  "watchlist.share_link": "Link to your list",
+  "watchlist.share_text": "My watchlist on TopStocks",
+  "watchlist.share_text_named": "My list “{name}” on TopStocks",
+  "watchlist.share_make": "Create link",
+  "watchlist.share_name": "Name",
+  "watchlist.share_note": "Only the symbols and the name go out: no amounts, notes or other groups.",
+  "watchlist.share_note_cut": "Only the first {n} symbols and the name go out: no amounts, notes or other groups."
 }

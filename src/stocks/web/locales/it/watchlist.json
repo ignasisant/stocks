@@ -58,5 +58,14 @@
   "watchlist.group_delete_help": "Toglie il gruppo dai suoi membri. I ticker restano nella watchlist.",
   "watchlist.group_deleted": "Gruppo {group} sciolto — {n} voci mantenute.",
   "watchlist.how_open": "Come funziona",
-  "watchlist.how": "- Ogni modifica si salva subito.\n- `Azioni` + `Prezzo medio di carico` formano una posizione di riserva; il portafoglio vero viene dalle transazioni importate.\n- Le crypto entrano come coppia Yahoo (`BTC-USD`, `ETH-EUR`); la ricerca lo fa per te.\n- Un ticker può stare in più gruppi."
+  "watchlist.how": "- Ogni modifica si salva subito.\n- `Azioni` + `Prezzo medio di carico` formano una posizione di riserva; il portafoglio vero viene dalle transazioni importate.\n- Le crypto entrano come coppia Yahoo (`BTC-USD`, `ETH-EUR`); la ricerca lo fa per te.\n- Un ticker può stare in più gruppi.",
+  "watchlist.share": "Condividi",
+  "watchlist.share_title": "Condividi questa lista",
+  "watchlist.share_link": "Link alla tua lista",
+  "watchlist.share_text": "La mia watchlist su TopStocks",
+  "watchlist.share_text_named": "La mia lista «{name}» su TopStocks",
+  "watchlist.share_make": "Crea link",
+  "watchlist.share_name": "Nome",
+  "watchlist.share_note": "Escono solo i simboli e il nome: niente importi, note o altri gruppi.",
+  "watchlist.share_note_cut": "Escono solo i primi {n} simboli e il nome: niente importi, note o altri gruppi."
 }

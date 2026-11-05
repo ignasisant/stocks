@@ -157,3 +157,33 @@ def test_the_feedback_command_says_which_bucket_it_read(sandbox, capsys):
 
     cli.cmd_feedback(Namespace())
     assert "local data/feedback only" in capsys.readouterr().out
+
+
+# ------------------------------------------- the one-time app rating prompt
+
+
+def test_an_app_rating_is_kept_with_or_without_a_comment(sandbox):
+    bare = json.loads(feedback.rate_app(4, page="home").read_text())
+    assert (bare["kind"], bare["stars"], bare["text"]) == ("app_rating", 4, "")
+    said = json.loads(feedback.rate_app(2, "  the charts are slow ").read_text())
+    assert (said["stars"], said["text"]) == (2, "the charts are slow")
+
+
+def test_an_app_rating_outside_one_to_five_is_refused(sandbox):
+    for stars in (0, 6, -1):
+        with pytest.raises(ValueError):
+            feedback.rate_app(stars)
+    assert not sandbox.exists() or not list(sandbox.iterdir())
+
+
+def test_the_feedback_command_averages_the_app_ratings(sandbox, capsys):
+    from argparse import Namespace
+
+    from stocks import cli
+
+    feedback.rate_app(5)
+    feedback.rate_app(2, "missing my broker")
+    cli.cmd_feedback(Namespace())
+    out = capsys.readouterr().out
+    assert "★★" in out and "missing my broker" in out
+    assert "app rating: 3.5★ from 2" in out

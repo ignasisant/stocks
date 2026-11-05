@@ -35,6 +35,7 @@
   "483340.KS": "",
   "5152.KL": "https://www.google.com/s2/favicons?domain=mbl.com&sz=128",
   "600703.SS": "https://financialmodelingprep.com/image-stock/600703.SS.png",
+  "603528.SS": "https://financialmodelingprep.com/image-stock/603528.SS.png",
   "6098.T": "https://financialmodelingprep.com/image-stock/6098.T.png",
   "6501.T": "https://financialmodelingprep.com/image-stock/6501.T.png",
   "6758.T": "https://financialmodelingprep.com/image-stock/6758.T.png",
@@ -264,6 +265,7 @@
   "DAVEW": "https://financialmodelingprep.com/image-stock/DAVEW.png",
   "DDHLY": "https://www.google.com/s2/favicons?domain=digitaldomain.com&sz=128",
   "DDOG": "https://financialmodelingprep.com/image-stock/DDOG.png",
+  "DE": "https://financialmodelingprep.com/image-stock/DE.png",
   "DE000A3H2200": "https://www.google.com/s2/favicons?domain=nagarro.com&sz=128",
   "DELL": "https://financialmodelingprep.com/image-stock/DELL.png",
   "DEPW": "",
@@ -303,6 +305,11 @@
   "DSY.PA": "https://financialmodelingprep.com/image-stock/DSY.PA.png",
   "DT": "https://financialmodelingprep.com/image-stock/DT.png",
   "DTE.DE": "https://financialmodelingprep.com/image-stock/DTE.DE.png",
+  "DUKR": "https://financialmodelingprep.com/image-stock/DUKR.png",
+  "DUKRW": "https://financialmodelingprep.com/image-stock/DUKRW.png",
+  "DUO": "https://financialmodelingprep.com/image-stock/DUO.png",
+  "DUOG": "https://financialmodelingprep.com/image-stock/DUOG.png",
+  "DUOT": "https://financialmodelingprep.com/image-stock/DUOT.png",
   "E": "https://financialmodelingprep.com/image-stock/E.png",
   "EBOSY": "https://financialmodelingprep.com/image-stock/EBOSY.png",
   "ECPG": "https://financialmodelingprep.com/image-stock/ECPG.png",
@@ -806,6 +813,7 @@
   "SPY": "https://financialmodelingprep.com/image-stock/SPY.png",
   "SQQQ": "https://financialmodelingprep.com/image-stock/SQQQ.png",
   "SSRLY": "",
+  "STM": "https://financialmodelingprep.com/image-stock/STM.png",
   "STNE": "https://financialmodelingprep.com/image-stock/STNE.png",
   "STRL": "https://financialmodelingprep.com/image-stock/STRL.png",
   "SU.PA": "https://financialmodelingprep.com/image-stock/SU.PA.png",
@@ -1057,6 +1065,10 @@
     "SNTL": [
       "https://financialmodelingprep.com/image-stock/SNTL.png",
       1793366008.436414
+    ],
+    "VTV": [
+      "https://financialmodelingprep.com/image-stock/VTV.png",
+      1793872031.491742
     ],
     "WTRG": [
       "https://financialmodelingprep.com/image-stock/WTRG.png",

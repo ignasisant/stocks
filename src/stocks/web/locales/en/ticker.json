@@ -559,5 +559,8 @@
   "ticker.shorts_holders": "Holders",
   "ticker.shorts_col_holder": "Holder",
   "ticker.shorts_col_pct": "Net short",
-  "ticker.shorts_no_holders": "{source} publishes the total only, not who holds it."
+  "ticker.shorts_no_holders": "{source} publishes the total only, not who holds it.",
+  "ticker.share": "Share {ticker}",
+  "ticker.share_link": "Link to {ticker}",
+  "ticker.share_text": "{name} ({ticker}) on TopStocks"
 }

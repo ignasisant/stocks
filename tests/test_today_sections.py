@@ -267,6 +267,11 @@ def test_the_print_row_reads_in_spanish():
     # An outlook without a figure is not quoted.
     ("The company expects continued growth next quarter.", ""),
     ("", ""),
+    # The 8-K's wrapper and title name the quarter it reports, not an outlook.
+    ("EX-99.1 2 sezl-20261104ex9901.htm EX-99.1 DocumentNovember 4, 2026Sezzle "
+     "Reports Third Quarter 2026 Results•Total Transaction Volume (TTV) reached "
+     "$1.4 billion•Raises full-year 2026 outlook to $3.10 EPS",
+     "Raises full-year 2026 outlook to $3.10 EPS"),
     # A long sentence is cut at a word.
     ("For fiscal 2027 the company projects revenue growth of 12 to 14 percent, "
      "operating margin expansion of 150 basis points, free cash flow above "
@@ -620,6 +625,138 @@ def test_a_name_without_history_is_left_out():
                   sources=_sources(closes=_closes))
     compare = next(s for s in out["sections"] if s["id"] == "compare")
     assert [r["tickers"][0] for r in compare["rows"]] == ["AAPL"]
+
+
+def _compare(out) -> dict:
+    return next(s for s in out["sections"] if s["id"] == "compare")
+
+
+def test_a_euro_reader_measures_everything_in_euros():
+    """AAPL and SPY quoted in dollars, the dollar falling: each move is the
+    one a euro holder had, and the gap is not the exchange rate's."""
+    from stocks.api.evidence import perf
+
+    tech = next(n for n, e in sm.SECTOR_ETFS.items() if e == "XLK")
+    closes = _closes() | {"EURUSD=X": _series(0.0002, 1.0)}
+    out = _gather({"AAPL": 1.0}, base="EUR", currencies={"AAPL": "USD"},
+                  sources=_sources(closes=lambda: closes,
+                                   verdicts=lambda: {"AAPL": {"sector": tech}}))
+    compare = _compare(out)
+    data = compare["rows"][0]["data"]
+    in_euros = perf(_series(0.001))
+    assert data["currency"] == "EUR" and compare["currency"] == "EUR"
+    assert data["m6"] == pytest.approx(in_euros["m6_pct"], abs=0.2)
+    # Both sides lose the dollar's fall: the gap to SPY is the dollar gap.
+    assert data["vs_index_m6"] == pytest.approx(
+        perf(_series(0.0012))["m6_pct"] - perf(_series(0.0004))["m6_pct"], abs=0.3)
+    spy = next(b for b in compare["benchmarks"] if b["symbol"] == "SPY")
+    assert spy["currency"] == "EUR"
+    assert spy["m6"] == pytest.approx(perf(_series(0.0002))["m6_pct"], abs=0.2)
+
+
+def test_a_european_listing_is_held_against_europes_sector_fund():
+    cyclical = "Consumer Cyclical"
+    closes = _closes() | {"RMS.PA": _series(-0.001), "7203.T": _series(0.0005),
+                          "EXH7.DE": _series(0.0003)}
+    kinds = STOCKS | {"RMS.PA": "stock", "7203.T": "stock"}
+    out = _gather({"RMS.PA": 0.5, "7203.T": 0.5}, kinds=kinds, base="EUR",
+                  currencies={"RMS.PA": "EUR", "7203.T": "JPY"},
+                  sources=_sources(closes=lambda: closes, verdicts=lambda: {
+                      "RMS.PA": {"sector": cyclical}, "7203.T": {"sector": cyclical}}))
+    rows = {r["tickers"][0]: r["data"] for r in _compare(out)["rows"]}
+    assert rows["RMS.PA"]["sector_etf"] == "EXH7.DE"
+    assert rows["RMS.PA"]["vs_sector"] is not None
+    # Tokyo against a US or a European fund says nothing.
+    assert rows["7203.T"]["sector_etf"] is None
+
+
+def test_the_benchmarks_carry_the_book_and_the_indexes():
+    closes = _closes() | {"QQQ": _series(0.0006), "^IBEX": _series(0.0003)}
+    out = _gather({"AAPL": 0.5, "KO": 0.5}, base="USD",
+                  currencies={"AAPL": "USD", "KO": "USD"},
+                  sources=_sources(closes=lambda: closes))
+    marks = {b["symbol"]: b for b in _compare(out)["benchmarks"]}
+    assert list(marks)[0] == today_sections.BOOK
+    assert marks["QQQ"]["name"] == "Nasdaq 100" and marks["QQQ"]["m6"] is not None
+    # Today's two names, half each, a year back: between their own moves.
+    book = marks[today_sections.BOOK]["y1"]
+    own = [r["data"]["y1"] for r in _compare(out)["rows"]]
+    assert min(own) < book < max(own)
+    # No coin held, no bitcoin among them; an index with no closes is left out.
+    assert "BTC-EUR" not in marks and "URTH" not in marks
+
+
+def _book(series: pd.Series, top_up_at: int = 150) -> pd.DataFrame:
+    """A book of 1,000 put in on its first day and 1,000 more at `top_up_at`,
+    all of it in `series`."""
+    units = np.where(np.arange(len(series)) < top_up_at, 1000 / series.iloc[0],
+                     1000 / series.iloc[0] + 1000 / series.iloc[top_up_at])
+    injected = np.where(np.arange(len(series)) < top_up_at, 1000.0, 2000.0)
+    return pd.DataFrame({"value": units * series.to_numpy(), "injected": injected},
+                        index=series.index)
+
+
+def test_every_comparison_also_runs_from_the_books_first_day():
+    """The book against each index on the same money from its first day, and
+    each position against each index over that same window."""
+    from stocks.analysis.portfolio import index_change, money_change
+
+    closes = _closes() | {"QQQ": _series(0.0006)}
+    hist = _book(closes["AAPL"])
+    out = _gather({"AAPL": 1.0}, base="USD", currencies={"AAPL": "USD"},
+                  sources=_sources(closes=lambda: closes, history=lambda: hist))
+    compare = _compare(out)
+    assert compare["since"] == SESSIONS[0].date().isoformat()
+    marks = {b["symbol"]: b for b in compare["benchmarks"]}
+    days = (SESSIONS[-1] - SESSIONS[0]).days
+    assert marks[today_sections.BOOK]["all"] == pytest.approx(
+        money_change(hist, days)[1] * 100, abs=0.1)
+    assert marks["SPY"]["all"] == pytest.approx(
+        index_change(hist, closes["SPY"], days)[1] * 100, abs=0.1)
+    # The top-up bought the index late, on its own day: not the price move.
+    spy_price = (closes["SPY"].iloc[-1] / closes["SPY"].iloc[0] - 1) * 100
+    assert marks["SPY"]["all"] != pytest.approx(spy_price, abs=0.5)
+    data = compare["rows"][0]["data"]
+    own = (closes["AAPL"].iloc[-1] / closes["AAPL"].iloc[0] - 1) * 100
+    qqq = (closes["QQQ"].iloc[-1] / closes["QQQ"].iloc[0] - 1) * 100
+    assert data["all"] == pytest.approx(own, abs=0.1)
+    assert data["vs_all:QQQ"] == pytest.approx(own - qqq, abs=0.2)
+    assert data["vs_index_all"] == pytest.approx(data["vs_all:SPY"])
+    assert "all_from" not in data
+
+
+def test_a_name_listed_after_the_book_began_runs_from_its_listing():
+    closes = _closes() | {"NEW": _series(0.002).iloc[200:]}
+    hist = _book(closes["SPY"])
+    out = _gather({"NEW": 1.0}, base="USD", currencies={"NEW": "USD"},
+                  sources=_sources(closes=lambda: closes, history=lambda: hist))
+    data = _compare(out)["rows"][0]["data"]
+    assert data["all_from"] == SESSIONS[200].date().isoformat()
+    spy = closes["SPY"]
+    gap = (closes["NEW"].iloc[-1] / closes["NEW"].iloc[0]
+           - spy.iloc[-1] / spy.iloc[200]) * 100
+    assert data["vs_all:SPY"] == pytest.approx(gap, abs=0.2)
+
+
+def test_without_a_history_there_is_no_since_inception():
+    out = _gather({"AAPL": 1.0}, base="USD", currencies={"AAPL": "USD"},
+                  sources=_sources(closes=_closes))
+    compare = _compare(out)
+    assert "since" not in compare
+    assert all(b["all"] is None for b in compare["benchmarks"])
+    assert "all" not in compare["rows"][0]["data"]
+
+
+def test_a_name_held_at_cost_without_history_leaves_prices_missing():
+    out = _gather({"AAPL": 0.5, "NEW": 0.5}, kinds=STOCKS | {"NEW": "stock"},
+                  unpriced=["NEW"], sources=_sources(closes=_closes))
+    assert _compare(out)["missing"] == ["prices"]
+
+
+def test_a_small_position_is_not_notable_however_far_it_ran():
+    row = {"data": {"weight": 0.7, "vs_sector": 45.0, "verdict": "trim"}}
+    assert not today_sections.notable(row)
+    assert today_sections.notable({"data": {**row["data"], "weight": 4.0}})
 
 
 def test_a_failing_review_keeps_the_figures():

@@ -71,6 +71,7 @@ import { SplitRepair } from "./Splits";
 import { AssetStatsSection, KpiSourcesSection } from "./Reference";
 import { CycleSection, HoldingSection, PositioningSection } from "./Crypto";
 import { AiAsk } from "./AiAsk";
+import { TickerShare } from "./Share";
 import {
   ComparablesSection,
   FundSection,
@@ -473,10 +474,15 @@ export default function Page() {
             price alert are all somebody's own edits to their own list, and all
             three live inside `<Actions>`. A guest is offered the thing that
             would make them theirs instead. */}
+        {/* Share sits in the same row at the actions' tighter gap: on a
+            390px phone the row then holds all of them. */}
         {ticker && !absent ? (
-          <SignedInOnly fallback={<SignIn className="ag-btn tk-signin" />}>
-            <Actions ticker={ticker} entry={entry} onEntry={onEntry} />
-          </SignedInOnly>
+          <div className="tk-tools">
+            <SignedInOnly fallback={<SignIn className="ag-btn tk-signin" />}>
+              <Actions ticker={ticker} entry={entry} onEntry={onEntry} />
+            </SignedInOnly>
+            <TickerShare ticker={ticker} name={drawn?.name} />
+          </div>
         ) : null}
         {/* No search box here: the shell's top-bar search is the one way to
             change company — two boxes that both navigate is one too many, and

@@ -44,12 +44,11 @@ import pandas as pd
 from stocks import accounts, obs
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import (
-    basket_change,
     index_change,
     money_change,
     us_market_open,
 )
-from stocks.api import holds, home, loaders
+from stocks.api import book_moves, holds, home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
 from stocks.chat import (
@@ -151,14 +150,23 @@ def _closes_since(first, index: str = daily_book.INDEX_SYMBOL) -> dict:
     money goes into the index from there, whatever window is drawn. The card's
     own two years when they reach (SPY, no request), else the indexes' six
     years, else their whole history."""
-    # A download opens a week or so late on its own first day.
-    def reaches(years: int) -> bool:
-        floor = pd.Timestamp.today().normalize() - pd.DateOffset(years=years, days=-7)
-        return first is None or pd.Timestamp(first) >= floor
-
-    if index == daily_book.INDEX_SYMBOL and reaches(2):
+    if index == daily_book.INDEX_SYMBOL and _reaches(first, 2):
         return _card_closes()
-    return _compare_closes(COMPARE_PERIOD if reaches(6) else "max")
+    return _compare_closes(COMPARE_PERIOD if _reaches(first, 6) else "max")
+
+
+def _reaches(first, years: int) -> bool:
+    """Whether `years` of closes reach back to `first` (None: nothing to
+    reach). A download opens a week or so late on its own first day."""
+    floor = pd.Timestamp.today().normalize() - pd.DateOffset(years=years, days=-7)
+    return first is None or pd.Timestamp(first) >= floor
+
+
+def _period_since(first) -> str:
+    """The shortest download that reaches back to `first`."""
+    if _reaches(first, 2):
+        return CARD_PERIOD
+    return COMPARE_PERIOD if _reaches(first, 6) else "max"
 
 
 @ttl_cache(900.0, max_entries=1, persist="card_closes")
@@ -179,6 +187,25 @@ def _compare_closes(period: str = COMPARE_PERIOD) -> dict[str, pd.Series]:
     from stocks.analysis.portfolio import load_closes
 
     return load_closes(sorted({*daily_book.INDEXES, "EURUSD=X"}), period=period)
+
+
+@ttl_cache(900.0, max_entries=3, persist="bench_closes")
+def _bench_closes(period: str = CARD_PERIOD) -> dict[str, pd.Series]:
+    """The indexes the Today comparisons are laid against (`daily_book.INDEXES`)
+    and Europe's sector funds, over `period`, in one bulk request shared by
+    every account. Read by the background card only, never by a page load:
+    Home's own request stays the size it was.
+
+    `period` reaches back to the book's first day (`_period_since`), where
+    every comparison also starts; past the card's two years it carries the
+    US funds and the euro pair too, which the card's own closes stop short
+    of."""
+    from stocks.analysis.portfolio import load_closes
+
+    wanted = {*daily_book.INDEXES, *sm.EUROPE_SECTOR_ETFS.values()}
+    if period != CARD_PERIOD:
+        wanted |= set(CARD_TICKERS)
+    return load_closes(sorted(wanted), period=period)
 
 
 @ttl_cache(86400.0, max_entries=32)
@@ -357,20 +384,11 @@ def _tax_year_net(paths, prefs: dict, ccy: str, day: date):
 
 
 def _day_move(tbl, hist) -> tuple[float, float] | None:
-    """The "Today" figure the KPI row shows, so the card cannot contradict it.
-
-    In a regular US session the basket's close-to-close day; outside one, the
-    per-row day (already re-read from the quote burst) summed against the
-    value it moved from.
-    """
-    if tbl is None or tbl.empty:
+    """The "Today" figure Home's tile shows (`book_moves.day`), so the card
+    cannot contradict it."""
+    if tbl is None or tbl.empty or hist is None or hist.empty:
         return None
-    if not us_market_open():
-        moved = float(tbl["day"].dropna().sum())
-        value = float(tbl["value"].dropna().sum())
-        start = value - moved
-        return moved, (moved / start if start else 0.0)
-    return basket_change(hist, 1) if hist is not None and not hist.empty else None
+    return book_moves.day(hist, book_moves.session_quotes(hist))
 
 
 def _attribution(tbl, hist, year: dict, ccy: str, moved) -> dict | None:
@@ -709,13 +727,25 @@ SLOW_RULES_BUDGET_S = 25.0
 # The 8-K items whose own document an event rule reads: an officer leaving,
 # and the results release (where a guidance or dividend cut is announced).
 _RULE_ITEMS = ("5.02", "2.02", "7.01", "8.01")
+# What a thesis rule reads besides: a material contract signed or ended, a
+# bankruptcy, an acquisition or disposal, a costly exit or impairment, a
+# delisting, past accounts withdrawn.
+_THESIS_ITEMS = _RULE_ITEMS + ("1.01", "1.02", "1.03", "2.01", "2.05", "2.06",
+                               "3.01", "4.02")
+# The thesis rules' round, after the card is stored: how long it may run and
+# how many names it may ask a model about. A book with more theses than
+# calls is read in turns (`journal.check_theses`), the longest unread first.
+THESIS_BUDGET_S = 90.0
+THESIS_MAX_CALLS = 10
 
 
-def _passages(ticker: str, since: date) -> list[dict]:
+def _passages(ticker: str, since: date, items: tuple[str, ...] = _RULE_ITEMS
+              ) -> list[dict]:
     """What an event rule is judged on: `ticker`'s 8-Ks since `since` that
     report an officer change or results (the filing's own words, or the
-    release's), and its last days' headlines. A source that cannot be read
-    is left out; both failing raises, so the rule waits for the next check."""
+    release's), or any other of `items`, and its last days' headlines. A
+    source that cannot be read is left out; both failing raises, so the rule
+    waits for the next check."""
     from stocks.data import edgar
 
     out: list[dict] = []
@@ -725,7 +755,7 @@ def _passages(ticker: str, since: date) -> list[dict]:
     except Exception:  # noqa: BLE001 — the headlines may still say it
         reports, failed = [], failed + 1
     for r in reports:
-        if r.filed < since or not set(r.items) & set(_RULE_ITEMS):
+        if r.filed < since or not set(r.items) & set(items):
             continue
         text = (edgar.earnings_release(ticker, r.filed) if "2.02" in r.items
                 else None) or edgar.current_report_text(r.url)
@@ -742,6 +772,40 @@ def _passages(ticker: str, since: date) -> list[dict]:
     out.extend({"source": h.publisher or "news", "day": h.published.isoformat(),
                 "text": h.title} for h in news if h.published >= since)
     return out
+
+
+def _thesis_passages(ticker: str, since: date) -> list[dict]:
+    return _passages(ticker, since, _THESIS_ITEMS)
+
+
+def check_theses(paths, prefs: dict, lang: str, day: date, spend) -> list[dict]:
+    """The reader's thesis rules read against the day's business news, and a
+    push for any met: the card that saw it is already written, and a broken
+    thesis should not wait for tomorrow's. The next card says so too
+    (`journal.measured`). Never raises."""
+    fired = journal.safely(
+        journal.check_theses, paths.journal, day,
+        passages_of=_thesis_passages,
+        judge=exit_judge.make_thesis_judge(
+            prefs, spend_free=lambda p: spend_for_judge(p, spend)),
+        budget_s=THESIS_BUDGET_S,
+        max_calls=THESIS_MAX_CALLS,
+    ) or []
+    if fired and prefs.get("notify_alerts", True):
+        with obs.swallow("journal.thesis_push"):
+            from stocks.notify import render, webpush
+            from stocks.web.i18n import translate
+
+            first = fired[0]
+            title = translate("notify.thesis_title", lang,
+                              ticker=str(first.get("ticker") or ""))
+            lines: list[str | None] = [
+                translate("notify.thesis_line", lang,
+                          pillar=str(r.get("pillar") or ""),
+                          quote=str(r.get("quote") or "")) for r in fired]
+            webpush.send_all(paths.push, render.message(
+                title, lines, "/profile?tab=journal", "thesis"), topic="thesis")
+    return fired
 
 
 def _held(paths) -> set[str]:
@@ -881,11 +945,15 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
     mtime = loaders.db_mtime(db)
     ccy = reporting_currency(paths)
     weights: dict[str, float] = {}
+    currencies: dict[str, str] = {}
+    unpriced: list[str] = []
     try:
         tbl = home.enriched(db, mtime, ccy)
-        if tbl is not None and not tbl.empty and "weight" in tbl:
-            weights = {str(t): float(w) for t, w in tbl["weight"].items()
-                       if finite(w) is not None}
+        if tbl is not None and not tbl.empty:
+            weights, unpriced = _today_weights(tbl)
+            if "ccy" in tbl:
+                currencies = {str(t): str(c).upper() for t, c in tbl["ccy"].items()
+                              if isinstance(c, str) and c}
     except Exception as exc:  # noqa: BLE001 — no positions, no sections
         obs.warn("today.positions_unavailable", error_type=type(exc).__name__)
 
@@ -897,8 +965,27 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
                            "quality": r.quality, "cheapness": r.cheapness}
                 for r in rows}
 
+    book: list = []
+
+    def history():
+        # Read once: the closes task needs its first day, the section all of it.
+        if not book:
+            hist, _twr, _missing = loaders.history(db, mtime, ccy)
+            book.append(None if hist is None or hist.empty else hist)
+        return book[0]
+
     def closes() -> dict:
-        return {**_card_closes(), **loaders.held_closes(db, mtime)}
+        try:
+            first = today_sections.book_start(history())
+        except Exception as exc:  # noqa: BLE001 — the fixed spans still stand
+            obs.warn("today.history_failed", error_type=type(exc).__name__)
+            first = None
+        try:
+            bench = _bench_closes(_period_since(first))
+        except Exception as exc:  # noqa: BLE001 — SPY and the US funds still stand
+            obs.warn("today.bench_closes_failed", error_type=type(exc).__name__)
+            bench = {}
+        return {**_card_closes(), **bench, **loaders.held_closes(db, mtime)}
 
     filings = None
     if os.environ.get("EDGAR_USER_AGENT"):
@@ -925,10 +1012,33 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
             eu_insiders=loaders.eu_insiders,
             verdicts=verdicts,
             closes=closes,
+            history=history,
             results=lambda: _printed(paths),
             print=print_source,
         ),
+        currencies=currencies,
+        base=ccy,
+        unpriced=unpriced,
     )
+
+
+def _today_weights(tbl) -> tuple[dict[str, float], list[str]]:
+    """({ticker: share of the book}, the names held at cost) for the Today
+    comparisons. A name the price pass missed is weighed at its cost, like
+    `value_weights` counts it, rather than dropped: on 2026-11-04 the ECB's
+    rate host failed, every dollar name read NaN, and the section compared
+    the book's seven euro coins and shares as if they were all of it."""
+    if not {"value", "cost"} <= set(tbl):
+        weight = tbl["weight"] if "weight" in tbl else pd.Series(dtype=float)
+        return {str(t): float(w) for t, w in weight.items() if finite(w) is not None}, []
+    held = tbl["value"].where(tbl["value"].notna(), tbl["cost"])
+    total = float(held[held > 0].sum())
+    if not total:
+        return {}, []
+    weights = {str(t): float(v) / total for t, v in held.items()
+               if finite(v) is not None and v > 0}
+    unpriced = [str(t) for t in tbl.index[tbl["value"].isna()] if str(t) in weights]
+    return weights, unpriced
 
 
 # --------------------------------------------------------------------- job
@@ -1170,6 +1280,9 @@ def start(
             # back on the moves proposed a month and a quarter ago.
             journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
                            _closes_on, day)
+            # The thesis rules too: a model call per name with news, too
+            # slow for a card anyone waits on, and pushed when one breaks.
+            check_theses(paths, prefs, lang, day, spend)
             _review_memories()
 
     def _review_memories() -> None:

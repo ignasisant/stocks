@@ -174,6 +174,8 @@
   "landing.seo_image_alt": "Panel de TopStocks: valor de la cartera en euros con posiciones FIFO y P/L",
   "landing.share_card_by": "{name} se lo preguntó a la IA de TopStocks:",
   "landing.share_card": "La IA de TopStocks responde:",
+  "landing.share_list_by": "{name} ha compartido una lista en TopStocks:",
+  "landing.share_list": "Una lista en TopStocks:",
   "landing.footer_guides": "Guías fiscales",
   "landing.footer_privacy": "Privacidad",
   "landing.footer_terms": "Condiciones",

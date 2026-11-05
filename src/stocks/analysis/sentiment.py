@@ -139,6 +139,27 @@ SECTOR_ETFS: dict[str, str] = {
     "Communication Services": "XLC",
 }
 
+# The same sectors for a name listed in Europe: iShares' STOXX Europe 600
+# sector funds on Xetra, in euros. Hermès against XLY is a luxury house against
+# Amazon and Tesla, in another currency. STOXX cuts sectors finer than Yahoo,
+# so each label takes the slice a European holding of it most often sits in:
+# banks for financials, personal & household goods (the luxury houses) for
+# consumer cyclicals, basic resources for materials, telecoms for
+# communication.
+EUROPE_SECTOR_ETFS: dict[str, str] = {
+    "Technology": "EXV3.DE",
+    "Financial Services": "EXV1.DE",
+    "Energy": "EXH1.DE",
+    "Healthcare": "EXV4.DE",
+    "Consumer Cyclical": "EXH7.DE",
+    "Consumer Defensive": "EXH3.DE",
+    "Industrials": "EXH4.DE",
+    "Utilities": "EXH9.DE",
+    "Basic Materials": "EXV6.DE",
+    "Real Estate": "EXI5.DE",
+    "Communication Services": "EXV2.DE",
+}
+
 # Rotation read as a ratio of two tickers: the pair moves up when the first
 # side leads. `key` names the i18n label; the page never hardcodes the pair.
 FACTOR_PAIRS: tuple[tuple[str, str, str], ...] = (

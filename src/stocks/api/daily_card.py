@@ -12,15 +12,17 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
-from stocks.api import briefing, loaders
+from stocks import obs
+from stocks.api import book_moves, briefing, loaders
 from stocks.api.schemas import (
     DailyBook,
+    DailyBookRow,
     DailyCard,
     DailyItem,
     DailySection,
     TodaySection,
 )
-from stocks.chat import daily, daily_routines
+from stocks.chat import daily, daily_book, daily_routines
 
 
 def stored(account) -> daily.DailyAction | None:
@@ -77,6 +79,53 @@ def _book(raw: dict) -> DailyBook | None:
         return DailyBook.model_validate({**raw, "attribution": None})
     except ValidationError:
         return None
+
+
+def live_book(account, card: DailyCard | None) -> DailyCard | None:
+    """`card` with its Portfolio rows as the book stands now.
+
+    The card is written once a morning and its words keep that morning's
+    stamp, but the rows are figures Home's tiles print live (`book_moves`):
+    rows kept from 07:26 read +402 € for the week beside a tile reading
+    −110 €. So the rows are worked out again on every read, from the cached
+    ledger and quotes; the headline, bullets and day split stay as written.
+    Anything that fails keeps the stored rows."""
+    if card is None or card.book is None:
+        return card
+    from stocks.api.deps import reporting_currency
+
+    try:
+        db = str(account.db)
+        mtime = loaders.db_mtime(db)
+        ccy = reporting_currency(account)
+        moves = book_moves.moves(db, mtime, ccy)
+        hist = loaders.history(db, mtime, ccy)[0]
+        index = daily_book.index_facts(
+            briefing._card_closes(), ccy, None if hist.empty else hist
+        )
+    except Exception as exc:  # noqa: BLE001 — the stored rows still stand
+        obs.warn("today.book_live_failed", error_type=type(exc).__name__)
+        return card
+    kept = {row.window: row for row in card.book.rows}
+    rows = []
+    for label, _days in book_moves.WINDOWS:
+        moved = moves.get(label)
+        if moved is None:
+            continue
+        amount, frac = moved
+        theirs = (
+            index.get(f"{label}_pct")
+            if index
+            else getattr(kept.get(label), "index_pct", None)
+        )
+        rows.append(DailyBookRow(
+            window=label, pct=round(frac * 100, 2), amount=round(amount, 2),
+            index_pct=theirs,
+        ))
+    if not rows:
+        return card
+    book = card.book.model_copy(update={"rows": rows, "currency": ccy})
+    return card.model_copy(update={"book": book})
 
 
 def _section(raw: dict) -> DailySection | None:
@@ -187,10 +236,14 @@ def stands(card, day, lang: str, key: tuple) -> bool:
     saved, reworded or dropped since — here, in the chat or by switching
     memory off — rewrites the card. So is a card with no book shape: it was
     written before the Today page's sections existed, and would leave that
-    page without them until tomorrow.
+    page without them until tomorrow. And one whose comparisons carry no
+    `currency`: they were measured in each listing's own money, before the
+    reader's, and set a dollar move against a euro one.
 
     Not the book's newest bar: the card turns over with the day, after the US
     close, and a European open or a US session under way must not rewrite the
     evening's card with half a day's figures."""
     return daily.is_fresh(card, day, lang) and (
-        card.brief_sig == key[3]) and bool(card.shape)
+        card.brief_sig == key[3]) and bool(card.shape) and not any(
+        sec.get("id") == "compare" and sec.get("rows") and not sec.get("currency")
+        for sec in card.today)

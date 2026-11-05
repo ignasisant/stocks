@@ -21,15 +21,12 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 
 from stocks.analysis.portfolio import (
-    basket_change,
-    day_change,
     market_active,
-    market_live,
+    money_change,
     ticker_changes,
     ticker_day_changes,
-    us_market_open,
 )
-from stocks.api import briefing, daily_card, home, loaders
+from stocks.api import book_moves, briefing, daily_card, home, loaders
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
@@ -172,10 +169,12 @@ def movers(
     matters to both — the basket is valued in the reporting currency, so a
     position's move includes its FX move, which is how the book is judged.
 
-    Measured on a basket held at today's quantities (`loaders.basket_values`),
-    never on the book's own value history: that one carries deposits and
-    imports, and a €12k book that took €38k on a Monday would read "+316% this
-    week" with the market flat.
+    The book's own figure is `book_moves`' — the one the daily card and the
+    Today page print: the day off the basket's last session, the week and
+    the month on the book's own money (`money_change`), so a €12k book that
+    took €38k on a Monday does not read "+316% this week" with the market
+    flat. The names are ranked on a basket held at today's quantities
+    (`loaders.basket_values`), over the same window.
 
     The day window is the one that cannot be read off closes alone. Outside a
     regular session the newest daily bar is stale or flat, and the basket then
@@ -208,18 +207,12 @@ def movers(
     if frame.empty:
         return answer
 
-    quotes: dict[str, dict] | None = None
-    if days <= 1 and not us_market_open():
-        # Only the names actually outside their own session: a Paris listing
-        # is live at 10:00 CET with New York hours away, and crypto never
-        # shuts. Costs one quote burst, cached, and only while the US is shut.
-        off = tuple(t for t in frame.columns if not market_live(str(t)))
-        quotes = loaders.quotes(off) if off else {}
+    quotes = book_moves.session_quotes(frame) if days <= 1 else None
 
     premarket: set[str] = set()
     if days <= 1:
         changes = ticker_day_changes(frame, quotes)
-        whole = day_change(frame, quotes)
+        whole = book_moves.day(frame, quotes)
         # Before the open a name's own day is a few premarket prints, so its row
         # reads the last session with the premarket on top. The rows only: the
         # book's own day above (`whole`) stays the move since the last close.
@@ -232,7 +225,8 @@ def movers(
                 premarket.add(ticker)
     else:
         changes = ticker_changes(frame, days)
-        whole = basket_change(frame, days)
+        hist = loaders.history(db, mtime, ccy)[0]
+        whole = money_change(None if hist.empty else hist, days)
     changes = changes.dropna().sort_values(ascending=False)
 
     def mover(ticker, pct) -> Mover:

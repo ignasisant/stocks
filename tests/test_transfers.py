@@ -219,7 +219,12 @@ def test_pairing_refuses_an_arrival_half_a_year_later():
     assert transfers.propose(_ledger(buy, left, arrived)) == []
 
 
-def test_security_id_reads_the_isin_wherever_the_importer_left_it():
+def test_security_id_reads_the_isin_wherever_the_importer_left_it(monkeypatch):
+    # The checkout's own watchlist.yaml may alias ASML to a listing; this is
+    # about the ISIN, not whatever this machine's aliases say.
+    from stocks.data import fetch
+
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {})
     assert transfers.security_id(replace(IN, note="ibkr snapshot NL0010273215")) == (
         "NL0010273215"
     )

@@ -147,7 +147,7 @@ export default function Today() {
   const lang = useLang();
   const guest = useGuest();
   const { params, setParams } = useRoute();
-  const { state, regenerate, restart } = useToday(lang, guest);
+  const { state, stalled, regenerate, restart } = useToday(lang, guest);
   const [editing, setEditing] = useState(false);
 
   // The card on screen: none while today's is being written for the first
@@ -184,7 +184,8 @@ export default function Today() {
   // drawn, and the market is the page.
   const card = shown && (shown.headline || shown.pending) ? shown : null;
   const regenerating = Boolean(card && !card.headline);
-  const busy = writing || regenerating || Boolean(card?.pending);
+  // A card stalled past the poll cap is no longer busy: the reader may ask again.
+  const busy = writing || regenerating || (Boolean(card?.pending) && !stalled);
   const visible: Pick<TodayCard, "market" | "personal"> = {
     market,
     personal: regenerating ? null : card,
@@ -280,7 +281,9 @@ export default function Today() {
           <Lines items={watch} {...lineProps} />
         </Block>
       ) : null}
-      {shows(active, "compare") && compare?.rows.length ? (
+      {/* Drawn with no rows when a source failed, as news and insiders are:
+          a price outage says so instead of the section vanishing. */}
+      {shows(active, "compare") && (compare?.rows.length || compare?.missing.length) ? (
         <Block
           id="compare"
           title={t("today.section_compare")}
@@ -288,7 +291,7 @@ export default function Today() {
           note={compare.note}
           missing={compare.missing}
         >
-          <Compare rows={compare.rows} />
+          {compare.rows.length ? <Compare section={compare} /> : null}
         </Block>
       ) : null}
       {shows(active, "news") ? (
@@ -332,10 +335,12 @@ export default function Today() {
           <h1 className="td-dateline">
             {t("nav.today")} · {longDay(card?.day ?? view.action_day, lang)}
             {session ? (
-              <span className="td-session">
+              <>
                 {" "}
-                · {t("today.dateline", { date: session })}
-              </span>
+                <span className="td-session">
+                  · {t("today.dateline", { date: session })}
+                </span>
+              </>
             ) : null}
           </h1>
           {tools}
@@ -369,6 +374,13 @@ export default function Today() {
         {headline && !regenerating ? <p className="td-headline">{headline}</p> : null}
         {writing || regenerating ? (
           <Status label={t("today.writing")} />
+        ) : card?.pending && stalled ? (
+          <p className="hm-note" role="status">
+            {t("today.stalled")}{" "}
+            <button type="button" className="ag-btn" onClick={restart}>
+              {t("today.retry")}
+            </button>
+          </p>
         ) : card?.pending ? (
           <Status label={t("home.daily_pending")} />
         ) : null}

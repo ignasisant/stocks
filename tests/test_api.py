@@ -781,6 +781,8 @@ WRITES = {
     # A shared answer is a public file: publishing one, and taking it down.
     ("/v1/chat/turns/{tid}/share", "post"),
     ("/v1/chat/shares/{share_id}", "delete"),
+    ("/v1/shares", "post"),
+    ("/v1/shares/{share_id}/follow", "post"),
     # The saved memories. They ride in every system prompt, so a token that
     # could add one could tell the account's assistant what to believe about
     # its user.
@@ -807,6 +809,8 @@ WRITES = {
     # Feedback. A write because it stores a file. The one a guest may make too —
     # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),
+    # The one-time score of the app. Session-only: a guest is never asked.
+    ("/v1/feedback/rating", "post"),
     # A browser error, logged. A guest may report one too, and a token has no
     # browser to report from.
     ("/v1/client-error", "post"),
@@ -821,6 +825,8 @@ WRITES = {
     # Ending a browser's sign-in from Profile, one or all the others.
     ("/v1/account/sessions/{session_id}", "delete"),
     ("/v1/account/sessions/others", "delete"),
+    # The invite link: the first call writes the account's code into prefs.
+    ("/v1/invite", "post"),
     # A provider key of your own, which is what lifts the free chain's daily
     # cap. Stored encrypted; a token must not be able to plant or remove one.
     ("/v1/chat/keys/{provider}", "put"),

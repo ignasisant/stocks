@@ -129,6 +129,8 @@ wheels/
 /data/feedback/
 # Shared chat answers (stocks.web.shares): one account's words, synced to R2.
 /data/shares/
+# The local account's index of the links it has up (`shares.listed`).
+/data/shares.json
 # Anonymised import fingerprints: no statement data, but they carry account
 # slugs, same as /data/logs/.
 /data/imports/

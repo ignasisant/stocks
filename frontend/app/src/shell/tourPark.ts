@@ -123,3 +123,16 @@ export function firstLoadInterrupted(interrupted: boolean): void {
 export function whenFirstLoadDecided(): Promise<boolean> {
   return firstLoadDecided;
 }
+
+/**
+ * One nudge dialog per load: the profile nudge and the rating prompt both
+ * claim this before they open, so a reader who just answered one is not met by
+ * the other thirty seconds later. False when the slot was already taken.
+ */
+let nudged = false;
+
+export function claimNudge(): boolean {
+  if (nudged) return false;
+  nudged = true;
+  return true;
+}

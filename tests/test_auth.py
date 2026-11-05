@@ -292,6 +292,25 @@ def test_toggle_favorite_creates_entry_and_flips(tmp_path):
     assert "favorite" not in raw["watchlist"][1]
 
 
+def test_add_entries_lists_the_lot_in_one_write_and_keeps_the_rest(tmp_path):
+    path = tmp_path / "watchlist.yaml"
+    path.write_text(yaml.safe_dump({
+        "aliases": {"RCF": "TEP.PA"},
+        "watchlist": [{"ticker": "NVDA", "tags": ["semis"], "favorite": True}],
+    }))
+    writes = []
+    added = wl.add_entries(path, ["nvda", "msft", "MSFT", "asml"], "Semis",
+                           persist=writes.append)
+    assert added == ["MSFT", "ASML"] and writes == [path]
+    raw = yaml.safe_load(path.read_text())
+    assert raw["aliases"] == {"RCF": "TEP.PA"}
+    assert raw["watchlist"][0] == {"ticker": "NVDA", "tags": ["semis"],
+                                   "favorite": True}, "same tag, other case"
+    assert [e.get("tags") for e in raw["watchlist"][1:]] == [["Semis"], ["Semis"]]
+    assert wl.add_entries(path, ["PLTR"], persist=writes.append) == ["PLTR"]
+    assert "tags" not in yaml.safe_load(path.read_text())["watchlist"][-1]
+
+
 def test_set_tags_and_all_tags(tmp_path):
     path = tmp_path / "watchlist.yaml"
     path.write_text(yaml.safe_dump({"watchlist": [{"ticker": "NVDA"}]}))

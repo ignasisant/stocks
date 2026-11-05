@@ -267,6 +267,7 @@ def test_a_bucket_outage_costs_the_demo_book_and_not_the_boot(monkeypatch):
         ("POST", "/v1/watchlist"),
         ("POST", "/v1/search/recent"),
         ("POST", "/v1/onboarding/seen"),
+        ("POST", "/v1/feedback/rating"),
     ],
 )
 def test_a_write_is_refused_with_the_header_that_offers_a_sign_in(

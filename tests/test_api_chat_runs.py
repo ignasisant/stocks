@@ -25,6 +25,7 @@ import time
 
 import pytest
 
+from stocks import obs
 from stocks.api import runs
 from stocks.web import auth
 from tests.patching import patch_engine
@@ -418,6 +419,22 @@ def test_a_quiet_run_pings_its_reader(monkeypatch):
 
 def one_frame(_run):
     yield "data: x\n\n"
+
+
+def test_a_run_logs_as_the_account_that_asked():
+    seen = {}
+
+    def events(_run):
+        seen.update(obs.current())
+        yield "data: x\n\n"
+
+    with obs.context(user="a_b_com_1f2e3d4c"):
+        r = runs.start(owner="o", rid="r", thread="t", question="q",
+                       events=events, stopped="", failed=lambda f: False)
+    deadline = time.monotonic() + 5
+    while r.live and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert seen.get("user") == "a_b_com_1f2e3d4c"
 
 
 def test_an_account_keeps_a_bounded_number_of_runs():

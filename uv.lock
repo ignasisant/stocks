@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -2610,6 +2610,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pdfminer-six" },
     { name = "pdfplumber" },
+    { name = "pillow" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -2662,6 +2663,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "pdfminer-six", specifier = ">=20260107" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
+    { name = "pillow", specifier = ">=13.0" },
     { name = "pyarrow", specifier = ">=24.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-dotenv", specifier = ">=1.2.2" },

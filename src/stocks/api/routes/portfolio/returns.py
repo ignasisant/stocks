@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from stocks import obs
 from stocks.analysis.monthly import window as book_window
 from stocks.analysis.portfolio import (
     annualized_return,
@@ -273,6 +274,19 @@ class HistoryPoint(BaseModel):
             "has no prior close to measure against)."
         )
     )
+    in_index: float | None = Field(
+        default=None,
+        description=(
+            "The book's own money in the S&P 500 (SPY), in `base`: bought with "
+            "the book's value on its first day, then with every deposit and "
+            "for every sale on its own day, at that day's close. Counted from "
+            "the book's first day whatever the window, so a window is a "
+            "stretch of one race and slices like `value`. Only with "
+            "`index=true`; null throughout when the index cannot be had in "
+            "`base` — dollars beside a euro book would make the gap the "
+            "exchange rate's."
+        ),
+    )
 
 
 class History(BaseModel):
@@ -299,6 +313,50 @@ class History(BaseModel):
     )
 
 
+def _in_index(hist: pd.DataFrame, base: str) -> dict[str, float]:
+    """The book's own money in SPY per ISO day, from its first day (`same_money`).
+
+    Raced over the book's whole life before any window is cut, as the Today
+    chart races it (`daily_book.versus`): restarted per window, every range
+    would open level with the book and hide what came before. The index
+    download is that chart's (`briefing._closes_since`), shared by every
+    account and cached. Best-effort — the line is an overlay, and a failed
+    download must not take the chart under it down too.
+    """
+    from stocks.analysis import naive_dates
+    from stocks.analysis.portfolio import same_money
+    from stocks.api import briefing
+    from stocks.chat import daily_book
+
+    try:
+        series, unit = daily_book.index_series(
+            briefing._closes_since(hist.index[0]), base
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort by contract
+        obs.warn(
+            "history.index_unavailable",
+            error_type=type(exc).__name__,
+            error=str(exc)[:200],
+        )
+        return {}
+    if series is None or unit != base:
+        return {}
+    days = pd.DatetimeIndex(naive_dates(hist.index))
+    book = pd.DataFrame(
+        {
+            "value": hist["value"].to_numpy(),
+            "injected": hist["injected"].ffill().to_numpy(),
+        },
+        index=days,
+    )
+    # From the first day both exist: a book older than the download opens the
+    # race where the index's history does.
+    shadow = same_money(book, series, max(days[0], series.index[0]))
+    if shadow is None:
+        return {}
+    return {f"{day:%Y-%m-%d}": float(v) for day, v in shadow.dropna().items()}
+
+
 @router.get("/history", response_model=History, summary="The book, day by day")
 def history(
     account: Account,
@@ -315,6 +373,13 @@ def history(
         date | None,
         Query(alias="to", description="Explicit range end, ISO. Excludes `window`."),
     ] = None,
+    with_index: Annotated[
+        bool,
+        Query(
+            alias="index",
+            description="Add the book's own money in SPY (`in_index`) to every point.",
+        ),
+    ] = False,
 ) -> History:
     """Injected capital, market value and the TWR index, one point per day.
 
@@ -350,6 +415,7 @@ def history(
     label = "custom" if explicit else window
     if hist.empty:
         return History(base=ccy, window=label, missing=missing)
+    in_index = _in_index(hist, ccy) if with_index else {}
 
     if explicit:
         if since is not None:
@@ -390,6 +456,7 @@ def history(
                 value=_num(row["value"]),
                 pnl_pct=_num(row["pnl_pct"]),
                 twr=_num(index.get(day)) if not index.empty else None,
+                in_index=_num(in_index.get(f"{day:%Y-%m-%d}")),
             )
             for day, row in hist.iterrows()
         ],
@@ -473,9 +540,7 @@ class MonthlyPoint(BaseModel):
 class Monthly(BaseModel):
     base: str
     window: str = "inception"
-    start: str | None = Field(
-        default=None, description="The close the window opens on."
-    )
+    start: str | None = Field(default=None, description="The close the window opens on.")
     end: str | None = None
     opening: float | None = Field(
         default=None, description="The value the window opened with; 0 since inception."

@@ -17,6 +17,16 @@ The sharer's answer is stamped with the links it went out under
 different pages, and a link already sent must keep working when the other is
 made. `revoke` takes every one of them down, and so does deleting the
 account (`purge_owner`).
+
+The account also keeps its own list of the links it made (`paths.shares`,
+`listed`), because the stamps go with their thread: a thread pruned after
+KEEP_DAYS leaves its links up and nowhere to find them from.
+
+A link can also carry a list of tickers (`kind` "watchlist", `create_list`):
+the symbols and a title the sharer chose, nothing else of their watchlist —
+no names they typed, no positions, no groups but the one they named. It has
+no answer behind it, so it is its own link and comes down alone. The reader
+follows it whole (`follow`), under its title as a group of their own.
 """
 
 from __future__ import annotations
@@ -28,6 +38,7 @@ import time
 from pathlib import Path
 
 from stocks import atomic, obs, storage
+from stocks import watchlist as wl
 from stocks.accounts import UserPaths
 from stocks.chat import share_mask
 from stocks.config import DATA_DIR, PROJECT_ROOT
@@ -38,6 +49,12 @@ SHARES_DIR = DATA_DIR / "shares"
 # server's card both check it before a path is built from it.
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,24}$")
 _QUESTION_CHARS = 1000
+# How much of the question names a link in the account's list.
+_LISTED_CHARS = 140
+# A shared list: past this many it is a dump, not a pick; a title is a group
+# name, and the reader's watchlist shows it as one.
+LIST_MAX = 50
+_TITLE_CHARS = 60
 
 
 def owner_of(paths: UserPaths) -> str:
@@ -112,9 +129,82 @@ def create(
     storage.persist(path)
     links = [k for k in links if k["masked"] != masked]
     auth.stamp_share(tid, [*links, {"id": share_id, "masked": masked}], paths.chat)
+    # A first read builds the list from the stamps, this one's included.
+    _write_list(paths, [_entry(share),
+                        *(k for k in listed(paths) if k["id"] != share_id)])
     obs.event("share.created", share=share_id, masked=masked,
               surfaces=len(share["activities"]), chars=len(share["content"]))
     return share
+
+
+def kind_of(share: dict) -> str:
+    """"watchlist" for a shared list; "answer" otherwise, the links made
+    before there was a kind included."""
+    return "watchlist" if share.get("kind") == "watchlist" else "answer"
+
+
+def list_snapshot(tickers: list[str], title: str) -> dict:
+    """What a link to a list shows: the symbols, upper-cased, once each, in
+    the sharer's order, at most LIST_MAX; the title on one line."""
+    from stocks.web.seo import ticker_symbol
+
+    seen: list[str] = []
+    for raw in tickers:
+        symbol = ticker_symbol(str(raw or ""))
+        if symbol and symbol not in seen:
+            seen.append(symbol)
+    return {
+        "kind": "watchlist",
+        "title": " ".join(str(title or "").split())[:_TITLE_CHARS],
+        "tickers": seen[:LIST_MAX],
+        "masked": False,
+    }
+
+
+def create_list(
+    paths: UserPaths, tickers: list[str], title: str, lang: str, by: str = ""
+) -> dict | None:
+    """Publish a list of tickers, signed with `by`; returns the stored share,
+    or None when no symbol in it is one. The same list under the same title
+    is the same link."""
+    cut = list_snapshot(tickers, title)
+    if not cut["tickers"]:
+        return None
+    for row in listed(paths):
+        if row.get("kind") != "watchlist":
+            continue
+        kept = load(row["id"])
+        if (kept is not None and kept.get("tickers") == cut["tickers"]
+                and kept.get("title") == cut["title"]):
+            return kept
+    share_id = secrets.token_urlsafe(8)
+    share = {
+        "id": share_id,
+        "owner": owner_of(paths),
+        "answer_id": "",
+        **cut,
+        "by": by,
+        "lang": lang,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    path = SHARES_DIR / f"{share_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic.write_json(path, share, ensure_ascii=False, indent=2)
+    storage.persist(path)
+    _write_list(paths, [_entry(share), *listed(paths)])
+    obs.event("share.created", share=share_id, kind="watchlist",
+              tickers=len(cut["tickers"]))
+    return share
+
+
+def follow(paths: UserPaths, share: dict) -> list[str]:
+    """Put a shared list on the reader's watchlist, under its title when it
+    has one; returns the symbols that were new to it."""
+    tickers = [str(t) for t in share.get("tickers") or []]
+    added = wl.add_entries(paths.watchlist, tickers, str(share.get("title") or ""))
+    obs.event("share.followed", share=str(share.get("id") or ""),
+              tickers=len(tickers), added=len(added))
+    return added
 
 
 def _links(answer: dict) -> list[dict]:
@@ -151,6 +241,11 @@ def revoke(paths: UserPaths, share_id: str) -> bool:
     share = load(share_id)
     if share is None or share.get("owner") != owner_of(paths):
         return False
+    if kind_of(share) == "watchlist":
+        _drop(share_id)
+        _write_list(paths, [k for k in listed(paths) if k["id"] != share_id])
+        obs.event("share.revoked", share=share_id, links=1)
+        return True
     tid = str(share.get("answer_id") or "")
     found = auth.find_answer(tid, paths.chat)
     # The answer may be gone from the thread (pruned), the link still up.
@@ -160,8 +255,63 @@ def revoke(paths: UserPaths, share_id: str) -> bool:
         _drop(each)
     if found:
         auth.stamp_share(tid, [], paths.chat)
+    _write_list(paths, [k for k in listed(paths)
+                        if k["id"] not in ids and k["answer_id"] != tid])
     obs.event("share.revoked", share=share_id, links=len(ids))
     return True
+
+
+def _entry(share: dict) -> dict:
+    if kind_of(share) == "watchlist":
+        # Named by its title, or by its symbols when it has none.
+        named = str(share.get("title") or "") or ", ".join(share.get("tickers") or [])
+    else:
+        named = str(share.get("question") or "")
+    return {
+        "id": str(share.get("id") or ""),
+        "kind": kind_of(share),
+        "answer_id": str(share.get("answer_id") or ""),
+        "question": " ".join(named.split())[:_LISTED_CHARS],
+        "masked": share.get("masked") is True,
+        "created": str(share.get("created") or ""),
+    }
+
+
+def _write_list(paths: UserPaths, entries: list[dict]) -> None:
+    path = paths.shares
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic.write_json(path, {"shares": entries}, ensure_ascii=False, indent=2)
+    storage.persist(path)
+
+
+def listed(paths: UserPaths) -> list[dict]:
+    """The links this account has up, newest first: {id, kind, answer_id,
+    question, masked, created}. The question is the stored one, so a masked
+    link is listed masked; a list's is its name (`_entry`).
+
+    An account that shared before the list was kept gets it built once from
+    the stamps its threads still carry; what a pruned thread took with it is
+    beyond recovering here, and those links stay up until the account goes.
+    """
+    path = paths.shares
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        rows = data.get("shares") if isinstance(data, dict) else None
+        if isinstance(rows, list):
+            return [r for r in rows if isinstance(r, dict)
+                    and ID_RE.match(str(r.get("id") or ""))]
+    entries = []
+    for conv in auth.load_book(paths.chat)["conversations"]:
+        for message in conv["messages"]:
+            for link in _links(message):
+                if (share := load(link["id"])) is not None:
+                    entries.append(_entry(share))
+    entries.sort(key=lambda e: e["created"], reverse=True)
+    _write_list(paths, entries)
+    return entries
 
 
 def continue_from(paths: UserPaths, share: dict) -> str:

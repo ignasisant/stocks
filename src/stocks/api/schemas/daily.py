@@ -212,9 +212,30 @@ class TodayRow(BaseModel):
         default_factory=dict,
         description=(
             "The figures behind the line — for a comparison: weight, m1, m6, "
-            "y1, sector, sector_etf, vs_sector_<span> and vs_index_<span> per "
-            "span, vs_sector / vs_index (six months), verdict."
+            "y1, all (since the book's first day), sector, sector_etf, "
+            "vs_sector_<span> and vs_index_<span> per span, vs_all:<symbol> "
+            "to each benchmark since that day, all_from when the name was "
+            "listed later, vs_sector / vs_index (six months), verdict, currency."
         ),
+    )
+
+
+class TodayBenchmark(BaseModel):
+    """An index the comparisons are laid against, over each span."""
+
+    symbol: str = Field(description="`SPY`, `^IBEX`…; `@BOOK` for the book itself.")
+    name: str = Field(default="", description="Empty for `@BOOK`.")
+    currency: str | None = Field(
+        default=None,
+        description="What its moves are in; the section's unless a rate failed.",
+    )
+    m1: float | None = None
+    m6: float | None = None
+    y1: float | None = None
+    all: float | None = Field(
+        default=None,
+        description="Since the book's first day: the book's own money for `@BOOK`, "
+        "that same money bought into the index on the same days for the rest.",
     )
 
 
@@ -230,6 +251,20 @@ class TodaySection(BaseModel):
     missing: list[str] = Field(
         default_factory=list,
         description="Sources that did not answer, e.g. `yahoo`, `edgar`.",
+    )
+    benchmarks: list[TodayBenchmark] = Field(
+        default_factory=list,
+        description="Comparisons only: the book and the indexes over each span.",
+    )
+    currency: str = Field(
+        default="",
+        description="Comparisons only: the currency every move is measured in; "
+        "empty on a card stored before they were.",
+    )
+    since: str = Field(
+        default="",
+        description="Comparisons only: the book's first day, ISO, where the `all` "
+        "span starts; empty without a history.",
     )
 
 

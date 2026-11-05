@@ -702,5 +702,14 @@
   "chat.shared_gone": "Questo link non è più disponibile.",
   "chat.shared_mine": "È il tuo link.",
   "chat.shared_continue": "Continua a chiedere",
-  "chat.shared_guest": "Accedi per chiedere del tuo portafoglio."
+  "chat.shared_guest": "Accedi per chiedere del tuo portafoglio.",
+  "chat.shared_guest_free": "Gratis, con un limite giornaliero. Nessuna chiave API.",
+  "chat.shared_guest_import": "Oppure importa prima il tuo estratto conto",
+  "chat.shared_list_title": "Lista condivisa",
+  "chat.shared_follow": "Segui tutti",
+  "chat.shared_list_guest": "Accedi per aggiungerli alla tua watchlist.",
+  "chat.shared_followed_one": "1 aggiunto alla tua watchlist.",
+  "chat.shared_followed_n": "{n} aggiunti alla tua watchlist.",
+  "chat.shared_followed_none": "Li segui già tutti.",
+  "chat.shared_followed_open": "Apri watchlist"
 }

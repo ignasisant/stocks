@@ -476,6 +476,14 @@ fixed meaning — they are not a series palette.
   as tall as its tallest page and the reader taps Next without re-aiming. In
   a paged dialog the side door lives in the page (`.ag-tour-go`), the footer
   is only Back + CTA, and "Skip" keeps its slot hidden on the last page.
+- **Nudges** (profile nudge, rating prompt): one per load (`claimNudge`),
+  after the first-load modals, never over another dialog and never while
+  focus is in a text field. A one-time ask is stamped when shown, not when
+  answered, and the stamp is an account pref (`rate_prompt_done`). The
+  rating prompt waits for 5 visit days and 30 s on the page; its stars are
+  a radiogroup of 44px buttons, outlined until picked so the score does not
+  rest on colour; the comment is optional and asks what to fix after ≤3,
+  what works after 4–5.
 - **Locked for guests:** an action a guest cannot take becomes a `SignIn`
   link, never a disabled button that answers a press with nothing.
 - **"Don't show again"** either offers Undo for a few seconds in place of what

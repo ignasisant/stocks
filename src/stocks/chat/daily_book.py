@@ -24,7 +24,6 @@ index conversion its market lines already make.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 INDEX_NAME = "S&P 500"
@@ -67,14 +66,13 @@ def _naive(series: pd.Series) -> pd.Series:
 
 
 def _start(index: pd.Index, days: int):
-    """Where a window of `days` calendar days opens on `index`, anchored as
-    `money_change` anchors it; None when `index` does not reach that far."""
-    if len(index) < 2:
-        return None
-    if days <= 1:
-        return index[-2]
-    prior = index[np.asarray(index <= index[-1] - pd.Timedelta(days=days))]
-    return prior[-1] if len(prior) else None
+    """Where a window of `days` calendar days opens on `index`, on the same
+    close the book's own window opens (`window_span`); None when `index` does
+    not reach that far."""
+    from stocks.analysis.portfolio import window_span
+
+    span = window_span(index, days)
+    return None if span is None else span[0]
 
 
 def change(series: pd.Series, days: int) -> float | None:

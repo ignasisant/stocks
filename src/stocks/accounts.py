@@ -24,6 +24,7 @@ import copy
 import hashlib
 import json
 import re
+import secrets
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,7 +45,7 @@ GUEST_DIR = USERS_DIR / "_guest"
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE, journal.FILE, "devices.json", "push.json",
+    learnings.FILE, journal.FILE, "devices.json", "push.json", "shares.json",
 )
 
 
@@ -95,6 +96,12 @@ class UserPaths:
     def push(self) -> Path:
         """This account's Web Push subscriptions (stocks/notify/webpush.py)."""
         return self.action.with_name("push.json")
+
+    @property
+    def shares(self) -> Path:
+        """The links this account shared answers under (web/shares.py): the
+        shares themselves live outside the account, this is its list of them."""
+        return self.action.with_name("shares.json")
 
     @property
     def learnings(self) -> Path:
@@ -323,6 +330,7 @@ def stamp_login(
     seeded: bool = False,
     email: str = "",
     source: str = "",
+    share: str = "",
     persist: Callable[[Path], None] | None = None,
 ) -> str:
     """Stamp this account's first/last login; return "signup" or "login".
@@ -346,6 +354,8 @@ def stamp_login(
     answers is "where did this account come from", and a later visit through a
     different link does not change that. Logs are kept 30 days and an account
     is kept for as long as it exists, so this is the only durable half.
+    `share` is the same for the shared answer the signup started from
+    (`first_share`).
 
     Headless on purpose: the OIDC callback and the API both stamp through here,
     so the two cannot disagree about what a signup is.
@@ -369,6 +379,8 @@ def stamp_login(
         kind = "signup" if seeded else "login"
         if source and not prefs.get("first_source"):
             prefs["first_source"] = source
+        if share and not prefs.get("first_share"):
+            prefs["first_share"] = share
         changed = True
     if prefs.get("last_seen") != today:
         prefs["last_seen"] = today
@@ -376,6 +388,35 @@ def stamp_login(
     if changed:
         save_prefs(paths.prefs, prefs, persist)
     return kind
+
+
+# ------------------------------------------------------------------- invites
+# An invite is a link with a source token of its own, `?src=inv-<code>`: the
+# landing, the sign-in round trip and the signup already carry a source
+# (`web.attribution`), so the account it brings records the code as its
+# `first_source` with nothing new on the way. The code is random and kept in
+# the inviter's prefs — never the slug or the address, which would put who
+# sent it into every forward of the link and every log line it lands in.
+
+INVITE_PREFIX = "inv-"
+_INVITE_CHARS = "abcdefghijkmnpqrstuvwxyz23456789"
+_INVITE_LEN = 10
+INVITE_RE = re.compile(rf"[{_INVITE_CHARS}]{{{_INVITE_LEN}}}")
+
+
+def invite_code(paths: UserPaths, persist: Callable[[Path], None] | None = None) -> str:
+    """This account's invite code, made and saved the first time it is asked.
+
+    One per account and kept: a link already sent keeps counting for its
+    sender. Checked and written under the prefs lock, so two tabs asking at
+    once get the same code."""
+    with _prefs_lock(paths.prefs):
+        held = str(stored_prefs(paths.prefs).get("invite_code") or "")
+        if INVITE_RE.fullmatch(held):
+            return held
+        code = "".join(secrets.choice(_INVITE_CHARS) for _ in range(_INVITE_LEN))
+        update_prefs(paths.prefs, {"invite_code": code}, persist)
+        return code
 
 
 # A starter watchlist wide enough that every list-shaped page has something to
@@ -400,6 +441,10 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     "last_seen": None,
     # Where the account came from, if its signup link said so (web.attribution).
     "first_source": None,
+    # The shared answer (`/?share=<id>`) the signup started from, if any.
+    "first_share": None,
+    # The account's invite link's code (`invite_code()`), made on first ask.
+    "invite_code": None,
     "first_seen_estimated": False,
     # The signed-in address, for the jobs that have a prefs.json and no
     # session (and for the free-chain allowlist). None until the next login.

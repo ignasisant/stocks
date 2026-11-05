@@ -23,11 +23,14 @@ import {
   noteKey,
   notable,
   compareData,
+  pickBench,
+  openingSpan,
   opens,
   safeUrl,
   sectionsOf,
   shows,
   sourceKey,
+  stalledAt,
   stampOf,
   tabsOf,
   teaserOf,
@@ -35,7 +38,13 @@ import {
   wantsWriting,
 } from "./card";
 import type { DailyItem } from "../home/types";
-import type { MarketCard, PersonalCard, TodayRow, TodaySection } from "./types";
+import type {
+  MarketCard,
+  PersonalCard,
+  TodayBenchmark,
+  TodayRow,
+  TodaySection,
+} from "./types";
 
 const t = (key: string, slots?: Record<string, string | number>) =>
   slots ? `${key}:${Object.values(slots).join(",")}` : key;
@@ -380,6 +389,81 @@ describe("comparisons", () => {
     expect(notable(compareData(row("A", data)))).toBe(false);
   });
 
+  it("never calls a position under 1 % notable", () => {
+    const far = { weight: 0.7, vs_sector_m6: 40, verdict: "trim" };
+    expect(notable(compareData(row("A", far)))).toBe(false);
+    expect(notable(compareData(row("A", { ...far, weight: 1 })))).toBe(true);
+  });
+
+  it("measures the gap to the benchmark picked, in the same money", () => {
+    const qqq: TodayBenchmark = {
+      symbol: "QQQ",
+      name: "Nasdaq 100",
+      currency: "EUR",
+      m1: 1,
+      m6: 4.25,
+      y1: null,
+    };
+    const eur = row("A", { m6: 10, currency: "EUR", vs_index_m6: 99 });
+    expect(compareData(eur, "m6", qqq).vs_index).toBe(5.8);
+    expect(compareData(eur, "y1", qqq).vs_index).toBeNull();
+    // A row the server could not convert is no gap to a euro index.
+    const usd = row("A", { m6: 10, currency: "USD" });
+    expect(compareData(usd, "m6", qqq).vs_index).toBeNull();
+    // Without benchmarks (an older card) the server's S&P 500 gap stands.
+    expect(compareData(eur, "m6").vs_index).toBe(99);
+  });
+
+  it("has no gap from an index to itself", () => {
+    const spy = row("SPY", { m6: 5, vs_index_m6: 0 });
+    expect(compareData(spy, "m6")).toMatchObject({
+      vs_index: null,
+      vs_index_applies: false,
+    });
+  });
+
+  it("reads the server's own gaps since the book's first day", () => {
+    const mark = (symbol: string, all: number): TodayBenchmark => ({
+      symbol,
+      name: symbol,
+      currency: "EUR",
+      m1: null,
+      m6: null,
+      y1: null,
+      all,
+    });
+    const a = row("A", { all: 40, currency: "EUR", "vs_all:QQQ": 12.5 });
+    // The index's `all` is the book's money bought into it, not a price
+    // a position can be set against: the row's own gap is read instead.
+    expect(compareData(a, "all", mark("QQQ", 30)).vs_index).toBe(12.5);
+    expect(compareData(a, "all", mark("^IBEX", 30)).vs_index).toBeNull();
+    expect(compareData(a, "all", mark("@BOOK", 20))).toMatchObject({
+      vs_index: null,
+      vs_index_applies: false,
+    });
+  });
+
+  it("opens on the book's first day when the card carries it", () => {
+    expect(openingSpan({ since: "2023-03-01" })).toBe("all");
+    expect(openingSpan({ since: "" })).toBe("m6");
+    expect(openingSpan({})).toBe("m6");
+  });
+
+  it("picks the S&P 500 until another index is pressed", () => {
+    const marks: TodayBenchmark[] = ["@BOOK", "SPY", "QQQ"].map((symbol) => ({
+      symbol,
+      name: symbol,
+      currency: "EUR",
+      m1: null,
+      m6: null,
+      y1: null,
+    }));
+    expect(pickBench(marks, null)?.symbol).toBe("SPY");
+    expect(pickBench(marks, "QQQ")?.symbol).toBe("QQQ");
+    expect(pickBench(marks.slice(2), null)?.symbol).toBe("QQQ");
+    expect(pickBench([], null)).toBeUndefined();
+  });
+
   it("puts the notable rows first, the rest in the server's order", () => {
     const rows = [
       row("A"),
@@ -422,6 +506,15 @@ describe("nextPoll", () => {
     expect(
       nextPoll({ market_stale: true, personal: card({ pending: true }) }, 60),
     ).toBeNull();
+  });
+
+  it("calls a card still pending at the cap stalled, and nothing else", () => {
+    const pending = { market_stale: false, personal: card({ pending: true }) };
+    expect(stalledAt(pending, 59)).toBe(false);
+    expect(stalledAt(pending, 60)).toBe(true);
+    // Only the market behind at the cap: nothing of the reader's is stuck.
+    expect(stalledAt({ market_stale: true, personal: card() }, 60)).toBe(false);
+    expect(stalledAt({ market_stale: false, personal: null }, 60)).toBe(false);
   });
 });
 

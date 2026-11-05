@@ -146,9 +146,7 @@ def trades() -> list[Transaction]:
 
 
 def get(client, **params) -> dict:
-    response = client.get(
-        "/v1/portfolio/history", params={**WHO, **params}, headers=AUTH
-    )
+    response = client.get("/v1/portfolio/history", params={**WHO, **params}, headers=AUTH)
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -259,15 +257,11 @@ def test_a_window_the_route_cannot_honour_is_refused(client, book, priced, param
     caller named is how a client ships a chart it never asked for."""
     book(trades())
     priced({"AAPL": 100.0})
-    response = client.get(
-        "/v1/portfolio/history", params={**WHO, **params}, headers=AUTH
-    )
+    response = client.get("/v1/portfolio/history", params={**WHO, **params}, headers=AUTH)
     assert response.status_code == 422
 
 
-def test_a_range_outside_the_book_is_an_empty_series_not_an_error(
-    client, book, priced
-):
+def test_a_range_outside_the_book_is_an_empty_series_not_an_error(client, book, priced):
     book(trades())
     priced({"AAPL": 100.0})
     payload = get(client, **{"from": "2000-01-01", "to": "2000-12-31"})
@@ -322,8 +316,7 @@ def test_a_name_with_no_price_series_is_logged_for_us_too(
     get(client)
 
     events = [
-        f for n, f in seen
-        if n == "data.inconsistency" and f["kind"] == "unpriced_held"
+        f for n, f in seen if n == "data.inconsistency" and f["kind"] == "unpriced_held"
     ]
     assert [f["ticker"] for f in events] == ["ORGN"]
 
@@ -360,14 +353,111 @@ def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
     assert broken["injected"] is not None and broken["value"] is not None
 
 
+# ------------------------------------------------------------------ the index
+
+
+def _index_closes(monkeypatch, closes_by_symbol):
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "_closes_since", lambda first: closes_by_symbol)
+
+
+def test_the_index_is_only_sent_when_asked_for(client, book, priced, monkeypatch):
+    """Opt-in: the Portfolio page's chart has no use for it, and the download
+    behind it is not one every caller should wait on."""
+    book(trades())
+    priced({"AAPL": 100.0})
+
+    def refuse(first):
+        raise AssertionError("downloaded an index nobody asked for")
+
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "_closes_since", refuse)
+    assert all(p["in_index"] is None for p in get(client)["points"])
+
+
+def test_the_index_line_is_the_books_own_money_in_spy_in_euros(
+    client, book, priced, monkeypatch
+):
+    """Dollars over the euro pair, the book's value bought on its first day and
+    the second buy added on its own day. A flat index holds the money as it
+    went in; a weekend in the book still has the Friday's price to buy at."""
+    book(trades())
+    priced({"AAPL": 100.0})
+    sessions = pd.bdate_range(START, pd.Timestamp.today().normalize())
+    _index_closes(
+        monkeypatch,
+        {
+            "SPY": pd.Series(500.0, index=sessions),
+            "EURUSD=X": pd.Series(1.25, index=sessions),
+        },
+    )
+
+    points = {p["date"]: p for p in get(client, index="true")["points"]}
+    assert points[START]["in_index"] == pytest.approx(1000.0)  # the book's value
+    assert points["2024-01-07"]["in_index"] == pytest.approx(1000.0)  # a Sunday
+    # +501 put in on the 9th (5 x 100 + 1 fee), bought at the day's close.
+    assert points["2024-01-09"]["in_index"] == pytest.approx(1501.0)
+
+
+def test_a_window_is_a_stretch_of_the_race_from_the_books_first_day(
+    client, book, priced, monkeypatch
+):
+    """Not restarted where the window opens: the index doubled since the book's
+    first day, so a month's window opens with the index line far above a book
+    that stayed flat, not level with it."""
+    book(trades())
+    priced({"AAPL": 100.0})
+    sessions = pd.bdate_range(START, pd.Timestamp.today().normalize())
+    rising = pd.Series(
+        [400.0 * (1 + i / (len(sessions) - 1)) for i in range(len(sessions))],
+        index=sessions,
+    )
+    _index_closes(
+        monkeypatch, {"SPY": rising, "EURUSD=X": pd.Series(1.0, index=sessions)}
+    )
+
+    whole = {p["date"]: p["in_index"] for p in get(client, index="true")["points"]}
+    month = get(client, window="1m", index="true")["points"]
+    assert [p["in_index"] for p in month] == [whole[p["date"]] for p in month]
+    assert month[0]["in_index"] > 1.5 * month[0]["value"]
+
+
+def test_an_index_that_cannot_be_had_in_base_is_null_not_dollars(
+    client, book, priced, monkeypatch
+):
+    """No euro pair, no line: a dollar price beside a euro book makes the gap
+    the exchange rate's."""
+    book(trades())
+    priced({"AAPL": 100.0})
+    sessions = pd.bdate_range(START, pd.Timestamp.today().normalize())
+    _index_closes(monkeypatch, {"SPY": pd.Series(500.0, index=sessions)})
+
+    assert all(p["in_index"] is None for p in get(client, index="true")["points"])
+
+
+def test_a_failed_index_download_leaves_the_book_drawn(client, book, priced, monkeypatch):
+    book(trades())
+    priced({"AAPL": 100.0})
+
+    def boom(first):
+        raise RuntimeError("yahoo said no")
+
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "_closes_since", boom)
+    points = get(client, index="true")["points"]
+    assert points and all(p["in_index"] is None for p in points)
+    assert all(p["value"] is not None for p in points)
+
+
 # -------------------------------------------------------------- the CSV file
 
 
 def test_the_export_is_a_named_attachment_of_the_whole_ledger(client, book):
     book(trades())
-    response = client.get(
-        "/v1/portfolio/transactions.csv", params=WHO, headers=AUTH
-    )
+    response = client.get("/v1/portfolio/transactions.csv", params=WHO, headers=AUTH)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     disposition = response.headers["content-disposition"]
@@ -389,9 +479,7 @@ def test_the_export_is_the_formatter_the_page_already_uses(client, book):
     from stocks.web.exports import ledger_csv
 
     paths = book(trades())
-    response = client.get(
-        "/v1/portfolio/transactions.csv", params=WHO, headers=AUTH
-    )
+    response = client.get("/v1/portfolio/transactions.csv", params=WHO, headers=AUTH)
     assert response.content == ledger_csv(paths.db, "EUR")
 
 
@@ -408,9 +496,7 @@ def test_a_book_with_nothing_in_it_has_no_file_to_hand_back(client, book):
     and handing somebody a file that turns out to be empty is worse than
     telling them there is nothing to take."""
     book([])
-    response = client.get(
-        "/v1/portfolio/transactions.csv", params=WHO, headers=AUTH
-    )
+    response = client.get("/v1/portfolio/transactions.csv", params=WHO, headers=AUTH)
     assert response.status_code == 404
 
 
@@ -432,23 +518,19 @@ def test_summary_and_performance_value_the_book_off_one_download(
     from stocks.data import fetch as data_fetch
 
     book(
-        trades()
-        + [Transaction(START, "CAT-EUR", "buy", 44_000_000, 1.1e-5, "EUR", 0.0)]
+        trades() + [Transaction(START, "CAT-EUR", "buy", 44_000_000, 1.1e-5, "EUR", 0.0)]
     )
     monkeypatch.setattr(
         data_fetch, "fetch_many", download({"AAPL": 120.0, "CAT-EUR": 0.02})
     )
     monkeypatch.setattr(
-        analysis, "price_units",
+        analysis,
+        "price_units",
         lambda tickers, ccys, *a, **k: {t: ("EUR", 1.0) for t in tickers},
     )
 
-    summary = client.get(
-        "/v1/portfolio/summary", params=WHO, headers=AUTH
-    ).json()
-    perf = client.get(
-        "/v1/portfolio/performance", params=WHO, headers=AUTH
-    ).json()
+    summary = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
+    perf = client.get("/v1/portfolio/performance", params=WHO, headers=AUTH).json()
 
     # Same prices; the only gap is the one each tile captions: the summary
     # leaves an unpriced name out of both cost and value, the TWR path
@@ -467,8 +549,11 @@ def test_a_gutted_download_prices_the_table_itself_and_caches_nothing(
     from stocks.analysis import portfolio as analysis
     from stocks.data import fetch as data_fetch
 
-    book(trades() + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
-         + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(6)])
+    book(
+        trades()
+        + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
+        + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(6)]
+    )
     calls = []
     serve = download({"AAPL": 120.0})
 
@@ -478,7 +563,8 @@ def test_a_gutted_download_prices_the_table_itself_and_caches_nothing(
 
     monkeypatch.setattr(data_fetch, "fetch_many", gutted)
     monkeypatch.setattr(
-        analysis, "market_values",
+        analysis,
+        "market_values",
         lambda positions, base="EUR", **k: {p.ticker: 7.0 for p in positions},
     )
     summary = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
@@ -502,15 +588,19 @@ def test_a_refused_download_reads_what_the_live_pass_missed_off_the_kept_frames(
 
     from stocks.analysis import portfolio as analysis
 
-    book(trades() + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
-         + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(3)])
+    book(
+        trades()
+        + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
+        + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(3)]
+    )
 
     def refused(db, mtime):
         raise YFRateLimitError()
 
     patch_loaders(monkeypatch, "held_closes", refused)
     monkeypatch.setattr(
-        analysis, "market_values",
+        analysis,
+        "market_values",
         lambda positions, base="EUR", **k: {"AAPL": 15 * 7.0},
     )
     kept = download({"MSFT": 150.0, "X0": 50.0, "X1": 50.0})(["MSFT", "X0", "X1"])

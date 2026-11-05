@@ -1,4 +1,5 @@
-"""A chat answer shared by link: the frozen copy, the routes, the link card.
+"""A chat answer or a list of tickers shared by link: the frozen copy, the
+routes, the link card.
 
 The copy is cut once and stored outside the account (`web/shares.py`), so a
 pruned thread cannot break a link already sent; a guest reads it, only its
@@ -183,3 +184,140 @@ def test_a_link_comes_down_after_its_thread_was_pruned(account):
     account.chat.unlink()
     assert shares.revoke(account, share["id"]) is True
     assert shares.load(share["id"]) is None
+
+
+# -------------------------------------------------------------- the list
+
+
+def test_the_account_lists_its_links_newest_first_and_revoke_drops_them(account):
+    _book(account.chat)
+    one = shares.create(account, "a1", masked=True, lang="es")
+    one_open = shares.create(account, "a1", masked=False, lang="es")
+    rows = shares.listed(account)
+    assert [r["id"] for r in rows] == [one_open["id"], one["id"]]
+    assert rows[1]["masked"] is True and rows[1]["question"] == one["question"]
+    assert "30 acciones" not in rows[1]["question"], "a masked link is listed masked"
+    shares.revoke(account, one["id"])
+    assert shares.listed(account) == []
+
+
+def test_the_list_survives_its_thread_being_pruned(account):
+    _book(account.chat)
+    share = shares.create(account, "a1", masked=True, lang="es")
+    account.chat.unlink()
+    assert [r["id"] for r in shares.listed(account)] == [share["id"]]
+    assert shares.revoke(account, share["id"])
+    assert shares.listed(account) == []
+
+
+def test_an_account_that_shared_before_the_list_gets_it_from_its_stamps(account):
+    _book(account.chat)
+    share = shares.create(account, "a1", masked=True, lang="es")
+    account.shares.unlink()
+    assert [r["id"] for r in shares.listed(account)] == [share["id"]]
+    assert account.shares.exists(), "built once, then read"
+
+
+def test_the_list_endpoint_is_the_sharers_alone(account, signed_in):
+    _book(account.chat)
+    made = signed_in.post("/v1/chat/turns/a1/share", json={"masked": True}).json()
+    r = signed_in.get("/v1/chat/shares")
+    assert r.status_code == 200
+    assert [(s["id"], s["masked"]) for s in r.json()] == [(made["id"], True)]
+    assert set(r.json()[0]) == {"id", "kind", "answer_id", "question", "masked",
+                                "created"}
+    assert TestClient(fastapi_app).get("/v1/chat/shares").status_code in (401, 403)
+
+
+# ------------------------------------------------------------ shared lists
+
+
+def test_a_list_keeps_the_symbols_once_each_and_nothing_else(account):
+    share = shares.create_list(
+        account, ["nvda", " NVDA", "msft", "not a symbol!", "BTC-EUR"],
+        "  Semis\n y  cripto ", "es", by="Ana")
+    assert share["kind"] == "watchlist"
+    assert share["tickers"] == ["NVDA", "MSFT", "BTC-EUR"]
+    assert share["title"] == "Semis y cripto" and share["by"] == "Ana"
+    assert share["masked"] is False and share["answer_id"] == ""
+    assert shares.load(share["id"]) == share
+
+
+def test_a_list_is_cut_at_its_cap_and_one_with_no_symbol_is_none(account):
+    many = [f"T{i}" for i in range(shares.LIST_MAX + 10)]
+    assert len(shares.create_list(account, many, "", "es")["tickers"]) == shares.LIST_MAX
+    assert shares.create_list(account, ["!!", ""], "x", "es") is None
+
+
+def test_the_same_list_under_the_same_name_is_the_same_link(account):
+    def link(tickers: list[str], title: str) -> str:
+        return shares.create_list(account, tickers, title, "es")["id"]
+
+    first = link(["NVDA", "MSFT"], "Semis")
+    assert link(["nvda", "msft"], "Semis") == first
+    assert link(["NVDA", "MSFT"], "Otra") != first
+    assert link(["MSFT", "NVDA"], "Semis") != first, "the order is the sharer's"
+
+
+def test_taking_down_a_list_leaves_the_other_links_up(account):
+    _book(account.chat)
+    answer = shares.create(account, "a1", masked=True, lang="es")
+    one = shares.create_list(account, ["NVDA"], "Uno", "es")
+    two = shares.create_list(account, ["MSFT"], "", "es")
+    assert shares.revoke(account, one["id"])
+    assert shares.load(one["id"]) is None
+    assert shares.load(two["id"]) is not None and shares.load(answer["id"]) is not None
+    rows = shares.listed(account)
+    assert [(r["id"], r["kind"], r["question"]) for r in rows] == [
+        (two["id"], "watchlist", "MSFT"), (answer["id"], "answer", answer["question"])]
+    assert shares.revoke(account, answer["id"])
+    assert [r["id"] for r in shares.listed(account)] == [two["id"]]
+
+
+def test_following_a_list_adds_whats_new_under_its_name(account):
+    from stocks import watchlist as wl
+    from stocks.config import load_watchlist
+
+    wl.add_entry(account.watchlist, "NVDA")
+    share = shares.create_list(account, ["NVDA", "MSFT"], "Semis", "es")
+    assert shares.follow(account, share) == ["MSFT"]
+    held = {h.ticker: h.tags for h in load_watchlist(account.watchlist)}
+    assert (held["NVDA"], held["MSFT"]) == (["Semis"], ["Semis"])
+    assert shares.follow(account, share) == [], "following twice adds nothing"
+
+
+def test_a_list_is_made_previewed_and_followed_over_the_api(account, signed_in, store):
+    preview = signed_in.post("/v1/shares", json={
+        "tickers": ["nvda", "msft"], "title": "Semis", "preview": True})
+    assert preview.status_code == 200
+    assert preview.json()["id"] == "" and preview.json()["tickers"] == ["NVDA", "MSFT"]
+    assert not store.exists() or not list(store.iterdir())
+    bad = signed_in.post("/v1/shares", json={"tickers": ["!!"]})
+    assert bad.status_code == 422
+    made = signed_in.post("/v1/shares", json={"tickers": ["NVDA", "MSFT"],
+                                               "title": "Semis"}).json()
+    assert made["kind"] == "watchlist" and made["mine"] is True
+    read = TestClient(fastapi_app).get(f"/v1/shares/{made['id']}").json()
+    assert read["kind"] == "watchlist" and read["title"] == "Semis"
+    assert read["question"] == "" and read["content"] == ""
+    r = signed_in.post(f"/v1/shares/{made['id']}/follow")
+    assert r.status_code == 200 and r.json() == {"added": ["NVDA", "MSFT"]}
+    listed = signed_in.get("/v1/chat/shares").json()
+    assert [(s["kind"], s["question"]) for s in listed] == [("watchlist", "Semis")]
+
+
+def test_a_guest_cannot_make_or_follow_a_list(account, signed_in):
+    made = signed_in.post("/v1/shares", json={"tickers": ["NVDA"]}).json()
+    guest = TestClient(fastapi_app)
+    assert guest.post("/v1/shares", json={"tickers": ["NVDA"]}).status_code in (401, 403)
+    assert guest.post(f"/v1/shares/{made['id']}/follow").status_code in (401, 403)
+
+
+def test_an_answer_cannot_be_followed_nor_a_list_carried_on(account, signed_in):
+    _book(account.chat)
+    answer = signed_in.post("/v1/chat/turns/a1/share", json={}).json()
+    assert signed_in.post(f"/v1/shares/{answer['id']}/follow").status_code == 404
+    assert signed_in.post("/v1/shares/missing123/follow").status_code == 404
+    made = signed_in.post("/v1/shares", json={"tickers": ["NVDA"]}).json()
+    r = signed_in.post("/v1/chat/conversations", json={"from_share": made["id"]})
+    assert r.status_code == 404

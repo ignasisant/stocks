@@ -265,6 +265,13 @@
   "profile.sessions_end": "Cerrar sesión",
   "profile.sessions_end_others": "Cerrar sesión en los demás",
   "profile.sessions_failed": "No se ha podido cerrar — inténtalo de nuevo.",
+  "profile.shares_title": "Enlaces compartidos",
+  "profile.shares_help": "Quien tenga uno de estos enlaces puede ver lo que muestra. Deja de compartir y el enlace deja de funcionar.",
+  "profile.shares_on": "Compartida el {date}",
+  "profile.shares_masked": "Importes ocultos",
+  "profile.shares_list": "Lista",
+  "profile.shares_stop": "Dejar de compartir",
+  "profile.shares_failed": "No se ha podido retirar — inténtalo de nuevo.",
   "profile.push_title": "Este dispositivo",
   "profile.push_sub": "El resumen, la revisión semanal, las alertas de precio, los recordatorios y las respuestas listas, como notificaciones aquí.",
   "profile.push_answers": "Notificaciones en este dispositivo",
@@ -281,5 +288,10 @@
   "profile.install_help": "Un acceso directo que abre sin la barra del navegador.",
   "profile.install_button": "Instalar",
   "profile.install_ios": "En Safari, toca Compartir › Añadir a pantalla de inicio. Se abre a pantalla completa y puede avisarte cuando el asistente termina.",
-  "profile.notify_no_devices": "Ningún dispositivo recibe notificaciones todavía. Actívalas arriba."
+  "profile.notify_no_devices": "Ningún dispositivo recibe notificaciones todavía. Actívalas arriba.",
+  "profile.invite_title": "Invita a alguien",
+  "profile.invite_note": "Envíale la app. Tu enlace no muestra nada de tu cartera.",
+  "profile.invite_send": "Enviar invitación",
+  "profile.invite_link": "Tu enlace de invitación",
+  "profile.invite_text": "Sigo mi cartera con TopStocks. Échale un vistazo:"
 }

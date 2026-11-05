@@ -654,3 +654,60 @@ def test_no_launches_says_so():
     assert lq.render_installs(lq.installs([])) == (
         "(no launches from a Home Screen in range)"
     )
+
+
+# ---------------------------------------------------------------------- shares
+
+
+def _shr(event: str, ts: str, **fields) -> dict:
+    return {"timestamp": ts, "jsonPayload": {"event": event, **fields}}
+
+
+def test_shares_credit_each_link_with_what_it_brought():
+    entries = [
+        _shr("share.created", "2026-11-01T09:00:00Z", share="aaaaaaaa", masked=True),
+        _shr("share.created", "2026-11-01T09:05:00Z", share="bbbbbbbb", masked=False),
+        _shr("share.opened", "2026-11-01T10:00:00Z", share="aaaaaaaa"),
+        _shr("share.opened", "2026-11-01T10:01:00Z", share="aaaaaaaa"),
+        _shr("share.opened", "2026-11-01T10:02:00Z", share="bbbbbbbb"),
+        _shr("share.opened", "2026-11-01T10:03:00Z", share="aaaaaaaa", bot=True),
+        _shr("share.continued", "2026-11-01T10:05:00Z", share="aaaaaaaa", user="old"),
+        _shr("auth.signup", "2026-11-01T10:10:00Z", share="aaaaaaaa", user="ana"),
+        _shr("auth.signup", "2026-11-01T10:11:00Z", src="rankia", user="bo"),
+        # The new account's first import counts for the share; a second does not.
+        _shr("import.committed", "2026-11-01T11:00:00Z", user="ana", first=True),
+        _shr("import.committed", "2026-11-02T11:00:00Z", user="ana", first=False),
+        # An account that arrived some other way imports for no share.
+        _shr("import.committed", "2026-11-01T12:00:00Z", user="bo", first=True),
+    ]
+    got = lq.shares(entries)
+    assert got["created"] == 2 and got["masked"] == 1
+    assert got["totals"] == {"opens": 3, "continues": 1, "signups": 1, "imports": 1}
+    top = got["shares"][0]
+    assert top == {"share": "aaaaaaaa", "opens": 2, "continues": 1,
+                   "signups": 1, "imports": 1}
+    out = lq.render_shares(got)
+    assert "shared: 2 links (1 masked)" in out and "aaaaaaaa" in out
+
+
+def test_invites_count_what_their_links_brought():
+    entries = [
+        _shr("invite.asked", "2026-11-01T09:00:00Z", code="abcdefghjk", user="ana"),
+        _shr("invite.asked", "2026-11-01T09:01:00Z", code="abcdefghjk", user="ana"),
+        _shr("landing.view", "2026-11-01T10:00:00Z", src="inv-abcdefghjk"),
+        _shr("landing.view", "2026-11-01T10:01:00Z", src="inv-abcdefghjk", bot=True),
+        _shr("landing.cta", "2026-11-01T10:02:00Z", src="inv-abcdefghjk"),
+        _shr("landing.view", "2026-11-01T10:03:00Z", src="rankia"),
+        _shr("auth.signup", "2026-11-01T10:10:00Z", src="inv-abcdefghjk", user="bo"),
+        _shr("import.committed", "2026-11-01T11:00:00Z", user="bo", first=True),
+        _shr("import.committed", "2026-11-02T11:00:00Z", user="bo", first=False),
+    ]
+    got = lq.shares(entries)
+    assert got["invites"] == {"asked": 1, "visits": 2, "signups": 1, "imports": 1}
+    # An invite is not a shared answer.
+    assert got["totals"]["signups"] == 0
+    assert "invites: 1 accounts took their link" in lq.render_shares(got)
+
+
+def test_no_share_events_says_so():
+    assert lq.render_shares(lq.shares([])) == "(no share events in range)"

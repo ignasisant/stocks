@@ -126,6 +126,7 @@ def _summary(labels: list[str]) -> str:
 def _criterion_slots(action: dict, lang: str) -> dict:
     """The placeholders of an exit-rule line: the rule in words, the figure
     it reads today and how far it still is (or how far past)."""
+    from stocks.chat import journal
     from stocks.web.i18n import translate
 
     rule = str(action.get("rule") or "below")
@@ -138,6 +139,9 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     if int(action.get("quarters") or 1) > 1:
         text = translate("home.daily_crit_run", lang, rule=text,
                          n=int(action["quarters"]))
+    if rule in journal.THESIS_RULES:
+        text = translate("home.daily_crit_thesis", lang,
+                         pillar=str(action.get("pillar") or ""))
     return {
         "ticker": str(action.get("ticker") or ""),
         "rule": text,
@@ -254,10 +258,12 @@ def go_of(item: dict) -> str:
 
 
 def _criterion_key(key: str, action: dict) -> str:
-    """An event rule's line quotes what it was met on instead of a figure."""
+    """An event or thesis rule's line quotes what it was met on instead of a
+    figure."""
     from stocks.chat import journal
 
-    return f"{key}_event" if action.get("rule") in journal.EVENT_RULES else key
+    quoted = journal.EVENT_RULES + journal.THESIS_RULES
+    return f"{key}_event" if action.get("rule") in quoted else key
 
 
 def _flag(action: dict, lang: str) -> str:

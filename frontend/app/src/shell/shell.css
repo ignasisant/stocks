@@ -446,3 +446,49 @@
 .ag-pull-glyph {
   display: inline-block;
 }
+
+/* The one-time rating prompt borrows the tour's dialog; these are its stars.
+   Picked stars take the brand accent, not the caution yellow: a score is not
+   a warning. 44px each, a full tap target on any pointer. */
+.ag-rate-stars {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 4px;
+}
+
+.ag-rate-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: var(--ag-radius-pill);
+  background: none;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.ag-rate-star[data-on] {
+  color: var(--ag-brand-accent);
+}
+
+/* Unpicked stars are outlines, so the score reads without the colour. */
+.ag-rate-star:not([data-on]) svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.ag-rate-text {
+  margin-top: 12px;
+}
+
+.ag-rate .ag-tour-foot {
+  margin-top: 16px;
+}

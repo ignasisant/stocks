@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (33)
+# Generated classes (35)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -181,6 +181,12 @@ class MarketReply(BaseModel):
 class PeerPicks(BaseModel):
     symbols: typing.Optional[typing.List[str]] = Field(default=None, description='Yahoo Finance symbols, exchange suffix included')
 
+class PillarVerdict(BaseModel):
+    pillar: typing.Optional[str] = Field(default=None, description='the pillar\'s letter: A, B or C')
+    verdict: typing.Optional[str] = Field(default=None, description='noise, watch or damaged')
+    item: typing.Optional[int] = Field(default=None, description='for watch or damaged: the number of the passage')
+    quote: typing.Optional[str] = Field(default=None, description='for watch or damaged: the passage\'s words, copied exactly')
+
 class QueryPlan(BaseModel):
     queries: typing.Optional[typing.List[str]] = Field(default=None, description='web search queries; empty when none is needed')
 
@@ -238,13 +244,16 @@ class StatementRow(BaseModel):
     fee: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     note: typing.Optional[str] = Field(default=None, description='short label, optional')
 
+class ThesisVerdict(BaseModel):
+    verdicts: typing.List["PillarVerdict"] = Field(description='one per pillar a passage touches; none when all is noise')
+
 # #########################################################################
 # Generated type aliases (0)
 # #########################################################################
 
 
 # #########################################################################
-# Model rebuilds (33)
+# Model rebuilds (35)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -271,6 +280,7 @@ LessonOps.model_rebuild()
 MarketNote.model_rebuild()
 MarketReply.model_rebuild()
 PeerPicks.model_rebuild()
+PillarVerdict.model_rebuild()
 QueryPlan.model_rebuild()
 ReviewOp.model_rebuild()
 ReviewOps.model_rebuild()
@@ -283,3 +293,4 @@ SectionNote.model_rebuild()
 SkillPick.model_rebuild()
 StatementPage.model_rebuild()
 StatementRow.model_rebuild()
+ThesisVerdict.model_rebuild()

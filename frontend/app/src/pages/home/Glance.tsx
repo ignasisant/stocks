@@ -103,7 +103,10 @@ export function useBook(nonce: number, enabled: boolean): Query<Book | null> {
         // A table of exchange hours and a clock — no account, no fetch. It
         // only decides a caption, so it must never take the card down with it.
         get<MarketStatus>("/market/status").catch(() => null),
-        get<History>("/portfolio/history", { window: SPARK_WINDOW }).catch(() => null),
+        get<History>("/portfolio/history", {
+          window: SPARK_WINDOW,
+          index: "true",
+        }).catch(() => null),
       ]);
     return {
       summary,
@@ -440,7 +443,7 @@ function MoversCard({
           onPick={setRange}
         />
       </div>
-      <div className="hm-split">
+      <div className="hm-split hm-split-tables">
         <MoverTable label={t("home.gainers")} rows={shown.gainers} held={held} />
         <MoverTable label={t("home.losers")} rows={shown.losers} held={held} />
       </div>

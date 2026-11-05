@@ -24,5 +24,13 @@
   "feedback.empty": "Write something first.",
   "feedback.rate_limited": "That's plenty for now — try again in a while.",
   "feedback.failed": "Could not save your feedback. Please try again later.",
-  "feedback.unsent": "Not sent — copy this before you close."
+  "feedback.unsent": "Not sent — copy this before you close.",
+  "feedback.rate_title": "How is TopStocks for you?",
+  "feedback.rate_intro": "One tap is enough. It goes straight to the developer.",
+  "feedback.rate_star": "{n} of 5 stars",
+  "feedback.rate_low": "What should we fix first? (optional)",
+  "feedback.rate_high": "What do you like, or what is missing? (optional)",
+  "feedback.rate_pick": "Pick a score first.",
+  "feedback.rate_later": "Not now",
+  "feedback.rate_send": "Send"
 }

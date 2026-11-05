@@ -65,8 +65,9 @@ _DF_MAX_SHARE = 0.2
 # written in exactly these two languages, so they are simply listed.
 _STOP = frozenset("""
 a al como con cual cuando de del donde el en es esta este hay la las le lo los
-mas me mi mis muy no o para pero por que qué quien se si sin sobre su sus te tu
-tus un una uno y ya yo cómo cuál dónde porque está están estoy tengo
+mas me mi mis muy no o otra otras otro otros para pero por que qué quien se si
+sin sobre su sus te tu tus un una uno y ya yo cómo cuál dónde porque está están
+estoy tengo
 an and are as at be by can do does for from has have how i if in is it its me
 my of on or the this to was what when where which who why with you your
 """.split())

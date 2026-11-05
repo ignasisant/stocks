@@ -58,5 +58,14 @@
   "watchlist.group_delete_help": "Quita el grupo de sus miembros. Los valores siguen en la lista de seguimiento.",
   "watchlist.group_deleted": "Grupo {group} deshecho — {n} entradas conservadas.",
   "watchlist.how_open": "Cómo funciona",
-  "watchlist.how": "- Todo se guarda al instante.\n- `Acciones` + `Coste medio` crean una posición de reserva; la cartera real viene de las transacciones importadas.\n- Las criptos van como par de Yahoo (`BTC-USD`, `ETH-EUR`); el buscador lo hace por ti.\n- Un valor puede estar en varios grupos."
+  "watchlist.how": "- Todo se guarda al instante.\n- `Acciones` + `Coste medio` crean una posición de reserva; la cartera real viene de las transacciones importadas.\n- Las criptos van como par de Yahoo (`BTC-USD`, `ETH-EUR`); el buscador lo hace por ti.\n- Un valor puede estar en varios grupos.",
+  "watchlist.share": "Compartir",
+  "watchlist.share_title": "Compartir esta lista",
+  "watchlist.share_link": "Enlace a tu lista",
+  "watchlist.share_text": "Mi lista de seguimiento en TopStocks",
+  "watchlist.share_text_named": "Mi lista «{name}» en TopStocks",
+  "watchlist.share_make": "Crear enlace",
+  "watchlist.share_name": "Nombre",
+  "watchlist.share_note": "Solo salen los símbolos y el nombre: ni importes, ni notas, ni otros grupos.",
+  "watchlist.share_note_cut": "Solo salen los primeros {n} símbolos y el nombre: ni importes, ni notas, ni otros grupos."
 }

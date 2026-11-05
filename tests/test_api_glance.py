@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
-from stocks.api import briefing, home, loaders
+from stocks.api import book_moves, briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import glance
 from tests.patching import patch_loaders
@@ -73,7 +73,7 @@ def _regular_session(monkeypatch):
     window would answer differently before and after 22:00 CET — and would go
     to the network to do it, which this module promises it never does.
     """
-    monkeypatch.setattr(glance, "us_market_open", lambda: True)
+    monkeypatch.setattr(book_moves, "us_market_open", lambda: True)
 
 
 @pytest.fixture
@@ -344,12 +344,14 @@ def test_money_paid_in_during_the_window_is_not_a_gain(client, account, monkeypa
 
     The book's own value history carries contributions, so an import that put
     38k into a 12k book on a Monday read as "+316% this week" with the market
-    flat. Measured on a basket held at today's quantities, the same week is
-    the move of the prices and nothing else.
+    flat. The week is the book's own money (`money_change`): the value's move
+    less what was put in, over the money at stake (`_at_stake`): 240 € made,
+    on the 12k there plus the 38.5k put in.
     """
     index = pd.to_datetime([date(2024, 3, 1) + timedelta(days=i) for i in range(10)])
     # One name, up 2% across the week. The book it sits in quadrupled, because
-    # money arrived — `history()` would report that, and this must not.
+    # money arrived on the last day — a gain on the value alone would report
+    # that, and this must not.
     frame = pd.DataFrame({"AAPL": pd.Series([100.0] * 9 + [102.0], index=index)})
     patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": frame)
     patch_loaders(
@@ -357,7 +359,7 @@ def test_money_paid_in_during_the_window_is_not_a_gain(client, account, monkeypa
         lambda db, mtime, base="EUR": (
             pd.DataFrame(
                 {
-                    "value": [12_000.0] * 9 + [56_000.0],
+                    "value": [12_000.0] * 9 + [12_240.0 + 38_500.0],
                     "injected": [6_500.0] * 9 + [45_000.0],
                 },
                 index=index,
@@ -369,7 +371,8 @@ def test_money_paid_in_during_the_window_is_not_a_gain(client, account, monkeypa
     payload = client.get(
         "/v1/movers", params=WHO | {"window": "week"}, headers=AUTH
     ).json()
-    assert payload["basket"] == pytest.approx(0.02)
+    assert payload["amount"] == pytest.approx(240.0)
+    assert payload["basket"] == pytest.approx(240.0 / (12_000.0 + 38_500.0))
 
 
 def test_the_move_comes_back_as_money_as_well_as_a_percentage(
@@ -421,8 +424,8 @@ def test_a_shut_market_reads_the_quote_and_not_the_flat_bar(
         }
     )
     patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": flat)
-    monkeypatch.setattr(glance, "us_market_open", lambda: False)
-    monkeypatch.setattr(glance, "market_live", lambda ticker: False)
+    monkeypatch.setattr(book_moves, "us_market_open", lambda: False)
+    monkeypatch.setattr(book_moves, "market_live", lambda ticker: False)
     patch_loaders(
         monkeypatch, "quotes",
         lambda tickers: {
@@ -454,8 +457,8 @@ def test_a_premarket_row_reads_the_last_session_plus_the_premarket(
         }
     )
     patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": flat)
-    monkeypatch.setattr(glance, "us_market_open", lambda: False)
-    monkeypatch.setattr(glance, "market_live", lambda ticker: False)
+    monkeypatch.setattr(book_moves, "us_market_open", lambda: False)
+    monkeypatch.setattr(book_moves, "market_live", lambda ticker: False)
     patch_loaders(
         monkeypatch, "quotes",
         lambda tickers: {
@@ -492,7 +495,7 @@ def test_a_longer_window_never_reads_a_quote(client, account, monkeypatch):
     it, and last night's quote is not one."""
     called = []
     patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
-    monkeypatch.setattr(glance, "us_market_open", lambda: False)
+    monkeypatch.setattr(book_moves, "us_market_open", lambda: False)
     patch_loaders(monkeypatch, "quotes", lambda tickers: called.append(tickers) or {})
     client.get("/v1/movers", params=WHO | {"window": "week"}, headers=AUTH)
     assert called == []
