@@ -221,13 +221,72 @@ def rates_range(start: str, end: str, base: str, quote: str) -> dict[str, float]
     if hit is not None:
         return hit
     url = RANGE_URL.format(start=start, end=end, base=base, quote=quote)
-    data = get_json(url, timeout=30)
+    try:
+        data = get_json(url, timeout=30)
+    except Exception as exc:
+        # Frankfurter down (a 522 for two hours on 2026-11-04) took every
+        # foreign row out of every book it was asked for. The rates already
+        # fetched are still the rates: answer with those, and leave the memo
+        # empty so the next ask tries the ECB again.
+        rates = _kept_range(start, end, base, quote)
+        if not rates:
+            raise
+        obs.warn(
+            "fx.range_from_cache",
+            base=base,
+            quote=quote,
+            days=len(rates),
+            last=max(rates),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return rates
     rates = {d: float(v[quote]) for d, v in data["rates"].items()}
+    _keep_range(rates, base, quote)
     with _range_lock:
         _range_memo[key] = rates
         while len(_range_memo) > _RANGE_MEMO_MAX:
             _range_memo.pop(next(iter(_range_memo)))
     return rates
+
+
+def _keep_range(rates: dict[str, float], base: str, quote: str) -> None:
+    """File a range's business days in the per-date history, for `_kept_range`.
+
+    Same keys `rate_on` writes, and the same figures it would fetch for those
+    days, so the two never disagree. Saved only when a day is new.
+    """
+    cache = _cache()
+    new = {
+        f"{day}:{base}:{quote}": rate
+        for day, rate in rates.items()
+        if f"{day}:{base}:{quote}" not in cache
+    }
+    if not new:
+        return
+    cache.update(new)
+    try:
+        _save_cache(cache)
+    except OSError as exc:
+        obs.warn("fx.save_failed", error_type=type(exc).__name__, error=str(exc)[:300])
+
+
+def _kept_range(start: str, end: str, base: str, quote: str) -> dict[str, float]:
+    """The rates the history already holds for `base`->`quote` in [start, end].
+
+    The inverse pair counts too: `rate_on` is asked both ways round.
+    """
+    direct, inverse = f":{base}:{quote}", f":{quote}:{base}"
+    out: dict[str, float] = {}
+    for key, rate in list(_cache().items()):
+        day = key[:10]
+        if not start <= day <= end or not rate:
+            continue
+        if key.endswith(direct):
+            out[day] = rate
+        elif key.endswith(inverse):
+            out.setdefault(day, 1 / rate)
+    return dict(sorted(out.items()))
 
 
 # One answer per exact range request, for the process. `book_history` asks
