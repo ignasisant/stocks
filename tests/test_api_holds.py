@@ -8,6 +8,7 @@ Cloud Run, and a route only this process can call.
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import httpx
@@ -84,6 +85,28 @@ def test_a_hold_that_is_not_answered_ends_rather_than_asking_again(monkeypatch):
             break
         threading.Event().wait(0.01)
     assert posted == ["http://testserver/api/v1/hold"] and not holds._active
+
+
+@pytest.mark.parametrize(
+    ("status", "level"), [(404, logging.INFO), (302, logging.WARNING)]
+)
+def test_a_hold_another_instance_refused_is_not_a_warning(monkeypatch, status, level):
+    """Behind the front end, a hold can land on an instance that does not know
+    this one's token and answers 404: that is routing, not a fault."""
+    monkeypatch.setenv("K_SERVICE", "topstocks")
+    logged: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        holds.obs, "event", lambda name, *, level, **_: logged.append((name, level))
+    )
+    monkeypatch.setattr(
+        holds.obs, "warn", lambda name, **_: logged.append((name, logging.WARNING))
+    )
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda url, **_: httpx.Response(status, request=httpx.Request("POST", url)),
+    )
+    holds._hold("http://testserver/api/v1/hold")
+    assert logged == [("cache.hold_failed", level)]
 
 
 def test_spawn_holds_the_cpu_while_the_thread_runs(monkeypatch):
