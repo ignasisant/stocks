@@ -30,7 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
-from stocks.chat.journal import CRITERION_RULES
+from stocks.chat.journal import CRITERION_RULES, THESIS_RULES
 from stocks.web.llm import ToolSpec
 
 MAX_RESULT_CHARS = 4000  # per tool result, before the model ever sees it
@@ -1072,7 +1072,11 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                      "items": {"type": "object",
                                "properties": {
                                    "rule": {"type": "string",
-                                            "enum": list(CRITERION_RULES)},
+                                            # A thesis rule's pillars are
+                                            # drafted through Claude (MCP)
+                                            # for now, not in the chat's card.
+                                            "enum": [r for r in CRITERION_RULES
+                                                     if r not in THESIS_RULES]},
                                    "level": {"type": "number"},
                                    "quarters": {"type": "integer",
                                                 "minimum": 1, "maximum": 4}},

@@ -36,8 +36,10 @@ class JournalEntry(BaseModel):
 
     `subject` groups showings of the same proposal; `links` are the ids of
     the entries it replaced or was replaced by. `snapshot` holds the figures
-    at the time (scalars only), keyed as the surface that showed it names
-    them. `day`/`last` are the first and latest day on screen."""
+    at the time, keyed as the surface that showed it names them: scalars,
+    and on an exit rule the lists its checks keep (a thesis rule's
+    `pillars`, the passages already read). `day`/`last` are the first and
+    latest day on screen."""
 
     id: str
     type: Kind
@@ -47,7 +49,7 @@ class JournalEntry(BaseModel):
     ticker: str
     line: str
     reasons: list[str]
-    snapshot: dict[str, float | int | bool | str | None]
+    snapshot: dict[str, float | int | bool | str | list[str] | None]
     evidence: str
     state: State
     day: str

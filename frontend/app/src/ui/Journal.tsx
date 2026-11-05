@@ -43,7 +43,7 @@ export type JournalEntry = {
   ticker: string;
   line: string;
   reasons: string[];
-  snapshot: Record<string, number | string | boolean | null>;
+  snapshot: Record<string, number | string | boolean | string[] | null>;
   evidence: string;
   state: JournalState;
   day: string;
@@ -105,6 +105,7 @@ const RULES = [
   "ceo_change",
   "guidance_cut",
   "dividend_cut",
+  "thesis",
 ];
 export const SOURCES: JournalSource[] = ["daily", "review", "chat"];
 
@@ -136,8 +137,9 @@ export function liveRule(entry: JournalEntry): boolean {
 
 /**
  * An exit rule in words: "a close at or below 95.00", "a 30 % loss on cost",
- * "an operating margin under 15 %, 2 quarters running", "a CEO change".
- * A price prints with two decimals, a percent with what it was given.
+ * "an operating margin under 15 %, 2 quarters running", "a CEO change",
+ * "the thesis breaks: …" with its pillars. A price prints with two decimals,
+ * a percent with what it was given.
  */
 export function ruleText(
   t: (key: string, vars?: Record<string, string | number>) => string,
@@ -154,6 +156,12 @@ export function ruleText(
         }).format(raw)
       : String(raw ?? "");
   if (!RULES.includes(rule)) return `${rule} ${level}`;
+  if (rule === "thesis") {
+    const pillars = entry.snapshot.pillars;
+    return t("journal.crit_thesis", {
+      pillars: Array.isArray(pillars) ? pillars.join(" · ") : "",
+    });
+  }
   const words = t(`journal.crit_${rule}`, { level });
   const run = Number(entry.snapshot.quarters ?? 1);
   return run > 1 ? t("journal.crit_run", { rule: words, n: run }) : words;
@@ -215,12 +223,18 @@ const FACTS: [string, Format][] = [
 ];
 
 function figure(
-  value: number | string | boolean | null | undefined,
+  value: JournalEntry["snapshot"][string] | undefined,
   format: Format,
   lang: string,
   currency: string,
 ): string | null {
-  if (value === null || value === undefined || typeof value === "boolean") return null;
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "boolean" ||
+    Array.isArray(value)
+  )
+    return null;
   if (typeof value === "string") return value || null;
   if (!Number.isFinite(value)) return null;
   const num = (n: number, digits: number) =>
@@ -268,10 +282,13 @@ export function priceMarks(
   });
 }
 
-/** The passage an event rule was met on, with where it was read. */
+/**
+ * The passage an event or thesis rule was met on, with where it was read and,
+ * for a thesis, the pillar it went against.
+ */
 export function MetOn({ entry }: { entry: JournalEntry }) {
   const t = useT();
-  const quote = entry.snapshot.quote;
+  const { quote, pillar } = entry.snapshot;
   if (entry.type !== "criterion" || typeof quote !== "string" || !quote) return null;
   const where = [entry.snapshot.source, entry.snapshot.source_day]
     .filter((part) => typeof part === "string" && part)
@@ -279,6 +296,9 @@ export function MetOn({ entry }: { entry: JournalEntry }) {
   return (
     <div className="ag-jr-group">
       <h3 className="ag-jr-h">{t("journal.met_on")}</h3>
+      {typeof pillar === "string" && pillar ? (
+        <p className="ag-jr-sub">{t("journal.pillar_hit", { pillar })}</p>
+      ) : null}
       <p className="ag-jr-quote">“{quote}”</p>
       {where ? <p className="ag-jr-sub">{where}</p> : null}
     </div>

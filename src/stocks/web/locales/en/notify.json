@@ -36,5 +36,7 @@
   "notify.push_test_body": "This device will get your digest, price alerts and finished answers.",
   "notify.digest_title_book": "Portfolio {value} · today {change}",
   "notify.ex_dividends": "Ex-dividend",
-  "notify.weekly_title_book": "Your week {change} · portfolio {value}"
+  "notify.weekly_title_book": "Your week {change} · portfolio {value}",
+  "notify.thesis_title": "{ticker}: a fact against your thesis",
+  "notify.thesis_line": "{pillar}: “{quote}”"
 }

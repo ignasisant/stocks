@@ -709,13 +709,25 @@ SLOW_RULES_BUDGET_S = 25.0
 # The 8-K items whose own document an event rule reads: an officer leaving,
 # and the results release (where a guidance or dividend cut is announced).
 _RULE_ITEMS = ("5.02", "2.02", "7.01", "8.01")
+# What a thesis rule reads besides: a material contract signed or ended, a
+# bankruptcy, an acquisition or disposal, a costly exit or impairment, a
+# delisting, past accounts withdrawn.
+_THESIS_ITEMS = _RULE_ITEMS + ("1.01", "1.02", "1.03", "2.01", "2.05", "2.06",
+                               "3.01", "4.02")
+# The thesis rules' round, after the card is stored: how long it may run and
+# how many names it may ask a model about. A book with more theses than
+# calls is read in turns (`journal.check_theses`), the longest unread first.
+THESIS_BUDGET_S = 90.0
+THESIS_MAX_CALLS = 10
 
 
-def _passages(ticker: str, since: date) -> list[dict]:
+def _passages(ticker: str, since: date, items: tuple[str, ...] = _RULE_ITEMS
+              ) -> list[dict]:
     """What an event rule is judged on: `ticker`'s 8-Ks since `since` that
     report an officer change or results (the filing's own words, or the
-    release's), and its last days' headlines. A source that cannot be read
-    is left out; both failing raises, so the rule waits for the next check."""
+    release's), or any other of `items`, and its last days' headlines. A
+    source that cannot be read is left out; both failing raises, so the rule
+    waits for the next check."""
     from stocks.data import edgar
 
     out: list[dict] = []
@@ -725,7 +737,7 @@ def _passages(ticker: str, since: date) -> list[dict]:
     except Exception:  # noqa: BLE001 — the headlines may still say it
         reports, failed = [], failed + 1
     for r in reports:
-        if r.filed < since or not set(r.items) & set(_RULE_ITEMS):
+        if r.filed < since or not set(r.items) & set(items):
             continue
         text = (edgar.earnings_release(ticker, r.filed) if "2.02" in r.items
                 else None) or edgar.current_report_text(r.url)
@@ -742,6 +754,40 @@ def _passages(ticker: str, since: date) -> list[dict]:
     out.extend({"source": h.publisher or "news", "day": h.published.isoformat(),
                 "text": h.title} for h in news if h.published >= since)
     return out
+
+
+def _thesis_passages(ticker: str, since: date) -> list[dict]:
+    return _passages(ticker, since, _THESIS_ITEMS)
+
+
+def check_theses(paths, prefs: dict, lang: str, day: date, spend) -> list[dict]:
+    """The reader's thesis rules read against the day's business news, and a
+    push for any met: the card that saw it is already written, and a broken
+    thesis should not wait for tomorrow's. The next card says so too
+    (`journal.measured`). Never raises."""
+    fired = journal.safely(
+        journal.check_theses, paths.journal, day,
+        passages_of=_thesis_passages,
+        judge=exit_judge.make_thesis_judge(
+            prefs, spend_free=lambda p: spend_for_judge(p, spend)),
+        budget_s=THESIS_BUDGET_S,
+        max_calls=THESIS_MAX_CALLS,
+    ) or []
+    if fired and prefs.get("notify_alerts", True):
+        with obs.swallow("journal.thesis_push"):
+            from stocks.notify import render, webpush
+            from stocks.web.i18n import translate
+
+            first = fired[0]
+            title = translate("notify.thesis_title", lang,
+                              ticker=str(first.get("ticker") or ""))
+            lines: list[str | None] = [
+                translate("notify.thesis_line", lang,
+                          pillar=str(r.get("pillar") or ""),
+                          quote=str(r.get("quote") or "")) for r in fired]
+            webpush.send_all(paths.push, render.message(
+                title, lines, "/profile?tab=journal", "thesis"), topic="thesis")
+    return fired
 
 
 def _held(paths) -> set[str]:
@@ -1170,6 +1216,9 @@ def start(
             # back on the moves proposed a month and a quarter ago.
             journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
                            _closes_on, day)
+            # The thesis rules too: a model call per name with news, too
+            # slow for a card anyone waits on, and pushed when one breaks.
+            check_theses(paths, prefs, lang, day, spend)
             _review_memories()
 
     def _review_memories() -> None:

@@ -90,14 +90,26 @@ FUNDAMENTAL_RULES = ("revenue_growth_below", "gross_margin_below",
 #   ceo_change   — the chief executive leaves or is replaced;
 #   guidance_cut — the company lowers or withdraws its own outlook;
 #   dividend_cut — the dividend is cut, suspended or scrapped.
-# A thesis or any other news condition ("if they lose the TSMC contract") is
-# not a rule the app can check, so it rides along as the rule's `evidence`.
 EVENT_RULES = ("ceo_change", "guidance_cut", "dividend_cut")
-CRITERION_RULES = PRICE_RULES + FUNDAMENTAL_RULES + EVENT_RULES
+# The thesis rule, with no level either: why the reader holds the name, as one
+# to MAX_PILLARS pillars a fact can contradict ("hyperscalers keep raising
+# their capex", "net revenue retention stays over 110 %"). Every day a model
+# reads the company's new filings and business headlines against each pillar
+# and sorts them (`check_theses`): noise (a price move, a rating, an opinion,
+# good news), a fact worth watching, or one that damages the pillar. Met on
+# damage, or on watches of one pillar on WATCH_TO_HIT different days within
+# WATCH_DAYS: one bad headline is noise, the same worry again is a pattern.
+# Why the reader holds it in their own words still rides along as `evidence`.
+THESIS_RULES = ("thesis",)
+CRITERION_RULES = PRICE_RULES + FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
 # The rules read off a fetch the morning's card does not already make: they
-# are checked on the card's background job (`check_slow`) and carried
-# between checks on their snapshot.
-SLOW_RULES = FUNDAMENTAL_RULES + EVENT_RULES
+# are checked on the card's background job (`check_slow`, `check_theses`) and
+# carried between checks on their snapshot.
+SLOW_RULES = FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
+MAX_PILLARS = 3
+MAX_PILLAR = 160
+WATCH_DAYS = 30
+WATCH_TO_HIT = 2
 CRITERION_PERCENT = ("drawdown_cost", "drawdown_high", "weight_above")
 MAX_QUARTERS = 4
 # A quarter's figures are filed weeks after it ends: one this old has
@@ -955,11 +967,26 @@ def _quarters(value: object) -> int:
     return min(max(int(n), 1), MAX_QUARTERS) if n is not None else 1
 
 
+def pillars_of(value: object) -> list[str]:
+    """A thesis rule's pillars: up to MAX_PILLARS distinct non-empty lines of
+    at most MAX_PILLAR characters each."""
+    if isinstance(value, str):
+        value = value.splitlines()
+    if not isinstance(value, list | tuple):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _text(item, MAX_PILLAR) if isinstance(item, str) else ""
+        if text and text.casefold() not in {p.casefold() for p in out}:
+            out.append(text)
+    return out[:MAX_PILLARS]
+
+
 def clean_rules(rules: Iterable[dict]) -> list[dict]:
     """The rules worth keeping, the last one per measure winning: a price
     rule with a level above zero (a percent one under 100), a fundamental
     rule with a percent level in range and its `quarters`, an event rule
-    alone."""
+    alone, a thesis rule with its pillars."""
     out: dict[str, dict] = {}
     for item in rules or ():
         if not isinstance(item, dict):
@@ -967,6 +994,11 @@ def clean_rules(rules: Iterable[dict]) -> list[dict]:
         rule = str(item.get("rule") or "").strip().lower()
         if rule in EVENT_RULES:
             out[rule] = {"rule": rule}
+            continue
+        if rule in THESIS_RULES:
+            pillars = pillars_of(item.get("pillars"))
+            if pillars:
+                out[rule] = {"rule": rule, "pillars": pillars}
             continue
         if rule in FUNDAMENTAL_RULES:
             level = _signed(item.get("level"))
@@ -1140,7 +1172,8 @@ def _stored_row(e: Entry, rule: str) -> dict | None:
         "hit_day": str(snap.get("hit_day") or ""),
         **({"quarters": int(snap.get("quarters") or 1)}
            if rule in FUNDAMENTAL_RULES else {}),
-        **{k: str(snap[k]) for k in ("quote", "source", "source_day")
+        **{k: str(snap[k]) for k in ("quote", "source", "source_day", "pillar",
+                                     "verdict")
            if snap.get(k)},
     }
 
@@ -1345,6 +1378,197 @@ def _check_event(e: Entry, rule: str, day: date, passages_of, judge) -> dict | N
     return out
 
 
+# ------------------------------------------------------------- thesis rules
+# A thesis is read every day against what is new about the company, and most
+# of what is new is noise: so a sieve first (no call on a quiet day), one call
+# per name with fresh business news, and at most `max_calls` a round — a name
+# not reached keeps its passages unseen and goes first on the next round.
+
+# What a headline has to touch before a pillar is weighed against it: results,
+# customers, products, rivals, regulators, people, money. "3 stocks to buy",
+# a price move or a target change says nothing a pillar stands on.
+BUSINESS_WORDS = re.compile(
+    r"\b(revenue|sales|earnings|results|guidance|outlook|forecast|margin|profit|"
+    r"loss|cash|debt|dividend|buyback|customer|client|contract|order|backlog|"
+    r"demand|supply|shortage|capex|spending|pric(e|ing) (war|cut)|market share|"
+    r"compet|rival|launch|product|subscri|users?\b|churn|growth|slow|"
+    r"lawsuit|sue[ds]?\b|court|probe|investigat|antitrust|regulat|fine[ds]?\b|"
+    r"ban(s|ned)?\b|tariff|export|sanction|fda|approv|trial|recall|patent|"
+    r"sec\b|doj\b|ftc\b|layoff|job cuts|restructur|ceo|cfo|resign|"
+    r"acqui|merger|deal|partner|spin.?off|stake|short.?seller|fraud|accounting|"
+    r"restat|delay|halt|strike|outage|breach|hack|downgrade|"
+    r"ingresos|ventas|beneficio|p[eé]rdida|resultados|previsi|margen|deuda|"
+    r"cliente|contrato|pedido|demanda|competencia|cuota|regulador|multa|"
+    r"investigaci|arancel|despid|adquisici|fusi[oó]n|acuerdo|retraso)",
+)
+# Words of a pillar too common to say a headline is about it.
+_PILLAR_STOP = frozenset(
+    "that this with from into over under than their they them keep keeps "
+    "stays stay remain remains more less still above below years year each "
+    "company business whose which while what when para como sigue siguen "
+    "siendo esta este estos estas pero sobre entre desde hasta cada años "
+    "empresa negocio mantiene mantener".split())
+# What one name's call reads at most: its filings first, then the headlines.
+THESIS_PASSAGES = 8
+
+
+def _pillar_words(pillars: list[str]) -> list[str]:
+    """The stems a passage may share with a pillar: each word of four letters
+    or more, cut to six, the common ones left out."""
+    words = re.findall(r"[^\W\d_]{4,}", " ".join(pillars).casefold())
+    return sorted({w[:6] for w in words if w not in _PILLAR_STOP})
+
+
+def _material(item: dict, stems: list[str]) -> int | None:
+    """Where a passage first says something a pillar could stand or fall on,
+    or None: a filing always does (from its start), a headline when it
+    touches the business or one of the pillars' own words."""
+    text = str(item.get("text") or "")
+    folded = text.casefold()
+    found = BUSINESS_WORDS.search(folded)
+    at = found.start() if found else None
+    for stem in stems:
+        hit = re.search(r"\b" + re.escape(stem), folded)
+        if hit and (at is None or hit.start() < at):
+            at = hit.start()
+    if str(item.get("source") or "").startswith("8-K"):
+        return at or 0
+    return at
+
+
+# (ticker, pillars, passages) -> {"verdicts": [{"pillar", "verdict", "item",
+# "quote"}]}: `pillar` the letter A, B, C; None when no model answered.
+ThesisJudge = Callable[[str, list[str], list[dict]], dict | None]
+PILLAR_LETTERS = "ABC"
+
+
+def _thesis_judged(ticker: str, pillars: list[str], shown: list[dict],
+                   judge: ThesisJudge) -> list[dict] | None:
+    """The judge's watches and damages on `shown`, each held to what it was
+    shown: a pillar that exists, a passage that exists and words that
+    passage holds. Noise, and anything off that, is dropped."""
+    got = judge(ticker, pillars, shown)
+    if not isinstance(got, dict):
+        return None
+    out: list[dict] = []
+    for v in got.get("verdicts") or ():
+        if not isinstance(v, dict):
+            continue
+        letter = str(v.get("pillar") or "").strip().upper()[:1]
+        verdict = str(v.get("verdict") or "").strip().lower()
+        if not letter or letter not in PILLAR_LETTERS[:len(pillars)] \
+                or verdict not in ("watch", "damaged"):
+            continue
+        index = v.get("item")
+        quote = " ".join(str(v.get("quote") or "").split())
+        if not isinstance(index, int) or not 0 <= index < len(shown) or not quote:
+            continue
+        if quote.casefold() not in " ".join(shown[index]["text"].split()).casefold():
+            continue
+        out.append({"pillar": PILLAR_LETTERS.index(letter), "verdict": verdict,
+                    "item": shown[index], "quote": quote[:200]})
+    return out
+
+
+def _watching(raw: object, day: date) -> list[str]:
+    """The thesis rule's watch notes still in the window, "<pillar>:<day>"."""
+    floor = (day - timedelta(days=WATCH_DAYS)).isoformat()
+    return [str(w) for w in raw or () if isinstance(w, str) and ":" in w
+            and w.split(":", 1)[1] >= floor] if isinstance(raw, list) else []
+
+
+def _check_thesis(e: Entry, day: date, passages_of, judge: ThesisJudge,
+                  can_ask: bool) -> tuple[dict | None, bool]:
+    """What one thesis rule's check found, for `_write_checks`, and whether a
+    model was asked. None when it could not be judged today: no model
+    answered, or the round's calls ran out (its passages wait unseen)."""
+    pillars = pillars_of(e.snapshot.get("pillars"))
+    if not pillars:
+        return None, False
+    try:
+        since = date.fromisoformat(e.day)
+    except ValueError:
+        since = day
+    iso = day.isoformat()
+    seen = list(e.snapshot.get("seen") or [])
+    fresh = [p for p in passages_of(e.ticker, since) or ()
+             if isinstance(p, dict) and str(p.get("text") or "").strip()
+             and str(p.get("day") or "") >= since.isoformat()
+             and _seen_key(p) not in seen]
+    stems = _pillar_words(pillars)
+    located = [(p, at) for p in fresh if (at := _material(p, stems)) is not None]
+    # The company's own filings before the press.
+    located.sort(key=lambda pa: not str(pa[0].get("source") or "").startswith("8-K"))
+    shown = located[:THESIS_PASSAGES]
+    watch = _watching(e.snapshot.get("watch"), day)
+    out: dict = {"checked": iso}
+    if shown:
+        if not can_ask:
+            return None, False
+        asked = [{**p, "text": _excerpt(str(p["text"]), at)} for p, at in shown]
+        verdicts = _thesis_judged(e.ticker, pillars, asked, judge)
+        if verdicts is None:
+            return None, True
+        for v in verdicts:
+            note = f"{v['pillar']}:{iso}"
+            if v["verdict"] == "watch" and note not in watch:
+                watch.append(note)
+        hits = [v for v in verdicts if v["verdict"] == "damaged"
+                or sum(w.split(":", 1)[0] == str(v["pillar"])
+                       for w in watch) >= WATCH_TO_HIT]
+        # A damage before a second watch: it is the stronger reading.
+        met = next((v for v in hits if v["verdict"] == "damaged"),
+                   hits[0] if hits else None)
+        if met is not None:
+            item = met["item"]
+            out |= {"_met": True, "quote": met["quote"],
+                    "source": str(item.get("source") or ""),
+                    "source_day": str(item.get("day") or ""),
+                    "pillar": pillars[met["pillar"]], "verdict": met["verdict"]}
+        obs.event("journal.thesis_judged", asked=len(asked),
+                  watch=sum(v["verdict"] == "watch" for v in verdicts),
+                  damaged=sum(v["verdict"] == "damaged" for v in verdicts))
+    passed = {id(p) for p, _ in located[THESIS_PASSAGES:]}
+    out["seen"] = (seen + [_seen_key(p) for p in fresh
+                           if id(p) not in passed])[-MAX_SEEN:]
+    out["watch"] = watch
+    return out, bool(shown)
+
+
+def check_theses(path: Path, day: date, *,
+                 passages_of: Callable[[str, date], list[dict]],
+                 judge: ThesisJudge, budget_s: float = 120.0,
+                 max_calls: int = 10) -> list[dict]:
+    """Read every thesis rule not yet read today against what is new about
+    its company; write what was found back on the rules and return the rows
+    (as `measured` would) of those met today.
+
+    The rules read longest ago go first, and a round asks the model at most
+    `max_calls` times, so a book of forty names on a tight allowance is read
+    in turns rather than always the same few. Never raises."""
+    start = time.monotonic()
+    due = [e for e in criteria(load(path))
+           if e.state == "open" and event_due(e, day)
+           and str(e.snapshot.get("rule") or e.action) in THESIS_RULES]
+    due.sort(key=lambda e: str(e.snapshot.get("checked") or ""))
+    found: dict[str, dict] = {}
+    calls = 0
+    for e in due:
+        if time.monotonic() - start > budget_s:
+            obs.event("journal.thesis_budget_spent", checked=len(found),
+                      left=len(due) - len(found))
+            break
+        try:
+            got, asked = _check_thesis(e, day, passages_of, judge, calls < max_calls)
+        except Exception as exc:  # noqa: BLE001 — a throttled feed, next round
+            obs.warn("journal.thesis_check_failed", error_type=type(exc).__name__)
+            continue
+        calls += asked
+        if got is not None:
+            found[e.id] = got
+    return _write_checks(path, found, day)
+
+
 def _write_checks(path: Path, found: dict[str, dict], day: date) -> list[dict]:
     """Stamp each check on its rule and move the met ones to ``hit``; return
     the met rows as `measured` reads them."""
@@ -1420,6 +1644,8 @@ def criterion_text(entry: Entry) -> str:
         "ceo_change": "the CEO leaves or is replaced",
         "guidance_cut": "the company cuts or withdraws its guidance",
         "dividend_cut": "the dividend is cut or suspended",
+        "thesis": "the thesis breaks: "
+        + " / ".join(pillars_of(entry.snapshot.get("pillars"))),
     }.get(rule, f"{rule} {level}")
 
 
@@ -1462,6 +1688,14 @@ def line_for(entry: Entry) -> str:
         if snap.get("quote"):
             lines.append(f"  met on: {snap.get('source') or ''} "
                          f"{snap.get('source_day') or ''} \"{snap['quote']}\"")
+        if snap.get("pillar"):
+            lines.append(f"  pillar {snap.get('verdict') or 'damaged'}: "
+                         f"{snap['pillar']}")
+        pillars = pillars_of(snap.get("pillars"))
+        for w in snap.get("watch") or () if entry.state == "open" else ():
+            i, _, on = str(w).partition(":")
+            if i.isdigit() and int(i) < len(pillars):
+                lines.append(f"  watching since {on}: {pillars[int(i)]}")
         if entry.evidence:
             lines.append(f"  thesis: {entry.evidence}")
         if entry.links:

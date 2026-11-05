@@ -1383,16 +1383,25 @@ class ExitRule(BaseModel):
     rule: Literal["below", "drawdown_cost", "drawdown_high", "weight_above",
                   "revenue_growth_below", "gross_margin_below",
                   "operating_margin_below", "ceo_change", "guidance_cut",
-                  "dividend_cut"] = Field(description=(
+                  "dividend_cut", "thesis"] = Field(description=(
         "below: a closing price; drawdown_cost: % loss from their own cost; "
         "drawdown_high: % fall from the 52-week high; weight_above: % of the "
         "portfolio; revenue_growth_below / gross_margin_below / "
         "operating_margin_below: a % the quarter's figure falls under; "
-        "ceo_change / guidance_cut / dividend_cut: an event, no level."))
+        "ceo_change / guidance_cut / dividend_cut: an event, no level; "
+        "thesis: the `pillars` the business must keep, read every day "
+        "against its filings and business news (noise, watch or damaged), "
+        "met when a fact damages one or the same worry comes back within "
+        "30 days."))
     level: float | None = Field(None, description="The price or percent; "
                                                   "none for an event.")
     quarters: int | None = Field(None, ge=1, le=4, description=(
         "Fundamental rules only: quarters running the figure must stay under."))
+    pillars: list[Annotated[str, Field(min_length=3, max_length=160)]] | None = Field(
+        None, min_length=1, max_length=3, description=(
+            "Thesis rule only: one to three facts about the business a news "
+            "item could contradict, e.g. 'hyperscalers keep raising AI "
+            "capex', not a price or a feeling."))
 
 
 async def set_kill_criteria(
@@ -1414,7 +1423,8 @@ async def set_kill_criteria(
         if not written:
             raise _Refused(
                 "No rule was usable: a price level must be above zero, a "
-                "percent under 100, and an event rule takes no level.")
+                "percent under 100, an event rule takes no level, and a "
+                "thesis rule needs its pillars.")
         return {"kind": "criteria", "written": [e.as_dict() for e in written],
                 "dropped": len(asked) - len(written)}
 

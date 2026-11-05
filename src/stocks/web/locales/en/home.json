@@ -198,6 +198,7 @@
   "home.daily_crit_ceo_change": "a CEO change",
   "home.daily_crit_guidance_cut": "a guidance cut",
   "home.daily_crit_dividend_cut": "a dividend cut",
+  "home.daily_crit_thesis": "a fact against your thesis, “{pillar}”",
   "home.daily_crit_run": "{rule}, {n} quarters running",
   "home.daily_act_alert_hit": "{ticker}: your {rule} alert at {level} fired — price {price}. Review the exit you set it for.",
   "home.daily_act_alert_near": "{ticker} is {gap} from your {rule} alert at {level} (price {price}) — decide before it gets there.",
