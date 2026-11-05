@@ -819,6 +819,9 @@ def fetch_many(
     `attempts` and `trip` go to `retry`: a side errand asks once and leaves
     the cooldown alone.
     """
+    # A blank label (an empty cell some caller kept) is no symbol: Yahoo
+    # answers it with "Empty ticker name" in the middle of the book's batch.
+    tickers = [t for t in tickers if t and t.strip()]
     if not tickers:
         return {}
     # Hand-mapped coins skip Yahoo entirely: for some its symbol is another

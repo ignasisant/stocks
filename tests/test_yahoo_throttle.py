@@ -152,6 +152,25 @@ def test_fetch_many_still_returns_frames(monkeypatch):
     assert list(out) == ["AAPL"] and len(out["AAPL"]) == 2
 
 
+def test_fetch_many_never_asks_yahoo_for_a_blank_label(monkeypatch):
+    """ERR-07 (triage 2026-11-05): a book's batch went out with "" in it and
+    yfinance logged "Empty ticker name" for it."""
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    idx = pd.date_range("2026-01-05", periods=2, name="Date")
+    frame = pd.DataFrame({"Close": [1.0, 2.0]}, index=idx)
+    asked: list[list[str]] = []
+
+    def download(symbols, *a, **k):
+        asked.append(list(symbols))
+        return frame
+
+    monkeypatch.setattr(fetch.yf, "download", download)
+    out = fetch.fetch_many(["AAPL", "", " "])
+    assert asked == [["AAPL"]] and list(out) == ["AAPL"]
+    assert fetch.fetch_many(["", " "]) == {}
+    assert asked == [["AAPL"]]
+
+
 # ---------------------------------------------- what the bulk download said
 # yfinance swallows every per-symbol failure and only names it in a summary it
 # logs once the batch is done. "Yahoo has no such symbol" and "Yahoo refused"
