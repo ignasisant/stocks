@@ -114,3 +114,19 @@ function JudgeExitEvent(instructions: string, input: string) -> ExitEventVerdict
   client Wire
   prompt #"{{ Frame(instructions, input) }}"#
 }
+
+class PillarVerdict {
+  pillar string @description("the pillar's letter: A, B or C")
+  verdict string @description("noise, watch or damaged")
+  item int? @description("for watch or damaged: the number of the passage")
+  quote string? @description("for watch or damaged: the passage's words, copied exactly")
+}
+
+class ThesisVerdict {
+  verdicts PillarVerdict[] @description("one per pillar a passage touches; none when all is noise")
+}
+
+function JudgeThesis(instructions: string, input: string) -> ThesisVerdict {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}

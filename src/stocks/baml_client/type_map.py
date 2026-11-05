@@ -79,6 +79,9 @@ type_map = {
     "types.PeerPicks": types.PeerPicks,
     "stream_types.PeerPicks": stream_types.PeerPicks,
 
+    "types.PillarVerdict": types.PillarVerdict,
+    "stream_types.PillarVerdict": stream_types.PillarVerdict,
+
     "types.QueryPlan": types.QueryPlan,
     "stream_types.QueryPlan": stream_types.QueryPlan,
 
@@ -114,6 +117,9 @@ type_map = {
 
     "types.StatementRow": types.StatementRow,
     "stream_types.StatementRow": stream_types.StatementRow,
+
+    "types.ThesisVerdict": types.ThesisVerdict,
+    "stream_types.ThesisVerdict": stream_types.ThesisVerdict,
 
 
     "types.AssetClass": types.AssetClass,

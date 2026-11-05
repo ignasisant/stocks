@@ -198,6 +198,7 @@
   "home.daily_crit_ceo_change": "un cambio de CEO",
   "home.daily_crit_guidance_cut": "un recorte de previsiones",
   "home.daily_crit_dividend_cut": "un recorte del dividendo",
+  "home.daily_crit_thesis": "un hecho contra tu tesis, «{pillar}»",
   "home.daily_crit_run": "{rule}, {n} trimestres seguidos",
   "home.daily_act_alert_hit": "{ticker}: tu alerta {rule} {level} se ha activado — precio {price}. Revisa la salida que fijaste.",
   "home.daily_act_alert_near": "{ticker} está a {gap} de tu alerta {rule} {level} (precio {price}) — decide antes de que llegue.",

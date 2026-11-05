@@ -36,5 +36,7 @@
   "notify.push_test_body": "Questo dispositivo riceverà il tuo riepilogo, gli alert di prezzo e le risposte pronte.",
   "notify.digest_title_book": "Portafoglio {value} · oggi {change}",
   "notify.ex_dividends": "Stacco dividendo",
-  "notify.weekly_title_book": "La tua settimana {change} · portafoglio {value}"
+  "notify.weekly_title_book": "La tua settimana {change} · portafoglio {value}",
+  "notify.thesis_title": "{ticker}: un fatto contro la tua tesi",
+  "notify.thesis_line": "{pillar}: “{quote}”"
 }

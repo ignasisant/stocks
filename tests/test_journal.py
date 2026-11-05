@@ -922,3 +922,176 @@ def test_the_judge_never_takes_the_cards_free_units(monkeypatch, left, charged):
     calls = []
     assert briefing.spend_for_judge({}, lambda p: calls.append(p) or True) is charged
     assert len(calls) == int(charged)
+
+
+# ------------------------------------------------------------- thesis rules
+
+PILLARS = ["Hyperscalers keep raising AI capex", "Data center revenue keeps growing"]
+
+
+def _thesis(path, pillars=PILLARS, ticker="NVDA"):
+    [rule] = journal.add_criteria(path, ticker,
+                                  [{"rule": "thesis", "pillars": pillars}], DAY)
+    return rule
+
+
+def _theses(path, day, passages, judge, **kw):
+    return journal.check_theses(path, day, passages_of=lambda t, since: passages,
+                                judge=judge, **kw)
+
+
+def test_a_thesis_rule_keeps_up_to_three_distinct_pillars(path):
+    assert journal.clean_rules([{"rule": "thesis"}]) == []
+    assert journal.clean_rules([{"rule": "thesis", "pillars": ["  ", 3]}]) == []
+    [rule] = journal.clean_rules([{"rule": "thesis", "level": 5, "pillars": [
+        "Capex grows", "capex grows", "Margins hold", "x" * 300, "Fourth"]}])
+    assert rule["pillars"][:2] == ["Capex grows", "Margins hold"]
+    assert len(rule["pillars"]) == 3 and len(rule["pillars"][2]) <= journal.MAX_PILLAR
+    assert "level" not in rule
+    entry = journal.load(path) or [_thesis(path)]
+    assert "Hyperscalers keep raising AI capex" in journal.criterion_text(entry[0])
+
+
+def test_a_quiet_day_asks_no_model_and_marks_the_noise_read(path):
+    _thesis(path)
+    noise = [_passage("NVIDIA stock jumps 4% in early trading", source="Yahoo"),
+             _passage("Old: data center revenue fell", day="2026-09-01",
+                      source="Reuters")]
+    assert _theses(path, date(2026, 10, 21), noise, _no_judge) == []
+    [entry] = journal.load(path)
+    assert entry.snapshot["checked"] == "2026-10-21" and entry.state == "open"
+    assert len(entry.snapshot["seen"]) == 1  # the old one is not this rule's
+    # Read today already: not again on a Regenerate.
+    assert _theses(path, date(2026, 10, 21), [_passage("Revenue guidance cut")],
+                   _no_judge) == []
+
+
+def test_damage_to_a_pillar_meets_the_rule_with_its_quote(path):
+    rule = _thesis(path)
+    news = [_passage("Microsoft cuts its capex plan for AI data centers by 20%",
+                     source="Reuters"),
+            _passage("NVIDIA price target raised at Morgan Stanley", source="Barron's")]
+    shown = []
+
+    def judge(ticker, pillars, passages):
+        shown.extend(passages)
+        return {"verdicts": [{"pillar": "A", "verdict": "damaged", "item": 0,
+                              "quote": "Microsoft cuts its capex plan"}]}
+
+    [row] = _theses(path, date(2026, 10, 21), news, judge)
+    # A price target says nothing a pillar stands on: sieved out unasked.
+    assert [p["source"] for p in shown] == ["Reuters"]
+    assert row["id"] == rule.id and row["met"]
+    assert row["pillar"] == PILLARS[0] and row["verdict"] == "damaged"
+    assert row["quote"] == "Microsoft cuts its capex plan" and row["source"] == "Reuters"
+    line = journal.line_for(journal.load(path)[0])
+    assert "pillar damaged: Hyperscalers" in line
+    [again] = journal.measured(journal.load(path), {}, None)
+    assert again["pillar"] == PILLARS[0]
+
+
+def test_one_watch_is_noise_the_same_worry_again_within_a_month_is_not(path):
+    _thesis(path)
+
+    def watch(pillar="B"):
+        def judge(ticker, pillars, passages):
+            return {"verdicts": [{"pillar": pillar, "verdict": "watch", "item": 0,
+                                  "quote": passages[0]["text"][:20]}]}
+        return judge
+
+    day = date(2026, 10, 10)
+    assert _theses(path, day, [_passage("Data center orders slip at one customer",
+                                        day="2026-10-10")], watch()) == []
+    [entry] = journal.load(path)
+    assert entry.snapshot["watch"] == ["1:2026-10-10"]
+    assert "watching since 2026-10-10: Data center" in journal.line_for(entry)
+    # A watch on the other pillar is its own worry.
+    assert _theses(path, day + timedelta(days=1),
+                   [_passage("Capex plans paused at Meta", day="2026-10-11")],
+                   watch("A")) == []
+    # The first pillar again, 40 days on: the first watch has aged out.
+    later = day + timedelta(days=40)
+    assert _theses(path, later,
+                   [_passage("Data center sales slow", day=later.isoformat())],
+                   watch()) == []
+    # And once more within the month: met, on the second watch.
+    [row] = _theses(path, later + timedelta(days=5),
+                    [_passage("Data center revenue misses", day="2026-11-24")], watch())
+    assert row["verdict"] == "watch" and row["pillar"] == PILLARS[1]
+
+
+def test_a_verdict_off_what_it_was_shown_is_dropped(path):
+    _thesis(path)
+    news = [_passage("Revenue for data center grew 50%", source="Reuters")]
+    for bad in ({"pillar": "C", "verdict": "damaged", "item": 0, "quote": "Revenue"},
+                {"pillar": "A", "verdict": "damaged", "item": 4, "quote": "Revenue"},
+                {"pillar": "A", "verdict": "damaged", "item": 0, "quote": "revenue fell"},
+                {"pillar": "A", "verdict": "fatal", "item": 0, "quote": "Revenue"}):
+        assert journal._thesis_judged("NVDA", PILLARS, news,
+                                      lambda *a, v=bad: {"verdicts": [v]}) == []
+    # No model answered: nothing stamped, the passages wait for tomorrow.
+    assert _theses(path, date(2026, 10, 21), news, lambda *a: None) == []
+    assert "checked" not in journal.load(path)[0].snapshot
+
+
+def test_a_round_asks_at_most_max_calls_the_longest_unread_first(path):
+    for ticker in ("AMD", "NVDA", "TSM"):
+        _thesis(path, ticker=ticker)
+    asked = []
+
+    def judge(ticker, pillars, passages):
+        asked.append(ticker)
+        return {"verdicts": []}
+
+    news = [_passage("Data center revenue grows", source="Reuters")]
+    _theses(path, date(2026, 10, 21), news, judge, max_calls=2)
+    assert asked == ["AMD", "NVDA"]
+    unread = [e.ticker for e in journal.load(path) if "checked" not in e.snapshot]
+    assert unread == ["TSM"]
+    _theses(path, date(2026, 10, 22), news, judge, max_calls=2)
+    assert asked[2] == "TSM"
+
+
+def test_a_thesis_rule_is_left_out_of_the_event_round(path):
+    _thesis(path)
+    assert journal.check_slow(path, date(2026, 10, 21), quarters_of=list,
+                              passages_of=_no_passages, judge=_no_judge) == []
+
+
+def test_the_thesis_judge_reads_its_contract(monkeypatch):
+    from stocks.chat import exit_judge
+
+    assert exit_judge.parse_thesis('{"verdicts": []}') == {"verdicts": []}
+    assert exit_judge.parse_thesis("all noise") is None
+    asked = {}
+
+    def complete(prefs, system, messages, timeout_s, *, spend_free, accept):
+        asked.update(system=system, text=messages[-1]["content"])
+        return accept('{"verdicts": [{"pillar": "B", "verdict": "watch", '
+                      '"item": 0, "quote": "slip"}]}')
+
+    patch_engine(monkeypatch, "complete_attempts", complete)
+    judge = exit_judge.make_thesis_judge({}, spend_free=lambda prefs: True)
+    got = judge("NVDA", PILLARS, [_passage("Orders slip")])
+    assert got == {"verdicts": [{"pillar": "B", "verdict": "watch", "item": 0,
+                                 "quote": "slip"}]}
+    assert "B. Data center revenue keeps growing" in asked["system"]
+    assert "[0] 8-K (5.02)" in asked["text"]
+    assert judge("NVDA", [], [_passage("x")]) is None
+
+
+def test_the_route_serves_a_rule_whose_checks_keep_lists(book):
+    journal.add_criteria(book.journal, "AMD", [
+        {"rule": "ceo_change"}, {"rule": "thesis", "pillars": PILLARS}], DAY)
+    journal.check_slow(book.journal, date(2026, 10, 21), quarters_of=list,
+                       passages_of=lambda t, s: [_passage("Nothing to see")],
+                       judge=_no_judge)
+    _theses(book.journal, date(2026, 10, 21),
+            [_passage("NVDA shares rise", source="Yahoo")], _no_judge)
+    got = TestClient(fastapi_app).get("/v1/journal",
+                                      params={"account": EMAIL, "type": "criterion"},
+                                      headers=AUTH)
+    assert got.status_code == 200
+    snaps = {e["snapshot"]["rule"]: e["snapshot"] for e in got.json()["entries"]}
+    assert snaps["thesis"]["pillars"] == PILLARS
+    assert isinstance(snaps["ceo_change"]["seen"], list)

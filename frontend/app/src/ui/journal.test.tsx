@@ -199,6 +199,18 @@ describe("an exit rule", () => {
     ).toBe("journal.crit_gross_margin_below(40)");
   });
 
+  it("reads a thesis rule as its pillars", () => {
+    expect(
+      ruleText(
+        echo,
+        rule({
+          snapshot: { rule: "thesis", pillars: ["Capex grows", "Margins hold"] },
+        }),
+        "en",
+      ),
+    ).toBe("journal.crit_thesis(Capex grows · Margins hold)");
+  });
+
   it("is live while open or met, not once retired or for a proposal", () => {
     expect(liveRule(rule())).toBe(true);
     expect(liveRule(rule({ state: "hit" }))).toBe(true);
@@ -251,6 +263,26 @@ describe("an exit rule", () => {
     expect(out).toContain("journal.met_on");
     expect(out).toContain("“Lisa Su will step down as CEO”");
     expect(out).toContain("8-K (5.02) · 2026-10-20");
+    expect(out).not.toContain("journal.pillar_hit");
+  });
+
+  it("names the pillar a thesis rule was met against", () => {
+    const out = renderToStaticMarkup(
+      <MetOn
+        entry={rule({
+          state: "hit",
+          snapshot: {
+            rule: "thesis",
+            pillars: ["Capex grows"],
+            pillar: "Capex grows",
+            quote: "Microsoft cuts its capex plan",
+            source: "Reuters",
+          },
+        })}
+      />,
+    );
+    expect(out).toContain("journal.pillar_hit");
+    expect(out).toContain("“Microsoft cuts its capex plan”");
   });
 });
 

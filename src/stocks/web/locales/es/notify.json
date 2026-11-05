@@ -36,5 +36,7 @@
   "notify.push_test_body": "Este dispositivo recibirá el resumen, las alertas de precio y las respuestas listas.",
   "notify.digest_title_book": "Cartera {value} · hoy {change}",
   "notify.ex_dividends": "Ex-dividendo",
-  "notify.weekly_title_book": "Tu semana {change} · cartera {value}"
+  "notify.weekly_title_book": "Tu semana {change} · cartera {value}",
+  "notify.thesis_title": "{ticker}: un hecho contra tu tesis",
+  "notify.thesis_line": "{pillar}: «{quote}»"
 }
