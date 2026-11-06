@@ -837,12 +837,14 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # reads, and a cheap model's window is the smaller one — then the cases
     # join the question and the whole is fitted again.
     sides: list[dict] = []
+    kept_sides: list[dict] = []
     stopping.check()
     if on_subagent is not None and (
             debate.wants(message) or (asked_for is not None and asked_for.debate)):
         say("debating")
         sides = debate.run(provider, key, msgs, lang, on_event=on_subagent,
                            timeout=min(timeout_s, debate.TIMEOUT))
+        kept_sides = debate.recorded(sides)
         if sides:
             msgs[-1]["content"] += debate.brief(sides)
             msgs = tokens.fit(msgs, system=system)
@@ -907,7 +909,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps=steps,
         lang=lang,
         activities=activities,
-        debate=sides,
+        debate=kept_sides,
         learned=learned,
         recalled=recalled,
         learning=learning,

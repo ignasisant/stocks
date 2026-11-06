@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from stocks import session
 from stocks.api.deps import Account, ShareWrite, Writer
-from stocks.api.routes.chat.messages import ActivityOut, Source
+from stocks.api.routes.chat.messages import ActivityOut, DebateSide, Source
 from stocks.api.routes.chat.preferences import _prefs
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -34,16 +34,31 @@ class ShareRequest(BaseModel):
     preview: bool = False
 
 
+class SharedTurn(BaseModel):
+    """An exchange of the thread before a shared answer, cut as it is."""
+
+    question: str = ""
+    content: str = ""
+    debate: list[DebateSide] = []
+    web: list[Source] = []
+    skills: list[str] = []
+    activities: list[ActivityOut] = []
+
+
 class SharedAnswer(BaseModel):
     """One shared answer or list as its link shows it. `id` and `created` are
     "" on a preview; `by` is the sharer's first name, "" on a link made before
     it was kept; `mine` says the reader is the account that shared it. A
-    list (`kind` "watchlist") has `title` and `tickers` and no question."""
+    list (`kind` "watchlist") has `title` and `tickers` and no question.
+    `turns` are the thread's exchanges above the answer, oldest first; [] on
+    a link made before they were kept."""
 
     id: str = ""
     kind: str = "answer"
     question: str = ""
     content: str = ""
+    debate: list[DebateSide] = []
+    turns: list[SharedTurn] = []
     title: str = ""
     tickers: list[str] = []
     web: list[Source] = []
@@ -56,20 +71,30 @@ class SharedAnswer(BaseModel):
     mine: bool = False
 
 
-def _out(share: dict, mine: bool) -> SharedAnswer:
-    from stocks.web import shares
-
-    return SharedAnswer(
-        id=str(share.get("id") or ""),
-        kind=shares.kind_of(share),
-        title=str(share.get("title") or ""),
-        tickers=[str(t) for t in share.get("tickers") or []],
+def _turn(share: dict) -> SharedTurn:
+    return SharedTurn(
         question=str(share.get("question") or ""),
         content=str(share.get("content") or ""),
+        debate=[DebateSide(side=str(d.get("side") or ""), text=str(d.get("text") or ""),
+                           failed=d.get("failed") is True)
+                for d in share.get("debate") or [] if isinstance(d, dict)],
         web=[Source(**w) for w in share.get("web") or [] if isinstance(w, dict)],
         skills=[str(s) for s in share.get("skills") or []],
         activities=[ActivityOut(**a) for a in share.get("activities") or []
                     if isinstance(a, dict)],
+    )
+
+
+def _out(share: dict, mine: bool) -> SharedAnswer:
+    from stocks.web import shares
+
+    return SharedAnswer(
+        **_turn(share).model_dump(),
+        id=str(share.get("id") or ""),
+        kind=shares.kind_of(share),
+        title=str(share.get("title") or ""),
+        tickers=[str(t) for t in share.get("tickers") or []],
+        turns=[_turn(t) for t in share.get("turns") or [] if isinstance(t, dict)],
         masked=share.get("masked") is True,
         by=str(share.get("by") or ""),
         lang=str(share.get("lang") or ""),

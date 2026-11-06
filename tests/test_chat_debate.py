@@ -36,6 +36,12 @@ def test_the_brief_carries_both_cases_and_the_rule():
     assert debate.brief([]) == ""
 
 
+def test_a_side_that_did_not_speak_is_recorded_as_failed_in_order():
+    kept = debate.recorded([{"side": "bear", "text": "- debt"}])
+    assert kept == [{"side": "bull", "text": "", "failed": True},
+                    {"side": "bear", "text": "- debt"}]
+
+
 def test_each_side_is_told_to_argue_only_its_own_case():
     bull, bear = debate._system("bull", "es"), debate._system("bear", "es")
     assert "case FOR" in bull and "case AGAINST" in bear

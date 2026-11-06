@@ -2110,7 +2110,8 @@ def test_a_decision_is_argued_by_two_subagents_before_it_is_answered(
     assert [d["side"] for d in result["debate"]] == ["bull", "bear"]
     cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
     stored = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"][-1]
-    assert stored["debate"] == result["debate"]
+    assert [(d["side"], d["text"], d["failed"]) for d in stored["debate"]] == [
+        (d["side"], d["text"], False) for d in result["debate"]]
 
 
 def test_the_answer_is_told_both_cases(client, account, signed_in, monkeypatch):
@@ -2130,7 +2131,7 @@ def test_the_answer_is_told_both_cases(client, account, signed_in, monkeypatch):
     assert "Weigh them" in asked
 
 
-def test_a_side_that_fails_is_absent_and_the_answer_goes_on(
+def test_a_side_that_fails_is_kept_as_failed_and_the_answer_goes_on(
     client, account, signed_in, served
 ):
     served(Analysts(fail="bear"))
@@ -2138,8 +2139,15 @@ def test_a_side_that_fails_is_absent_and_the_answer_goes_on(
     (failed,) = [e for e in stream if e["type"] == "SUBAGENT_ERROR"]
     assert failed["code"] == "chat.debate_failed"
     result = finished(stream)["result"]
-    assert [d["side"] for d in result["debate"]] == ["bull"]
+    assert [(d["side"], d.get("failed", False)) for d in result["debate"]] == [
+        ("bull", False), ("bear", True)]
     assert result["text"] == "Hola mundo"
+    # Read back, the bear card still says it did not arrive rather than
+    # leaving the bull case to pass for the whole debate.
+    cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
+    stored = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"][-1]
+    assert [(d["side"], d["failed"]) for d in stored["debate"]] == [
+        ("bull", False), ("bear", True)]
 
 
 def test_a_question_that_asks_for_no_decision_is_not_argued(

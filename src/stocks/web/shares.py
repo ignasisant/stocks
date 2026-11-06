@@ -6,10 +6,13 @@ sent to a group chat is opened weeks later. So `create` cuts the answer once
 (`chat/share_mask.py`) and writes it to data/shares/<id>.json, mirrored to the
 bucket like feedback; `load` reads it from either.
 
-What is copied: the question, the answer's words, the pages it cited, the
-lenses it used and the surfaces it drew (inert). What never is: its tool
-trace, the memories it read or wrote, a proposal, the debate, the model. A
-trace quotes the book line by line, and none of the rest is the answer.
+What is copied: the question, the answer's words, the bull and bear cases
+argued above it, the pages it cited, the lenses it used and the surfaces it
+drew (inert). The exchanges of the thread before it go too (`turns`), each cut
+the same way: an answer read alone loses the "and what about…" it replied
+to. What comes after it in the thread does not. What never is: a tool trace,
+the memories read or written, a proposal, the model. A trace quotes the book
+line by line, and none of the rest is the answer.
 
 The id is random (`token_urlsafe`), so a link is found only by being sent.
 The sharer's answer is stamped with the links it went out under
@@ -49,6 +52,8 @@ SHARES_DIR = DATA_DIR / "shares"
 # server's card both check it before a path is built from it.
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,24}$")
 _QUESTION_CHARS = 1000
+# The thread above a shared answer: its last exchanges, not a long session.
+_TURNS_MAX = 20
 # How much of the question names a link in the account's list.
 _LISTED_CHARS = 140
 # A shared list: past this many it is a dump, not a pick; a title is a group
@@ -67,22 +72,50 @@ def _path(share_id: str) -> Path | None:
 
 
 def snapshot(found: dict, masked: bool) -> dict:
-    """What a link to the answer `found` (`auth.find_answer`) shows."""
-    answer = found["answer"]
-    question = found["question"][:_QUESTION_CHARS]
+    """What a link to the answer `found` (`auth.find_answer`) shows: the
+    exchange, the thread's earlier ones above it, and the cut."""
+    return {**_exchange(found["question"], found["answer"], masked),
+            "turns": _turns(found.get("earlier") or [], masked),
+            "masked": masked}
+
+
+def _turns(earlier: list[dict], masked: bool) -> list[dict]:
+    """The exchanges of `earlier` (a thread's messages, oldest first), the
+    last _TURNS_MAX. A question with nothing to read under it (failed,
+    stopped, never answered) drops, so every turn is a question and its
+    answer."""
+    turns: list[dict] = []
+    question = ""
+    for m in earlier:
+        if m.get("role") == "user":
+            question = str(m.get("content") or "")
+        elif m.get("role") == "assistant":
+            if m.get("content") or m.get("activities"):
+                turns.append(_exchange(question, m, masked))
+            question = ""
+    return turns[-_TURNS_MAX:]
+
+
+def _exchange(question: str, answer: dict, masked: bool) -> dict:
+    question = question[:_QUESTION_CHARS]
     content = str(answer.get("content") or "")
+    debate = [{"side": str(d.get("side") or ""), "text": str(d.get("text") or ""),
+               **({"failed": True} if d.get("failed") is True else {})}
+              for d in answer.get("debate") or []
+              if isinstance(d, dict) and (d.get("text") or d.get("failed") is True)]
     if masked:
         question = share_mask.mask_text(question)
         content = share_mask.mask_text(content)
+        debate = [{**d, "text": share_mask.mask_text(str(d["text"]))} for d in debate]
     return {
         "question": question,
         "content": content,
+        "debate": debate,
         "web": [{"title": str(w.get("title") or ""), "url": str(w.get("url") or ""),
                  "step": str(w.get("step") or "")}
                 for w in answer.get("web") or [] if isinstance(w, dict)],
         "skills": [str(s) for s in answer.get("skills") or []],
         "activities": share_mask.surfaces(answer.get("activities") or [], masked),
-        "masked": masked,
     }
 
 
@@ -112,7 +145,7 @@ def create(
     links = _links(found["answer"])
     for link in links:
         if link["masked"] == masked and (kept := load(link["id"])) is not None:
-            return kept
+            return _backfilled(kept, snapshot(found, masked))
     share_id = secrets.token_urlsafe(8)
     share = {
         "id": share_id,
@@ -133,8 +166,24 @@ def create(
     _write_list(paths, [_entry(share),
                         *(k for k in listed(paths) if k["id"] != share_id)])
     obs.event("share.created", share=share_id, masked=masked,
-              surfaces=len(share["activities"]), chars=len(share["content"]))
+              surfaces=len(share["activities"]), chars=len(share["content"]),
+              turns=len(share["turns"]))
     return share
+
+
+def _backfilled(kept: dict, cut: dict) -> dict:
+    """A link made before the cases or the earlier turns were copied gets
+    them the next time its answer is shared — the preview showed them: the
+    same link, now with what the sharer saw above the answer."""
+    missing = {key: cut[key] for key in ("debate", "turns")
+               if key not in kept and cut[key]}
+    if not missing:
+        return kept
+    kept = {**kept, **missing}
+    path = SHARES_DIR / f"{kept['id']}.json"
+    atomic.write_json(path, kept, ensure_ascii=False, indent=2)
+    storage.persist(path)
+    return kept
 
 
 def kind_of(share: dict) -> str:
@@ -317,21 +366,31 @@ def listed(paths: UserPaths) -> list[dict]:
 def continue_from(paths: UserPaths, share: dict) -> str:
     """Start the reader's own thread from a shared answer; returns its id.
 
-    The question and the answer go in as its first turns, so the next
-    question is asked with them above it, and the answer gets an id of this
-    account's (a rating names it by that) and says where it came from."""
-    question = str(share.get("question") or "")
-    answer = {
-        "role": "assistant",
-        "content": str(share.get("content") or ""),
-        "skills": list(share.get("skills") or []),
-        "web": list(share.get("web") or []),
-        "activities": list(share.get("activities") or []),
-        "id": secrets.token_hex(6),
-        "shared_from": str(share.get("id") or ""),
-    }
-    cid = auth.seed_conversation(
-        question, [{"role": "user", "content": question}, answer], paths.chat)
+    The shared thread goes in as its first turns, the earlier exchanges then
+    the shared one, so the next question is asked with all of them above it.
+    Each answer gets an id of this account's (a rating names it by that), and
+    the shared one says where it came from. Named by the thread's first
+    question, as the sharer's was."""
+    exchanges = [t for t in share.get("turns") or [] if isinstance(t, dict)]
+    exchanges.append(share)
+    messages: list[dict] = []
+    for each in exchanges:
+        question = str(each.get("question") or "")
+        if question:
+            messages.append({"role": "user", "content": question})
+        messages.append({
+            "role": "assistant",
+            "content": str(each.get("content") or ""),
+            "skills": list(each.get("skills") or []),
+            "debate": list(each.get("debate") or []),
+            "web": list(each.get("web") or []),
+            "activities": list(each.get("activities") or []),
+            "id": secrets.token_hex(6),
+        })
+    messages[-1]["shared_from"] = str(share.get("id") or "")
+    title = next((str(t.get("question") or "") for t in exchanges
+                  if t.get("question")), "")
+    cid = auth.seed_conversation(title, messages, paths.chat)
     obs.event("share.continued", share=str(share.get("id") or ""))
     return cid
 
