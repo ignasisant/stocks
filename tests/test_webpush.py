@@ -270,6 +270,47 @@ def test_one_broken_device_does_not_stop_the_others(tmp_path, vapid, outbox, mon
     assert webpush.answer_ready(path, "owner", thread="t", question="q") == 1
 
 
+def test_what_was_sent_is_logged_newest_first(tmp_path, vapid, outbox):
+    path = tmp_path / "push.json"
+    keep(path, Browser())
+    keep(path, Browser("https://web.push.apple.com/abc"))
+    outbox.status["https://web.push.apple.com/abc"] = 429
+    message = {"title": "NVDA", "body": "Below 90", "url": "/ticker?ticker=NVDA"}
+    assert webpush.send_all(path, message, topic="alerts") == 1
+    webpush.answer_ready(path, "owner", thread="t", question="q")
+    first, second = webpush.history(path)[:2]
+    assert first["topic"] == "answer" and second["topic"] == "alerts"
+    assert second["title"] == "NVDA" and second["took"] == 1 and second["devices"] == 2
+
+
+def test_the_log_keeps_what_another_process_logged(tmp_path, vapid, outbox, monkeypatch):
+    path = tmp_path / "push.json"
+    keep(path, Browser())
+    theirs = {"sent": [{"id": "cron1", "at": 1, "topic": "digest", "title": "d"}]}
+    monkeypatch.setattr("stocks.storage.read",
+                        lambda p: json.dumps(theirs).encode())
+    webpush.send_all(path, {"title": "mine"}, topic="alerts")
+    assert [r["id"] for r in webpush.history(path)][1:] == ["cron1"]
+    for n in range(webpush.LOG_ROWS + 3):
+        webpush.send_all(path, {"title": f"m{n}"}, topic="alerts")
+    rows = webpush.history(path)
+    assert len(rows) == webpush.LOG_ROWS
+    assert rows[0]["title"] == f"m{webpush.LOG_ROWS + 2}"
+    assert "cron1" not in {r["id"] for r in rows}  # the oldest went past the cap
+
+
+def test_no_device_logs_nothing(tmp_path, vapid, outbox):
+    path = tmp_path / "push.json"
+    assert webpush.send_all(path, {"title": "x"}, topic="alerts") == 0
+    assert webpush.history(path) == []
+
+
+def test_the_log_is_one_of_the_accounts_files():
+    paths = accounts.paths_for(EMAIL, None)
+    assert paths.push_log.name in accounts.USER_FILES
+    assert paths.push_log.name == webpush.LOG_FILE
+
+
 # ---------------------------------------------------------------- presence
 
 

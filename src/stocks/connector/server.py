@@ -21,6 +21,8 @@ those are.
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -79,7 +81,9 @@ selling it again; say what changed since, if anything did. Those are context, \
 not data: every figure, price and date comes from the other tools. \
 `decision_journal` is what the app itself already proposed to them (sell, \
 trim, harvest a loss, set an alert) and what became of it: check it before \
-proposing the same move again.
+proposing the same move again. The person's own exit rules are in \
+`kill_criteria_status`; to draft a thesis rule, read `ticker_news` and try \
+the pillars with `check_thesis` before proposing them.
 
 The TopStocks assistant analyses through written frameworks; use the same \
 ones so both give the person one way of reasoning. Before analysing a \
@@ -111,11 +115,24 @@ class _Server(MCPServer):
         return [t for t in listed if t.name not in tools.WRITE_NAMES]
 
 
+def _catalog() -> str:
+    """A short hash of the tool catalog: names, descriptions, signatures.
+
+    The server is stateless, so it can never send `tools/list_changed`; a
+    client that cached the tools at connect keeps the old shapes until it
+    reconnects. Carried in the version, a new catalog at least shows as a
+    new server to a client that compares them."""
+    text = "\n".join(f"{s.name}|{s.description}|{inspect.signature(s.fn)}"
+                     for s in tools.TOOLS)
+    return hashlib.sha256(text.encode()).hexdigest()[:8]
+
+
 def _version() -> str:
     try:
-        return version("stocks")
+        base = version("stocks")
     except PackageNotFoundError:
-        return ""
+        base = "0"
+    return f"{base}+tools.{_catalog()}"
 
 
 def _hosts(origin: str) -> list[str]:

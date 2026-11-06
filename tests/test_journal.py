@@ -1095,3 +1095,55 @@ def test_the_route_serves_a_rule_whose_checks_keep_lists(book):
     snaps = {e["snapshot"]["rule"]: e["snapshot"] for e in got.json()["entries"]}
     assert snaps["thesis"]["pillars"] == PILLARS
     assert isinstance(snaps["ceo_change"]["seen"], list)
+
+
+# ------------------------------------------------------- thesis, tried first
+
+
+def test_a_thesis_tried_first_sifts_judges_and_writes_nothing(path):
+    news = [_passage("NVIDIA price target raised at Morgan Stanley", source="Barron's"),
+            _passage("Data center orders slip at one customer", day="2026-10-10",
+                     source="Reuters"),
+            _passage("Data center orders slip again at a second customer",
+                     day="2026-10-14", source="Reuters")]
+
+    def judge(ticker, pillars, passages):
+        return {"verdicts": [
+            {"pillar": "B", "verdict": "watch", "item": i,
+             "quote": passages[i]["text"][:20]} for i in range(len(passages))]}
+
+    out = journal.trial_thesis("NVDA", PILLARS, news, judge)
+    assert out["passages"] == 3 and out["material"] == 2
+    assert [s["source"] for s in out["shown"]] == ["Reuters", "Reuters"]
+    assert out["judged"] and {v["pillar"] for v in out["verdicts"]} == {PILLARS[1]}
+    # Watches on one pillar from two different days: the live rule would meet.
+    assert out["would_meet"]["verdict"] == "watch"
+    assert not path.exists()
+
+
+def test_a_tried_thesis_with_one_watch_or_no_model_would_not_meet(path):
+    one = [_passage("Data center orders slip at one customer", source="Reuters")]
+
+    def watch(ticker, pillars, passages):
+        return {"verdicts": [{"pillar": "B", "verdict": "watch", "item": 0,
+                              "quote": "orders slip"}]}
+
+    assert journal.trial_thesis("NVDA", PILLARS, one, watch)["would_meet"] is None
+    silent = journal.trial_thesis("NVDA", PILLARS, one, lambda *a: None)
+    assert not silent["judged"] and silent["shown"]
+    quiet = journal.trial_thesis("NVDA", PILLARS, [], _no_judge)
+    assert quiet["shown"] == [] and not quiet["judged"]
+
+
+def test_many_holdings_write_once_and_an_unusable_one_writes_nothing(path, monkeypatch):
+    saves = []
+    real = journal._save
+    monkeypatch.setattr(journal, "_save", lambda p, e: saves.append(1) or real(p, e))
+    done = journal.add_criteria_many(path, [
+        ("nvda", [{"rule": "thesis", "pillars": PILLARS}], "AI capex"),
+        ("AMD", [{"rule": "drawdown_cost", "level": 150}], ""),
+        ("MSFT", [{"rule": "below", "level": 300}, {"rule": "ceo_change"}], ""),
+    ], DAY)
+    assert [len(w) for w in done] == [1, 0, 2] and len(saves) == 1
+    assert done[0][0].ticker == "NVDA" and done[0][0].evidence == "AI capex"
+    assert {e.ticker for e in journal.criteria(journal.load(path))} == {"NVDA", "MSFT"}

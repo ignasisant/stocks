@@ -932,3 +932,115 @@ def test_harvest_and_rebalance_run_the_chats_engines(site, token, monkeypatch):
     assert asked == [("AAPL", 25)]
     assert moved["shares"] == -5.0 and moved["extra_tax"] == 30.0
     assert moved["weight"] == 50.0
+
+
+# ----------------------------------------------------- exit rules from outside
+
+NEWS = [
+    {"source": "8-K (Results)", "day": "2026-10-30",
+     "text": "Item 2.02. Apple reported revenue of $102 billion, up 8%."},
+    {"source": "Reuters", "day": "2026-11-02",
+     "text": "Apple faces EU antitrust probe over App Store fees"},
+    {"source": "Barron's", "day": "2026-11-03", "text": "Apple stock jumps 2%"},
+]
+
+
+def test_news_is_what_the_rules_read_newest_first(site, token, monkeypatch):
+    from stocks.api import briefing
+
+    asked = []
+    monkeypatch.setattr(briefing, "thesis_passages",
+                        lambda t, since: asked.append((t, since)) or NEWS)
+    data = ok(call(site, token, "ticker_news", ticker="aapl", since="2026-10-25"))
+    assert asked[0][0] == "AAPL" and data["total"] == 3
+    assert [i["day"] for i in data["items"]] == ["2026-11-03", "2026-11-02", "2026-10-30"]
+    assert data["items"][2]["filing"] is True
+    bad = call(site, token, "ticker_news", ticker="AAPL", since="last week")
+    assert bad["isError"] is True and "ISO date" in result_text(bad)
+
+
+def test_a_thesis_is_tried_without_writing_a_rule(site, token, book, monkeypatch):
+    from stocks.api import briefing
+    from stocks.chat import exit_judge
+
+    monkeypatch.setattr(briefing, "thesis_passages", lambda t, since: NEWS)
+
+    def make(prefs, *, spend_free):
+        def judge(ticker, pillars, passages):
+            return {"verdicts": [{"pillar": "A", "verdict": "damaged", "item": 1,
+                                  "quote": "EU antitrust probe"}]}
+        return judge
+
+    monkeypatch.setattr(exit_judge, "make_thesis_judge", make)
+    data = ok(call(site, token, "check_thesis", ticker="AAPL",
+                   pillars=["App Store fees stay intact"], days=10))
+    assert data["material"] == 2  # the price move is sieved out
+    assert data["would_meet"]["quote"] == "EU antitrust probe"
+    assert data["would_meet"]["pillar"] == "App Store fees stay intact"
+    assert not book.journal.exists()
+
+
+def test_the_status_lists_rules_by_holding_and_the_bare_ones(
+        site, editor, book, monkeypatch):
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "_held", lambda paths: {"AAPL", "MSFT", "NVDA"})
+    ok(call(site, editor, "set_kill_criteria_batch", holdings=[
+        {"ticker": "aapl", "rules": [{"rule": "thesis", "pillars": ["Services grow"]}]},
+        {"ticker": "MSFT", "rules": [{"rule": "below", "level": 300}]},
+        {"ticker": "TSLA", "rules": [{"rule": "ceo_change"}]},
+    ]))
+    data = ok(call(site, editor, "kill_criteria_status"))
+    assert [h["ticker"] for h in data["holdings"]] == ["AAPL", "MSFT", "TSLA"]
+    assert data["holdings"][0]["rules"][0]["pillars"] == ["Services grow"]
+    assert data["without_rules"] == ["NVDA"]
+    assert data["without_thesis"] == ["MSFT", "NVDA"]
+    assert data["not_held"] == ["TSLA"]
+
+
+def test_a_batch_names_each_ticker_once_and_needs_the_write_scope(site, token, editor):
+    rule = [{"rule": "below", "level": 90.0}]
+    twice = call(site, editor, "set_kill_criteria_batch", holdings=[
+        {"ticker": "AAPL", "rules": rule}, {"ticker": "aapl", "rules": rule}])
+    assert twice["isError"] is True and "repeated: AAPL" in result_text(twice)
+    mixed = ok(call(site, editor, "set_kill_criteria_batch", holdings=[
+        {"ticker": "AAPL", "rules": rule},
+        {"ticker": "AMD", "rules": [{"rule": "drawdown_cost", "level": 150}]}]))
+    assert list(mixed["written"]) == ["AAPL"] and mixed["refused"] == ["AMD"]
+    refused = call(site, token, "set_kill_criteria_batch",
+                   holdings=[{"ticker": "AAPL", "rules": rule}])
+    assert refused["isError"] is True and "can only read" in result_text(refused)
+
+
+def test_the_brief_reads_the_stored_card_and_never_writes(site, token, monkeypatch):
+    from stocks.api import daily_card
+    from stocks.api.routes import today
+
+    monkeypatch.setattr(today, "_market", lambda lang: (None, True))
+    monkeypatch.setattr(daily_card, "request", lambda *a, **k: pytest.fail("wrote"))
+    data = ok(call(site, token, "daily_brief"))
+    assert data["market"] is None and data["market_stale"] is True
+    assert data["card"]["action_day"] == data["action_day"]
+
+
+def test_push_history_and_a_test_push(site, token, editor, book, monkeypatch):
+    from stocks.notify import webpush
+
+    webpush.log(book.push, {"title": "NVDA below 90", "url": "/x"},
+                topic="alerts", devices=2, took=1)
+    data = ok(call(site, token, "push_history"))
+    assert data["sent"][0]["title"] == "NVDA below 90"
+    assert data["sent"][0]["at"].endswith("+00:00")
+    monkeypatch.setattr(webpush, "configured", lambda: True)
+    none = call(site, editor, "send_test_push")
+    assert none["isError"] is True and "No device" in result_text(none)
+    monkeypatch.setattr(webpush, "devices", lambda path: 2)
+    monkeypatch.setattr(webpush, "send_all", lambda path, message, topic: 2)
+    assert ok(call(site, editor, "send_test_push")) == {
+        "kind": "push_test", "devices": 2, "took": 2}
+
+
+def test_the_version_names_the_tool_catalog():
+    from stocks.connector import server
+
+    assert "+tools." in server._version()

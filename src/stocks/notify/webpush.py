@@ -28,6 +28,12 @@ Subscriptions live in one JSON file per account (`UserPaths.push`, in
 push service answering 404/410 means the subscription is gone (app removed,
 permission revoked) and the row goes with it.
 
+What was sent is kept beside them, in its own file (`UserPaths.push_log`):
+the last `LOG_ROWS` messages an account was pushed, with how many devices
+took each, so the reader (and Claude, through the connector) can see what
+reached them. Its own file because the crons write it from another process:
+a stale copy written back there loses a log line, never a subscription.
+
 Whether someone is looking is `seen`/`present`: an open, visible app posts a
 heartbeat, and a finished answer skips the push while one is fresh. In memory
 on purpose — the service runs one instance (`runs.py` relies on the same), and
@@ -61,6 +67,9 @@ from stocks import atomic, obs, storage
 from stocks.secrets_env import secret
 
 FILE = "push.json"
+LOG_FILE = "push_log.json"
+# Messages kept in the log, newest last.
+LOG_ROWS = 50
 
 # Devices per account; the oldest goes past it.
 MAX_ROWS = 10
@@ -349,6 +358,54 @@ def _snippet(text: str, limit: int = 110) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
+def _log_rows(raw: bytes | str | None) -> list[dict]:
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        return []
+    rows = data.get("sent") if isinstance(data, dict) else None
+    return [r for r in rows or () if isinstance(r, dict) and r.get("id")]
+
+
+def history(path: Path) -> list[dict]:
+    """What this account was pushed, newest first (`log`)."""
+    try:
+        raw = path.with_name(LOG_FILE).read_text()
+    except OSError:
+        return []
+    return _log_rows(raw)[::-1]
+
+
+def log(path: Path, message: dict, *, topic: str, devices: int, took: int) -> None:
+    """Keep one push in the account's log. The bucket's copy is merged in
+    first, as `journal._merged` does: a cron in another process may have
+    logged since this one restored the file. Never raises."""
+    with obs.swallow("push.log"):
+        target = path.with_name(LOG_FILE)
+        try:
+            mine = _log_rows(target.read_text())
+        except OSError:
+            mine = []
+        try:
+            theirs = _log_rows(storage.read(target))
+        except Exception:  # noqa: BLE001 — the local log still gets the line
+            theirs = []
+        at = time.time()
+        seed = f"{at}:{topic}:{os.getpid()}".encode()
+        row = {"id": hashlib.sha256(seed).hexdigest()[:12],
+               "at": round(at), "topic": topic[:32],
+               "title": str(message.get("title") or "")[:120],
+               "body": str(message.get("body") or "")[:300],
+               "url": str(message.get("url") or "")[:200],
+               "devices": devices, "took": took}
+        known = {r["id"] for r in mine}
+        rows = mine + [r for r in theirs if r["id"] not in known] + [row]
+        rows.sort(key=lambda r: float(r.get("at") or 0))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic.write_json(target, {"sent": rows[-LOG_ROWS:]}, indent=1)
+        storage.persist(target)
+
+
 def send_all(path: Path, message: dict, *, topic: str = "") -> int:
     """Push one message to every device of an account; how many took it.
 
@@ -358,9 +415,12 @@ def send_all(path: Path, message: dict, *, topic: str = "") -> int:
     if not configured():
         return 0
     took = 0
-    for row in list(_read(path).values()):
+    rows = list(_read(path).values())
+    for row in rows:
         with obs.swallow("push.send"):
             took += 200 <= send(path, row, message, topic=topic) < 300
+    if rows:
+        log(path, message, topic=topic, devices=len(rows), took=took)
     return took
 
 
@@ -371,7 +431,9 @@ def answer_ready(path: Path, owner: str, *, thread: str, question: str) -> int:
     from stocks.web.i18n import translate
 
     took = 0
-    for row in list(_read(path).values()):
+    message: dict = {}
+    rows = list(_read(path).values())
+    for row in rows:
         lang = row.get("lang") or "en"
         message = {
             "title": translate("notify.push_answer_title", lang),
@@ -381,4 +443,6 @@ def answer_ready(path: Path, owner: str, *, thread: str, question: str) -> int:
         }
         with obs.swallow("push.send"):
             took += 200 <= send(path, row, message, topic=thread) < 300
+    if rows:
+        log(path, message, topic="answer", devices=len(rows), took=took)
     return took

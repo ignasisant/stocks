@@ -45,7 +45,8 @@ GUEST_DIR = USERS_DIR / "_guest"
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE, journal.FILE, "devices.json", "push.json", "shares.json",
+    learnings.FILE, journal.FILE, "devices.json", "push.json", "push_log.json",
+    "shares.json",
 )
 
 
@@ -96,6 +97,11 @@ class UserPaths:
     def push(self) -> Path:
         """This account's Web Push subscriptions (stocks/notify/webpush.py)."""
         return self.action.with_name("push.json")
+
+    @property
+    def push_log(self) -> Path:
+        """What this account was pushed, newest last (webpush.log)."""
+        return self.action.with_name("push_log.json")
 
     @property
     def shares(self) -> Path:
@@ -286,6 +292,7 @@ def restore_account(
                 paths.verdicts,
                 paths.devices,
                 paths.push,
+                paths.push_log,
             ),
         )
     except Exception as exc:

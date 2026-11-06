@@ -1025,32 +1025,44 @@ def add_criteria(path: Path, ticker: str, rules: Iterable[dict], day: date,
     one that replaces it: the reader moved their line, and the journal keeps
     where it was. `thesis` is the why in the reader's words (or the chat's
     draft they approved), kept on every rule written with it."""
-    ticker = ticker.strip().upper()
-    rules = clean_rules(rules)
-    if not ticker or not rules:
-        return []
+    return add_criteria_many(path, [(ticker, rules, thesis)], day)[0]
+
+
+def add_criteria_many(path: Path, holdings: Iterable[tuple[str, Iterable[dict], str]],
+                      day: date) -> list[list[Entry]]:
+    """`add_criteria` for many holdings under one read and one write: the
+    entries written for each (ticker, rules, thesis), in order, empty for one
+    whose rules were all unusable."""
     iso, now = day.isoformat(), _now()
-    thesis = _text(thesis, MAX_THESIS)
-    written: list[Entry] = []
+    out: list[list[Entry]] = []
     with _LOCK:
         entries = load(path)
-        for item in rules:
-            subject = criterion_subject(ticker, item["rule"])
-            entry = Entry(
-                id=_new_id(), type="criterion", source="chat", action=item["rule"],
-                subject=subject, ticker=ticker,
-                snapshot=dict(item),
-                evidence=thesis, day=iso, last=iso, updated=now,
-            )
-            for i, e in enumerate(entries):
-                if e.type == "criterion" and e.subject == subject and e.state in LIVE:
-                    entries[i] = replace(e, state="retired", links=(*e.links, entry.id),
-                                         updated=now)
-                    entry = replace(entry, links=(*entry.links, e.id))
-            entries.append(entry)
-            written.append(entry)
-        _save(path, entries)
-    return written
+        for ticker, rules, thesis in holdings:
+            ticker = ticker.strip().upper()
+            kept = clean_rules(rules)
+            written: list[Entry] = []
+            out.append(written)
+            if not ticker or not kept:
+                continue
+            why = _text(thesis, MAX_THESIS)
+            for item in kept:
+                subject = criterion_subject(ticker, item["rule"])
+                entry = Entry(
+                    id=_new_id(), type="criterion", source="chat", action=item["rule"],
+                    subject=subject, ticker=ticker,
+                    snapshot=dict(item),
+                    evidence=why, day=iso, last=iso, updated=now,
+                )
+                for i, e in enumerate(entries):
+                    if e.type == "criterion" and e.subject == subject and e.state in LIVE:
+                        entries[i] = replace(e, state="retired",
+                                             links=(*e.links, entry.id), updated=now)
+                        entry = replace(entry, links=(*entry.links, e.id))
+                entries.append(entry)
+                written.append(entry)
+        if any(out):
+            _save(path, entries)
+    return out
 
 
 def retire(path: Path, entry_id: str) -> Entry | None:
@@ -1470,6 +1482,55 @@ def _thesis_judged(ticker: str, pillars: list[str], shown: list[dict],
     return out
 
 
+def _sifted(passages: list[dict], pillars: list[str]) -> list[tuple[dict, int]]:
+    """The passages a pillar could stand or fall on, each with where it says
+    so: the company's own filings before the press."""
+    stems = _pillar_words(pillars)
+    located = [(p, at) for p in passages if (at := _material(p, stems)) is not None]
+    located.sort(key=lambda pa: not str(pa[0].get("source") or "").startswith("8-K"))
+    return located
+
+
+def trial_thesis(ticker: str, pillars: list[str], passages: list[dict],
+                 judge: ThesisJudge) -> dict:
+    """A thesis read once over `passages` and nothing written: what the
+    daily check would sift out, what it would show the model and what the
+    model made of it. For drafting pillars before they are kept.
+
+    `would_meet` is the live rule's test on this one reading: a damage, or
+    watches on one pillar from items of two different days (the daily check
+    counts its own days; a backlog read at once stands in for them)."""
+    pillars = pillars_of(pillars)
+    fresh = [p for p in passages or ()
+             if isinstance(p, dict) and str(p.get("text") or "").strip()]
+    located = _sifted(fresh, pillars)
+    shown = located[:THESIS_PASSAGES]
+    out: dict = {"pillars": pillars, "passages": len(fresh),
+                 "material": len(located),
+                 "shown": [{"source": str(p.get("source") or ""),
+                            "day": str(p.get("day") or ""),
+                            "text": _excerpt(str(p["text"]), at)[:240]}
+                           for p, at in shown],
+                 "judged": False, "verdicts": [], "would_meet": None}
+    if not pillars or not shown:
+        return out
+    asked = [{**p, "text": _excerpt(str(p["text"]), at)} for p, at in shown]
+    verdicts = _thesis_judged(ticker, pillars, asked, judge)
+    if verdicts is None:
+        return out
+    days: dict[int, set[str]] = {}
+    for v in verdicts:
+        if v["verdict"] == "watch":
+            days.setdefault(v["pillar"], set()).add(str(v["item"].get("day") or ""))
+    rows = [{"pillar": pillars[v["pillar"]], "verdict": v["verdict"],
+             "quote": v["quote"], "source": str(v["item"].get("source") or ""),
+             "day": str(v["item"].get("day") or "")} for v in verdicts]
+    met = next((r for r in rows if r["verdict"] == "damaged"), None) or next(
+        (rows[i] for i, v in enumerate(verdicts)
+         if len(days.get(v["pillar"], ())) >= WATCH_TO_HIT), None)
+    return out | {"judged": True, "verdicts": rows, "would_meet": met}
+
+
 def _watching(raw: object, day: date) -> list[str]:
     """The thesis rule's watch notes still in the window, "<pillar>:<day>"."""
     floor = (day - timedelta(days=WATCH_DAYS)).isoformat()
@@ -1495,10 +1556,7 @@ def _check_thesis(e: Entry, day: date, passages_of, judge: ThesisJudge,
              if isinstance(p, dict) and str(p.get("text") or "").strip()
              and str(p.get("day") or "") >= since.isoformat()
              and _seen_key(p) not in seen]
-    stems = _pillar_words(pillars)
-    located = [(p, at) for p in fresh if (at := _material(p, stems)) is not None]
-    # The company's own filings before the press.
-    located.sort(key=lambda pa: not str(pa[0].get("source") or "").startswith("8-K"))
+    located = _sifted(fresh, pillars)
     shown = located[:THESIS_PASSAGES]
     watch = _watching(e.snapshot.get("watch"), day)
     out: dict = {"checked": iso}
