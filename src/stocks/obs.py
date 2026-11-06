@@ -205,6 +205,11 @@ class PlainFormatter(logging.Formatter):
 
 _YFINANCE_PANDAS_NOTICE = re.compile(
     r"(^|[/\\])yfinance[/\\.][^:]*:\d+: Pandas4Warning: ")
+# openpyxl's note on a workbook a broker exported without a default style
+# (ClickTrade's): it reads the cells all the same.
+_OPENPYXL_STYLE_NOTICE = re.compile(
+    r"(^|[/\\])openpyxl[/\\]styles[/\\][^:]*:\d+: UserWarning: "
+    r"Workbook contains no default style")
 
 
 class _PandasNoticesFromYfinance(logging.Filter):
@@ -218,7 +223,9 @@ class _PandasNoticesFromYfinance(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return not _YFINANCE_PANDAS_NOTICE.search(record.getMessage())
+        message = record.getMessage()
+        return not (_YFINANCE_PANDAS_NOTICE.search(message)
+                    or _OPENPYXL_STYLE_NOTICE.search(message))
 
 
 def setup(level: str | int | None = None, *, force: bool = False) -> None:
@@ -248,6 +255,10 @@ def setup(level: str | int | None = None, *, force: bool = False) -> None:
 
     for name in _NOISY:
         logging.getLogger(name).setLevel(logging.WARNING)
+    # trafilatura logs an empty page at ERROR (three lines per page, and the
+    # ERROR alert with them); `chat_web._extract` already reads its None as
+    # "nothing here" and falls back to lxml.
+    logging.getLogger("trafilatura").setLevel(logging.CRITICAL)
     yf_log = logging.getLogger("yfinance")
     if not any(isinstance(f, _YahooMissIsNotAnError) for f in yf_log.filters):
         yf_log.addFilter(_YahooMissIsNotAnError())

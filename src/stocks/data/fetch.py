@@ -617,7 +617,11 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         hit = _splits_memo.get(key)
     if hit is not None:
         return hit
-    if retired(key):
+    if retired(key) or unlisted({ticker, key}):
+        # Yahoo said this week it has no such symbol: asking for its bars
+        # gets a blank, counted as unanswered, so the warm's sweep never
+        # stamped a book that holds one and asked again on every tick
+        # (ORGN, 19 times in three days).
         return []
     if is_isin(key):
         # An ISIN nothing has placed yet is no symbol: yfinance would run its
@@ -815,6 +819,9 @@ def fetch_many(
     `attempts` and `trip` go to `retry`: a side errand asks once and leaves
     the cooldown alone.
     """
+    # A blank label (an empty cell some caller kept) is no symbol: Yahoo
+    # answers it with "Empty ticker name" in the middle of the book's batch.
+    tickers = [t for t in tickers if t and t.strip()]
     if not tickers:
         return {}
     # Hand-mapped coins skip Yahoo entirely: for some its symbol is another

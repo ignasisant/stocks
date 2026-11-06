@@ -252,6 +252,40 @@ def test_yahoo_misses_stay_off_the_log_but_still_reach_fetch():
     assert "METIS-EUR" in sink
 
 
+def test_a_workbook_without_a_default_style_stays_off_the_log():
+    seen: list[str] = []
+
+    class Sink(logging.Handler):
+        def emit(self, record):
+            seen.append(record.getMessage())
+
+    py_warnings = logging.getLogger("py.warnings")
+    sink = Sink()
+    py_warnings.addHandler(sink)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("always")
+            logging.captureWarnings(False)
+            obs.setup(force=True)
+            site = "/app/.venv/lib/python3.12/site-packages"
+            warnings.warn_explicit(
+                "Workbook contains no default style, apply openpyxl's default",
+                UserWarning, f"{site}/openpyxl/styles/stylesheet.py", 237,
+            )
+            warnings.warn_explicit(
+                "something of ours", UserWarning, "/app/src/stocks/x.py", 1,
+            )
+            logging.captureWarnings(False)
+    finally:
+        py_warnings.removeHandler(sink)
+    assert len(seen) == 1 and seen[0].startswith("/app/src/stocks/x.py")
+
+
+def test_an_empty_page_is_not_an_error_from_trafilatura():
+    obs.setup(force=True)
+    assert not logging.getLogger("trafilatura.utils").isEnabledFor(logging.ERROR)
+
+
 def test_sdk_http_clients_log_quietly():
     obs.setup(force=True)
     for name in ("httpx2", "primp", "google_genai"):

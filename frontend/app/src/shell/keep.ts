@@ -124,6 +124,23 @@ export async function recall(url: string): Promise<Kept | undefined> {
 }
 
 /**
+ * A screen threw while painted from the shelf: empty it, once, for this visit.
+ *
+ * Whatever kept answer it choked on would otherwise come back at every launch:
+ * the crash unmounts the screen, which cancels the live request that would
+ * have replaced it (seen on 2026-11-04, an iPhone app crashing Home on the
+ * same kept `/home/market` nine times in two hours). The next `/me` stamps the
+ * empty shelf for its owner again.
+ */
+export function forgetKept(): void {
+  const s = shelf;
+  if (!s || !recalled) return;
+  recalled = false;
+  ready = null;
+  s.reset({ owner: "", build: "" }).catch(() => undefined);
+}
+
+/**
  * Sign this device out: empty the shelf, end the session, land on the home
  * page as a guest.
  *

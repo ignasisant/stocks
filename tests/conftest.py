@@ -125,7 +125,7 @@ def _chat_keeps_forgotten():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _fx_offline():
+def _fx_offline(tmp_path_factory):
     """Answer the three frankfurter shapes `stocks.data.fx` asks for — latest,
     one day, a range — from a fixed table, without a socket.
 
@@ -154,10 +154,14 @@ def _fx_offline():
         day = date.today().isoformat() if when == "latest" else when
         return {"rates": {quote: rate}, "date": day}
 
-    before = fx.get_json
+    # The stub's rates are filed in the history like real ones: never in the
+    # checkout's data/fx_history.json.
+    before = fx.get_json, fx.FX_CACHE, fx._MEM_CACHE
     fx.get_json = get_json  # type: ignore[assignment]
+    fx.FX_CACHE = tmp_path_factory.mktemp("fx") / "fx_history.json"
+    fx._MEM_CACHE = None
     yield
-    fx.get_json = before
+    fx.get_json, fx.FX_CACHE, fx._MEM_CACHE = before
 
 
 @pytest.fixture(scope="session", autouse=True)

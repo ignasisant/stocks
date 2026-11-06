@@ -16,6 +16,7 @@ covers every refresh in flight; off Cloud Run there is nothing to hold.
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import threading
 import time
@@ -152,8 +153,18 @@ def _hold(url: str) -> None:
                 timeout=httpx.Timeout(HOLD_S + 15, connect=10),
             ).raise_for_status()
         except Exception as exc:  # noqa: BLE001 — a lost hold is a slow refresh
-            obs.warn(
-                "cache.hold_failed", error_type=type(exc).__name__, error=str(exc)[:300]
+            # A 404 is the front end handing the hold to another instance,
+            # which does not know this one's token: how Cloud Run routes, not
+            # a fault, so it is noted rather than warned about.
+            elsewhere = (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code == 404
+            )
+            obs.event(
+                "cache.hold_failed",
+                level=logging.INFO if elsewhere else logging.WARNING,
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
             )
             with _lock:
                 _pending.clear()
