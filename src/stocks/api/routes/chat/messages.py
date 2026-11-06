@@ -50,10 +50,12 @@ class ToolCallOut(BaseModel):
 
 
 class DebateSide(BaseModel):
-    """One analyst's case: `side` is "bull" or "bear"."""
+    """One analyst's case: `side` is "bull" or "bear". `failed` when that side
+    did not arrive (an error or past its time), with no `text`."""
 
     side: str
     text: str
+    failed: bool = False
 
 
 class ActivityOut(BaseModel):
@@ -170,9 +172,10 @@ def _turn(raw: dict, lang: str = "en") -> Message:
         tool_calls=_calls(raw),
         activities=[ActivityOut(**a) for a in _activities(raw, lang)],
         debate=[
-            DebateSide(side=str(d.get("side", "")), text=str(d.get("text", "")))
+            DebateSide(side=str(d.get("side", "")), text=str(d.get("text", "")),
+                       failed=d.get("failed") is True)
             for d in (raw.get("debate") or [])
-            if isinstance(d, dict) and d.get("text")
+            if isinstance(d, dict) and (d.get("text") or d.get("failed") is True)
         ],
         learned=[
             Learned(op=str(c.get("op", "")), id=str(c.get("id", "")),

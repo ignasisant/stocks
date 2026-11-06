@@ -671,6 +671,17 @@ describe("an answer that weighed a debate", () => {
     expect(out).toContain("chat.debate_failed");
   });
 
+  it("says a side failed on a stored answer too, instead of dropping its card", () => {
+    const out = drawn({
+      debate: [
+        { side: "bull", text: "- cash flow" },
+        { side: "bear", text: "", failed: true },
+      ],
+    });
+    expect(out).toContain("chat.debate_bear");
+    expect(out).toContain("chat.debate_failed");
+  });
+
   it("draws no debate on an answer that had none", () => {
     expect(drawn({})).not.toContain("chat.debate_");
   });

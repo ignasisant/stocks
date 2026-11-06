@@ -4,9 +4,10 @@
  *
  * Above the answer, because that is the order it happened in and the order it
  * reads best in: the case for, the case against, then the verdict that had to
- * weigh them. While a side is still being argued its column says so, like any
+ * weigh them. While a side is still being argued its card says so, like any
  * other wait in the drawer; a side that failed says that instead of vanishing,
- * so a one-sided debate never passes for a balanced one.
+ * live and once stored (`failed`), so a one-sided debate never passes for a
+ * balanced one.
  */
 
 import { useT } from "../shell/i18n";
@@ -25,7 +26,7 @@ export function Debate({ sides }: { sides: (DebateSide | Arguing)[] }) {
   return (
     <div className="ag-chat-debate">
       {drawn.map((side) => {
-        const state = "state" in side ? side.state : "done";
+        const state = "state" in side ? side.state : side.failed ? "failed" : "done";
         return (
           <section
             key={side.side}

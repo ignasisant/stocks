@@ -12,6 +12,7 @@ owner takes it down, and deleting the account takes every link with it.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -40,19 +41,35 @@ def _surface(sid: str) -> dict:
     return a2ui.activity(sid, a2ui.surface(sid, parts, {}))
 
 
-def _book(path, *, answer_id: str = "a1") -> None:
+def _book(path, *, answer_id: str = "a1", earlier: list | None = None,
+          later: list | None = None) -> None:
     auth.save_book({"conversations": [{
         "id": "c1", "title": "t", "updated": STAMP,
         "messages": [
+            *(earlier or []),
             {"role": "user", "content": QUESTION},
             {"role": "assistant", "content": ANSWER, "id": answer_id,
              "skills": ["tax"], "web": [{"title": "SEC", "url": "https://sec.gov"}],
+             "debate": [{"side": "bull", "text": "Tus 30 acciones valen 4.200 €."},
+                        {"side": "bear", "text": "Capex enorme."}],
              "steps": [{"tool": "positions", "arg": "", "out": "NVDA 30 @ 120"}],
              "learned": [{"op": "added", "id": "m1", "text": "secret"}],
              "provider": "gemini",
              "activities": [_surface("chart"), _surface("whatif")]},
+            *(later or []),
         ],
     }], "active": "c1"}, path)
+
+
+EARLIER = [
+    {"role": "user", "content": "¿Cómo va NVDA en mi cartera?"},
+    {"role": "assistant", "content": "Llevas 30 acciones que valen 4.200 €.", "id": "a0",
+     "skills": ["growth"], "steps": [{"tool": "positions", "out": "NVDA 30"}],
+     "activities": [_surface("chart"), _surface("whatif")]},
+    {"role": "user", "content": "¿Y AMD?"},
+    {"role": "assistant", "content": "", "id": "a00", "error": "timeout"},
+    {"role": "user", "content": "¿Y el resultado de ayer?"},
+]
 
 
 @pytest.fixture(autouse=True)
@@ -69,9 +86,13 @@ def store(monkeypatch, tmp_path):
 def test_the_copy_holds_the_answer_cut_and_nothing_private(account):
     _book(account.chat)
     share = shares.create(account, "a1", masked=True, lang="es")
-    assert set(share) == {"id", "owner", "answer_id", "question", "content", "web",
-                          "skills", "activities", "masked", "by", "lang", "created"}
+    assert set(share) == {"id", "owner", "answer_id", "question", "content", "debate",
+                          "turns", "web", "skills", "activities", "masked", "by",
+                          "lang", "created"}
+    assert share["turns"] == []
     assert "4.200" not in share["content"] and "30 acciones" not in share["question"]
+    assert [d["side"] for d in share["debate"]] == ["bull", "bear"]
+    assert "4.200" not in share["debate"][0]["text"], "the cases are masked too"
     assert "12 %" in share["content"]
     assert [a["id"] for a in share["activities"]] == ["chart"]
     assert shares.load(share["id"]) == share
@@ -88,6 +109,54 @@ def test_the_same_cut_is_the_same_link_and_the_other_cut_a_second_one(account):
     assert {(k["id"], k["masked"]) for k in stamped} == {
         (first["id"], True), (open_["id"], False)}
     assert shares.load(first["id"]) is not None, "a link already sent keeps working"
+
+
+def test_a_link_made_before_the_cases_were_kept_gets_them_on_the_next_share(account):
+    _book(account.chat)
+    old = shares.create(account, "a1", masked=True, lang="es")
+    path = shares.SHARES_DIR / f"{old['id']}.json"
+    path.write_text(json.dumps({k: v for k, v in old.items() if k != "debate"}))
+    again = shares.create(account, "a1", masked=True, lang="es")
+    assert again["id"] == old["id"]
+    assert [d["side"] for d in shares.load(old["id"])["debate"]] == ["bull", "bear"]
+
+
+def test_the_thread_before_the_answer_goes_along_cut_the_same_way(account):
+    later = [{"role": "user", "content": "¿Y TSM?"},
+             {"role": "assistant", "content": "TSM sube.", "id": "a2"}]
+    _book(account.chat, earlier=EARLIER, later=later)
+    share = shares.create(account, "a1", masked=True, lang="es")
+    turns = share["turns"]
+    # The failed answer drops with its question, and so does the unanswered one.
+    assert [t["question"] for t in turns] == ["¿Cómo va NVDA en mi cartera?"]
+    assert "4.200" not in turns[0]["content"] and "acciones" in turns[0]["content"]
+    assert [a["id"] for a in turns[0]["activities"]] == ["chart"]
+    assert turns[0]["skills"] == ["growth"] and "steps" not in turns[0]
+    assert "TSM" not in json.dumps(share), "what came after the answer stays home"
+    unmasked = shares.preview(account, "a1", False)
+    assert "4.200" in unmasked["turns"][0]["content"]
+    assert [a["id"] for a in unmasked["turns"][0]["activities"]] == ["chart", "whatif"]
+
+
+def test_a_long_thread_goes_as_its_last_exchanges(account):
+    earlier = [m for n in range(shares._TURNS_MAX + 5)
+               for m in ({"role": "user", "content": f"q{n}"},
+                         {"role": "assistant", "content": f"r{n}", "id": f"x{n}"})]
+    _book(account.chat, earlier=earlier)
+    turns = shares.preview(account, "a1", True)["turns"]
+    assert len(turns) == shares._TURNS_MAX
+    assert turns[0]["question"] == "q5"
+    assert turns[-1]["content"] == f"r{shares._TURNS_MAX + 4}"
+
+
+def test_a_link_made_before_the_thread_was_kept_gets_it_on_the_next_share(account):
+    _book(account.chat, earlier=EARLIER)
+    old = shares.create(account, "a1", masked=True, lang="es")
+    path = shares.SHARES_DIR / f"{old['id']}.json"
+    path.write_text(json.dumps({k: v for k, v in old.items() if k != "turns"}))
+    again = shares.create(account, "a1", masked=True, lang="es")
+    assert again["id"] == old["id"]
+    assert len(shares.load(old["id"])["turns"]) == 1
 
 
 def test_a_link_outlives_the_thread_it_came_from(account):
@@ -164,9 +233,26 @@ def test_carrying_on_from_a_link_starts_a_thread_of_ones_own(account, signed_in)
     user, answer = thread["messages"]
     assert user["content"] == made["question"]
     assert answer["content"] == made["content"]
+    assert answer["debate"] == made["debate"] and len(made["debate"]) == 2
     assert answer["shared_from"] == made["id"] and answer["id"] not in ("", "a1")
     gone = signed_in.post("/v1/chat/conversations", json={"from_share": "missing123"})
     assert gone.status_code == 404
+
+
+def test_carrying_on_from_a_link_takes_the_thread_above_it_too(account, signed_in):
+    _book(account.chat, earlier=EARLIER)
+    made = signed_in.post("/v1/chat/turns/a1/share", json={}).json()
+    assert [t["question"] for t in made["turns"]] == ["¿Cómo va NVDA en mi cartera?"]
+    cid = signed_in.post("/v1/chat/conversations",
+                         json={"from_share": made["id"]}).json()["id"]
+    thread = signed_in.get(f"/v1/chat/conversations/{cid}").json()
+    assert [m["role"] for m in thread["messages"]] == [
+        "user", "assistant", "user", "assistant"]
+    assert thread["messages"][1]["content"] == made["turns"][0]["content"]
+    assert thread["messages"][1]["id"] not in ("", "a0")
+    assert not thread["messages"][1].get("shared_from")
+    assert thread["messages"][-1]["shared_from"] == made["id"]
+    assert thread["title"] == "¿Cómo va NVDA en mi cartera?"
 
 
 def test_a_link_is_signed_with_the_sharers_first_name_only(account):

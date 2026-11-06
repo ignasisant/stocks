@@ -669,8 +669,9 @@ def rate_turn(tid: str, vote: str | None, path: Path) -> dict | None:
 
 
 def find_answer(tid: str, path: Path) -> dict | None:
-    """The answer `tid` names and the question above it, read only:
-    {"answer": entry, "question": text, "thread": id}, or None."""
+    """The answer `tid` names, the question above it and the thread before
+    that, read only: {"answer": entry, "question": text, "thread": id,
+    "earlier": [message, …]}, or None."""
     if not tid:
         return None
     for conv in load_book(path)["conversations"]:
@@ -678,10 +679,11 @@ def find_answer(tid: str, path: Path) -> dict | None:
         for i, m in enumerate(msgs):
             if m.get("role") != "assistant" or m.get("id") != tid:
                 continue
-            asked = next((str(msgs[j].get("content") or "")
-                          for j in range(i - 1, -1, -1)
-                          if msgs[j].get("role") == "user"), "")
-            return {"answer": dict(m), "question": asked, "thread": conv["id"]}
+            at = next((j for j in range(i - 1, -1, -1)
+                       if msgs[j].get("role") == "user"), None)
+            asked = str(msgs[at].get("content") or "") if at is not None else ""
+            return {"answer": dict(m), "question": asked, "thread": conv["id"],
+                    "earlier": [dict(q) for q in msgs[:at if at is not None else i]]}
     return None
 
 

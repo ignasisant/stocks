@@ -3016,24 +3016,31 @@ a.ag-chat-btn {
   background: var(--ag-surface-card);
 }
 
-/* The bull and bear cases (`Debate`), side by side when the drawer is wide
-   enough for two readable columns, stacked when it is not. */
+/* The bull and bear cases (`Debate`), one above the other: two columns in a
+   drawer squeeze each case into a ragged strip, and the cases are read, not
+   compared line by line. Same type as the answer under them — they are
+   argument, not footnote. */
 .ag-chat-debate {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .ag-chat-case {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border: 1px solid var(--ag-border);
   border-left-width: 3px;
   border-radius: var(--ag-radius-md);
   background: var(--ag-surface-card);
-  font-size: var(--ag-fs-xs);
+  font-size: var(--ag-fs-base);
+  line-height: 1.5;
+}
+
+.ag-chat-case > :last-child {
+  margin-bottom: 0;
 }
 
 .ag-chat-case-bull {
@@ -3047,7 +3054,7 @@ a.ag-chat-btn {
 .ag-chat-case-head {
   margin: 0 0 4px;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-2xs);
+  font-size: var(--ag-fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;

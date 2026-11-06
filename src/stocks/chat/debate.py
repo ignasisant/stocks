@@ -10,7 +10,10 @@ which is stronger rather than to pick the one the question hoped for.
 
 Each side is an AG-UI subagent: its run is announced, its words stream under
 its own id, and it finishes or fails on its own without taking the answer
-with it. A side that fails is simply absent; the answer goes on.
+with it. A side that fails or overruns TIMEOUT is left out of what the
+answer is written against, and the answer goes on; but it is kept as failed
+in what the turn stores (`recorded`), so the cards read "this case did not
+arrive" rather than one case passing for the whole debate.
 
 Gated tightly, because it is two more model calls on keys that are often the
 operator's: an explicit ask for a decision or for both sides, about something
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -139,10 +143,21 @@ def run(provider: Provider, api_key: str, messages: list[dict], lang: str, *,
         tell({"kind": "end", "id": ids[side], "side": side})
         return {"side": side, "text": text}
 
+    began = time.monotonic()
     got = in_parallel(*(lambda s=side: one(s) for side in SIDES), timeout=timeout)
     spoken = [g for g in got if isinstance(g, dict)]
-    obs.event("chat.debated", provider=provider.id, sides=[g["side"] for g in spoken])
+    # `ms` is what says whether TIMEOUT is too tight for the sides that miss.
+    obs.event("chat.debated", provider=provider.id, sides=[g["side"] for g in spoken],
+              ms=round((time.monotonic() - began) * 1000))
     return spoken
+
+
+def recorded(spoken: list[dict]) -> list[dict]:
+    """What the turn keeps of a debate: every side in SIDES order, the ones
+    that did not speak as `{side, text: "", failed: True}`."""
+    said = {s["side"]: s for s in spoken}
+    return [said.get(side) or {"side": side, "text": "", "failed": True}
+            for side in SIDES]
 
 
 def brief(sides: list[dict]) -> str:

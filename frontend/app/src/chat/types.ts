@@ -20,7 +20,8 @@ type Source = { title: string; url: string; step?: string };
 export type Step = { tool: string; arg: string; out: string; why?: string };
 
 /** One analyst's case in the bull/bear debate an answer weighed. */
-export type DebateSide = { side: string; text: string };
+/** `failed`: that side did not arrive (an error, or past its time). */
+export type DebateSide = { side: string; text: string; failed?: boolean };
 
 /** A side of the debate while it is being argued (session-only). */
 export type Arguing = DebateSide & { id: string; state: "arguing" | "done" | "failed" };
@@ -186,16 +187,14 @@ export type ListedShare = {
  * list (`kind` "watchlist") has `title` and `tickers`, an empty question and
  * answer.
  */
-export type SharedAnswer = {
+export type SharedAnswer = SharedTurn & {
   id: string;
   kind: "answer" | "watchlist";
   title: string;
   tickers: string[];
-  question: string;
-  content: string;
-  web: Source[];
-  skills: string[];
-  activities: Activity[];
+  /** The thread's exchanges above the answer, oldest first; [] on a link
+   *  made before they were kept. */
+  turns: SharedTurn[];
   masked: boolean;
   /** The sharer's first name; "" on a link made before it was kept. */
   by: string;
@@ -203,6 +202,18 @@ export type SharedAnswer = {
   created: string;
   /** The reader is the account that shared it. */
   mine: boolean;
+};
+
+/** One exchange of a shared thread, cut on the server. */
+export type SharedTurn = {
+  question: string;
+  content: string;
+  /** The bull and bear cases argued above the answer; [] on a link made
+   *  before they were kept. */
+  debate: DebateSide[];
+  web: Source[];
+  skills: string[];
+  activities: Activity[];
 };
 
 /**

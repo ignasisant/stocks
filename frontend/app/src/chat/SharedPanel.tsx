@@ -2,12 +2,14 @@
  * A shared answer, as the person who was sent the link reads it.
  *
  * `/?share=<id>` opens the app on its own page — Home by default — with the
- * drawer open on this view: the question, the answer, the charts it drew
- * (inert: a press on a link's chart would act on somebody else's book) and
- * the pages it cited. What follows depends on who is reading:
+ * drawer open on this view: the thread's earlier exchanges, then the
+ * question, the lens and the bull and bear cases above the answer as the
+ * sharer saw them, the answer, the charts it drew (inert: a press on a link's
+ * chart would act on somebody else's book) and the pages it cited. What
+ * follows depends on who is reading:
  *
  * - signed in, it offers to carry on: a thread of the reader's own starts
- *   from the shared exchange, so the next question has it above it;
+ *   from the shared thread, so the next question has all of it above it;
  * - a guest gets the same "Keep asking", as a sign-in whose `next=` is this
  *   answer with `&continue=1`: they come back to it and the thread is
  *   started for them (`carryOnNow`), so the press they made is the one that
@@ -32,49 +34,78 @@ import { NumbersIn, useLang, useT } from "../shell/i18n";
 import { useSignIn } from "../shell/session";
 import { Status } from "../ui/Status";
 import { continueShare, followShare, readShare, unshare } from "./api";
-import { figuresIn } from "./format";
+import { Debate } from "./Debate";
+import { figuresIn, skillName } from "./format";
 import { Glyph } from "./icons";
 import { Inline, Markdown } from "./markdown";
 import { Surfaces } from "./Surfaces";
 import { Sources } from "./Sources";
-import type { SharedAnswer } from "./types";
+import type { SharedAnswer, SharedTurn } from "./types";
 
 /**
- * The exchange a link shows: the question as the asker's turn, the answer as
- * the assistant's. The sheet's preview draws the same, so what the sharer
- * sees before sending is what the reader gets.
+ * The thread a link shows: the exchanges before the shared answer, then the
+ * shared one, each question as the asker's turn and each answer as the
+ * assistant's. The sheet's preview draws the same, so what the sharer sees
+ * before sending is what the reader gets.
  */
 export function SharedBody({
   share,
   onLeave,
 }: {
-  share: Pick<SharedAnswer, "question" | "content" | "web" | "activities" | "masked">;
+  share: SharedTurn & Pick<SharedAnswer, "masked"> & { turns?: SharedTurn[] };
+  onLeave: () => void;
+}) {
+  return (
+    <>
+      {(share.turns ?? []).map((turn, i) => (
+        <Exchange key={i} turn={turn} masked={false} onLeave={onLeave} />
+      ))}
+      <Exchange turn={share} masked={share.masked} onLeave={onLeave} />
+    </>
+  );
+}
+
+/** One question and its answer; the note on hidden amounts goes under the
+ *  last answer only, once for the whole link. */
+function Exchange({
+  turn,
+  masked,
+  onLeave,
+}: {
+  turn: SharedTurn;
+  masked: boolean;
   onLeave: () => void;
 }) {
   const t = useT();
   const lang = useLang();
+  // The reader has no catalog of the sharer's skills: the label or the id.
+  const lens = turn.skills.length
+    ? t("chat.lens", { skills: turn.skills.map((id) => skillName(t, id)).join(" · ") })
+    : "";
   return (
     <>
-      {share.question && (
+      {turn.question && (
         <div className="ag-chat-turn ag-chat-mine">
           <div className="ag-chat-bubble">
-            <Inline text={share.question} />
+            <Inline text={turn.question} />
           </div>
         </div>
       )}
       <div className="ag-chat-turn ag-chat-assistant">
+        {lens && <span className="ag-chat-lens">{lens}</span>}
+        {turn.debate.length > 0 && <Debate sides={turn.debate} />}
         <div className="ag-chat-bubble">
-          <Markdown text={share.content} />
+          <Markdown text={turn.content} />
         </div>
-        {share.activities.length > 0 && (
-          <NumbersIn lang={figuresIn(share.content, lang)}>
-            <Surfaces activities={share.activities} />
+        {turn.activities.length > 0 && (
+          <NumbersIn lang={figuresIn(turn.content, lang)}>
+            <Surfaces activities={turn.activities} />
           </NumbersIn>
         )}
-        {(share.web.length > 0 || share.masked) && (
+        {(turn.web.length > 0 || masked) && (
           <div className="ag-chat-foot">
-            {share.web.length > 0 && <Sources web={share.web} onLeave={onLeave} />}
-            {share.masked && (
+            {turn.web.length > 0 && <Sources web={turn.web} onLeave={onLeave} />}
+            {masked && (
               <span className="ag-chat-share-masked">
                 {t("chat.share_masked_note")}
               </span>
