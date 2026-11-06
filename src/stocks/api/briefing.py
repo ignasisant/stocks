@@ -774,7 +774,7 @@ def _passages(ticker: str, since: date, items: tuple[str, ...] = _RULE_ITEMS
     return out
 
 
-def _thesis_passages(ticker: str, since: date) -> list[dict]:
+def thesis_passages(ticker: str, since: date) -> list[dict]:
     return _passages(ticker, since, _THESIS_ITEMS)
 
 
@@ -785,7 +785,7 @@ def check_theses(paths, prefs: dict, lang: str, day: date, spend) -> list[dict]:
     (`journal.measured`). Never raises."""
     fired = journal.safely(
         journal.check_theses, paths.journal, day,
-        passages_of=_thesis_passages,
+        passages_of=thesis_passages,
         judge=exit_judge.make_thesis_judge(
             prefs, spend_free=lambda p: spend_for_judge(p, spend)),
         budget_s=THESIS_BUDGET_S,

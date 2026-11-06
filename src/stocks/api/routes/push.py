@@ -111,12 +111,15 @@ def test(body: Endpoint, paths: Writer, request: Request) -> None:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This device is not subscribed.")
     lang = row.get("lang") or "en"
-    sent = webpush.send(paths.push, row, {
+    message = {
         "title": translate("notify.push_test_title", lang),
         "body": translate("notify.push_test_body", lang),
         "url": "/profile?tab=notify",
         "tag": "test",
-    })
+    }
+    sent = webpush.send(paths.push, row, message)
+    webpush.log(paths.push, message, topic="test", devices=1,
+                took=int(200 <= sent < 300))
     if not 200 <= sent < 300:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"The push service said {sent}.")
 

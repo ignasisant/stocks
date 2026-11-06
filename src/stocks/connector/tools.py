@@ -26,7 +26,7 @@ import time
 import traceback
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.error import URLError
 
@@ -747,6 +747,207 @@ async def decision_journal(
     return await _run("decision_journal", work)
 
 
+# ------------------------------------------------------------ exit rules, read
+# What the morning card and the thesis round read, from the outside: the
+# news a rule is judged on, a thesis tried before it is kept, and where every
+# holding stands.
+
+NEWS_MAX = 30
+NEWS_CHARS = 700
+NEWS_DAYS_MAX = 90
+Since = Annotated[str | None, Field(
+    description="ISO date to read from; defaults to 14 days ago, at most 90.")]
+
+
+def _since(raw: str | None, default_days: int) -> date:
+    today = date.today()
+    if not raw:
+        return today - timedelta(days=default_days)
+    try:
+        asked = date.fromisoformat(raw[:10])
+    except ValueError:
+        raise _Refused("`since` must be an ISO date, e.g. 2026-10-01.") from None
+    return max(min(asked, today), today - timedelta(days=NEWS_DAYS_MAX))
+
+
+def _read_passages(ticker: str, since: date) -> list[dict]:
+    from stocks.api import briefing
+
+    try:
+        return briefing.thesis_passages(ticker, since)
+    except RuntimeError:
+        raise _Refused("Neither EDGAR nor the news feed answered; try again "
+                       "in a few minutes.") from None
+
+
+async def ticker_news(ticker: Ticker, since: Since = None) -> CallToolResult:
+    """What the thesis and event rules are judged on, as they read it
+    (`briefing.thesis_passages`): the company's 8-Ks with the results
+    release's own text, then the headlines, each cut to where it touches the
+    business."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import journal
+
+        code = _symbol(ticker)
+        start = _since(since, 14)
+        rows = []
+        for p in _read_passages(code, start):
+            text = str(p.get("text") or "")
+            at = journal._material(p, []) or 0
+            rows.append({"source": str(p.get("source") or ""),
+                         "day": str(p.get("day") or ""),
+                         "filing": str(p.get("source") or "").startswith("8-K"),
+                         "text": journal._excerpt(text, at)[:NEWS_CHARS]})
+        rows.sort(key=lambda r: r["day"], reverse=True)
+        return {"kind": "news", "ticker": code, "since": start.isoformat(),
+                "total": len(rows), "items": rows[:NEWS_MAX]}
+
+    return await _run("ticker_news", work)
+
+
+Pillars = Annotated[
+    list[Annotated[str, Field(min_length=3, max_length=160)]],
+    Field(min_length=1, max_length=3, description=(
+        "One to three facts about the business a news item could "
+        "contradict, as set_kill_criteria's thesis rule takes them.")),
+]
+
+
+async def check_thesis(
+    ticker: Ticker,
+    pillars: Pillars,
+    days: Annotated[int, Field(ge=1, le=NEWS_DAYS_MAX, description=(
+        "How far back to read; the live rule reads from the day it is "
+        "written.")) ] = 30,
+) -> CallToolResult:
+    """A thesis rule's daily check run once, now, over the last `days` of
+    news — the same sieve and the same judge (`journal.trial_thesis`) — with
+    nothing written. Spends one judgement from the account's allowance, and
+    only out of what the morning card does not need."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.api import briefing
+        from stocks.chat import engine, exit_judge, journal
+
+        code = _symbol(ticker)
+        passages = _read_passages(code, date.today() - timedelta(days=days))
+        prefs = accounts.load_prefs(paths.prefs)
+        spent = False
+
+        def spend(p: dict) -> bool:
+            nonlocal spent
+            took = briefing.spend_for_judge(p, engine.spend_free_quota)
+            spent = spent or took
+            return took
+
+        judge = exit_judge.make_thesis_judge(prefs, spend_free=spend)
+        out = journal.trial_thesis(code, list(pillars), passages, judge)
+        if spent:
+            briefing._save_counters(paths, prefs)
+        note = ""
+        if out["shown"] and not out["judged"]:
+            note = ("No model answered: the free allowance left today is kept "
+                    "for the morning card, or the models were busy. The sieve "
+                    "above is still what the rule would read.")
+        elif not out["shown"]:
+            note = ("Nothing in the window touched the business or the "
+                    "pillars, so the rule would not ask a model.")
+        return {"kind": "thesis_trial", "ticker": code, "days": days,
+                **out, "note": note}
+
+    return await _run("check_thesis", work)
+
+
+def _rule_row(e: Any) -> dict:
+    snap = e.snapshot
+    row = {"id": e.id, "rule": str(snap.get("rule") or e.action),
+           "state": e.state, "since": e.day,
+           "level": snap.get("level"), "quarters": snap.get("quarters"),
+           "pillars": snap.get("pillars"), "checked": snap.get("checked"),
+           "last_value": snap.get("value"), "watch": snap.get("watch") or None}
+    if e.state == "hit":
+        row |= {"quote": snap.get("quote"), "source": snap.get("source"),
+                "source_day": snap.get("source_day"),
+                "pillar": snap.get("pillar"), "verdict": snap.get("verdict")}
+    return {k: v for k, v in row.items() if v not in (None, "", [])}
+
+
+async def kill_criteria_status() -> CallToolResult:
+    """Every live exit rule by holding, with what its last check found, and
+    the holdings left without any rule or without a thesis rule."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.api import briefing
+        from stocks.chat import journal
+
+        live = journal.criteria(journal.load(paths.journal))
+        held = briefing._held(paths)
+        by: dict[str, list[dict]] = {}
+        for e in live:
+            by.setdefault(e.ticker.upper(), []).append(_rule_row(e))
+        holdings = [{"ticker": t, "held": t in held, "rules": rows}
+                    for t, rows in sorted(by.items())]
+        return {
+            "kind": "criteria_status",
+            "holdings": holdings,
+            "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
+                    for r in rows if r["state"] == "hit"],
+            "without_rules": sorted(held - by.keys()),
+            "without_thesis": sorted(
+                t for t in held
+                if not any(r["rule"] in journal.THESIS_RULES for r in by.get(t, ()))),
+            "not_held": sorted(by.keys() - held),
+        }
+
+    return await _run("kill_criteria_status", work)
+
+
+# ------------------------------------------------------------ the day, read
+
+
+async def daily_brief() -> CallToolResult:
+    """This morning's card and the Today page's market read, as stored
+    (`GET /today`): never writes one and never spends. The comparisons
+    section sets the book against the indexes on the same money, from the
+    book's first day (`since`) as well as the shorter spans."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.api import briefing, daily_card
+        from stocks.api.routes import today
+
+        lang = str(accounts.load_prefs(paths.prefs).get("language") or "en")
+        _, day = briefing.now_day(paths)
+        market, stale = today._market(lang)
+        card = daily_card.live_book(paths, daily_card.status(paths, lang))
+        personal = _plain(card) if card is not None else None
+        if personal and isinstance(personal.get("book"), dict):
+            # The month's chart is the page's to draw; the rows carry it.
+            personal["book"].pop("chart", None)
+        return {"kind": "daily_brief", "action_day": day.isoformat(),
+                "card": personal,
+                "market": _plain(market) if market is not None else None,
+                "market_stale": stale}
+
+    return await _run("daily_brief", work)
+
+
+async def push_history(
+    limit: Annotated[int, Field(ge=1, le=50)] = 20,
+) -> CallToolResult:
+    """The notifications this account's devices were sent, newest first:
+    alerts, the evening digest, the weekly review, exit rules met, answers
+    ready, tests."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.notify import webpush
+
+        rows = webpush.history(paths.push)
+        for r in rows:
+            r["at"] = datetime.fromtimestamp(float(r.get("at") or 0), UTC).isoformat(
+                timespec="seconds")
+        return {"kind": "push_history", "devices": webpush.devices(paths.push),
+                "configured": webpush.configured(), "total": len(rows),
+                "sent": rows[:limit]}
+
+    return await _run("push_history", work)
+
+
 # --------------------------------------------------------------- frameworks
 # The analysis frameworks the app's own assistant applies (`web/skills/*.md`,
 # picked per question by `chat_skills`): method, never data — so Claude reads
@@ -1447,6 +1648,68 @@ async def retire_kill_criterion(
     return await _run("retire_kill_criterion", work, write=True)
 
 
+class HoldingRules(BaseModel):
+    """One holding's rules in a batch, as set_kill_criteria takes them."""
+
+    ticker: Ticker
+    rules: Annotated[list[ExitRule], Field(min_length=1, max_length=10)]
+    thesis: Annotated[str, Field(max_length=300)] = ""
+
+
+async def set_kill_criteria_batch(
+    holdings: Annotated[list[HoldingRules], Field(min_length=1, max_length=60)],
+) -> CallToolResult:
+    """`set_kill_criteria` for many holdings in one call and one write
+    (`journal.add_criteria_many`)."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import journal
+
+        codes = [_symbol(h.ticker) for h in holdings]
+        twice = sorted({c for c in codes if codes.count(c) > 1})
+        if twice:
+            raise _Refused("Each ticker once per batch; repeated: "
+                           + ", ".join(twice) + ".")
+        asked = [[r.model_dump(exclude_none=True) for r in h.rules] for h in holdings]
+        done = journal.add_criteria_many(
+            paths.journal,
+            [(c, a, h.thesis) for c, a, h in zip(codes, asked, holdings, strict=True)],
+            date.today())
+        if not any(done):
+            raise _Refused("No rule was usable in any holding.")
+        return {"kind": "criteria_batch",
+                "written": {c: [_rule_row(e) for e in w]
+                            for c, w in zip(codes, done, strict=True) if w},
+                "refused": [c for c, w in zip(codes, done, strict=True) if not w],
+                "dropped": sum(len(a) for a in asked) - sum(len(w) for w in done)}
+
+    return await _run("set_kill_criteria_batch", work, write=True)
+
+
+async def send_test_push() -> CallToolResult:
+    """One test notification to every device the account switched on."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.notify import webpush
+        from stocks.web.i18n import translate
+
+        if not webpush.configured():
+            raise _Refused("Notifications are not set up on this server.")
+        devices = webpush.devices(paths.push)
+        if not devices:
+            raise _Refused("No device has notifications switched on: the "
+                           "person turns them on in Profile > Notifications.")
+        lang = str(accounts.load_prefs(paths.prefs).get("language")
+                   or webpush.lang_of(paths.push) or "en")
+        took = webpush.send_all(paths.push, {
+            "title": translate("notify.push_test_title", lang),
+            "body": translate("notify.push_test_body", lang),
+            "url": "/profile?tab=notify",
+            "tag": "test",
+        }, topic="test")
+        return {"kind": "push_test", "devices": devices, "took": took}
+
+    return await _run("send_test_push", work, write=True)
+
+
 async def set_preferences(
     currency: Annotated[str | None, Field(description="Base currency, e.g. EUR.")] = None,
     language: Annotated[str | None, Field(description="en or es.")] = None,
@@ -1574,6 +1837,32 @@ TOOLS: tuple[Spec, ...] = (
          "reasons, linked follow-ups, and what became of it (open, followed, "
          "declined, lapsed). The app's proposals, not the person's own "
          "reasons for past trades; never ask them for those."),
+    Spec(kill_criteria_status, "Exit rules status",
+         "Every live exit rule (kill criterion) by holding — price, drawdown, "
+         "weight, fundamentals, events, thesis — with when it was last "
+         "checked, its last value or watch notes, those met, and the holdings "
+         "with no rule or no thesis rule. Start here before drafting rules."),
+    Spec(ticker_news, "Ticker news and filings",
+         "A company's recent business news as the exit rules read it: its "
+         "8-K filings (the results release's own text on earnings) and "
+         "headlines since a date, newest first, each cut to the part about "
+         "the business. 8-Ks exist for US filers only."),
+    Spec(check_thesis, "Try a thesis",
+         "Dry run of a thesis rule: read the last days of a company's filings "
+         "and news through the same sieve and judge the daily check uses, "
+         "and show what it would show the model, each pillar's verdict "
+         "(watch or damaged, with the quote) and whether the rule would be "
+         "met. Writes nothing; spends one judgement of the person's free "
+         "allowance. Use it to test pillars before set_kill_criteria."),
+    Spec(daily_brief, "Today's briefing",
+         "This morning's card (headline, bullets, focus tickers, the book "
+         "against the index, news, insiders, comparisons) and the Today "
+         "page's market read, as stored; never generates one. Comparisons "
+         "set the book against indexes with the same money, from the book's "
+         "first day and over shorter spans."),
+    Spec(push_history, "Notifications sent",
+         "The last notifications pushed to the person's devices, newest "
+         "first: topic, title, text, link, and how many devices took it."),
     Spec(list_skills, "Analysis frameworks",
          "The frameworks the TopStocks assistant analyses with: lenses (value, "
          "dividend, earnings review, bear case, tax…) and industry playbooks "
@@ -1719,13 +2008,21 @@ TOOLS: tuple[Spec, ...] = (
          write=True, destructive=True),
     Spec(set_kill_criteria, "Set exit rules",
          "Write the person's kill criteria for one holding — a price, a "
-         "drawdown, a weight, a quarter's margin or growth, or an event — "
-         "which the morning card then checks. Replaces a live rule on the "
-         "same measure. They are the person's rules, not yours: show the "
+         "drawdown, a weight, a quarter's margin or growth, an event, or a "
+         "thesis (pillars the business must keep, read daily against its "
+         "news) — which the morning card then checks. Replaces a live rule on "
+         "the same measure. They are the person's rules, not yours: show the "
          "draft and write it only once they agree.", write=True),
+    Spec(set_kill_criteria_batch, "Set exit rules for many holdings",
+         "set_kill_criteria for up to 60 holdings in one call, each with its "
+         "own rules and thesis. Same rules apply: show the whole draft and "
+         "write it only once the person agrees.", write=True),
     Spec(retire_kill_criterion, "Retire an exit rule",
          "Take down one live exit rule by its id from decision_journal; the "
          "journal keeps it as retired.", write=True, destructive=True),
+    Spec(send_test_push, "Send a test notification",
+         "Push one test notification to every device the person switched "
+         "notifications on for, and say how many took it.", write=True),
     Spec(set_preferences, "Set preferences",
          "Change base currency, language, tax residence and filing details, "
          "or notifications. Only the fields given change.", write=True),
