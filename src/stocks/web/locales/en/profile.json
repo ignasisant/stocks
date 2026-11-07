@@ -102,6 +102,7 @@
   "profile.plan_reserve_max": "At most",
   "profile.plan_reserve_max_help": "Over it, Review names the idle cash to put to work.",
   "profile.plan_reserve_order": "The floor can't be over the ceiling.",
+  "profile.plan_reserve_clash": "Your mix gives cash {target}%, outside this band. The reserve is what Review and the daily card measure.",
   "profile.plan_cash_title": "Cash outside the book",
   "profile.plan_cash_sub": "Money no import sees. Update it now and then: nothing in your ledger moves it.",
   "profile.plan_investable": "Ready to invest",

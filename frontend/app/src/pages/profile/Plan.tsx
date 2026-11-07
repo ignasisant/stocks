@@ -210,14 +210,21 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
   };
 
   const mix = plan.mix;
+  // A reserve is cash's own band and overrides the mix there, as the server
+  // reads it (`plan.drift`).
+  const outside = (value: number, bucket: Bucket, mix: Mix) =>
+    bucket === "cash" && plan.reserve
+      ? value < (plan.reserve.min_pct ?? -Infinity) ||
+        value > (plan.reserve.max_pct ?? Infinity)
+      : Math.abs(value - mix.targets[bucket]) > mix.band_pp;
   const off = mix
     ? BUCKETS.filter((bucket) => {
         const actual = plan.actual[bucket];
-        return (
-          actual !== undefined && Math.abs(actual - mix.targets[bucket]) > mix.band_pp
-        );
+        return actual !== undefined && outside(actual, bucket, mix);
       })
     : [];
+  // A cash target the reserve rules out: the reserve is what is measured.
+  const clash = mix && plan.reserve ? outside(mix.targets.cash, "cash", mix) : false;
 
   return (
     <>
@@ -410,6 +417,11 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
                 onCommit={reserve("max_pct")}
               />
             </Row>
+            {clash && mix && (
+              <p className="pl-sum pl-sum-off" aria-live="polite">
+                {t("profile.plan_reserve_clash", { target: num(mix.targets.cash, 0) })}
+              </p>
+            )}
           </Card>
 
           <Card title={t("profile.plan_cash_title")} sub={t("profile.plan_cash_sub")}>

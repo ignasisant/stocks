@@ -71,6 +71,25 @@ describe("the plan tab", () => {
     expect(html).not.toContain("pl-warn");
   });
 
+  it("reads cash against the reserve and says when the mix's target clashes", () => {
+    const mix = {
+      targets: { stocks: 70, equity_funds: 0, bonds: 20, cash: 0, crypto: 10 },
+      band_pp: 5,
+    };
+    const reserve = { min_pct: 10, max_pct: 30 };
+    const inside = draw({
+      mix,
+      reserve,
+      set: true,
+      actual: { stocks: 68, equity_funds: 0, bonds: 0, cash: 22, crypto: 10 },
+    });
+    // Bonds are off; cash 22 is inside the reserve though 0 is its target.
+    expect(inside).toContain('<b class="pl-warn">profile.plan_bucket_bonds</b>');
+    expect(inside).toContain("profile.plan_reserve_clash");
+    const agreed = draw({ mix: MIX, reserve: { min_pct: 5, max_pct: 15 }, set: true });
+    expect(agreed).not.toContain("profile.plan_reserve_clash");
+  });
+
   it("keeps the schedule fields shut until there is an amount", () => {
     expect(draw()).toMatch(/aria-label="profile.plan_every"[^>]*disabled/);
     const html = draw({

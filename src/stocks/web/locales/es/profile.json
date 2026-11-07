@@ -102,6 +102,7 @@
   "profile.plan_reserve_max": "Como mucho",
   "profile.plan_reserve_max_help": "Por encima, Review señala la liquidez ociosa para invertir.",
   "profile.plan_reserve_order": "El mínimo no puede superar el máximo.",
+  "profile.plan_reserve_clash": "Tu mezcla da a la liquidez un {target}%, fuera de esta banda. Review y la tarjeta diaria miden la reserva.",
   "profile.plan_cash_title": "Liquidez fuera de la cartera",
   "profile.plan_cash_sub": "Dinero que ninguna importación ve. Actualízalo de vez en cuando: tus movimientos no lo cambian.",
   "profile.plan_investable": "Para invertir",
