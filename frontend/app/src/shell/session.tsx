@@ -44,6 +44,8 @@ export type Prefs = {
   tax_subnational_rate: number;
   notify_digest: boolean;
   notify_weekly: boolean;
+  /** The Friday email, on for every imported book until switched off. */
+  notify_weekly_email: boolean;
   notify_alerts: boolean;
   chat_panel_open: boolean;
   /** What is switched on, put away. */

@@ -39,7 +39,8 @@ output "deploy_secrets_reminder" {
     access_key_id = "${local.r2_access_key_id}"
     secret_access_key = "${local.r2_secret_access_key}"
 
-    # Also keep existing [auth] (Google OIDC), [chat], [free_llm] and
-    # [webpush] sections.
+    # Also keep existing [auth] (Google OIDC), [chat], [free_llm],
+    # [webpush] and [resend] (api_key, from: the Friday email; its sending
+    # domain's SPF/DKIM records are set at Resend by hand) sections.
   EOT
 }

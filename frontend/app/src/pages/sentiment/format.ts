@@ -15,6 +15,7 @@
 /** What a figure that could not be computed reads as. Never `0`, never a dash. */
 export const NA = "n/a";
 
+import { decimal, isNum, percent } from "../../shell/format";
 import { formatter, num, numberLang } from "../../shell/numbers";
 
 const GROUPS = {
@@ -22,34 +23,30 @@ const GROUPS = {
     formatter(numberLang(), { maximumFractionDigits: 0 }).format(value),
 };
 
-function known(value: number | null | undefined): value is number {
-  return value !== null && value !== undefined && Number.isFinite(value);
-}
-
 export function fixed(value: number | null, digits: number, suffix = ""): string {
-  return known(value) ? `${num(value, digits)}${suffix}` : NA;
+  const text = decimal(value, { digits });
+  return text === null ? NA : `${text}${suffix}`;
 }
 
 /** A signed level — `+0.42`, `-33bp`. The sign is the number's own, not a verdict. */
 export function signed(value: number | null, digits: number, suffix = ""): string {
-  if (!known(value)) return NA;
-  return `${value >= 0 ? "+" : ""}${num(value, digits)}${suffix}`;
+  const text = decimal(value, { digits, signed: "always" });
+  return text === null ? NA : `${text}${suffix}`;
 }
 
 /** A fraction as a signed percentage: `0.0123` to `+1.2%`. */
-export function percent(value: number | null, digits = 1): string {
-  if (!known(value)) return NA;
-  return `${value >= 0 ? "+" : ""}${num(value * 100, digits)}%`;
+export function signedPercent(value: number | null, digits = 1): string {
+  return percent(value, { digits, signed: "always", tight: true }) ?? NA;
 }
 
 /** A fraction as an unsigned share: `0.71` to `71%`. */
 export function share(value: number | null, digits = 0): string {
-  return known(value) ? `${num(value * 100, digits)}%` : NA;
+  return percent(value, { digits, tight: true }) ?? NA;
 }
 
 /** An index level: grouped, no decimals. */
 export function grouped(value: number | null): string {
-  return known(value) ? GROUPS.format(value) : NA;
+  return isNum(value) ? GROUPS.format(value) : NA;
 }
 
 /**
@@ -60,7 +57,7 @@ export function grouped(value: number | null): string {
  * on a currency pair, two on a barrel of oil, none on a coin.
  */
 export function adaptive(value: number | null): string {
-  if (!known(value)) return NA;
+  if (!isNum(value)) return NA;
   const size = Math.abs(value);
   if (size >= 1000) return GROUPS.format(value);
   return num(value, size >= 2 ? 2 : 4);
@@ -77,7 +74,7 @@ export function adaptive(value: number | null): string {
 export function changeText(unit: string, value: number): string {
   if (unit === "basis_points") return signed(value, 0, "bp");
   if (unit === "points") return signed(value, 1, "pp");
-  return percent(value, 1);
+  return signedPercent(value, 1);
 }
 
 /**

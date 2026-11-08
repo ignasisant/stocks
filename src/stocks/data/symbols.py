@@ -226,6 +226,21 @@ def cached_isin_symbol(isin: str) -> str | None:
     return _load_isin_cache().get(key) if is_isin(key) else None
 
 
+def isin_for_symbol(symbol: str) -> str | None:
+    """The ISIN an earlier lookup resolved to `symbol`, if any — the map only.
+
+    The reverse of `cached_isin_symbol`: a line an import named by its ISIN
+    knows it; one only ever searched by ticker does not, and gets None rather
+    than a search.
+    """
+    key = (symbol or "").strip().upper()
+    if not key:
+        return None
+    return next(
+        (isin for isin, sym in _load_isin_cache().items() if sym.upper() == key), None
+    )
+
+
 def symbol_for_isin(isin: str) -> str | None:
     """Yahoo symbol for an ISIN, or None when nothing resolves it.
 

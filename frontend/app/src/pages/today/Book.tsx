@@ -15,9 +15,10 @@ import { Cancelled, get, withMemo } from "../../shell/api";
 import { useLang, useT } from "../../shell/i18n";
 import { Kpi, KpiGrid, chipFor, toneOf } from "../../ui/Kpi";
 import { Segmented } from "../../ui/Segmented";
-import { money, parseDay, percent } from "../home/format";
+import { parseDay } from "../home/format";
 import type { DailyBook, DailySection } from "../home/types";
 import type { BookCompare, MarketCard } from "./types";
+import { money, percent } from "../../shell/format";
 
 const WINDOWS = {
   day: "home.daily_book_day",
@@ -28,7 +29,7 @@ const WINDOWS = {
 /** A move in percent as the tiles print it: signed, or "n/a" when unknown. */
 function move(pct: number | null | undefined, lang: string, na: string): string {
   if (pct === null || pct === undefined) return na;
-  return percent(pct / 100, lang, { signed: true }) ?? na;
+  return percent(pct / 100, { lang, digits: 2, signed: "always" }) ?? na;
 }
 
 /** The book's three windows, each beside the index's. */
@@ -46,7 +47,7 @@ export function BookKpis({ book }: { book: DailyBook }) {
           valueTone={toneOf(row.pct)}
           chip={chipFor(
             row.amount,
-            money(row.amount, book.currency, lang, { signed: true }),
+            money(row.amount, { currency: book.currency, lang, signed: "always" }),
           )}
           note={`${book.index} ${move(row.index_pct, lang, na)}`}
         />

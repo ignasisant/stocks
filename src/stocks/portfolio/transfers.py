@@ -52,6 +52,7 @@ from datetime import date as _date
 from datetime import timedelta as _timedelta
 
 from stocks.portfolio import ledger
+from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction
 
 TRANSFER_IN = "transfer_in"
@@ -463,7 +464,7 @@ def _day_groups(
     for i, leg in enumerate(departures):
         if i not in claimed:
             tx = leg.tx
-            groups[(tx.ticker, _broker(tx), tx.date, tx.currency)].append(i)
+            groups[(tx.ticker, broker_of(tx), tx.date, tx.currency)].append(i)
     out: list[tuple[list[int], _Leg]] = []
     for members in groups.values():
         if len(members) < 2:
@@ -553,8 +554,8 @@ def _move(leg: _Leg, arrival: Transaction) -> Move:
         quantity=arrival.quantity,
         ticker_out=departure.ticker,
         ticker_in=arrival.ticker,
-        broker_out=_broker(departure),
-        broker_in=_broker(arrival),
+        broker_out=broker_of(departure),
+        broker_in=broker_of(arrival),
         date_out=departure.date,
         date_in=arrival.date,
         out_ids=leg.ids,
@@ -579,7 +580,7 @@ def _same_move(
     """
     if abs(departure.quantity - arrival.quantity) > 1e-6:
         return False
-    if _broker(departure) == _broker(arrival):
+    if broker_of(departure) == broker_of(arrival):
         return False
     if not departure.date <= arrival.date <= _horizon(departure.date):
         return False
@@ -626,13 +627,6 @@ def _is_arrival(tx: Transaction) -> bool:
     return tx.action == TRANSFER_IN or (
         tx.action == "buy" and "snapshot" in tx.note.lower()
     )
-
-
-def _broker(tx: Transaction) -> str:
-    """First word of the note, the label every importer stamps (fees.broker_of
-    reads the same one; imported here would be a cycle)."""
-    words = tx.note.split()
-    return words[0].lower() if words else "manual"
 
 
 class _Basis:

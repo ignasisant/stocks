@@ -7,9 +7,7 @@ import { token } from "../../../shell/theme";
 import { Spoken, useScrub } from "../../../ui/chart/useScrub";
 import { useWidth } from "../../../shell/useWidth";
 import {
-  niceTicks,
   NARROW,
-  plotHeightFor,
   AxisLabel,
   ValueAxis,
   ChartTip,
@@ -19,6 +17,8 @@ import {
   NARROW_PAD,
   BARS,
 } from "./frame";
+import { fitHeight } from "../../../ui/chart/fit";
+import { ticks } from "../../../ui/chart/ticks";
 
 /** One bar of the "what moved it" waterfall. */
 export type WaterfallBar = {
@@ -106,7 +106,7 @@ function WaterfallPlot({
   const range = high - low || 1;
 
   const narrow = width < NARROW;
-  const height = plotHeightFor(width, BARS.height);
+  const height = fitHeight(width, BARS.height);
   const left = narrow ? NARROW_PAD : PLOT.left;
   const top = 8;
   const footer = narrow ? 34 : 22;
@@ -195,7 +195,7 @@ function WaterfallPlot({
           }}
         >
           <ValueAxis
-            ticks={niceTicks(low, high, narrow ? 3 : 4).filter((tick) => tick !== 0)}
+            ticks={ticks(low, high, narrow ? 4 : 5).filter((tick) => tick !== 0)}
             y={y}
             left={left}
             right={width - PLOT.right}

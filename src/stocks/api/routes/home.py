@@ -223,7 +223,7 @@ def refresh(account: Writer) -> Refreshed:
         loaders.basket_values,
         loaders.history,
         loaders.quotes,
-        briefing._card_closes,
+        briefing.card_closes,
     ):
         # Looked up rather than assumed: every one of these is a `ttl_cache`
         # today, and a loader that stops being one should stop being cleared,

@@ -142,7 +142,7 @@ def projection(
     hist, _twr, _missing = loaders.history(db, mtime, ccy)
     start_value = loaders.book_value_today(db, mtime, ccy, hist) or 0.0
 
-    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    txs = loaders.ledger_state(db, mtime, ccy).txs
     flows = flow_series(txs, base=ccy)
     year_ago = pd.Timestamp(date.today()) - pd.Timedelta(days=365)
     recent = flows[flows.index > year_ago] if not flows.empty else flows

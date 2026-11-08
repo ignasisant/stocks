@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { POLL_MS } from "./poll";
 
 export type Job = {
   step: string;
@@ -25,8 +26,6 @@ export type Job = {
   /** How long this step took last time it finished, when known. */
   expected_s: number | null;
 };
-
-const POLL_MS = 2000;
 
 export function useServerProgress(active: boolean): Job | null {
   const [job, setJob] = useState<Job | null>(null);
@@ -44,7 +43,7 @@ export function useServerProgress(active: boolean): Job | null {
         .then((body: { job: Job | null }) => {
           if (!live) return;
           setJob(body.job);
-          timer = setTimeout(poll, POLL_MS);
+          timer = setTimeout(poll, POLL_MS.progress);
         })
         .catch(() => live && setJob(null));
     };

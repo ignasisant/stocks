@@ -11,6 +11,7 @@ from stocks.data.dividends import DividendEvent
 from stocks.data.earnings import EarningsEvent
 from stocks.notify import render
 from stocks.notify import weekly as wk
+from stocks.portfolio.ledger import Transaction
 
 D = date(2026, 9, 13)  # a Sunday
 
@@ -137,9 +138,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(wk, "upcoming_ex_dividends", lambda *a, **k: [])
     monkeypatch.setattr(wk, "calendar_events", lambda *a, **k: ([], []))
     monkeypatch.setattr(wk, "recent_dividends", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "stocks.analysis.portfolio.benchmark_changes", lambda *a, **k: {}
-    )
+    monkeypatch.setattr(wk, "index_closes", lambda *a, **k: None)
 
 
 class _Pos:
@@ -147,15 +146,18 @@ class _Pos:
         self.ticker, self.quantity, self.currency = ticker, quantity, currency
 
 
-def _book(monkeypatch, values: pd.DataFrame, positions, injected=None):
+def _book(monkeypatch, values: pd.DataFrame, positions, injected=None,
+          shares: pd.DataFrame | None = None, txs=None, missing=()):
     """A book whose value path is `values` summed, with `injected` (the
-    money put in, constant by default) as its flows."""
-    monkeypatch.setattr(wk, "all_transactions", lambda path: ["tx"])
+    money put in, constant by default) as its flows. Each column is a leg
+    priced in the book's currency at one share, unless `shares` says."""
+    from stocks.analysis.portfolio.flows import Leg, Legs
+
+    txs = txs if txs is not None else [
+        Transaction("2020-01-02", t.ticker, "buy", 1, 1, "EUR") for t in positions
+    ]
+    monkeypatch.setattr(wk, "all_transactions", lambda path: txs)
     monkeypatch.setattr(wk, "build", lambda txs, base="EUR": (positions, []))
-    monkeypatch.setattr(
-        "stocks.analysis.portfolio.position_value_frames",
-        lambda pos, period="1mo", base="EUR": (values, values),
-    )
     value = values.sum(axis=1)
     put_in = pd.Series(
         float(value.iloc[0]) if injected is None else injected, index=value.index
@@ -163,9 +165,19 @@ def _book(monkeypatch, values: pd.DataFrame, positions, injected=None):
     flows = put_in.diff().fillna(0.0)
     twr = ((value - flows) / value.shift(1) - 1).iloc[1:]
     hist = pd.DataFrame({"value": value, "injected": put_in})
+    legs = Legs()
+    for col in values:
+        q = shares[col] if shares is not None else pd.Series(1.0, index=values.index)
+        px = (values[col] / q).where(q > 0)
+        legs[col] = Leg(
+            shares=q, value=values[col], px=px.ffill().bfill(),
+            rate=pd.Series(1.0, index=values.index),
+            marked=pd.Series(True, index=values.index),
+        )
+    hist.attrs["legs"] = legs
     monkeypatch.setattr(
         "stocks.analysis.portfolio.book_history",
-        lambda txs, base="EUR": (hist, twr, []),
+        lambda txs, base="EUR": (hist, twr, list(missing)),
     )
 
 
@@ -226,7 +238,7 @@ def test_compute_returns_early_for_an_account_with_no_book(tmp_path, monkeypatch
     def boom(*a, **k):
         raise AssertionError("should not have priced anything")
 
-    monkeypatch.setattr("stocks.analysis.portfolio.position_value_frames", boom)
+    monkeypatch.setattr("stocks.analysis.portfolio.book_history", boom)
     data = wk.compute_weekly_data(watchlist, tmp_path / "portfolio.db", today=D)
     assert data.total is None and data.best == [] and data.top_weight is None
 
@@ -288,3 +300,74 @@ def test_ytd_is_dropped_when_the_history_starts_after_new_year(tmp_path, monkeyp
     data = wk.compute_weekly_data(watchlist, tmp_path / "portfolio.db", today=D)
     assert data.week is not None and data.ytd is None
     assert "YTD" not in wk.weekly_message(data, "en")["body"]
+
+
+def test_a_name_bought_mid_week_counts_from_its_purchase(tmp_path, monkeypatch):
+    """Its purchase is money put in, not its gain: B made 50 since Thursday,
+    and its percent is over the days it was held."""
+    idx = pd.to_datetime(["2026-09-06", "2026-09-10", "2026-09-13"])
+    values = pd.DataFrame(
+        {"A": [1000.0, 1000.0, 990.0], "B": [0.0, 500.0, 550.0]}, index=idx
+    )
+    shares = pd.DataFrame({"A": [1.0, 1.0, 1.0], "B": [0.0, 1.0, 1.0]}, index=idx)
+    txs = [
+        Transaction("2026-09-06", "A", "buy", 1, 1000, "EUR"),
+        Transaction("2026-09-10", "B", "buy", 1, 500, "EUR"),
+    ]
+    _book(monkeypatch, values, [_Pos("A"), _Pos("B")],
+          injected=[1000.0, 1500.0, 1500.0], shares=shares, txs=txs)
+
+    data = wk.compute_weekly_data(tmp_path / "w.yaml", tmp_path / "p.db", today=D)
+    assert data.best == [("B", pytest.approx(50.0), pytest.approx(0.10))]
+    assert data.worst == [("A", pytest.approx(-10.0), pytest.approx(-0.01))]
+    assert data.week == pytest.approx((40.0, 40.0 / 1500.0))
+
+
+def test_since_start_leads_and_the_index_is_on_the_same_money(tmp_path, monkeypatch):
+    idx = pd.to_datetime(["2026-03-02", "2026-09-06", "2026-09-13"])
+    values = pd.DataFrame({"A": [1000.0, 1100.0, 1210.0]}, index=idx)
+    _book(monkeypatch, values, [_Pos("A")])
+    spy = pd.Series([100.0, 105.0, 110.0], index=idx)
+    monkeypatch.setattr(wk, "index_closes", lambda base, first: spy)
+
+    data = wk.compute_weekly_data(tmp_path / "w.yaml", tmp_path / "p.db", today=D)
+    assert data.start == date(2026, 3, 2)
+    assert data.since == pytest.approx((210.0, 0.21))
+    assert data.benchmark[data.since_days] == pytest.approx(0.10)
+    assert data.benchmark_gain[data.since_days] == pytest.approx(100.0)
+    assert data.as_of == date(2026, 9, 13)
+    line = wk._benchmark_line(data, tr())
+    assert line.startswith("vs S&P 500 · Since start +10.00% · Week")
+    assert wk._window_line(data, tr()).startswith("Since start +")
+
+
+def test_no_index_in_the_books_currency_means_no_comparison(tmp_path, monkeypatch):
+    idx = pd.to_datetime(["2026-09-06", "2026-09-13"])
+    _book(monkeypatch, pd.DataFrame({"A": [900.0, 1000.0]}, index=idx), [_Pos("A")])
+    data = wk.compute_weekly_data(tmp_path / "w.yaml", tmp_path / "p.db", today=D)
+    assert data.week is not None and data.benchmark == {} and data.as_of is None
+
+
+def test_unpriced_names_are_listed_and_counted_at_cost(tmp_path, monkeypatch):
+    idx = pd.to_datetime(["2026-09-06", "2026-09-13"])
+    values = pd.DataFrame({"A": [900.0, 1000.0], "ZZZ": [500.0, 500.0]}, index=idx)
+    _book(monkeypatch, values, [_Pos("A"), _Pos("ZZZ")], missing=["ZZZ"])
+    data = wk.compute_weekly_data(tmp_path / "w.yaml", tmp_path / "p.db", today=D)
+    assert data.total == 1500.0 and data.missing == ["ZZZ"]
+    assert data.largest == ("A", pytest.approx(1000 / 1500))
+
+
+def test_the_week_ahead_reads_held_names_not_the_watchlist(tmp_path, monkeypatch):
+    idx = pd.to_datetime(["2026-09-06", "2026-09-13"])
+    _book(monkeypatch, pd.DataFrame({"A": [900.0, 1000.0]}, index=idx),
+          [_Pos("A"), _Pos("SOLD", quantity=0.0)])
+    asked = []
+    monkeypatch.setattr(
+        wk, "calendar_events",
+        lambda holdings, ref=None: (
+            asked.extend(h.ticker for h in holdings), ([], []))[1],
+    )
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist:\n  - ticker: FOLLOWED\n")
+    wk.compute_weekly_data(watchlist, tmp_path / "p.db", today=D)
+    assert asked == ["A"]

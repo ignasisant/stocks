@@ -176,5 +176,7 @@
   "tour.hello_ai_cap": "Sul tuo portafoglio o su qualsiasi ticker",
   "tour.hello_hint": "Nessun estratto? Cerca un ticker qui sopra.",
   "tour.hello_cta": "Importa ora",
-  "tour.hello_later": "Esplora prima"
+  "tour.hello_later": "Esplora prima",
+  "tour.news_2026_11_1_email_title": "La tua settimana via email",
+  "tour.news_2026_11_1_email_body": "Ogni venerdì dopo la chiusura USA, la tua settimana in cifre via email; disattivala in **Notifiche**."
 }

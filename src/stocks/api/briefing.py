@@ -145,13 +145,13 @@ CARD_PERIOD = "2y"
 COMPARE_PERIOD = "6y"
 
 
-def _closes_since(first, index: str = daily_book.INDEX_SYMBOL) -> dict:
+def closes_since(first, index: str = daily_book.INDEX_SYMBOL) -> dict:
     """Index closes reaching back to `first`, the book's first day: the same
     money goes into the index from there, whatever window is drawn. The card's
     own two years when they reach (SPY, no request), else the indexes' six
     years, else their whole history."""
     if index == daily_book.INDEX_SYMBOL and _reaches(first, 2):
-        return _card_closes()
+        return card_closes()
     return _compare_closes(COMPARE_PERIOD if _reaches(first, 6) else "max")
 
 
@@ -170,7 +170,7 @@ def _period_since(first) -> str:
 
 
 @ttl_cache(900.0, max_entries=1, persist="card_closes")
-def _card_closes() -> dict[str, pd.Series]:
+def card_closes() -> dict[str, pd.Series]:
     """The market symbols the card reads, in ONE bulk request shared by every
     account in the process: an index close is not personal data."""
     from stocks.analysis.portfolio import load_closes
@@ -209,7 +209,7 @@ def _bench_closes(period: str = CARD_PERIOD) -> dict[str, pd.Series]:
 
 
 @ttl_cache(86400.0, max_entries=32)
-def _meta(tickers: tuple[str, ...]) -> dict[str, dict]:
+def ticker_meta(tickers: tuple[str, ...]) -> dict[str, dict]:
     """Sector / country / currency per ticker. These four fields do not move."""
     from stocks.analysis.portfolio import load_meta
 
@@ -227,7 +227,7 @@ def book_sectors(tbl) -> pd.Series:
         return pd.Series(dtype=float)
     names = tuple(sorted(str(t) for t in weights.index))
     return allocation(
-        {str(t): float(w) for t, w in weights.items()}, _meta(names), "sector"
+        {str(t): float(w) for t, w in weights.items()}, ticker_meta(names), "sector"
     )
 
 
@@ -279,7 +279,7 @@ def _market(tbl, money, currency: str) -> list:
     index is the card this was before, so any failure is an empty list.
     """
     try:
-        closes = _card_closes()
+        closes = card_closes()
         sectors = book_sectors(tbl)
         ccy = None
         if tbl is not None and not tbl.empty and {"ccy", "weight"} <= set(tbl.columns):
@@ -403,8 +403,8 @@ def _attribution(tbl, hist, year: dict, ccy: str, moved) -> dict | None:
     if tbl is None or tbl.empty:
         return None
     try:
-        card = _card_closes()
-        meta = _meta(tuple(sorted(str(t) for t in tbl.index)))
+        card = card_closes()
+        meta = ticker_meta(tuple(sorted(str(t) for t in tbl.index)))
         stamps = tbl["day_asof"].dropna() if "day_asof" in tbl else []
         session = max((str(s)[:10] for s in stamps), default=None)
         sector_day = {
@@ -599,7 +599,7 @@ def _index(currency: str, money: pd.DataFrame | None = None) -> dict | None:
     book's own money when `money` is given, or None — a section with the
     book's figures alone still stands."""
     try:
-        return daily_book.index_facts(_card_closes(), currency, money)
+        return daily_book.index_facts(card_closes(), currency, money)
     except Exception as exc:  # noqa: BLE001 — best-effort, like the market block
         obs.warn("daily_action.index_unavailable", error_type=type(exc).__name__)
         return None
@@ -619,7 +619,7 @@ def book_chart(paths, lang: str) -> list[dict]:
         if money is None:
             return []
         return daily_book.versus(
-            money, _closes_since(money.index[0]), ccy,
+            money, closes_since(money.index[0]), ccy,
             label=translate("chat.chart_book", lang),
         )
     except Exception as exc:  # noqa: BLE001
@@ -632,7 +632,7 @@ def book_compare(paths, lang: str, span: str, index: str) -> list[dict]:
     index: the book's value beside the same money in the index
     (`daily_book.versus`, off the Portfolio page's own history), so the
     index is bought with the reader's deposits on their days, from the
-    book's first day (`_closes_since`). [] when it cannot be drawn."""
+    book's first day (`closes_since`). [] when it cannot be drawn."""
     from stocks.web.i18n import translate
 
     db = str(paths.db)
@@ -641,7 +641,7 @@ def book_compare(paths, lang: str, span: str, index: str) -> list[dict]:
     days = daily_book.window_days(span)
     label = translate("chat.chart_book", lang)
     hist, _twr, _missing = loaders.history(db, mtime, ccy)
-    closes = _closes_since(None if hist.empty else hist.index[0], index)
+    closes = closes_since(None if hist.empty else hist.index[0], index)
     return daily_book.versus(None if hist.empty else hist, closes, ccy,
                              label=label, days=days, index=index)
 
@@ -707,7 +707,7 @@ def _sources(paths, prefs: dict, facts: dict) -> daily_routines.Sources:
     )
 
 
-def _closes_on(ticker: str, days: list[date]) -> list[float | None]:
+def closes_on(ticker: str, days: list[date]) -> list[float | None]:
     """The close on or before each of `days` (`journal.ClosesOn`), off the
     cached window download the Review's return columns use."""
     import math
@@ -808,7 +808,7 @@ def check_theses(paths, prefs: dict, lang: str, day: date, spend) -> list[dict]:
     return fired
 
 
-def _held(paths) -> set[str]:
+def held_symbols(paths) -> set[str]:
     """The account's open positions' symbols, re-read on the job's thread."""
     try:
         db = str(paths.db)
@@ -985,7 +985,7 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
         except Exception as exc:  # noqa: BLE001 — SPY and the US funds still stand
             obs.warn("today.bench_closes_failed", error_type=type(exc).__name__)
             bench = {}
-        return {**_card_closes(), **bench, **loaders.held_closes(db, mtime)}
+        return {**card_closes(), **bench, **loaders.held_closes(db, mtime)}
 
     filings = None
     if os.environ.get("EDGAR_USER_AGENT"):
@@ -995,7 +995,7 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
 
     def print_source(ticker: str, iso: str) -> dict:
         # The release is read only where EDGAR can be asked at all.
-        return _print_source({"ticker": ticker, "date": iso},
+        return print_facts({"ticker": ticker, "date": iso},
                              release=filings is not None)
 
     return today_sections.gather(
@@ -1044,7 +1044,7 @@ def _today_weights(tbl) -> tuple[dict[str, float], list[str]]:
 # --------------------------------------------------------------------- job
 
 
-def _save_counters(paths, prefs: dict) -> None:
+def save_counters(paths, prefs: dict) -> None:
     """Merge the free-allowance counters into prefs.json.
 
     Merged rather than the whole dict written back: the prefs were read when
@@ -1076,7 +1076,7 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool,
     from stocks.web import auth
 
     if spent:
-        _save_counters(paths, prefs)
+        save_counters(paths, prefs)
     action = job.action or job.computed
     if action is None or job.abandoned:
         return
@@ -1213,13 +1213,13 @@ def start(
         ) or []
         if fired:
             facts["actions"] = with_fired(facts.get("actions") or [], fired,
-                                          _held(paths), day)
+                                          held_symbols(paths), day)
 
     def _check_filings() -> None:
         """The held names' 8-Ks read for red flags on the job's thread, any
         found put on this very card. Before the Today sections, whose news
         reads a flagged name first (`_alerted`)."""
-        held = _held(paths)
+        held = held_symbols(paths)
         flags = signals.filing_signals(_filings(held), held, day) if held else []
         if flags:
             facts["actions"] = with_flags(facts.get("actions") or [], flags,
@@ -1279,7 +1279,7 @@ def start(
             # After the card is out, so no reader waits on it: the price read
             # back on the moves proposed a month and a quarter ago.
             journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
-                           _closes_on, day)
+                           closes_on, day)
             # The thesis rules too: a model call per name with news, too
             # slow for a card anyone waits on, and pushed when one breaks.
             check_theses(paths, prefs, lang, day, spend)
@@ -1359,7 +1359,7 @@ def _release(ticker: str, iso: str) -> str | None:
     return edgar.earnings_release(ticker, date.fromisoformat(iso))
 
 
-def _print_source(action: dict, release: bool = True) -> dict:
+def print_facts(action: dict, release: bool = True) -> dict:
     """What a print's paragraph can quote beyond EPS: the quarter's revenue
     and margin, and the company's own press release (US filers). `release`
     False leaves the release unread — a caller without `EDGAR_USER_AGENT`
@@ -1399,7 +1399,7 @@ def _print_source(action: dict, release: bool = True) -> dict:
     return source
 
 
-def _rate_source(action: dict) -> dict:
+def rate_history(action: dict) -> dict:
     """A rate paragraph's history: the bank's last few moves, off the series
     the card already downloaded."""
     from stocks.data import macro_calendar as cal
@@ -1471,7 +1471,7 @@ def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | N
             spend_free=spend, chat_path=paths.chat,
         )
         if spent:
-            _save_counters(paths, prefs)
+            save_counters(paths, prefs)
         body = daily_analysis.record(card, key, found, written, card.lang)
         # Read, merge, write under the account's own lock ("" is no line's
         # key): two lines opened at once must not store over each other.

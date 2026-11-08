@@ -30,7 +30,7 @@ from stocks.portfolio.positions import build
 
 @_on_download
 def _priced_positions(db: str, mtime: float, base: str, closes) -> pd.DataFrame:
-    positions = ledger_state(db, mtime, base)[1]
+    positions = ledger_state(db, mtime, base).positions
     vals = position_values_history(positions, base=base, closes=closes)
     latest = (
         {t: float(v) for t, v in vals.iloc[-1].items() if pd.notna(v)}
@@ -54,7 +54,7 @@ def _self_priced_positions(db: str, mtime: float, base: str) -> pd.DataFrame:
 
     from stocks.analysis import portfolio as analysis
 
-    positions = ledger_state(db, mtime, base)[1]
+    positions = ledger_state(db, mtime, base).positions
     try:
         values = analysis.market_values(positions, base=base)
     except YFRateLimitError:
@@ -208,7 +208,7 @@ def basket_values(db: str, mtime: float, base: str, closes) -> pd.DataFrame:
     move. Prices come off the book's shared download, sliced to the window —
     no request of its own.
     """
-    positions = ledger_state(db, mtime, base)[1]
+    positions = ledger_state(db, mtime, base).positions
     cutoff = pd.Timestamp.today().normalize() - pd.DateOffset(months=_BASKET_MONTHS)
     window = {}
     for ticker, series in closes.items():
@@ -343,7 +343,7 @@ def basket_report_since(db: str, mtime: float, base: str):
     """
     from dataclasses import replace
 
-    txs = ledger_state(db, mtime, base)[0]
+    txs = ledger_state(db, mtime, base).txs
     if not txs:
         return None
     first = min(t.date for t in txs)

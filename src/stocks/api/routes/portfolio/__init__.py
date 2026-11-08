@@ -24,7 +24,6 @@ from stocks.api.routes.portfolio.holdings import (
 from stocks.api.routes.portfolio.income import dividends_, dividends_unbooked, fees_
 from stocks.api.routes.portfolio.ledger import (
     EditOps,
-    _change,
     health,
     list_changes,
     plan_change,
@@ -35,7 +34,6 @@ from stocks.api.routes.portfolio.taxes import tax_
 
 __all__ = [
     "_cash_in",
-    "_change",
     "_ledger_csv",
     "attribution",
     "dividends_",

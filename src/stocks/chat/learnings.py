@@ -54,7 +54,6 @@ from __future__ import annotations
 import json
 import re
 import secrets
-import threading
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
@@ -62,7 +61,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from stocks import atomic, obs, storage
+from stocks import obs, userstore
 from stocks.chat import structured
 
 FILE = "chat_learnings.json"
@@ -98,8 +97,7 @@ MAX_REPLACED = 3
 UNUSED_DAYS = 60
 
 # One account's file is written from its turn and from that turn's background
-# extraction at once; every read-modify-write holds this.
-_LOCK = threading.RLock()
+# extraction at once; every read-modify-write holds its `userstore.lock`.
 
 
 def path_for(chat: Path) -> Path:
@@ -234,9 +232,6 @@ def _save(path: Path, items: list[Learning],
     """Write the list. `unseen` replaces the changes waiting to be said,
     `asked` / `declined` the routine logs (`notice`) and `side` any of the
     _SIDE keys; None (or a key left out) keeps what is already there."""
-    from stocks import accounts
-
-    accounts.writable(path)
     raw = _raw(path)
     if unseen is None:
         unseen = _unseen(path)
@@ -258,12 +253,7 @@ def _save(path: Path, items: list[Learning],
             value = {k: v for k, v in value.items() if k in ids}
         if value:
             body[key] = value
-    atomic.write_json(path, body, indent=2)
-    try:
-        storage.persist(path)
-    except Exception as exc:  # noqa: BLE001 — the local copy is good
-        obs.warn("chat.learnings.persist_failed", error_type=type(exc).__name__,
-                 error=str(exc)[:200])
+    userstore.write(path, body)
 
 
 def side(path: Path, key: str) -> object:
@@ -275,7 +265,7 @@ def set_side(path: Path, **values: object) -> None:
     """Replace _SIDE values, the list left as it is."""
     if set(values) - set(_SIDE):
         raise KeyError(", ".join(sorted(set(values) - set(_SIDE))))
-    with _LOCK:
+    with userstore.lock(path):
         _save(path, load(path), side=values)
 
 
@@ -505,7 +495,7 @@ def save(path: Path, text: str, *, kind: str | None = None, thread: str = "",
     if len(text) < MIN_CHARS:
         raise ValueError("too short to be worth remembering")
     tickers = tuple(dict.fromkeys(t.upper() for t in tickers if t))[:5]
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         folded = _fold(text)
         now = _now()
@@ -564,7 +554,7 @@ def edit(path: Path, lid: str, *, text: str | None = None,
     """Change one learning's wording, kind, tickers or end (`until`, an ISO
     day; "" holds for good). None when there is no such id. New words keep
     the old ones (`replaced`), and bring their own end when they name one."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         for n, item in enumerate(items):
             if item.id != lid:
@@ -611,7 +601,7 @@ def edit(path: Path, lid: str, *, text: str | None = None,
 def supersede(path: Path, keep: str, old: str) -> tuple[Learning, Learning] | None:
     """Let memory `keep` replace memory `old`: `old` goes, its words kept in
     `keep`'s `replaced`. Returns (kept, gone); None when either is missing."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         at = next((n for n, i in enumerate(items) if i.id == keep), None)
         gone = next((i for i in items if i.id == old), None)
@@ -652,7 +642,7 @@ def note_used(path: Path, ids: Iterable[str], day: str | None = None) -> None:
     if not ids:
         return
     day = day or _today()
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         known = {i.id for i in items}
         used = usage(path)
@@ -697,7 +687,7 @@ def set_recipe(path: Path, lid: str, text: str, recipe: dict) -> bool:
     """Keep a routine's recipe, worked out for its wording `text`. False,
     keeping nothing, when that routine is gone or has been reworded since:
     a recipe for words the user no longer says is not theirs."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         for n, item in enumerate(items):
             if item.id == lid and item.kind == "routine" and item.text == text:
@@ -712,7 +702,7 @@ def drop(path: Path, lid: str) -> Learning | None:
 
     A routine deleted is remembered as declined: asking that question again
     on ROUTINE_DAYS days does not bring it back (`notice`)."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         kept = [i for i in items if i.id != lid]
         if len(kept) == len(items):
@@ -728,18 +718,10 @@ def drop(path: Path, lid: str) -> Learning | None:
 
 def clear(path: Path) -> int:
     """Delete every learning. Returns how many there were."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         if path.exists():
-            from stocks import accounts
-
-            accounts.writable(path)
-            path.unlink()
-            try:
-                storage.persist(path)  # gone locally -> deleted in the bucket
-            except Exception as exc:  # noqa: BLE001
-                obs.warn("chat.learnings.persist_failed",
-                         error_type=type(exc).__name__, error=str(exc)[:200])
+            userstore.remove(path)  # gone locally -> deleted in the bucket
         return len(items)
 
 
@@ -754,7 +736,7 @@ def change(op: str, item: Learning, **extra: object) -> dict:
 def take_unseen(path: Path) -> list[dict]:
     """The changes made in the background that no turn has said yet — handed
     over once, to the turn about to be stored."""
-    with _LOCK:
+    with userstore.lock(path):
         waiting = _unseen(path)
         if waiting:
             _save(path, load(path), unseen=[])
@@ -1277,7 +1259,7 @@ def apply(path: Path, proposed: list[Lesson], *, thread: str = "",
     user may have edited it in the meantime, and a change to a memory that
     has since gone is skipped. A full list takes no additions — the asked-for
     ones are not evicted to make room for a guess."""
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         made: list[dict] = []
         now = _now()
@@ -1386,7 +1368,7 @@ def notice(path: Path, message: str, *, day: str, thread: str = "",
     terms = _ask_terms(message)
     if not terms or (len(terms) < 2 and not tickers and not opener):
         return None
-    with _LOCK:
+    with userstore.lock(path):
         items = load(path)
         if any(i.kind == "routine" and _alike(_ask_terms(i.text), terms)
                for i in items):

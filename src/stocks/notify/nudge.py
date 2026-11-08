@@ -178,7 +178,7 @@ def run_nudge_fanout(dry_run: bool = False, today: date | None = None) -> dict[s
                 )
             else:
                 status[user.label] = "not delivered"
-            save_state(state, user.state_path)
+            save_state(state, user.state_path, only=("nudges",))
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

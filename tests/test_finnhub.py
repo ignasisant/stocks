@@ -12,7 +12,7 @@ import urllib.error
 import pytest
 
 import stocks.data.fetch as fetch
-from stocks.analysis.portfolio import _snapshot
+from stocks.analysis.portfolio import quote_snapshot
 from stocks.data import finnhub
 from stocks.data import quotes as q
 
@@ -70,7 +70,7 @@ def test_share_classes_are_asked_in_finnhubs_spelling(keyed):
 # --------------------------------------------------------------------- shape
 def test_the_row_reads_as_a_regular_session_quote(keyed):
     row = finnhub.quotes(["AAPL"], timeout=1)["AAPL"]
-    snap = _snapshot(row)
+    snap = quote_snapshot(row)
     assert snap["price"] == 110.0
     assert abs(snap["pct"] - 0.10) < 1e-9
     assert snap["session"] is None  # no extended hours on the free quote

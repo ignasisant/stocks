@@ -247,7 +247,7 @@ def test_the_index_is_read_back_to_the_books_first_day(
     periods = []
     monkeypatch.setattr(briefing, "_compare_closes",
                         lambda period="6y": periods.append(period) or {})
-    monkeypatch.setattr(briefing, "_card_closes", dict)
+    monkeypatch.setattr(briefing, "card_closes", dict)
     # Whatever the window: the same money goes in from the book's first day.
     lines = briefing.book_compare(account, "en", "1m", index)
     assert periods == asked
@@ -266,7 +266,7 @@ def test_every_window_is_the_book_against_its_own_money_in_the_index(
     hist = pd.DataFrame({"value": value, "injected": injected})
     patch_loaders(monkeypatch, "history", lambda *a, **k: (hist, None, []))
     monkeypatch.setattr(briefing, "_compare_closes", lambda period="6y": {})
-    monkeypatch.setattr(briefing, "_card_closes", dict)
+    monkeypatch.setattr(briefing, "card_closes", dict)
     monkeypatch.setattr(daily_book, "index_series", lambda closes, ccy: (spy, "EUR"))
     for span, days_back in (("1m", 30), ("6m", 182), ("2y", 730)):
         book, index = briefing.book_compare(account, "en", span, "SPY")
@@ -361,13 +361,13 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     patch_loaders(monkeypatch, "headlines", lambda t: [])
     patch_loaders(monkeypatch, "insiders", lambda t: [])
     patch_loaders(monkeypatch, "eu_insiders", lambda t: [])
-    monkeypatch.setattr(briefing, "_card_closes", lambda: {})
+    monkeypatch.setattr(briefing, "card_closes", lambda: {})
     monkeypatch.setattr(briefing, "_bench_closes", lambda: {})
     row = SimpleNamespace(ticker="AAPL", verdict="trim", sector="Technology",
                           quality=70.0, cheapness=20.0)
     monkeypatch.setattr(briefing, "_review_rows", lambda paths: [row])
     # The followed names' prints come off the calendar the card already read;
-    # a print's revenue off `_print_source`, the release left unread without
+    # a print's revenue off `print_facts`, the release left unread without
     # EDGAR (it would only cache the refusal).
     from stocks.data.earnings import EarningsResult
 
@@ -380,7 +380,7 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
         asked.append((action, release))
         return {"revenue": 35.1e9, "revenue_yoy_pct": 12.0, "currency": "USD"}
 
-    monkeypatch.setattr(briefing, "_print_source", print_source)
+    monkeypatch.setattr(briefing, "print_facts", print_source)
     reviewed: list = []
     out = briefing.gather_today(
         account, {}, {"actions": [{"kind": "alert_hit", "ticker": "KO"}]}, "en",
@@ -424,7 +424,7 @@ def test_the_book_rows_are_the_ones_home_prints_now(account, monkeypatch):
         "day": (3835.0, 0.0284), "week": (-110.0, -0.0008), "month": None})
     patch_loaders(monkeypatch, "history",
                   lambda db, mtime, base="EUR": (pd.DataFrame(), None, []))
-    monkeypatch.setattr(briefing, "_card_closes", lambda: {})
+    monkeypatch.setattr(briefing, "card_closes", lambda: {})
     monkeypatch.setattr(daily_book, "index_facts", lambda closes, ccy, hist=None: {
         "day_pct": 1.2, "week_pct": -0.4, "month_pct": 2.0})
     card = daily_card.live_book(account, _card_with_book())

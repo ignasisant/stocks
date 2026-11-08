@@ -273,6 +273,66 @@ def test_a_missing_ledger_reads_as_nothing_imported(tmp_path):
 
 
 # ----------------------------------------------------------------- releases
+# ---------------------------------------------------------------- account_gaps
+
+
+def _gap_paths(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(**vars(_paths(tmp_path)), journal=tmp_path / "journal.json")
+
+
+def _keys(gaps) -> list[str]:
+    return [g.key for g in gaps]
+
+
+def test_gaps_lead_with_what_makes_the_figures_wrong(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding, "_connector_open", lambda: False)
+    gaps = onboarding.account_gaps({}, _gap_paths(tmp_path), held={"AAPL", "KO"},
+                                   unpriced=["ORGN", "SLP"])
+    assert _keys(gaps) == ["unpriced", "plan", "rules", "push"]
+    assert gaps[0].args == {"names": "ORGN, SLP"}
+    assert gaps[0].query == {"ticker": "ORGN"}
+    assert gaps[2].args == {"n": "2", "total": "2"}
+    assert len(gaps) == onboarding.GAPS_SHOWN
+
+
+def test_a_gap_goes_once_it_is_set_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding, "_connector_open", lambda: False)
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 1)
+    prefs = {"investor_plan": {"set": True}, "tax_residence": "ES",
+             "investor_profile": {"set": True}}
+    assert onboarding.account_gaps(prefs, _gap_paths(tmp_path), held=set()) == []
+    del prefs["tax_residence"]
+    assert _keys(onboarding.account_gaps(prefs, _gap_paths(tmp_path), held=set())) == [
+        "tax"]
+
+
+def test_the_claude_gap_needs_the_connector_and_an_address(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 1)
+    prefs = {"investor_plan": {"set": True}, "tax_residence": "ES",
+             "investor_profile": {"set": True}}
+    monkeypatch.setattr(onboarding, "_connector_open", lambda: True)
+    from stocks.connector import store
+
+    monkeypatch.setattr(store, "ledger", lambda: SimpleNamespace(
+        grants_for=lambda email: []))
+    paths = _gap_paths(tmp_path)
+    assert onboarding.account_gaps(prefs, paths, held=set()) == []
+    gaps = onboarding.account_gaps(prefs, paths, held=set(), email="a@example.com")
+    assert _keys(gaps) == ["claude"]
+
+
+def test_a_broken_check_reads_as_nothing_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding, "_connector_open", lambda: False)
+    monkeypatch.setattr(onboarding.webpush, "devices", lambda path: 1)
+
+    def broken(prefs):
+        raise RuntimeError("bad prefs")
+
+    monkeypatch.setattr(onboarding, "_has_plan", broken)
+    prefs = {"tax_residence": "ES", "investor_profile": {"set": True}}
+    assert onboarding.account_gaps(prefs, _gap_paths(tmp_path), held=set()) == []
+
+
 def test_unseen_releases_are_everything_for_a_new_account():
     assert onboarding.unseen_releases({}) == onboarding.RELEASES
 
@@ -370,6 +430,17 @@ def test_unseen_news_drops_a_feature_this_deploy_does_not_carry(monkeypatch):
     got = [c.item.slug for c in onboarding.unseen_news({})]
     # A card with no step of its own is not gated on one.
     assert got == ["here", "stepless"]
+
+
+@pytest.mark.parametrize(("configured", "shown"), [(False, False), (True, True)])
+def test_the_email_card_waits_for_a_deploy_that_can_send(
+    monkeypatch, configured, shown
+):
+    """The Friday email's page ships everywhere; without Resend keys no mail
+    goes out, and a card announcing it would promise mail that never comes."""
+    monkeypatch.setattr(onboarding.mail, "configured", lambda: configured)
+    got = [c.item.slug for c in onboarding.unseen_news({})]
+    assert ("email" in got) is shown
 
 
 @pytest.mark.parametrize(

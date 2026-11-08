@@ -14,9 +14,7 @@ import { Spoken, useScrub } from "../../../ui/chart/useScrub";
 import { useWidth } from "../../../shell/useWidth";
 import type { TaxPeriod } from "../api";
 import {
-  niceTicks,
   NARROW,
-  plotHeightFor,
   AxisLabel,
   ValueAxis,
   Legend,
@@ -28,6 +26,8 @@ import {
   NARROW_PAD,
   BARS,
 } from "./frame";
+import { fitHeight } from "../../../ui/chart/fit";
+import { ticks } from "../../../ui/chart/ticks";
 
 /**
  * The realized result per period: gains (and dividends, where they share the
@@ -115,7 +115,7 @@ function PeriodBarsPlot({
   const span = maxUp + maxDown || 1;
 
   const narrow = width < NARROW;
-  const height = plotHeightFor(width, BARS.height);
+  const height = fitHeight(width, BARS.height);
   const left = narrow ? NARROW_PAD : PLOT.left;
   const top = 8;
   const footer = 22;
@@ -210,9 +210,7 @@ function PeriodBarsPlot({
           }}
         >
           <ValueAxis
-            ticks={niceTicks(-maxDown, maxUp, narrow ? 3 : 4).filter(
-              (tick) => tick !== 0,
-            )}
+            ticks={ticks(-maxDown, maxUp, narrow ? 4 : 5).filter((tick) => tick !== 0)}
             y={y}
             left={left}
             right={width - PLOT.right}

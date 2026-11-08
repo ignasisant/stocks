@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import re
 import secrets
 import threading
@@ -30,7 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from stocks import atomic, storage
+from stocks import atomic, storage, userstore
 from stocks.chat import journal, learnings, memory
 from stocks.config import DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
 from stocks.secrets_env import secret
@@ -46,7 +45,7 @@ USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
     learnings.FILE, journal.FILE, "devices.json", "push.json", "push_log.json",
-    "shares.json",
+    "shares.json", "alerts_state.json",
 )
 
 
@@ -108,6 +107,12 @@ class UserPaths:
         """The links this account shared answers under (web/shares.py): the
         shares themselves live outside the account, this is its list of them."""
         return self.action.with_name("shares.json")
+
+    @property
+    def alerts_state(self) -> Path:
+        """Which alert rules already fired, and when (notify/state.py) —
+        beside prefs.json, which the hourly cron finds accounts by."""
+        return self.prefs.with_name("alerts_state.json")
 
     @property
     def learnings(self) -> Path:
@@ -293,6 +298,7 @@ def restore_account(
                 paths.devices,
                 paths.push,
                 paths.push_log,
+                paths.alerts_state,
             ),
         )
     except Exception as exc:
@@ -465,6 +471,10 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # plain `.get()` on a loaded prefs dict answered None. Two truths about one
     # switch; this is the one the senders already assume.
     "notify_weekly": True,
+    # The Friday review by email (notify/weekly_email.py): on for every account
+    # that imported a book, off by its one-click unsubscribe or the Profile
+    # toggle. Needs no device, unlike the toggles above.
+    "notify_weekly_email": True,
     "notify_alerts": True,
     # Tax residence drives which jurisdiction's rules the Realized & tax tab
     # applies and which currency the ledger is replayed in (see
@@ -506,11 +516,7 @@ def stored_prefs(prefs: Path) -> dict:
     account being served: it means "nothing was expressed", which is where a
     brand-new account starts anyway.
     """
-    try:
-        stored = json.loads(prefs.read_text())
-    except (OSError, ValueError, TypeError):
-        return {}
-    return stored if isinstance(stored, dict) else {}
+    return userstore.read(prefs)
 
 
 class LoadedPrefs(dict):
@@ -571,12 +577,6 @@ def writable(path: Path) -> Path:
     return path
 
 
-# One lock per prefs file: two requests of one account each read-modify-write
-# the same file, and the bucket must receive the writes in the order the disk
-# took them.
-_prefs_locks: dict[str, threading.RLock] = {}
-_prefs_locks_guard = threading.Lock()
-
 # Keys that count rather than hold a setting. A `LoadedPrefs` saves them as the
 # difference from what it read, so two turns that each spent one unit leave
 # the file two higher — saved as plain values, both would write N+1 and the
@@ -585,9 +585,12 @@ COUNTER_PREFIXES = ("free_msgs::",)
 
 
 def prefs_lock(prefs: Path) -> threading.RLock:
-    """The lock `save_prefs` takes; hold it to check-and-spend in one step."""
-    with _prefs_locks_guard:
-        return _prefs_locks.setdefault(str(prefs.resolve()), threading.RLock())
+    """The lock `save_prefs` takes; hold it to check-and-spend in one step.
+
+    `userstore.lock`, so anything editing prefs.json through `userstore` queues
+    behind the same one — and the bucket receives the writes in the order the
+    disk took them."""
+    return userstore.lock(prefs)
 
 
 _prefs_lock = prefs_lock
@@ -629,11 +632,10 @@ def save_prefs(
                     stored[k] = v
             for k in removed:
                 stored.pop(k, None)
-            atomic.write_json(writable(prefs), stored, indent=2)
+            userstore.write(prefs, stored, mirror=persist or storage.persist)
             values.base = copy.deepcopy(dict(values))
         else:
-            atomic.write_json(writable(prefs), values, indent=2)
-        (persist or storage.persist)(prefs)
+            userstore.write(prefs, values, mirror=persist or storage.persist)
 
 
 def update_prefs(
@@ -668,10 +670,7 @@ def load_recent_searches(prefs: Path) -> list[str]:
     A corrupt or missing prefs file reads as "no history", which is the same
     thing the search box shows a brand-new account.
     """
-    try:
-        stored = json.loads(prefs.read_text()).get("recent_searches", [])
-    except Exception:
-        return []
+    stored = stored_prefs(prefs).get("recent_searches", [])
     if not isinstance(stored, list):
         return []
     return [str(t) for t in stored][:RECENT_SEARCHES_MAX]
@@ -683,10 +682,7 @@ def load_recent_names(prefs: Path) -> dict[str, str]:
     Kept in a key of its own, not folded into `recent_searches`, because that
     list is bare strings in every prefs.json already written.
     """
-    try:
-        stored = json.loads(prefs.read_text()).get("recent_names", {})
-    except Exception:
-        return {}
+    stored = stored_prefs(prefs).get("recent_names", {})
     if not isinstance(stored, dict):
         return {}
     return {str(k): str(v) for k, v in stored.items() if v}
@@ -711,24 +707,19 @@ def push_recent_search(
     t = ticker.strip().upper()
     if not t:
         return load_recent_searches(prefs)
-    try:
-        stored = json.loads(prefs.read_text())
-    except Exception:
-        stored = {}
-    if not isinstance(stored, dict):
-        stored = {}
-    rest = [x for x in load_recent_searches(prefs) if x != t]
-    recent = [t, *rest][:RECENT_SEARCHES_MAX]
-    stored["recent_searches"] = recent
-    names = {k: v for k, v in load_recent_names(prefs).items() if k in recent}
-    if name.strip():
-        names[t] = name.strip()
-    stored["recent_names"] = names
-    # Not through save_prefs, so the guard has to be stated again here. This is
-    # the exact shape of the bug it exists for: a helper that writes prefs,
-    # reached from a path that never asked who is asking.
-    atomic.write_json(writable(prefs), stored, indent=2)
-    (persist or storage.persist)(prefs)
+    # Under the prefs lock and through save_prefs, like every other prefs
+    # write: on its own it raced a settings save and could put back the value
+    # that save had just replaced.
+    with prefs_lock(prefs):
+        stored = stored_prefs(prefs)
+        rest = [x for x in load_recent_searches(prefs) if x != t]
+        recent = [t, *rest][:RECENT_SEARCHES_MAX]
+        stored["recent_searches"] = recent
+        names = {k: v for k, v in load_recent_names(prefs).items() if k in recent}
+        if name.strip():
+            names[t] = name.strip()
+        stored["recent_names"] = names
+        save_prefs(prefs, stored, persist)
     return recent
 
 

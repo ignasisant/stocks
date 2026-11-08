@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api import book_moves, briefing, home, loaders
 from stocks.api.app import app as fastapi_app
+from stocks.api.loaders.keys import LedgerState
 from stocks.api.routes import glance
 from tests.patching import patch_loaders
 
@@ -395,7 +396,7 @@ def test_a_position_the_basket_cannot_price_is_declared(client, account, monkeyp
     patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": basket())
     patch_loaders(
         monkeypatch, "ledger_state",
-        lambda db, mtime, base="EUR", matching="fifo": (
+        lambda db, mtime, base="EUR", matching="fifo": LedgerState(
             [],
             [SimpleNamespace(ticker=t) for t in ("AAPL", "MSFT", "ORGN")],
             [],

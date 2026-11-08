@@ -21,13 +21,11 @@ import { useLang, useT } from "../../shell/i18n";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Fold } from "../../ui/Fold";
-import { moneyIn, shares as formatShares } from "../portfolio/format";
 import type { CalendarDividend, EventPick } from "./data";
 import { days, longDate, plain } from "./format";
 import type { T } from "./format";
 import { num } from "../../shell/numbers";
-
-const DASH = "—";
+import { DASH, moneyIn, shares as formatShares } from "../../shell/format";
 
 /** Cash in the dividend's own currency; a bare figure when Yahoo named none. */
 export function cash(
@@ -44,7 +42,7 @@ export function cash(
 function breakdown(dividend: CalendarDividend, lang: string, t: T): string {
   return t("earnings.div_breakdown", {
     per_share: cash(lang, dividend.per_share, dividend.currency),
-    shares: formatShares(lang, dividend.shares) ?? DASH,
+    shares: formatShares(dividend.shares, { lang }) ?? DASH,
     amount: cash(lang, dividend.amount, dividend.currency),
   });
 }

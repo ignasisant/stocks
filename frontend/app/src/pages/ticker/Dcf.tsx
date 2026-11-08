@@ -12,9 +12,9 @@
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
 import { valuePerShare } from "./dcfmath";
-import { DASH, money, signedPercent } from "./format";
 import { Card, Note, Scroll } from "./ui";
 import type { Dcf } from "./types";
+import { DASH, money, percent } from "../../shell/format";
 
 /** A percentage as the field shows it: 0.085 -> "8.5". */
 const asField = (rate: number) => String(Math.round(rate * 1000) / 10);
@@ -73,14 +73,17 @@ export function DcfSection({ dcf }: { dcf: Dcf }) {
         <div className="tk-dcf-value">
           <span className="tk-dcf-label">{t("ticker.dcf_value")}</span>
           <strong>
-            {value === null ? DASH : money(value)} {dcf.currency ?? ""}
+            {value === null ? DASH : (money(value, { digits: 2 }) ?? DASH)}{" "}
+            {dcf.currency ?? ""}
           </strong>
           <span className="tk-dcf-vs">
             {upside === null
               ? t("ticker.dcf_refused")
               : t("ticker.dcf_vs_price", {
-                  price: money(dcf.price),
-                  pct: signedPercent(upside, 0),
+                  price: money(dcf.price, { digits: 2 }) ?? DASH,
+                  pct:
+                    percent(upside, { digits: 0, signed: "always", tight: true }) ??
+                    DASH,
                 })}
           </span>
         </div>
@@ -134,7 +137,7 @@ export function DcfSection({ dcf }: { dcf: Dcf }) {
                       className={current ? "tk-dcf-now" : undefined}
                       aria-current={current ? "true" : undefined}
                     >
-                      {cell === null ? DASH : money(cell)}
+                      {cell === null ? DASH : (money(cell, { digits: 2 }) ?? DASH)}
                     </td>
                   );
                 })}

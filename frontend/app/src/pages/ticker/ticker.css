@@ -1103,12 +1103,12 @@
   }
 }
 
-.tk-ticker-logo {
+.tk-ticker .ag-tick-logo {
   width: 16px;
   height: 16px;
-  border-radius: var(--ag-radius-xs);
-  background: var(--ag-text-primary);
-  object-fit: contain;
+  padding: 0;
+  margin-right: 0;
+  vertical-align: baseline;
 }
 
 /* A wide grid on a phone either pans sideways or squeezes every column to three

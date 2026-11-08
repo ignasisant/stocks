@@ -132,7 +132,7 @@
   "profile.iv_save_failed": "No se ha podido guardar tu perfil. Tus respuestas siguen aquí; vuelve a intentarlo.",
   "profile.notifications": "Notificaciones",
   "profile.notify_caption": "El resumen IA, las cifras del día, la revisión semanal, las alertas de precio y las respuestas listas llegan como notificaciones a este dispositivo.",
-  "profile.notify_how_body": "- **Resumen IA** — qué mirar hoy, por la mañana. Abre su conversación.\n- **Cifras del día** — valor, variación del día y la semana, mayores movimientos y resultados; por la noche.\n- **Revisión semanal** — la semana frente al índice; los domingos.\n- **Alertas de precio** — umbrales de tu lista, cada hora en días de mercado.\n- **¿Una semana sin entrar?** — un recordatorio, dos como mucho.\n\nCada ejecución programada queda como conversación en Programadas, en el chat, donde también eliges hora y días. Solo guardamos la dirección push del navegador; desactívalas cuando quieras.",
+  "profile.notify_how_body": "- **Resumen IA** — qué mirar hoy, por la mañana. Abre su conversación.\n- **Cifras del día** — valor, variación del día y la semana, mayores movimientos y resultados; por la noche.\n- **Revisión semanal** — la semana frente al índice; los domingos.\n- **Alertas de precio** — umbrales de tu lista, cada hora en días de mercado.\n- **¿Una semana sin entrar?** — un recordatorio, dos como mucho.\n- **Email del viernes** — tu semana en cifras, a tu dirección de acceso.\n\nCada ejecución programada queda como conversación en Programadas, en el chat, donde también eliges hora y días. Solo guardamos la dirección push del navegador; desactívalas cuando quieras.",
   "profile.notify_digest": "Cifras del día",
   "profile.notify_alerts": "Alertas de precio (cada hora, en horario de mercado)",
   "profile.push_test": "Enviar notificación de prueba",
@@ -294,5 +294,9 @@
   "profile.invite_note": "Envíale la app. Tu enlace no muestra nada de tu cartera.",
   "profile.invite_send": "Enviar invitación",
   "profile.invite_link": "Tu enlace de invitación",
-  "profile.invite_text": "Sigo mi cartera con TopStocks. Échale un vistazo:"
+  "profile.invite_text": "Sigo mi cartera con TopStocks. Échale un vistazo:",
+  "profile.notify_email_title": "Email",
+  "profile.notify_email_sub": "Se envía a {email}. No hace falta ningún dispositivo.",
+  "profile.notify_weekly_email": "Email del viernes",
+  "profile.notify_weekly_email_help": "Tu semana tras el cierre de EE. UU.: valor, rentabilidad frente al S&P 500 desde tu primer día, lo que se movió, tus operaciones y la semana que viene."
 }

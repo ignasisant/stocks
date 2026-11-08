@@ -168,7 +168,7 @@ def risk(
     # ledger's value path. Both belong on one axis or neither says much — the
     # gap between them is exactly how much the book has changed shape.
     hist, twr, missing = path.result()
-    flows = flow_series(loaders.ledger_state(db, mtime, ccy)[0], base=ccy)
+    flows = flow_series(loaders.ledger_state(db, mtime, ccy).txs, base=ccy)
     return Risk(
         base=ccy,
         period=period,

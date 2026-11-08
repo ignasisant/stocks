@@ -34,7 +34,7 @@ import { useTickerProfile } from "../../shell/tickers";
 import { useDialog } from "../../shell/useDialog";
 import { useExitGhost } from "../../shell/useSheet";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
-import { moneyIn, percent, shares as formatShares, tone } from "../portfolio/format";
+import { tone } from "../portfolio/format";
 import type {
   CalendarDividend,
   CalendarEvent,
@@ -54,8 +54,7 @@ import type { T } from "./format";
 import { loss, rule } from "./Repurchase";
 import ResultDetail from "./ResultDetail";
 import { taxBody, taxTitle } from "./Tax";
-
-const DASH = "—";
+import { DASH, moneyIn, percent, shares as formatShares } from "../../shell/format";
 
 /** "Today", "in 9 days", "3 days ago" — how far the date is, in words. */
 export function relative(daysUntil: number | null, t: T): string {
@@ -241,7 +240,7 @@ function DividendCard({ dividend }: { dividend: CalendarDividend }) {
   const gross = dividend.amount;
   const net = gross === null || rate === null ? null : gross * (1 - rate);
   const withheld = gross === null || rate === null ? null : gross * rate;
-  const rateText = rate === null ? DASH : (percent(lang, rate, { digits: 0 }) ?? DASH);
+  const rateText = rate === null ? DASH : (percent(rate, { lang, digits: 0 }) ?? DASH);
   const base = dividend.base_currency;
   // A second figure only when it says something the first does not.
   const converted =
@@ -293,7 +292,7 @@ function DividendCard({ dividend }: { dividend: CalendarDividend }) {
         />
         <Kpi
           label={t("earnings.ev_div_shares")}
-          value={formatShares(lang, dividend.shares) ?? DASH}
+          value={formatShares(dividend.shares, { lang }) ?? DASH}
         />
         <Kpi
           label={t("earnings.ev_div_gross_tile")}
@@ -413,7 +412,7 @@ function TradeCard({ trade }: { trade: CalendarTrade }) {
         label={longDate(trade.date, t)}
         value={cash(lang, trade.amount, trade.currency)}
         sub={t("earnings.trade_breakdown", {
-          shares: formatShares(lang, trade.quantity) ?? DASH,
+          shares: formatShares(trade.quantity, { lang }) ?? DASH,
           price: cash(lang, trade.price, trade.currency),
         })}
         tags={<span className="earn-ev-tag">{relative(trade.days_until, t)}</span>}
@@ -421,7 +420,7 @@ function TradeCard({ trade }: { trade: CalendarTrade }) {
       <KpiGrid>
         <Kpi
           label={t("earnings.ev_trade_shares")}
-          value={formatShares(lang, trade.quantity) ?? DASH}
+          value={formatShares(trade.quantity, { lang }) ?? DASH}
         />
         <Kpi
           label={t("earnings.ev_trade_price")}

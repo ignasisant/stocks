@@ -7,122 +7,13 @@
  * Spanish reader gets "1.234 €" and an English one "€1,234".
  */
 
-import { formatter } from "../../shell/numbers";
+import { isNum } from "../../shell/format";
 
 type Maybe = number | null | undefined;
 
-const usable = (value: Maybe): value is number =>
-  value !== null && value !== undefined && Number.isFinite(value);
-
-export type Money = (
-  value: Maybe,
-  options?: { digits?: number; signed?: boolean },
-) => string | null;
-
-/**
- * A formatter bound to one currency — the reporting one, a tax replay's, or a
- * dividend's own.
- *
- * Not every currency string on this page is the account's: the forward
- * dividend table quotes each per-share amount in the company's own currency,
- * straight from Yahoo. `Intl` throws a RangeError on anything that is not a
- * well-formed code, and a throw inside render blanks the page — so an
- * unrecognised one falls back to the amount with its code beside it rather
- * than taking the tab down.
- */
-export function moneyIn(lang: string, currency: string): Money {
-  return (value, options) => {
-    if (!usable(value)) return null;
-    const digits = options?.digits ?? 0;
-    const shape = {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-      signDisplay: (options?.signed ? "exceptZero" : "auto") as "exceptZero" | "auto",
-    };
-    try {
-      return formatter(lang, {
-        style: "currency",
-        currency,
-        ...shape,
-      }).format(value);
-    } catch {
-      return `${formatter(lang, shape).format(value)} ${currency}`;
-    }
-  };
-}
-
-/**
- * `moneyIn`, shorthand past a thousand: 12500 -> "12.5k €", 1500000 -> "1.5M €".
- *
- * For a chart axis, where the gutter is a few characters wide and every digit
- * crowds the plot — the exact figure is a tooltip away. Reuses `moneyIn` for
- * the scaled number (so the currency symbol's side and the locale's decimal
- * mark stay correct) and splices the suffix in right after the last digit.
- */
-export function compactMoneyIn(lang: string, currency: string): Money {
-  const full = moneyIn(lang, currency);
-  return (value, options) => {
-    if (!usable(value)) return null;
-    const abs = Math.abs(value);
-    const [scale, suffix]: [number, string] =
-      abs >= 1e9
-        ? [1e9, "B"]
-        : abs >= 1e6
-          ? [1e6, "M"]
-          : abs >= 1e3
-            ? [1e3, "k"]
-            : [1, ""];
-    if (!suffix) return full(value, options);
-    const scaled = value / scale;
-    const digits = options?.digits ?? (Number.isInteger(scaled) ? 0 : 1);
-    const rendered = full(scaled, { ...options, digits });
-    return rendered && rendered.replace(/(\d)(\D*)$/, `$1${suffix}$2`);
-  };
-}
-
-/** A fraction as a percentage: 0.1234 -> "12.3%". */
-export function percent(
-  lang: string,
-  value: Maybe,
-  options?: { digits?: number; signed?: boolean },
-): string | null {
-  if (!usable(value)) return null;
-  const digits = options?.digits ?? 1;
-  return formatter(lang, {
-    style: "percent",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: options?.signed ? "exceptZero" : "auto",
-  }).format(value);
-}
-
-export function decimal(lang: string, value: Maybe, digits = 2): string | null {
-  if (!usable(value)) return null;
-  return formatter(lang, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
-}
-
-/**
- * Share counts: enough decimals for a fractional share, none for a whole one.
- *
- * The ledger holds 0.0031 of a name as readily as 12 of another, and in a
- * list of payers "12.0000" beside it is noise. `fixed` is the ledger tables'
- * reading instead — positions and tax parcels, at four decimals always, so the
- * figures line up down the column.
- */
-export function shares(lang: string, value: Maybe, fixed = false): string | null {
-  if (!usable(value)) return null;
-  return formatter(lang, {
-    minimumFractionDigits: fixed ? 4 : 0,
-    maximumFractionDigits: fixed || !Number.isInteger(value) ? 4 : 0,
-  }).format(value);
-}
-
 /** Sign of a figure, for the colour a P/L cell takes. `null` is neither. */
 export function tone(value: Maybe): "up" | "down" | "flat" {
-  if (!usable(value) || value === 0) return "flat";
+  if (!isNum(value) || value === 0) return "flat";
   return value > 0 ? "up" : "down";
 }
 

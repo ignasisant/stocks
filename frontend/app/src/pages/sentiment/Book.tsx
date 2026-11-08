@@ -12,7 +12,7 @@ import { useT } from "../../shell/i18n";
 import { DownBody } from "./Down";
 import { driftChip } from "./Hero";
 import { Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
-import { fixed, maybe, percent, sectorKey, share, signed } from "./format";
+import { fixed, maybe, signedPercent, sectorKey, share, signed } from "./format";
 import { topSectors } from "./logic";
 import type { PulseBook, TrendBlock, TrendRow } from "./types";
 import { Badge } from "../../ui/Badge";
@@ -88,11 +88,13 @@ export function Book({
     );
   }
   if (drag !== null) {
-    notes.push(t("sentiment.fx_note", { value: percent(drag, 2) }));
+    notes.push(t("sentiment.fx_note", { value: signedPercent(drag, 2) }));
   }
   if (book.rotation_capture !== null) {
     notes.push(
-      t("sentiment.rotation_capture", { value: percent(book.rotation_capture, 2) }),
+      t("sentiment.rotation_capture", {
+        value: signedPercent(book.rotation_capture, 2),
+      }),
     );
   }
   // Which of their largest sectors is beating the index right now. The three
@@ -147,7 +149,10 @@ export function Book({
             chip={
               drag === null
                 ? null
-                : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
+                : chipFor(
+                    drag,
+                    t("sentiment.fx_pill", { value: signedPercent(drag, 2) }),
+                  )
             }
           />
         </KpiGrid>

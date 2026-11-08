@@ -13,8 +13,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { FundFitSection } from "./FundFit";
 import { FundSection } from "./Sections";
-import type { ClosedEnd, Fund, SourceCheck, SourcedFigure } from "./types";
+import type {
+  ClosedEnd,
+  Fund,
+  FundFit,
+  FundWrapper,
+  SourceCheck,
+  SourcedFigure,
+} from "./types";
 
 const figure = (
   value: number | null,
@@ -163,5 +171,123 @@ describe("a money-market fund", () => {
     const html = renderToStaticMarkup(<FundSection fund={cash} />);
     expect(html).toContain("Bund 2027");
     expect(html).toContain("ticker.fund_caption");
+  });
+});
+
+describe("a fund's wrapper", () => {
+  const wrapper: FundWrapper = {
+    share_class: "acc",
+    domicile: "IE",
+    ucits: true,
+    hedged: null,
+    synthetic: false,
+    tracks: "MSCI EM IMI",
+    exposure: "em",
+    window_start: null,
+    window_end: null,
+    underlying_closed: true,
+  };
+  const eimi: Fund = {
+    ...base,
+    ticker: "EIMI.L",
+    quote_type: "ETF",
+    currency: "USD",
+    is_bond_fund: false,
+    closed_end: null,
+    aum: 2e7,
+    average_traded: 4e6,
+    traded_currency: "USD",
+    wrapper,
+  };
+
+  it("says class, index, currency and that its market sleeps", () => {
+    const html = render(eimi);
+    expect(html).toContain("ticker.fund_acc");
+    expect(html).toContain("UCITS");
+    expect(html).toContain("ticker.fund_tracks");
+    expect(html).toContain("ticker.fund_currency<");
+    expect(html).toContain("ticker.fund_window_closed");
+    expect(html).toContain("ticker.fund_traded");
+    // 20 M: the size issuers shut.
+    expect(html).toContain("ticker.fund_small");
+    // An EM basket's dividends are not American: no treaty line.
+    expect(html).not.toContain("ticker.fund_wht_ie");
+  });
+
+  it("charges an Irish world fund 15% on its US dividends", () => {
+    const html = render({
+      ...eimi,
+      aum: 5e9,
+      wrapper: { ...wrapper, exposure: "world", underlying_closed: false },
+    });
+    expect(html).toContain("ticker.fund_wht_ie");
+    expect(html).not.toContain("ticker.fund_small");
+    expect(html).not.toContain("ticker.fund_window_closed");
+  });
+
+  it("says a hedge once, as what it does to the currency", () => {
+    const html = render({ ...eimi, wrapper: { ...wrapper, hedged: "EUR" } });
+    expect(html).toContain("ticker.fund_currency_hedged");
+    expect(html).not.toContain("ticker.fund_currency<");
+  });
+});
+
+describe("a fund against the book", () => {
+  const fit: FundFit = {
+    ticker: "VWCE.DE",
+    base: "EUR",
+    held: true,
+    fund_share: 0.4,
+    overlap: [{ symbol: "AAPL", name: "Apple", fund_weight: 0.045, book_weight: 0.4 }],
+    overlap_weight: 0.045,
+    disclosed_weight: 0.2,
+    sectors: [
+      { label: "Technology", book: 0.6, fund: 0.3, without: 0.8 },
+      { label: "Financials", book: 0.1, fund: 0.15, without: 0.07 },
+    ],
+    sector_cap: 0.35,
+    trades: 3,
+    spread: 0.0012,
+    commission: 0.0005,
+    jurisdiction: "ES",
+  };
+  const etf: Fund = {
+    ...base,
+    quote_type: "ETF",
+    closed_end: null,
+    expense_ratio: 0.0022,
+  };
+  const draw = (f: FundFit, fund: Fund = etf) =>
+    renderToStaticMarkup(<FundFitSection fund={fund} fit={f} />);
+
+  it("names what it repeats, flags a sector over the cap, and prices the fills", () => {
+    const html = draw(fit);
+    expect(html).toContain("ticker.fit_overlap_line");
+    expect(html).toContain("ticker.fit_without");
+    expect(html).toContain("tk-is-red");
+    expect(html).toContain("ticker.fit_over_cap");
+    expect(html).toContain("ticker.fit_spread");
+    expect(html).toContain("ticker.fit_cost_caption_n");
+    expect(html).toContain("ticker.fit_es_transfer");
+  });
+
+  it("an unheld fund has no 'without' column and no fills to price", () => {
+    const html = draw({
+      ...fit,
+      held: false,
+      fund_share: null,
+      overlap: [],
+      sectors: fit.sectors.map((row) => ({ ...row, without: null })),
+      trades: 0,
+      spread: null,
+      commission: null,
+      jurisdiction: "PT",
+    });
+    expect(html).toContain("ticker.fit_unheld");
+    expect(html).toContain("ticker.fit_overlap_none");
+    expect(html).not.toContain("ticker.fit_without");
+    expect(html).not.toContain("ticker.fit_spread");
+    expect(html).toContain("ticker.fit_cost_unheld");
+    expect(html).not.toContain("ticker.fit_es_transfer");
   });
 });

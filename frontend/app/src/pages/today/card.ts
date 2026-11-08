@@ -10,6 +10,7 @@
 
 import type { DailyCard, DailyItem } from "../home/types";
 import { dayKey, monthDay, type Translate } from "../home/format";
+import { POLL_MS } from "../../shell/poll";
 import type {
   MarketCard,
   MarketLine,
@@ -447,10 +448,6 @@ export function missingKeys(missing: string[]): string[] {
   return missing.map((source) => MISSING[source]).filter((key): key is string => !!key);
 }
 
-/** How often the page asks again while the personal card is written. */
-export const POLL_MS = 1500;
-/** And while the market read is a session behind and a newer one is coming. */
-const MARKET_POLL_MS = 20_000;
 /** A poll that never sees the end stops here: the server's job has a timeout. */
 const POLL_CAP = 60;
 
@@ -460,20 +457,9 @@ export function nextPoll(
   polls: number,
 ): number | null {
   if (polls >= POLL_CAP) return null;
-  if (view.personal?.pending) return POLL_MS;
-  if (view.market_stale) return MARKET_POLL_MS;
+  if (view.personal?.pending) return POLL_MS.card;
+  if (view.market_stale) return POLL_MS.market;
   return null;
-}
-
-/**
- * Whether the poll gave up on a card still being written: the server's job
- * outlived the cap, and only the reader asking again moves it on.
- */
-export function stalledAt(
-  view: Pick<TodayCard, "market_stale" | "personal">,
-  polls: number,
-): boolean {
-  return Boolean(view.personal?.pending) && nextPoll(view, polls) === null;
 }
 
 /**

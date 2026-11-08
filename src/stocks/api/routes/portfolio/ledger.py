@@ -118,7 +118,8 @@ def _row_change(c: edits.RowChange) -> RowChange:
     )
 
 
-def _change(c: edits.Changeset) -> Change:
+def change_view(c: edits.Changeset) -> Change:
+    """A journalled edit as the API (and the connector) show it."""
     return Change(
         id=c.id,
         at=c.at,
@@ -129,19 +130,8 @@ def _change(c: edits.Changeset) -> Change:
     )
 
 
-@router.post("/changes/plan", response_model=EditPlan, summary="Preview an edit")
-def plan_change(account: Writer, body: EditOps) -> EditPlan:
-    """What an edit would do. Nothing is written.
-
-    A plan with `problems` is still returned — the caller shows why it cannot
-    go ahead — but it cannot be committed.
-    """
-    try:
-        planned = edits.plan(body.ops, account.db)
-    except edits.EditError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
-        ) from exc
+def plan_view(planned: edits.Plan) -> EditPlan:
+    """A plan as the API (and the connector) show it."""
     return EditPlan(
         ops=planned.ops,
         changes=[_row_change(c) for c in planned.changes],
@@ -154,13 +144,31 @@ def plan_change(account: Writer, body: EditOps) -> EditPlan:
     )
 
 
+def refusal(exc: edits.EditError) -> HTTPException:
+    """The HTTP answer for an edit the book refused: the error's own status."""
+    return HTTPException(status_code=exc.status, detail=str(exc))
+
+
+@router.post("/changes/plan", response_model=EditPlan, summary="Preview an edit")
+def plan_change(account: Writer, body: EditOps) -> EditPlan:
+    """What an edit would do. Nothing is written.
+
+    A plan with `problems` is still returned — the caller shows why it cannot
+    go ahead — but it cannot be committed.
+    """
+    try:
+        return plan_view(edits.plan(body.ops, account.db))
+    except edits.EditError as exc:
+        raise refusal(exc) from exc
+
+
 @router.post(
     "/changes",
     response_model=Change,
     status_code=status.HTTP_201_CREATED,
     summary="Apply a planned edit",
 )
-def commit_change(account: Writer, body: EditCommit) -> Change:
+def commitchange_view(account: Writer, body: EditCommit) -> Change:
     """Apply an edit `POST /changes/plan` showed, journalled and undoable.
 
     409 when the book changed since the plan (or the token is another plan's):
@@ -171,16 +179,10 @@ def commit_change(account: Writer, body: EditCommit) -> Change:
         done = edits.commit(
             body.ops, body.token, source="api", summary=body.summary, path=account.db
         )
-    except edits.Stale as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
     except edits.EditError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
-        ) from exc
+        raise refusal(exc) from exc
     obs.event("ledger.edited", rows=len(done.changes), via="api")
-    return _change(done)
+    return change_view(done)
 
 
 @router.get("/changes", response_model=Changes, summary="Edit history")
@@ -188,11 +190,11 @@ def list_changes(
     account: Account, limit: Annotated[int, Query(ge=1, le=200)] = 50
 ) -> Changes:
     """The book's hand edits, newest first, each with the rows it touched."""
-    return Changes(changes=[_change(c) for c in edits.history(account.db, limit)])
+    return Changes(changes=[change_view(c) for c in edits.history(account.db, limit)])
 
 
 @router.delete("/changes/{change_id}", response_model=Change, summary="Undo an edit")
-def undo_change(account: Writer, change_id: int) -> Change:
+def undochange_view(account: Writer, change_id: int) -> Change:
     """Put back what one edit replaced.
 
     409 when any of its rows was changed again since: half an undo is a book
@@ -200,16 +202,10 @@ def undo_change(account: Writer, change_id: int) -> Change:
     """
     try:
         done = edits.undo(change_id, path=account.db)
-    except LookupError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
-    except edits.Conflict as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+    except edits.EditError as exc:
+        raise refusal(exc) from exc
     obs.event("ledger.undone", rows=len(done.changes), via="api")
-    return _change(done)
+    return change_view(done)
 
 
 @router.get("/health", response_model=BookHealth, summary="What looks wrong")

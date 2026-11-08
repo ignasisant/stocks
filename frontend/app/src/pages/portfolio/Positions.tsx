@@ -14,29 +14,14 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Pending, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import type {
-  Custodian,
-  MarketStatus,
-  Movers,
-  Positions as PositionsData,
-  Position,
-  Summary,
-} from "./api";
+import type { Custodian, MarketStatus, Movers, Position, Summary } from "./api";
 import { priceDigits } from "../home/format";
-import { brokerName, moneyIn, percent, shares as formatShares } from "./format";
-import {
-  Caption,
-  Card,
-  Chip,
-  Empty,
-  Figure,
-  Kpis,
-  Signed,
-  Table,
-  TickerCell,
-} from "./ui";
+import { brokerName } from "./format";
+import { Caption, Card, Chip, Empty, Figure, Kpis, Signed, Table } from "./ui";
 import type { Column } from "./ui";
 import History from "./History";
+import { moneyIn, percent, shares as formatShares } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 /**
  * The three spans the book's own move is quoted over, and the label each one
@@ -78,7 +63,7 @@ function custodyText(
   const name = (c: Custodian) => c.name || brokerName(c.broker, t);
   if (custody.length === 1 || !withShares) return custody.map(name).join(" · ");
   return custody
-    .map((c) => `${name(c)} ${percent(lang, c.share, { digits: 0 }) ?? ""}`.trim())
+    .map((c) => `${name(c)} ${percent(c.share, { lang, digits: 0 }) ?? ""}`.trim())
     .join(" · ");
 }
 
@@ -86,7 +71,7 @@ function custodyText(
 function realizedChip(summary: Summary, lang: string) {
   if (summary.realized === null || !summary.realized_cost) return null;
   const pct = summary.realized / summary.realized_cost;
-  return { text: percent(lang, pct, { signed: true }) ?? "", value: pct };
+  return { text: percent(pct, { lang, signed: true }) ?? "", value: pct };
 }
 
 /**
@@ -117,7 +102,7 @@ function Positions() {
   const query = useApi(
     () =>
       Promise.all([
-        get<PositionsData>("/portfolio/positions", { base }),
+        get("/portfolio/positions", { base }),
         get<Summary>("/portfolio/summary", { base }),
         // A clock and a table of exchange hours: it only decides a caption
         // and whether the day chip is greyed, so it never takes the card down.
@@ -137,7 +122,7 @@ function Positions() {
   // call above is still out, so the table is there at once and only the
   // figures that are being fetched shimmer.
   const rows = useApi(
-    () => get<PositionsData>("/portfolio/positions", { base, priced: "false" }),
+    () => get("/portfolio/positions", { base, priced: "false" }),
     [base],
   );
   const pending = query.state === "loading";
@@ -152,7 +137,7 @@ function Positions() {
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      cell: (row) => <TickerCell ticker={row.ticker} />,
+      cell: (row) => <TickerCell className="pf-ticker" ticker={row.ticker} />,
     },
     {
       key: "shares",
@@ -160,7 +145,7 @@ function Positions() {
       sort: (row) => row.shares,
       // Four decimals always: a whole share and a fractional one line up in
       // the column.
-      cell: (row) => <Figure value={formatShares(lang, row.shares, true)} />,
+      cell: (row) => <Figure value={formatShares(row.shares, { lang, fixed: true })} />,
     },
     {
       key: "price",
@@ -202,7 +187,7 @@ function Positions() {
       key: "weight",
       label: t("portfolio.col_weight"),
       sort: (row) => row.weight,
-      cell: (row) => priced(<Figure value={percent(lang, row.weight)} />),
+      cell: (row) => priced(<Figure value={percent(row.weight, { lang })} />),
     },
     {
       key: "day",
@@ -219,7 +204,7 @@ function Positions() {
             {row.day_pct === null ? null : (
               <Chip
                 value={row.day_pct}
-                text={percent(lang, row.day_pct, { signed: true })}
+                text={percent(row.day_pct, { lang, signed: true })}
               />
             )}
           </span>,
@@ -238,7 +223,7 @@ function Positions() {
             {row.pnl_pct === null ? null : (
               <Chip
                 value={row.pnl_pct}
-                text={percent(lang, row.pnl_pct, { signed: true })}
+                text={percent(row.pnl_pct, { lang, signed: true })}
               />
             )}
           </span>,
@@ -279,7 +264,7 @@ function Positions() {
             <Chip
               value={row.pnl_pct}
               text={t("portfolio.chip_pl", {
-                pct: percent(lang, row.pnl_pct, { signed: true }) ?? "",
+                pct: percent(row.pnl_pct, { lang, signed: true }) ?? "",
               })}
             />
           ),
@@ -293,7 +278,7 @@ function Positions() {
                   row.day_pct === null
                     ? null
                     : t("portfolio.chip_day", {
-                        pct: percent(lang, row.day_pct, { signed: true }) ?? "",
+                        pct: percent(row.day_pct, { lang, signed: true }) ?? "",
                       })
                 }
               />
@@ -301,7 +286,7 @@ function Positions() {
           ),
         sub: (row) => [
           pending ? null : price(row),
-          pending ? null : percent(lang, row.weight),
+          pending ? null : percent(row.weight, { lang }),
           custodyText(row.custody, t, lang, false),
         ],
       }}
@@ -358,7 +343,7 @@ function Positions() {
                         : {
                             text: t("portfolio.chip_vs_cost", {
                               pct:
-                                percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                                percent(summary.pnl_pct, { lang, signed: true }) ?? "",
                             }),
                             value: summary.pnl_pct,
                           },
@@ -373,7 +358,7 @@ function Positions() {
                         : {
                             text: t("portfolio.chip_vs_cost", {
                               pct:
-                                percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                                percent(summary.pnl_pct, { lang, signed: true }) ?? "",
                             }),
                             value: summary.pnl_pct,
                           },
@@ -412,10 +397,8 @@ function Positions() {
                         ? null
                         : {
                             text:
-                              percent(lang, move.basket, {
-                                signed: true,
-                                digits: 2,
-                              }) ?? "",
+                              percent(move.basket, { lang, signed: true, digits: 2 }) ??
+                              "",
                             value: move.basket,
                             // Grey only while nothing trades at all: a pre- or
                             // after-hours quote is live data, and so is its move.

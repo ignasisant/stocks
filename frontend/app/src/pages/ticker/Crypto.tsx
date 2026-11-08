@@ -22,10 +22,11 @@
 import { calendarDay } from "../../shell/dates";
 import { useT } from "../../shell/i18n";
 import { Kpi, bandTone } from "../../ui/Kpi";
-import { DASH, compactMoney, percent, signedPercent, type Translate } from "./format";
+import { type Translate, currencySymbol } from "./format";
 import { Banner, Card, Metric, Metrics, Note } from "./ui";
 import type { Banded, CryptoCycle, CryptoHolding, CryptoPositioning } from "./types";
 import { num } from "../../shell/numbers";
+import { DASH, compact, percent } from "../../shell/format";
 
 // ------------------------------------------------------------------ the bands
 // Switches of literal keys, so the catalog scan sees every one; a band this
@@ -158,12 +159,12 @@ export function HoldingSection({
       <Metrics>
         <Metric
           label={t("ticker.coin_weight")}
-          value={percent(holding.crypto_weight, 1)}
+          value={percent(holding.crypto_weight, { digits: 1, tight: true }) ?? DASH}
           help={t("ticker.coin_weight_help")}
         />
         <Metric
           label={t("ticker.sleeve_share")}
-          value={percent(holding.crypto_share, 1)}
+          value={percent(holding.crypto_share, { digits: 1, tight: true }) ?? DASH}
           help={t("ticker.sleeve_help")}
           note={sizingLine(t, holding.sizing)}
           noteTone={holding.sizing === "over" ? "orange" : null}
@@ -176,11 +177,23 @@ export function HoldingSection({
         <Banner tone={harvest.blocked ? "warn" : "good"}>
           {harvest.blocked
             ? t("ticker.harvest_blocked", {
-                loss: compactMoney(harvest.loss, harvest.currency),
+                loss:
+                  compact(harvest.loss, {
+                    prefix: currencySymbol(harvest.currency),
+                    digits: 1,
+                  }) ?? DASH,
               })
             : t("ticker.harvest_line", {
-                loss: compactMoney(harvest.loss, harvest.currency),
-                saving: compactMoney(harvest.saving, harvest.currency),
+                loss:
+                  compact(harvest.loss, {
+                    prefix: currencySymbol(harvest.currency),
+                    digits: 1,
+                  }) ?? DASH,
+                saving:
+                  compact(harvest.saving, {
+                    prefix: currencySymbol(harvest.currency),
+                    digits: 1,
+                  }) ?? DASH,
               })}
           {!harvest.blocked && harvest.clear_on
             ? ` ${t("ticker.harvest_window", { date: harvest.clear_on })}`
@@ -268,11 +281,17 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.btc_dominance")}
             help={t("ticker.btc_dominance_help")}
-            value={percent(cycle.btc_dominance / 100, 1)}
+            value={
+              percent(cycle.btc_dominance / 100, { digits: 1, tight: true }) ?? DASH
+            }
             note={
               cycle.total_mcap !== null
                 ? t("ticker.total_mcap", {
-                    value: compactMoney(cycle.total_mcap, cycle.quote),
+                    value:
+                      compact(cycle.total_mcap, {
+                        prefix: currencySymbol(cycle.quote),
+                        digits: 1,
+                      }) ?? DASH,
                   })
                 : ""
             }
@@ -300,14 +319,14 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.vol30")}
             help={t("ticker.vol30_help")}
-            value={percent(cycle.vol30, 0)}
+            value={percent(cycle.vol30, { digits: 0, tight: true }) ?? DASH}
           />
         ) : null}
         {vsBtc !== null ? (
           <Metric
             label={t("ticker.vs_btc")}
             help={t("ticker.vs_btc_help", { coin })}
-            value={signedPercent(vsBtc, 1)}
+            value={percent(vsBtc, { digits: 1, signed: "always", tight: true }) ?? DASH}
             note={t(vsBtc >= 0 ? "ticker.vs_beat" : "ticker.vs_lagged")}
             noteTone={signTone(vsBtc)}
           />
@@ -316,7 +335,7 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.vs_nasdaq")}
             help={t("ticker.vs_nasdaq_help")}
-            value={signedPercent(vsNdx, 1)}
+            value={percent(vsNdx, { digits: 1, signed: "always", tight: true }) ?? DASH}
             note={t(vsNdx >= 0 ? "ticker.vs_beat" : "ticker.vs_lagged")}
             noteTone={signTone(vsNdx)}
           />
@@ -325,11 +344,21 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.stablecoins")}
             help={t("ticker.stablecoins_help")}
-            value={compactMoney(cycle.stablecoins.usd, "USD")}
+            value={
+              compact(cycle.stablecoins.usd, {
+                prefix: currencySymbol("USD"),
+                digits: 1,
+              }) ?? DASH
+            }
             note={
               cycle.stablecoins.change_30d !== null
                 ? t("ticker.stablecoins_30d", {
-                    pct: signedPercent(cycle.stablecoins.change_30d, 1),
+                    pct:
+                      percent(cycle.stablecoins.change_30d, {
+                        digits: 1,
+                        signed: "always",
+                        tight: true,
+                      }) ?? DASH,
                   })
                 : ""
             }
@@ -340,11 +369,18 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.onchain_tvl", { name: onchain.name })}
             help={t("ticker.onchain_tvl_help", { name: onchain.name })}
-            value={compactMoney(onchain.tvl, "USD")}
+            value={
+              compact(onchain.tvl, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH
+            }
             note={
               onchain.tvl_change_30d !== null
                 ? t("ticker.onchain_tvl_30d", {
-                    pct: signedPercent(onchain.tvl_change_30d, 1),
+                    pct:
+                      percent(onchain.tvl_change_30d, {
+                        digits: 1,
+                        signed: "always",
+                        tight: true,
+                      }) ?? DASH,
                   })
                 : ""
             }
@@ -355,11 +391,18 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
           <Metric
             label={t("ticker.onchain_fees")}
             help={t("ticker.onchain_fees_help", { name: onchain.name })}
-            value={compactMoney(onchain.fees_30d, "USD")}
+            value={
+              compact(onchain.fees_30d, { prefix: currencySymbol("USD"), digits: 1 }) ??
+              DASH
+            }
             note={
               onchain.revenue_30d !== null
                 ? t("ticker.onchain_revenue", {
-                    value: compactMoney(onchain.revenue_30d, "USD"),
+                    value:
+                      compact(onchain.revenue_30d, {
+                        prefix: currencySymbol("USD"),
+                        digits: 1,
+                      }) ?? DASH,
                   })
                 : ""
             }
@@ -429,7 +472,14 @@ export function PositioningSection({
           value={rate(week?.value)}
           note={
             data.annualized !== null
-              ? t("ticker.funding_annual", { pct: signedPercent(data.annualized, 1) })
+              ? t("ticker.funding_annual", {
+                  pct:
+                    percent(data.annualized, {
+                      digits: 1,
+                      signed: "always",
+                      tight: true,
+                    }) ?? DASH,
+                })
               : ""
           }
           noteTone={week?.tone ?? null}
@@ -437,10 +487,19 @@ export function PositioningSection({
         <Metric
           label={t("ticker.open_interest")}
           help={t("ticker.open_interest_help")}
-          value={compactMoney(data.oi_usd, "USD")}
+          value={
+            compact(data.oi_usd, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH
+          }
           note={
             data.oi_change_7d !== null
-              ? t("ticker.oi_week", { pct: signedPercent(data.oi_change_7d, 1) })
+              ? t("ticker.oi_week", {
+                  pct:
+                    percent(data.oi_change_7d, {
+                      digits: 1,
+                      signed: "always",
+                      tight: true,
+                    }) ?? DASH,
+                })
               : ""
           }
         />

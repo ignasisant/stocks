@@ -21,8 +21,8 @@ import { useT } from "../../shell/i18n";
 import { toast } from "../../ui/toast";
 import { ratioLabel } from "../import/repairs";
 import { applySplits, getSplits, undoChange } from "./data";
-import { money, shares } from "./format";
 import type { TickerPosition, TickerSplit } from "./types";
+import { DASH, money, shares } from "../../shell/format";
 
 export type Done =
   | { kind: "applied"; changeId: number; splits: TickerSplit[] }
@@ -152,11 +152,11 @@ export function fields(split: TickerSplit) {
   return {
     ratio: ratioLabel(split.ratio),
     date: split.date,
-    price: money(split.priced_at),
+    price: money(split.priced_at, { digits: 2 }) ?? DASH,
     day: split.priced_on,
-    adjusted: money(split.priced_at / split.ratio),
-    before: shares(split.held_before),
-    after: shares(split.held_after),
+    adjusted: money(split.priced_at / split.ratio, { digits: 2 }) ?? DASH,
+    before: shares(split.held_before) ?? DASH,
+    after: shares(split.held_after) ?? DASH,
     currency: split.currency,
   };
 }

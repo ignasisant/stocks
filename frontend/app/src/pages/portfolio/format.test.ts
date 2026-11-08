@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compactMoneyIn } from "./format";
+import { compactMoneyIn } from "../../shell/format";
 
 // Intl's es-EUR formatting puts a non-breaking space before the symbol.
 const NBSP = " ";

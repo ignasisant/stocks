@@ -1064,7 +1064,13 @@ export function useChat(live: boolean) {
           lang,
           ...(mapping ? { mapping } : {}),
         });
-        setTurns((list) => [...list, { ...found.message, skills: [], web: [] }]);
+        // The note was filed on the thread the file was read into. A reader
+        // who opened another one meanwhile finds it there, not on this one.
+        const here = activeRef.current;
+        if (!here || here === found.conversation) {
+          if (!here && found.conversation) setActiveId(found.conversation);
+          setTurns((list) => [...list, { ...found.message, skills: [], web: [] }]);
+        }
         // Only a file with something in it gets a card — or one whose columns
         // can still be corrected, since a mapping that read nothing is exactly
         // the one worth fixing. The note already says what happened.
@@ -1241,7 +1247,12 @@ export function useChat(live: boolean) {
     remove,
     settings,
     apply,
-    preview,
+    // The card belongs to the thread its note was filed on: a new or another
+    // thread does not show it, and going back to that one does.
+    preview:
+      preview && (!preview.conversation || preview.conversation === activeId)
+        ? preview
+        : null,
     reading,
     work,
     opening,

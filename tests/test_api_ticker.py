@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from stocks.api.loaders.keys import LedgerState
 from stocks.portfolio.custody import Custody
 from stocks.portfolio.ledger import Transaction
 from tests.patching import patch_loaders
@@ -501,7 +502,9 @@ FILLS = (
 
 @pytest.fixture
 def ledger(monkeypatch):
-    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: (list(FILLS), [], []))
+    patch_loaders(
+        monkeypatch, "ledger_state", lambda *a, **k: LedgerState(list(FILLS), [], [])
+    )
 
 
 def test_a_closed_position_still_reports_where_it_was_entered(
@@ -561,7 +564,8 @@ def test_every_buy_and_sell_reaches_the_chart_across_brokers_and_spellings(
     it and however that broker spelled it — and keep sending them when the
     book's pricing pass fails: a 5xx there once took every marker with it."""
     patch_loaders(
-        monkeypatch, "ledger_state", lambda *a, **k: (list(TWO_BROKER_BOOK), [], [])
+        monkeypatch, "ledger_state",
+        lambda *a, **k: LedgerState(list(TWO_BROKER_BOOK), [], []),
     )
     patch_loaders(
         monkeypatch, "native_positions",
@@ -1069,7 +1073,7 @@ def test_fills_are_found_under_the_label_the_position_is_built_on(
     patch_loaders(monkeypatch, "native_positions", lambda db, m: {})
     patch_loaders(
         monkeypatch, "ledger_state",
-        lambda *a, **k: (
+        lambda *a, **k: LedgerState(
             [
                 Transaction(
                     "2024-01-02", "US00724F1012", "buy", 5, 500.0, "USD", 1.0,
@@ -1102,7 +1106,7 @@ def test_a_dollar_buy_charted_off_a_euro_listing_is_restated_onto_its_axis(
         Transaction("2025-11-13", "ASML", "buy", 1, 690.0, "USD", 0.0),
     ]
     rates = {"2024-10-24": 0.9, "2025-11-13": 0.86}
-    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: (book, [], []))
+    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: LedgerState(book, [], []))
     patch_loaders(
         monkeypatch, "native_positions",
         lambda db, m: {"ASML": FakePosition("ASML", 3.0, 2130.0, "USD")},

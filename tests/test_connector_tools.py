@@ -984,7 +984,7 @@ def test_the_status_lists_rules_by_holding_and_the_bare_ones(
         site, editor, book, monkeypatch):
     from stocks.api import briefing
 
-    monkeypatch.setattr(briefing, "_held", lambda paths: {"AAPL", "MSFT", "NVDA"})
+    monkeypatch.setattr(briefing, "held_symbols", lambda paths: {"AAPL", "MSFT", "NVDA"})
     ok(call(site, editor, "set_kill_criteria_batch", holdings=[
         {"ticker": "aapl", "rules": [{"rule": "thesis", "pillars": ["Services grow"]}]},
         {"ticker": "MSFT", "rules": [{"rule": "below", "level": 300}]},

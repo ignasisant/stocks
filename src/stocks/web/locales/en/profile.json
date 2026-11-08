@@ -132,7 +132,7 @@
   "profile.iv_save_failed": "Could not save your profile. Your answers are still here — try again.",
   "profile.notifications": "Notifications",
   "profile.notify_caption": "Your AI briefing, day's numbers, weekly review, price alerts and finished answers arrive as notifications on this device.",
-  "profile.notify_how_body": "- **AI briefing** — what to look at today, mornings. Opens its conversation.\n- **Day's numbers** — value, day and week change, top movers and earnings; evenings.\n- **Weekly review** — the week against the index; Sundays.\n- **Price alerts** — your watchlist thresholds, hourly on market days.\n- **Away a week?** — one reminder, two at most.\n\nEach scheduled run is kept as a conversation under Scheduled in the chat, where you also pick its time and days. Only the browser's push address is stored; switch off anytime.",
+  "profile.notify_how_body": "- **AI briefing** — what to look at today, mornings. Opens its conversation.\n- **Day's numbers** — value, day and week change, top movers and earnings; evenings.\n- **Weekly review** — the week against the index; Sundays.\n- **Price alerts** — your watchlist thresholds, hourly on market days.\n- **Away a week?** — one reminder, two at most.\n- **Friday email** — your week in numbers, to your sign-in address.\n\nEach scheduled run is kept as a conversation under Scheduled in the chat, where you also pick its time and days. Only the browser's push address is stored; switch off anytime.",
   "profile.notify_digest": "Day's numbers",
   "profile.notify_alerts": "Price alerts (hourly, market hours)",
   "profile.push_test": "Send test notification",
@@ -294,5 +294,9 @@
   "profile.invite_note": "Send them the app. Your link shows nothing of your portfolio.",
   "profile.invite_send": "Send invite",
   "profile.invite_link": "Your invite link",
-  "profile.invite_text": "I follow my portfolio with TopStocks. Have a look:"
+  "profile.invite_text": "I follow my portfolio with TopStocks. Have a look:",
+  "profile.notify_email_title": "Email",
+  "profile.notify_email_sub": "Sent to {email}. No device needed.",
+  "profile.notify_weekly_email": "Friday email",
+  "profile.notify_weekly_email_help": "Your week after the US close: value, returns against the S&P 500 from your first day, what moved, your trades and the week ahead."
 }

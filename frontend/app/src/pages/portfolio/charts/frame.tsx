@@ -8,42 +8,8 @@ import { token } from "../../../shell/theme";
 import { useTabStrip } from "../../../shell/useTabStrip";
 import { Tip, tipAt } from "../../../ui/chart/Tip";
 
-/**
- * Three to five round values spanning [low, high] — the value axis's labels.
- *
- * The step is the 1-2-5 ladder scaled to the span, so a €12k book reads
- * 10k/11k/12k and not 11,843/12,261, and every label lands inside the plot.
- */
-export function niceTicks(low: number, high: number, count = 4): number[] {
-  const span = high - low;
-  if (!(span > 0) || !Number.isFinite(span)) return [low];
-  // The smallest ladder step that keeps the labels at or under count + 1.
-  const raw = span / (count + 1);
-  const power = 10 ** Math.floor(Math.log10(raw));
-  const step =
-    [1, 2, 2.5, 5, 10].map((m) => m * power).find((m) => m >= raw) ?? 10 * power;
-  const out: number[] = [];
-  for (let v = Math.ceil(low / step) * step; v <= high + step * 1e-9; v += step) {
-    // Snap away float drift (0.30000000000000004) before it reaches a label.
-    out.push(Number((Math.round(v / step) * step).toPrecision(12)));
-  }
-  return out;
-}
-
 /** Under this measured width a plot is a phone's: no gutters, labels inside. */
 export const NARROW = 480;
-
-/**
- * The height a chart draws at, in pixels now that a unit is one.
- *
- * Drawn in a fixed viewBox, a chart shrank with its card — a phone's plot came
- * out at half its desktop height, a strip. At 1:1 the desktop height would be
- * all of a 360px screen, so a narrow plot takes a squarer shape instead: four
- * fifths of its width, no shorter than `min` and never past `max`.
- */
-export function plotHeightFor(width: number, max: number, min = 240): number {
-  return Math.round(Math.min(max, Math.max(min, width * 0.8)));
-}
 
 /** One value-axis label. Beside the plot it sits in the gutter, vertically
     centred on its gridline; `inside`, on a narrow plot, it sits on the line
@@ -267,7 +233,7 @@ export function nearest(
 }
 
 /** Where a plot sits in its frame: the left gutter holds the value axis, and
-    `height` is the desktop one — a narrow plot is squarer (`plotHeightFor`).
+    `height` is the desktop one — a narrow plot is squarer (`fitHeight`).
     The frame is the measured width, so every figure here is in pixels. */
 export const PLOT = { height: 300, top: 8, right: 8, bottom: 24, left: 64 };
 

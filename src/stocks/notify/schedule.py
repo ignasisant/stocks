@@ -26,7 +26,9 @@ delivers this morning's briefing at nine, not at midnight.
 
 **Who**: accounts with a device to push to, or seen in the last
 `ACTIVE_DAYS` — a run spends a model call, and an account nobody opens has
-nobody to read it.
+nobody to read it. The Friday email is the exception (`email_due`): it
+spends no model call and is how an account that has not come back hears
+from its book, so it goes to every account with an address and an import.
 """
 
 from __future__ import annotations
@@ -47,10 +49,17 @@ if TYPE_CHECKING:
 
 JOBS = ("briefing", "digest", "weekly")
 CARD = "card"
+# The Friday email (`notify/weekly_email.py`): not one of the reader's chat
+# runs, so not in JOBS, and read in one zone for everyone — 23:00 in Madrid is
+# after the US close in every week of the year, DST gap weeks included, so it
+# always reports a finished week.
+EMAIL = "weekly_email"
+EMAIL_ZONE = "Europe/Madrid"
 DEFAULTS: dict[str, dict] = {
     "briefing": {"time": "08:30", "days": [0, 1, 2, 3, 4]},
     "digest": {"time": "22:30", "days": [0, 1, 2, 3, 4]},
     "weekly": {"time": "18:00", "days": [6]},
+    EMAIL: {"time": "23:00", "days": [4]},
 }
 PREFS_KEY = "schedules"
 LAST_KEY = "schedule_last"
@@ -169,6 +178,26 @@ def eligible(prefs: dict, devices: int, today: date) -> bool:
     return today - seen <= timedelta(days=ACTIVE_DAYS)
 
 
+def email_due(prefs: dict, paths, now: datetime, last: object) -> date | None:
+    """The Friday the weekly email is due for at `now`, or None.
+
+    Switched by `notify_weekly_email` (on by default), for an account with an
+    address and a book it imported — the onboarding sample is not one. No
+    device and no recent visit needed. The ledger is read only once the slot
+    is due, not on every tick."""
+    if not prefs.get("email"):
+        return None
+    day = due(slot(prefs, EMAIL), ZoneInfo(EMAIL_ZONE), now, last)
+    if day is None:
+        return None
+    from stocks.portfolio import demo
+
+    try:
+        return day if demo.has_real(paths.db) else None
+    except Exception:  # noqa: BLE001 — unreadable ledger: nothing to report
+        return None
+
+
 # ------------------------------------------------------------------ the tick
 
 
@@ -215,17 +244,19 @@ def plan(now: datetime) -> list[Account]:
                      error_type=type(exc).__name__)
             continue
         tz = zone(prefs)
-        if not eligible(prefs, webpush.devices(paths.push), now.astimezone(tz).date()):
-            continue
         stored = prefs.get(LAST_KEY)
         last: dict = stored if isinstance(stored, dict) else {}
-        runs = [
-            (job, day)
-            for job in JOBS
-            if (day := due(slot(prefs, job), tz, now, last.get(job))) is not None
-        ]
-        if (session := card_due(now, last.get(CARD))) is not None:
-            runs.insert(0, (CARD, session))
+        runs: list[tuple[str, date]] = []
+        if eligible(prefs, webpush.devices(paths.push), now.astimezone(tz).date()):
+            runs = [
+                (job, day)
+                for job in JOBS
+                if (day := due(slot(prefs, job), tz, now, last.get(job))) is not None
+            ]
+            if (session := card_due(now, last.get(CARD))) is not None:
+                runs.insert(0, (CARD, session))
+        if (friday := email_due(prefs, paths, now, last.get(EMAIL))) is not None:
+            runs.append((EMAIL, friday))
         if runs:
             out.append(Account(label, paths, prefs, runs))
     return out
@@ -324,17 +355,13 @@ def _notify_user(account: Account):
     from stocks import storage
     from stocks.notify.fanout import NotifyUser
 
-    state = account.paths.prefs.with_name("alerts_state.json")
     # The one file a cron still writes beside the app (the hourly alerts):
     # pulled fresh so its edges are not written back stale.
-    storage.restore(state)
+    storage.restore(account.paths.alerts_state)
     return NotifyUser(
         label=account.label,
         prefs=account.prefs,
-        watchlist=account.paths.watchlist,
-        db=account.paths.db,
-        prefs_path=account.paths.prefs,
-        state_path=state,
+        paths=account.paths,
         served=True,
     )
 
@@ -433,4 +460,15 @@ def _briefing(account: Account, day: date) -> str:
     return _status(cid, _push(account, message, "briefing"))
 
 
-RUNNERS = {CARD: _card, "briefing": _briefing, "digest": _digest, "weekly": _weekly}
+def _weekly_email(account: Account, day: date) -> str:
+    """Send the Friday email. Never moves the Sunday review's drift baseline
+    (`weekly.weekly_delivered`): that one is the push's to keep."""
+    from stocks.notify import weekly_email
+
+    return weekly_email.send_for(account.label, account.paths, account.prefs, day)
+
+
+RUNNERS = {
+    CARD: _card, "briefing": _briefing, "digest": _digest, "weekly": _weekly,
+    EMAIL: _weekly_email,
+}

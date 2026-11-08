@@ -17,6 +17,7 @@ import { useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { useApi } from "../../shell/useApi";
+import { useDebounced } from "../../shell/useDebounced";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { useLabels } from "./labels";
 import { formatMetric, ordered, passes, type Screen } from "./metrics";
@@ -89,10 +90,7 @@ export function Cohort({ data }: { data: SectorCohort }) {
   const na = t("sector.na");
   // The cohort is the same for every reader; what the reader already owns is
   // joined here (see routes/sector.py), from the one positions request.
-  const book = useApi(
-    () => get<{ positions: { ticker: string }[] }>("/portfolio/positions"),
-    [],
-  );
+  const book = useApi(() => get("/portfolio/positions"), []);
   const held = new Set(
     book.state === "loaded"
       ? book.data.positions.map((p) => p.ticker.toUpperCase())
@@ -117,6 +115,10 @@ export function Cohort({ data }: { data: SectorCohort }) {
   const [thresholds, setThresholds] = useState<Record<string, string>>(() =>
     Object.fromEntries(SCREENS.map((screen) => [screen.metric, screen.value])),
   );
+  // The table follows a threshold once the typing stops: "0." or "-" on the
+  // way to "0.2" or "-5" is not a filter, and rows blinking out and back on
+  // each keystroke read as the cohort changing.
+  const settled = useDebounced(thresholds);
 
   /**
    * Picking a metric picks its direction too, so the most attractive row is
@@ -136,7 +138,7 @@ export function Cohort({ data }: { data: SectorCohort }) {
     .map((screen) => ({
       metric: screen.metric,
       kind: screen.kind,
-      value: threshold(thresholds[screen.metric] ?? ""),
+      value: threshold(settled[screen.metric] ?? ""),
     }))
     .filter((screen) => Number.isFinite(screen.value));
 

@@ -18,26 +18,11 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import type {
-  DividendYear,
-  Dividends as DividendsData,
-  ForwardHolding,
-  Positions,
-} from "./api";
-import { moneyIn, percent, shares as formatShares } from "./format";
-import {
-  Caption,
-  Card,
-  Empty,
-  Figure,
-  Hero,
-  Info,
-  ShareBar,
-  Table,
-  TickerCell,
-  Warn,
-} from "./ui";
+import type { DividendYear, Dividends as DividendsData, ForwardHolding } from "./api";
+import { Caption, Card, Empty, Figure, Hero, Info, ShareBar, Table, Warn } from "./ui";
 import type { Column, FactItem } from "./ui";
+import { moneyIn, percent, shares as formatShares } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 export default function Dividends() {
   const t = useT();
@@ -51,7 +36,7 @@ export default function Dividends() {
     () =>
       Promise.all([
         get<DividendsData>("/portfolio/dividends", { base }),
-        get<Positions>("/portfolio/positions", { base }),
+        get("/portfolio/positions", { base }),
       ]).then(([dividends, positions]) => ({ dividends, positions })),
     [base],
   );
@@ -103,13 +88,13 @@ export default function Dividends() {
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      cell: (row) => <TickerCell ticker={row.ticker} />,
+      cell: (row) => <TickerCell className="pf-ticker" ticker={row.ticker} />,
     },
     {
       key: "shares",
       label: t("portfolio.col_shares"),
       sort: (row) => row.shares,
-      cell: (row) => <Figure value={formatShares(lang, row.shares)} />,
+      cell: (row) => <Figure value={formatShares(row.shares, { lang })} />,
     },
     {
       key: "per_share",
@@ -224,7 +209,7 @@ export default function Dividends() {
                 label: t("portfolio.div_yield_on_cost"),
                 value:
                   invested && forwardAnnual !== null
-                    ? percent(lang, forwardAnnual / invested, { digits: 2 })
+                    ? percent(forwardAnnual / invested, { lang, digits: 2 })
                     : null,
                 help: t("portfolio.div_yield_on_cost_help"),
               },
@@ -282,7 +267,7 @@ export default function Dividends() {
                       ticker: (row) => row.ticker,
                       value: (row) => <Figure value={money(row.gross_base)} />,
                       sub: (row) => [
-                        `${t("portfolio.col_shares")} ${formatShares(lang, row.shares) ?? ""}`,
+                        `${t("portfolio.col_shares")} ${formatShares(row.shares, { lang }) ?? ""}`,
                         `${t("portfolio.col_per_share_ttm")} ${
                           moneyIn(lang, row.currency)(row.per_share, { digits: 2 }) ??
                           t("portfolio.na")

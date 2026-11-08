@@ -20,10 +20,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { POLL_MS } from "../../shell/poll";
 import { useGuest } from "../../shell/session";
-
-/** How often to ask whether it landed. A scan takes tens of seconds. */
-const POLL_MS = 3000;
 
 type Status = {
   sector: string;
@@ -92,7 +90,7 @@ export function useRescan(sector: string, label: string, onDone: () => void): Re
           // the server either way, and the next answer will say how it ended.
           if (alive()) poll(alive);
         }
-      }, POLL_MS);
+      }, POLL_MS.scan);
     },
     [at, settle],
   );

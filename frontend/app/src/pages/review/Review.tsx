@@ -61,10 +61,11 @@ import {
   parseFilter,
   splitCoins,
 } from "./filter";
-import { askAgain, longDay, MAX_ADDED, parseAdded, percent, SYMBOL } from "./format";
+import { askAgain, longDay, MAX_ADDED, parseAdded, SYMBOL } from "./format";
 import { buildPrompt, noteText } from "./prompt";
 import type { Review, ReviewNote, ReviewRow } from "./types";
 import "./review.css";
+import { percent } from "../../shell/format";
 
 const RETRY_MS = 3000;
 
@@ -77,12 +78,10 @@ export default function Page() {
   const review = useApi(
     () => get<Review>("/review", { base, add: add || undefined }),
     [base, add],
+    // A ticker added or removed refetches the whole read (~seconds on a cold
+    // cache): the last one stays up, dimmed, instead of a skeleton.
+    { keep: true },
   );
-  // A ticker added or removed refetches the whole read (~seconds on a cold
-  // cache): the last one stays up, dimmed, instead of a skeleton.
-  const [last, setLast] = useState<Review | null>(null);
-  if (review.state === "loaded" && review.data !== last) setLast(review.data);
-  const stale = review.state === "loading" ? last : null;
 
   // A wide book read cold answers with the names that arrived in time; the
   // rest keep loading on the server, so ask once more a moment later.
@@ -98,7 +97,9 @@ export default function Page() {
   }, [review, retried, asked]);
 
   // The ask sits in the header, written from whatever read is on screen.
-  const shown = review.state === "loaded" ? review.data : last;
+  const shown = review.state === "loaded" ? review.data : null;
+  const waiting =
+    review.state === "loading" || (review.state === "loaded" && !!review.refreshing);
 
   // Nothing of the reader's to judge: the page is the reason to import, so it
   // is drawn from the demo book behind the import wall, with nothing to type.
@@ -149,11 +150,7 @@ export default function Page() {
     <>
       {book ? (
         <TopActions>
-          <Ask
-            data={applyFilter(book, filter)}
-            filter={filter}
-            busy={review.state === "loading"}
-          />
+          <Ask data={applyFilter(book, filter)} filter={filter} busy={waiting} />
         </TopActions>
       ) : null}
       <div className="ag-rev-lead">
@@ -163,31 +160,22 @@ export default function Page() {
         </div>
         <AddTickers added={added} onChange={setAdded} />
       </div>
-      {stale ? (
-        <div className="ag-rev-body" aria-busy="true">
-          <Screen
-            data={stale}
-            filter={filter}
-            onFilter={setFilter}
-            onAdd={canAdd}
-            measured
-          />
-        </div>
-      ) : (
-        <Loaded query={review} skeleton={<Skeleton rows={8} />}>
-          {(data) => (
-            <div className="ag-rev-body">
-              <Screen
-                data={data}
-                filter={filter}
-                onFilter={setFilter}
-                onAdd={canAdd}
-                measured
-              />
-            </div>
-          )}
-        </Loaded>
-      )}
+      <Loaded query={review} skeleton={<Skeleton rows={8} />}>
+        {(data) => (
+          <div
+            className="ag-rev-body"
+            aria-busy={(review.state === "loaded" && review.refreshing) || undefined}
+          >
+            <Screen
+              data={data}
+              filter={filter}
+              onFilter={setFilter}
+              onAdd={canAdd}
+              measured
+            />
+          </div>
+        )}
+      </Loaded>
     </>
   );
 }
@@ -419,10 +407,10 @@ function MixRow({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }
         <MixBar actual={weight * 100} target={target === null ? null : target * 100} />
       </span>
       <span className="ag-rev-mix-fig" aria-hidden="true">
-        <b>{percent(note.weight, lang) ?? t("review.na")}</b>
+        <b>{percent(note.weight, { lang }) ?? t("review.na")}</b>
         {target !== null ? (
           <span className="ag-rev-mix-target">
-            {t("review.mix_target", { target: percent(target, lang) ?? "" })}
+            {t("review.mix_target", { target: percent(target, { lang }) ?? "" })}
           </span>
         ) : null}
       </span>
@@ -443,13 +431,13 @@ function Coins({ rows }: { rows: ReviewRow[] }) {
   return (
     <div className="ag-rev-coins">
       <p className="ag-rev-caption">
-        {t("review.coins", { weight: percent(weight, lang) ?? t("review.na") })}
+        {t("review.coins", { weight: percent(weight, { lang }) ?? t("review.na") })}
       </p>
       <ul className="ag-rev-coin-list">
         {rows.map((row) => (
           <li key={row.ticker} className="ag-row-reach">
             <TickerCell ticker={row.ticker} name={false} />
-            <span className="ag-rev-caption">{percent(row.weight, lang)}</span>
+            <span className="ag-rev-caption">{percent(row.weight, { lang })}</span>
           </li>
         ))}
       </ul>

@@ -38,5 +38,6 @@
   "notify.ex_dividends": "Stacco dividendo",
   "notify.weekly_title_book": "La tua settimana {change} · portafoglio {value}",
   "notify.thesis_title": "{ticker}: un fatto contro la tua tesi",
-  "notify.thesis_line": "{pillar}: “{quote}”"
+  "notify.thesis_line": "{pillar}: “{quote}”",
+  "notify.since_start": "Dall'inizio"
 }

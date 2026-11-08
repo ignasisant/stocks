@@ -21,11 +21,11 @@ import { useApi, type Query } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import { useTickerProfile } from "../../shell/tickers";
+import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { Badge } from "../../ui/Badge";
 import { DenseRow, DenseRows, Responsive } from "../../ui/Rows";
-import { Card, CardTitle, TickerCell } from "./ui";
-import { money, plain, shortDate } from "./format";
+import { Card, CardTitle } from "./ui";
+import { plain, shortDate } from "./format";
 import { owedTotal, recentRows, type RecentRow } from "./recent";
 import type {
   Transaction,
@@ -33,6 +33,7 @@ import type {
   UnbookedDividend,
   UnbookedDividends,
 } from "./types";
+import { money } from "../../shell/format";
 
 /** Rows the strip shows. */
 const SHOWN = 5;
@@ -148,22 +149,26 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
               : (row.dividends[0]?.ticker ?? "");
         const estimate = (p: UnbookedDividend) =>
           (estimates && p.amount != null
-            ? money(p.amount, estimates.base, lang, { digits: 2 })
-            : money(p.gross, p.currency, lang, { digits: 2 })) ?? na;
+            ? money(p.amount, { currency: estimates.base, lang, digits: 2 })
+            : money(p.gross, { currency: p.currency, lang, digits: 2 })) ?? na;
         const amount = (row: RecentRow) => {
           if (row.kind === "estimated") return estimate(row.dividend);
           if (row.kind === "owed") {
             return (
               (estimates &&
-                money(owedTotal(row.dividends), estimates.base, lang, { digits: 2 })) ??
+                money(owedTotal(row.dividends), {
+                  currency: estimates.base,
+                  lang,
+                  digits: 2,
+                })) ??
               na
             );
           }
           const tx = row.tx;
           return (
             (data.base && tx.amount != null
-              ? money(tx.amount, data.base, lang, { digits: 2 })
-              : money(amountOf(tx), tx.currency, lang, { digits: 2 })) ?? na
+              ? money(tx.amount, { currency: data.base, lang, digits: 2 })
+              : money(amountOf(tx), { currency: tx.currency, lang, digits: 2 })) ?? na
           );
         };
         const key = (row: RecentRow, index: number) =>
@@ -246,7 +251,11 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
                                   </td>
                                   <td>{verb("dividend")}</td>
                                   <td>
-                                    <TickerCell ticker={p.ticker} name={false} />
+                                    <TickerCell
+                                      className="hm-ticker"
+                                      ticker={p.ticker}
+                                      name={false}
+                                    />
                                   </td>
                                   <td className="hm-num">{estimate(p)}</td>
                                 </tr>
@@ -263,7 +272,11 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
                             </span>
                           </td>
                           <td>
-                            <TickerCell ticker={ticker(row)} name={false} />
+                            <TickerCell
+                              className="hm-ticker"
+                              ticker={ticker(row)}
+                              name={false}
+                            />
                           </td>
                           <td className="hm-num">{amount(row)}</td>
                         </tr>

@@ -16,6 +16,7 @@ One process on one port, one Starlette app in front of everything:
     /guides/*, /es/guias/*   the Spanish-tax lessons as public pages
                    (web/guides.py), in the sitemap
     /auth/login, /oauth2callback, /auth/logout   sign-in (web/oidc.py)
+    /email/unsubscribe                          weekly email stop (web/unsubscribe.py)
     /api/v1/*      the HTTP API (stocks.api) every screen reads through
     /portfolio, /ticker, …   the app: the React shell (frontend/app), one
                    document for every page its router answers
@@ -82,6 +83,7 @@ from stocks.web import (
     precompress,
     ratelimit,
     seo,
+    unsubscribe,
     upstream,
 )
 from stocks.web.landing import (
@@ -1391,6 +1393,7 @@ routes = [
     Route(f"{APP_ASSETS}{{path:path}}", app_asset, methods=["GET", "HEAD"]),
     Route(f"{STATIC_PATH}{{path:path}}", static_file, methods=["GET", "HEAD"]),
     *oidc.routes(),
+    *unsubscribe.routes(),
     # The MCP connector: the authorization server, the consent page and `/mcp`
     # itself, all behind one door that is open only inside the lifespan.
     *(Route(p, connector_door) for p in connector_oauth.PATHS),

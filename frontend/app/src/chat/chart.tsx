@@ -40,16 +40,16 @@ import {
   scale,
   spoken,
   summary,
-  ticks,
   type TipLine,
 } from "../pages/ticker/plot";
+import { ticks } from "../ui/chart/ticks";
 import "../pages/ticker/ticker.css";
-import { money } from "../pages/home/format";
 import { useLang, useT } from "../shell/i18n";
 import { chart as palette, seriesColors } from "../shell/theme";
 import { useWidth } from "../shell/useWidth";
 import { DOT, LINE } from "../ui/chart/marks";
 import { num } from "../shell/numbers";
+import { money } from "../shell/format";
 
 export type Line = {
   symbol: string;
@@ -229,7 +229,11 @@ export function LineChart({
     hover === null ? null : lines.map((_, at) => nearest(xs[at] as number[], hover));
   const lead = picked?.[0] ?? 0;
   const cash = (amount: number | undefined, line: Line, signed = false) =>
-    money(amount, line.currency || "EUR", lang, { signed }) ?? "";
+    money(amount, {
+      currency: line.currency || "EUR",
+      lang,
+      signed: signed ? "always" : false,
+    }) ?? "";
   const toned = (amount: number) => (amount >= 0 ? ("up" as const) : ("down" as const));
   // The money the book had in, which the index line was bought with too.
   const flows = lines.find((line) => line.injected?.length)?.injected;

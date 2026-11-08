@@ -9,10 +9,11 @@ import { useApi } from "../../shell/useApi";
 import { Loaded } from "../../shell/Layout";
 import { Responsive, StackCards } from "../../ui/Rows";
 import { useT } from "../../shell/i18n";
-import { DASH, compactMoney, money, orElse, percent, type Translate } from "./format";
+import { orElse, type Translate, currencySymbol } from "./format";
 import { Card, Metric, Metrics, Note, Scroll, Tag } from "./ui";
 import type { AssetStats, KpiSourceRow } from "./types";
 import { num } from "../../shell/numbers";
+import { DASH, compact, money, percent } from "../../shell/format";
 
 /**
  * The coin stand-in for fundamentals, insiders and comps — a currency pair has
@@ -26,11 +27,28 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
     // `stocks.formatting.compact_money`'s shape: "€1.5T", "€40.7B" — the mark
     // of the quote currency, one decimal. Supply is a count of coins, so it
     // takes the same rounding with no mark at all.
-    [t("ticker.market_cap"), cell(compactMoney(stats.market_cap, stats.quote))],
-    [t("ticker.volume_24h"), cell(compactMoney(stats.volume_24h, stats.quote))],
+    [
+      t("ticker.market_cap"),
+      cell(
+        compact(stats.market_cap, { prefix: currencySymbol(stats.quote), digits: 1 }) ??
+          DASH,
+      ),
+    ],
+    [
+      t("ticker.volume_24h"),
+      cell(
+        compact(stats.volume_24h, { prefix: currencySymbol(stats.quote), digits: 1 }) ??
+          DASH,
+      ),
+    ],
     [
       t("ticker.circulating_supply"),
-      cell(compactMoney(stats.circulating_supply, null)),
+      cell(
+        compact(stats.circulating_supply, {
+          prefix: currencySymbol(null),
+          digits: 1,
+        }) ?? DASH,
+      ),
     ],
     // Tokenomics: how much of the supply is out, and what the rest is
     // already priced at. Rows the scan has no figure for are left out rather
@@ -39,19 +57,22 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
       ? ([
           [
             t("ticker.max_supply"),
-            `${compactMoney(stats.max_supply, null)}${
+            `${compact(stats.max_supply, { prefix: currencySymbol(null), digits: 1 }) ?? DASH}${
               stats.issued_pct !== null && stats.issued_pct !== undefined
-                ? ` · ${t("ticker.issued", { pct: percent(stats.issued_pct, 0) })}`
+                ? ` · ${t("ticker.issued", { pct: percent(stats.issued_pct, { digits: 0, tight: true }) ?? DASH })}`
                 : ""
             }`,
           ],
         ] as [string, string][])
       : []),
     ...(stats.fdv
-      ? ([[t("ticker.fdv"), compactMoney(stats.fdv, stats.quote)]] as [
-          string,
-          string,
-        ][])
+      ? ([
+          [
+            t("ticker.fdv"),
+            compact(stats.fdv, { prefix: currencySymbol(stats.quote), digits: 1 }) ??
+              DASH,
+          ],
+        ] as [string, string][])
       : []),
     [
       t("ticker.range_52w"),
@@ -61,7 +82,7 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
       // today's price, and "16.2K – 98.1K" loses the very digits that
       // comparison needs.
       stats.low_52w && stats.high_52w
-        ? `${money(stats.low_52w, 0)} – ${money(stats.high_52w, 0)}`
+        ? `${money(stats.low_52w, { digits: 0 }) ?? DASH} – ${money(stats.high_52w, { digits: 0 }) ?? DASH}`
         : na,
     ],
   ];

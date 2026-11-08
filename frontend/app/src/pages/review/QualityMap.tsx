@@ -58,7 +58,7 @@ import { useTickerProfile } from "../../shell/tickers";
 import { useWidth } from "../../shell/useWidth";
 import { Chip } from "../../ui/Kpi";
 import { Segmented } from "../../ui/Segmented";
-import { percent, pnl, score, tipFigures, verdictTone } from "./format";
+import { pnl, score, tipFigures, verdictTone } from "./format";
 import { type Box, type LabelSpot, labelRank, placeLabels } from "./labels";
 import { DetailsDialog, PnlChip, metricLabel } from "./Explain";
 import { useFocus } from "./focus";
@@ -67,6 +67,7 @@ import { MapFind } from "./MapFind";
 import { type ReturnWindow, type TrailStep, WINDOWS, useReturns } from "./returns";
 import { FIND_MIN, useRowWords } from "./Tables";
 import type { ReviewRow, ScorePoint } from "./types";
+import { percent } from "../../shell/format";
 
 /** `stocks.analysis.review.GOOD` and `CHEAP`. */
 const GOOD = 60;
@@ -909,7 +910,7 @@ function Dot({
     t(`review.verdict_${row.verdict}`),
     `${t("review.col_quality")} ${score(row.quality)}`,
     `${t("review.col_cheapness")} ${score(row.cheapness)}`,
-    row.held ? `${t("review.col_weight")} ${percent(row.weight, lang)}` : null,
+    row.held ? `${t("review.col_weight")} ${percent(row.weight, { lang })}` : null,
     row.held
       ? `${t("review.col_pnl")} ${pnl(row, base, lang) ?? t("review.na")}`
       : null,
@@ -1038,7 +1039,7 @@ function Tip({
         </span>
         {row.held ? (
           <span>
-            {t("review.col_weight")} <b>{percent(row.weight, lang) ?? na}</b>
+            {t("review.col_weight")} <b>{percent(row.weight, { lang }) ?? na}</b>
           </span>
         ) : null}
         {row.held ? (

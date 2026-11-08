@@ -46,18 +46,3 @@ export function num(value: number, digits = 2, lang = current): string {
     maximumFractionDigits: digits,
   }).format(value);
 }
-
-/** As `num`, with the sign always printed ("+1,29", "-0,40", "+0,00"). */
-function signedNum(value: number, digits = 2, lang = current): string {
-  return `${value >= 0 ? "+" : ""}${num(value, digits, lang)}`;
-}
-
-/** A fraction as a percentage: 0.1234 to "12,3%" (no space, as the tables set it). */
-export function pctNum(value: number, digits = 1, lang = current): string {
-  return `${num(value * 100, digits, lang)}%`;
-}
-
-/** …and always signed: 0.0129 to "+1,29%". */
-export function signedPct(value: number, digits = 1, lang = current): string {
-  return `${signedNum(value * 100, digits, lang)}%`;
-}

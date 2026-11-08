@@ -20,15 +20,9 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useTaxWords } from "./taxWords";
-import { TickerCell as Cell } from "../../shell/tickers";
+import { TickerCell, TickerCell as Cell } from "../../shell/tickers";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
-import {
-  compactMoneyIn,
-  jurisdictionLabel,
-  moneyIn,
-  percent,
-  shares as formatShares,
-} from "./format";
+import { jurisdictionLabel } from "./format";
 import { PeriodBars, type TipRow } from "./charts";
 import {
   Caption,
@@ -41,10 +35,15 @@ import {
   Segmented,
   Signed,
   Table,
-  TickerCell,
   Warn,
 } from "./ui";
 import type { Column } from "./ui";
+import {
+  compactMoneyIn,
+  moneyIn,
+  percent,
+  shares as formatShares,
+} from "../../shell/format";
 
 /**
  * Which sales belong to which fiscal year.
@@ -129,6 +128,20 @@ export function salesByPosition(sales: TaxSale[]): PositionSales[] {
     one.gain += sale.gain;
   }
   return [...byTicker.values()];
+}
+
+/**
+ * What one share cost and fetched in a sale, fees in: the prices a phone row
+ * shows beside its dates, where the cost and proceeds columns do not fit.
+ * Null for a sale of no shares (capital returned past the basis) and a side
+ * at nothing (a write-off), where a per-share price says nothing.
+ */
+export function perShare(sale: TaxSale): { buy: number | null; sell: number | null } {
+  if (!(sale.quantity > 0)) return { buy: null, sell: null };
+  return {
+    buy: sale.cost > 0 ? sale.cost / sale.quantity : null,
+    sell: sale.proceeds > 0 ? sale.proceeds / sale.quantity : null,
+  };
 }
 
 /** A first–last date pair, one date when they are the same day. */
@@ -256,7 +269,7 @@ function Report({ report }: { report: TaxReport }) {
         rows.push({
           label: t("portfolio.tip_effective_rate"),
           value:
-            percent(lang, period.estimated_tax / period.net_taxable, { digits: 1 }) ??
+            percent(period.estimated_tax / period.net_taxable, { lang, digits: 1 }) ??
             "",
         });
       if (period.carryforward_loss > 0)
@@ -521,7 +534,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      cell: (row) => <TickerCell ticker={row.ticker} />,
+      cell: (row) => <TickerCell className="pf-ticker" ticker={row.ticker} />,
     },
     {
       key: "buy",
@@ -572,7 +585,9 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       key: "qty",
       label: t("portfolio.col_shares"),
       sort: (row) => row.quantity,
-      cell: (row) => <Figure value={formatShares(lang, row.quantity, true)} />,
+      cell: (row) => (
+        <Figure value={formatShares(row.quantity, { lang, fixed: true })} />
+      ),
     },
     {
       key: "cost",
@@ -610,7 +625,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
               text={money(row.gain, { digits: 2, signed: true })}
             />
             {pct === null ? null : (
-              <Chip value={pct} text={percent(lang, pct, { signed: true })} />
+              <Chip value={pct} text={percent(pct, { lang, signed: true })} />
             )}
           </span>
         );
@@ -630,7 +645,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
           row.cost ? (
             <Chip
               value={row.gain / row.cost}
-              text={percent(lang, row.gain / row.cost, { signed: true })}
+              text={percent(row.gain / row.cost, { lang, signed: true })}
             />
           ) : null,
         value: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
@@ -640,11 +655,22 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
             text={money(row.gain, { digits: 2, signed: true })}
           />
         ),
-        sub: (row) => [
-          `${t("portfolio.col_bought")} ${row.buy_date}`,
-          `${t("portfolio.col_sold")} ${row.sell_date}`,
-          `${t("portfolio.col_shares")} ${formatShares(lang, row.quantity, true) ?? ""}`,
-        ],
+        sub: (row) => {
+          const each = perShare(row);
+          const leg = (side: string, date: string, price: number | null) =>
+            price === null
+              ? `${t(side)} ${date}`
+              : t("portfolio.tax_leg", {
+                  side: t(side),
+                  date,
+                  price: money(price, { digits: 2 }) ?? "",
+                });
+          return [
+            leg("portfolio.col_bought", row.buy_date, each.buy),
+            leg("portfolio.col_sold", row.sell_date, each.sell),
+            `${t("portfolio.col_shares")} ${formatShares(row.quantity, { lang, fixed: true }) ?? ""}`,
+          ];
+        },
         wrap: true,
       }}
     />
@@ -665,7 +691,7 @@ function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[]
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      cell: (row) => <TickerCell ticker={row.ticker} />,
+      cell: (row) => <TickerCell className="pf-ticker" ticker={row.ticker} />,
     },
     {
       key: "count",
@@ -695,7 +721,9 @@ function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[]
       key: "qty",
       label: t("portfolio.col_shares"),
       sort: (row) => row.quantity,
-      cell: (row) => <Figure value={formatShares(lang, row.quantity, true)} />,
+      cell: (row) => (
+        <Figure value={formatShares(row.quantity, { lang, fixed: true })} />
+      ),
     },
     {
       key: "cost",
@@ -722,7 +750,7 @@ function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[]
               text={money(row.gain, { digits: 2, signed: true })}
             />
             {pct === null ? null : (
-              <Chip value={pct} text={percent(lang, pct, { signed: true })} />
+              <Chip value={pct} text={percent(pct, { lang, signed: true })} />
             )}
           </span>
         );
@@ -741,7 +769,7 @@ function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[]
         badge: (row) => {
           const pct = pctOf(row);
           return pct === null ? null : (
-            <Chip value={pct} text={percent(lang, pct, { signed: true })} />
+            <Chip value={pct} text={percent(pct, { lang, signed: true })} />
           );
         },
         value: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
@@ -756,7 +784,7 @@ function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[]
             ? t("portfolio.tip_sale_one")
             : t("portfolio.tip_sale_count", { n: row.sales }),
           `${t("portfolio.col_sold")} ${span(row.first_sell, row.last_sell)}`,
-          `${t("portfolio.col_shares")} ${formatShares(lang, row.quantity, true) ?? ""}`,
+          `${t("portfolio.col_shares")} ${formatShares(row.quantity, { lang, fixed: true }) ?? ""}`,
         ],
         wrap: true,
       }}

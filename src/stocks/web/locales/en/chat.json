@@ -667,6 +667,8 @@
   "chat.import_see_all": "See all {n} rows full width",
   "chat.import_warn_line": "{n} rows carry a warning: check them before importing.",
   "chat.import_safe": "Nothing is saved until you press Import.",
+  "chat.import_all_held": "All {n} rows are already in your book. Nothing new to import.",
+  "chat.import_close": "Close",
   "chat.import_in_book": "already in book",
   "chat.import_warned": "Has a warning",
   "chat.import_col_operation": "Operation",

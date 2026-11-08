@@ -12,6 +12,7 @@
  * write, and it is why `send` never falls back to a form encoding.
  */
 
+import type { Responses } from "../api.gen";
 import { begin } from "./activity";
 import { noteFreshness, noteRefreshing, noteUpdating } from "./freshness";
 import { keepable, landed, recall } from "./keep";
@@ -279,10 +280,22 @@ async function fail(response: Response): Promise<never> {
   );
 }
 
-export async function get<T>(
-  path: string,
-  params?: Record<string, string | number | undefined>,
-): Promise<T> {
+type Params = Record<string, string | number | undefined>;
+
+/**
+ * GET `path` under `/api/v1`.
+ *
+ * A path the API's schema knows (`api.gen.ts`, regenerated with
+ * `npm run gen:api`) answers with its response model, so a page cannot
+ * describe the body wrongly. `get<T>(…)` is the escape hatch: a path built at
+ * run time (`/ticker/${symbol}`), or a body a page narrows on purpose.
+ */
+export function get<P extends keyof Responses>(
+  path: P,
+  params?: Params,
+): Promise<Responses[P]>;
+export function get<T>(path: string, params?: Params): Promise<T>;
+export async function get<T>(path: string, params?: Params): Promise<T> {
   const entries = Object.entries(params ?? {}).filter(([, v]) => v !== undefined);
   const query = entries.length
     ? `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)]))}`

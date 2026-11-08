@@ -35,7 +35,9 @@ def _stamped(root: Path, key: str, value, timeout: float = 5.0) -> None:
 
 
 def test_whats_new_opens_once_for_an_account_a_release_behind(page: Page, sign_in):
-    behind = onboarding.RELEASES[-2].version
+    # Two behind, not one: the newest release's only card (the Friday email)
+    # waits for Resend keys this server does not have.
+    behind = onboarding.RELEASES[-3].version
     root = sign_in({onboarding.PREF_SEEN_VERSION: behind})
 
     page.goto("/home")

@@ -10,8 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import { POLL_MS } from "../../shell/poll";
+
 import {
-  POLL_MS,
   activeTab,
   badgeKey,
   compareOrder,
@@ -30,7 +31,6 @@ import {
   sectionsOf,
   shows,
   sourceKey,
-  stalledAt,
   stampOf,
   tabsOf,
   teaserOf,
@@ -495,9 +495,9 @@ describe("nextPoll", () => {
   it("polls fast while the card is written, slowly while the market catches up", () => {
     expect(
       nextPoll({ market_stale: false, personal: card({ pending: true }) }, 0),
-    ).toBe(POLL_MS);
+    ).toBe(POLL_MS.card);
     expect(nextPoll({ market_stale: true, personal: card() }, 0)).toBeGreaterThan(
-      POLL_MS,
+      POLL_MS.card,
     );
     expect(nextPoll({ market_stale: false, personal: card() }, 0)).toBeNull();
   });
@@ -506,15 +506,6 @@ describe("nextPoll", () => {
     expect(
       nextPoll({ market_stale: true, personal: card({ pending: true }) }, 60),
     ).toBeNull();
-  });
-
-  it("calls a card still pending at the cap stalled, and nothing else", () => {
-    const pending = { market_stale: false, personal: card({ pending: true }) };
-    expect(stalledAt(pending, 59)).toBe(false);
-    expect(stalledAt(pending, 60)).toBe(true);
-    // Only the market behind at the cap: nothing of the reader's is stuck.
-    expect(stalledAt({ market_stale: true, personal: card() }, 60)).toBe(false);
-    expect(stalledAt({ market_stale: false, personal: null }, 60)).toBe(false);
   });
 });
 

@@ -19,13 +19,11 @@ import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
 import { DenseRows } from "../../ui/Rows";
 import { Fold } from "../../ui/Fold";
-import { moneyIn, shares as formatShares } from "../portfolio/format";
 import type { CalendarPayment, CalendarTrade, EventPick, MarketHoliday } from "./data";
 import { cash } from "./Dividends";
 import { longDate, plain, tone } from "./format";
 import type { T } from "./format";
-
-const DASH = "—";
+import { DASH, moneyIn, shares as formatShares } from "../../shell/format";
 
 /** "+1.234,56 €": a realised gain in the reporting currency, signed. */
 export function gainText(lang: string, trade: CalendarTrade): string {
@@ -46,7 +44,7 @@ function tradeTitle(
     who,
     t(`earnings.trade_${trade.side}`),
     t("earnings.trade_breakdown", {
-      shares: formatShares(lang, trade.quantity) ?? DASH,
+      shares: formatShares(trade.quantity, { lang }) ?? DASH,
       price: cash(lang, trade.price, trade.currency),
     }),
   ];

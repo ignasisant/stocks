@@ -24,6 +24,7 @@ import { onIdle } from "./idle";
 import { BASE, navigate } from "./router";
 import { useGuest } from "./session";
 import { useTickerProfile } from "./tickers";
+import { TYPING_MS } from "./useDebounced";
 import { Badge } from "../ui/Badge";
 import { formatter } from "./numbers";
 
@@ -57,8 +58,6 @@ const CAPTIONS: Record<string, string> = {
 
 const MARKS: Record<string, string> = { favorite: "★", held: "●" };
 
-/** Long enough that typing a five-letter symbol is one request, not five. */
-const DEBOUNCE_MS = 220;
 /**
  * `stocks.fuzzy.MIN_QUERY`: under this many characters the server skips the
  * worldwide tier itself, so the local answer *is* the full one, and a
@@ -174,7 +173,7 @@ export function Search({
           if (live && !full) setMatches(local);
         })
         .catch(() => undefined);
-    }, DEBOUNCE_MS);
+    }, TYPING_MS);
     return () => {
       live = false;
       window.clearTimeout(timer);

@@ -49,7 +49,6 @@ import hashlib
 import json
 import re
 import secrets
-import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
@@ -57,7 +56,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import SupportsFloat
 
-from stocks import atomic, obs, storage
+from stocks import obs, storage, userstore
 
 FILE = "decisions.json"
 
@@ -168,8 +167,7 @@ CHAT_ACTIONS = {
 }
 
 # One account's file is written from a request and from a card's background
-# job at once; every read-modify-write holds this.
-_LOCK = threading.RLock()
+# job at once; every read-modify-write holds its `userstore.lock`.
 
 
 def path_for(chat: Path) -> Path:
@@ -324,19 +322,14 @@ def writable(path: Path) -> bool:
 def _save(path: Path, entries: list[Entry]) -> None:
     from stocks import accounts
 
-    accounts.writable(path)
+    accounts.writable(path)  # before the bucket read `_merged` costs
     entries = _merged(path, entries)
     if len(entries) > MAX_ENTRIES:
         settled = [e for e in entries if e.state not in LIVE]
         drop = {e.id for e in settled[: len(entries) - MAX_ENTRIES]}
         entries = [e for e in entries if e.id not in drop]
-    atomic.write_json(path, {"version": 1, "entries": [e.as_dict() for e in entries]},
-                      indent=1, ensure_ascii=False)
-    try:
-        storage.persist(path)
-    except Exception as exc:  # noqa: BLE001 — the local copy is good
-        obs.warn("journal.persist_failed", error_type=type(exc).__name__,
-                 error=str(exc)[:200])
+    userstore.write(path, {"version": 1, "entries": [e.as_dict() for e in entries]},
+                    indent=1, ensure_ascii=False)
 
 
 def _merged(path: Path, entries: list[Entry]) -> list[Entry]:
@@ -401,7 +394,7 @@ def record(path: Path, shown: Iterable[Shown], day: date, *,
     """
     shown = [s for s in shown if s.source in SOURCES and s.subject and s.action]
     iso, now = day.isoformat(), _now()
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         index = {(e.source, e.subject): i for i, e in enumerate(entries)
                  if e.state == "open" and e.type == "proposal"}
@@ -455,7 +448,7 @@ def settle(path: Path, shown: Shown, state: str, day: date) -> Entry | None:
     if state not in ("followed", "declined") or not shown.subject:
         return None
     now = _now()
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for i, e in enumerate(entries):
             if (e.type == "proposal" and e.source == shown.source
@@ -482,7 +475,7 @@ def attach(path: Path, source: str, subject: str, evidence: str) -> bool:
     evidence = _text(evidence, MAX_EVIDENCE)
     if not evidence:
         return False
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for i in range(len(entries) - 1, -1, -1):
             e = entries[i]
@@ -553,7 +546,7 @@ def settle_from_ledger(path: Path, trades: Iterable, day: date) -> int:
     if not rows:
         return 0
     now = _now()
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         changed = 0
         for i, e in enumerate(entries):
@@ -605,7 +598,7 @@ OUTCOME_KEYS = ("then", *(f"d{m}" for m in MARKS))
 MAX_MARKED = 12
 
 # (ticker, [day, ...]) -> the close on or before each day, None where the
-# listing had no price yet — `api.briefing._closes_on`, off `window_closes`.
+# listing had no price yet — `api.briefing.closes_on`, off `window_closes`.
 ClosesOn = Callable[[str, list[date]], list[float | None]]
 
 
@@ -653,7 +646,7 @@ def mark_outcomes(path: Path, closes: ClosesOn, day: date) -> int:
             found[entry_id] = {"then": round(then, 4), **marked}
     if not found:
         return 0
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for i, e in enumerate(entries):
             if e.id in found:
@@ -1035,7 +1028,7 @@ def add_criteria_many(path: Path, holdings: Iterable[tuple[str, Iterable[dict], 
     whose rules were all unusable."""
     iso, now = day.isoformat(), _now()
     out: list[list[Entry]] = []
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for ticker, rules, thesis in holdings:
             ticker = ticker.strip().upper()
@@ -1068,7 +1061,7 @@ def add_criteria_many(path: Path, holdings: Iterable[tuple[str, Iterable[dict], 
 def retire(path: Path, entry_id: str) -> Entry | None:
     """Take one of the reader's rules down. None when there is no live
     criterion with that id."""
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for i, e in enumerate(entries):
             if e.id == entry_id and e.type == "criterion" and e.state in LIVE:
@@ -1085,6 +1078,42 @@ def criteria(entries: Iterable[Entry], ticker: str = "") -> list[Entry]:
     return [e for e in entries
             if e.type == "criterion" and e.state in LIVE
             and (not want or e.ticker.upper() == want)]
+
+
+def rule_row(e: Entry) -> dict:
+    """One live exit rule as a client reads it: the rule, its state and what
+    its last check found, with the evidence once it has been met."""
+    snap = e.snapshot
+    row = {"id": e.id, "rule": str(snap.get("rule") or e.action),
+           "state": e.state, "since": e.day,
+           "level": snap.get("level"), "quarters": snap.get("quarters"),
+           "pillars": snap.get("pillars"), "checked": snap.get("checked"),
+           "last_value": snap.get("value"), "watch": snap.get("watch") or None}
+    if e.state == "hit":
+        row |= {"quote": snap.get("quote"), "source": snap.get("source"),
+                "source_day": snap.get("source_day"),
+                "pillar": snap.get("pillar"), "verdict": snap.get("verdict")}
+    return {k: v for k, v in row.items() if v not in (None, "", [])}
+
+
+def criteria_status(entries: Iterable[Entry], held: set[str]) -> dict:
+    """Every live exit rule by holding, the rules already met, and the
+    holdings left without any rule or without a thesis rule. `held` is the
+    set of upper-case tickers the book holds now."""
+    by: dict[str, list[dict]] = {}
+    for e in criteria(entries):
+        by.setdefault(e.ticker.upper(), []).append(rule_row(e))
+    return {
+        "holdings": [{"ticker": t, "held": t in held, "rules": rows}
+                     for t, rows in sorted(by.items())],
+        "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
+                for r in rows if r["state"] == "hit"],
+        "without_rules": sorted(held - by.keys()),
+        "without_thesis": sorted(
+            t for t in held
+            if not any(r["rule"] in THESIS_RULES for r in by.get(t, ()))),
+        "not_held": sorted(by.keys() - held),
+    }
 
 
 def _row(tbl, ticker: str):
@@ -1267,7 +1296,7 @@ def _says(rule: str, text: str) -> int | None:
     return None
 
 
-def _excerpt(text: str, at: int) -> str:
+def excerpt(text: str, at: int) -> str:
     """The EXCERPT_CHARS of `text` around position `at`, a third before it."""
     if len(text) <= EXCERPT_CHARS:
         return text
@@ -1374,7 +1403,7 @@ def _check_event(e: Entry, rule: str, day: date, passages_of, judge) -> dict | N
              if isinstance(p, dict) and str(p.get("text") or "").strip()
              and str(p.get("day") or "") >= since.isoformat()
              and _seen_key(p) not in seen]
-    asked = [{**p, "text": _excerpt(str(p["text"]), at)} for p in fresh
+    asked = [{**p, "text": excerpt(str(p["text"]), at)} for p in fresh
              if (at := _says(rule, str(p["text"]))) is not None][:6]
     out: dict = {"checked": day.isoformat()}
     if asked:
@@ -1431,7 +1460,7 @@ def _pillar_words(pillars: list[str]) -> list[str]:
     return sorted({w[:6] for w in words if w not in _PILLAR_STOP})
 
 
-def _material(item: dict, stems: list[str]) -> int | None:
+def material(item: dict, stems: list[str]) -> int | None:
     """Where a passage first says something a pillar could stand or fall on,
     or None: a filing always does (from its start), a headline when it
     touches the business or one of the pillars' own words."""
@@ -1486,7 +1515,7 @@ def _sifted(passages: list[dict], pillars: list[str]) -> list[tuple[dict, int]]:
     """The passages a pillar could stand or fall on, each with where it says
     so: the company's own filings before the press."""
     stems = _pillar_words(pillars)
-    located = [(p, at) for p in passages if (at := _material(p, stems)) is not None]
+    located = [(p, at) for p in passages if (at := material(p, stems)) is not None]
     located.sort(key=lambda pa: not str(pa[0].get("source") or "").startswith("8-K"))
     return located
 
@@ -1509,12 +1538,12 @@ def trial_thesis(ticker: str, pillars: list[str], passages: list[dict],
                  "material": len(located),
                  "shown": [{"source": str(p.get("source") or ""),
                             "day": str(p.get("day") or ""),
-                            "text": _excerpt(str(p["text"]), at)[:240]}
+                            "text": excerpt(str(p["text"]), at)[:240]}
                            for p, at in shown],
                  "judged": False, "verdicts": [], "would_meet": None}
     if not pillars or not shown:
         return out
-    asked = [{**p, "text": _excerpt(str(p["text"]), at)} for p, at in shown]
+    asked = [{**p, "text": excerpt(str(p["text"]), at)} for p, at in shown]
     verdicts = _thesis_judged(ticker, pillars, asked, judge)
     if verdicts is None:
         return out
@@ -1563,7 +1592,7 @@ def _check_thesis(e: Entry, day: date, passages_of, judge: ThesisJudge,
     if shown:
         if not can_ask:
             return None, False
-        asked = [{**p, "text": _excerpt(str(p["text"]), at)} for p, at in shown]
+        asked = [{**p, "text": excerpt(str(p["text"]), at)} for p, at in shown]
         verdicts = _thesis_judged(e.ticker, pillars, asked, judge)
         if verdicts is None:
             return None, True
@@ -1634,7 +1663,7 @@ def _write_checks(path: Path, found: dict[str, dict], day: date) -> list[dict]:
         return []
     iso, now = day.isoformat(), _now()
     fired: list[Entry] = []
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         for i, e in enumerate(entries):
             got = found.get(e.id)
@@ -1664,7 +1693,7 @@ def mark_hit(path: Path, rows: Iterable[dict], day: date) -> list[dict]:
     if not fired:
         return rows
     iso, now = day.isoformat(), _now()
-    with _LOCK:
+    with userstore.lock(path):
         entries = load(path)
         changed = False
         for i, e in enumerate(entries):

@@ -41,6 +41,7 @@ from stocks import accounts, obs
 from stocks.api import cache, deps
 from stocks.api.schemas import AlertRule
 from stocks.connector import store
+from stocks.portfolio.edits import EditError
 from stocks.web import ratelimit
 
 if TYPE_CHECKING:
@@ -96,6 +97,10 @@ READ_ONLY_REFUSAL = (
     "TopStocks in Claude and connects it again, ticking the box that lets "
     "Claude make changes on the consent screen."
 )
+
+
+# What the model does next, by the reason the book refused an edit.
+_RETRY = {"stale": "Preview it again and show the person the new plan."}
 
 
 class _Refused(Exception):
@@ -222,6 +227,9 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
         except _Refused as exc:
             outcome = "refused"
             return _error(str(exc))
+        except EditError as exc:
+            outcome = "refused"
+            return _error(f"{exc} {_RETRY.get(exc.kind, "")}".strip())
         except ValidationError as exc:
             outcome = "invalid"
             return _error("; ".join(e["msg"] for e in exc.errors()))
@@ -793,11 +801,11 @@ async def ticker_news(ticker: Ticker, since: Since = None) -> CallToolResult:
         rows = []
         for p in _read_passages(code, start):
             text = str(p.get("text") or "")
-            at = journal._material(p, []) or 0
+            at = journal.material(p, []) or 0
             rows.append({"source": str(p.get("source") or ""),
                          "day": str(p.get("day") or ""),
                          "filing": str(p.get("source") or "").startswith("8-K"),
-                         "text": journal._excerpt(text, at)[:NEWS_CHARS]})
+                         "text": journal.excerpt(text, at)[:NEWS_CHARS]})
         rows.sort(key=lambda r: r["day"], reverse=True)
         return {"kind": "news", "ticker": code, "since": start.isoformat(),
                 "total": len(rows), "items": rows[:NEWS_MAX]}
@@ -842,7 +850,7 @@ async def check_thesis(
         judge = exit_judge.make_thesis_judge(prefs, spend_free=spend)
         out = journal.trial_thesis(code, list(pillars), passages, judge)
         if spent:
-            briefing._save_counters(paths, prefs)
+            briefing.save_counters(paths, prefs)
         note = ""
         if out["shown"] and not out["judged"]:
             note = ("No model answered: the free allowance left today is kept "
@@ -857,20 +865,6 @@ async def check_thesis(
     return await _run("check_thesis", work)
 
 
-def _rule_row(e: Any) -> dict:
-    snap = e.snapshot
-    row = {"id": e.id, "rule": str(snap.get("rule") or e.action),
-           "state": e.state, "since": e.day,
-           "level": snap.get("level"), "quarters": snap.get("quarters"),
-           "pillars": snap.get("pillars"), "checked": snap.get("checked"),
-           "last_value": snap.get("value"), "watch": snap.get("watch") or None}
-    if e.state == "hit":
-        row |= {"quote": snap.get("quote"), "source": snap.get("source"),
-                "source_day": snap.get("source_day"),
-                "pillar": snap.get("pillar"), "verdict": snap.get("verdict")}
-    return {k: v for k, v in row.items() if v not in (None, "", [])}
-
-
 async def kill_criteria_status() -> CallToolResult:
     """Every live exit rule by holding, with what its last check found, and
     the holdings left without any rule or without a thesis rule."""
@@ -878,24 +872,9 @@ async def kill_criteria_status() -> CallToolResult:
         from stocks.api import briefing
         from stocks.chat import journal
 
-        live = journal.criteria(journal.load(paths.journal))
-        held = briefing._held(paths)
-        by: dict[str, list[dict]] = {}
-        for e in live:
-            by.setdefault(e.ticker.upper(), []).append(_rule_row(e))
-        holdings = [{"ticker": t, "held": t in held, "rules": rows}
-                    for t, rows in sorted(by.items())]
-        return {
-            "kind": "criteria_status",
-            "holdings": holdings,
-            "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
-                    for r in rows if r["state"] == "hit"],
-            "without_rules": sorted(held - by.keys()),
-            "without_thesis": sorted(
-                t for t in held
-                if not any(r["rule"] in journal.THESIS_RULES for r in by.get(t, ()))),
-            "not_held": sorted(by.keys() - held),
-        }
+        held = briefing.held_symbols(paths)
+        return {"kind": "criteria_status",
+                **journal.criteria_status(journal.load(paths.journal), held)}
 
     return await _run("kill_criteria_status", work)
 
@@ -1209,11 +1188,11 @@ Ids = Annotated[list[int], Field(min_length=1, max_length=200,
 
 def _edit(paths: UserPaths, ops: list[dict], plan_token: str | None,
           summary: str) -> dict:
-    from stocks.api.routes import portfolio
+    from stocks.api.routes.portfolio.ledger import change_view, plan_view
     from stocks.portfolio import edits
 
     if plan_token is None:
-        planned = _plain(portfolio.plan_change(paths, portfolio.EditOps(ops=ops)))
+        planned = _plain(plan_view(edits.plan(ops, paths.db)))
         planned["plan_token"] = planned.pop("token")
         planned["next"] = (
             "Nothing was written. Show the person these changes and effects; "
@@ -1223,18 +1202,10 @@ def _edit(paths: UserPaths, ops: list[dict], plan_token: str | None,
             "This edit cannot be applied: see problems. Nothing was written."
         )
         return {"kind": "edit_plan", "applied": False, "summary": summary, **planned}
-    try:
-        done = edits.commit(ops, plan_token, source="mcp", summary=summary,
-                            path=paths.db)
-    except edits.Stale as exc:
-        raise _Refused(
-            f"{exc} Preview it again and show the person the new plan."
-        ) from exc
-    except edits.EditError as exc:
-        raise _Refused(str(exc)) from exc
+    done = edits.commit(ops, plan_token, source="mcp", summary=summary,
+                        path=paths.db)
     obs.event("ledger.edited", rows=len(done.changes), via="mcp")
-    return {"kind": "edit_done", "applied": True,
-            **_plain(portfolio._change(done)),
+    return {"kind": "edit_done", "applied": True, **_plain(change_view(done)),
             "next": f"Applied. undo_change with change_id {done.id} takes it back."}
 
 
@@ -1336,21 +1307,21 @@ async def rename_security(
     plan_token: PlanToken = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.portfolio.fees import broker_of
+        from stocks.api import loaders
+        from stocks.portfolio import ledger_ops
 
-        if ids:
-            chosen = list(dict.fromkeys(ids))
-        elif label:
-            wanted = label.strip().upper()
-            chosen = [t.id for t in _rows(paths) if t.ticker.upper() == wanted
-                      and (not broker or broker_of(t) == broker.strip().lower())]
-            if not chosen:
-                raise _Refused(f"No transactions are stored under {wanted}.")
-        else:
+        if not ids and not label:
             raise _Refused("Name the rows: a label or ids.")
+        renamed = ledger_ops.rename(_rows(paths), to, label=label or "",
+                                    broker=broker or "", ids=ids or (),
+                                    resolve=loaders.display_symbol)
+        if not renamed.ops:
+            raise _Refused("No transactions are stored under "
+                           f"{(label or '').strip().upper() or 'those ids'} "
+                           "that are not already booked there.")
         target = to.strip().upper()
-        return _edit(paths, [{"op": "relabel", "ids": chosen, "to": target}],
-                     plan_token, f"Book {len(chosen)} row(s) under {target}")
+        return _edit(paths, renamed.ops, plan_token,
+                     f"Book {len(renamed.rows)} row(s) under {target}")
 
     return await _run("rename_security", work, write=True)
 
@@ -1369,15 +1340,10 @@ async def record_transfer(
     plan_token: PlanToken = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        ops: list[dict] = [{"op": "set_action", "ids": list(out_ids),
-                            "action": "transfer_out"}]
-        if in_ids:
-            ops.append({"op": "set_action", "ids": list(in_ids),
-                        "action": "transfer_in"})
-        if to:
-            ops.append({"op": "relabel", "ids": [*out_ids, *in_ids],
-                        "to": to.strip().upper()})
-        return _edit(paths, ops, plan_token, "Shares moved between brokers")
+        from stocks.portfolio import ledger_ops
+
+        return _edit(paths, ledger_ops.transfer_ops(out_ids, in_ids, to or ""),
+                     plan_token, "Shares moved between brokers")
 
     return await _run("record_transfer", work, write=True)
 
@@ -1389,24 +1355,15 @@ async def apply_fix(
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api import loaders
-        from stocks.portfolio import demo, doctor, held
+        from stocks.portfolio import ledger_ops
 
-        ids = held.ids_in(key)
-        if ids is not None:
-            sales = held.take(ids, paths.db)
-            if sales is None:
-                raise _Refused("Those sales are not ready any more; run "
-                               "check_book again.")
-            return _edit(paths, held.ops(sales), plan_token,
-                         f"Add {len(sales)} sale(s) an import left out")
-        rows = demo.without(_rows(paths))
-        found = doctor.by_key(rows, key, loaders.display_symbol)
-        if found is None:
-            raise _Refused("No such finding any more; run check_book again.")
-        if not found.fix:
-            raise _Refused("That finding has no fix to apply; it needs the person "
-                           "to say which rows are right.")
-        return _edit(paths, found.fix, plan_token, f"Fix {found.kind} in {found.ticker}")
+        fix = ledger_ops.fix_by_key(_rows(paths), key, paths.db,
+                                    loaders.display_symbol)
+        if fix.finding is None:
+            summary = f"Add {len(fix.sales)} sale(s) an import left out"
+        else:
+            summary = f"Fix {fix.finding.kind} in {fix.finding.ticker}"
+        return _edit(paths, fix.ops, plan_token, summary)
 
     return await _run("apply_fix", work, write=True)
 
@@ -1438,7 +1395,7 @@ async def undo_change(
     confirm: Confirm = False,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.api.routes import portfolio
+        from stocks.api.routes.portfolio.ledger import change_view
         from stocks.portfolio import edits
 
         if change_id is None:
@@ -1452,15 +1409,12 @@ async def undo_change(
                 raise _Refused(f"There is no change {change_id}.")
         if not confirm:
             return {"kind": "undo_plan", "applied": False,
-                    **_plain(portfolio._change(target)),
+                    **_plain(change_view(target)),
                     "next": "Nothing was written. Call again with confirm true "
                             "to put these rows back as they were."}
-        try:
-            done = edits.undo(target.id, path=paths.db)
-        except (edits.Conflict, LookupError) as exc:
-            raise _Refused(str(exc)) from exc
+        done = edits.undo(target.id, path=paths.db)
         obs.event("ledger.undone", rows=len(done.changes), via="mcp")
-        return {"kind": "undo_done", "applied": True, **_plain(portfolio._change(done))}
+        return {"kind": "undo_done", "applied": True, **_plain(change_view(done))}
 
     return await _run("undo_change", work, write=True)
 
@@ -1677,7 +1631,7 @@ async def set_kill_criteria_batch(
         if not any(done):
             raise _Refused("No rule was usable in any holding.")
         return {"kind": "criteria_batch",
-                "written": {c: [_rule_row(e) for e in w]
+                "written": {c: [journal.rule_row(e) for e in w]
                             for c, w in zip(codes, done, strict=True) if w},
                 "refused": [c for c, w in zip(codes, done, strict=True) if not w],
                 "dropped": sum(len(a) for a in asked) - sum(len(w) for w in done)}

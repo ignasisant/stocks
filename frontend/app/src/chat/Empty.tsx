@@ -110,8 +110,8 @@ export function Empty({
   const { go } = useRoute();
   const account = useApi(async () => {
     const [book, watch] = await Promise.all([
-      get<Book>("/portfolio/positions"),
-      get<Watch>("/watchlist"),
+      get("/portfolio/positions"),
+      get("/watchlist"),
     ]);
     return {
       held: book.positions.filter((p) => p.shares).length,

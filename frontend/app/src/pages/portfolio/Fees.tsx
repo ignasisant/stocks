@@ -15,9 +15,10 @@ import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { BrokerCost, Fees as FeesData } from "./api";
-import { brokerName, decimal, moneyIn, percent } from "./format";
+import { brokerName } from "./format";
 import { Caption, Card, Empty, Figure, Hero, ShareBar, Signed, Table } from "./ui";
 import type { Column } from "./ui";
+import { decimal, moneyIn, percent } from "../../shell/format";
 
 export default function Fees() {
   const t = useT();
@@ -107,7 +108,7 @@ export default function Fees() {
                   label: t("portfolio.col_spread_bps"),
                   sort: (row: BrokerCost) => row.spread_bps,
                   cell: (row: BrokerCost) => (
-                    <Figure value={decimal(lang, row.spread_bps, 1)} />
+                    <Figure value={decimal(row.spread_bps, { lang, digits: 1 })} />
                   ),
                 },
               ]
@@ -133,7 +134,7 @@ export default function Fees() {
               >
                 <Signed
                   value={row.cost_pct === null ? null : -row.cost_pct}
-                  text={percent(lang, row.cost_pct, { digits: 2 })}
+                  text={percent(row.cost_pct, { lang, digits: 2 })}
                 />
               </ShareBar>
             ),
@@ -164,7 +165,7 @@ export default function Fees() {
                 sub={
                   measured
                     ? t("portfolio.fees_hero_sub", {
-                        pct: percent(lang, fees.cost_pct, { digits: 2 }) ?? "",
+                        pct: percent(fees.cost_pct, { lang, digits: 2 }) ?? "",
                         volume: money(fees.volume) ?? "",
                       })
                     : t("portfolio.fees_hero_sub_unmeasured", {

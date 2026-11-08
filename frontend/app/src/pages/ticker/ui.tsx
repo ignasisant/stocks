@@ -12,8 +12,6 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { Link } from "../../shell/router";
-import { useTickerProfile } from "../../shell/tickers";
 import { Fold } from "../../ui/Fold";
 import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
 import { Segmented as Seg } from "../../ui/Segmented";
@@ -94,46 +92,6 @@ export function Bold({ text }: { text: string }) {
           i % 2 ? <strong key={i}>{part}</strong> : <span key={i}>{part}</span>,
         )}
     </>
-  );
-}
-
-/**
- * A ticker, always as a link to its own page, and with its mark where we have
- * one.
- *
- * House rule: every symbol on screen opens its analysis. `?ticker=` is the
- * param every other page in this shell links with.
- */
-export function TickerLink({
-  ticker,
-  logo,
-  label,
-  title,
-}: {
-  ticker: string;
-  /** A same-origin mirror URL, where the payload carried one. */
-  logo?: string | null;
-  label?: ReactNode;
-  title?: string;
-}) {
-  // A logo the payload already carried is used as-is; everything else asks the
-  // shell, which collects a whole screen's worth of names into one
-  // `/market/profiles` call. Either way the house rule holds: a symbol on
-  // screen is a mark and a way into its page, never four bare letters.
-  const fetched = useTickerProfile(logo ? "" : ticker);
-  const mark = logo ?? fetched?.logo ?? null;
-  return (
-    <Link
-      className="tk-ticker"
-      page="ticker"
-      params={{ ticker }}
-      title={title ?? fetched?.name ?? undefined}
-    >
-      {mark ? (
-        <img className="tk-ticker-logo" src={mark} alt="" loading="lazy" />
-      ) : null}
-      {label ?? ticker}
-    </Link>
   );
 }
 

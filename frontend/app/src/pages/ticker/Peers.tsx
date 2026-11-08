@@ -14,13 +14,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
+import { useDebounced } from "../../shell/useDebounced";
 import { useTickerProfile } from "../../shell/tickers";
 import { getPeers, getSectors, searchTickers } from "./data";
 import { Note } from "./ui";
 import type { Peer, SearchMatch, WatchlistEntry } from "./types";
 import { ToggleChip } from "../../ui/Toggle";
-
-const DEBOUNCE_MS = 160;
 
 export function PeerPicker({
   ticker,
@@ -78,22 +77,20 @@ export function PeerPicker({
   }, [ticker]);
 
   const trimmed = query.trim();
+  const settled = useDebounced(trimmed);
   useEffect(() => {
-    if (!trimmed) {
+    if (!settled) {
       setHits(null);
       return;
     }
     let live = true;
-    const timer = setTimeout(() => {
-      searchTickers(trimmed, 6)
-        .then((body) => live && setHits(body.matches))
-        .catch(() => live && setHits([]));
-    }, DEBOUNCE_MS);
+    searchTickers(settled, 6)
+      .then((body) => live && setHits(body.matches))
+      .catch(() => live && setHits([]));
     return () => {
       live = false;
-      clearTimeout(timer);
     };
-  }, [trimmed]);
+  }, [settled]);
 
   const add = (symbol: string) => {
     if (symbol === ticker || peers.includes(symbol)) return;

@@ -49,10 +49,10 @@ import type {
 import { HolidayMark, PaymentChip, TradeChip } from "./Book";
 import { CentralBankChip } from "./CentralBanks";
 import { DividendChip } from "./Dividends";
-import { eps, signedPct } from "./format";
 import type { T } from "./format";
 import { blockedTitle, RepurchaseChip } from "./Repurchase";
 import { TaxChip } from "./Tax";
+import { DASH, decimal, percent } from "../../shell/format";
 
 /** More chips than this and the cell shows one fewer, plus "+N". */
 const CELL_CHIPS = 5;
@@ -88,10 +88,16 @@ function resultTitle(result: CalendarResult, name: string | undefined, t: T): st
     const versus =
       result.eps_estimate === null
         ? ""
-        : t("earnings.chip_vs_est", { est: eps(result.eps_estimate) });
-    bits.push(`EPS ${eps(result.reported_eps)}${versus}`);
+        : t("earnings.chip_vs_est", {
+            est: decimal(result.eps_estimate, { digits: 2 }) ?? DASH,
+          });
+    bits.push(`EPS ${decimal(result.reported_eps, { digits: 2 }) ?? DASH}${versus}`);
   }
-  if (result.surprise_pct !== null) bits.push(signedPct(result.surprise_pct));
+  if (result.surprise_pct !== null)
+    bits.push(
+      percent(result.surprise_pct, { digits: 1, signed: "always", points: true }) ??
+        DASH,
+    );
   return bits.join(" · ") + t("earnings.chip_click_details");
 }
 

@@ -9,6 +9,8 @@
 
 import type { Line } from "../../chat/chart";
 
+export type { Position, Positions, Performance, WatchlistEntry } from "../../api.gen";
+
 export type DailyCard = {
   day: string | null;
   headline: string | null;
@@ -273,37 +275,6 @@ export type Summary = {
   realized_cost: number | null;
 };
 
-export type Performance = {
-  base: string;
-  start: string | null;
-  end: string | null;
-  injected: number | null;
-  value: number | null;
-  twr_cumulative: number | null;
-  twr_annualised: number | null;
-  /** False under a year of history: `twr_annualised` is then cumulative. */
-  twr_is_annual?: boolean;
-  irr: number | null;
-  /** False under a year of history: `irr` is then cumulative. */
-  irr_annualised?: boolean;
-  missing: string[];
-};
-
-export type Position = {
-  ticker: string;
-  shares: number;
-  currency: string;
-  cost: number;
-  value: number | null;
-  /** One share, in `currency` — the market's own quote, not the book's. */
-  price: number | null;
-  pnl: number | null;
-  pnl_pct: number | null;
-  weight: number | null;
-};
-
-export type Positions = { base: string; positions: Position[]; unpriced: number };
-
 export type Transaction = {
   id: number | null;
   date: string;
@@ -365,16 +336,6 @@ export type CloseRow = {
 };
 
 export type Closes = { rows: CloseRow[] };
-
-export type WatchlistEntry = {
-  ticker: string;
-  name: string;
-  favorite: boolean;
-  tags: string[];
-  is_crypto: boolean;
-};
-
-export type Watchlist = { entries: WatchlistEntry[] };
 
 /**
  * `/portfolio/history` — one point per day. Every figure is nullable and means

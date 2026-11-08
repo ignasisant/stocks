@@ -21,8 +21,10 @@ import { useTaxWords } from "../portfolio/taxWords";
 import type { EarningsCalendar } from "../earnings/data";
 import type { PulseBook, TrendBlock, TrendTables } from "../sentiment/types";
 import { maybe, sectorKey } from "../sentiment/format";
-import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
-import { decimal, money, percent, plain, shortDate } from "./format";
+import { Card, CardQuery, CardTitle, Note } from "./ui";
+import { plain, shortDate } from "./format";
+import { decimal, money, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 function More({ tab, label }: { tab: string; label: string }) {
   return (
@@ -67,22 +69,22 @@ export function RiskCard() {
           <KpiGrid>
             <Kpi
               label={t("sentiment.beta_equity")}
-              value={decimal(risk.betas.SPY ?? book?.beta, lang, 2) ?? na}
+              value={decimal(risk.betas.SPY ?? book?.beta, { lang, digits: 2 }) ?? na}
               note={book?.stance ? t(`sentiment.stance_${book.stance}`) : undefined}
             />
             <Kpi
               label={t("portfolio.annualised_vol")}
-              value={percent(risk.volatility, lang, { digits: 1 }) ?? na}
+              value={percent(risk.volatility, { lang, digits: 1 }) ?? na}
               help={t("portfolio.basket_vol_help")}
             />
             <Kpi
               label={t("portfolio.max_drawdown")}
-              value={percent(risk.max_drawdown, lang, { digits: 1 }) ?? na}
+              value={percent(risk.max_drawdown, { lang, digits: 1 }) ?? na}
               help={t("portfolio.basket_dd_help")}
             />
             <Kpi
               label={t("portfolio.effective_names")}
-              value={decimal(risk.effective_names, lang, 1) ?? na}
+              value={decimal(risk.effective_names, { lang, digits: 1 }) ?? na}
               help={t("portfolio.effective_names_help")}
             />
           </KpiGrid>
@@ -129,13 +131,21 @@ export function DividendsCard() {
             <KpiGrid>
               <Kpi
                 label={t("portfolio.div_kpi_ytd")}
-                value={money(dividends.booked_ytd, dividends.base || base, lang) ?? na}
+                value={
+                  money(dividends.booked_ytd, {
+                    currency: dividends.base || base,
+                    lang,
+                  }) ?? na
+                }
                 help={t("portfolio.div_kpi_ytd_help")}
               />
               <Kpi
                 label={t("portfolio.div_kpi_next")}
                 value={
-                  money(dividends.forward_annual, dividends.base || base, lang) ?? na
+                  money(dividends.forward_annual, {
+                    currency: dividends.base || base,
+                    lang,
+                  }) ?? na
                 }
                 help={t("portfolio.div_kpi_next_help")}
               />
@@ -144,16 +154,19 @@ export function DividendsCard() {
               <ul className="hm-extra-list">
                 {next.map((row) => (
                   <li key={`${row.ticker}-${row.date}`} className="ag-row-reach">
-                    <TickerCell ticker={row.ticker} name={false} />
+                    <TickerCell
+                      className="hm-ticker"
+                      ticker={row.ticker}
+                      name={false}
+                    />
                     <span className="hm-muted">
                       {t("home.card_ex_date", { date: shortDate(row.date, lang) })}
                     </span>
                     <span className="hm-num">
-                      {money(
-                        row.amount_base,
-                        row.base_currency || dividends.base || base,
+                      {money(row.amount_base, {
+                        currency: row.base_currency || dividends.base || base,
                         lang,
-                      ) ?? ""}
+                      }) ?? ""}
                     </span>
                   </li>
                 ))}
@@ -212,7 +225,8 @@ function TaxBody({
   // neutral `portfolio.<name>` — the API ships names, not sentences.
   const words = useTaxWords(report.jurisdiction);
   const na = t("home.na");
-  const cash = (value: number) => money(value, report.currency, lang) ?? na;
+  const cash = (value: number) =>
+    money(value, { currency: report.currency, lang }) ?? na;
   // The newest year the engine replayed: the current one once anything
   // in it was sold, otherwise the last one that had a sale.
   const year = report.years[report.years.length - 1] ?? null;
@@ -344,14 +358,17 @@ function Rotation({ block }: { block: TrendBlock | null }) {
                 {row.weight ? (
                   <span className="hm-muted">
                     {t("home.card_rotation_weight", {
-                      weight: percent(row.weight, lang, { digits: 0 }) ?? "",
+                      weight: percent(row.weight, { lang, digits: 0 }) ?? "",
                     })}
                   </span>
                 ) : hasBook ? (
                   <span className="hm-muted">{t("home.card_rotation_none")}</span>
                 ) : null}
                 <Chip
-                  chip={chipFor(move, percent(move, lang, { signed: true, digits: 1 }))}
+                  chip={chipFor(
+                    move,
+                    percent(move, { lang, signed: "always", digits: 1 }),
+                  )}
                 />
               </li>
             );

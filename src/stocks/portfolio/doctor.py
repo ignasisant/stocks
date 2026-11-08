@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from stocks.portfolio import consistency, edits, positions, revolut_crypto, transfers
+from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction
 
 # Why a book does not add up, as far as the ledger alone can tell. `unexplained`
@@ -312,13 +313,13 @@ def _classify(
                     t.action == "split" and t.date > sale.date for t in order
                 )
                 return "split", {**base, "factor": k, "known": known}
-    broker = transfers._broker(sale)
+    broker = broker_of(sale)
     for tx in order[:at]:
         if (tx.action in ("sell", "transfer_out")
-                and transfers._broker(tx) != broker
+                and broker_of(tx) != broker
                 and abs(tx.quantity - short) <= _TOL * short + 1e-9):
             return "transfer", {
-                **base, "broker_from": transfers._broker(tx), "broker_to": broker}
+                **base, "broker_from": broker_of(tx), "broker_to": broker}
     return "unexplained", base
 
 
@@ -340,7 +341,7 @@ def _duplicates(rows: list[Transaction]) -> list[Finding]:
         for i, a in enumerate(group):
             for b in group[i + 1 :]:
                 if (a.id in dropped or b.id in dropped
-                        or transfers._broker(a) == transfers._broker(b)
+                        or broker_of(a) == broker_of(b)
                         or abs(a.quantity - b.quantity) > 1e-6
                         or abs(a.price - b.price)
                         > _SAME_PRICE * max(a.price, b.price)):
@@ -359,8 +360,8 @@ def _duplicates(rows: list[Transaction]) -> list[Finding]:
                             "quantity": keep.quantity,
                             "price": keep.price,
                             "currency": currency,
-                            "broker_kept": transfers._broker(keep),
-                            "broker_dropped": transfers._broker(drop),
+                            "broker_kept": broker_of(keep),
+                            "broker_dropped": broker_of(drop),
                         },
                         weight=keep.quantity * keep.price,
                         cause="duplicate",

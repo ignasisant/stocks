@@ -23,7 +23,7 @@ Optional, like FMP: the key is `FINNHUB_API_KEY` or `[finnhub] api_key` in the
 secrets file. Without one every call returns nothing and callers carry on with
 what Yahoo gave them.
 
-The quote is shaped as a Yahoo v7 quote row so `analysis.portfolio._snapshot`
+The quote is shaped as a Yahoo v7 quote row so `analysis.portfolio.quote_snapshot`
 reads it without knowing who fetched it. Finnhub's free quote has no extended
 hours, so the row carries no `marketState`: it reads as the regular session —
 live while the market trades, the last completed session once it closes.

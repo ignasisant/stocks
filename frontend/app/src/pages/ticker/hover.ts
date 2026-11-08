@@ -20,10 +20,11 @@
 
 import type { EventLine } from "./events";
 import { sellLine } from "./events";
-import { DASH, money, signed, type Translate } from "./format";
+import { type Translate } from "./format";
 import type { Trade } from "./types";
 import { num } from "../../shell/numbers";
 import { calendarDay } from "../../shell/dates";
+import { DASH, decimal, money } from "../../shell/format";
 
 /** A run of text inside a row, and how it is set. */
 export type TipPart = { text: string; bold?: boolean; tone?: "up" | "down" | "dim" };
@@ -160,20 +161,24 @@ export function priceRows(
   const parts: TipPart[] = [
     { text: t("ticker.price"), tone: "dim" },
     { text: "  " },
-    { text: close === null ? DASH : money(close), bold: true },
+    { text: close === null ? DASH : (money(close, { digits: 2 }) ?? DASH), bold: true },
   ];
   if (move !== null) {
     parts.push(
       { text: "  " },
-      { text: `${signed(move)}%`, bold: true, tone: toneOf(move) },
+      {
+        text: `${decimal(move, { digits: 2, signed: "always" }) ?? DASH}%`,
+        bold: true,
+        tone: toneOf(move),
+      },
     );
   }
   const out = [row(parts, swatch)];
   if (ohlc) {
     const detail = t("ticker.hover_ohlc", {
-      open: money(ohlc.open),
-      high: money(ohlc.high),
-      low: money(ohlc.low),
+      open: money(ohlc.open, { digits: 2 }) ?? DASH,
+      high: money(ohlc.high, { digits: 2 }) ?? DASH,
+      low: money(ohlc.low, { digits: 2 }) ?? DASH,
     });
     out.push(row([{ text: detail, tone: "dim" }]));
   }
@@ -184,7 +189,11 @@ export function priceRows(
 export function averageRow(name: string, value: number | null, swatch: string) {
   if (value === null || value === undefined) return null;
   return row(
-    [{ text: name, tone: "dim" }, { text: "  " }, { text: money(value), bold: true }],
+    [
+      { text: name, tone: "dim" },
+      { text: "  " },
+      { text: money(value, { digits: 2 }) ?? DASH, bold: true },
+    ],
     swatch,
   );
 }
@@ -203,18 +212,27 @@ export function fillRows(
   const { last, avgCost, swatch } = args;
   const qty = num(fill.quantity, 4);
   if (fill.action === "sell") {
-    return rows(sellLine(qty, money(fill.price), calendarDay(fill.date), t), swatch);
+    return rows(
+      sellLine(
+        qty,
+        money(fill.price, { digits: 2 }) ?? DASH,
+        calendarDay(fill.date),
+        t,
+      ),
+      swatch,
+    );
   }
   const pct = last !== null && fill.price ? (last / fill.price - 1) * 100 : 0;
   let html = t("ticker.hover_buy", {
     qty,
-    price: money(fill.price),
+    price: money(fill.price, { digits: 2 }) ?? DASH,
     date: calendarDay(fill.date),
     color: colorSlot(pct),
-    pct: signed(pct),
-    last: money(last),
+    pct: decimal(pct, { digits: 2, signed: "always" }) ?? DASH,
+    last: money(last, { digits: 2 }) ?? DASH,
   });
-  if (avgCost) html += t("ticker.hover_avg_buy", { avg: money(avgCost) });
+  if (avgCost)
+    html += t("ticker.hover_avg_buy", { avg: money(avgCost, { digits: 2 }) ?? DASH });
   return rows(html, swatch);
 }
 

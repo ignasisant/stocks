@@ -112,7 +112,7 @@ def performance(
     # a book that sat empty for a year has no return for it, and dividing the
     # compounding by those months understates what the money that was in did.
     annualised = annualized_return(twr) if not twr.empty else float("nan")
-    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    txs = loaders.ledger_state(db, mtime, ccy).txs
     flows = flow_series(txs, base=ccy)
     shown = hist[hist.index >= start] if start is not None else hist
     if shown.empty:
@@ -206,7 +206,7 @@ def attribution(
         if window in _PERFORMANCE_DAYS
         else None
     )
-    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    txs = loaders.ledger_state(db, mtime, ccy).txs
     parts = decompose(hist, txs, start=start, base=ccy)  # ty: ignore[invalid-argument-type]
     if parts is None:
         return Attribution(base=ccy, window=window, missing=missing)
@@ -319,7 +319,7 @@ def _in_index(hist: pd.DataFrame, base: str) -> dict[str, float]:
     Raced over the book's whole life before any window is cut, as the Today
     chart races it (`daily_book.versus`): restarted per window, every range
     would open level with the book and hide what came before. The index
-    download is that chart's (`briefing._closes_since`), shared by every
+    download is that chart's (`briefing.closes_since`), shared by every
     account and cached. Best-effort — the line is an overlay, and a failed
     download must not take the chart under it down too.
     """
@@ -329,8 +329,8 @@ def _in_index(hist: pd.DataFrame, base: str) -> dict[str, float]:
     from stocks.chat import daily_book
 
     try:
-        series, unit = daily_book.index_series(
-            briefing._closes_since(hist.index[0]), base
+        series = daily_book.index_in_currency(
+            briefing.closes_since(hist.index[0]), base
         )
     except Exception as exc:  # noqa: BLE001 — best-effort by contract
         obs.warn(
@@ -339,7 +339,7 @@ def _in_index(hist: pd.DataFrame, base: str) -> dict[str, float]:
             error=str(exc)[:200],
         )
         return {}
-    if series is None or unit != base:
+    if series is None:
         return {}
     days = pd.DatetimeIndex(naive_dates(hist.index))
     book = pd.DataFrame(
@@ -592,7 +592,7 @@ def monthly(account: Account, base: Base = None, window: str = "inception") -> M
     hist, twr, missing = loaders.history(db, mtime, ccy)
     if hist.empty:
         return Monthly(base=ccy, window=window, missing=missing)
-    flows = flow_series(loaders.ledger_state(db, mtime, ccy)[0], base=ccy)
+    flows = flow_series(loaders.ledger_state(db, mtime, ccy).txs, base=ccy)
     book = book_window(hist, twr, flows, _monthly_start(window))
     if book is None:
         return Monthly(base=ccy, window=window, missing=missing)

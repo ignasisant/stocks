@@ -6,43 +6,8 @@
 import { type ChipSpec, type Tone, toneOf } from "../../ui/Kpi";
 import { parseDay } from "../home/format";
 import type { Review, Verdict } from "./types";
+import { isNum, money, percent } from "../../shell/format";
 import { formatter } from "../../shell/numbers";
-
-function finite(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-export function money(
-  value: number | null | undefined,
-  currency: string,
-  lang: string,
-  signed = false,
-): string | null {
-  if (!finite(value)) return null;
-  try {
-    return formatter(lang, {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 0,
-      signDisplay: signed ? "exceptZero" : "auto",
-    }).format(value);
-  } catch {
-    return `${Math.round(value)} ${currency}`;
-  }
-}
-
-export function percent(
-  value: number | null | undefined,
-  lang: string,
-  digits = 1,
-): string | null {
-  if (!finite(value)) return null;
-  return formatter(lang, {
-    style: "percent",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
-}
 
 /** A line the copy quotes: as few decimals as it needs (5 %, 0,25 %). */
 export function line(value: number, lang: string): string {
@@ -147,10 +112,10 @@ const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
 export const inYears = (key: string) => UNITS[key] === "years";
 
 export function metric(key: string, value: number | null | undefined, lang: string) {
-  if (!finite(value)) return null;
+  if (!isNum(value)) return null;
   switch (UNITS[key]) {
     case "pct":
-      return percent(value, lang);
+      return percent(value, { lang });
     case "score":
       return Math.round(value).toString();
     case "years":
@@ -172,7 +137,7 @@ export function longDay(iso: string, lang: string): string {
 }
 
 export function score(value: number | null | undefined): string | null {
-  return finite(value) ? Math.round(value).toString() : null;
+  return isNum(value) ? Math.round(value).toString() : null;
 }
 
 /** The colour a verdict reads in: action to take, or nothing to do. */
@@ -217,8 +182,8 @@ export function pnl(
   base: string,
   lang: string,
 ): string | null {
-  const amount = money(row.pnl, base, lang, true);
-  const share = percent(row.pnl_pct, lang);
+  const amount = money(row.pnl, { currency: base, lang, signed: true });
+  const share = percent(row.pnl_pct, { lang });
   if (amount && share) return `${amount} (${share})`;
   return amount ?? share;
 }

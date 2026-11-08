@@ -30,12 +30,11 @@ import {
   type Fees,
   type Monthly,
   type MonthlyWindow,
-  type Performance,
   type TaxReport,
 } from "./api";
 import { BookAndRates } from "./charts";
-import { compactMoneyIn, moneyIn, percent } from "./format";
 import { Caption, Card, Kpis, MissingPrices, Segmented } from "./ui";
+import { compactMoneyIn, moneyIn, percent } from "../../shell/format";
 
 /** A tile's text while its call is out, and n/a once it has failed. */
 function read<T>(query: Query<T>, pick: (data: T) => string | null): string | null {
@@ -49,12 +48,9 @@ export default function Overview() {
   const base = useCurrency();
   const money = moneyIn(lang, base);
   const year = new Date().getFullYear();
-  const pct = (value: number | null, signed = true) => percent(lang, value, { signed });
+  const pct = (value: number | null, signed = true) => percent(value, { lang, signed });
 
-  const performance = useApi(
-    () => get<Performance>("/portfolio/performance", { base }),
-    [base],
-  );
+  const performance = useApi(() => get("/portfolio/performance", { base }), [base]);
   const tax = useApi(() => get<TaxReport>("/portfolio/tax"), []);
   const dividends = useApi(
     () => get<Dividends>("/portfolio/dividends", { base }),
@@ -325,7 +321,7 @@ function MonthlyCard() {
                   label: t("portfolio.overview_monthly_month"),
                   points: data.months.map((row) => row.month_return),
                   format: (value) =>
-                    percent(lang, value, { digits: 1, signed: true }) ?? "",
+                    percent(value, { lang, digits: 1, signed: true }) ?? "",
                 }}
                 labels={{
                   invested: t("portfolio.series_injected"),
@@ -336,7 +332,7 @@ function MonthlyCard() {
                 }}
                 money={(value, sign) => money(value, { signed: sign }) ?? ""}
                 axisMoney={(value) => axisMoney(value) ?? ""}
-                format={(value) => percent(lang, value, { digits: 1 }) ?? ""}
+                format={(value) => percent(value, { lang, digits: 1 }) ?? ""}
                 formatDate={formatMonth}
               />
               {yearOne ? <Caption>{yearOne}</Caption> : null}

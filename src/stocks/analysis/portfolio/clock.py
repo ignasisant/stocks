@@ -245,10 +245,10 @@ def session_quote(ticker: str) -> dict | None:
     """
     from stocks.data.quotes import quote as live_quote
 
-    return _snapshot(live_quote(ticker))
+    return quote_snapshot(live_quote(ticker))
 
 
-def _snapshot(quote: dict) -> dict | None:
+def quote_snapshot(quote: dict) -> dict | None:
     """`session_quote`'s reading of one raw Yahoo quote row — pure, no network.
 
     Split out because the batch path parses the same rows: one place decides
@@ -353,7 +353,9 @@ def session_quotes(tickers: list[str]) -> dict[str, dict]:
 
     if not tickers:
         return {}
-    snapshots = ((t, _snapshot(row)) for t, row in live_quotes(list(tickers)).items())
+    snapshots = (
+        (t, quote_snapshot(row)) for t, row in live_quotes(list(tickers)).items()
+    )
     return {t: q for t, q in snapshots if q and q.get("pct") is not None}
 
 

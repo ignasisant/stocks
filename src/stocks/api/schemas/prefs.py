@@ -71,6 +71,9 @@ class Prefs(BaseModel):
     tax_subnational_rate: float = 0.0
     notify_digest: bool = True
     notify_weekly: bool = True
+    # The Friday email (`notify/weekly_email.py`): on for every imported
+    # book, device or not, until the reader turns it off.
+    notify_weekly_email: bool = True
     notify_alerts: bool = True
     # The Home first-run card, dismissed. An account setting rather than a
     # browser one: a reader who put the checklist away has put it away, and

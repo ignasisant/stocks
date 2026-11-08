@@ -27,9 +27,9 @@ import { ApiError, get, scoped, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Status } from "../../ui/Status";
 import { Glyph } from "../../chat/icons";
-import { TickerCell } from "./ui";
 import type { Translate } from "./format";
 import "./brief.css";
+import { TickerCell } from "../../shell/tickers";
 
 export type BriefPlan = {
   markets: string[];
@@ -148,7 +148,12 @@ function Plan({ plan }: { plan: BriefPlan }) {
       {plan.symbols.length > 0 ? (
         <span className="hm-br-symbols">
           {plan.symbols.map((symbol) => (
-            <TickerCell key={symbol} ticker={symbol} name={false} />
+            <TickerCell
+              className="hm-ticker"
+              key={symbol}
+              ticker={symbol}
+              name={false}
+            />
           ))}
         </span>
       ) : null}

@@ -15,8 +15,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { CalendarResult, QuarterFigures, ResultDetailData } from "./data";
-import { money, pct, quarterLabel, signedFrac } from "./format";
+import { quarterLabel } from "./format";
 import { Breakdown } from "./ResultDetail";
+import { compact, DASH, percent } from "../../shell/format";
 
 const t = (key: string) => key;
 
@@ -153,16 +154,20 @@ describe("the breakdown", () => {
 
 describe("the formatters", () => {
   it("compacts money the way earnings_ui._money does", () => {
-    expect(money(81.6e9, "$")).toBe("$81.60B");
-    expect(money(1.24e12, "€")).toBe("€1.24T");
-    expect(money(950, "")).toBe("950");
-    expect(money(null, "$")).toBe("—");
+    expect(compact(81.6e9, { prefix: "$" }) ?? DASH).toBe("$81.60B");
+    expect(compact(1.24e12, { prefix: "€" }) ?? DASH).toBe("€1.24T");
+    expect(compact(950, { prefix: "" }) ?? DASH).toBe("950");
+    expect(compact(null, { prefix: "$" }) ?? DASH).toBe("—");
   });
 
   it("reads ratios as fractions", () => {
-    expect(pct(0.183)).toBe("18.3%");
-    expect(signedFrac(0.052)).toBe("+5.2%");
-    expect(signedFrac(-0.02)).toBe("-2.0%");
+    expect(percent(0.183, { digits: 1, tight: true }) ?? DASH).toBe("18.3%");
+    expect(percent(0.052, { digits: 1, signed: "always", tight: true }) ?? DASH).toBe(
+      "+5.2%",
+    );
+    expect(percent(-0.02, { digits: 1, signed: "always", tight: true }) ?? DASH).toBe(
+      "-2.0%",
+    );
   });
 
   it("tags a quarter by its end month", () => {

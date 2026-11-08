@@ -854,7 +854,7 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
     pricing = pool.submit(carried(loaders.positions_table), db, mtime, ccy)
     risk = pool.submit(carried(_risk_shares), db, mtime, ccy)
     pool.shutdown(wait=False)
-    held_labels = [str(p.ticker) for p in loaders.ledger_state(db, mtime, ccy)[1]]
+    held_labels = [str(p.ticker) for p in loaders.ledger_state(db, mtime, ccy).positions]
 
     held_symbols = {label: _symbol(label) for label in held_labels}
     held_set = {s.upper() for s in held_symbols.values()} | {

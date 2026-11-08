@@ -19,6 +19,7 @@ from stocks import accounts
 from stocks.analysis import review as engine
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
+from stocks.api.loaders.keys import LedgerState
 from stocks.api.routes import review as route
 from stocks.chat import whatif
 from stocks.portfolio import ledger
@@ -250,7 +251,7 @@ def test_add_refuses_what_is_not_a_ticker(client, book):
 
 def test_an_empty_book_still_answers_its_watchlist(client, book, monkeypatch):
     patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
-    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: ([], [], []))
+    patch_loaders(monkeypatch, "ledger_state", lambda *a, **k: LedgerState([], [], []))
     body = _get(client)
     assert body["held"] == [] and body["total"] is None
     assert {r["ticker"] for r in body["candidates"]} == {"AMD", "BKNG", "SNAP"}

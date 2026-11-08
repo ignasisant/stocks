@@ -47,6 +47,7 @@ import {
   getCrypto,
   getCryptoCycle,
   getCryptoHolding,
+  getFundFit,
   getCryptoPositioning,
   getEvents,
   getFinancials,
@@ -80,6 +81,7 @@ import {
   MetricsSection,
   MoatSection,
 } from "./Sections";
+import { FundFitSection } from "./FundFit";
 import { Card, Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
@@ -201,11 +203,6 @@ export default function Page() {
 
   const ticker = asked || null;
 
-  const onRange = useCallback((next: Range) => {
-    setRange(next);
-    remember(RANGE_KEY, next);
-  }, []);
-
   const onCandles = useCallback((next: boolean) => {
     setCandles(next);
     remember(CANDLES_KEY, next ? "1" : "0");
@@ -217,24 +214,6 @@ export default function Page() {
     () => (ticker ? getProfile(ticker) : Promise.resolve<Profile | null>(null)),
     [ticker],
   );
-  const bars = useApi(
-    () => (ticker ? getBars(ticker, range) : Promise.resolve(null)),
-    [ticker, range],
-  );
-  // The ranges this company's history fills, as its last bars answered. Held
-  // in state so the pills do not all come back while the next range loads,
-  // and tagged with the company so the previous one's never apply here.
-  const [fills, setFills] = useState<{ ticker: string; ranges: Range[] } | null>(null);
-  useEffect(() => {
-    if (bars.state !== "loaded" || !bars.data?.ranges?.length) return;
-    setFills({ ticker: bars.data.ticker, ranges: bars.data.ranges.filter(isRange) });
-  }, [bars]);
-  const offered = fills && fills.ticker === ticker ? fills.ranges : null;
-  // A remembered "5Y" on a stock two years old is not re-fetched as "max":
-  // five years trimmed from a two-year history already IS the whole of it.
-  // Only the pill and the period line change, and the reader's pick stays
-  // stored for the next company that has five years to show.
-  const shown: Range = offered && !offered.includes(range) ? "max" : range;
   // Quote, calendar and holding do not depend on the range, so changing it
   // redraws the chart without re-fetching any of them.
   const quote = useApi(
@@ -285,6 +264,48 @@ export default function Page() {
     fund: fundSays,
   });
   const shape = layout(kind);
+
+  // A fund or an index opens on its long line (`layout.ts` `opens`), not on
+  // the range a share's page last showed. A pick on the page holds while the
+  // reader stays on it, and only a share's or a coin's pick is remembered for
+  // the next company: a week chosen on a stock must not open every ETF on a
+  // week, nor five years chosen on an ETF every stock on five years. An index
+  // is named by its caret before the profile answers.
+  const [picked, setPicked] = useState<{ ticker: string; range: Range } | null>(null);
+  const opens = shape.opens ?? (ticker?.startsWith("^") ? "5y" : null);
+  const own = picked && picked.ticker === ticker ? picked.range : null;
+  const chartRange: Range = own ?? opens ?? range;
+  const onRange = useCallback(
+    (next: Range) => {
+      if (ticker) setPicked({ ticker, range: next });
+      if (opens) return;
+      setRange(next);
+      remember(RANGE_KEY, next);
+    },
+    [ticker, opens],
+  );
+  const bars = useApi(
+    () => (ticker ? getBars(ticker, chartRange) : Promise.resolve(null)),
+    [ticker, chartRange],
+  );
+  // Until the profile names the kind, bars asked on the reader's last range
+  // may be a share's week on what turns out to be an ETF: the chart waits
+  // rather than draw a week and then swap it for five years.
+  const chartReady = own !== null || opens !== null || profile.state !== "loading";
+  // The ranges this company's history fills, as its last bars answered. Held
+  // in state so the pills do not all come back while the next range loads,
+  // and tagged with the company so the previous one's never apply here.
+  const [fills, setFills] = useState<{ ticker: string; ranges: Range[] } | null>(null);
+  useEffect(() => {
+    if (bars.state !== "loaded" || !bars.data?.ranges?.length) return;
+    setFills({ ticker: bars.data.ticker, ranges: bars.data.ranges.filter(isRange) });
+  }, [bars]);
+  const offered = fills && fills.ticker === ticker ? fills.ranges : null;
+  // A remembered "5Y" on a stock two years old is not re-fetched as "max":
+  // five years trimmed from a two-year history already IS the whole of it.
+  // Only the pill and the period line change, and the reader's pick stays
+  // stored for the next company that has five years to show.
+  const shown: Range = offered && !offered.includes(chartRange) ? "max" : chartRange;
   const crypto = shape.sections.stats;
   const company = profile.state !== "loading" && shape.sections.company && !absent;
   // Named once the profile has answered: a label that flips from "Share" to
@@ -405,6 +426,19 @@ export default function Page() {
     () => (ticker && holds ? getCryptoHolding(ticker, base) : Promise.resolve(null)),
     [ticker, base, holds],
   );
+  // A fund against the reader's book: an account's question, so never asked
+  // for a guest, and not for a cash fund whose basket is deposits.
+  const fits = Boolean(
+    !guest &&
+    shape.sections.fundHoldings &&
+    fund.state === "loaded" &&
+    fund.data?.is_fund &&
+    !fund.data.closed_end,
+  );
+  const fit = useApi(
+    () => (ticker && fits ? getFundFit(ticker, base) : Promise.resolve(null)),
+    [ticker, base, fits],
+  );
   const coin = (drawn?.symbol || ticker || "").split("-")[0] ?? "";
   const comps = useApi(
     () =>
@@ -517,7 +551,7 @@ export default function Page() {
             />
           ) : null}
           <PriceSection
-            query={bars}
+            query={chartReady ? bars : { state: "loading" }}
             quote={quote.state === "loaded" ? quote.data : null}
             events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
             position={held}
@@ -554,6 +588,12 @@ export default function Page() {
           {/* A fund stops here. */}
           {shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund ? (
             <FundSection fund={fund.data} holdings={shape.sections.fundHoldings} />
+          ) : null}
+          {fund.state === "loaded" &&
+          fund.data &&
+          fit.state === "loaded" &&
+          fit.data ? (
+            <FundFitSection fund={fund.data} fit={fit.data} />
           ) : null}
 
           {/* …and a coin pair here: no statements, no Form 4, no comps. */}

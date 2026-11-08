@@ -380,6 +380,14 @@ def test_our_auth_routes_answer(client, path):
     assert r.status_code == 302
 
 
+def test_the_unsubscribe_link_passes_the_gate(client):
+    """The weekly email's link lands on its own page, never the gate's 404:
+    a broken stop link is a spam complaint."""
+    r = client.get("/email/unsubscribe?t=not-a-token")
+    assert r.status_code == 400
+    assert "<form" not in r.text
+
+
 def test_the_signin_parameter_bounces_into_the_apps_own_sign_in(client):
     """The landing's CTA. It is answered here, because this is the layer that
     can return a 302."""

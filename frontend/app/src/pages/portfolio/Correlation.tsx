@@ -20,16 +20,16 @@ import {
 } from "./charts";
 import { TickerCell } from "../../shell/tickers";
 import { TipRows } from "../../ui/chart/Tip";
-import { decimal, percent } from "./format";
 import { Caption, Card, Chip, Kpis, Lede } from "./ui";
+import { decimal, percent } from "../../shell/format";
 
 export function CorrelationCard({ data }: { data: Risk }) {
   const t = useT();
   const lang = useLang();
   const stats = correlationStats(data.correlation, data.weights);
-  const num = (value: number) => decimal(lang, value) ?? "";
+  const num = (value: number) => decimal(value, { lang }) ?? "";
   const pct = (value: number | null | undefined) =>
-    value == null ? "—" : (percent(lang, value, { digits: 1 }) ?? "—");
+    value == null ? "—" : (percent(value, { lang, digits: 1 }) ?? "—");
   const bench = Object.keys(data.betas)[0] ?? null;
   const book = bench ? data.betas[bench] : undefined;
   const band = (value: number) => t(`portfolio.corr_band_${correlationBand(value)}`);

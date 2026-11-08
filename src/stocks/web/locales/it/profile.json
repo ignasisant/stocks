@@ -132,7 +132,7 @@
   "profile.iv_save_failed": "Impossibile salvare il profilo. Le tue risposte sono ancora qui: riprova.",
   "profile.notifications": "Notifiche",
   "profile.notify_caption": "Il briefing IA, i numeri del giorno, la revisione settimanale, gli avvisi di prezzo e le risposte pronte arrivano come notifiche su questo dispositivo.",
-  "profile.notify_how_body": "- **Briefing IA** — cosa guardare oggi, al mattino. Apre la sua conversazione.\n- **Numeri del giorno** — valore, variazione di giorno e settimana, maggiori movimenti e utili; la sera.\n- **Revisione settimanale** — la settimana contro l'indice; la domenica.\n- **Avvisi di prezzo** — le soglie della tua watchlist, ogni ora nei giorni di mercato.\n- **Una settimana senza entrare?** — un promemoria, due al massimo.\n\nOgni esecuzione programmata resta come conversazione in Programmate, nella chat, dove scegli anche orario e giorni. Salviamo solo l'indirizzo push del browser; disattivale quando vuoi.",
+  "profile.notify_how_body": "- **Briefing IA** — cosa guardare oggi, al mattino. Apre la sua conversazione.\n- **Numeri del giorno** — valore, variazione di giorno e settimana, maggiori movimenti e utili; la sera.\n- **Revisione settimanale** — la settimana contro l'indice; la domenica.\n- **Avvisi di prezzo** — le soglie della tua watchlist, ogni ora nei giorni di mercato.\n- **Una settimana senza entrare?** — un promemoria, due al massimo.\n- **Email del venerdì** — la tua settimana in cifre, al tuo indirizzo di accesso.\n\nOgni esecuzione programmata resta come conversazione in Programmate, nella chat, dove scegli anche orario e giorni. Salviamo solo l'indirizzo push del browser; disattivale quando vuoi.",
   "profile.notify_digest": "Numeri del giorno",
   "profile.notify_alerts": "Avvisi di prezzo (ogni ora, in orario di mercato)",
   "profile.push_test": "Invia notifica di prova",
@@ -294,5 +294,9 @@
   "profile.invite_note": "Mandagli l'app. Il tuo link non mostra nulla del tuo portafoglio.",
   "profile.invite_send": "Invia invito",
   "profile.invite_link": "Il tuo link di invito",
-  "profile.invite_text": "Seguo il mio portafoglio con TopStocks. Dai un'occhiata:"
+  "profile.invite_text": "Seguo il mio portafoglio con TopStocks. Dai un'occhiata:",
+  "profile.notify_email_title": "Email",
+  "profile.notify_email_sub": "Inviata a {email}. Nessun dispositivo necessario.",
+  "profile.notify_weekly_email": "Email del venerdì",
+  "profile.notify_weekly_email_help": "La tua settimana dopo la chiusura USA: valore, rendimento rispetto all'S&P 500 dal primo giorno, cosa si è mosso, le tue operazioni e la settimana a venire."
 }

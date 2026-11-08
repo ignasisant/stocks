@@ -14,7 +14,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
-import { NA, fixed, percent, share, signed } from "./format";
+import { NA, fixed, signedPercent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
 import { Badge } from "../../ui/Badge";
 import { num } from "../../shell/numbers";
@@ -297,7 +297,7 @@ export function Side({
         chip={
           drag === null
             ? null
-            : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
+            : chipFor(drag, t("sentiment.fx_pill", { value: signedPercent(drag, 2) }))
         }
       />
       {/* The dollar share survived the outage — it is read off the positions

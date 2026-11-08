@@ -82,6 +82,7 @@ class PrefsPatch(BaseModel):
     tax_subnational_rate: float | None = None
     notify_digest: bool | None = None
     notify_weekly: bool | None = None
+    notify_weekly_email: bool | None = None
     notify_alerts: bool | None = None
     notify_briefing: bool | None = None
     # Sent by the app itself (the browser's own zone), not a control: the
@@ -197,6 +198,7 @@ def _view(stored: dict) -> Prefs:
         # account that never touched it would draw the switch off beside a
         # review that is being delivered every Sunday.
         notify_weekly=bool(stored.get("notify_weekly", True)),
+        notify_weekly_email=bool(stored.get("notify_weekly_email", True)),
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),

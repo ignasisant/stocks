@@ -27,18 +27,14 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import {
-  RISK_PERIODS,
-  type Performance,
-  type Risk as RiskData,
-  type RiskPeriod,
-} from "./api";
-import { brokerName, compactMoneyIn, decimal, moneyIn, percent } from "./format";
+import { RISK_PERIODS, type Risk as RiskData, type RiskPeriod } from "./api";
+import { brokerName } from "./format";
 import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
 import AttributionCard from "./Attribution";
 import { CorrelationCard } from "./Correlation";
 import { Caption, Card, Chip, Empty, Hero, Lede, MissingPrices, Segmented } from "./ui";
 import { maybe, sectorKey } from "../sentiment/format";
+import { compactMoneyIn, decimal, moneyIn, percent } from "../../shell/format";
 
 /** Allocation splits, in the order they are laid out. */
 const SPLITS: [string, string][] = [
@@ -78,7 +74,7 @@ export default function Risk() {
   // What a slice's hover box and its pinned breakdown read its money with.
   const detail: SliceDetail = {
     money: (value, signed) => money(value, { signed }) ?? "",
-    change: (fraction) => percent(lang, fraction, { signed: true }) ?? "",
+    change: (fraction) => percent(fraction, { lang, signed: true }) ?? "",
     labels: {
       value: t("portfolio.alloc_value"),
       invested: t("portfolio.alloc_invested"),
@@ -118,7 +114,7 @@ export default function Risk() {
     const mine = curves.portfolio[day]!;
     const head = t("portfolio.flow_lede", {
       gain: money(invested * mine, { signed: true }) ?? "",
-      pct: percent(lang, mine, { signed: true }) ?? "",
+      pct: percent(mine, { lang, signed: true }) ?? "",
       invested: money(invested) ?? "",
     });
     let best: [string, number] | null = null;
@@ -145,7 +141,7 @@ export default function Risk() {
   // load independently — a slow price burst behind the basket must not hold the
   // ledger's own figures back.
   const performance = useApi(
-    () => get<Performance>("/portfolio/performance", { base, window: period }),
+    () => get("/portfolio/performance", { base, window: period }),
     [base, period],
   );
   const risk = useApi(
@@ -183,48 +179,37 @@ export default function Risk() {
       <Card title={t("portfolio.real_perf")} sub={t("portfolio.real_perf_sub")}>
         <Loaded query={performance} skeleton={<Skeleton rows={4} />}>
           {(data) => {
-            const total =
-              data.twr_is_annual === false
-                ? null
-                : percent(lang, data.twr_cumulative, { signed: true });
+            // What the money put in made over the window, as a share of it. A
+            // net withdrawal leaves nothing to divide by.
+            const onMoney =
+              data.value !== null &&
+              data.injected_window != null &&
+              data.injected_window > 0
+                ? (data.value - data.injected_window) / data.injected_window
+                : null;
             return (
               <>
                 <Hero
-                  // Under a year of history the API hands back the cumulative
-                  // figure in `twr_annualised`; the label must not say "yearly".
+                  // The headline is the IRR, what the reader's own money did,
+                  // deposits on the days they were made. The TWR (one euro
+                  // put in on the first day and left alone) answers a question
+                  // nobody who adds money month by month is asking, and set
+                  // beside a gain on the money it read as a contradiction.
+                  // Under a year the IRR comes back cumulative, and says so.
                   eyebrow={
-                    data.twr_is_annual === false
+                    data.irr_annualised === false
                       ? t("portfolio.return_to_date")
                       : t("portfolio.annualised_return")
                   }
-                  help={t("portfolio.twr_return_help")}
-                  value={percent(lang, data.twr_annualised, { signed: true })}
-                  // The IRR rides beside the TWR rather than in a figure of its
-                  // own: both are the window's return, just weighted
-                  // differently, and the mismatch between them (not either
-                  // alone) is what a reader is checking for. Under a year of
-                  // history it is a cumulative figure, and says so.
-                  // A yearly rate beside the window's total, so the figure
-                  // reads as the one the Today chart ends on (+39.6% over two
-                  // years is +18.2% a year, the same return).
+                  help={t("portfolio.mwr_help")}
+                  value={percent(data.irr, { lang, signed: true })}
                   sub={
-                    data.irr === null && total === null ? null : (
-                      <>
-                        {total === null ? null : (
-                          <span>{t("portfolio.twr_total", { pct: total })}</span>
-                        )}
-                        {data.irr === null ? null : (
-                          <Chip
-                            value={data.irr}
-                            text={`${t("portfolio.mwr_short")} ${
-                              percent(lang, data.irr, { signed: true }) ?? ""
-                            }`}
-                          />
-                        )}
-                        {data.irr !== null && data.irr_annualised === false ? (
-                          <span>{t("portfolio.irr_not_annualised")}</span>
-                        ) : null}
-                      </>
+                    onMoney === null ? null : (
+                      <span>
+                        {t("portfolio.money_total", {
+                          pct: percent(onMoney, { lang, signed: true }) ?? "",
+                        })}
+                      </span>
                     )
                   }
                   facts={[
@@ -235,12 +220,12 @@ export default function Risk() {
                     // mistake both exist to prevent.
                     {
                       label: t("portfolio.real_swings"),
-                      value: percent(lang, data.twr_volatility),
+                      value: percent(data.twr_volatility, { lang }),
                       help: t("portfolio.twr_vol_help"),
                     },
                     {
                       label: t("portfolio.real_drawdown"),
-                      value: percent(lang, data.twr_max_drawdown),
+                      value: percent(data.twr_max_drawdown, { lang }),
                       // The number alone reads as "what the account lost", and
                       // on a TWR it is not: a fall on a €800 account of two
                       // coins counts as much as one on today's. When it ran and
@@ -265,7 +250,7 @@ export default function Risk() {
                     },
                     {
                       label: t("portfolio.real_var"),
-                      value: percent(lang, data.twr_var_95),
+                      value: percent(data.twr_var_95, { lang }),
                       help: t("portfolio.twr_var_help"),
                       // The percentage is of the path; what it comes to on
                       // today's book is the figure a bad day actually costs.
@@ -340,7 +325,7 @@ export default function Risk() {
             );
           }
           const betas = Object.entries(data.betas)
-            .map(([bench, value]) => `β ${bench} ${decimal(lang, value) ?? ""}`)
+            .map(([bench, value]) => `β ${bench} ${decimal(value, { lang }) ?? ""}`)
             .join(" · ");
           return (
             <>
@@ -351,26 +336,26 @@ export default function Risk() {
                 <Hero
                   eyebrow={t("portfolio.sim_swings")}
                   help={t("portfolio.basket_vol_help")}
-                  value={percent(lang, data.volatility)}
+                  value={percent(data.volatility, { lang })}
                   facts={[
                     {
                       label: t("portfolio.effective_names"),
-                      value: decimal(lang, data.effective_names, 1),
+                      value: decimal(data.effective_names, { lang, digits: 1 }),
                       help: t("portfolio.effective_names_help"),
                     },
                     {
                       label: t("portfolio.top5"),
-                      value: percent(lang, data.top5_weight, { digits: 0 }),
+                      value: percent(data.top5_weight, { lang, digits: 0 }),
                       help: t("portfolio.top5_help"),
                     },
                     {
                       label: t("portfolio.sim_drawdown"),
-                      value: percent(lang, data.max_drawdown),
+                      value: percent(data.max_drawdown, { lang }),
                       help: t("portfolio.basket_dd_help"),
                     },
                     {
                       label: t("portfolio.sim_var"),
-                      value: percent(lang, data.var_95),
+                      value: percent(data.var_95, { lang }),
                       help: t("portfolio.basket_var_help"),
                     },
                   ]}
@@ -408,7 +393,7 @@ export default function Risk() {
                         key={key}
                         title={title}
                         otherLabel={t("portfolio.alloc_other")}
-                        format={(fraction) => percent(lang, fraction) ?? ""}
+                        format={(fraction) => percent(fraction, { lang }) ?? ""}
                         detail={detail}
                         slices={
                           key === "broker"
@@ -455,7 +440,7 @@ export default function Risk() {
                     dates={data.curves.dates}
                     label={t("portfolio.flow_matched_return")}
                     format={(value) =>
-                      percent(lang, value, { digits: 1, signed: true }) ?? ""
+                      percent(value, { lang, digits: 1, signed: true }) ?? ""
                     }
                     // Euros won or lost, the figure the legend prints: a
                     // percentage on the first months' few hundred euros drew

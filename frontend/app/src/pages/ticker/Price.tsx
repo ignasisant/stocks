@@ -23,18 +23,11 @@ import { useT } from "../../shell/i18n";
 import { Count } from "../../ui/Count";
 import type { Query } from "../../shell/useApi";
 import {
-  DASH,
   barsDayPct,
   currencySymbol,
   earliest,
-  known,
   latest,
-  money,
   orElse,
-  percent,
-  shares,
-  signed,
-  signedPercent,
   type Translate,
 } from "./format";
 import { layout, type MetricId, type Shape } from "./layout";
@@ -62,6 +55,7 @@ import type {
   Valuation,
 } from "./types";
 import { num } from "../../shell/numbers";
+import { DASH, decimal, isNum, money, percent, shares } from "../../shell/format";
 
 /** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
 const RANGES = ["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "max"] as const;
@@ -185,14 +179,16 @@ export function PriceSection({
       ? ""
       : zoomed
         ? t("ticker.range_change", {
-            pct: `${signed(periodPct)}%`,
+            pct: `${decimal(periodPct, { digits: 2, signed: "always" }) ?? DASH}%`,
             start: zoomed.start,
             end: zoomed.end,
           })
         : range === "max"
-          ? t("ticker.period_change_max", { pct: `${signed(periodPct)}%` })
+          ? t("ticker.period_change_max", {
+              pct: `${decimal(periodPct, { digits: 2, signed: "always" }) ?? DASH}%`,
+            })
           : t("ticker.period_change", {
-              pct: `${signed(periodPct)}%`,
+              pct: `${decimal(periodPct, { digits: 2, signed: "always" }) ?? DASH}%`,
               period: t(`ticker.period_${range}`),
             });
   const unit = shape.points ? t("ticker.points") : (quote?.currency ?? null);
@@ -207,7 +203,7 @@ export function PriceSection({
   // a KRW close is not that. Never for an index: its level is points, and
   // points restated in euros are a number that is nobody's money.
   const approxLine =
-    !held && !shape.points && known(quote?.price_base)
+    !held && !shape.points && isNum(quote?.price_base)
       ? approx(quote.price_base, quote.base)
       : "";
   const tiles = held
@@ -269,7 +265,11 @@ export function PriceSection({
               // them: "Price · pre-market". A day move printed without that reads
               // as today's session when it is not.
               label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
-              value={live === null ? DASH : `${money(live)}${unit ? ` ${unit}` : ""}`}
+              value={
+                live === null
+                  ? DASH
+                  : `${money(live, { digits: 2 }) ?? DASH}${unit ? ` ${unit}` : ""}`
+              }
               delta={dayPct}
               dim={dim}
               note={[periodLine, approxLine].filter(Boolean).join(" · ")}
@@ -307,7 +307,9 @@ export function PriceSection({
           bars={bars}
           events={events}
           cycle={cycle}
-          trades={held?.trades ?? []}
+          // A closed position still marks its fills: where somebody got in
+          // and out is the part of the chart that was theirs.
+          trades={shape.holdable ? (position?.trades ?? []) : []}
           avgCost={held?.avg_cost_native ?? null}
           candles={shape.candles && candles}
           overlays={shape.overlays}
@@ -353,17 +355,20 @@ function LastBuy({
     );
   if (!latestBuy || last === null) return null;
   const pct = latestBuy.price ? (last / latestBuy.price - 1) * 100 : null;
-  const reading = pct === null ? DASH : `${signed(pct)}%`;
+  const reading =
+    pct === null ? DASH : `${decimal(pct, { digits: 2, signed: "always" }) ?? DASH}%`;
   const fields = {
-    qty: shares(latestBuy.quantity),
-    price: money(latestBuy.price),
+    qty: shares(latestBuy.quantity) ?? DASH,
+    price: money(latestBuy.price, { digits: 2 }) ?? DASH,
     date: latestBuy.date,
     pct: reading,
-    last: money(last),
+    last: money(last, { digits: 2 }) ?? DASH,
   };
   let line = units ? t("ticker.last_buy_units", fields) : t("ticker.last_buy", fields);
   if (position?.avg_cost_native) {
-    line += t("ticker.last_buy_avg", { avg: money(position.avg_cost_native) });
+    line += t("ticker.last_buy_avg", {
+      avg: money(position.avg_cost_native, { digits: 2 }) ?? DASH,
+    });
   }
   const [head, ...tail] = line.split(reading);
   return (
@@ -438,11 +443,21 @@ function Hero({
     <div className="tk-hero">
       <div className="tk-hero-price">
         <span className="tk-hero-level">
-          {price === null ? DASH : <Count text={money(price)} tint />}
+          {price === null ? (
+            DASH
+          ) : (
+            <Count text={money(price, { digits: 2 }) ?? DASH} tint />
+          )}
         </span>
         {currency ? <span className="tk-hero-session">{currency}</span> : null}
         {dayPct !== null ? (
-          <Chip chip={chipFor(dayPct, `${signed(dayPct * 100)}%`, dim)} />
+          <Chip
+            chip={chipFor(
+              dayPct,
+              `${decimal(dayPct * 100, { digits: 2, signed: "always" }) ?? DASH}%`,
+              dim,
+            )}
+          />
         ) : null}
         {sessionNote ? <span className="tk-hero-session">{sessionNote}</span> : null}
         {periodLine ? (
@@ -485,12 +500,12 @@ function Hero({
  * currency, with its mark ahead of the figure, not the code after it.
  */
 function approx(value: number, base: string | null | undefined): string {
-  return `≈ ${currencySymbol(base)}${money(value)}`;
+  return `≈ ${currencySymbol(base)}${money(value, { digits: 2 }) ?? DASH}`;
 }
 
 /** "+€735,26" / "-$12,00": a signed amount with its currency's mark. */
 function signedMoney(value: number, currency: string | null | undefined): string {
-  return `${value < 0 ? "-" : "+"}${currencySymbol(currency)}${money(Math.abs(value))}`;
+  return `${value < 0 ? "-" : "+"}${currencySymbol(currency)}${money(Math.abs(value), { digits: 2 }) ?? DASH}`;
 }
 
 /** The local calendar day, as the API writes dates. */
@@ -541,21 +556,21 @@ function recentResults(events: EarningsEvent[], today: string): EarningsEvent | 
 function ResultsLine({ event, t }: { event: EarningsEvent; t: Translate }) {
   const fields = {
     date: calendarDay(event.date),
-    eps: money(event.reported_eps),
-    est: money(event.eps_estimate),
+    eps: money(event.reported_eps, { digits: 2 }) ?? DASH,
+    est: money(event.eps_estimate, { digits: 2 }) ?? DASH,
   };
-  const line = known(event.eps_estimate)
+  const line = isNum(event.eps_estimate)
     ? t("ticker.results_recent", fields)
     : t("ticker.results_recent_bare", fields);
   const surprise = event.surprise_pct;
   return (
     <p className="tk-results">
       <Bold text={line} />
-      {known(surprise) ? (
+      {isNum(surprise) ? (
         <>
           {" · "}
           <strong className={surprise >= 0 ? "tk-is-green" : "tk-is-red"}>
-            {signed(surprise, 1)}%
+            {decimal(surprise, { digits: 1, signed: "always" }) ?? DASH}%
           </strong>{" "}
           {t("ticker.hover_surprise")}
         </>
@@ -625,10 +640,10 @@ function yearRange(
   stats: AssetStats | null,
   bars: Bars | null,
 ): { low: number; high: number } | null {
-  if (known(stats?.high_52w) && known(stats?.low_52w)) {
+  if (isNum(stats?.high_52w) && isNum(stats?.low_52w)) {
     return { low: stats.low_52w, high: stats.high_52w };
   }
-  if (known(quote?.high_52w) && known(quote?.low_52w)) {
+  if (isNum(quote?.high_52w) && isNum(quote?.low_52w)) {
     return { low: quote.low_52w, high: quote.high_52w };
   }
   if (!bars || bars.dates.length < 2) return null;
@@ -639,7 +654,7 @@ function yearRange(
   let low = Infinity;
   let high = -Infinity;
   (bars.series.Close ?? []).forEach((one, i) => {
-    if (!known(one)) return;
+    if (!isNum(one)) return;
     const day = (bars.dates[i] ?? "").slice(0, 10);
     if (daysBetween(firstDay, day) < since) return;
     low = Math.min(low, one);
@@ -711,14 +726,18 @@ function cell(
       return {
         id,
         label,
-        value: `${money(year.low, digits)} – ${money(year.high, digits)}`,
+        value: `${money(year.low, { digits: digits }) ?? DASH} – ${money(year.high, { digits: digits }) ?? DASH}`,
         help,
         // Within half a tenth of the high is at it: a pre-market print a cent
         // over last year's intraday peak is not "+0,0 % off the high".
         note:
           offHigh >= -0.0005
             ? t("ticker.at_high")
-            : t("ticker.off_high", { pct: signedPercent(offHigh, 1) }),
+            : t("ticker.off_high", {
+                pct:
+                  percent(offHigh, { digits: 1, signed: "always", tight: true }) ??
+                  DASH,
+              }),
         tone: null,
         extra: <RangeMeter at={at} />,
       };
@@ -742,12 +761,18 @@ function cell(
       // The distance from the high is the range cell's; this one adds what
       // the range cannot say: the year's momentum and the home index.
       const note = [
-        known(trend.mom_12_1)
-          ? t("ticker.trend_momentum", { pct: signedPercent(trend.mom_12_1, 0) })
+        isNum(trend.mom_12_1)
+          ? t("ticker.trend_momentum", {
+              pct:
+                percent(trend.mom_12_1, { digits: 0, signed: "always", tight: true }) ??
+                DASH,
+            })
           : "",
-        known(trend.rs_12m) && trend.bench_name
+        isNum(trend.rs_12m) && trend.bench_name
           ? t("ticker.trend_vs", {
-              pct: signedPercent(trend.rs_12m, 0),
+              pct:
+                percent(trend.rs_12m, { digits: 0, signed: "always", tight: true }) ??
+                DASH,
               index: trend.bench_name,
             })
           : "",
@@ -758,7 +783,7 @@ function cell(
       // with the average: a coin back above a rising line after a crash reads
       // "up" with a -24 % year, and a green -24 % says the opposite of itself.
       const side = trend.state === "up" ? 1 : trend.state === "down" ? -1 : 0;
-      const agrees = !known(trend.mom_12_1) || side * trend.mom_12_1 >= 0;
+      const agrees = !isNum(trend.mom_12_1) || side * trend.mom_12_1 >= 0;
       return {
         id,
         label,
@@ -793,9 +818,11 @@ function cell(
         // Against its own average when there is one; the grid's band when
         // the history is too short to have one.
         note:
-          window && known(premium)
+          window && isNum(premium)
             ? t("ticker.pe_vs_avg", {
-                pct: signedPercent(premium, 0),
+                pct:
+                  percent(premium, { digits: 0, signed: "always", tight: true }) ??
+                  DASH,
                 rng: window.window,
               })
             : orElse(t, `ticker.verdict_${valuation?.current_verdict ?? ""}`, ""),
@@ -854,7 +881,7 @@ function cell(
       return {
         id,
         label: t("ticker.fund_yield"),
-        value: percent(fund?.dividend_yield, 2),
+        value: percent(fund?.dividend_yield, { digits: 2, tight: true }) ?? DASH,
         help: t("ticker.fund_yield_help"),
         note: "",
         tone: null,
@@ -879,12 +906,14 @@ function cell(
       return {
         id,
         label: t("ticker.cash_yield"),
-        value: percent(headline, 2),
+        value: percent(headline, { digits: 2, tight: true }) ?? DASH,
         help: t("ticker.cash_yield_help"),
         note: paid
           ? t("ticker.cash_yield_paid")
           : cash?.yield_1y !== null && cash?.yield_1y !== undefined
-            ? t("ticker.cash_yield_1y", { pct: percent(cash.yield_1y, 2) })
+            ? t("ticker.cash_yield_1y", {
+                pct: percent(cash.yield_1y, { digits: 2, tight: true }) ?? DASH,
+              })
             : "",
         tone: null,
       };
@@ -898,12 +927,16 @@ function cell(
       // percentage points — a shortfall is the normal reading, not an alarm.
       const gap =
         policy !== null && earned !== null && earned !== undefined
-          ? t("ticker.policy_gap", { pp: signed((earned - policy) * 100, 2) })
+          ? t("ticker.policy_gap", {
+              pp:
+                decimal((earned - policy) * 100, { digits: 2, signed: "always" }) ??
+                DASH,
+            })
           : "";
       return {
         id,
         label: t("ticker.policy_rate"),
-        value: percent(policy, 2),
+        value: percent(policy, { digits: 2, tight: true }) ?? DASH,
         help: t("ticker.policy_rate_help"),
         note: [bankLabel(t, cash?.bank ?? null), gap].filter(Boolean).join(" · "),
         tone: null,
@@ -913,7 +946,7 @@ function cell(
       return {
         id,
         label: t("ticker.fund_ter"),
-        value: percent(fund?.expense_ratio, 2),
+        value: percent(fund?.expense_ratio, { digits: 2, tight: true }) ?? DASH,
         help: t("ticker.fund_ter_help"),
         note: "",
         tone: null,
@@ -922,7 +955,12 @@ function cell(
       return {
         id,
         label: t("ticker.cef_premium"),
-        value: signedPercent(fund?.closed_end?.premium.value),
+        value:
+          percent(fund?.closed_end?.premium.value, {
+            digits: 2,
+            signed: "always",
+            tight: true,
+          }) ?? DASH,
         help: t("ticker.cef_premium_help"),
         note: "",
         tone: null,
@@ -931,7 +969,11 @@ function cell(
       return {
         id,
         label: t("ticker.cef_distribution"),
-        value: percent(fund?.closed_end?.distribution_rate.value, 2),
+        value:
+          percent(fund?.closed_end?.distribution_rate.value, {
+            digits: 2,
+            tight: true,
+          }) ?? DASH,
         help: t("ticker.cef_distribution_help"),
         note: "",
         tone: null,
@@ -945,7 +987,10 @@ function cell(
         id,
         label: t("ticker.ath_label"),
         short: t("ticker.ath_short"),
-        value: drop === null ? DASH : signedPercent(drop, 1),
+        value:
+          drop === null
+            ? DASH
+            : (percent(drop, { digits: 1, signed: "always", tight: true }) ?? DASH),
         help: t("ticker.ath_help"),
         // A peak read off a year of bars is not an all-time high, and the
         // cell says which one it is measured from.
@@ -966,8 +1011,8 @@ function cell(
 /** "67 shares", or "0.0773 units" for a coin, which has no shares. */
 function countNote(t: Translate, count: number, units: boolean): string {
   return units
-    ? t("ticker.n_units", { n: shares(count) })
-    : t("ticker.n_shares", { n: shares(count) });
+    ? t("ticker.n_units", { n: shares(count) ?? DASH })
+    : t("ticker.n_shares", { n: shares(count) ?? DASH });
 }
 
 /** One of the holding's tiles, ready for `Kpi` in either layout. */
@@ -1013,7 +1058,7 @@ function positionTiles(
   // as pounds is a hundredfold.
   const sameMoney = Boolean(native && base && native === base);
   const rate =
-    quote && known(quote.price_base) && known(quote.price) && quote.price !== 0
+    quote && isNum(quote.price_base) && isNum(quote.price) && quote.price !== 0
       ? quote.price_base / quote.price
       : null;
   let valueBase: number | null = null;
@@ -1022,11 +1067,12 @@ function positionTiles(
     valueBase = valueNative;
   } else if (valueNative !== null && rate !== null) {
     valueBase = valueNative * rate;
-  } else if (known(position.value)) {
+  } else if (isNum(position.value)) {
     valueBase = position.value;
     approxValue = true;
   }
-  const money_ = (value: number) => `${currencySymbol(base)}${money(value)}`;
+  const money_ = (value: number) =>
+    `${currencySymbol(base)}${money(value, { digits: 2 }) ?? DASH}`;
 
   // Today's move in the reader's money: the value now against the value
   // before the day's change, off the same percentage the price tile shows.
@@ -1042,7 +1088,7 @@ function positionTiles(
       valueBase === null
         ? valueNative === null
           ? DASH
-          : `${money(valueNative)} ${native}`.trim()
+          : `${money(valueNative, { digits: 2 }) ?? DASH} ${native}`.trim()
         : `${approxValue ? "≈ " : ""}${money_(valueBase)}`,
     chip:
       todayBase === null
@@ -1054,22 +1100,22 @@ function positionTiles(
           ),
     note:
       valueBase !== null && valueNative !== null && !sameMoney
-        ? `${money(valueNative)} ${native}`.trim()
+        ? `${money(valueNative, { digits: 2 }) ?? DASH} ${native}`.trim()
         : "",
   };
 
   const basis = position.cost_base ?? null;
   let gainBase: number | null = null;
   let gainNative: number | null = null;
-  if (valueBase !== null && known(basis)) {
+  if (valueBase !== null && isNum(basis)) {
     gainBase = valueBase - basis;
-  } else if (valueNative !== null && known(position.cost_native)) {
+  } else if (valueNative !== null && isNum(position.cost_native)) {
     gainNative = valueNative - position.cost_native;
   }
   const gainPct =
-    gainBase !== null && known(basis) && basis !== 0
+    gainBase !== null && isNum(basis) && basis !== 0
       ? gainBase / basis
-      : gainNative !== null && known(position.cost_native) && position.cost_native !== 0
+      : gainNative !== null && isNum(position.cost_native) && position.cost_native !== 0
         ? gainNative / position.cost_native
         : null;
   const gain: Tile = {
@@ -1080,12 +1126,17 @@ function positionTiles(
       gainBase !== null
         ? signedMoney(gainBase, base)
         : gainNative !== null
-          ? `${signed(gainNative)} ${native}`.trim()
+          ? `${decimal(gainNative, { digits: 2, signed: "always" }) ?? DASH} ${native}`.trim()
           : DASH,
-    chip: chipFor(gainPct, gainPct === null ? null : signedPercent(gainPct, 2)),
-    note: known(position.avg_cost_native)
+    chip: chipFor(
+      gainPct,
+      gainPct === null
+        ? null
+        : (percent(gainPct, { digits: 2, signed: "always", tight: true }) ?? DASH),
+    ),
+    note: isNum(position.avg_cost_native)
       ? t("ticker.avg_cost_note", {
-          avg: `${money(position.avg_cost_native)} ${native}`.trim(),
+          avg: `${money(position.avg_cost_native, { digits: 2 }) ?? DASH} ${native}`.trim(),
         })
       : "",
   };
@@ -1094,7 +1145,7 @@ function positionTiles(
     key: "weight",
     label: t("ticker.pct_portfolio"),
     help: t("ticker.pct_portfolio_help"),
-    value: known(position.weight) ? `${num(position.weight * 100, 1)}%` : DASH,
+    value: isNum(position.weight) ? `${num(position.weight * 100, 1)}%` : DASH,
     note: count === null ? "" : countNote(t, count, units),
   };
 

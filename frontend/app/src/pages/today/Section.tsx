@@ -16,13 +16,13 @@
 import { useId, type ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { Help } from "../../ui/Kpi";
-import { TickerCell } from "../home/ui";
 import { Go } from "../home/Go";
 import { monthDay } from "../home/format";
 import type { DailyItem } from "../home/types";
 import { AnalysisPanel, type Panel } from "./Analysis";
 import { missingKeys, opens, safeUrl, sourceKey } from "./card";
 import type { TodayRow } from "./types";
+import { TickerCell } from "../../shell/tickers";
 
 export function Block({
   id,
@@ -70,7 +70,7 @@ function Tickers({ tickers }: { tickers: string[] }) {
   return (
     <span className="td-tks">
       {tickers.map((ticker) => (
-        <TickerCell key={ticker} ticker={ticker} name={false} />
+        <TickerCell className="hm-ticker" key={ticker} ticker={ticker} name={false} />
       ))}
     </span>
   );
@@ -160,7 +160,12 @@ export function Rows({
             <li key={row.key} className="td-row">
               <span className="td-row-who">
                 {row.tickers.map((ticker) => (
-                  <TickerCell key={ticker} ticker={ticker} name={false} />
+                  <TickerCell
+                    className="hm-ticker"
+                    key={ticker}
+                    ticker={ticker}
+                    name={false}
+                  />
                 ))}
               </span>
               <span className="td-line">

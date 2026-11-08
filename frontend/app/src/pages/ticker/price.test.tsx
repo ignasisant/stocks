@@ -8,7 +8,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { calendarDay } from "../../shell/dates";
-import { money, signedPercent } from "./format";
 import { layout } from "./layout";
 import { PriceSection } from "./Price";
 import type { AssetKind } from "../../shell/assets";
@@ -20,6 +19,7 @@ import type {
   Trend,
   Valuation,
 } from "./types";
+import { DASH, money, percent } from "../../shell/format";
 
 // The English strings the row is read through, slots filled as the real
 // hook fills them; every other key renders as itself, as with no catalog.
@@ -195,19 +195,21 @@ describe("the price row for a holder", () => {
     // 8.8861 shares at the pre-market 676.88, restated through the quote's
     // own rate: never the 697.52 close the last bar still carries.
     const valueBase = 8.8861 * 676.88 * (602.52 / 676.88);
-    expect(html).toContain(`€${money(valueBase)}`);
-    expect(html).not.toContain(money(8.8861 * 697.52));
+    expect(html).toContain(`€${money(valueBase, { digits: 2 }) ?? DASH}`);
+    expect(html).not.toContain(money(8.8861 * 697.52, { digits: 2 }) ?? DASH);
     // The native figure stays as the note, and the day's move in euros rides
     // the tile as a chip, greyed because the session has not opened.
-    expect(html).toContain(`${money(8.8861 * 676.88)} USD`);
+    expect(html).toContain(`${money(8.8861 * 676.88, { digits: 2 }) ?? DASH} USD`);
     const today = valueBase - valueBase / (1 - 0.0296);
-    expect(html).toContain(`-€${money(Math.abs(today))} today`);
+    expect(html).toContain(`-€${money(Math.abs(today), { digits: 2 }) ?? DASH} today`);
     expect(html).toContain("ag-chip-flat");
     // The gain is value less the basis in euros at each trade's rate — the
     // Portfolio page's figure — with its percentage beside it.
     const gain = valueBase - 4782.09;
-    expect(html).toContain(`+€${money(gain)}`);
-    expect(html).toContain(signedPercent(gain / 4782.09, 2));
+    expect(html).toContain(`+€${money(gain, { digits: 2 }) ?? DASH}`);
+    expect(html).toContain(
+      percent(gain / 4782.09, { digits: 2, signed: "always", tight: true }) ?? DASH,
+    );
     expect(html).toContain("avg buy 614.78 USD");
     expect(html).toContain("3.8%");
     expect(html).toContain("8.8861 shares");
@@ -219,7 +221,9 @@ describe("the price row for a holder", () => {
     dom();
     const html = render(position);
     expect(html).toContain("550 – 760");
-    expect(html).toContain(`${signedPercent(676.88 / 760 - 1, 1)} off the high`);
+    expect(html).toContain(
+      `${percent(676.88 / 760 - 1, { digits: 1, signed: "always", tight: true }) ?? DASH} off the high`,
+    );
     expect(html).toContain('class="tk-range"');
     expect(html).toContain("31.4");
     expect(html).toContain("+12% vs 5y avg");
@@ -242,7 +246,7 @@ describe("the price row for a holder", () => {
     dom();
     const html = render({ ...position, cost_base: null });
     const gainNative = 8.8861 * 676.88 - 5462.6;
-    expect(html).toContain(`+${money(gainNative)} USD`);
+    expect(html).toContain(`+${money(gainNative, { digits: 2 }) ?? DASH} USD`);
   });
 });
 
@@ -254,6 +258,31 @@ describe("the price row for a reader who does not hold the name", () => {
     expect(html).toContain("550 – 760");
     expect(html).not.toContain("Position value");
     expect(html).not.toContain("Unsold gain");
+  });
+
+  it("still marks the buys and sells of a position since closed", () => {
+    dom();
+    const closed: TickerPosition = {
+      ticker: "ORCL",
+      held: false,
+      shares: null,
+      currency: null,
+      cost_native: null,
+      avg_cost_native: null,
+      base: null,
+      value: null,
+      weight: null,
+      trades: [
+        { date: isoDay(-200), action: "buy", price: 580, quantity: 4 },
+        { date: isoDay(-30), action: "sell", price: 680, quantity: 4 },
+      ],
+      brokers: {},
+      custody: [],
+    };
+    const html = render(closed);
+    expect(html).not.toContain("Position value");
+    expect(html).toContain("ticker.my_buys");
+    expect(html).toContain("ticker.my_sells");
   });
 
   it("reads the year off the bars when the quote has none", () => {
@@ -343,17 +372,25 @@ describe("the trend cell", () => {
     const html = withTrend(UPTREND);
     expect(html).toContain("Trend");
     expect(html).toContain("Uptrend");
-    expect(html).toContain(`12-1 ${signedPercent(0.221, 0)}`);
-    expect(html).toContain(`${signedPercent(0.11, 0)} vs IBEX 35`);
+    expect(html).toContain(
+      `12-1 ${percent(0.221, { digits: 0, signed: "always", tight: true }) ?? DASH}`,
+    );
+    expect(html).toContain(
+      `${percent(0.11, { digits: 0, signed: "always", tight: true }) ?? DASH} vs IBEX 35`,
+    );
     // The distance from the high is the range cell's, not said twice.
-    expect(html).not.toContain(signedPercent(-0.042, 1));
+    expect(html).not.toContain(
+      percent(-0.042, { digits: 1, signed: "always", tight: true }) ?? DASH,
+    );
   });
 
   it("reads a downtrend and a mixed one", () => {
     dom();
     const down = withTrend({ ...UPTREND, state: "down", mom_12_1: -0.3, rs_12m: -0.2 });
     expect(down).toContain("Downtrend");
-    expect(down).toContain(`12-1 ${signedPercent(-0.3, 0)}`);
+    expect(down).toContain(
+      `12-1 ${percent(-0.3, { digits: 0, signed: "always", tight: true }) ?? DASH}`,
+    );
     expect(withTrend({ ...UPTREND, state: "mixed" })).toContain("Mixed");
   });
 
@@ -379,7 +416,9 @@ describe("the trend cell", () => {
     );
     expect(html).toContain("Uptrend");
     // The note ends at the momentum: no " · … vs" after it.
-    expect(html).toContain(`12-1 ${signedPercent(0.221, 0)}<`);
+    expect(html).toContain(
+      `12-1 ${percent(0.221, { digits: 0, signed: "always", tight: true }) ?? DASH}<`,
+    );
   });
 
   it("says the history is short rather than guess a side", () => {

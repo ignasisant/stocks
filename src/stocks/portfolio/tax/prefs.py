@@ -7,10 +7,10 @@ the one holding it.
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from pathlib import Path
 
+from stocks import userstore
 from stocks.portfolio import tax
 
 # prefs.json keys. tax_residence None = auto (from the browser locale's region).
@@ -45,11 +45,7 @@ def load(path: Path) -> dict:
     A corrupt or missing file must not stop a book being taxed — it means "no
     preference expressed", which is exactly what `resolve` already handles.
     """
-    try:
-        stored = json.loads(Path(path).read_text())
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return stored if isinstance(stored, dict) else {}
+    return userstore.read(path)
 
 
 def resolve(prefs: dict, region: str | None = None) -> tuple[str, str]:

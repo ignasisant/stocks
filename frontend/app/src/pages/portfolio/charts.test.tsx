@@ -33,8 +33,6 @@ import {
   foldSlices,
   lineMoney,
   dateTicks,
-  niceTicks,
-  plotHeightFor,
   sliceTip,
   type SliceDetail,
 } from "./charts";
@@ -42,17 +40,6 @@ import {
 beforeAll(() => {
   vi.stubGlobal("document", { documentElement: {} });
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
-});
-
-describe("niceTicks", () => {
-  it("lands on round steps inside the span", () => {
-    expect(niceTicks(11_843, 12_261)).toEqual([11_900, 12_000, 12_100, 12_200]);
-    expect(niceTicks(-0.12, 0.31)).toEqual([-0.1, 0, 0.1, 0.2, 0.3]);
-  });
-
-  it("answers a flat series with the one value it has", () => {
-    expect(niceTicks(5, 5)).toEqual([5]);
-  });
 });
 
 describe("BookHistory", () => {
@@ -109,7 +96,7 @@ describe("BookHistory", () => {
     const out = renderToStaticMarkup(
       <BookHistory
         points={crossing}
-        labels={{ ...labels, reset: "Reset" }}
+        labels={labels}
         money={money}
         percent={pct}
         formatDate={(iso) => iso}
@@ -122,6 +109,31 @@ describe("BookHistory", () => {
     expect(out).toContain("Loss");
   });
 
+  it("lets a far-off injected line leave the axis instead of filling under it", () => {
+    // A month of a book well in profit: value moves 100, sits 2000 above.
+    const month = [3000, 3050, 3020, 3100].map((value, i) => ({
+      date: `2026-03-0${i + 1}`,
+      injected: 1000,
+      value,
+    }));
+    const out = renderToStaticMarkup(
+      <BookHistory
+        points={month}
+        labels={labels}
+        money={money}
+        percent={pct}
+        formatDate={(iso) => iso}
+      />,
+    );
+    // No band and no dashed line: only the value line.
+    expect(out).not.toContain("<path");
+    expect(out.match(/<polyline/g)).toHaveLength(1);
+    // The axis fits the value, not the gap down to injected.
+    expect(out).not.toMatch(/text-anchor="end"[^>]*>€1000</);
+    // Injected's amount is still on screen, pinned with the way to it.
+    expect(out).toContain("Injected €1000 ↓");
+  });
+
   it("renders its axis and legend", () => {
     const out = renderToStaticMarkup(
       <BookHistory
@@ -132,7 +144,6 @@ describe("BookHistory", () => {
           profit: "Profit",
           loss: "Loss",
           pnl: "P/L",
-          reset: "Reset",
         }}
         money={(v, signed) => `${signed && v > 0 ? "+" : ""}€${v}`}
         percent={(v) => `${(v * 100).toFixed(1)}%`}
@@ -141,8 +152,6 @@ describe("BookHistory", () => {
     );
     // A value axis: at least one money label in the gutter.
     expect(out).toMatch(/text-anchor="end"[^>]*>€1/);
-    // Not zoomed yet, so no reset button.
-    expect(out).not.toContain("Reset");
   });
 });
 
@@ -695,16 +704,6 @@ describe("ReturnLines", () => {
 });
 
 describe("narrow plots", () => {
-  it("takes a squarer shape as the plot narrows, and the desktop's past 480", () => {
-    // A 350px phone: four fifths of the width, not the desktop's 300 and not
-    // the half-height strip a scaled viewBox gave.
-    expect(plotHeightFor(350, 300)).toBe(280);
-    // Never under 240, never over the desktop height.
-    expect(plotHeightFor(240, 300)).toBe(240);
-    expect(plotHeightFor(720, 300)).toBe(300);
-    expect(plotHeightFor(720, 240)).toBe(240);
-  });
-
   const label = (props: Partial<Parameters<typeof AxisLabel>[0]>) =>
     renderToStaticMarkup(
       <svg>

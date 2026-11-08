@@ -1,3 +1,4 @@
+export type { Position, Custodian } from "../../api.gen";
 /**
  * The shapes `/api/v1/portfolio/*` actually sends, transcribed from
  * `src/stocks/api/schemas/`.
@@ -7,53 +8,6 @@
  * could measure is not a spread of zero. They are typed as nullable so the
  * renderer cannot quietly treat them as numbers.
  */
-
-export type Position = {
-  ticker: string;
-  shares: number;
-  currency: string;
-  /** Basis in the reporting currency. */
-  cost: number;
-  value: number | null;
-  /**
-   * One share's last price in `currency` — the listing's, not the reporting
-   * one; null when the row did not price or its pair could not be read.
-   */
-  price: number | null;
-  pnl: number | null;
-  pnl_pct: number | null;
-  /** Share of the book by market value; null when the row did not price. */
-  weight: number | null;
-  /**
-   * Today's move in the reporting currency and as a fraction. Off-hours this
-   * is the pre/after-hours quote or the last completed session, never a stale
-   * flat bar; null when no two prices could be compared.
-   */
-  day: number | null;
-  day_pct: number | null;
-  /** False when no live quote exists now — the day cells are dimmed. */
-  market_active: boolean;
-  /** Which broker accounts hold the shares, largest first. */
-  custody: Custodian[];
-};
-
-/**
- * One broker holding part of a position. `name` is empty for the two generic
- * buckets (`manual`, `unknown`), which the client words from its catalog.
- */
-export type Custodian = {
-  broker: string;
-  name: string;
-  logo: string | null;
-  shares: number;
-  share: number;
-};
-
-export type Positions = {
-  base: string;
-  positions: Position[];
-  unpriced: number;
-};
 
 export type Summary = {
   base: string;
@@ -109,39 +63,6 @@ export type Transactions = {
     fee: number;
     note: string;
   }[];
-};
-
-export type Performance = {
-  base: string;
-  /** The window every return below was re-taken over. */
-  window: string;
-  start: string | null;
-  end: string | null;
-  injected: number | null;
-  /** The window's buy-in: the book's value on its first day plus the net money put in since. Equals `injected` since inception. */
-  injected_window: number | null;
-  value: number | null;
-  twr_cumulative: number | null;
-  twr_annualised: number | null;
-  /** False when the span is under a year: then `twr_annualised` is cumulative. */
-  twr_is_annual: boolean;
-  /** Of the flow-adjusted path, over the whole span — not today's basket. */
-  twr_volatility: number | null;
-  twr_max_drawdown: number | null;
-  /** One-day historical VaR at 95% of the same path, as a return (<= 0); null under 60 days. */
-  twr_var_95: number | null;
-  /** When the worst fall ran, and what the book was worth at its top — the
-   *  TWR weighs every day alike, so a fall on a small early book needs saying. */
-  twr_drawdown_peak: string | null;
-  twr_drawdown_trough: string | null;
-  twr_drawdown_peak_value: number | null;
-  /** Days left out of every figure above, because their flow could not price. */
-  dropped_days: string[];
-  irr: number | null;
-  /** False when the span is under a year: then `irr` is cumulative, not annualised. */
-  irr_annualised: boolean;
-  /** Held names with no price series, carried at cost in `value`. */
-  missing: string[];
 };
 
 export type AttributionMover = { ticker: string; amount: number };
