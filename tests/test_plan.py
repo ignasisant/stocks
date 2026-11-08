@@ -83,6 +83,28 @@ def test_drift_names_the_buckets_outside_their_band_furthest_first():
     ]
 
 
+def test_a_reserve_is_the_cash_bucket_band():
+    plan = P.parse(
+        {
+            "mix": {"targets": {"stocks": 70, "bonds": 20, "crypto": 10}, "band_pp": 5},
+            "reserve": {"min_pct": 10, "max_pct": 30},
+        }
+    )
+    over = P.drift(plan, {"stocks": 55, "cash": 34.4, "crypto": 10.6})
+    assert [(d.bucket, d.target_pct, d.gap_pp) for d in over] == [
+        ("bonds", 20, -20.0),
+        ("stocks", 70, -15.0),
+        ("cash", 30, 4.4),
+    ]
+    inside = P.drift(plan, {"stocks": 70, "cash": 20, "crypto": 10})
+    assert "cash" not in {d.bucket for d in inside}
+    low = P.drift(plan, {"stocks": 75, "bonds": 20, "cash": 4, "crypto": 1})
+    assert [(d.bucket, d.target_pct, d.side) for d in low] == [
+        ("crypto", 10, "under"),
+        ("cash", 10, "under"),
+    ]
+
+
 def test_reserve_reads_the_cash_bucket():
     plan = P.parse({"reserve": {"min_pct": 5, "max_pct": 15}})
     assert P.reserve_state(plan, {"cash": 2}) == "low"

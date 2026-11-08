@@ -102,6 +102,7 @@
   "profile.plan_reserve_max": "Al massimo",
   "profile.plan_reserve_max_help": "Sopra questa soglia, Review segnala la liquidità inattiva da mettere a frutto.",
   "profile.plan_reserve_order": "Il minimo non può superare il massimo.",
+  "profile.plan_reserve_clash": "Il tuo mix dà alla liquidità il {target}%, fuori da questa fascia. Review e la scheda giornaliera misurano la riserva.",
   "profile.plan_cash_title": "Liquidità fuori dal portafoglio",
   "profile.plan_cash_sub": "Denaro che nessuna importazione vede. Aggiornalo ogni tanto: nulla nel tuo registro lo muove.",
   "profile.plan_investable": "Pronta da investire",

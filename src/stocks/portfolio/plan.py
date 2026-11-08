@@ -442,14 +442,20 @@ def stamp_cash(new: Mapping | None, old: Cash | None, today: date) -> dict | Non
 
 
 def drift(plan: Plan, shares: Mapping[str, float]) -> list[Drift]:
-    """The buckets outside their band, the furthest first."""
+    """The buckets outside their band, the furthest first. A reserve is the
+    cash bucket's band: the reader drew it for cash alone, so it overrides
+    the mix's target there, and the edge crossed is the target named."""
     if plan.mix is None or not shares:
         return []
     out = [
         Drift(b, float(shares.get(b, 0.0)), t, plan.mix.band_pp)
         for b, t in plan.mix.targets.items()
-        if abs(float(shares.get(b, 0.0)) - t) > plan.mix.band_pp
+        if not (b == CASH and plan.reserve is not None)
+        and abs(float(shares.get(b, 0.0)) - t) > plan.mix.band_pp
     ]
+    if plan.reserve is not None and (state := reserve_state(plan, shares)):
+        edge = plan.reserve.min_pct if state == "low" else plan.reserve.max_pct
+        out.append(Drift(CASH, float(shares.get(CASH, 0.0)), float(edge or 0.0), 0.0))
     return sorted(out, key=lambda d: (-abs(d.gap_pp), d.bucket))
 
 
