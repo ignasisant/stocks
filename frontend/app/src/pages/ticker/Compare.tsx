@@ -17,26 +17,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useApi } from "../../shell/useApi";
+import { useDebounced } from "../../shell/useDebounced";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { chart, seriesColors } from "../../shell/theme";
 import { ToggleChip } from "../../ui/Toggle";
 import { ReturnLines, type ReturnSeries } from "../portfolio/charts";
 import { maybe, sectorKey } from "../sentiment/format";
 import { getCompare, searchTickers } from "./data";
-import { signedPercent } from "./format";
 import { ChipMark } from "./Peers";
 import { Card, Note, Segmented } from "./ui";
 import type { CompareLine, CompareOffer, Comparison, SearchMatch } from "./types";
 // The chart and its legend are styled with the portfolio's, as the chat's are.
 import "../portfolio/portfolio.css";
+import { DASH, percent } from "../../shell/format";
 
 const COMPARE_RANGES = ["1m", "6m", "1y", "2y"] as const;
 export type CompareRange = (typeof COMPARE_RANGES)[number];
 
 /** Lines beside the subject — `analysis.compare.MAX_OTHERS`. */
 const MAX_OTHERS = 6;
-
-const DEBOUNCE_MS = 160;
 
 /**
  * A colour per drawn name: `seriesColors`, so SPY reads as SPY here and on the
@@ -58,12 +57,14 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const query = useApi(
     () => getCompare(ticker, range, base, picked ?? undefined),
     [ticker, range, base, picked?.join(",") ?? null],
+    // The last answer stays up, dimmed, until the next lands, rather than the
+    // card dropping to a skeleton on every chip.
+    { keep: true },
   );
   // The chips outlive a reload: a new range or pick must not blank the very
   // controls the reader just pressed.
   const offered = useRef<CompareOffer[]>([]);
-  // …and so does the chart: the last answer stays up, dimmed, until the next
-  // lands, rather than the card dropping to a skeleton on every chip.
+  // …and so does what the chips are drawn from.
   const last = useRef<Comparison | null>(null);
   if (query.state === "loaded") {
     offered.current = query.data.offered;
@@ -167,34 +168,32 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
         onPick={(name) => toggle(name)}
       />
 
-      {query.state === "loading" && last.current ? (
-        <div className="tk-compare-stale" aria-busy="true">
-          <CompareChart
-            data={last.current}
-            colors={colors}
-            label={(line) => labelOf(line, sectorName)}
-            formatDate={formatDate}
-          />
-        </div>
-      ) : (
-        <Loaded
-          query={query}
-          skeleton={
-            <div className="tk-compare-wait">
-              <Skeleton rows={6} />
-            </div>
-          }
-        >
-          {(data) => (
+      <Loaded
+        query={query}
+        skeleton={
+          <div className="tk-compare-wait">
+            <Skeleton rows={6} />
+          </div>
+        }
+      >
+        {(data) => (
+          <div
+            className={
+              query.state === "loaded" && query.refreshing
+                ? "tk-compare-stale"
+                : undefined
+            }
+            aria-busy={(query.state === "loaded" && query.refreshing) || undefined}
+          >
             <CompareChart
               data={data}
               colors={colors}
               label={(line) => labelOf(line, sectorName)}
               formatDate={formatDate}
             />
-          )}
-        </Loaded>
-      )}
+          </div>
+        )}
+      </Loaded>
     </Card>
   );
 }
@@ -233,8 +232,12 @@ export function CompareChart({
         dates={data.dates}
         series={series}
         label={t("ticker.compare_chart", { ticker: data.ticker })}
-        format={(value) => signedPercent(value, 1)}
-        tickFormat={(value) => signedPercent(value, 0)}
+        format={(value) =>
+          percent(value, { digits: 1, signed: "always", tight: true }) ?? DASH
+        }
+        tickFormat={(value) =>
+          percent(value, { digits: 0, signed: "always", tight: true }) ?? DASH
+        }
         formatDate={formatDate}
         legendValues
       />
@@ -273,22 +276,20 @@ function PickSearch({
   const [hits, setHits] = useState<SearchMatch[] | null>(null);
   const trimmed = query.trim();
 
+  const settled = useDebounced(trimmed);
   useEffect(() => {
-    if (!trimmed) {
+    if (!settled) {
       setHits(null);
       return;
     }
     let live = true;
-    const timer = setTimeout(() => {
-      searchTickers(trimmed, 6)
-        .then((body) => live && setHits(body.matches))
-        .catch(() => live && setHits([]));
-    }, DEBOUNCE_MS);
+    searchTickers(settled, 6)
+      .then((body) => live && setHits(body.matches))
+      .catch(() => live && setHits([]));
     return () => {
       live = false;
-      clearTimeout(timer);
     };
-  }, [trimmed]);
+  }, [settled]);
 
   const offers = (hits ?? []).filter(
     (match) => match.ticker !== ticker && !selected.includes(match.ticker),

@@ -50,6 +50,7 @@ from typing import Any, Literal
 
 from stocks import storage
 from stocks.portfolio import positions, transfers
+from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import ACTIONS, DB_PATH, Transaction, connect
 from stocks.portfolio.ledger import _row_to_tx as _from_sql
 
@@ -67,15 +68,37 @@ _EPS = 1e-9
 
 class EditError(ValueError):
     """An edit that cannot be planned: malformed, or aimed at rows that are
-    not there. The message is for the person, in plain English."""
+    not there. The message is for the person, in plain English.
+
+    Every refusal says how a front end should treat it: `status` is the HTTP
+    code a surface with one answers with, `kind` the reason a surface with its
+    own wording (the chat) looks its sentence up by. Adapters map the error
+    by those two and never by its class.
+    """
+
+    status = 422
+    kind = "invalid"
 
 
 class Stale(EditError):
     """The book or the edit changed since the plan was shown."""
 
+    status = 409
+    kind = "stale"
+
 
 class Conflict(EditError):
     """An undo whose rows were changed again after the edit."""
+
+    status = 409
+    kind = "conflict"
+
+
+class Missing(EditError, LookupError):
+    """A change the history does not have."""
+
+    status = 404
+    kind = "gone"
 
 
 @dataclass(frozen=True)
@@ -481,7 +504,7 @@ def undo(change_id: int, *, path: Path = DB_PATH) -> Changeset:
                 "SELECT * FROM changes WHERE id = ?", (change_id,)
             ).fetchone()
             if found is None:
-                raise LookupError(f"change {change_id} is not in this book's history")
+                raise Missing(f"change {change_id} is not in this book's history")
             change = _changeset(found)
             if change.undone_at:
                 raise Conflict("this change was already undone")
@@ -614,7 +637,7 @@ def select(
             continue
         if want and not _names(want, tx, shown.ticker, resolve, pairs=pairs):
             continue
-        if sel.broker and transfers._broker(tx) != sel.broker.strip().lower():
+        if sel.broker and broker_of(tx) != sel.broker.strip().lower():
             continue
         if sel.action and tx.action != sel.action.strip().lower():
             continue

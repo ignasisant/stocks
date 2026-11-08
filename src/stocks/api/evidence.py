@@ -502,7 +502,7 @@ def _held(paths) -> dict[str, pd.Series]:
 
 def _market() -> dict[str, pd.Series]:
     try:
-        return briefing._card_closes()
+        return briefing.card_closes()
     except Exception:  # noqa: BLE001
         return {}
 
@@ -635,16 +635,16 @@ def gather(paths, card, key: str, *, today: date | None = None) -> dict:
         if kind == signals.HARVEST:
             out["tax"] = tax(action, today)
         elif kind == signals.EARNINGS_RESULT:
-            out["print"] = briefing._print_source(action)
+            out["print"] = briefing.print_facts(action)
         elif kind in (signals.MACRO_EVENT, signals.MACRO_RESULT):
-            rates = briefing._rate_source(action)
+            rates = briefing.rate_history(action)
             if rates:
                 out["rates"] = rates
         elif kind == signals.SECTOR_TILT:
             name = str(action.get("sector") or "")
             etf = SECTOR_ETFS.get(name)
             names = tuple(sorted(str(t) for t in tbl.index)) if tbl is not None else ()
-            meta = briefing._meta(names) if names else {}
+            meta = briefing.ticker_meta(names) if names else {}
             inside = [t for t, m in meta.items() if (m or {}).get("sector") == name]
             out["holdings"] = holdings(tbl, _held(paths), inside)
             out["sectors"] = sectors(market, etf)

@@ -22,11 +22,10 @@ import {
   insiderValue,
   legend,
   orElse,
-  shares,
-  signed,
   yoy,
 } from "./format";
 import type { AlertForm } from "./types";
+import { DASH, decimal, shares } from "../../shell/format";
 
 const CATALOG: Record<string, string> = {
   "ticker.hover_dividend": "<b>Dividend</b>  {amt}/sh \u00b7 ex-date {date}",
@@ -112,10 +111,10 @@ describe("insider table cells", () => {
 
 describe("signs and sizes", () => {
   it("always signs a change", () => {
-    expect(signed(3.5)).toBe("+3.50");
-    expect(signed(-3.5)).toBe("-3.50");
+    expect(decimal(3.5, { digits: 2, signed: "always" }) ?? DASH).toBe("+3.50");
+    expect(decimal(-3.5, { digits: 2, signed: "always" }) ?? DASH).toBe("-3.50");
     // Zero is not a fall.
-    expect(signed(0)).toBe("+0.00");
+    expect(decimal(0, { digits: 2, signed: "always" }) ?? DASH).toBe("+0.00");
   });
 
   it("shortens a figure the way an axis does", () => {
@@ -126,10 +125,10 @@ describe("signs and sizes", () => {
 
   it("counts shares without padding a whole lot", () => {
     // "67.0000 acciones" read as a fractional lot that is not there.
-    expect(shares(67)).toBe("67");
-    expect(shares(0.12345)).toBe("0.1235");
-    expect(shares(1234)).toBe("1,234");
-    expect(shares(null)).toBe("\u2014");
+    expect(shares(67) ?? DASH).toBe("67");
+    expect(shares(0.12345) ?? DASH).toBe("0.1235");
+    expect(shares(1234) ?? DASH).toBe("1,234");
+    expect(shares(null) ?? DASH).toBe("\u2014");
   });
 });
 

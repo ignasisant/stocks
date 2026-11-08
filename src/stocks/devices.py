@@ -23,13 +23,11 @@ Nothing here raises into a request: bookkeeping failures are warnings.
 
 from __future__ import annotations
 
-import json
 import re
-import threading
 import time
 from pathlib import Path
 
-from stocks import atomic, obs, revocation, storage
+from stocks import obs, revocation, userstore
 
 FILE = "devices.json"
 
@@ -37,7 +35,6 @@ FILE = "devices.json"
 SEEN_EVERY = 5 * 60
 MAX_ROWS = 20
 
-_lock = threading.Lock()
 # sid hash -> monotonic-free wall clock of the last write, so a request that
 # does not need a write does not even read the file.
 _touched: dict[str, float] = {}
@@ -74,14 +71,9 @@ def summarise(user_agent: str) -> str:
 def _read(path: Path) -> dict[str, dict]:
     # No restore here: the account's bucket restore (`accounts.restore_account`,
     # `USER_FILES`) already brought this file down with the rest.
-    try:
-        data = json.loads(path.read_text())
-    except FileNotFoundError:
+    rows = userstore.read(path).get("sessions")
+    if not isinstance(rows, dict):
         return {}
-    except (OSError, ValueError) as exc:
-        obs.error("session.devices_unreadable", error_type=type(exc).__name__)
-        return {}
-    rows = data.get("sessions") if isinstance(data, dict) else None
     return {k: v for k, v in (rows or {}).items() if isinstance(v, dict)}
 
 
@@ -92,9 +84,7 @@ def _write(path: Path, rows: dict[str, dict]) -> None:
         if float(v.get("expires") or 0) > now and not revocation.session_revoked(k)
     }
     newest = sorted(live, key=lambda k: float(live[k].get("seen") or 0))[-MAX_ROWS:]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, {"sessions": {k: live[k] for k in newest}}, indent=1)
-    storage.persist(path)
+    userstore.write(path, {"sessions": {k: live[k] for k in newest}}, indent=1)
 
 
 def record(
@@ -108,7 +98,7 @@ def record(
     now = time.time() if now is None else now
     key = sid_hash(sid)
     try:
-        with _lock:
+        with userstore.lock(path):
             rows = _read(path)
             row = rows.get(key) or {}
             rows[key] = {
@@ -141,7 +131,7 @@ def listing(path: Path, current_sid: str, now: float | None = None) -> list[dict
     """The live rows, newest activity first, the caller's own marked."""
     now = time.time() if now is None else now
     me = sid_hash(current_sid) if current_sid else ""
-    with _lock:
+    with userstore.lock(path):
         rows = _read(path)
     out = [
         {
@@ -159,7 +149,7 @@ def listing(path: Path, current_sid: str, now: float | None = None) -> list[dict
 
 def end(path: Path, key: str) -> bool:
     """End the session whose row is `key`; False when this account has none."""
-    with _lock:
+    with userstore.lock(path):
         rows = _read(path)
         row = rows.get(key)
         if row is None:
@@ -174,7 +164,7 @@ def end(path: Path, key: str) -> bool:
 def end_others(path: Path, current_sid: str) -> int:
     """End every session but the caller's; how many there were."""
     me = sid_hash(current_sid) if current_sid else ""
-    with _lock:
+    with userstore.lock(path):
         rows = _read(path)
         others = [k for k in rows if k != me]
         for k in others:

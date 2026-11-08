@@ -16,9 +16,7 @@ import { Spoken, useScrub } from "../../../ui/chart/useScrub";
 import { BASELINE_DASH, LINE } from "../../../ui/chart/marks";
 import { useWidth } from "../../../shell/useWidth";
 import {
-  niceTicks,
   NARROW,
-  plotHeightFor,
   AxisLabel,
   ValueAxis,
   Legend,
@@ -34,8 +32,10 @@ import {
   withNote,
   gainBands,
 } from "./frame";
+import { fitHeight } from "../../../ui/chart/fit";
 import type { ReturnSeries } from "./ReturnLines";
 import { bookSpanTip } from "./BookHistory";
+import { ticks as valueTicks } from "../../../ui/chart/ticks";
 
 /** The two floors of the book-and-rates frame: money over rates with no gap
     between them, one date axis under both, money's gutter on the left and the
@@ -220,7 +220,7 @@ function BookAndRatesPlot({
   // The desktop floors' total, and a squarer one on a phone, split in the
   // desktop's own proportion.
   const floors = FLOORS.money + FLOORS.rates;
-  const height = plotHeightFor(width, FLOORS.top + floors + FLOORS.bottom);
+  const height = fitHeight(width, FLOORS.top + floors + FLOORS.bottom);
   const room = height - FLOORS.top - FLOORS.bottom;
   const moneyH = Math.round((room * FLOORS.money) / floors);
   const ratesH = room - moneyH;
@@ -434,7 +434,7 @@ function BookAndRatesPlot({
             />
           ))}
           <ValueAxis
-            ticks={niceTicks(moneyLow, moneyLow + moneySpan, narrow ? 3 : 4)}
+            ticks={valueTicks(moneyLow, moneyLow + moneySpan, narrow ? 4 : 5)}
             y={yMoney}
             left={left}
             right={width - right}
@@ -482,7 +482,7 @@ function BookAndRatesPlot({
               strokeWidth="1"
             />
             <ValueAxis
-              ticks={niceTicks(rateLow, rateLow + rateSpan, narrow ? 2 : 3).filter(
+              ticks={valueTicks(rateLow, rateLow + rateSpan, narrow ? 3 : 4).filter(
                 (tick) => tick !== 0,
               )}
               y={yRate}

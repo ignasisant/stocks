@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from stocks.accounts import paths_in
 from stocks.chat import daily, daily_analysis, engine, guide_ai, learnings, memory
 from stocks.notify import narrative
 from stocks.notify.alerts import AlertHit
@@ -228,14 +229,9 @@ def test_notification_lines_speak_to_the_profiled_investor(provider):
 
 def test_the_account_memory_is_read_beside_its_prefs(tmp_path, chat):
     root = chat.parent
-    user = NotifyUser(label="jane", prefs={}, watchlist=root / "watchlist.yaml",
-                      db=root / "portfolio.db", prefs_path=root / "prefs.json",
-                      state_path=root / "alerts_state.json")
+    user = NotifyUser(label="jane", prefs={}, paths=paths_in(root))
     assert SAID in user.memories()
-    off = NotifyUser(label="jane", prefs={"chat_memory": False},
-                     watchlist=root / "watchlist.yaml", db=root / "portfolio.db",
-                     prefs_path=root / "prefs.json",
-                     state_path=root / "alerts_state.json")
+    off = NotifyUser(label="jane", prefs={"chat_memory": False}, paths=paths_in(root))
     assert off.memories() == ""
 
 

@@ -9,9 +9,7 @@ import { Spoken, useScrub } from "../../../ui/chart/useScrub";
 import { BASELINE_DASH, DOT, LINE } from "../../../ui/chart/marks";
 import { useWidth } from "../../../shell/useWidth";
 import {
-  niceTicks,
   NARROW,
-  plotHeightFor,
   AxisLabel,
   ValueAxis,
   Legend,
@@ -24,6 +22,8 @@ import {
   lastValue,
   withNote,
 } from "./frame";
+import { fitHeight } from "../../../ui/chart/fit";
+import { ticks } from "../../../ui/chart/ticks";
 
 export type ReturnSeries = {
   label: string;
@@ -87,7 +87,7 @@ const RETURN = { fallback: 720, top: 10, right: 10, bottom: 24 };
     desktop row. */
 const returnHeight = (width: number) =>
   width < NARROW
-    ? plotHeightFor(width, 380)
+    ? fitHeight(width, 380)
     : Math.round(Math.min(380, Math.max(220, width * 0.4)));
 
 /** The room 11px axis labels need — a digit is ~6.4px — plus their 6px gap. */
@@ -249,10 +249,10 @@ export function ReturnLines({
   const height = returnHeight(width);
   const plotH = height - RETURN.top - RETURN.bottom;
   const narrow = width < NARROW;
-  const yTicks = niceTicks(
+  const yTicks = ticks(
     low,
     high,
-    Math.max(3, Math.min(narrow ? 4 : 6, Math.round(plotH / 56))),
+    Math.max(3, Math.min(narrow ? 4 : 6, Math.round(plotH / 56))) + 1,
   );
   // A narrow plot has no gutter: its value labels sit inside, on their lines.
   const left = narrow ? NARROW_PAD : gutterFor([...yTicks, 0].map(tickFormat));

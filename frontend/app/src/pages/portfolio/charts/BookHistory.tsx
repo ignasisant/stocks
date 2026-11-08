@@ -1,5 +1,5 @@
 /**
- * The book's history: value over the money put in, with drag-to-zoom.
+ * The book's history: value over the money put in, with drag-to-measure.
  */
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
@@ -9,9 +9,7 @@ import { Spoken, useScrub } from "../../../ui/chart/useScrub";
 import { BASELINE_DASH, LINE } from "../../../ui/chart/marks";
 import { useWidth } from "../../../shell/useWidth";
 import {
-  niceTicks,
   NARROW,
-  plotHeightFor,
   ValueAxis,
   Legend,
   type TipRow,
@@ -25,9 +23,8 @@ import {
   BARS,
   gainBands,
 } from "./frame";
-
-/** Fewest days a drag has to cover to count as a zoom rather than a click. */
-const MIN_ZOOM_DAYS = 5;
+import { fitHeight } from "../../../ui/chart/fit";
+import { ticks as valueTicks } from "../../../ui/chart/ticks";
 
 type BookPoint = {
   date: string;
@@ -104,12 +101,11 @@ export function bookSpanTip(
  * the wrong colour on one side of it, and the crossover is exactly the day a
  * reader is looking for.
  *
- * Drag across the plot to zoom into those days, with the value axis refitted to
- * them, since a €40k book's March wobble is invisible on an axis sized for its
- * whole life. Double-click, or the reset button, puts the window back. The
- * tooltip carries value, injected, and the P/L between them as an amount and a
- * percentage. Two fingers, or a secondary click with a mouse (`useSpan`),
- * compare two days instead (`bookSpanTip`).
+ * The tooltip carries value, injected, and the P/L between them as an amount
+ * and a percentage. A mouse dragged across the plot compares the day it went
+ * down on with the day under it (`bookSpanTip`), as do two fingers or a
+ * secondary click (`useSpan`). It does not zoom: the range picker above
+ * already narrows the window, with the axis refitted to it.
  */
 type BookHistoryProps = {
   points: BookPoint[];
@@ -120,13 +116,18 @@ type BookHistoryProps = {
     profit: string;
     loss: string;
     pnl: string;
-    reset: string;
   };
   money: (value: number, signed?: boolean) => string;
   /** Compact formatter for the gutter; falls back to `money` when omitted. */
   axisMoney?: (value: number) => string;
   percent: (value: number) => string;
   formatDate: (iso: string) => string;
+  /**
+   * One day in full, for the hover box and a comparison's ends; falls back to
+   * `formatDate`. A month-and-year tick is enough to place the axis, not to
+   * say which two days a comparison ran between.
+   */
+  formatDay?: (iso: string) => string;
 };
 
 type BookDay = BookPoint & { injected: number; value: number };
@@ -148,31 +149,31 @@ function BookHistoryPlot({
   axisMoney,
   percent,
   formatDate,
+  formatDay = formatDate,
 }: Omit<BookHistoryProps, "points"> & { all: BookDay[] }) {
   const gutter = axisMoney ?? ((value: number) => money(value));
   const [frame, width] = useWidth(BARS.fallback);
-  const [zoom, setZoom] = useState<{ from: number; to: number } | null>(null);
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  // The day a mouse drag went down on; the comparison runs from it to the pointer.
+  const [anchor, setAnchor] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
-  // Two visible days being compared (`useSpan`), in day order.
+  // Two days being compared (a drag or `useSpan`), in day order.
   const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const drop = useCallback(() => {
     setHover(null);
     setMeasure(null);
   }, []);
-  // A new window from the server is a new series: yesterday's zoom indexes
-  // into days that are no longer the same days.
+  // A new window from the server is a new series: a comparison indexes into
+  // days that are no longer the same days.
   const first = all[0]?.date;
   const last = all[all.length - 1]?.date;
   useEffect(() => {
-    setZoom(null);
-    setDrag(null);
+    setAnchor(null);
     setHover(null);
     setMeasure(null);
   }, [first, last, all.length]);
 
-  const days = zoom ? all.slice(zoom.from, zoom.to + 1) : all;
+  const days = all;
   const walk = useScrub({
     plot: svg,
     at: hover,
@@ -182,12 +183,29 @@ function BookHistoryPlot({
     drop,
   });
   const narrow = width < NARROW;
-  const height = plotHeightFor(width, PLOT.height);
+  const height = fitHeight(width, PLOT.height);
   const left = narrow ? NARROW_PAD : PLOT.left;
   const plotW = width - left - PLOT.right;
   const plotH = height - PLOT.top - PLOT.bottom;
 
-  const values = days.flatMap((day) => [day.injected, day.value]);
+  // In a short window the money put in can sit far below everything the value
+  // did: fitted together, the value's month is squeezed into the top third
+  // and the band is a solid block under it, so every range looks the same.
+  // Past one value-span away it leaves the axis — a plain line, no fill,
+  // since an area needs the baseline it is measured from on screen — and its
+  // amount moves into the legend, arrowed the way it went.
+  const worthLow = Math.min(...days.map((day) => day.value));
+  const worthHigh = Math.max(...days.map((day) => day.value));
+  const reach = worthHigh - worthLow;
+  const offAxis =
+    Math.min(...days.map((day) => day.injected)) > worthHigh + reach
+      ? "above"
+      : Math.max(...days.map((day) => day.injected)) < worthLow - reach
+        ? "below"
+        : null;
+  const values = offAxis
+    ? [worthLow, worthHigh]
+    : days.flatMap((day) => [day.injected, day.value]);
   const rawLow = Math.min(...values);
   const rawHigh = Math.max(...values);
   // A hair of headroom so the line never rides the frame, and a flat book does
@@ -209,12 +227,11 @@ function BookHistoryPlot({
   );
 
   const ticks = [0, Math.floor(days.length / 2), days.length - 1];
-  const offsetOf = zoom ? zoom.from : 0;
 
   /** Where a pointer is on the SVG, in viewBox x. */
   const xAt = (event: MouseEvent<SVGSVGElement>) =>
     viewX(event, svg.current, width) ?? left;
-  /** Which visible day a viewBox x is over. */
+  /** Which day a viewBox x is over. */
   const dayOf = (at: number) => nearest(at, left, plotW, days.length);
   const spanned = useSpan((pair) => {
     if (!pair) return setMeasure(null);
@@ -223,14 +240,10 @@ function BookHistoryPlot({
     setMeasure({ from: Math.min(a, b), to: Math.max(a, b) });
   });
 
-  const finish = () => {
-    if (!drag) return;
-    const lo = Math.min(drag.from, drag.to);
-    const hi = Math.max(drag.from, drag.to);
-    setDrag(null);
-    if (hi - lo < MIN_ZOOM_DAYS) return;
-    setZoom({ from: offsetOf + lo, to: offsetOf + hi });
-  };
+  const stretch = (from: number, to: number) =>
+    setMeasure(
+      from === to ? null : { from: Math.min(from, to), to: Math.max(from, to) },
+    );
 
   const upColor = token("up");
   const downColor = token("down");
@@ -238,8 +251,8 @@ function BookHistoryPlot({
   const hovered = hover === null ? null : days[hover];
   const firstDay = days[0]!;
   const lastDay = days[days.length - 1]!;
-  const summary = `${labels.value}, ${formatDate(firstDay.date)} → ${formatDate(lastDay.date)}: ${money(firstDay.value)} → ${money(lastDay.value)}; ${labels.injected} ${money(lastDay.injected)}`;
-  const spoken = hovered ? tipSaid(formatDate(hovered.date), tipRows(hovered)) : "";
+  const summary = `${labels.value}, ${formatDay(firstDay.date)} → ${formatDay(lastDay.date)}: ${money(firstDay.value)} → ${money(lastDay.value)}; ${labels.injected} ${money(lastDay.injected)}`;
+  const spoken = hovered ? tipSaid(formatDay(hovered.date), tipRows(hovered)) : "";
   const anyGain = days.some((day) => day.value >= day.injected);
   const anyLoss = days.some((day) => day.value < day.injected);
 
@@ -249,7 +262,11 @@ function BookHistoryPlot({
         <Legend>
           <li className="pf-legend-row">
             <span className="pf-swatch" style={{ background: token("text-muted") }} />
-            <span>{labels.injected}</span>
+            <span>
+              {offAxis
+                ? `${labels.injected} ${gutter(lastDay.injected)} ${offAxis === "below" ? "↓" : "↑"}`
+                : labels.injected}
+            </span>
           </li>
           {/* Only the colours this window actually draws, as Plotly's legend
               leaves out a trace with no points. */}
@@ -266,15 +283,6 @@ function BookHistoryPlot({
             </li>
           ) : null}
         </Legend>
-        {zoom ? (
-          <button
-            className="ag-btn pf-zoom-reset"
-            type="button"
-            onClick={() => setZoom(null)}
-          >
-            {labels.reset}
-          </button>
-        ) : null}
       </div>
       <div className="pf-plot pf-scrub" ref={frame} style={stripLines(3)}>
         <svg
@@ -289,9 +297,8 @@ function BookHistoryPlot({
             walk.quiet();
             if (spanned.down(event, xAt(event))) return;
             const at = dayOf(xAt(event));
-            // A finger scrubs, it does not zoom: on a phone the drag that
-            // drew a window was the only way to read a day, so every attempt
-            // to read one ended zoomed into a sliver of it.
+            // A finger scrubs; its comparison is the hold-and-slide `useSpan`
+            // already read above.
             if (event.pointerType === "touch") {
               setHover(at);
               return;
@@ -301,35 +308,43 @@ function BookHistoryPlot({
             // (to the edge day, since `dayOf` clamps) and ends where the
             // button is let go, not where the pointer happened to leave.
             event.currentTarget.setPointerCapture?.(event.pointerId);
-            setDrag({ from: at, to: at });
+            setAnchor(at);
+            setHover(null);
+            setMeasure(null);
           }}
           onPointerMove={(event) => {
             if (spanned.move(event, xAt(event))) return;
             walk.quiet();
             const at = dayOf(xAt(event));
+            if (anchor !== null) return stretch(anchor, at);
             setHover(at);
-            if (drag) setDrag({ ...drag, to: at });
           }}
+          // Letting go keeps the comparison up to be read; the next press
+          // or the pointer leaving puts it away.
           onPointerUp={(event) => {
             if (spanned.up(event)) return;
-            finish();
+            setAnchor(null);
           }}
           // A finger lifting is a leave too: the day it read stays up until
           // the reader touches elsewhere (useTouchHold).
           onPointerLeave={(event) => {
             // A drag in progress is held by the capture; leaving is not its end.
-            if (drag && event.currentTarget.hasPointerCapture?.(event.pointerId))
+            if (
+              anchor !== null &&
+              event.currentTarget.hasPointerCapture?.(event.pointerId)
+            )
               return;
             spanned.leave(event);
-            if (event.pointerType !== "touch") setHover(null);
-            finish();
+            if (event.pointerType === "touch") return;
+            setHover(null);
+            setAnchor(null);
+            setMeasure(null);
           }}
           onPointerCancel={spanned.cancel}
           onContextMenu={(event) => spanned.menu?.(event, xAt(event))}
-          onDoubleClick={() => setZoom(null)}
         >
           <ValueAxis
-            ticks={niceTicks(low, high, narrow ? 3 : 4)}
+            ticks={valueTicks(low, high, narrow ? 4 : 5)}
             y={y}
             left={left}
             right={width - PLOT.right}
@@ -337,24 +352,25 @@ function BookHistoryPlot({
             inside={narrow}
             top={PLOT.top}
           />
-          <g
-            className="ag-redraw"
-            key={`${first}|${last}|${all.length}|${zoom?.from}|${zoom?.to}`}
-          >
-            {bands.map((band, index) => (
-              <path
-                key={index}
-                d={band.path}
-                fill={band.gain ? token("profit-band") : token("loss-band")}
-              />
-            ))}
-            <polyline
-              points={line((day) => day.injected)}
-              fill="none"
-              stroke={token("text-muted")}
-              strokeWidth={LINE.rule}
-              strokeDasharray={BASELINE_DASH}
-            />
+          <g className="ag-redraw" key={`${first}|${last}|${all.length}`}>
+            {offAxis ? null : (
+              <>
+                {bands.map((band, index) => (
+                  <path
+                    key={index}
+                    d={band.path}
+                    fill={band.gain ? token("profit-band") : token("loss-band")}
+                  />
+                ))}
+                <polyline
+                  points={line((day) => day.injected)}
+                  fill="none"
+                  stroke={token("text-muted")}
+                  strokeWidth={LINE.rule}
+                  strokeDasharray={BASELINE_DASH}
+                />
+              </>
+            )}
             {bands.map((band, index) => (
               <polyline
                 key={`value-${index}`}
@@ -403,17 +419,6 @@ function BookHistoryPlot({
               />
             </g>
           ) : null}
-          {drag && drag.from !== drag.to ? (
-            <rect
-              x={x(Math.min(drag.from, drag.to))}
-              y={PLOT.top}
-              width={Math.abs(x(drag.to) - x(drag.from))}
-              height={plotH}
-              fill={token("surface-hover")}
-              stroke={token("border")}
-              pointerEvents="none"
-            />
-          ) : null}
           {ticks.map((index) => (
             <text
               key={index}
@@ -432,14 +437,14 @@ function BookHistoryPlot({
           <ChartTip
             x={(x(measure.from) + x(measure.to)) / 2}
             width={width}
-            title={`${formatDate(days[measure.from]!.date)} → ${formatDate(days[measure.to]!.date)}`}
+            title={`${formatDay(days[measure.from]!.date)} → ${formatDay(days[measure.to]!.date)}`}
             rows={bookSpanTip(days[measure.from]!, days[measure.to]!, labels, money)}
           />
-        ) : hovered && hover !== null && !drag && !measure ? (
+        ) : hovered && hover !== null && !measure ? (
           <ChartTip
             x={x(hover)}
             width={width}
-            title={formatDate(hovered.date)}
+            title={formatDay(hovered.date)}
             rows={tipRows(hovered)}
           />
         ) : null}

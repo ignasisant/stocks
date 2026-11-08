@@ -124,7 +124,7 @@ def positions(
         # `values={}` is "priced at nothing": the frame keeps its shape with
         # NaN values, and `positions_frame` never reaches for a quote.
         table = positions_frame(
-            loaders.ledger_state(db, mtime, ccy)[1], base=ccy, values={}
+            loaders.ledger_state(db, mtime, ccy).positions, base=ccy, values={}
         )
     if table.empty:
         return Positions(base=ccy, positions=[], unpriced=0)
@@ -275,7 +275,7 @@ def transactions(
     """
     ccy = reporting_currency(account, base)
     db = str(account.db)
-    txs = loaders.ledger_state(db, loaders.db_mtime(db), ccy)[0]
+    txs = loaders.ledger_state(db, loaders.db_mtime(db), ccy).txs
     wanted = edits.Selector(
         ticker=ticker, broker=broker, action=action, since=since, until=until
     )

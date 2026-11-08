@@ -17,8 +17,9 @@
 import { maybe, sectorKey } from "../sentiment/format";
 import { countryName } from "./countries";
 import { planMoves, waitingMoves } from "./filter";
-import { OWN_LABEL, foreign, longDay, metric, money, percent, score } from "./format";
+import { OWN_LABEL, foreign, longDay, metric, score } from "./format";
 import type { Review, ReviewNote, ReviewRow } from "./types";
+import { money, percent } from "../../shell/format";
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
 
@@ -37,20 +38,20 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
   const head = tags.length ? `${name} (${tags.join(", ")})` : name;
   const parts: string[] = [t(`review.verdict_${row.verdict}`)];
   if (row.held) {
-    const weight = percent(row.weight, lang);
-    const target = percent(row.target_weight, lang);
+    const weight = percent(row.weight, { lang });
+    const target = percent(row.target_weight, { lang });
     if (weight)
       parts[0] +=
         target && target !== weight ? `, ${weight} → ${target}` : `, ${weight}`;
-    const move = money(row.delta, data.base, lang, true);
-    const tax = money(row.tax, data.plan.tax_currency, lang);
+    const move = money(row.delta, { currency: data.base, lang, signed: true });
+    const tax = money(row.tax, { currency: data.plan.tax_currency, lang });
     if (move)
       parts[0] += tax ? ` (${move}, ${t("review.col_tax")} ${tax})` : ` (${move})`;
-    const pnl = percent(row.pnl_pct, lang);
+    const pnl = percent(row.pnl_pct, { lang });
     if (pnl) parts.push(`${t("review.col_pnl")} ${pnl}`);
   } else {
-    const target = percent(row.target_weight, lang);
-    const move = money(row.delta, data.base, lang, true);
+    const target = percent(row.target_weight, { lang });
+    const move = money(row.delta, { currency: data.base, lang, signed: true });
     if (target && move) parts[0] += `, → ${target} (${move})`;
   }
   if (row.quality !== null && row.cheapness !== null) {
@@ -96,11 +97,11 @@ export function noteText(
       : "",
     country: note.country ? countryName(note.country, lang) : "",
     currency: note.currency ?? "",
-    weight: percent(note.weight, lang) ?? na,
-    amount: money(note.amount, taxCurrency, lang) ?? na,
+    weight: percent(note.weight, { lang }) ?? na,
+    amount: money(note.amount, { currency: taxCurrency, lang }) ?? na,
     tickers: (note.tickers ?? []).join(", "),
     bucket: note.bucket ? t(`profile.plan_bucket_${note.bucket}`) : "",
-    target: percent(note.target ?? null, lang) ?? na,
+    target: percent(note.target ?? null, { lang }) ?? na,
   });
   return note.day
     ? `${text} ${t(`review.note_${note.key}_window`, { date: note.day })}`
@@ -122,9 +123,11 @@ export function buildPrompt(data: Review, t: T, lang: string, filter = ""): stri
       out.length + into.length === 0
         ? t("review.prompt_stay")
         : t("review.prompt_plan", {
-            sells: money(data.plan.sells, data.base, lang) ?? "—",
-            buys: money(data.plan.buys, data.base, lang) ?? "—",
-            tax: money(data.plan.tax, data.plan.tax_currency, lang) ?? t("review.na"),
+            sells: money(data.plan.sells, { currency: data.base, lang }) ?? "—",
+            buys: money(data.plan.buys, { currency: data.base, lang }) ?? "—",
+            tax:
+              money(data.plan.tax, { currency: data.plan.tax_currency, lang }) ??
+              t("review.na"),
           }),
     );
     const waiting = waitingMoves(data);

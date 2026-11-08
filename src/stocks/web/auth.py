@@ -21,15 +21,15 @@ session to fall back on.
 from __future__ import annotations
 
 import functools
+import inspect
 import json
-import threading
 import uuid
 from collections.abc import Container
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 
-from stocks import accounts, atomic, obs, storage
+from stocks import accounts, obs, storage, userstore
 from stocks import watchlist as wl
 from stocks.chat import memory
 from stocks.config import PROJECT_ROOT, stat_key
@@ -52,18 +52,10 @@ _USER_FILES = accounts.USER_FILES
 _migrate_legacy = accounts.migrate_legacy
 
 
-def _persist(path: Path) -> None:
-    """Mirror to the bucket after a committed local write.
-
-    A cloud failure must not fail the request — the local write has landed and
-    the caller's answer is true — but it is logged: the local copy still
-    vanishes on the next container restart.
-    """
-    try:
-        storage.persist(path)
-    except Exception as exc:
-        obs.warn("storage.persist_failed", file=path.name,
-                 error_type=type(exc).__name__)
+# The bucket mirror every write here goes through: a failure is logged, never
+# raised into a request whose local write already landed. A name of its own
+# so the tests that count mirrored files patch one place.
+_persist = userstore.persist
 
 
 def delete_account(paths: UserPaths) -> None:
@@ -152,11 +144,7 @@ def load_action(path: Path) -> dict:
     Shaped like load_prefs: unreadable or corrupt reads as "nothing stored",
     which sends the dashboard down the regenerate path instead of an error.
     """
-    try:
-        out = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError):
-        return {}
-    return out if isinstance(out, dict) else {}
+    return userstore.read(path)
 
 
 def save_action(card: dict, path: Path) -> None:
@@ -167,8 +155,7 @@ def save_action(card: dict, path: Path) -> None:
     start would spend another unit of the free allowance on a card the account
     already has.
     """
-    atomic.write_json(path, card, indent=2)
-    _persist(path)
+    userstore.write(path, card, mirror=_persist)
 
 
 # ------------------------------------------------------ sector verdicts
@@ -180,11 +167,7 @@ def load_verdicts(path: Path) -> dict:
     Same contract as load_action: unreadable or corrupt reads as "nothing
     stored", which sends the page down the regenerate path, not an error page.
     """
-    try:
-        out = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError):
-        return {}
-    return out if isinstance(out, dict) else {}
+    return userstore.read(path)
 
 
 def save_verdicts(verdicts: dict, path: Path) -> None:
@@ -196,8 +179,7 @@ def save_verdicts(verdicts: dict, path: Path) -> None:
     losing the file to a container recycle would charge the reader twice for
     the same paragraph.
     """
-    atomic.write_json(path, verdicts, indent=2)
-    _persist(path)
+    userstore.write(path, verdicts, mirror=_persist)
 
 # ------------------------------------------------------- investor profile
 # Who the assistant is advising, stated by the user (not hard-coded). Stored
@@ -319,15 +301,16 @@ _TITLE_MAX = 80
 
 # Every write is a read-modify-write of the whole book, and since the daily
 # card files its thread from a background job, two can now overlap inside one
-# process: a card filed while a chat turn is being saved. One lock for all of
-# them. Re-entrant only so a writer may call another without deadlocking.
-_book_lock = threading.RLock()
-
-
+# process: a card filed while a chat turn is being saved. Each writer holds
+# its book's lock (`userstore.lock`, re-entrant so a writer may call another);
+# two accounts' books no longer queue behind each other.
 def _locked(fn):
+    signature = inspect.signature(fn)
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        with _book_lock:
+        path = signature.bind(*args, **kwargs).arguments["path"]
+        with userstore.lock(path):
             return fn(*args, **kwargs)
 
     return wrapper
@@ -458,8 +441,7 @@ def _pruned(book: dict) -> dict:
 
 def save_book(book: dict, path: Path) -> None:
     kept = _pruned(book)
-    atomic.write_json(path, kept, indent=2)
-    _persist(path)
+    userstore.write(path, kept, mirror=_persist)
     # A thread that is gone must not keep answering questions through the
     # memory index — whether the reader deleted it, KEEP_DAYS ran out on it or
     # a cap let it go. Swept here, where every one of those lands.

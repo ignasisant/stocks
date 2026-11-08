@@ -19,16 +19,18 @@ import { useApi, type Query } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { DenseRows, Responsive } from "../../ui/Rows";
-import { CardQuery, Card, CardTitle, Note, TickerCell } from "./ui";
-import { decimal, money, percent, plain, priceDigits, type Translate } from "./format";
+import { CardQuery, Card, CardTitle, Note } from "./ui";
+import { plain, priceDigits, type Translate } from "./format";
 import type { Extreme, Extremes } from "./types";
 import type { Book } from "./Glance";
+import { decimal, money, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 function gap(extreme: Extreme, t: Translate, lang: string): string {
   // Within a hundredth of a percent prints as "-0,0%": that is the edge.
   if (extreme.distance === null || Math.abs(extreme.distance) < 0.0005)
     return t(extreme.edge === "high" ? "home.at_high" : "home.at_low");
-  return percent(extreme.distance, lang, { signed: true, digits: 1 }) ?? "";
+  return percent(extreme.distance, { lang, signed: "always", digits: 1 }) ?? "";
 }
 
 /** The two runs the card draws, highs first; an empty run drops out. */
@@ -92,8 +94,8 @@ export function ExtremesCard({
     const currency = currencies.get(extreme.ticker);
     return (
       (currency
-        ? money(extreme.price, currency, lang, { digits: priceDigits(extreme.price) })
-        : decimal(extreme.price, lang, priceDigits(extreme.price))) ?? na
+        ? money(extreme.price, { currency, lang, digits: priceDigits(extreme.price) })
+        : decimal(extreme.price, { lang, digits: priceDigits(extreme.price) })) ?? na
     );
   };
 
@@ -133,7 +135,10 @@ export function ExtremesCard({
                             {/* The name ellipsises here rather than wrapping the
                             row onto two lines in a narrow column. */}
                             <td className="hm-tick-cell">
-                              <TickerCell ticker={extreme.ticker} />
+                              <TickerCell
+                                className="hm-ticker"
+                                ticker={extreme.ticker}
+                              />
                             </td>
                             <td className="hm-num">{price(extreme)}</td>
                             <td className="hm-num hm-muted">{gap(extreme, t, lang)}</td>

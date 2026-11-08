@@ -246,13 +246,23 @@ def test_the_weekly_review_can_be_turned_off(client, account, signed_in):
     assert json.loads(account.prefs.read_text())["notify_weekly"] is False
 
 
+def test_the_friday_email_reads_on_until_switched_off(client, account, signed_in):
+    """On by default for every account, like the cron (`weekly_email.PREF`)."""
+    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
+        "notify_weekly_email"
+    ] is True
+    signed_in.patch("/v1/prefs", json={"notify_weekly_email": False})
+    assert json.loads(account.prefs.read_text())["notify_weekly_email"] is False
+
+
 def test_every_delivery_the_profile_page_writes_is_writable_here(
     client, account, signed_in
 ):
-    """The sweep, pinned. The Profile page writes exactly these three keys from
-    its notification card; a fourth added there and not here would save on one
-    surface and 422 on the other."""
-    for key in ("notify_digest", "notify_weekly", "notify_alerts"):
+    """The sweep, pinned. The Profile page writes exactly these keys from its
+    notification and email cards; one added there and not here would save on
+    one surface and 422 on the other."""
+    for key in ("notify_briefing", "notify_digest", "notify_weekly", "notify_alerts",
+                "notify_weekly_email"):
         response = signed_in.patch("/v1/prefs", json={key: False})
         assert response.status_code == 200, key
         assert response.json()[key] is False, key

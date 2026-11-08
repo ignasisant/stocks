@@ -27,10 +27,11 @@ import { useSpan } from "../../shell/useSpan";
 import { BASELINE_DASH, LINE } from "../../ui/chart/marks";
 import { Tip } from "../../ui/chart/Tip";
 import { Spoken, useScrub } from "../../ui/chart/useScrub";
-import { money, monthDay, percent } from "./format";
+import { monthDay } from "./format";
 import { Kpi, chipFor } from "../../ui/Kpi";
 import { Segmented } from "../../ui/Segmented";
 import type { History } from "./types";
+import { money, percent } from "../../shell/format";
 
 const WIDTH = 320;
 const HEIGHT = 56;
@@ -224,8 +225,8 @@ export function Spark({ history }: { history: History | null }) {
     if (!ending) start = index;
   }
 
-  const high = money(Math.max(...levels), base, lang);
-  const low = money(floor, base, lang);
+  const high = money(Math.max(...levels), { currency: base, lang });
+  const low = money(floor, { currency: base, lang });
 
   // The peak of the value line itself, not of whichever of the two series
   // happens to be higher — "period max" is a claim about what the book was
@@ -242,24 +243,27 @@ export function Spark({ history }: { history: History | null }) {
     const gain = day.value >= day.injected;
     const pnl = day.value - day.injected;
     const pct = day.injected
-      ? percent(pnl / day.injected, lang, { signed: true })
+      ? percent(pnl / day.injected, { lang, digits: 2, signed: "always" })
       : null;
     return [
       {
         label: t("home.chart_value"),
-        value: money(day.value, base, lang),
+        value: money(day.value, { currency: base, lang }),
         color: gain ? token("up") : token("down"),
       },
-      { label: t("home.chart_injected"), value: money(day.injected, base, lang) },
+      {
+        label: t("home.chart_injected"),
+        value: money(day.injected, { currency: base, lang }),
+      },
       {
         label: "",
-        value: `${money(pnl, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`,
+        value: `${money(pnl, { currency: base, lang, signed: "always" })}${pct ? ` (${pct})` : ""}`,
       },
       ...(bench
         ? [
             {
               label: t("home.chart_index"),
-              value: money(bench[at]!, base, lang),
+              value: money(bench[at]!, { currency: base, lang }),
               color: benchColor,
             },
           ]
@@ -298,7 +302,8 @@ export function Spark({ history }: { history: History | null }) {
     const to = days[toAt]!;
     const moved = to.value - from.value;
     const put = to.injected - from.injected;
-    const signed = (value: number) => money(value, base, lang, { signed: true });
+    const signed = (value: number) =>
+      money(value, { currency: base, lang, signed: "always" });
     return [
       {
         label: t("home.chart_value"),
@@ -330,22 +335,26 @@ export function Spark({ history }: { history: History | null }) {
   /** A gap as "+€1,200 (+8.4%)": the amount, and its share of what went in. */
   const gap = (day: (typeof days)[number]) => {
     const pct = day.injected
-      ? percent((day.value - day.injected) / day.injected, lang, { signed: true })
+      ? percent((day.value - day.injected) / day.injected, {
+          lang,
+          digits: 2,
+          signed: "always",
+        })
       : null;
-    return `${money(day.value - day.injected, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`;
+    return `${money(day.value - day.injected, { currency: base, lang, signed: "always" })}${pct ? ` (${pct})` : ""}`;
   };
   const end = days[days.length - 1]!;
   const summary = t("home.chart_summary", {
-    value: money(end.value, base, lang) ?? "",
+    value: money(end.value, { currency: base, lang }) ?? "",
     gap: gap(end),
-    injected: money(end.injected, base, lang) ?? "",
+    injected: money(end.injected, { currency: base, lang }) ?? "",
     range: range in WORDS ? t(WORDS[range as keyof typeof WORDS]) : range,
   });
   const sentence = hovered
     ? t("home.chart_spoken", {
         date: monthDay(hovered.date, t) ?? hovered.date,
-        value: money(hovered.value, base, lang) ?? "",
-        injected: money(hovered.injected, base, lang) ?? "",
+        value: money(hovered.value, { currency: base, lang }) ?? "",
+        injected: money(hovered.injected, { currency: base, lang }) ?? "",
         gap: gap(hovered),
       })
     : null;
@@ -414,7 +423,7 @@ export function Spark({ history }: { history: History | null }) {
             <span className="hm-spark-key hm-spark-max" />
             {t("home.chart_period_max")}
             <strong className="hm-spark-legend-figure">
-              {money(maxValue, base, lang)}
+              {money(maxValue, { currency: base, lang })}
             </strong>
           </li>
         </ul>
@@ -631,11 +640,12 @@ export function AverageTile({ history }: { history: History | null }) {
     values.slice(-SMA_WINDOW).reduce((sum, value) => sum + value, 0) / SMA_WINDOW;
   const last = values[values.length - 1]!;
   const gap = mean ? (last - mean) / mean : null;
-  const figure = gap === null ? null : percent(gap, lang, { signed: true });
+  const figure =
+    gap === null ? null : percent(gap, { lang, digits: 2, signed: "always" });
   return (
     <Kpi
       label={t("home.sma20_tile")}
-      value={money(mean, base, lang) ?? "—"}
+      value={money(mean, { currency: base, lang }) ?? "—"}
       chip={chipFor(gap, figure)}
       help={t("home.sma20_help")}
     />

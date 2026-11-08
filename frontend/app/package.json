@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "format": "prettier --write src index.html",
     "test": "vitest run",
-    "knip": "knip"
+    "knip": "knip",
+    "gen:api": "cd ../.. && uv run python frontend/app/scripts/gen_api_types.py"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

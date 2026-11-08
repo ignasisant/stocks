@@ -9,7 +9,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { moveBetween, PriceChart, spanLength, stretch, zoomable } from "./PriceChart";
+import {
+  labeller,
+  moveBetween,
+  PriceChart,
+  spanLength,
+  stretch,
+  zoomable,
+} from "./PriceChart";
 import { Legend, Tooltip, frame } from "./plot";
 import type { Bars } from "./types";
 
@@ -76,6 +83,15 @@ describe("PriceChart", () => {
     const desk = render(false);
     expect(phone).toMatch(/aria-pressed="false"[^>]*>(?:(?!<\/button>).)*SMA200/);
     expect(desk).toMatch(/aria-pressed="true"[^>]*>(?:(?!<\/button>).)*SMA200/);
+  });
+});
+
+describe("labeller", () => {
+  it("carries the day over several intraday sessions, the clock alone on one", () => {
+    const stamp = "2026-05-07 15:30";
+    expect(labeller("en-GB", true, false, true)(stamp)).toBe("Thu 7, 15:30");
+    expect(labeller("es", true, false, true)(stamp)).toBe("jue 7, 15:30");
+    expect(labeller("en-GB", true)(stamp)).toBe("15:30");
   });
 });
 

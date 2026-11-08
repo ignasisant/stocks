@@ -338,13 +338,14 @@ def _run_unfavorite(act: Action, path: Path) -> None:
 def _run_set_alerts(act: Action, path: Path) -> None:
     from dataclasses import asdict
 
+    from stocks import watchlist as wl
+
     holding = _holding(act.ticker, path)
     existing = [
         {k: v for k, v in asdict(a).items() if v is not None}
         for a in (holding.alerts if holding else [])
     ]
-    new = [a for a in act.alerts if a not in existing]
-    _auth().set_alerts(act.ticker, existing + new, path)
+    _auth().set_alerts(act.ticker, wl.add_alerts(existing, act.alerts), path)
 
 
 def _run_tag(act: Action, path: Path) -> None:

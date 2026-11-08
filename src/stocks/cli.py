@@ -173,6 +173,41 @@ def cmd_nudge(args: argparse.Namespace) -> None:
         print(f"{label}: {result}")
 
 
+def cmd_weekly_email(args: argparse.Namespace) -> None:
+    """Render one account's Friday email, or send one copy (notify/weekly_email.py).
+
+    The schedule sends the real ones; this is the look before it does. With
+    --to the copy goes to that address, whatever the account's switch says.
+    """
+    from datetime import date
+
+    from stocks import accounts
+    from stocks.notify import weekly_email
+    from stocks.notify.schedule import _roster
+
+    roster = dict(_roster())
+    paths = roster.get(args.user)
+    if paths is None:
+        have = ", ".join(sorted(roster)) or "none"
+        raise SystemExit(f"unknown user {args.user!r}; have: {have}")
+    accounts.restore_account(paths, seed=False)
+    prefs = accounts.load_prefs(paths.prefs)
+    day = date.fromisoformat(args.day) if args.day else date.today()
+    if args.to:
+        print(weekly_email.send_for(args.user, paths, prefs, day, to=args.to,
+                                    base_url=args.base_url))
+        return
+    email = weekly_email.compose(args.user, paths, prefs, day,
+                                 base_url=args.base_url)
+    if isinstance(email, str):
+        raise SystemExit(f"no email: {email}")
+    print(f"To: {email.to or '(no address)'}\nSubject: {email.subject}\n"
+          f"Preheader: {email.preheader}\n\n{email.text}")
+    if args.out:
+        Path(args.out).write_text(email.html, encoding="utf-8")
+        print(f"\nhtml -> {args.out}")
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Send a test notification down the real delivery paths.
 
@@ -686,8 +721,8 @@ def cmd_tx(args: argparse.Namespace) -> None:
     elif args.tx_command == "import":
         n = import_csv(Path(args.file))
         print(f"imported {n} transactions from {args.file}")
-    elif args.tx_command == "revolut":
-        _tx_revolut(Path(args.file), commit=args.commit)
+    elif args.tx_command in ("statement", "revolut"):
+        _tx_statement(Path(args.file), commit=args.commit)
     else:  # list
         txs = all_transactions()
         if not txs:
@@ -700,20 +735,23 @@ def cmd_tx(args: argparse.Namespace) -> None:
             )
 
 
-def _tx_revolut(path: Path, *, commit: bool) -> None:
-    """Parse + validate a Revolut statement (CSV or PDF); write only on --commit."""
+def _tx_statement(path: Path, *, commit: bool) -> None:
+    """Parse + validate a broker statement; write only on --commit.
+
+    The parser is the one the Import page and the chat would pick
+    (`autodetect.detect`), without the model fallback: a file no parser owns
+    is reported, never guessed at."""
     from datetime import datetime
 
-    from stocks.portfolio import last_import, revolut, revolut_pdf
+    from stocks.data import fetch
+    from stocks.portfolio import autodetect, last_import
     from stocks.portfolio.ledger import add_many, all_transactions
     from stocks.portfolio.validate import known_tickers, validate
 
-    if path.suffix.lower() == ".pdf":
-        result = revolut_pdf.parse_pdf(path)
-    else:
-        result = revolut.parse_csv(path.read_text(encoding="utf-8-sig"))
-
-    from stocks.data import fetch
+    detected = autodetect.detect(path.name, path.read_bytes())
+    result = detected.result
+    if detected.label:
+        print(f"read as {detected.label}")
 
     v = validate(
         result, all_transactions(), known=known_tickers(), splits=fetch.splits
@@ -1409,6 +1447,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ntest.set_defaults(func=cmd_notify_test)
 
+    p_wmail = sub.add_parser(
+        "weekly-email",
+        help="render one account's Friday email, or send one test copy",
+    )
+    p_wmail.add_argument(
+        "--user", metavar="LABEL", default="owner",
+        help="'owner' (default) or a data/users/ slug",
+    )
+    p_wmail.add_argument("--day", metavar="YYYY-MM-DD", help="the Friday (default today)")
+    p_wmail.add_argument("--out", metavar="FILE", help="write the html here")
+    p_wmail.add_argument(
+        "--to", metavar="ADDRESS",
+        help="send one copy to this address through Resend; nothing else changes",
+    )
+    p_wmail.add_argument(
+        "--base-url", metavar="URL",
+        help="link base for the buttons (default [app] public_url)",
+    )
+    p_wmail.set_defaults(func=cmd_weekly_email)
+
     p_nudge = sub.add_parser(
         "nudge",
         help="remind accounts with push on that went quiet for a week (two at most)",
@@ -1523,9 +1581,10 @@ def build_parser() -> argparse.ArgumentParser:
         "file", help="CSV: date,ticker,action,quantity,price,currency,fee,note")
 
     p_rev = tx_sub.add_parser(
-        "revolut", help="parse + validate a Revolut statement (CSV or PDF)"
+        "statement", aliases=["revolut"],
+        help="parse + validate a broker statement (any importer's format)",
     )
-    p_rev.add_argument("file", help="Revolut trading account statement (.csv or .pdf)")
+    p_rev.add_argument("file", help="broker statement (.csv, .xlsx or .pdf)")
     p_rev.add_argument(
         "--commit", action="store_true",
         help="write importable rows to the ledger (default: dry-run preview)",

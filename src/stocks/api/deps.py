@@ -17,7 +17,6 @@ the same way the web app resolves them.
 
 from __future__ import annotations
 
-import json
 import shutil
 from typing import Annotated
 
@@ -218,10 +217,7 @@ def reporting_currency(paths: UserPaths, override: str | None = None) -> str:
         # brand-new account gets, and `?base=` above is how a guest changes the
         # question for the length of one request.
         return "EUR"
-    try:
-        stored = json.loads(paths.prefs.read_text()).get("currency")
-    except (OSError, json.JSONDecodeError, AttributeError):
-        stored = None
+    stored = accounts.stored_prefs(paths.prefs).get("currency")
     code = str(stored or "EUR").upper()
     return code if code in CURRENCIES else "EUR"
 

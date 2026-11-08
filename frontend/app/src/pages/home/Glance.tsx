@@ -22,8 +22,8 @@ import { useCurrency } from "../../shell/session";
 import { Link } from "../../shell/router";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
-import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
-import { money, percent, plain, priceDigits } from "./format";
+import { Card, CardQuery, CardTitle, Note } from "./ui";
+import { plain, priceDigits } from "./format";
 import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
 import { Segmented } from "../../ui/Segmented";
 import type {
@@ -37,6 +37,8 @@ import type {
   Summary,
   Transactions,
 } from "./types";
+import { money, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 /** The windows the card offers, and the labels its range selector uses. */
 const WINDOWS = [
@@ -93,8 +95,8 @@ export function useBook(nonce: number, enabled: boolean): Query<Book | null> {
     const [summary, performance, positions, day, week, month, market, history] =
       await Promise.all([
         get<Summary>("/portfolio/summary"),
-        get<Performance>("/portfolio/performance"),
-        get<Positions>("/portfolio/positions"),
+        get("/portfolio/performance"),
+        get("/portfolio/positions"),
         // Every name that moved, not the server's cut: the card draws its own
         // cut and unfolds to the rest on "show all" without another trip.
         get<Movers>("/movers", { window: "day", all: "true" }),
@@ -237,7 +239,7 @@ function GlanceCard({ book }: { book: Book }) {
   }
 
   const realized = summary.realized ?? 0;
-  const paid = money(summary.cost, currency, lang) ?? na;
+  const paid = money(summary.cost, { currency, lang }) ?? na;
   // The row sets the value beside everything that went in, so a name with no
   // price stands in it at what it cost, as the value history carries it.
   // Leaving it out put a 28k "value today" beside 111k injected one
@@ -266,27 +268,30 @@ function GlanceCard({ book }: { book: Book }) {
         <KpiGrid>
           <Kpi
             label={t("portfolio.series_injected")}
-            value={money(performance.injected, currency, lang) ?? na}
+            value={money(performance.injected, { currency, lang }) ?? na}
             help={t("portfolio.overview_injected_help")}
           />
           <Kpi
             label={t("home.market_value")}
-            value={money(worth, currency, lang) ?? na}
+            value={money(worth, { currency, lang }) ?? na}
             help={t("portfolio.market_value_help")}
           />
           {/* The chip is the gain over the money put in — the figure the
               Portfolio overview chips its value with. */}
           <Kpi
             label={t("home.total_gain")}
-            value={money(total, currency, lang, { signed: true }) ?? na}
+            value={money(total, { currency, lang, signed: "always" }) ?? na}
             // The sum itself, in the reader's figures: the one sentence that
             // makes "gain" mean "value less what went in".
             help={t("home.total_gain_help", {
-              value: money(worth, currency, lang) ?? na,
-              injected: money(performance.injected, currency, lang) ?? na,
-              gain: money(total, currency, lang, { signed: true }) ?? na,
+              value: money(worth, { currency, lang }) ?? na,
+              injected: money(performance.injected, { currency, lang }) ?? na,
+              gain: money(total, { currency, lang, signed: "always" }) ?? na,
             })}
-            chip={chipFor(total, percent(totalPct, lang, { signed: true, digits: 1 }))}
+            chip={chipFor(
+              total,
+              percent(totalPct, { lang, signed: "always", digits: 1 }),
+            )}
           />
         </KpiGrid>
         <KpiGrid>
@@ -296,7 +301,7 @@ function GlanceCard({ book }: { book: Book }) {
               sale" is not "broke even"): the tile reads +0 and draws no chip. */}
           <Kpi
             label={t("home.realised_pl")}
-            value={money(realized, currency, lang, { signed: true }) ?? na}
+            value={money(realized, { currency, lang, signed: "always" }) ?? na}
             help={t("home.realised_pl_help")}
             chip={
               summary.realized === null
@@ -307,18 +312,17 @@ function GlanceCard({ book }: { book: Book }) {
                       summary.realized_cost
                         ? summary.realized / summary.realized_cost
                         : null,
-                      lang,
-                      { signed: true, digits: 1 },
+                      { lang, signed: "always", digits: 1 },
                     ),
                   )
             }
           />
           <Kpi
             label={t("home.unrealised_pl")}
-            value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
+            value={money(summary.pnl, { currency, lang, signed: "always" }) ?? na}
             chip={chipFor(
               summary.pnl_pct,
-              percent(summary.pnl_pct, lang, { signed: true, digits: 1 }),
+              percent(summary.pnl_pct, { lang, signed: "always", digits: 1 }),
             )}
             help={t("home.unrealised_pl_help", { paid })}
             // What the chip is measured on, as a phrase rather than a term:
@@ -329,7 +333,9 @@ function GlanceCard({ book }: { book: Book }) {
               money in, the TWR strips it out. Neither stands in for the other. */}
           <Kpi
             label={t("home.irr_annualised")}
-            value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
+            value={
+              percent(performance.irr, { lang, signed: "always", digits: 1 }) ?? na
+            }
             help={t("portfolio.mwr_help")}
             note={
               performance.irr_annualised === false
@@ -340,8 +346,11 @@ function GlanceCard({ book }: { book: Book }) {
           <Kpi
             label={t("home.twr_annualised")}
             value={
-              percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ??
-              na
+              percent(performance.twr_annualised, {
+                lang,
+                signed: "always",
+                digits: 1,
+              }) ?? na
             }
             help={t("portfolio.twr_return_help")}
             note={
@@ -376,11 +385,15 @@ function GlanceCard({ book }: { book: Book }) {
             // `basket: null` means the price history does not reach back over the
             // window. That is "we cannot say", not "the book was flat".
             const { basket, amount, base } = book.movers[key];
-            const figure = percent(basket, lang, { signed: true });
+            const figure = percent(basket, { lang, digits: 2, signed: "always" });
             // Money leads and the percentage chips it. Printing the fraction in
             // both slots states one fact twice and leaves out the one a reader
             // came for: how much moved.
-            const cash = money(amount, base || currency, lang, { signed: true });
+            const cash = money(amount, {
+              currency: base || currency,
+              lang,
+              signed: "always",
+            });
             return (
               <Kpi
                 key={key}
@@ -544,18 +557,24 @@ function MoverTable({
             <tbody>
               {rows.map((row) => {
                 const position = held.get(row.ticker);
-                const move = percent(row.pct, lang, { signed: true });
+                const move = percent(row.pct, { lang, digits: 2, signed: "always" });
                 return (
                   <tr key={row.ticker}>
                     <td>
                       {/* Symbol alone: five columns in half a card have no
                       room for a name. */}
-                      <TickerCell ticker={row.ticker} name={false} />
+                      <TickerCell
+                        className="hm-ticker"
+                        ticker={row.ticker}
+                        name={false}
+                      />
                     </td>
                     {/* In the currency the name trades in — a share price is
                     quoted by its own market, unlike the value beside it. */}
                     <td className="hm-num">
-                      {money(position?.price, position?.currency || currency, lang, {
+                      {money(position?.price, {
+                        currency: position?.currency || currency,
+                        lang,
                         digits: priceDigits(position?.price),
                       }) ?? na}
                     </td>
@@ -563,10 +582,10 @@ function MoverTable({
                       <MoveChip row={row} text={move} />
                     </td>
                     <td className="hm-num">
-                      {money(position?.value, currency, lang) ?? na}
+                      {money(position?.value, { currency, lang }) ?? na}
                     </td>
                     <td className="hm-num">
-                      {percent(position?.weight, lang, { digits: 1 }) ?? na}
+                      {percent(position?.weight, { lang, digits: 1 }) ?? na}
                     </td>
                   </tr>
                 );
@@ -581,18 +600,24 @@ function MoverTable({
             spec={{
               ticker: (row) => row.ticker,
               badge: (row) => (
-                <MoveChip row={row} text={percent(row.pct, lang, { signed: true })} />
+                <MoveChip
+                  row={row}
+                  text={percent(row.pct, { lang, digits: 2, signed: "always" })}
+                />
               ),
-              value: (row) => money(held.get(row.ticker)?.value, currency, lang) ?? na,
+              value: (row) =>
+                money(held.get(row.ticker)?.value, { currency, lang }) ?? na,
               sub: (row) => {
                 const position = held.get(row.ticker);
                 return [
-                  money(position?.price, position?.currency || currency, lang, {
+                  money(position?.price, {
+                    currency: position?.currency || currency,
+                    lang,
                     digits: priceDigits(position?.price),
                   }),
                   position?.weight != null
                     ? t("home.weight_short", {
-                        pct: percent(position.weight, lang, { digits: 1 }) ?? "",
+                        pct: percent(position.weight, { lang, digits: 1 }) ?? "",
                       })
                     : null,
                 ];

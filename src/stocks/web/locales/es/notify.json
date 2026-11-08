@@ -38,5 +38,6 @@
   "notify.ex_dividends": "Ex-dividendo",
   "notify.weekly_title_book": "Tu semana {change} · cartera {value}",
   "notify.thesis_title": "{ticker}: un hecho contra tu tesis",
-  "notify.thesis_line": "{pillar}: «{quote}»"
+  "notify.thesis_line": "{pillar}: «{quote}»",
+  "notify.since_start": "Desde el inicio"
 }

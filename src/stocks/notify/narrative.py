@@ -178,6 +178,9 @@ def _weekly_prompt(
                                  "pct": round(data.month[1] * 100, 2)},
         "ytd": data.ytd and {"amount": round(data.ytd[0], 2),
                              "pct": round(data.ytd[1] * 100, 2)},
+        "since_start": data.since and {"amount": round(data.since[0], 2),
+                                       "pct": round(data.since[1] * 100, 2),
+                                       "days": data.since_days},
         "benchmark_pct": {
             str(days): None if pct is None else round(pct * 100, 2)
             for days, pct in (data.benchmark or {}).items()

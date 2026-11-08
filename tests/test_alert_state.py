@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from stocks import storage
 from stocks.config import Alert
 from stocks.notify import state as st_mod
 
@@ -82,7 +83,7 @@ def test_load_missing_and_corrupt_tolerated(tmp_path):
 
 def test_save_prunes_stale_fingerprints(tmp_path, monkeypatch):
     persisted = []
-    monkeypatch.setattr(st_mod.storage, "persist", persisted.append)
+    monkeypatch.setattr(storage, "persist", persisted.append)
     path = tmp_path / "alerts_state.json"
     state = st_mod.load_state(path)
     st_mod.should_send(state, "KEEP|above|price=1|w=", fired=True, now=NOW)
@@ -93,8 +94,24 @@ def test_save_prunes_stale_fingerprints(tmp_path, monkeypatch):
     assert persisted == [path]
 
 
+def test_a_writer_saves_only_the_keys_it_owns(tmp_path, monkeypatch):
+    """The digest loads the state, takes a minute, then saves; the alert edges
+    the hourly run moved meanwhile must survive it."""
+    monkeypatch.setattr(storage, "persist", lambda p: None)
+    path = tmp_path / "alerts_state.json"
+    digest_copy = st_mod.load_state(path)
+    hourly = st_mod.load_state(path)
+    st_mod.should_send(hourly, "NVDA|above|price=1|w=", fired=True, now=NOW)
+    st_mod.save_state(hourly, path, only=("alerts",))
+    st_mod.remember_highlight(digest_copy, "today's line")
+    st_mod.save_state(digest_copy, path, only=("highlights", "tax_reminded"))
+    reloaded = st_mod.load_state(path)
+    assert list(reloaded["alerts"]) == ["NVDA|above|price=1|w="]
+    assert st_mod.recent_highlights(reloaded) == ["today's line"]
+
+
 def test_highlight_memory_keeps_the_last_few(tmp_path, monkeypatch):
-    monkeypatch.setattr(st_mod.storage, "persist", lambda p: None)
+    monkeypatch.setattr(storage, "persist", lambda p: None)
     path = tmp_path / "alerts_state.json"
     state = st_mod.load_state(path)
     assert st_mod.recent_highlights(state) == []
@@ -114,7 +131,7 @@ def test_highlight_memory_ignores_blanks_and_junk():
 
 def test_highlight_memory_survives_fingerprint_pruning(tmp_path, monkeypatch):
     """save_state prunes stale alert rules; the highlight history is not one."""
-    monkeypatch.setattr(st_mod.storage, "persist", lambda p: None)
+    monkeypatch.setattr(storage, "persist", lambda p: None)
     path = tmp_path / "alerts_state.json"
     state = st_mod.load_state(path)
     st_mod.should_send(state, "GONE|above|price=1|w=", fired=True, now=NOW)

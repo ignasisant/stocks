@@ -98,7 +98,7 @@ def test_a_late_slot_catches_up_across_midnight_as_its_own_day():
 
 def test_defaults_until_set_and_a_bad_value_reads_as_the_default():
     assert schedule.slots({}) == {
-        job: {"on": True, **spec} for job, spec in schedule.DEFAULTS.items()
+        job: {"on": True, **schedule.DEFAULTS[job]} for job in schedule.JOBS
     }
     prefs = {
         "notify_digest": False,
@@ -202,6 +202,56 @@ def test_the_plan_takes_only_whats_due(account, monkeypatch):
     # 22:45: the next day's card, after the US close, and the day's numbers.
     (due,) = schedule.plan(at("2026-11-02T21:45"))
     assert due.runs == [("card", date(2026, 11, 2)), ("digest", date(2026, 11, 2))]
+
+
+# ------------------------------------------------------------------ the email
+
+FRIDAY = date(2026, 11, 6)
+
+
+class _Paths:
+    db = Path("portfolio.db")
+
+
+@pytest.fixture
+def imported(monkeypatch):
+    from stocks.portfolio import demo
+
+    monkeypatch.setattr(demo, "has_real", lambda db: True)
+
+
+def test_the_email_goes_out_friday_night_after_the_us_close(imported):
+    prefs = {"email": "a@example.com"}
+    # 23:00 Madrid on winter time is 22:00 UTC.
+    assert schedule.email_due(prefs, _Paths, at("2026-11-06T21:59"), None) is None
+    assert schedule.email_due(prefs, _Paths, at("2026-11-06T22:01"), None) == FRIDAY
+    assert schedule.email_due(prefs, _Paths, at("2026-11-06T22:01"), "2026-11-06") is None
+    assert schedule.email_due(prefs, _Paths, at("2026-11-05T22:01"), None) is None
+
+
+def test_no_email_without_an_address_or_once_switched_off(imported):
+    now = at("2026-11-06T22:01")
+    assert schedule.email_due({}, _Paths, now, None) is None
+    off = {"email": "a@example.com", "notify_weekly_email": False}
+    assert schedule.email_due(off, _Paths, now, None) is None
+
+
+def test_the_onboarding_sample_is_not_a_book_to_report(monkeypatch):
+    from stocks.portfolio import demo
+
+    monkeypatch.setattr(demo, "has_real", lambda db: False)
+    prefs = {"email": "a@example.com"}
+    assert schedule.email_due(prefs, _Paths, at("2026-11-06T22:01"), None) is None
+
+
+def test_an_account_with_no_device_and_no_visit_still_gets_the_email(
+    account, monkeypatch, imported
+):
+    account.paths.prefs.write_text(json.dumps({"email": "a@example.com"}))
+    monkeypatch.setattr(schedule, "_roster", lambda: [("jane", account.paths)])
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    (due,) = schedule.plan(at("2026-11-06T22:01"))
+    assert due.runs == [("weekly_email", FRIDAY)]
 
 
 # ------------------------------------------------------------------ the thread

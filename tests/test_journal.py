@@ -584,11 +584,11 @@ def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
         return pd.Series([float("nan"), 12.5], index=pd.DatetimeIndex(days.split(",")))
 
     patch_loaders(monkeypatch, "window_closes", window)
-    got = briefing._closes_on("AMD", [DAY, DAY + timedelta(days=30)])
+    got = briefing.closes_on("AMD", [DAY, DAY + timedelta(days=30)])
     assert got == [None, 12.5]
     assert asked == [("AMD", "2026-10-01,2026-10-31")]
     patch_loaders(monkeypatch, "window_closes", lambda t, d: pd.Series(dtype=float))
-    assert briefing._closes_on("AMD", [DAY]) == [None]
+    assert briefing.closes_on("AMD", [DAY]) == [None]
 
 
 # ----------------------------------------------------------------- criteria

@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from stocks.config import load_watchlist
-from stocks.notify import webpush
+from stocks.notify import mail, webpush
 from stocks.portfolio import demo
 from stocks.web import auth
 
@@ -250,15 +250,20 @@ class News:
     every locale. `step` names the tour step that explains it, which is what
     turns an announcement into somewhere to go; a feature whose step this
     deploy does not carry is not announced at all (see `unseen_news`).
+    `needs`, when set, is the same gate for a feature whose page ships on
+    every deploy but which only works once configured.
 
     """
 
     slug: str
     icon: str
     step: str | None = None
+    needs: Callable[[], bool] | None = None
 
     def announced(self, steps: set[str]) -> bool:
         """Whether this deploy has the feature to send a reader to."""
+        if self.needs is not None and not self.needs():
+            return False
         return self.step is None or self.step in steps
 
 
@@ -582,6 +587,20 @@ RELEASES: tuple[Release, ...] = (
             News(slug="share", icon="share", step="assistant"),
         ),
     ),
+    Release(
+        version="2026.11.1",
+        date="2026-11",
+        items=(
+            # A channel there was none of: the week by email on Fridays, to
+            # every account with an import and no device needed. It arrives
+            # unasked, so the card says where it is switched off: the notify
+            # step's tab, which holds the Email card. Held back until the
+            # deploy can send: a card for mail that never comes is a promise.
+            News(
+                slug="email", icon="mail", step="notify", needs=lambda: mail.configured()
+            ),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version
@@ -653,6 +672,151 @@ def setup_state(prefs: dict, paths, *, signed_in: bool) -> dict[str, bool]:
         "ai": _has_ai_key(prefs, paths),
         "notify": _has_push(prefs, paths) if signed_in else False,
     }
+
+
+@dataclass(frozen=True)
+class Gap:
+    """One thing this account has not set up, with the page that sets it.
+
+    Copy is `email.gap_<key>` (filled with `args`, real counts from the book)
+    and `email.gap_<key>_cta`; `page`/`query` are the app path the button
+    opens (`notify.links.page_url`).
+    """
+
+    key: str
+    page: str
+    query: dict[str, str] = field(default_factory=dict)
+    args: dict[str, str] = field(default_factory=dict)
+
+
+#: A ledger whose newest row is older than this reads as not kept up to date.
+STALE_LEDGER_DAYS = 30
+GAPS_SHOWN = 4
+
+
+def account_gaps(
+    prefs: dict,
+    paths,
+    *,
+    email: str | None = None,
+    held: set[str] | None = None,
+    unpriced: list[str] | tuple[str, ...] = (),
+    today=None,
+    lang: str = "en",
+) -> list[Gap]:
+    """What this account has not configured yet, most consequential first.
+
+    First what makes its own figures wrong (records to fix, names without a
+    price, a ledger left behind), then what it is missing out on. At most
+    `GAPS_SHOWN`; empty when nothing is missing. Each check fails alone and
+    reads as "nothing missing" — a broken check must not nag.
+
+    `held` and `unpriced` come from the caller's book when it has one (the
+    weekly email already replayed it); `held` is read here otherwise.
+    """
+    from datetime import date
+
+    today = today or date.today()
+    gaps: list[Gap] = []
+
+    def check(fn) -> None:
+        try:
+            gap = fn()
+        except Exception:  # noqa: BLE001 — one check, one silent miss
+            return
+        if gap is not None:
+            gaps.append(gap)
+
+    rows: list = []
+    try:
+        from stocks.portfolio.ledger import all_transactions
+
+        rows = demo.without(all_transactions(paths.db))
+    except Exception:  # noqa: BLE001 — unreadable ledger reads as empty
+        rows = []
+
+    def fixes() -> Gap | None:
+        from stocks.api import loaders
+        from stocks.api.routes.import_statement.book_checkup import _FIXABLE
+        from stocks.portfolio import doctor
+        from stocks.portfolio import held as held_sales
+
+        if not rows:
+            return None
+        n = len(held_sales.ready(paths.db)) + len(held_sales.reuploads(rows, paths.db))
+        n += sum(
+            1 for f in doctor.scan(rows, resolve=loaders.display_symbol)
+            if f.kind in _FIXABLE and f.fix
+        )
+        return Gap("fixes", "import_transactions", args={"n": str(n)}) if n else None
+
+    def prices() -> Gap | None:
+        if not unpriced:
+            return None
+        return Gap("unpriced", "ticker", {"ticker": unpriced[0]},
+                   {"names": ", ".join(unpriced)})
+
+    def stale() -> Gap | None:
+        if not rows:
+            return None
+        newest = max(date.fromisoformat(r.date[:10]) for r in rows)
+        if (today - newest).days <= STALE_LEDGER_DAYS:
+            return None
+        from stocks.notify.render import date_line
+
+        return Gap("stale", "import_transactions",
+                   args={"date": date_line(newest, lang)})
+
+    def plan() -> Gap | None:
+        return None if _has_plan(prefs) else Gap("plan", "profile", {"tab": "plan"})
+
+    def rules() -> Gap | None:
+        from stocks.chat import journal
+
+        names = held
+        if names is None:
+            from stocks.api.briefing import held_symbols
+
+            names = held_symbols(paths)
+        if not names:
+            return None
+        live = journal.criteria(journal.load(paths.journal))
+        ruled = {e.ticker.upper() for e in live}
+        bare = sorted(t for t in names if t.upper() not in ruled)
+        if not bare:
+            return None
+        return Gap("rules", "portfolio", {"tab": "positions"},
+                   {"n": str(len(bare)), "total": str(len(names))})
+
+    def push() -> Gap | None:
+        if _has_push(prefs, paths):
+            return None
+        return Gap("push", "profile", {"tab": "notify"})
+
+    def tax() -> Gap | None:
+        if prefs.get("tax_residence"):
+            return None
+        return Gap("tax", "portfolio", {"tab": "tax"})
+
+    def investor() -> Gap | None:
+        if (prefs.get("investor_profile") or {}).get("set"):
+            return None
+        return Gap("investor", "profile", {"tab": "iv"})
+
+    def connector() -> Gap | None:
+        if not email or not _connector_open():
+            return None
+        from stocks.connector import store
+
+        if store.ledger().grants_for(email):
+            return None
+        return Gap("claude", "profile", {"tab": "claude"})
+
+    for fn in (fixes, prices, stale, plan, rules, push, tax, investor, connector):
+        if len(gaps) >= GAPS_SHOWN:
+            break
+        check(fn)
+    return gaps
 
 
 def visible_steps() -> tuple[Step, ...]:

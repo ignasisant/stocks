@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from stocks.analysis import naive_series
+
 INDEX_NAME = "S&P 500"
 INDEX_SYMBOL = "SPY"
 # (row, calendar days): the windows the facts use (`money_change`).
@@ -56,15 +58,6 @@ RANGES: dict[str, int] = {
 }
 
 
-def _naive(series: pd.Series) -> pd.Series:
-    """`series` on naive dates, one value a day, oldest first."""
-    from stocks.analysis import naive_dates
-
-    out = series.dropna().copy()
-    out.index = naive_dates(out.index)
-    return out[~out.index.duplicated(keep="last")].sort_index()
-
-
 def _start(index: pd.Index, days: int):
     """Where a window of `days` calendar days opens on `index`, on the same
     close the book's own window opens (`window_span`); None when `index` does
@@ -93,7 +86,7 @@ def index_series(closes: dict | None, currency: str) -> tuple[pd.Series | None, 
     series = index_in_base(closes or {}, currency)
     if series is None or len(series) < 2:
         return None, ""
-    return _naive(series), currency if currency == "EUR" else "USD"
+    return naive_series(series), currency if currency == "EUR" else "USD"
 
 
 def compare_series(
@@ -110,19 +103,37 @@ def compare_series(
     raw = (closes or {}).get(symbol)
     if raw is None or raw.dropna().empty or symbol not in INDEXES:
         return None, ""
-    series = _naive(raw)
+    series = naive_series(raw)
     if len(series) < 2:
         return None, ""
     native = INDEXES[symbol][1]
     if native == currency:
         return series, currency
+    converted = _at_rate(series, native, currency)
+    return (converted, currency) if converted is not None else (series, native)
+
+
+def index_in_currency(closes: dict | None, currency: str) -> pd.Series | None:
+    """SPY in `currency`, or None — never the dollar series beside a book in
+    another currency: a gap that is the exchange rate's is not the picks'.
+    `index_series` first, then the ECB's daily rate for any base it leaves in
+    dollars."""
+    series, unit = index_series(closes, currency)
+    if series is None or unit == currency:
+        return series
+    return _at_rate(series, unit, currency)
+
+
+def _at_rate(series: pd.Series, native: str, currency: str) -> pd.Series | None:
+    """`series` from `native` into `currency` at the daily rate the book's
+    positions are valued at; None when that rate cannot be had."""
     from stocks.analysis.portfolio import fx_frame
 
     rate = fx_frame([native], series.index, currency).get(native)
     if rate is None:
-        return series, native
+        return None
     converted = (series * rate.reindex(series.index).ffill()).dropna()
-    return (converted, currency) if len(converted) >= 2 else (series, native)
+    return converted if len(converted) >= 2 else None
 
 
 def window_days(span: str, today: pd.Timestamp | None = None) -> int:
@@ -228,8 +239,8 @@ def versus(
 
     if hist is None or hist.empty or not {"value", "injected"} <= set(hist):
         return []
-    value = _naive(hist["value"])
-    injected = _naive(hist["injected"]).reindex(value.index, method="ffill")
+    value = naive_series(hist["value"])
+    injected = naive_series(hist["injected"]).reindex(value.index, method="ffill")
     start = _start(value.index, days) or value.index[0]
     window = value.loc[start:]
     if len(window) < 2:

@@ -31,7 +31,7 @@ from pathlib import Path
 from stocks import obs
 from stocks.chat import clock
 from stocks.chat.tools import Action
-from stocks.portfolio import demo, doctor, edits, ledger, positions, transfers
+from stocks.portfolio import demo, doctor, edits, ledger, ledger_ops, positions, transfers
 from stocks.portfolio import held as shelf
 from stocks.portfolio.ledger import Transaction
 
@@ -291,45 +291,27 @@ def _rename(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     to = act.args.get("to", "")
     if not to:
         return Draft(ctx.tr("chat.book_rename_what", ticker=act.ticker))
-    broker = act.args.get("broker", "")
-    # The label as stored first: renaming "SAN" must not sweep up "SAN.PA"
-    # because the two share a root. The generous match is the fallback for a
-    # reader who named the company rather than the label.
-    found = [t for t in rows if t.ticker == act.ticker
-             and (not broker or transfers._broker(t) == broker)]
-    if not found:
-        found = edits.select(rows, edits.Selector(ticker=act.ticker, broker=broker),
-                             ctx.resolve)
-    found = [t for t in found if t.ticker != to]
+    renamed = ledger_ops.rename(rows, to, label=act.ticker,
+                                broker=act.args.get("broker", ""),
+                                resolve=ctx.resolve)
+    found = renamed.rows
     if not found:
         return Draft(ctx.tr("chat.book_none"))
     if len(found) > MAX_ROWS:
         return Draft(ctx.tr("chat.book_too_many", count=len(found), most=MAX_ROWS))
     summary = ctx.tr("chat.book_summary_rename", count=len(found),
                      ticker=_names(found), to=to)
-    return _planned([{"op": "relabel", "ids": [t.id for t in found], "to": to}],
-                    summary, ctx)
+    return _planned(renamed.ops, summary, ctx)
 
 
 def _transfer(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
-    want = act.ticker
-    broker = act.args.get("broker", "")
-    to_broker = act.args.get("to_broker", "")
-    for f in doctor.scan(rows, ctx.resolve):
-        if f.kind != "transfer":
-            continue
-        d = f.detail
-        named = {d["ticker_out"], d["ticker_in"]}
-        if want not in named and want.split(".")[0] not in {
-            n.split(".")[0] for n in named
-        }:
-            continue
-        if broker and d["broker_out"] != broker:
-            continue
-        if to_broker and d["broker_in"] != to_broker:
-            continue
-        return _planned(f.fix, _finding_summary(f, ctx), ctx)
-    return Draft(ctx.tr("chat.book_no_transfer", ticker=want))
+    f = ledger_ops.find_transfer(rows, act.ticker,
+                                 broker=act.args.get("broker", ""),
+                                 to_broker=act.args.get("to_broker", ""),
+                                 resolve=ctx.resolve)
+    if f is None:
+        return Draft(ctx.tr("chat.book_no_transfer", ticker=act.ticker))
+    return _planned(f.fix, _finding_summary(f, ctx), ctx)
 
 
 def _move(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
@@ -497,15 +479,15 @@ def _check(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     lines += [f"- {_held_line(h, ctx)}" for h in sales[:_FINDINGS]]
     lines += ["- " + ctx.tr("chat.book_finding_reupload", broker=r.broker,
                             ticker=r.ticker, date=r.split_date) for r in hints]
-    fixable = next((f for f in found if f.fix), None)
-    if fixable is not None:
-        planned = _planned(fixable.fix, _finding_summary(fixable, ctx), ctx)
-    elif sales:
-        summary = ctx.tr("chat.book_summary_held", count=len(sales),
-                         tickers=_names([h.tx for h in sales]))
-        planned = _planned(shelf.ops([h.tx for h in sales]), summary, ctx)
-    else:
+    fix = ledger_ops.first_fix(found, sales)
+    if fix is None:
         return Draft("\n".join(lines))
+    if fix.finding is not None:
+        planned = _planned(fix.ops, _finding_summary(fix.finding, ctx), ctx)
+    else:
+        summary = ctx.tr("chat.book_summary_held", count=len(fix.sales),
+                         tickers=_names(fix.sales))
+        planned = _planned(fix.ops, summary, ctx)
     return Draft("\n".join([*lines, "", planned.text]), planned.book)
 
 
@@ -586,26 +568,39 @@ def apply(offer: dict, *, db: Path, source: str, translate: Translate) -> str:
     """
     book = offer["book"]
     if "undo" in book:
-        try:
-            edits.undo(int(book["undo"]), path=db)
-        except edits.Conflict as err:
-            raise Refused("chat.book_undo_conflict", str(err)) from err
-        except (LookupError, edits.EditError) as err:
-            raise Refused("chat.action_gone", str(err)) from err
+        _undone(int(book["undo"]), db)
         return translate("chat.book_undone", summary=book.get("summary", ""))
     added = sum(1 for op in book["ops"] if op.get("op") == "add")
     first = bool(added) and not demo.has_real(db)  # read before the write
     try:
         done = edits.commit(book["ops"], book["token"], source=source,
                             summary=book.get("summary", ""), path=db)
-    except edits.Stale as err:
-        raise Refused("chat.book_stale", str(err)) from err
     except edits.EditError as err:
-        raise Refused("chat.action_invalid", str(err)) from err
+        raise _refused(err) from err
     book["change"] = done.id
     if added:
         _brought(db, added, first)
     return translate("chat.book_done", summary=book.get("summary", ""))
+
+
+# The locale line for each reason the book can refuse (`EditError.kind`).
+_REFUSALS = {
+    "stale": "chat.book_stale",
+    "conflict": "chat.book_undo_conflict",
+    "gone": "chat.action_gone",
+    "invalid": "chat.action_invalid",
+}
+
+
+def _refused(err: edits.EditError) -> Refused:
+    return Refused(_REFUSALS[err.kind], str(err))
+
+
+def _undone(change: int, db: Path) -> None:
+    try:
+        edits.undo(change, path=db)
+    except edits.EditError as err:
+        raise _refused(err) from err
 
 
 def _brought(db: Path, added: int, first: bool) -> None:
@@ -626,12 +621,7 @@ def undo(offer: dict, *, db: Path, translate: Translate) -> str:
     change = (offer.get("book") or {}).get("change")
     if change is None:
         raise Refused("chat.action_gone")
-    try:
-        edits.undo(int(change), path=db)
-    except edits.Conflict as err:
-        raise Refused("chat.book_undo_conflict", str(err)) from err
-    except (LookupError, edits.EditError) as err:
-        raise Refused("chat.action_gone", str(err)) from err
+    _undone(int(change), db)
     return translate("chat.book_undone", summary=offer["book"].get("summary", ""))
 
 

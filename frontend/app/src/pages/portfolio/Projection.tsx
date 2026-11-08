@@ -26,11 +26,11 @@ import {
   STOCK_PRESETS,
   type Projection as ProjectionData,
 } from "./api";
-import { compactMoneyIn, moneyIn, percent } from "./format";
 import { ReturnLines, type ReturnSeries } from "./charts";
 import { Caption, Chip, Empty, Segmented } from "./ui";
 import { Help } from "../../ui/Kpi";
 import { num } from "../../shell/numbers";
+import { compactMoneyIn, moneyIn, percent } from "../../shell/format";
 
 type StockPreset = keyof typeof STOCK_PRESETS | typeof OWN_GROWTH;
 type CryptoGrowth = (typeof CRYPTO_GROWTH)[number] | typeof OWN_GROWTH;
@@ -93,9 +93,9 @@ export default function Projection() {
   const data = query.state === "loaded" ? query.data : last;
 
   const signed = (fraction: number) =>
-    percent(lang, fraction, { digits: 1, signed: true }) ?? "";
+    percent(fraction, { lang, digits: 1, signed: true }) ?? "";
   const pct = (fraction: number | null | undefined, digits = 0) =>
-    percent(lang, fraction ?? null, { digits }) ?? "";
+    percent(fraction ?? null, { lang, digits }) ?? "";
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
   const formatDate = (iso: string) => date.format(new Date(`${iso}T00:00:00`));
   const longDate = new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" });

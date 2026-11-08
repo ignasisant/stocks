@@ -359,7 +359,7 @@ def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
 def _index_closes(monkeypatch, closes_by_symbol):
     from stocks.api import briefing
 
-    monkeypatch.setattr(briefing, "_closes_since", lambda first: closes_by_symbol)
+    monkeypatch.setattr(briefing, "closes_since", lambda first: closes_by_symbol)
 
 
 def test_the_index_is_only_sent_when_asked_for(client, book, priced, monkeypatch):
@@ -373,7 +373,7 @@ def test_the_index_is_only_sent_when_asked_for(client, book, priced, monkeypatch
 
     from stocks.api import briefing
 
-    monkeypatch.setattr(briefing, "_closes_since", refuse)
+    monkeypatch.setattr(briefing, "closes_since", refuse)
     assert all(p["in_index"] is None for p in get(client)["points"])
 
 
@@ -446,7 +446,7 @@ def test_a_failed_index_download_leaves_the_book_drawn(client, book, priced, mon
 
     from stocks.api import briefing
 
-    monkeypatch.setattr(briefing, "_closes_since", boom)
+    monkeypatch.setattr(briefing, "closes_since", boom)
     points = get(client, index="true")["points"]
     assert points and all(p["in_index"] is None for p in points)
     assert all(p["value"] is not None for p in points)

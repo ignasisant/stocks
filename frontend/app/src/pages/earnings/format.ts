@@ -7,26 +7,10 @@
  * formatter here funnels null to a dash.
  */
 
-import { num, numberLang } from "../../shell/numbers";
+import { DASH } from "../../shell/format";
+import { numberLang } from "../../shell/numbers";
 
 export type T = (key: string, slots?: Record<string, string | number>) => string;
-
-/** Not a figure: what a missing number prints as. */
-const DASH = "—";
-
-export function eps(value: number | null): string {
-  return value === null ? DASH : num(value, 2);
-}
-
-/** A signed number with no unit — what `earnings.surprise_vs_est` slots in. */
-export function signedNum(value: number, digits = 2): string {
-  return `${value >= 0 ? "+" : ""}${num(value, digits)}`;
-}
-
-/** Always signed: a surprise printed without its sign reads as a level. */
-export function signedPct(value: number | null, digits = 1): string {
-  return value === null ? DASH : `${signedNum(value, digits)}%`;
-}
 
 export function days(value: number | null): string {
   return value === null ? DASH : String(value);
@@ -64,47 +48,6 @@ export function longDate(iso: string, _t?: T): string {
  */
 export function plain(value: string): string {
   return value.replace(/\*\*/g, "").replace(/^:[a-z-]+\[(.*)\]$/, "$1");
-}
-
-/**
- * Compact money — "$81.60B", "€1.24T".
- *
- * `prefix` is the server's `currency_symbol` (`stocks.config`), not a code the
- * client maps, so every currency prints as the server spells it — including
- * the ones it leaves bare (a yen statement prints as plain figures).
- * Share counts go through the same function with no prefix.
- */
-export function money(value: number | null | undefined, prefix = ""): string {
-  if (value === null || value === undefined) return DASH;
-  const sign = value < 0 ? "-" : "";
-  const size = Math.abs(value);
-  for (const [div, suffix] of [
-    [1e12, "T"],
-    [1e9, "B"],
-    [1e6, "M"],
-    [1e3, "K"],
-  ] as const) {
-    if (size >= div) return `${sign}${prefix}${grouped(size / div, 2)}${suffix}`;
-  }
-  return `${sign}${prefix}${grouped(size, 0)}`;
-}
-
-function grouped(value: number, digits: number): string {
-  return num(value, digits);
-}
-
-/** A fraction as a level: 0.183 → "18.3%". */
-export function pct(fraction: number | null | undefined, digits = 1): string {
-  return fraction === null || fraction === undefined
-    ? DASH
-    : `${num(fraction * 100, digits)}%`;
-}
-
-/** A fraction as a change, always signed: 0.052 → "+5.2%". */
-export function signedFrac(fraction: number | null | undefined, digits = 1): string {
-  return fraction === null || fraction === undefined
-    ? DASH
-    : `${signedNum(fraction * 100, digits)}%`;
 }
 
 /** The short fiscal-quarter tag axes and tables use: "Jun 26". */

@@ -20,15 +20,15 @@ and watchlist.yaml belong to live app sessions.
 
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 
 from stocks import obs, storage
+from stocks.accounts import UserPaths, paths_in, stored_prefs
 from stocks.config import DATA_DIR, WATCHLIST_FILE, Holding, load_watchlist
 from stocks.data.fetch import fetch_history
 from stocks.notify import links, render, webpush
@@ -44,10 +44,7 @@ class NotifyUser:
 
     label: str  # slug, or "owner"
     prefs: dict
-    watchlist: Path
-    db: Path
-    prefs_path: Path
-    state_path: Path  # alerts_state.json, sibling of prefs
+    paths: UserPaths
     # Built inside the app (`notify/schedule.py`), whose local files are the
     # current ones: nothing is pulled from the bucket over them.
     served: bool = False
@@ -57,22 +54,35 @@ class NotifyUser:
         return self.prefs.get("language") or "en"
 
     @property
+    def watchlist(self) -> Path:
+        return self.paths.watchlist
+
+    @property
+    def db(self) -> Path:
+        return self.paths.db
+
+    @property
+    def prefs_path(self) -> Path:
+        return self.paths.prefs
+
+    @property
+    def state_path(self) -> Path:
+        return self.paths.alerts_state
+
+    @property
     def import_path(self) -> Path:
-        """last_import.json sibling of prefs — when the account last uploaded
-        a statement, which is the only honest measure of a stale book."""
-        return self.prefs_path.with_name("last_import.json")
+        """When the account last uploaded a statement, which is the only
+        honest measure of a stale book."""
+        return self.paths.last_import
 
     @property
     def push_path(self) -> Path:
-        """push.json sibling of prefs — the devices a notification goes to
-        (matches accounts.UserPaths.push)."""
-        return self.prefs_path.with_name("push.json")
+        """The devices a notification goes to."""
+        return self.paths.push
 
     @property
     def chat_path(self) -> Path:
-        """chat.json sibling of prefs — data/chat.json for the owner,
-        data/users/<slug>/chat.json otherwise (matches auth.paths_for)."""
-        return self.prefs_path.with_name("chat.json")
+        return self.paths.chat
 
     def memories(self) -> str:
         """What the user told the chat about themselves (`engine.memory_block`),
@@ -91,14 +101,6 @@ class NotifyUser:
             obs.warn("notify.memories_unavailable", user=self.label,
                      error_type=type(exc).__name__, error=str(exc)[:200])
             return ""
-
-
-def _read_prefs(path: Path) -> dict:
-    try:
-        raw = json.loads(path.read_text())
-        return raw if isinstance(raw, dict) else {}
-    except (OSError, ValueError):
-        return {}
 
 
 def _slugs() -> set[str]:
@@ -130,50 +132,30 @@ def iter_all_users() -> list[NotifyUser]:
     """
     users: list[NotifyUser] = []
 
-    for slug_name in sorted(_slugs()):
-        root = USERS_DIR / slug_name
-        prefs_path = root / "prefs.json"
-        watchlist = root / "watchlist.yaml"
-        db = root / "portfolio.db"
-        _restore_user_files(
-            prefs_path, watchlist, db,
-            root / "alerts_state.json", root / "last_import.json",
-            root / "push.json",
-        )
-        users.append(
-            NotifyUser(
-                label=slug_name,
-                prefs=_read_prefs(prefs_path),
-                watchlist=watchlist,
-                db=db,
-                prefs_path=prefs_path,
-                state_path=root / "alerts_state.json",
-            )
-        )
+    def restored(label: str, paths: UserPaths) -> NotifyUser:
+        _restore_user_files(paths.prefs, paths.watchlist, paths.db,
+                            paths.alerts_state, paths.last_import, paths.push)
+        return NotifyUser(label=label, prefs=stored_prefs(paths.prefs), paths=paths)
 
-    owner_prefs = DATA_DIR / "prefs.json"
-    _restore_user_files(
-        owner_prefs, WATCHLIST_FILE, DATA_DIR / "portfolio.db",
-        DATA_DIR / "alerts_state.json", DATA_DIR / "last_import.json",
-        DATA_DIR / "push.json",
-    )
-    if owner_prefs.exists():
-        users.append(
-            NotifyUser(
-                label="owner",
-                prefs=_read_prefs(owner_prefs),
-                watchlist=WATCHLIST_FILE,
-                db=DATA_DIR / "portfolio.db",
-                prefs_path=owner_prefs,
-                state_path=DATA_DIR / "alerts_state.json",
-            )
-        )
+    for slug_name in sorted(_slugs()):
+        users.append(restored(slug_name, paths_in(USERS_DIR / slug_name)))
+
+    owner = _owner_paths()
+    user = restored("owner", owner)
+    if owner.prefs.exists():
+        users.append(user)
 
     return users
 
 
+def _owner_paths() -> UserPaths:
+    """`accounts.owner_paths`, over this module's constants so the tests that
+    point them at a temporary directory move the owner with them."""
+    return replace(paths_in(DATA_DIR), root=DATA_DIR.parent, watchlist=WATCHLIST_FILE)
+
+
 def _account_row(label: str, prefs_path: Path) -> dict:
-    prefs = _read_prefs(prefs_path)
+    prefs = stored_prefs(prefs_path)
     return {
         "label": label,
         "first_seen": str(prefs.get("first_seen") or ""),
@@ -341,7 +323,8 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 status[user.label] = f"sent {len(to_send)}"
             else:
                 status[user.label] = "no hits"
-            save_state(state, user.state_path, active_fingerprints=active_fps)
+            save_state(state, user.state_path, active_fingerprints=active_fps,
+                       only=("alerts",))
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

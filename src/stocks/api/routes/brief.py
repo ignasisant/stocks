@@ -154,7 +154,7 @@ def save(body: BriefText, paths: RoutineSave) -> Brief:
     prefs = accounts.load_prefs(paths.prefs)
     item = routine_plan.ensure(prefs, paths.chat, [item], date.today(),
                                spend_free=engine.spend_free_quota)[0]
-    briefing._save_counters(paths, prefs)
+    briefing.save_counters(paths, prefs)
     return _out(paths, [item])
 
 

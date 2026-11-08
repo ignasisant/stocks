@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from stocks import obs
+from stocks import obs, userstore
 from stocks.chat import learnings, structured
 
 REVIEW_DAYS = 7  # between two reviews of one account
@@ -236,7 +236,7 @@ def due(path: Path, day: str) -> bool:
 def keep(path: Path, found: list[Proposal], day: str) -> list[Proposal]:
     """Store `found` as this week's proposals (deduplicated, dismissed ones
     out, at most MAX_PROPOSALS). Returns what was kept."""
-    with learnings._LOCK:
+    with userstore.lock(path):
         gone = _dismissed(path, day)
         seen: set[str] = set()
         touched: set[str] = set()
@@ -260,7 +260,7 @@ def settle(path: Path, sid: str, action: str,
     changes as `learnings.change` files them — or None when there is no such
     open proposal (gone, settled, or about a memory since deleted)."""
     day = day or learnings._today()
-    with learnings._LOCK:
+    with userstore.lock(path):
         found = next((p for p in pending(path, day) if p.sid == sid), None)
         if found is None:
             return None

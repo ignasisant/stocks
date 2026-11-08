@@ -205,7 +205,7 @@ def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
     burst for names whose exchange is shut, and dated with the session it
     belongs to so the card never calls a last-completed-session move "today".
     `day_basis` says which price it runs to ("pre", "post" or "regular",
-    `analysis.portfolio._snapshot`): overnight a report's reaction is in the
+    `analysis.portfolio.quote_snapshot`): overnight a report's reaction is in the
     after-hours print, and the chat says so.
 
     A copy, always: `positions_table` is a cached frame shared by every reader

@@ -13,27 +13,28 @@
 
 import { useLang, useT } from "../../shell/i18n";
 import { toneOf } from "../../ui/Kpi";
-import { decimal, money, percent } from "../home/format";
-import { TickerCell } from "../home/ui";
 import type {
   DailyAttribution,
   DailyAttributionBlock,
   DailyContribution,
 } from "../home/types";
 import { maybe } from "../sentiment/format";
+import { decimal, money, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 function useFigures(currency: string) {
   const t = useT();
   const lang = useLang();
   const na = t("home.na");
   return {
-    money: (value: number) => money(value, currency, lang, { signed: true }) ?? na,
+    money: (value: number) => money(value, { currency, lang, signed: "always" }) ?? na,
     pct: (value: number | null) =>
       value === null
         ? na
-        : (percent(value / 100, lang, { signed: true, digits: 1 }) ?? na),
+        : (percent(value / 100, { lang, signed: "always", digits: 1 }) ?? na),
     pp: (value: number | null) => {
-      const text = value === null ? null : decimal(value, lang, 2, { signed: true });
+      const text =
+        value === null ? null : decimal(value, { lang, digits: 2, signed: "always" });
       return text === null ? null : t("today.pp", { value: text });
     },
   };
@@ -48,7 +49,8 @@ function tone(value: number | null) {
  * when the catalog has none), the fund's logo and link, or the coins. */
 function BlockName({ block }: { block: DailyAttributionBlock }) {
   const t = useT();
-  if (block.kind === "fund") return <TickerCell ticker={block.label} name={false} />;
+  if (block.kind === "fund")
+    return <TickerCell className="hm-ticker" ticker={block.label} name={false} />;
   const key =
     block.kind === "crypto" ? "crypto" : block.label.toLowerCase().replace(/\W+/g, "_");
   return <span>{maybe(t, `sentiment.sector_${key}`) ?? block.label}</span>;
@@ -70,7 +72,7 @@ function Side({
       <ul className="td-attr-rows">
         {rows.map((row) => (
           <li key={row.ticker} className="ag-row-reach">
-            <TickerCell ticker={row.ticker} name={false} />
+            <TickerCell className="hm-ticker" ticker={row.ticker} name={false} />
             <span className="td-attr-fig">
               <strong className={tone(row.amount)}>{figures.money(row.amount)}</strong>
               <small>{figures.pp(row.pp)}</small>
@@ -128,13 +130,13 @@ export function DayAttribution({
         <ul className="td-lines td-attr-why">
           {data.explained.map((row) => (
             <li key={row.ticker}>
-              <TickerCell ticker={row.ticker} name={false} />{" "}
+              <TickerCell className="hm-ticker" ticker={row.ticker} name={false} />{" "}
               {t("today.day_explained", {
                 pct: figures.pct(row.pct),
                 sigmas: row.sigmas,
               })}{" "}
-              · <TickerCell ticker={row.etf} name={false} /> {figures.pct(row.etf_pct)}:{" "}
-              {t(`today.day_verdict_${row.verdict}`)}
+              · <TickerCell className="hm-ticker" ticker={row.etf} name={false} />{" "}
+              {figures.pct(row.etf_pct)}: {t(`today.day_verdict_${row.verdict}`)}
             </li>
           ))}
         </ul>
@@ -154,7 +156,12 @@ export function DayAttribution({
           {t("today.day_stale")}
           <span className="td-tks">
             {data.stale.map((ticker) => (
-              <TickerCell key={ticker} ticker={ticker} name={false} />
+              <TickerCell
+                className="hm-ticker"
+                key={ticker}
+                ticker={ticker}
+                name={false}
+              />
             ))}
           </span>
         </p>

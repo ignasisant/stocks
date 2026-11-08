@@ -136,7 +136,7 @@ class Sources:
     names (`data.earnings.EarningsResult`: reported EPS, the estimate, the
     surprise); `print(ticker, iso_day)` what one print's row quotes beyond
     EPS — the quarter's `revenue` and `revenue_yoy_pct` in `currency`, and
-    the `release` text the outlook is read from (`api.briefing._print_source`).
+    the `release` text the outlook is read from (`api.briefing.print_facts`).
     Neither is a section's source: without them a results row still stands,
     with fewer figures.
 
@@ -644,18 +644,18 @@ def _in_base(series, unit: str | None, base: str | None, closes: dict):
     Yahoo's own pair when the closes carry it, else the ECB's rate the book
     is valued at; with neither, the series stays in its own currency, and the
     row says which."""
-    from stocks.chat.daily_book import _naive
+    from stocks.analysis import naive_series
 
     if series is None or series.dropna().empty:
         return None, unit
-    series = _naive(series)
+    series = naive_series(series)
     if base is None or unit is None or unit == base:
         return series, unit
     rate = None
     for pair, invert in ((f"{base}{unit}=X", True), (f"{unit}{base}=X", False)):
         raw = closes.get(pair)
         if raw is not None and not raw.dropna().empty:
-            quoted = _naive(raw).reindex(series.index, method="ffill")
+            quoted = naive_series(raw).reindex(series.index, method="ffill")
             rate = 1 / quoted if invert else quoted
             break
     if rate is None:
@@ -686,16 +686,16 @@ def _measure(symbol: str, closes: dict, currencies: dict[str, str],
 
 def book_start(hist):
     """The book's first day with money in it, or None without a history."""
-    from stocks.chat.daily_book import _naive
+    from stocks.analysis import naive_series
 
     if hist is None or getattr(hist, "empty", True) or "value" not in hist:
         return None
-    value = _naive(hist["value"])
+    value = naive_series(hist["value"])
     value = value[value > 0]
     return value.index[0] if len(value) >= 2 else None
 
 
-def _reaching(series, start):
+def reaching(series, start):
     """`series` read from `start`: its close that day or the last before, or
     its first when it opens within `OPEN_SLACK_DAYS` after; None when it opens
     later than that or ends before."""
@@ -716,7 +716,7 @@ def _reaching(series, start):
 
 def _since(series, start) -> float | None:
     """The price move of `series` from `start` to its last close, in percent."""
-    reached = _reaching(series, start)
+    reached = reaching(series, start)
     if reached is None:
         return None
     first = float(reached[reached.index <= start].iloc[-1])
@@ -746,17 +746,17 @@ def _index_all(hist, start, series) -> float | None:
     from stocks.analysis.portfolio import index_change
 
     days = _days_since(hist, start)
-    reached = _reaching(series, start)
+    reached = reaching(series, start)
     moved = index_change(hist, reached, days) if days and reached is not None else None
     return None if moved is None else round(moved[1] * 100, 1)
 
 
 def _days_since(hist, start) -> int | None:
-    from stocks.chat.daily_book import _naive
+    from stocks.analysis import naive_series
 
     if start is None:
         return None
-    end = _naive(hist["value"]).index[-1]
+    end = naive_series(hist["value"]).index[-1]
     return int((end - start).days) or None
 
 

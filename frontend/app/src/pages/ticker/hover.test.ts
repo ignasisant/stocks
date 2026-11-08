@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import { resultsLines } from "./events";
-import { barsDayPct, compactMoney, currencySymbol } from "./format";
+import { barsDayPct, currencySymbol } from "./format";
 import {
   averageRow,
   eventRows,
@@ -24,6 +24,7 @@ import {
   priceRows,
 } from "./hover";
 import type { Bars, Trade } from "./types";
+import { DASH, compact } from "../../shell/format";
 
 const CATALOG: Record<string, string> = {
   "ticker.price": "Price",
@@ -191,13 +192,27 @@ describe("the hover box", () => {
 
 describe("money as Streamlit prints it", () => {
   it("is compact_money: the mark first, one decimal on a suffix", () => {
-    expect(compactMoney(1.49e12, "EUR")).toBe("€1.5T");
-    expect(compactMoney(40.7e9, "EUR")).toBe("€40.7B");
-    expect(compactMoney(811.9e9, "USD")).toBe("$811.9B");
-    expect(compactMoney(-114.5e6, "USD")).toBe("-$114.5M");
-    expect(compactMoney(950, "USD")).toBe("$950");
-    expect(compactMoney(19.8e6, null)).toBe("19.8M");
-    expect(compactMoney(null, "USD")).toBe("—");
+    expect(compact(1.49e12, { prefix: currencySymbol("EUR"), digits: 1 }) ?? DASH).toBe(
+      "€1.5T",
+    );
+    expect(compact(40.7e9, { prefix: currencySymbol("EUR"), digits: 1 }) ?? DASH).toBe(
+      "€40.7B",
+    );
+    expect(compact(811.9e9, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH).toBe(
+      "$811.9B",
+    );
+    expect(
+      compact(-114.5e6, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH,
+    ).toBe("-$114.5M");
+    expect(compact(950, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH).toBe(
+      "$950",
+    );
+    expect(compact(19.8e6, { prefix: currencySymbol(null), digits: 1 }) ?? DASH).toBe(
+      "19.8M",
+    );
+    expect(compact(null, { prefix: currencySymbol("USD"), digits: 1 }) ?? DASH).toBe(
+      "—",
+    );
   });
 
   it("writes the code where the currency has no mark of its own", () => {

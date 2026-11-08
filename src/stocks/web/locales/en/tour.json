@@ -176,5 +176,7 @@
   "tour.hello_ai_cap": "About your portfolio or any ticker",
   "tour.hello_hint": "No statement? Search any ticker up top.",
   "tour.hello_cta": "Import now",
-  "tour.hello_later": "Explore first"
+  "tour.hello_later": "Explore first",
+  "tour.news_2026_11_1_email_title": "Your week by email",
+  "tour.news_2026_11_1_email_body": "Every Friday after the US close, your week in numbers in your inbox; switch it off in **Notifications**."
 }

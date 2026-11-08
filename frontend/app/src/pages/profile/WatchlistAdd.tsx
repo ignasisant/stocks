@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { findTickers } from "../../shell/findTickers";
 import { useT } from "../../shell/i18n";
+import { useDebounced } from "../../shell/useDebounced";
 import { Card, Failure } from "./ui";
 import { ToggleChip } from "../../ui/Toggle";
 
@@ -52,23 +53,20 @@ export function WatchlistAdd({
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [searchFailed, setSearchFailed] = useState<string | null>(null);
 
-  const term = query.trim();
+  const typed = query.trim();
+  const term = useDebounced(typed);
   useEffect(() => {
     if (term.length < MIN_QUERY) {
       setMatches(null);
       return;
     }
-    // Typing is not a request per keystroke: the field settles first.
     let live = true;
-    const timer = window.setTimeout(() => {
-      findTickers<Match>(term, { limit: 8 }).then(
-        (results) => live && (setMatches(results.matches), setSearchFailed(null)),
-        () => live && (setMatches([]), setSearchFailed(t("common.offline"))),
-      );
-    }, 250);
+    findTickers<Match>(term, { limit: 8 }).then(
+      (results) => live && (setMatches(results.matches), setSearchFailed(null)),
+      () => live && (setMatches([]), setSearchFailed(t("common.offline"))),
+    );
     return () => {
       live = false;
-      window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [term]);
@@ -157,7 +155,7 @@ export function WatchlistAdd({
 
         <Failure message={failure ?? searchFailed} />
 
-        {term.length < MIN_QUERY ? (
+        {typed.length < MIN_QUERY ? (
           <p className="pr-hint">{t("watchlist.add_hint")}</p>
         ) : matches === null ? (
           <p className="pr-hint">{t("common.loading")}</p>

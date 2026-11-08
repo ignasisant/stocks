@@ -8,11 +8,11 @@
  */
 
 import { Donut, type Slice } from "../pages/portfolio/charts";
-import { percent } from "../pages/portfolio/format";
 import "../pages/portfolio/portfolio.css";
 import { countryName } from "../pages/review/countries";
 import { maybe, sectorKey } from "../pages/sentiment/format";
 import { useLang, useT } from "../shell/i18n";
+import { percent } from "../shell/format";
 
 /**
  * A slice's name in the reader's words. The server sums with Yahoo's English
@@ -62,7 +62,7 @@ export function AllocationDonut({
         title={label}
         slices={shown}
         otherLabel={other}
-        format={(fraction) => percent(lang, fraction) ?? ""}
+        format={(fraction) => percent(fraction, { lang }) ?? ""}
       />
     </div>
   );

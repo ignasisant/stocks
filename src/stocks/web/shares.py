@@ -40,7 +40,7 @@ import secrets
 import time
 from pathlib import Path
 
-from stocks import atomic, obs, storage
+from stocks import obs, storage, userstore
 from stocks import watchlist as wl
 from stocks.accounts import UserPaths
 from stocks.chat import share_mask
@@ -156,15 +156,14 @@ def create(
         "lang": lang,
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    path = SHARES_DIR / f"{share_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, share, ensure_ascii=False, indent=2)
-    storage.persist(path)
+    userstore.write(SHARES_DIR / f"{share_id}.json", share,
+                    ensure_ascii=False, indent=2)
     links = [k for k in links if k["masked"] != masked]
     auth.stamp_share(tid, [*links, {"id": share_id, "masked": masked}], paths.chat)
     # A first read builds the list from the stamps, this one's included.
-    _write_list(paths, [_entry(share),
-                        *(k for k in listed(paths) if k["id"] != share_id)])
+    with userstore.lock(paths.shares):
+        _write_list(paths, [_entry(share),
+                            *(k for k in listed(paths) if k["id"] != share_id)])
     obs.event("share.created", share=share_id, masked=masked,
               surfaces=len(share["activities"]), chars=len(share["content"]),
               turns=len(share["turns"]))
@@ -180,9 +179,8 @@ def _backfilled(kept: dict, cut: dict) -> dict:
     if not missing:
         return kept
     kept = {**kept, **missing}
-    path = SHARES_DIR / f"{kept['id']}.json"
-    atomic.write_json(path, kept, ensure_ascii=False, indent=2)
-    storage.persist(path)
+    userstore.write(SHARES_DIR / f"{kept['id']}.json", kept,
+                    ensure_ascii=False, indent=2)
     return kept
 
 
@@ -236,11 +234,10 @@ def create_list(
         "lang": lang,
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    path = SHARES_DIR / f"{share_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, share, ensure_ascii=False, indent=2)
-    storage.persist(path)
-    _write_list(paths, [_entry(share), *listed(paths)])
+    userstore.write(SHARES_DIR / f"{share_id}.json", share,
+                    ensure_ascii=False, indent=2)
+    with userstore.lock(paths.shares):
+        _write_list(paths, [_entry(share), *listed(paths)])
     obs.event("share.created", share=share_id, kind="watchlist",
               tickers=len(cut["tickers"]))
     return share
@@ -278,10 +275,8 @@ def load(share_id: str) -> dict | None:
 
 def _drop(share_id: str) -> None:
     path = _path(share_id)
-    if path is None:
-        return
-    path.unlink(missing_ok=True)
-    storage.persist(path)  # a file that is gone deletes its key
+    if path is not None:
+        userstore.remove(path)  # a file that is gone deletes its key
 
 
 def revoke(paths: UserPaths, share_id: str) -> bool:
@@ -292,7 +287,8 @@ def revoke(paths: UserPaths, share_id: str) -> bool:
         return False
     if kind_of(share) == "watchlist":
         _drop(share_id)
-        _write_list(paths, [k for k in listed(paths) if k["id"] != share_id])
+        with userstore.lock(paths.shares):
+            _write_list(paths, [k for k in listed(paths) if k["id"] != share_id])
         obs.event("share.revoked", share=share_id, links=1)
         return True
     tid = str(share.get("answer_id") or "")
@@ -304,8 +300,9 @@ def revoke(paths: UserPaths, share_id: str) -> bool:
         _drop(each)
     if found:
         auth.stamp_share(tid, [], paths.chat)
-    _write_list(paths, [k for k in listed(paths)
-                        if k["id"] not in ids and k["answer_id"] != tid])
+    with userstore.lock(paths.shares):
+        _write_list(paths, [k for k in listed(paths)
+                            if k["id"] not in ids and k["answer_id"] != tid])
     obs.event("share.revoked", share=share_id, links=len(ids))
     return True
 
@@ -327,10 +324,9 @@ def _entry(share: dict) -> dict:
 
 
 def _write_list(paths: UserPaths, entries: list[dict]) -> None:
-    path = paths.shares
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, {"shares": entries}, ensure_ascii=False, indent=2)
-    storage.persist(path)
+    """Replace the account's list; callers hold `userstore.lock(paths.shares)`
+    from the `listed` they built it from."""
+    userstore.write(paths.shares, {"shares": entries}, ensure_ascii=False, indent=2)
 
 
 def listed(paths: UserPaths) -> list[dict]:
@@ -342,13 +338,8 @@ def listed(paths: UserPaths) -> list[dict]:
     the stamps its threads still carry; what a pruned thread took with it is
     beyond recovering here, and those links stay up until the account goes.
     """
-    path = paths.shares
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = None
-        rows = data.get("shares") if isinstance(data, dict) else None
+    if paths.shares.exists():
+        rows = userstore.read(paths.shares).get("shares")
         if isinstance(rows, list):
             return [r for r in rows if isinstance(r, dict)
                     and ID_RE.match(str(r.get("id") or ""))]
@@ -359,7 +350,8 @@ def listed(paths: UserPaths) -> list[dict]:
                 if (share := load(link["id"])) is not None:
                     entries.append(_entry(share))
     entries.sort(key=lambda e: e["created"], reverse=True)
-    _write_list(paths, entries)
+    with userstore.lock(paths.shares):
+        _write_list(paths, entries)
     return entries
 
 

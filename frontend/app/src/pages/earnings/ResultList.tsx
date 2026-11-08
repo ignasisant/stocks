@@ -24,10 +24,11 @@ import type {
   TaxDeadline,
 } from "./data";
 import { DividendTable } from "./Dividends";
-import { eps, longDate, plain, signedPct, tone } from "./format";
+import { longDate, plain, tone } from "./format";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Fold } from "../../ui/Fold";
+import { DASH, decimal, percent } from "../../shell/format";
 
 /**
  * Logo, symbol and — under it — the company's name. The name rides the same
@@ -78,12 +79,16 @@ function Past({ all }: { all: CalendarResult[] }) {
                       <Ticker ticker={result.ticker} />
                     </td>
                     <td className="left">{longDate(result.date, t)}</td>
-                    <td>{eps(result.eps_estimate)}</td>
-                    <td>{eps(result.reported_eps)}</td>
+                    <td>{decimal(result.eps_estimate, { digits: 2 }) ?? DASH}</td>
+                    <td>{decimal(result.reported_eps, { digits: 2 }) ?? DASH}</td>
                     {/* Coloured by the surprise itself, not by `beat`: a result with
                   nothing to compare has no colour to be given. */}
                     <td className={tone(result.surprise_pct)}>
-                      {signedPct(result.surprise_pct)}
+                      {percent(result.surprise_pct, {
+                        digits: 1,
+                        signed: "always",
+                        points: true,
+                      }) ?? DASH}
                     </td>
                   </tr>
                 ))}
@@ -96,15 +101,19 @@ function Past({ all }: { all: CalendarResult[] }) {
               rowKey={(result) => `${result.ticker}-${result.date}`}
               spec={{
                 ticker: (result) => result.ticker,
-                value: (result) => eps(result.reported_eps),
+                value: (result) => decimal(result.reported_eps, { digits: 2 }) ?? DASH,
                 delta: (result) => (
                   <span className={tone(result.surprise_pct)}>
-                    {signedPct(result.surprise_pct)}
+                    {percent(result.surprise_pct, {
+                      digits: 1,
+                      signed: "always",
+                      points: true,
+                    }) ?? DASH}
                   </span>
                 ),
                 sub: (result) => [
                   longDate(result.date, t),
-                  `${t("earnings.list_col_eps_est")} ${eps(result.eps_estimate)}`,
+                  `${t("earnings.list_col_eps_est")} ${decimal(result.eps_estimate, { digits: 2 }) ?? DASH}`,
                 ],
               }}
             />

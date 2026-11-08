@@ -15,12 +15,10 @@
 
 import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
-import { moneyIn } from "../portfolio/format";
 import type { EventPick, RepurchaseWindow } from "./data";
 import { longDate } from "./format";
 import type { T } from "./format";
-
-const DASH = "—";
+import { DASH, moneyIn } from "../../shell/format";
 
 export function loss(lang: string, window: RepurchaseWindow): string {
   return moneyIn(lang, window.currency)(window.loss, { digits: 2 }) ?? DASH;

@@ -104,6 +104,7 @@ APP_PREFIXES = (
     "/legacy/",
     "/app/static/",
     "/auth/",
+    "/email/",
     "/api/",
     "/oauth/",
     "/next/",

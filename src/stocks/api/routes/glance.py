@@ -196,7 +196,7 @@ def movers(
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     ccy = reporting_currency(account, base)
-    held = loaders.ledger_state(db, mtime, ccy)[1]
+    held = loaders.ledger_state(db, mtime, ccy).positions
     frame = loaders.basket_values(db, mtime, ccy).dropna(how="all")
     answer = Movers(
         window=window,

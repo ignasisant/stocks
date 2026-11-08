@@ -35,9 +35,10 @@ import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
 import { useReturns } from "./returns";
 import { planMoves, waitingMoves } from "./filter";
-import { longDay, money, percent, verdictTone } from "./format";
+import { longDay, verdictTone } from "./format";
 import type { Review, ReviewInvestorPlan, ReviewRow } from "./types";
 import { jurisdictionLabel } from "../portfolio/format";
+import { money, percent } from "../../shell/format";
 
 // The chart and its code wait for the full read: folded, the plan is figures.
 const PlanChart = lazy(() => import("./PlanChart"));
@@ -84,14 +85,14 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
                 <Help text={t("review.plan_net_help")} />
               </span>
               <b className="ag-rev-plan-value">
-                {money(Math.abs(net), data.base, lang) ?? na}
+                {money(Math.abs(net), { currency: data.base, lang }) ?? na}
               </b>
               <span className="ag-rev-plan-tax">
                 {t("review.plan_tax")}
                 {plan.tax_currency && plan.tax_currency !== data.base
                   ? ` (${t("review.tax_in", { currency: plan.tax_currency })})`
                   : null}{" "}
-                <b>{money(plan.tax, plan.tax_currency, lang) ?? na}</b>
+                <b>{money(plan.tax, { currency: plan.tax_currency, lang }) ?? na}</b>
                 <Help text={t("review.plan_tax_help", { code: data.jurisdiction })} />
               </span>
             </div>
@@ -119,7 +120,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
           {net < 0 ? (
             <p className="ag-rev-caption ag-rev-plan-note">
               {t("review.plan_unplaced", {
-                amount: money(-net, data.base, lang) ?? na,
+                amount: money(-net, { currency: data.base, lang }) ?? na,
               })}
             </p>
           ) : null}
@@ -247,13 +248,15 @@ function Waiting({
           {t("review.wait_title")} <span className="ag-rev-mvs-n">{rows.length}</span>
           <Help text={t("review.wait_help")} />
         </span>
-        <span className="ag-rev-tone-up">{money(total, base, lang, true)}</span>
+        <span className="ag-rev-tone-up">
+          {money(total, { currency: base, lang, signed: true })}
+        </span>
       </h3>
       {due ? (
         <p className="ag-rev-caption">
           {t("review.wait_contribution", {
             date: longDay(upcoming.next_contribution ?? "", lang),
-            amount: money(upcoming.contribution, base, lang) ?? na,
+            amount: money(upcoming.contribution, { currency: base, lang }) ?? na,
           })}
         </p>
       ) : null}
@@ -267,12 +270,13 @@ function Waiting({
                 <TickerCell ticker={row.ticker} />
               </div>
               <span className="ag-rev-mv-weights">
-                {percent(from, lang) ?? na}
+                {percent(from, { lang }) ?? na}
                 <i aria-hidden="true">→</i>
-                {percent(to, lang) ?? na}
+                {percent(to, { lang }) ?? na}
               </span>
               <b className="ag-rev-mv-money ag-rev-tone-up">
-                {money(row.new_money ?? null, base, lang, true) ?? na}
+                {money(row.new_money ?? null, { currency: base, lang, signed: true }) ??
+                  na}
               </b>
               {brief ? null : (
                 <>
@@ -335,7 +339,9 @@ function Flow({
           <span className="ag-rev-flow-gap" style={{ width: `${gap}%` }} />
         ) : null}
       </dd>
-      <dd className="ag-rev-flow-amount">{money(amount, base, lang) ?? "—"}</dd>
+      <dd className="ag-rev-flow-amount">
+        {money(amount, { currency: base, lang }) ?? "—"}
+      </dd>
     </div>
   );
 }
@@ -366,7 +372,9 @@ function MoveList({
         <span>
           {title} <span className="ag-rev-mvs-n">{rows.length}</span>
         </span>
-        <span className={`ag-rev-tone-${tone}`}>{money(total, base, lang, true)}</span>
+        <span className={`ag-rev-tone-${tone}`}>
+          {money(total, { currency: base, lang, signed: true })}
+        </span>
       </h3>
       <ul className="ag-rev-mv-list">
         {rows.map((row) => (
@@ -417,11 +425,11 @@ function Move({
     ) : row.verdict === "add" || row.tax === null ? null : row.tax > 0 ? (
       <span
         title={t("review.move_tax", {
-          amount: money(row.tax, taxCurrency, lang) ?? na,
+          amount: money(row.tax, { currency: taxCurrency, lang }) ?? na,
         })}
       >
         {t("review.move_tax_short", {
-          amount: money(row.tax, taxCurrency, lang) ?? na,
+          amount: money(row.tax, { currency: taxCurrency, lang }) ?? na,
         })}
       </span>
     ) : (
@@ -435,12 +443,12 @@ function Move({
         {row.verdict === "trim" ? <VerdictChip row={row} /> : null}
       </div>
       <span className="ag-rev-mv-weights">
-        {row.held ? (percent(row.weight, lang) ?? na) : t("review.move_new")}
+        {row.held ? (percent(row.weight, { lang }) ?? na) : t("review.move_new")}
         <i aria-hidden="true">→</i>
-        {percent(row.target_weight, lang) ?? na}
+        {percent(row.target_weight, { lang }) ?? na}
       </span>
       <b className={`ag-rev-mv-money ag-rev-tone-${tone}`}>
-        {money(row.delta, base, lang, true) ?? na}
+        {money(row.delta, { currency: base, lang, signed: true }) ?? na}
       </b>
       {brief ? null : (
         <>

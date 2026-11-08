@@ -12,7 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from stocks.analysis.portfolio import _snapshot
+from stocks.analysis.portfolio import quote_snapshot
 from stocks.api import loaders
 from tests.patching import patch_loaders
 
@@ -120,7 +120,7 @@ def test_the_snapshot_carries_the_regular_close_through_extended_hours():
         "exchangeTimezoneName": "America/New_York",
         "currency": "USD",
     }
-    snap = _snapshot(quote)
+    snap = quote_snapshot(quote)
     assert snap["price"] == 103.0 and snap["session"] == "post"
     assert snap["regular"] == 100.0 and snap["regular_as_of"] == "2026-10-09"
 

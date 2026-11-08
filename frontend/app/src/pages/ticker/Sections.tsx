@@ -9,30 +9,25 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { InsiderFlow, FundExposure } from "./Charts";
 import {
-  DASH,
-  compactMoney,
   currencySymbol,
   insiderPrice,
   insiderValue,
   kpiText,
-  money,
   orElse,
-  percent,
-  signed,
-  signedPercent,
   type Translate,
 } from "./format";
-import { Banner, Bold, Card, Note, Scroll, TickerLink, useMobile } from "./ui";
+import { Banner, Bold, Card, Note, Scroll, useMobile } from "./ui";
 import { Chip, Help, Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type {
   ClosedEnd,
   Comparables,
   FigureSource,
   Fund,
+  FundWrapper,
   Insiders,
   Kpi as KpiRow,
   Metrics,
@@ -48,6 +43,7 @@ import { Link } from "../../shell/router";
 import { score, verdictTone } from "../review/format";
 import { useHelp } from "../review/lines";
 import { calendarDay } from "../../shell/dates";
+import { DASH, compact, decimal, money, percent } from "../../shell/format";
 
 // ------------------------------------------------------------------ KPI grid
 
@@ -333,7 +329,9 @@ export function MoatSection({ moat }: { moat: Moat }) {
                 pillar.score === null
                   ? null
                   : {
-                      text: t("ticker.weight", { pct: percent(pillar.weight, 0) }),
+                      text: t("ticker.weight", {
+                        pct: percent(pillar.weight, { digits: 0, tight: true }) ?? DASH,
+                      }),
                       tone: "flat",
                     }
               }
@@ -360,9 +358,9 @@ export function MoatSection({ moat }: { moat: Moat }) {
 
 /** How each moat fact prints inside its sentence. */
 const MOAT_FACTS: Record<string, (value: number) => string> = {
-  roic: (value) => percent(value, 0),
-  margin: (value) => percent(value, 0),
-  cagr: (value) => percent(value, 0),
+  roic: (value) => percent(value, { digits: 0, tight: true }) ?? DASH,
+  margin: (value) => percent(value, { digits: 0, tight: true }) ?? DASH,
+  cagr: (value) => percent(value, { digits: 0, tight: true }) ?? DASH,
   // Percentage points; the unit is the sentence's, since it is worded per
   // language ("pp", "p. p.").
   sd: (value) => num(value * 100, 1),
@@ -371,7 +369,8 @@ const MOAT_FACTS: Record<string, (value: number) => string> = {
     const points = Math.round(value * 1000) / 10 || 0;
     return `${points >= 0 ? "+" : ""}${num(points, 1)}`;
   },
-  shares: (value) => signedPercent(value, 1),
+  shares: (value) =>
+    percent(value, { digits: 1, signed: "always", tight: true }) ?? DASH,
 };
 
 /** The pillar's detail in the reader's language, or the API's English. */
@@ -422,7 +421,11 @@ export function ShortsSection({ shorts }: { shorts: Shorts }) {
           />
           <Kpi
             label={t("ticker.shorts_vs_prior")}
-            value={us.change_pct === null ? DASH : `${signed(us.change_pct, 1)}%`}
+            value={
+              us.change_pct === null
+                ? DASH
+                : `${decimal(us.change_pct, { digits: 1, signed: "always" }) ?? DASH}%`
+            }
           />
           {us.volume_ratio !== null ? (
             <Kpi
@@ -534,7 +537,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             chip={
               summary.buy_value
                 ? {
-                    text: `+${compactMoney(summary.buy_value, ccy ?? "USD")}`,
+                    text: `+${compact(summary.buy_value, { prefix: currencySymbol(ccy ?? "USD"), digits: 1 }) ?? DASH}`,
                     tone: "up",
                   }
                 : null
@@ -546,7 +549,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             chip={
               summary.sell_value
                 ? {
-                    text: `-${compactMoney(summary.sell_value, ccy ?? "USD")}`,
+                    text: `-${compact(summary.sell_value, { prefix: currencySymbol(ccy ?? "USD"), digits: 1 }) ?? DASH}`,
                     tone: "down",
                   }
                 : null
@@ -554,7 +557,12 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
           />
           <Kpi
             label={t("ticker.net_window", { days: summary.window_days })}
-            value={compactMoney(summary.net_value, ccy ?? "USD")}
+            value={
+              compact(summary.net_value, {
+                prefix: currencySymbol(ccy ?? "USD"),
+                digits: 1,
+              }) ?? DASH
+            }
           />
           <Kpi
             label={t("ticker.distinct_buyers_sellers")}
@@ -605,7 +613,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
               <Line label={t("ticker.col_type")} value={codeLabel(t, trade)} />
               <Line
                 label={t("ticker.col_shares")}
-                value={signed(trade.shares, 0)}
+                value={decimal(trade.shares, { digits: 0, signed: "always" }) ?? DASH}
                 tone={trade.shares >= 0 ? "green" : "red"}
               />
               {trade.price !== null ? (
@@ -646,7 +654,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
                   <td className="tk-muted">{trade.role}</td>
                   <td>{codeLabel(t, trade)}</td>
                   <td className={trade.shares >= 0 ? "tk-is-green" : "tk-is-red"}>
-                    {signed(trade.shares, 0)}
+                    {decimal(trade.shares, { digits: 0, signed: "always" }) ?? DASH}
                   </td>
                   <td>{insiderPrice(trade.price, trade.currency)}</td>
                   <td
@@ -732,14 +740,25 @@ export function FundSection({
           <CefChecks fund={fund} cef={cef} />
         </>
       ) : (
-        <FundTiles fund={fund} />
+        <>
+          <FundTiles fund={fund} />
+          {fund.aum !== null && fund.aum < SMALL_FUND ? (
+            <Banner tone="warn">
+              <Bold text={t("ticker.fund_small")} />
+            </Banner>
+          ) : null}
+          {fund.wrapper ? <WrapperLines fund={fund} wrapper={fund.wrapper} /> : null}
+        </>
       )}
       {/* Stocks / bonds / cash, which is what says whether the sector chart
           below is the whole story or a third of it. */}
       {holdings && fund.asset_classes.length > 0 ? (
         <Note>
           {`${t("ticker.fund_assets")} ${fund.asset_classes
-            .map(([label, weight]) => `${label} ${percent(weight, 1)}`)
+            .map(
+              ([label, weight]) =>
+                `${label} ${percent(weight, { digits: 1, tight: true }) ?? DASH}`,
+            )
             .join(" · ")}`}
         </Note>
       ) : null}
@@ -761,6 +780,100 @@ export function FundSection({
 }
 
 /**
+ * Under this a fund is the size issuers close or merge: the money comes back,
+ * but on their date, and as a sale for tax.
+ */
+const SMALL_FUND = 100e6;
+
+/** The currency an exposure's stocks are mostly priced in; null for a mix. */
+const EXPOSURE_CURRENCY: Record<string, string> = {
+  us: "USD",
+  nasdaq: "USD",
+  world: "USD",
+  japan: "JPY",
+  europe: "EUR",
+  china: "HKD",
+};
+
+/** Exposures whose dividends are mostly American, so the domicile's treaty bites. */
+const US_DIVIDENDS = new Set(["us", "nasdaq", "world"]);
+
+function clock(iso: string, lang: string): string {
+  return new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(
+    new Date(iso),
+  );
+}
+
+/**
+ * What the wrapper around the basket is — the facts that make two lines of
+ * one index different purchases — then what the domicile costs in withheld
+ * dividends, which currency actually moves it, and when it is cheapest to
+ * trade. Each line only when the fund's name or ISIN says it.
+ */
+function WrapperLines({ fund, wrapper }: { fund: Fund; wrapper: FundWrapper }) {
+  const t = useT();
+  const lang = useLang();
+  const country = (code: string) => {
+    try {
+      return new Intl.DisplayNames([lang], { type: "region" }).of(code) ?? code;
+    } catch {
+      return code;
+    }
+  };
+  const facts = [
+    wrapper.share_class === "acc"
+      ? t("ticker.fund_acc")
+      : wrapper.share_class === "dist"
+        ? t("ticker.fund_dist")
+        : null,
+    wrapper.domicile
+      ? t("ticker.fund_domicile", { country: country(wrapper.domicile) })
+      : null,
+    wrapper.ucits ? "UCITS" : null,
+    wrapper.synthetic ? t("ticker.fund_synthetic") : null,
+    wrapper.tracks ? t("ticker.fund_tracks", { index: wrapper.tracks }) : null,
+  ].filter(Boolean);
+  const usDividends = US_DIVIDENDS.has(wrapper.exposure ?? "");
+  const domicile = wrapper.domicile;
+  const withheld =
+    domicile === "US"
+      ? t("ticker.fund_us_kid")
+      : !usDividends
+        ? null
+        : domicile === "IE"
+          ? t("ticker.fund_wht_ie")
+          : domicile && ["LU", "DE", "FR"].includes(domicile)
+            ? t("ticker.fund_wht_eu", { country: country(domicile) })
+            : null;
+  const quoted = fund.traded_currency ?? fund.currency;
+  const held = EXPOSURE_CURRENCY[wrapper.exposure ?? ""] ?? null;
+  const currency = wrapper.hedged
+    ? t("ticker.fund_currency_hedged", { ccy: wrapper.hedged })
+    : quoted && wrapper.exposure && held !== quoted
+      ? t("ticker.fund_currency", {
+          quoted,
+          held: held ?? t("ticker.fund_currency_mix"),
+        })
+      : null;
+  const window = wrapper.underlying_closed
+    ? t("ticker.fund_window_closed")
+    : wrapper.window_start && wrapper.window_end
+      ? t("ticker.fund_window", {
+          from: clock(wrapper.window_start, lang),
+          to: clock(wrapper.window_end, lang),
+        })
+      : null;
+  return (
+    <>
+      {facts.length ? <Note>{facts.join(" · ")}</Note> : null}
+      {[withheld, currency, window].map((line) =>
+        line ? <Note key={line}>{line}</Note> : null,
+      )}
+    </>
+  );
+}
+
+/**
  * Cost, size and income — a fund's answer to the KPI grid.
  *
  * Every tile stands on its own and prints "n/a" rather than the section hiding:
@@ -776,20 +889,26 @@ function FundTiles({ fund }: { fund: Fund }) {
     fund.is_bond_fund || (fund.bond_duration !== null && !fund.holdings.length);
   const cell = (value: string) => (value === DASH ? na : value);
   const tiles: [string, string, string][] = [
-    ["ticker.fund_ter", cell(percent(fund.expense_ratio, 2)), "ticker.fund_ter_help"],
+    [
+      "ticker.fund_ter",
+      cell(percent(fund.expense_ratio, { digits: 2, tight: true }) ?? DASH),
+      "ticker.fund_ter_help",
+    ],
     [
       "ticker.fund_aum",
-      cell(compactMoney(fund.aum, fund.currency)),
+      cell(
+        compact(fund.aum, { prefix: currencySymbol(fund.currency), digits: 1 }) ?? DASH,
+      ),
       "ticker.fund_aum_help",
     ],
     [
       "ticker.fund_yield",
-      cell(percent(fund.dividend_yield, 2)),
+      cell(percent(fund.dividend_yield, { digits: 2, tight: true }) ?? DASH),
       "ticker.fund_yield_help",
     ],
     [
       "ticker.fund_turnover",
-      cell(percent(fund.turnover, 1)),
+      cell(percent(fund.turnover, { digits: 1, tight: true }) ?? DASH),
       "ticker.fund_turnover_help",
     ],
     bonds
@@ -800,9 +919,21 @@ function FundTiles({ fund }: { fund: Fund }) {
         ]
       : [
           "ticker.fund_top10",
-          fund.holdings.length ? cell(percent(fund.disclosed_weight, 1)) : na,
+          fund.holdings.length
+            ? cell(percent(fund.disclosed_weight, { digits: 1, tight: true }) ?? DASH)
+            : na,
           "ticker.fund_top10_help",
         ],
+    [
+      "ticker.fund_traded",
+      cell(
+        compact(fund.average_traded ?? null, {
+          prefix: currencySymbol(fund.traded_currency ?? fund.currency),
+          digits: 1,
+        }) ?? DASH,
+      ),
+      "ticker.fund_traded_help",
+    ],
   ];
   return (
     <KpiGrid>
@@ -872,7 +1003,7 @@ function CefTiles({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
   const sym = currencySymbol(fund.currency);
   const cell = (value: string) => (value === DASH ? na : value);
   const priced = (value: number | null) =>
-    value === null ? na : `${sym}${money(value, 2)}`;
+    value === null ? na : `${sym}${money(value, { digits: 2 }) ?? DASH}`;
   const premiumLead =
     cef.premium.source === "yahoo_nav" && cef.price.value !== null
       ? t("ticker.cef_premium_lead", {
@@ -889,31 +1020,39 @@ function CefTiles({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
     ],
     [
       t("ticker.cef_premium"),
-      cell(signedPercent(cef.premium.value)),
+      cell(
+        percent(cef.premium.value, { digits: 2, signed: "always", tight: true }) ??
+          DASH,
+      ),
       t("ticker.cef_premium_help"),
       provenance(t, cef.premium, cef.nav_symbol, premiumLead),
     ],
     [
       t("ticker.cef_distribution"),
-      cell(percent(cef.distribution_rate.value, 2)),
+      cell(percent(cef.distribution_rate.value, { digits: 2, tight: true }) ?? DASH),
       t("ticker.cef_distribution_help"),
       provenance(t, cef.distribution_rate, cef.nav_symbol),
     ],
     [
       t("ticker.fund_ter"),
-      cell(percent(cef.expense_ratio.value, 2)),
+      cell(percent(cef.expense_ratio.value, { digits: 2, tight: true }) ?? DASH),
       t("ticker.cef_ter_help"),
       provenance(t, cef.expense_ratio, cef.nav_symbol),
     ],
     [
       t("ticker.cef_net_assets"),
-      cell(compactMoney(cef.net_assets.value, fund.currency)),
+      cell(
+        compact(cef.net_assets.value, {
+          prefix: currencySymbol(fund.currency),
+          digits: 1,
+        }) ?? DASH,
+      ),
       t("ticker.cef_net_assets_help"),
       provenance(t, cef.net_assets, cef.nav_symbol),
     ],
     [
       t("ticker.cef_leverage"),
-      cell(percent(cef.leverage.value, 1)),
+      cell(percent(cef.leverage.value, { digits: 1, tight: true }) ?? DASH),
       t("ticker.cef_leverage_help"),
       provenance(t, cef.leverage, cef.nav_symbol),
     ],
@@ -950,8 +1089,8 @@ function CefChecks({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
     value === null
       ? t("ticker.na")
       : check.metric === "premium"
-        ? signedPercent(value)
-        : `${sym}${money(value, 2)}`;
+        ? (percent(value, { digits: 2, signed: "always", tight: true }) ?? DASH)
+        : `${sym}${money(value, { digits: 2 }) ?? DASH}`;
   if (cef.checks.length === 0) return <Note>{t("ticker.cef_check_absent")}</Note>;
   return (
     <>
@@ -1017,7 +1156,7 @@ function FundHoldings({ fund }: { fund: Fund }) {
                   )}
                 </td>
                 {/* Weights arrive as fractions; scaling once, here. */}
-                <td>{percent(holding.weight, 2)}</td>
+                <td>{percent(holding.weight, { digits: 2, tight: true }) ?? DASH}</td>
               </tr>
             ))}
           </tbody>
@@ -1031,11 +1170,11 @@ function FundHoldings({ fund }: { fund: Fund }) {
               date: fund.closed_end.holdings_as_of
                 ? calendarDay(fund.closed_end.holdings_as_of)
                 : DASH,
-              pct: percent(fund.disclosed_weight, 1),
+              pct: percent(fund.disclosed_weight, { digits: 1, tight: true }) ?? DASH,
             })
           : t("ticker.fund_holdings_caption", {
               n: fund.holdings.length,
-              pct: percent(fund.disclosed_weight, 1),
+              pct: percent(fund.disclosed_weight, { digits: 1, tight: true }) ?? DASH,
             })}
       </Note>
     </>
@@ -1112,7 +1251,7 @@ function CompsGrid({ comps }: { comps: Comparables }) {
   const head = (ticker: string) => (
     <th key={ticker}>
       {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
-      <TickerLink ticker={ticker} />
+      <TickerCell className="tk-ticker" name={false} ticker={ticker} />
     </th>
   );
   const cell = (ticker: string, row: number) => (
@@ -1167,7 +1306,7 @@ function CompsCards({ comps }: { comps: Comparables }) {
     <div className="tk-stack-card" key={ticker}>
       <p className="tk-stack-title">
         {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
-        <TickerLink ticker={ticker} />
+        <TickerCell className="tk-ticker" name={false} ticker={ticker} />
       </p>
       {comps.labels.map((label, row) => {
         const cell = comps.rows[ticker]?.[row];

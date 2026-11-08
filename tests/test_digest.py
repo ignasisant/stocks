@@ -163,6 +163,38 @@ def test_compute_digest_data_with_ledger(tmp_path, monkeypatch):
     assert data.movers == [("NVDA", 0.05)]
 
 
+def test_digest_total_holds_an_unpriced_position_at_cost(tmp_path, monkeypatch):
+    """A name the price pass missed stays in the book at its cost, not at 0."""
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist: []\n")
+
+    class Priced:
+        ticker, cost = "NVDA", 800.0
+
+    class Unpriced:
+        ticker, cost = "ZZZ.DE", 300.0
+
+    monkeypatch.setattr(dg, "all_transactions", lambda path: ["tx"])
+    monkeypatch.setattr(
+        dg, "build", lambda txs, base="EUR": ([Priced(), Unpriced()], [])
+    )
+
+    import stocks.analysis.portfolio as ap
+
+    idx = pd.to_datetime(["2026-08-13", "2026-08-14"])
+    values = pd.DataFrame({"NVDA": [950.0, 1000.0]}, index=idx)
+    monkeypatch.setattr(
+        ap,
+        "position_value_frames",
+        lambda pos, period="1mo", base="EUR": (values, values),
+    )
+    monkeypatch.setattr(ap, "session_moves", lambda ts, max_workers=8: {})
+    monkeypatch.setattr(dg, "money_changes", lambda *a, **k: ({7: None}, {}))
+
+    data = dg.compute_digest_data(watchlist, tmp_path / "portfolio.db")
+    assert data.total == 1300.0
+
+
 def test_compute_sections_fail_independently(tmp_path, monkeypatch):
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text("watchlist:\n  - ticker: AAPL\n")

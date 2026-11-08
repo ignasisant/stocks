@@ -667,6 +667,8 @@
   "chat.import_see_all": "Ver las {n} filas en pantalla ancha",
   "chat.import_warn_line": "{n} filas tienen un aviso: revísalas antes de importar.",
   "chat.import_safe": "Nada se guarda hasta que pulses Importar.",
+  "chat.import_all_held": "Las {n} filas ya están en tu libro. No hay nada nuevo que importar.",
+  "chat.import_close": "Cerrar",
   "chat.import_in_book": "ya en libro",
   "chat.import_warned": "Tiene un aviso",
   "chat.import_col_operation": "Operación",

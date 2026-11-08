@@ -13,6 +13,43 @@ class FundHolding(BaseModel):
     weight: float = Field(description="Fraction of the fund: 0.075 is 7.5%.")
 
 
+class FundWrapper(BaseModel):
+    share_class: str | None = Field(
+        default=None, description="'acc' reinvests income, 'dist' pays it out."
+    )
+    domicile: str | None = Field(
+        default=None, description="ISO country of the fund, from its ISIN or name."
+    )
+    ucits: bool = False
+    hedged: str | None = Field(
+        default=None, description="The currency the line is hedged to, if any."
+    )
+    synthetic: bool = Field(
+        default=False,
+        description="The name says swap or synthetic. False is not 'physical'.",
+    )
+    tracks: str | None = Field(default=None, description="The index, as named.")
+    exposure: str | None = Field(
+        default=None,
+        description=(
+            "Where its stocks trade: em, china, japan, nasdaq, world, europe, us."
+        ),
+    )
+    window_start: str | None = Field(
+        default=None,
+        description=(
+            "Today's stretch when the line and its stocks are both open, ISO "
+            "UTC: when its spread is tightest. Null with `underlying_closed` "
+            "false means the whole session overlaps."
+        ),
+    )
+    window_end: str | None = None
+    underlying_closed: bool = Field(
+        default=False,
+        description="Its stocks' market is shut for the line's whole session.",
+    )
+
+
 class Fund(BaseModel):
     ticker: str
     is_fund: bool
@@ -54,6 +91,22 @@ class Fund(BaseModel):
     )
     asset_classes: list[list] = Field(
         default_factory=list, description="[[label, fraction], …] — stocks, bonds, cash."
+    )
+    average_traded: float | None = Field(
+        default=None,
+        description=(
+            "Money that changes hands on an average day (Yahoo's average "
+            "volume times the price), in `traded_currency`."
+        ),
+    )
+    traded_currency: str | None = None
+    wrapper: FundWrapper | None = Field(
+        default=None,
+        description=(
+            "What the fund's name says about the wrapper around its basket: "
+            "share class, domicile, hedge, the index it tracks and where its "
+            "stocks trade. Each field null where the name is silent."
+        ),
     )
     closed_end: ClosedEnd | None = Field(
         default=None,
@@ -386,4 +439,58 @@ class CryptoHolding(BaseModel):
     )
     harvest: CoinHarvest | None = Field(
         default=None, description="Only when the coin is held at a loss."
+    )
+
+
+class FundOverlap(BaseModel):
+    symbol: str = Field(description="The book's symbol for the company.")
+    name: str
+    fund_weight: float = Field(description="Its share of the fund: 0.05 is 5%.")
+    book_weight: float = Field(description="Its share of the book, held directly.")
+
+
+class FundSectorRow(BaseModel):
+    label: str
+    book: float = Field(description="The book's share, funds looked through.")
+    fund: float = Field(description="The fund's share.")
+    without: float | None = Field(
+        default=None,
+        description="The book's share with this fund taken out; null when not held.",
+    )
+
+
+class FundFit(BaseModel):
+    ticker: str
+    base: str | None = None
+    held: bool = False
+    fund_share: float | None = Field(
+        default=None, description="The fund's share of the book, when held."
+    )
+    overlap: list[FundOverlap] = Field(
+        default_factory=list,
+        description="The fund's disclosed top holdings the book also holds directly.",
+    )
+    overlap_weight: float = Field(
+        default=0.0, description="What those holdings add up to inside the fund."
+    )
+    disclosed_weight: float = Field(
+        default=0.0, description="What the disclosed holdings add up to at all."
+    )
+    sectors: list[FundSectorRow] = Field(default_factory=list)
+    sector_cap: float | None = Field(
+        default=None, description="The plan's cap on one sector, as a fraction."
+    )
+    trades: int = Field(default=0, description="The reader's own buys and sells of it.")
+    spread: float | None = Field(
+        default=None,
+        description=(
+            "What those fills paid against the day's mid, as a fraction of "
+            "what they traded: 0.002 is 0.2%. Null when none could be measured."
+        ),
+    )
+    commission: float | None = Field(
+        default=None, description="Their commissions, as a fraction of what they traded."
+    )
+    jurisdiction: str | None = Field(
+        default=None, description="The tax jurisdiction the account is taxed under."
     )

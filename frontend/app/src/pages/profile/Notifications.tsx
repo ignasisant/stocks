@@ -2,11 +2,15 @@
  * The Notifications tab: what to receive, and the switch that turns it on for
  * this device.
  *
- * Every message — the AI briefing, the day's numbers, the weekly review, price
- * alerts, the reminder, a finished answer — is a Web Push notification, so the
- * channel is per device (`PushCard`) while the toggles are the account's. The
- * toggles are drawn whenever the deployment can push at all; with no device
- * subscribed yet they say where the messages will go once one is.
+ * Every message but one — the AI briefing, the day's numbers, the weekly
+ * review, price alerts, the reminder, a finished answer — is a Web Push
+ * notification, so the channel is per device (`PushCard`) while the toggles
+ * are the account's. The toggles are drawn whenever the deployment can push at
+ * all; with no device subscribed yet they say where the messages will go once
+ * one is.
+ *
+ * The one is the Friday email, sent to the sign-in address with no device
+ * involved, so its card stands outside the push gate.
  *
  * The three scheduled runs say when they go out; that is changed where their
  * runs are read, the chat's "Scheduled" block (`?chat=scheduled`).
@@ -16,7 +20,7 @@ import { useEffect, useState } from "react";
 import { type PushState, readPush } from "../../shell/push";
 import { useLang, useT } from "../../shell/i18n";
 import { get } from "../../shell/api";
-import type { Prefs } from "../../shell/session";
+import { type Prefs, useSession } from "../../shell/session";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { weekdayNames, whenLabel } from "../../chat/slots";
@@ -27,6 +31,8 @@ import { Card, Failure, Prose, Row, Toggle } from "./ui";
 export function Notifications({ prefs, saving, failure, save }: Settings) {
   const t = useT();
   const lang = useLang();
+  const session = useSession();
+  const email = session.guest ? null : session.me.email;
   const { setParams } = useRoute();
   const [push, setPush] = useState<PushState | null>(null);
   const fail = (field: string) => (failure?.field === field ? failure.message : null);
@@ -133,6 +139,27 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                 onToggle={(on) => save("notify_alerts", on)}
               />
               <Failure message={fail("notify_alerts")} />
+            </Row>
+          </Card>
+        )}
+
+        {email && (
+          <Card
+            title={t("profile.notify_email_title")}
+            sub={t("profile.notify_email_sub", { email })}
+          >
+            <Row
+              label={t("profile.notify_weekly_email")}
+              help={t("profile.notify_weekly_email_help")}
+              middle
+            >
+              <Toggle
+                label={t("profile.notify_weekly_email")}
+                checked={prefs.notify_weekly_email ?? true}
+                disabled={saving === "notify_weekly_email"}
+                onToggle={(on) => save("notify_weekly_email", on)}
+              />
+              <Failure message={fail("notify_weekly_email")} />
             </Row>
           </Card>
         )}

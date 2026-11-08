@@ -7,11 +7,10 @@ that batch — "clear last import" — without touching the rest of the ledger.
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from stocks import atomic, storage
+from stocks import userstore
 from stocks.config import DATA_DIR
 
 RECORD_PATH = DATA_DIR / "last_import.json"
@@ -37,20 +36,17 @@ def imported_on(record: ImportRecord | None) -> str | None:
 
 
 def save(record: ImportRecord, path: Path = RECORD_PATH) -> None:
-    atomic.write_json(path, asdict(record), indent=2)
-    storage.persist(path)
+    userstore.write(path, asdict(record))
 
 
 def load(path: Path = RECORD_PATH) -> ImportRecord | None:
     """The last import record, or None if absent/corrupt."""
-    if not path.exists():
-        return None
+    stored = userstore.read(path)
     try:
-        return ImportRecord(**json.loads(path.read_text()))
-    except (json.JSONDecodeError, TypeError):
+        return ImportRecord(**stored) if stored else None
+    except TypeError:
         return None
 
 
 def forget(path: Path = RECORD_PATH) -> None:
-    path.unlink(missing_ok=True)
-    storage.persist(path)
+    userstore.remove(path)

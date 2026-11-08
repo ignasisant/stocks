@@ -18,15 +18,16 @@ import type { ReactNode } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { Kpi, KpiGrid, type ChipSpec } from "../../ui/Kpi";
-import { decimal, monthDay, percent, type Translate } from "../home/format";
-import { TickerCell } from "../home/ui";
+import { monthDay, type Translate } from "../home/format";
 import { leadersLaggards, marketSplit } from "./card";
 import type { MarketCard, MarketLine, MarketSector } from "./types";
+import { decimal, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 /** A change in basis points as a grey chip: "+8 bp". */
 function bpChip(bp: number | null, lang: string, t: Translate): ChipSpec | null {
   if (bp === null || !Number.isFinite(bp)) return null;
-  const text = decimal(bp, lang, 0, { signed: true });
+  const text = decimal(bp, { lang, digits: 0, signed: "always" });
   return text ? { text: t("today.bp", { value: text }), tone: "flat" } : null;
 }
 
@@ -51,7 +52,7 @@ export function Macro({ market }: { market: MarketCard }) {
   const banks = new Set(market.banks.map((bank) => `policy_${bank.bank}`));
   const rates = market.rates.filter((rate) => !banks.has(rate.key));
   const level = (value: number | null) =>
-    value === null ? t("home.na") : `${decimal(value, lang, 2) ?? ""}%`;
+    value === null ? t("home.na") : `${decimal(value, { lang, digits: 2 }) ?? ""}%`;
 
   const tiles: ReactNode[] = [
     ...rates.map((rate) => (
@@ -61,7 +62,9 @@ export function Macro({ market }: { market: MarketCard }) {
         value={
           rate.key === "curve_2s10s"
             ? t("today.bp", {
-                value: decimal(rate.value * 100, lang, 0, { signed: true }) ?? "",
+                value:
+                  decimal(rate.value * 100, { lang, digits: 0, signed: "always" }) ??
+                  "",
               })
             : level(rate.value)
         }
@@ -120,13 +123,13 @@ function SectorList({ title, sectors }: { title: string; sectors: MarketSector[]
           const month = sector.month ?? 0;
           return (
             <li key={sector.ticker} className="ag-row-reach">
-              <TickerCell ticker={sector.ticker} name={false} />
+              <TickerCell className="hm-ticker" ticker={sector.ticker} name={false} />
               <span className="td-sector-name">
                 {t(`sentiment.sector_${sector.name.toLowerCase().replace(/ /g, "_")}`)}
               </span>
               <span className={`hm-num ${month < 0 ? "td-down" : "td-up"}`}>
                 {t("today.pp", {
-                  value: decimal(month, lang, 1, { signed: true }) ?? "",
+                  value: decimal(month, { lang, digits: 1, signed: "always" }) ?? "",
                 })}
               </span>
             </li>
@@ -186,7 +189,7 @@ export function Trends({ market }: { market: MarketCard }) {
       <Kpi
         key="btc"
         label={t("today.btc_dom")}
-        value={percent(crypto.btc_dominance / 100, lang, { digits: 1 }) ?? t("home.na")}
+        value={percent(crypto.btc_dominance / 100, { lang, digits: 1 }) ?? t("home.na")}
       />,
     );
 

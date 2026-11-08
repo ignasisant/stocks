@@ -10,65 +10,11 @@
  * `cur / prev - 1` reports a loss deepening from -56M to -187M as +233%.
  */
 
-/** What an uncomputable figure reads as. Never `0`. */
-export const DASH = "—";
-
-import {
-  formatter,
-  num,
-  numberLang,
-  pctNum,
-  signedPct as signedPctNum,
-} from "../../shell/numbers";
+import { DASH, UNITS, decimal, isNum, percent } from "../../shell/format";
+import { formatter, num, numberLang } from "../../shell/numbers";
 import type { Bars } from "./types";
 
 type Maybe = number | null | undefined;
-
-export function known(value: Maybe): value is number {
-  return value !== null && value !== undefined && Number.isFinite(value);
-}
-
-/**
- * A price or an amount, in the account's language ("1.234,56" / "1,234.56").
- *
- * Every screen spells it through `shell/numbers`, so one share price reads the
- * same on the ticker, in a table and in the chat.
- */
-export function money(value: Maybe, digits = 2): string {
-  if (!known(value)) return DASH;
-  return num(value, digits);
-}
-
-/** Always signed. A change printed without its sign is a level. */
-export function signed(value: Maybe, digits = 2): string {
-  if (!known(value)) return DASH;
-  return `${value >= 0 ? "+" : ""}${money(value, digits)}`;
-}
-
-/**
- * A share count: whole shares whole, a fraction to at most four places.
- *
- * "67", not "67.0000" — four fixed decimals claim a precision a whole lot does
- * not have — while "0.1234" still shows the fractional lot a broker sold.
- */
-export function shares(value: Maybe): string {
-  if (!known(value)) return DASH;
-  return formatter(numberLang(), {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-  }).format(value);
-}
-
-/** A premium keeps its sign: "−2.6%" is a discount, and unsigned it is a level. */
-export function signedPercent(value: Maybe, digits = 2): string {
-  if (!known(value)) return DASH;
-  return signedPctNum(value, digits);
-}
-
-/** A fraction as a percentage: 0.1234 -> "12.3%". */
-export function percent(value: Maybe, digits = 1): string {
-  return known(value) ? pctNum(value, digits) : DASH;
-}
 
 /** Three significant digits, in the account's decimal mark: 4,98 / 41,0 / 391. */
 function shortNum(value: number): string {
@@ -80,16 +26,11 @@ function shortNum(value: number): string {
 
 /** 391_000_000_000 as "391B", with an optional currency after it. */
 export function compact(value: Maybe, suffix = ""): string {
-  if (!known(value)) return DASH;
+  if (!isNum(value)) return DASH;
   const sign = value < 0 ? "-" : "";
   const size = Math.abs(value);
   const tail = suffix ? ` ${suffix}` : "";
-  for (const [limit, unit] of [
-    [1e12, "T"],
-    [1e9, "B"],
-    [1e6, "M"],
-    [1e3, "K"],
-  ] as const) {
+  for (const [limit, unit] of UNITS) {
     if (size >= limit) return `${sign}${shortNum(size / limit)}${unit}${tail}`;
   }
   return `${sign}${shortNum(size)}${tail}`;
@@ -125,32 +66,6 @@ export function currencySymbol(currency: string | null | undefined): string {
 }
 
 /**
- * `stocks.formatting.compact_money`: "$394.3B", "-$1.2M", "€950".
- *
- * One decimal on a suffix and the sign ahead of the mark, so a market cap, an
- * AUM and an insider net read here exactly as the server prints them — and
- * never `toPrecision(3)`, which prints "1.49T" where the server says "1.5T".
- */
-export function compactMoney(
-  value: Maybe,
-  currency: string | null | undefined,
-): string {
-  if (!known(value)) return DASH;
-  const sym = currencySymbol(currency);
-  const sign = value < 0 ? "-" : "";
-  const size = Math.abs(value);
-  for (const [limit, unit] of [
-    [1e12, "T"],
-    [1e9, "B"],
-    [1e6, "M"],
-    [1e3, "K"],
-  ] as const) {
-    if (size >= limit) return `${sign}${sym}${num(size / limit, 1)}${unit}`;
-  }
-  return `${sign}${sym}${num(Math.round(size), 0)}`;
-}
-
-/**
  * The mark an insider figure is prefixed with — `config.CURRENCY_SYMBOL` for
  * the only two currencies an insider feed arrives in (Form 4 is USD, BaFin
  * EUR), and the code with a space for anything else rather than a wrong mark.
@@ -167,7 +82,7 @@ function mark(currency: string | null): string {
  * missing figures.
  */
 export function insiderPrice(value: Maybe, currency: string | null): string {
-  return known(value) ? `${mark(currency)}${money(value, 2)}` : "";
+  return isNum(value) ? `${mark(currency)}${decimal(value)}` : "";
 }
 
 /**
@@ -175,7 +90,9 @@ export function insiderPrice(value: Maybe, currency: string | null): string {
  * "$-474,813", "$+12,000". Blank with no notional.
  */
 export function insiderValue(value: Maybe, currency: string | null): string {
-  return known(value) ? `${mark(currency)}${signed(value, 0)}` : "";
+  return isNum(value)
+    ? `${mark(currency)}${decimal(value, { digits: 0, signed: "always" })}`
+    : "";
 }
 
 /**
@@ -183,7 +100,7 @@ export function insiderValue(value: Maybe, currency: string | null): string {
  * usable one — a growth rate out of zero is not a large number, it is none.
  */
 export function yoy(cur: Maybe, prev: Maybe): number | null {
-  if (!known(cur) || !known(prev) || prev === 0) return null;
+  if (!isNum(cur) || !isNum(prev) || prev === 0) return null;
   return ((cur - prev) / Math.abs(prev)) * 100;
 }
 
@@ -206,11 +123,11 @@ export function barGrowth(
   return values.map((value, index) => {
     if (index < reported) {
       const out = index > 0 ? yoy(value, values[index - 1]) : null;
-      if (known(value)) anchor = value;
+      if (isNum(value)) anchor = value;
       return out;
     }
     const out = yoy(value, anchor);
-    if (known(value)) anchor = value;
+    if (isNum(value)) anchor = value;
     return out;
   });
 }
@@ -322,7 +239,7 @@ export function kpiText(value: number | string | null, unit: string): string {
   if (!Number.isFinite(value)) return "n/a";
   switch (unit) {
     case "pct":
-      return pctNum(value, 1);
+      return percent(value, { tight: true });
     case "x":
       return `${num(value, 1)}x`;
     case "score":

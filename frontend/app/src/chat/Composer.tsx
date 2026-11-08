@@ -29,7 +29,9 @@
  * card it opens is what writes to the ledger. One file per press, because a
  * second attachment would either queue a second preview behind the first or be
  * dropped with an apology, and in practice the second file was nearly always
- * the same export twice.
+ * the same export twice. Pasting into the field is the same door (`pasted.ts`):
+ * a copied file, rows out of a spreadsheet or a base64 PDF go to the preview,
+ * not into the question.
  *
  * The microphone is the fourth, inside the field beside the lens — the same
  * control, in the same corner, as the feedback dialog's (`ui/Mic`). It is
@@ -78,6 +80,7 @@ import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
 import { useAssistantFills } from "../shell/assistant";
 import { takeDraft } from "./draft";
+import { pastedStatement } from "./pasted";
 import { Model } from "./Settings";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
@@ -519,6 +522,13 @@ export function Composer({
             onChange={(event) => {
               setText(event.target.value);
               if (!event.target.value.trim()) spoken.current = false;
+            }}
+            onPaste={(event) => {
+              if (busy || reading || live) return;
+              const pasted = pastedStatement(event.clipboardData, state.upload_types);
+              if (!pasted) return;
+              event.preventDefault();
+              onAttach(pasted);
             }}
             onKeyDown={(event) => {
               // Enter sends, shift-enter writes a second line — the shape every

@@ -4,18 +4,24 @@ An alert condition ("NVDA above 190") often stays true for days; the hourly
 cron must message on the rising edge, then stay quiet until either the
 condition clears (re-arming the edge) or a 24h cooldown passes (one daily
 re-reminder while it holds). State lives in alerts_state.json next to the
-account's prefs.json and is mirrored to the bucket like every user file —
-the cron is its only writer, so it never races the live app (which only
-writes prefs/watchlist).
+account's prefs.json and is mirrored to the bucket like every user file.
+
+Several writers share the file, each owning its own keys: the hourly alerts
+run (`alerts`), the digest (`highlights`, `tax_reminded`), the weekly review
+(`weekly`) and the dormancy nudge (`nudges`) — from the cron or from the app's
+own schedule. Each loads the state, spends a while building its message, then
+saves only the keys it owns (`save_state(..., only=...)`) over the file as it
+is by then, so a digest that took a minute does not put back the alert edges
+the hourly run moved meanwhile.
 """
 
 from __future__ import annotations
 
-import json
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from stocks import atomic, storage
+from stocks import userstore
 from stocks.config import Alert
 
 VERSION = 1
@@ -39,27 +45,37 @@ def fingerprint(ticker: str, alert: Alert) -> str:
 
 def load_state(path: Path) -> dict:
     """State from disk; a fresh structure when missing or corrupt."""
-    try:
-        raw = json.loads(path.read_text())
-        if isinstance(raw, dict) and isinstance(raw.get("alerts"), dict):
-            raw.setdefault("version", VERSION)
-            return raw
-    except (OSError, ValueError):
-        pass
+    raw = userstore.read(path)
+    if isinstance(raw.get("alerts"), dict):
+        raw.setdefault("version", VERSION)
+        return raw
     return {"version": VERSION, "alerts": {}}
 
 
 def save_state(
-    state: dict, path: Path, active_fingerprints: set[str] | None = None
+    state: dict, path: Path, active_fingerprints: set[str] | None = None, *,
+    only: Iterable[str] | None = None,
 ) -> None:
-    """Write state (pruning rules no longer on the watchlist) and mirror it."""
+    """Write state (pruning rules no longer on the watchlist) and mirror it.
+
+    `only` names the keys this writer owns: those come from `state`, every
+    other key from the file as it is now. Without it `state` replaces the file.
+    """
     if active_fingerprints is not None:
         state["alerts"] = {
             fp: rec for fp, rec in state["alerts"].items() if fp in active_fingerprints
         }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, state, indent=2)
-    storage.persist(path)
+    with userstore.lock(path):
+        if only is None:
+            current = state
+        else:
+            current = load_state(path)
+            for key in only:
+                if key in state:
+                    current[key] = state[key]
+                else:
+                    current.pop(key, None)
+        userstore.write(path, current)
 
 
 def should_send(

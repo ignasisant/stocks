@@ -13,7 +13,7 @@
  * inlines — so these follow both themes.
  */
 
-export { niceTicks, plotHeightFor, AxisLabel, type TipRow } from "./frame";
+export { AxisLabel, type TipRow } from "./frame";
 export { type Slice, type SliceDetail, foldSlices, sliceTip, Donut } from "./Donut";
 export {
   correlationBand,

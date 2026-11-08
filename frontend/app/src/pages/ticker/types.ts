@@ -11,6 +11,8 @@
 
 import type { Verdict } from "../review/types";
 
+export type { WatchlistEntry } from "../../api.gen";
+
 export type Bars = {
   ticker: string;
   range: string;
@@ -698,6 +700,71 @@ export type Fund = {
   closed_end?: ClosedEnd | null;
   /** Set for a money-market fund: what it yields, against the rate it tracks. */
   cash?: CashYield | null;
+  /** Average value traded a day on this listing, in `traded_currency`. */
+  average_traded?: number | null;
+  traded_currency?: string | null;
+  wrapper?: FundWrapper | null;
+};
+
+/**
+ * What the fund's name and ISIN say about its wrapper. A field the name is
+ * silent on is null: replication is only ever "synthetic" when the name says
+ * so, never "physical".
+ */
+export type FundWrapper = {
+  /** acc | dist */
+  share_class: string | null;
+  /** ISO country: IE, LU, DE, FR, US… */
+  domicile: string | null;
+  ucits: boolean;
+  /** The currency the share class is hedged to. */
+  hedged: string | null;
+  synthetic: boolean;
+  tracks: string | null;
+  /** em | china | japan | nasdaq | world | europe | us */
+  exposure: string | null;
+  /** Today's stretch when the line and its stocks trade at once, UTC ISO. */
+  window_start: string | null;
+  window_end: string | null;
+  /** The stocks' market is shut through the whole of the line's session. */
+  underlying_closed: boolean;
+};
+
+type FundOverlap = {
+  symbol: string;
+  name: string;
+  fund_weight: number;
+  book_weight: number;
+};
+
+type FundSectorRow = {
+  label: string;
+  book: number;
+  fund: number;
+  /** The book's share with the fund taken out; null when it is not held. */
+  without: number | null;
+};
+
+/** A fund against the reader's book. Fractions throughout. */
+export type FundFit = {
+  ticker: string;
+  base: string | null;
+  held: boolean;
+  fund_share: number | null;
+  /** The fund's disclosed top holdings the book also holds directly. */
+  overlap: FundOverlap[];
+  overlap_weight: number;
+  disclosed_weight: number;
+  sectors: FundSectorRow[];
+  /** The plan's cap on one sector. */
+  sector_cap: number | null;
+  /** Buys and sells of the fund in the ledger. */
+  trades: number;
+  /** Measured half-spread paid per unit traded. */
+  spread: number | null;
+  commission: number | null;
+  /** Tax residence: ES, PT, US… */
+  jurisdiction: string | null;
 };
 
 /**
@@ -775,15 +842,6 @@ export type Comparables = {
 
 /** rival: same-industry cohort; watched: same-industry names Yahoo readers co-view. */
 export type Peer = { ticker: string; name: string; source: "rival" | "watched" };
-
-export type WatchlistEntry = {
-  ticker: string;
-  name: string;
-  favorite: boolean;
-  tags: string[];
-  /** A coin pair. The comps table ranks on KPIs a coin has none of. */
-  is_crypto: boolean;
-};
 
 export type SearchMatch = {
   ticker: string;

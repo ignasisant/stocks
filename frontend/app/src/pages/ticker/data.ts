@@ -28,6 +28,7 @@ import type {
   EntryFields,
   Financials,
   Fund,
+  FundFit,
   Insiders,
   Shorts,
   Metrics,
@@ -120,6 +121,10 @@ export const getOptions = (ticker: string) => get<OptionsView>(`${at(ticker)}/op
 
 export const getFund = (ticker: string) => get<Fund>(`${at(ticker)}/fund`);
 
+/** The fund against the reader's book: overlap, sectors, what their fills cost. */
+export const getFundFit = (ticker: string, base: string) =>
+  get<FundFit>(`${at(ticker)}/fund/fit`, { base });
+
 export const getCrypto = (ticker: string) => get<AssetStats>(`${at(ticker)}/crypto`);
 
 /** Sentiment, Mayer, 200-week, halving: the nightly scan plus the coin's closes. */
@@ -162,7 +167,7 @@ export async function getSectors(tickers: string[]): Promise<Record<string, stri
 export const getLastViewed = () =>
   get<{ tickers: string[] }>("/search/recent").then((body) => body.tickers[0] ?? null);
 
-export const getWatchlist = () => get<{ entries: WatchlistEntry[] }>("/watchlist");
+export const getWatchlist = () => get("/watchlist");
 
 export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");
 

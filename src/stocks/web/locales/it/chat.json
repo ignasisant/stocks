@@ -667,6 +667,8 @@
   "chat.import_see_all": "Vedi tutte le {n} righe a tutta larghezza",
   "chat.import_warn_line": "{n} righe hanno un avviso: controllale prima di importare.",
   "chat.import_safe": "Nulla viene salvato finché non premi Importa.",
+  "chat.import_all_held": "Tutte le {n} righe sono già nel tuo libro. Niente di nuovo da importare.",
+  "chat.import_close": "Chiudi",
   "chat.import_in_book": "già nel libro",
   "chat.import_warned": "Ha un avviso",
   "chat.import_col_operation": "Operazione",

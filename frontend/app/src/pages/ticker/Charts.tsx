@@ -14,16 +14,7 @@ import { useT } from "../../shell/i18n";
 import { maybe, sectorKey } from "../sentiment/format";
 import { chart as palette, series as seriesHues } from "../../shell/theme";
 import { useWidth } from "../../shell/useWidth";
-import {
-  DASH,
-  barGrowth,
-  compact,
-  growthLabel,
-  known,
-  orElse,
-  legend as legendOf,
-  percent,
-} from "./format";
+import { barGrowth, compact, growthLabel, orElse, legend as legendOf } from "./format";
 import {
   Chart,
   FillMark,
@@ -32,7 +23,6 @@ import {
   YGrid,
   YLabels,
   bounds,
-  fitHeight,
   frame,
   plotHeight,
   plotWidth,
@@ -41,12 +31,14 @@ import {
   summary,
   type TipLine,
 } from "./plot";
+import { fitHeight } from "../../ui/chart/fit";
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import { BAR, DOT, LINE, barPath } from "../../ui/chart/marks";
 import type { Financials, Fund, Insiders, Trade, Valuation } from "./types";
 import { placeFills } from "./hover";
 import { num } from "../../shell/numbers";
+import { DASH, isNum, percent } from "../../shell/format";
 
 /** Where the layout reads as a phone: the page's own flag, or a card too
  *  narrow for a gutter of axis labels whichever the viewport says. */
@@ -218,7 +210,7 @@ function Annual({ data }: { data: Financials }) {
       });
     });
     const point = eps[hover];
-    if (known(point)) lines.push({ text: `EPS ${num(point, 2)}` });
+    if (isNum(point)) lines.push({ text: `EPS ${num(point, 2)}` });
   }
 
   // Whether the year was filed, polled or extrapolated rides on its title, so
@@ -309,7 +301,7 @@ function Annual({ data }: { data: Financials }) {
 
         {bars.map((series, slot) =>
           series.values.map((value, index) => {
-            if (!known(value)) return null;
+            if (!isNum(value)) return null;
             const forecast = index >= years.length;
             const x = xOf(index) - group / 2 + slot * (width + BAR.gap);
             const shown =
@@ -383,7 +375,7 @@ function Annual({ data }: { data: Financials }) {
               ];
             })
           : null}
-        {yEps && hover !== null && known(eps[hover]) ? (
+        {yEps && hover !== null && isNum(eps[hover]) ? (
           <circle
             cx={xOf(hover)}
             cy={yEps(eps[hover] as number)}
@@ -480,7 +472,7 @@ function runs(values: (number | null)[]): number[][] {
   const out: number[][] = [];
   let run: number[] = [];
   values.forEach((value, index) => {
-    if (known(value)) run.push(index);
+    if (isNum(value)) run.push(index);
     else {
       if (run.length > 1) out.push(run);
       run = [];
@@ -504,13 +496,13 @@ function bandPath(
   const start = centre[at];
   const top: string[] = [];
   const bottom: string[] = [];
-  if (known(start)) {
+  if (isNum(start)) {
     top.push(`${xOf(at)},${y(start)}`);
     bottom.push(`${xOf(at)},${y(start)}`);
   }
   high.forEach((value, index) => {
     const floor = low[index];
-    if (!known(value) || !known(floor)) return;
+    if (!isNum(value) || !isNum(floor)) return;
     top.push(`${xOf(index)},${y(value)}`);
     bottom.push(`${xOf(index)},${y(floor)}`);
   });
@@ -546,7 +538,7 @@ function Quarterly({ data }: { data: Financials }) {
     Math.max(1, ...rows.map((row) => row.period.length)),
   );
   const point = hover === null ? null : values[hover];
-  const tipLines = [{ text: `EPS ${known(point) ? num(point, 2) : DASH}` }];
+  const tipLines = [{ text: `EPS ${isNum(point) ? num(point, 2) : DASH}` }];
 
   return (
     <div className="tk-plot" ref={node}>
@@ -712,7 +704,7 @@ export function ValuationChart({
       placeFills(
         trades,
         kept.map((row) => row.day),
-      ).filter((fill) => known(kept[fill.index]?.value)),
+      ).filter((fill) => isNum(kept[fill.index]?.value)),
     [trades, kept],
   );
 
@@ -764,7 +756,7 @@ export function ValuationChart({
       ? []
       : [
           {
-            text: `P/E ${known(values[hover]) ? num(values[hover] as number, 1) : DASH}`,
+            text: `P/E ${isNum(values[hover]) ? num(values[hover] as number, 1) : DASH}`,
           },
           ...(window.mean === null
             ? []
@@ -1019,7 +1011,9 @@ export function FundExposure({ fund }: { fund: Fund }) {
                 style={{ width: `${(weight / top) * 100}%` }}
               />
             </span>
-            <span className="tk-hbar-v">{percent(weight, 1)}</span>
+            <span className="tk-hbar-v">
+              {percent(weight, { digits: 1, tight: true }) ?? DASH}
+            </span>
           </div>
         ))}
       </div>

@@ -27,13 +27,12 @@ import {
   SHOWN,
   inYears,
   metric,
-  money,
-  percent,
   pnlChip,
   score,
   verdictTone,
 } from "./format";
 import type { ReviewRow } from "./types";
+import { money, percent } from "../../shell/format";
 
 /** Catalog copy is markdown-lite; a tooltip is plain text. */
 const plain = (text: string) => text.replaceAll("**", "").replaceAll("*", "");
@@ -135,12 +134,12 @@ function Details({
               <>
                 <Fact
                   label={t("review.col_value")}
-                  value={money(row.value, base, lang) ?? na}
+                  value={money(row.value, { currency: base, lang }) ?? na}
                 />
                 <Fact
                   label={t("review.col_weight")}
                   help={t("review.col_weight_help")}
-                  value={percent(row.weight, lang) ?? na}
+                  value={percent(row.weight, { lang }) ?? na}
                 />
                 <Fact
                   label={t("review.col_pnl")}
@@ -152,18 +151,18 @@ function Details({
             <Fact
               label={t("review.col_target")}
               help={help("review.col_target_help")}
-              value={percent(row.target_weight, lang) ?? "—"}
+              value={percent(row.target_weight, { lang }) ?? "—"}
             />
             <Fact
               label={t("review.col_move")}
               help={t("review.col_move_help")}
-              value={money(row.delta, base, lang, true) ?? "—"}
+              value={money(row.delta, { currency: base, lang, signed: true }) ?? "—"}
             />
             {taxCurrency && row.held ? (
               <Fact
                 label={t("review.col_tax")}
                 help={t("review.col_tax_help")}
-                value={money(row.tax, taxCurrency, lang) ?? "—"}
+                value={money(row.tax, { currency: taxCurrency, lang }) ?? "—"}
               />
             ) : null}
           </dl>

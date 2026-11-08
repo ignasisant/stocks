@@ -165,23 +165,29 @@ export function useTickerProfile(ticker: string): Profile | null {
  * who it is. `children` still replaces the whole label, as it always did.
  *
  * `className` is the caller's, because a table cell and a chip are the same
- * content at two sizes and the page owns its own spacing. The logo carries an
+ * content at two sizes and the page owns its own spacing. `logo` is a mark the
+ * payload already carried: it is used as-is and nothing is asked of the shell.
+ * The logo carries an
  * empty alt: the symbol is right beside it, and a screen reader announcing
  * "Apple logo Apple" reads the name twice.
  */
 export function TickerCell({
   ticker,
   className,
+  logo,
   name = true,
   children,
 }: {
   ticker: string;
   className?: string;
+  /** A same-origin mirror URL, where the payload carried one. */
+  logo?: string | null;
   /** Print the company name after the symbol. Default on. */
   name?: boolean;
   children?: React.ReactNode;
 }) {
-  const profile = useTickerProfile(ticker);
+  const fetched = useTickerProfile(logo ? "" : ticker);
+  const profile = logo ? { symbol: ticker, name: "", logo } : fetched;
   const symbol = profile?.symbol || ticker;
   const company = profile?.name || "";
   return (

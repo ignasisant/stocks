@@ -101,7 +101,7 @@ def live_book(account, card: DailyCard | None) -> DailyCard | None:
         moves = book_moves.moves(db, mtime, ccy)
         hist = loaders.history(db, mtime, ccy)[0]
         index = daily_book.index_facts(
-            briefing._card_closes(), ccy, None if hist.empty else hist
+            briefing.card_closes(), ccy, None if hist.empty else hist
         )
     except Exception as exc:  # noqa: BLE001 — the stored rows still stand
         obs.warn("today.book_live_failed", error_type=type(exc).__name__)

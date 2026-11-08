@@ -17,6 +17,7 @@ import { useCallback, useRef, useState } from "react";
 import { type Span, useSpan } from "../../shell/useSpan";
 import { Tip, tipAt } from "../../ui/chart/Tip";
 import { Spoken, useScrub } from "../../ui/chart/useScrub";
+import { ticks } from "../../ui/chart/ticks";
 
 /**
  * A chart's box, in viewBox units.
@@ -49,16 +50,6 @@ export function frame(over: Partial<Frame> = {}): Frame {
   };
 }
 
-/**
- * How tall a chart is drawn at a measured width: `max` wherever there is room,
- * and no shorter than `min` on a phone. Drawn at the real width a chart is no
- * longer shrunk by the scale, but a desktop height on a 360px screen would be
- * all of it — so a narrow chart keeps a squarer shape instead.
- */
-export function fitHeight(width: number, max: number, min = 240): number {
-  return Math.round(Math.min(max, Math.max(min, width * 0.8)));
-}
-
 export const plotWidth = (f: Frame) => f.width - f.left - f.right;
 export const plotHeight = (f: Frame) => f.height - f.top - f.bottom;
 
@@ -66,26 +57,6 @@ export const plotHeight = (f: Frame) => f.height - f.top - f.bottom;
 export function scale(lo: number, hi: number, from: number, to: number) {
   const span = hi - lo || 1;
   return (value: number) => from + ((value - lo) / span) * (to - from);
-}
-
-/**
- * Axis ticks on round numbers, and never fewer than two.
- *
- * A 1-2-5 step, because an axis labelled 0, 37, 74 is arithmetic nobody reads
- * off a chart.
- */
-export function ticks(lo: number, hi: number, count = 4): number[] {
-  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [];
-  if (hi === lo) return [lo];
-  const raw = (hi - lo) / count;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const step =
-    magnitude * ([1, 2, 5, 10].find((mult) => magnitude * mult >= raw) ?? 10);
-  const out: number[] = [];
-  for (let at = Math.ceil(lo / step) * step; at <= hi + step / 1e6; at += step) {
-    out.push(Math.abs(at) < step / 1e6 ? 0 : at);
-  }
-  return out;
 }
 
 /**

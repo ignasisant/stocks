@@ -148,7 +148,7 @@ class Quote:
     # market's mood from the nightly scan (`crypto_context`).
     context: str = ""
     # Which print `price` is — "pre", "post" or "" for the regular session —
-    # and the exchange date its move belongs to (`portfolio._snapshot`). A
+    # and the exchange date its move belongs to (`portfolio.quote_snapshot`). A
     # report out after the bell trades in after-hours and the next premarket,
     # and a move with no date reads as today's whatever session it was.
     session: str = ""
@@ -509,7 +509,7 @@ def _fetch_quote(ticker: str) -> Quote | None:
     """One live snapshot: the app's session quote first, yfinance's fast
     path when that has nothing.
 
-    The session quote (`data.quotes`, read by `portfolio._snapshot`) is the
+    The session quote (`data.quotes`, read by `portfolio.quote_snapshot`) is the
     one the pages show: premarket and after-hours included, and dated. The
     fast path stays for what the batch quote misses."""
     with obs.swallow("chat.quote"):
@@ -551,16 +551,16 @@ def _fetch_quote(ticker: str) -> Quote | None:
 
 
 def _session_quote(ticker: str) -> Quote | None:
-    from stocks.analysis.portfolio import _snapshot
+    from stocks.analysis.portfolio import quote_snapshot
     from stocks.data.quotes import quote as live_quote
 
     row = live_quote(ticker)
-    snap = _snapshot(row) if row else None
+    snap = quote_snapshot(row) if row else None
     if not snap or snap.get("price") is None:
         return None
     basis = snap.get("basis")
     # The close the move runs from: premarket against the last close,
-    # everything else against the one before (`_snapshot`).
+    # everything else against the one before (`quote_snapshot`).
     since = snap.get("regular") if basis == "pre" else row.get(
         "regularMarketPreviousClose")
     cap = row.get("marketCap")

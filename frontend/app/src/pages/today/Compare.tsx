@@ -29,8 +29,6 @@ import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { Chip, toneOf, type ChipSpec } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
-import { decimal, percent } from "../home/format";
-import { TickerCell } from "../home/ui";
 import { verdictTone } from "../review/format";
 import type { Verdict } from "../review/types";
 import {
@@ -47,6 +45,8 @@ import {
 } from "./card";
 import type { TodayBenchmark, TodayRow, TodaySection } from "./types";
 import { Segmented } from "../../ui/Segmented";
+import { decimal, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 type Shown = { row: TodayRow; data: CompareData; hot: boolean };
 
@@ -57,9 +57,16 @@ function useFigures() {
   return {
     na,
     pct: (value: number | null, signed = true) =>
-      value === null ? na : (percent(value / 100, lang, { signed, digits: 1 }) ?? na),
+      value === null
+        ? na
+        : (percent(value / 100, {
+            lang,
+            signed: signed ? "always" : false,
+            digits: 1,
+          }) ?? na),
     pp: (value: number | null) => {
-      const text = value === null ? null : decimal(value, lang, 1, { signed: true });
+      const text =
+        value === null ? null : decimal(value, { lang, digits: 1, signed: "always" });
       return text === null ? na : t("today.pp", { value: text });
     },
     verdict: (value: string | null): ChipSpec | null =>
@@ -220,7 +227,7 @@ export function Compare({ section }: { section: TodaySection }) {
           {shown.map(({ row, data, hot }) => (
             <tr key={row.key} className={hot ? "td-hot" : undefined}>
               <td>
-                <TickerCell ticker={row.tickers[0] ?? ""} />
+                <TickerCell className="hm-ticker" ticker={row.tickers[0] ?? ""} />
               </td>
               <td className="hm-num">{f.pct(data.weight, false)}</td>
               <td className="hm-num" title={listedLater(row)}>

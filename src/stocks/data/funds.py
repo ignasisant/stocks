@@ -196,6 +196,10 @@ class FundProfile:
     turnover: float | None = None
     bond_duration: float | None = None  # years, bond sleeves only
     bond_maturity: float | None = None  # years
+    # What changes hands on an average day, in `traded_currency` (the major
+    # unit: a London line quoted in pence reads in pounds).
+    average_traded: float | None = None
+    traded_currency: str | None = None
     description: str = ""
     holdings: tuple[FundHolding, ...] = ()
     sectors: tuple[tuple[str, float], ...] = ()  # (display label, fraction)
@@ -457,6 +461,12 @@ def fetch_profile(ticker: str, info: dict | None = None) -> FundProfile | None:
     except Exception:
         pass  # a fund with no disclosed basket still has its costs below
 
+    from stocks.analysis.listing import quote_unit
+
+    traded_ccy, scale = quote_unit(info.get("currency"))
+    volume = finite(info.get("averageVolume"))
+    price = finite(info.get("regularMarketPrice")) or finite(info.get("previousClose"))
+    traded = volume * price * scale if volume and price else None
     return FundProfile(
         ticker=key,
         name=str(info.get("longName") or info.get("shortName") or fund_name(key) or key),
@@ -472,6 +482,8 @@ def fetch_profile(ticker: str, info: dict | None = None) -> FundProfile | None:
         turnover=_frame_value(ops, "Annual Holdings Turnover"),
         bond_duration=_frame_value(bonds, "Duration"),
         bond_maturity=_frame_value(bonds, "Maturity"),
+        average_traded=traded,
+        traded_currency=traded_ccy if traded is not None else None,
         description=description,
         holdings=_holdings(holdings),
         sectors=_weights(sectors, SECTOR_LABELS),

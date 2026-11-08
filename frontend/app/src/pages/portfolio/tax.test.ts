@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TaxSale } from "./api";
-import { salesByPosition, salesByTicker } from "./Tax";
+import { perShare, salesByPosition, salesByTicker } from "./Tax";
 
 const sale = (ticker: string, gain: number): TaxSale => ({
   ticker,
@@ -64,5 +64,32 @@ describe("salesByPosition", () => {
         gain: 100,
       },
     ]);
+  });
+});
+
+describe("perShare", () => {
+  it("divides cost and proceeds by the shares sold", () => {
+    const each = perShare({
+      ...sale("CLSK", 79),
+      quantity: 75,
+      cost: 718,
+      proceeds: 797,
+    });
+    expect(each.buy).toBeCloseTo(9.5733, 4);
+    expect(each.sell).toBeCloseTo(10.6267, 4);
+  });
+
+  it("has no sale price for a write-off", () => {
+    expect(perShare({ ...sale("CLSK", -100), proceeds: 0 })).toEqual({
+      buy: 100,
+      sell: null,
+    });
+  });
+
+  it("has no prices for a sale of no shares", () => {
+    expect(perShare({ ...sale("CLSK", 12), quantity: 0, cost: 0 })).toEqual({
+      buy: null,
+      sell: null,
+    });
   });
 });

@@ -27,15 +27,20 @@ import { DetailsButton, Head, VerdictChip, PnlChip } from "./Explain";
 import { bucket, findRows } from "./filter";
 import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
-import { money as amount, priceDigits } from "../home/format";
-import { foreign, longDay, metric, money, percent, score, verdictTone } from "./format";
+import { priceDigits } from "../home/format";
+import { foreign, longDay, metric, score, verdictTone } from "./format";
+import { money, percent } from "../../shell/format";
 import { ReturnCells, ReturnHeads, WindowPicker, useReturnLine } from "./returns";
 import type { ReviewRow } from "./types";
 
 /** One share's price as its own market quotes it, not in the page's money. */
 function sharePrice(row: ReviewRow, lang: string): string | null {
   if (!row.currency) return null;
-  return amount(row.price, row.currency, lang, { digits: priceDigits(row.price) });
+  return money(row.price, {
+    currency: row.currency,
+    lang,
+    digits: priceDigits(row.price),
+  });
 }
 
 /** The quote currency beside the name, only when it is not the page's. */
@@ -192,12 +197,13 @@ export function HeldTable({
                       </td>
                       <td>{score(row.quality) ?? na}</td>
                       <td>{score(row.cheapness) ?? na}</td>
-                      <td>{percent(row.weight, lang) ?? na}</td>
-                      <td>{percent(row.target_weight, lang) ?? "—"}</td>
+                      <td>{percent(row.weight, { lang }) ?? na}</td>
+                      <td>{percent(row.target_weight, { lang }) ?? "—"}</td>
                       <td className={`ag-rev-tone-${verdictTone(row.verdict)}`}>
-                        {money(row.delta, base, lang, true) ?? "—"}
+                        {money(row.delta, { currency: base, lang, signed: true }) ??
+                          "—"}
                       </td>
-                      <td>{money(row.tax, taxCurrency, lang) ?? "—"}</td>
+                      <td>{money(row.tax, { currency: taxCurrency, lang }) ?? "—"}</td>
                       <td>{sharePrice(row, lang) ?? na}</td>
                       <td>
                         <PnlChip row={row} />
@@ -226,15 +232,16 @@ export function HeldTable({
                       ticker: (r) => r.ticker,
                       badge: (r) => <VerdictChip row={r} />,
                       sub: (r) => [
-                        percent(r.weight, lang),
+                        percent(r.weight, { lang }),
                         foreign(r, base),
                         returned(r.symbol),
                         reason(r),
                       ],
-                      value: (r) => money(r.delta, base, lang, true),
+                      value: (r) =>
+                        money(r.delta, { currency: base, lang, signed: true }),
                       delta: (r) =>
                         r.target_weight !== null
-                          ? `→ ${percent(r.target_weight, lang)}`
+                          ? `→ ${percent(r.target_weight, { lang })}`
                           : null,
                       wrap: true,
                     }}

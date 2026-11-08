@@ -19,10 +19,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { POLL_MS } from "../shell/poll";
 import type { Conversation } from "./types";
-
-/** How often the list is read while another thread is answering (ms). */
-const POLL_MS = 5000;
 
 /** One answer that landed on a thread the reader was not on. */
 export type Landed = {
@@ -127,7 +125,7 @@ export function useLanded(
   const waiting = !!threads?.some((c) => c.answering && c.id !== active);
   useEffect(() => {
     if (!waiting) return;
-    const timer = setInterval(poll, POLL_MS);
+    const timer = setInterval(poll, POLL_MS.threads);
     return () => clearInterval(timer);
   }, [waiting, poll]);
 

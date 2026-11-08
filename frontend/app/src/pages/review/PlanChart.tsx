@@ -14,18 +14,17 @@
  * every other page draws it in.
  */
 
-import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { chart } from "../../shell/theme";
 import { useApi } from "../../shell/useApi";
 import { ReturnLines, type ReturnSeries } from "../portfolio/charts";
 import { getCompare } from "../ticker/data";
-import { signedPercent } from "../ticker/format";
 import type { Comparison } from "../ticker/types";
 import { INDEX, type ReturnWindow } from "./returns";
 import type { ReviewRow } from "./types";
 import "../portfolio/portfolio.css";
+import { DASH, percent } from "../../shell/format";
 
 /** Lines per side — three sales and three adds fill `MAX_OTHERS`. */
 export const PER_SIDE = 3;
@@ -66,12 +65,11 @@ export default function PlanChart({
   const query = useApi(
     () => getCompare(INDEX, span, base, names),
     [span, base, names.join(",")],
+    // A new window refetches. The last chart stays up, dimmed, until the next
+    // one draws: a skeleton of another height here, above both tables, moves
+    // the page under the reader's hand on every press of the window picker.
+    { keep: true },
   );
-  // A new window refetches. The last chart stays up, dimmed, until the next
-  // one draws: a skeleton of another height here, above both tables, moves
-  // the page under the reader's hand on every press of the window picker.
-  const [last, setLast] = useState<Comparison | null>(null);
-  if (query.state === "loaded" && query.data !== last) setLast(query.data);
 
   const date = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" });
   const yearly = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
@@ -89,19 +87,16 @@ export default function PlanChart({
         </span>
       </h3>
       <p className="ag-rev-caption">{t("review.plan_chart_note", { base })}</p>
-      {query.state === "loading" && last ? (
-        <div className="ag-rev-plan-lines" aria-busy="true">
-          <Lines data={last} sells={sells} adds={adds} formatDate={formatDate} />
-        </div>
-      ) : (
-        <Loaded query={query} skeleton={<Skeleton rows={5} />}>
-          {(data) => (
-            <div className="ag-rev-plan-lines">
-              <Lines data={data} sells={sells} adds={adds} formatDate={formatDate} />
-            </div>
-          )}
-        </Loaded>
-      )}
+      <Loaded query={query} skeleton={<Skeleton rows={5} />}>
+        {(data) => (
+          <div
+            className="ag-rev-plan-lines"
+            aria-busy={(query.state === "loaded" && query.refreshing) || undefined}
+          >
+            <Lines data={data} sells={sells} adds={adds} formatDate={formatDate} />
+          </div>
+        )}
+      </Loaded>
       {left > 0 ? (
         <p className="ag-rev-caption">{t("review.plan_chart_more", { count: left })}</p>
       ) : null}
@@ -155,8 +150,12 @@ function Lines({
         dates={data.dates}
         series={series}
         label={t("review.plan_chart_title", { span: data.range })}
-        format={(value) => signedPercent(value, 1)}
-        tickFormat={(value) => signedPercent(value, 0)}
+        format={(value) =>
+          percent(value, { digits: 1, signed: "always", tight: true }) ?? DASH
+        }
+        tickFormat={(value) =>
+          percent(value, { digits: 0, signed: "always", tight: true }) ?? DASH
+        }
         formatDate={formatDate}
         legendValues
       />

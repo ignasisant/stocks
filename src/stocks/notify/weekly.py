@@ -24,15 +24,17 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pandas as pd
+
 from stocks import obs
-from stocks.config import load_watchlist
+from stocks.config import Holding
 from stocks.data.dividends import DividendEvent, upcoming_ex_dividends
 from stocks.data.earnings import EarningsEvent, calendar_events
 from stocks.notify import links, render
 from stocks.notify.digest import (
     BENCHMARK,
     BENCHMARK_LABEL,
-    money_changes,
+    dividend_cash,
     recent_dividends,
 )
 from stocks.notify.render import date_line, delta, money, signed
@@ -55,8 +57,16 @@ class WeeklyData:
     week: tuple[float, float] | None = None  # (change, pct)
     month: tuple[float, float] | None = None
     ytd: tuple[float, float] | None = None
-    # {days: index % change} over the same windows, in the index's currency.
+    # From the book's first day (`today_sections.book_start`): the span every
+    # comparison against an index opens on, so a later window cannot forgive
+    # what the picks lost before it.
+    since: tuple[float, float] | None = None
+    start: date | None = None
+    # {days: index % change} over the same windows, on the book's own money
+    # and in its currency; a window the index cannot cover in it is None.
     benchmark: dict[int, float | None] = field(default_factory=dict)
+    # {days: gain} the same money made in the index, beside `benchmark`.
+    benchmark_gain: dict[int, float] = field(default_factory=dict)
     # (ticker, money, pct) over the week, best first / worst first.
     best: list[tuple[str, float, float | None]] = field(default_factory=list)
     worst: list[tuple[str, float, float | None]] = field(default_factory=list)
@@ -66,86 +76,108 @@ class WeeklyData:
     earnings: list[EarningsEvent] = field(default_factory=list)
     top_weight: float | None = None  # top TOP_N names as a share of the book
     effective_names: float | None = None  # 1/HHI — equal-sized-name equivalent
+    largest: tuple[str, float] | None = None  # (ticker, weight)
     drift: float | None = None  # top_weight minus last Sunday's
     highlight: str | None = None
     currency: str = "EUR"
+    # Held names with no usable price, carried at cost in `total`: a total
+    # that quietly drops part of the book is a lie in smaller print.
+    missing: list[str] = field(default_factory=list)
+    # The index's last session: the close every figure here is as of.
+    as_of: date | None = None
+    # What the email reads beyond the push, kept off the dataclass's face.
+    hist: pd.DataFrame | None = field(default=None, repr=False, compare=False)
+    transactions: list = field(default_factory=list, repr=False, compare=False)
+    realized: list = field(default_factory=list, repr=False, compare=False)
 
     @property
     def ytd_days(self) -> int:
         """Calendar days back to 1 January — the YTD window for money_change."""
         return (self.date - date(self.date.year, 1, 1)).days
 
+    @property
+    def since_days(self) -> int | None:
+        """Calendar days back to the book's first day — its since-start window."""
+        return (self.date - self.start).days if self.start else None
+
+
+def index_closes(base: str, first) -> pd.Series | None:
+    """The S&P 500 (SPY) in `base` from the book's first day, or None.
+
+    The cached card download (`api.briefing.closes_since`), converted the way
+    Today converts it: euros through the downloaded pair, any other base at the
+    daily rate the book is valued at. Never the dollar series beside a euro
+    book: a gap that is the exchange rate's is not the picks'.
+    """
+    from stocks.api.briefing import closes_since
+    from stocks.chat import daily_book
+
+    return daily_book.index_in_currency(closes_since(first), base)
+
 
 def compute_weekly_data(
     watchlist: Path, db: Path, base: str = "EUR", today: date | None = None
 ) -> WeeklyData:
-    """Gather one account's weekly review, in `base`. Sections fail alone."""
-    from stocks.analysis.portfolio import (
-        effective_positions,
-        load_closes,
-        position_value_frames,
-        ticker_changes,
-        ticker_money_changes,
-        top_n_weight,
-    )
+    """Gather one account's weekly review, in `base`. Sections fail alone.
+
+    Every book figure reads one `book_history`: the total, the windows, the
+    names behind the week and the weights are the same valuation, so they add
+    up — a name without a price is carried at cost in all of them and listed
+    in `missing`."""
+    from stocks.analysis.portfolio import book_history, effective_positions, top_n_weight
 
     data = WeeklyData(date=today or date.today(), currency=base)
-    holdings = load_watchlist(watchlist)
 
     positions = []
     txs: list[Transaction] = []
     try:
         txs = all_transactions(db)
         if txs:
-            positions, _ = build(txs, base=base)
+            positions, data.realized = build(txs, base=base)
     except Exception:
         positions = []
     if not positions:
         # A watchlist has no book to review — the daily digest is the right
         # message for that account, and this one has nothing to say.
         return data
+    data.transactions = txs
 
-    with obs.swallow("weekly.position_values", positions=len(positions)):
-        # The week's movers and today's weights: a month of closes covers both.
-        values, _ = position_value_frames(positions, period="1mo", base=base)
-        if not values.empty:
-            last = values.iloc[-1].dropna()
-            data.total = float(last.sum()) if not last.empty else None
-            data.best, data.worst = _week_movers(
-                ticker_money_changes(values, WEEK), ticker_changes(values, WEEK)
-            )
-            if data.total:
-                weights = {str(t): float(v) / data.total for t, v in last.items()}
+    hist = None
+    with obs.swallow("weekly.book", positions=len(positions)):
+        hist, _twr, missing = book_history(txs, base)
+        if hist.empty:
+            hist = None
+        else:
+            data.hist = hist
+            data.missing = sorted(missing)
+            data.total = float(hist["value"].iloc[-1])
+
+    if hist is not None:
+        with obs.swallow("weekly.movers"):
+            data.best, data.worst = _week_movers(hist, txs, base)
+        with obs.swallow("weekly.weights"):
+            weights = _weights(hist)
+            if weights:
                 data.top_weight = top_n_weight(weights, TOP_N)
                 data.effective_names = effective_positions(weights)
+                data.largest = max(weights.items(), key=lambda kv: kv[1])
+        with obs.swallow("weekly.returns"):
+            _windows(data, hist, base)
 
-    index = None
-    with obs.swallow("weekly.benchmark", ticker=BENCHMARK):
-        index = load_closes([BENCHMARK], period="1y").get(BENCHMARK)
-
-    with obs.swallow("weekly.returns", positions=len(positions)):
-        # On the book's own money, the index bought with the same deposits on
-        # the same days: a deposit in March is not a year-to-date gain, and a
-        # good spring on 5,000 € is not one on 100,000 € (`money_changes`).
-        windows = [WEEK, MONTH, data.ytd_days]
-        changes, same = money_changes(txs, base, windows, index)
-        data.week, data.month = changes[WEEK], changes[MONTH]
-        data.ytd = changes[data.ytd_days]
-        if data.week is not None:
-            data.benchmark = same
-
-    tickers = [p.ticker for p in positions]
+    held = [p.ticker for p in positions if p.quantity > 0]
     with obs.swallow("weekly.earnings"):
-        events, _ = calendar_events(holdings, ref=data.date)
+        # The book's own names: a print on a name merely followed is the
+        # digest's news, not this book's week ahead.
+        events, _ = calendar_events([Holding(ticker=t) for t in held], ref=data.date)
         data.earnings = [
             e for e in events if e.days_until is not None and e.days_until <= WEEK
         ]
 
-    with obs.swallow("weekly.ex_dividends", tickers=len(tickers)):
+    with obs.swallow("weekly.ex_dividends", tickers=len(held)):
         data.ex_dividends = upcoming_ex_dividends(
-            tickers, within_days=WEEK, ref=data.date
+            held, within_days=WEEK, ref=data.date
         )
-        data.dividend_cash = _dividend_cash(data.ex_dividends, positions, base)
+        data.dividend_cash = dividend_cash(data.ex_dividends, positions, base)
 
     with obs.swallow("weekly.dividends_received"):
         data.dividends_received = recent_dividends(
@@ -155,14 +187,62 @@ def compute_weekly_data(
     return data
 
 
+def _windows(data: WeeklyData, hist: pd.DataFrame, base: str) -> None:
+    """Week, month, YTD and since the book's first day, each beside the index
+    bought with the same money on the same days (`index_change`)."""
+    from stocks.analysis.portfolio import index_change, money_change
+    from stocks.chat.today_sections import book_start, reaching
+
+    start = book_start(hist)
+    data.start = start.date() if start is not None else None
+    windows = [WEEK, MONTH, data.ytd_days]
+    if data.since_days:
+        windows.append(data.since_days)
+    own = {days: money_change(hist, days) for days in windows}
+    data.week, data.month, data.ytd = own[WEEK], own[MONTH], own[data.ytd_days]
+    data.since = own.get(data.since_days) if data.since_days else None
+    if data.week is None:
+        return
+    index = None
+    with obs.swallow("weekly.benchmark", ticker=BENCHMARK):
+        index = index_closes(base, start)
+    if index is None:
+        return
+    data.as_of = index.index[-1].date()
+    # Read from the book's first day, or from its first close within a few
+    # days after: a download opens a session or so late.
+    reached = reaching(index, start)
+    if reached is not None:
+        index = reached
+    for days in windows:
+        change = index_change(hist, index, days)
+        data.benchmark[days] = None if change is None else change[1]
+        if change is not None:
+            data.benchmark_gain[days] = change[0]
+
+
 def _week_movers(
-    contributions, percents
+    hist: pd.DataFrame, txs, base: str
 ) -> tuple[list[tuple[str, float, float | None]], list[tuple[str, float, float | None]]]:
-    """(best, worst) names of the week, ranked by money and carrying the percent."""
-    pcts = {str(t): float(v) for t, v in percents.items()}
+    """(best, worst) names of the week by what each added to the book.
+
+    `return_attribution` over the week's window: a name's move net of the
+    money put into it, so a name bought on Wednesday counts from Wednesday and
+    its purchase is not its gain. The percent beside it is its price over the
+    days it was held, in its own currency."""
+    from stocks.analysis.portfolio import window_span
+    from stocks.analysis.return_attribution import attribution
+
+    span = window_span(pd.DatetimeIndex(hist.index), WEEK)
+    if span is None:
+        return [], []
+    split = attribution(hist, txs, start=span[0], base=base)
+    if split is None:
+        return [], []
+    legs = hist.attrs.get("legs") or {}
     rows = [
-        (str(t), float(v), pcts.get(str(t)))
-        for t, v in contributions.items()
+        (str(t), float(v), _held_move(legs.get(t), span))
+        for t, v in split.movers.items()
     ]
     ranked = sorted(rows, key=lambda r: r[1], reverse=True)
     best = [r for r in ranked if r[1] > 0][:NAMES_SHOWN]
@@ -170,35 +250,64 @@ def _week_movers(
     return best, worst
 
 
-def _dividend_cash(
-    events: list[DividendEvent], positions, base: str
-) -> dict[str, float]:
-    """Estimated gross cash per upcoming ex-date, in `base`, keyed by ticker."""
-    from stocks.notify.digest import _dividend_cash as shared
+def _held_move(leg, span) -> float | None:
+    """The price move of `leg` over `span`, from the later of its open and the
+    first day shares were held in it; None without a price at both ends."""
+    if leg is None or leg.px is None:
+        return None
+    start, end = span
+    held = leg.shares[(leg.shares.index >= start) & (leg.shares.index <= end)]
+    held = held[held > 0]
+    if held.empty:
+        return None
+    opened = held.index[0]
+    if opened > start:
+        # Bought inside the week: its first held close is where it starts.
+        start = opened
+    marked = leg.marked
+    if not (bool(marked.get(start, False)) and bool(marked.get(end, False))):
+        return None
+    first, last = float(leg.px.loc[start]), float(leg.px.loc[end])
+    return last / first - 1 if first else None
 
-    return shared(events, positions, base)
+
+def _weights(hist: pd.DataFrame) -> dict[str, float]:
+    """{ticker: share of the book} on its last day, off the same legs as the
+    total — an unpriced name at its cost, as it is counted there."""
+    legs = hist.attrs.get("legs") or {}
+    total = float(hist["value"].iloc[-1])
+    if not total:
+        return {}
+    last = {str(t): float(leg.value.iloc[-1]) for t, leg in legs.items()}
+    return {t: v / total for t, v in last.items() if v > 0}
 
 
 # ---------------------------------------------------------------- rendering
 
 
 def _window_line(data: WeeklyData, tr) -> str | None:
-    """'Month +3,100 € (+3.02%) · YTD …' — the horizons the title leaves out."""
+    """'Since start +9,800 € (+12.40%) · Month … · YTD …' — the horizons the
+    title leaves out, the book's whole span first."""
     parts = [
         f"{tr(key)} {delta(*value, data.currency)}"
-        for key, value in (("month", data.month), ("ytd", data.ytd))
+        for key, value in (
+            ("since_start", data.since), ("month", data.month), ("ytd", data.ytd)
+        )
         if value is not None
     ]
     return " · ".join(parts) if parts else None
 
 
 def _benchmark_line(data: WeeklyData, tr) -> str | None:
-    """'vs S&P 500 · week +1.10% · YTD +9.80%' — the same windows, the index."""
+    """'vs S&P 500 · since start +31.20% · week +1.10% · …' — the same
+    windows, the index; the span from the book's first day leads."""
     labels = {WEEK: "week", MONTH: "month", data.ytd_days: "ytd"}
+    if data.since_days:
+        labels = {data.since_days: "since_start", **labels}
     parts = [
-        f"{tr(labels[days])} {pct * 100:+.2f}%"
-        for days, pct in data.benchmark.items()
-        if pct is not None and days in labels
+        f"{tr(label)} {pct * 100:+.2f}%"
+        for days, label in labels.items()
+        if (pct := data.benchmark.get(days)) is not None
     ]
     if not parts:
         return None
@@ -333,7 +442,7 @@ def weekly_delivered(user, state: dict, data: WeeklyData) -> None:
 
     if data.top_weight is not None:
         remember_top_weight(state, data.top_weight, datetime.now(UTC))
-        save_state(state, user.state_path)
+        save_state(state, user.state_path, only=("weekly",))
 
 
 def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:

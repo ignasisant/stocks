@@ -181,7 +181,7 @@ def test_purge_owner_deletes_only_that_accounts_links(account, store):
     _book(account.chat)
     mine = shares.create(account, "a1", masked=True, lang="es")
     other = dict(mine, id="someoneElse1", owner="other")
-    shares.atomic.write_json(store / "someoneElse1.json", other)
+    (store / "someoneElse1.json").write_text(json.dumps(other))
     assert shares.purge_owner(shares.owner_of(account)) == 1
     assert shares.load(mine["id"]) is None
     assert shares.load("someoneElse1") is not None

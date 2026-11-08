@@ -176,5 +176,7 @@
   "tour.hello_ai_cap": "Sobre tu cartera o cualquier valor",
   "tour.hello_hint": "¿Sin extracto? Busca cualquier valor arriba.",
   "tour.hello_cta": "Importar ahora",
-  "tour.hello_later": "Explorar primero"
+  "tour.hello_later": "Explorar primero",
+  "tour.news_2026_11_1_email_title": "Tu semana por email",
+  "tour.news_2026_11_1_email_body": "Cada viernes tras el cierre de EE. UU., tu semana en cifras en tu correo; apágalo en **Notificaciones**."
 }

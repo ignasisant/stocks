@@ -26,8 +26,9 @@ import { Link } from "../../shell/router";
 import { Help, type Tone } from "../../ui/Kpi";
 import { Card, CardQuery, CardTitle, Note } from "./ui";
 import { Segmented } from "../../ui/Segmented";
-import { decimal, money, percent, plain, shortDate } from "./format";
+import { plain, shortDate } from "./format";
 import type { MarketGlance, MarketTile, MarketWindow } from "./types";
+import { decimal, money, percent } from "../../shell/format";
 
 const WINDOWS: { key: MarketWindow; label: string }[] = [
   { key: "day", label: "home.market_window_day" },
@@ -180,7 +181,7 @@ function Regime({ data }: { data: MarketGlance }) {
       {week !== null ? (
         <span className="hm-regime-delta">
           {t("home.market_regime_delta", {
-            delta: decimal(week, lang, 0, { signed: true }) ?? "",
+            delta: decimal(week, { lang, digits: 0, signed: "always" }) ?? "",
           })}
         </span>
       ) : null}
@@ -243,8 +244,10 @@ function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
     change === undefined
       ? null
       : tile.unit === "basis_points"
-        ? t("home.market_bp", { n: decimal(change, lang, 0, { signed: true }) ?? "" })
-        : percent(change, lang, { signed: true, digits: 1 });
+        ? t("home.market_bp", {
+            n: decimal(change, { lang, digits: 0, signed: "always" }) ?? "",
+          })
+        : percent(change, { lang, signed: "always", digits: 1 });
   const arrow = tile.state ? ARROWS[tile.state] : undefined;
   const body = (
     <>
@@ -289,12 +292,12 @@ function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
 function level(tile: MarketTile, lang: string): string | null {
   const value = tile.value;
   if (value === null) return null;
-  if (tile.unit === "basis_points") return percent(value / 100, lang, { digits: 2 });
-  if (tile.group === "fx") return decimal(value, lang, 4);
+  if (tile.unit === "basis_points") return percent(value / 100, { lang, digits: 2 });
+  if (tile.group === "fx") return decimal(value, { lang, digits: 4 });
   if (tile.group === "commodity" || tile.group === "crypto") {
-    return money(value, "USD", lang, { digits: value >= 1000 ? 0 : 2 });
+    return money(value, { currency: "USD", lang, digits: value >= 1000 ? 0 : 2 });
   }
-  return decimal(value, lang, value >= 1000 ? 0 : 2);
+  return decimal(value, { lang, digits: value >= 1000 ? 0 : 2 });
 }
 
 /** Where the fear gauge sits in its own year: a word, then the share of the year's days it is above. */

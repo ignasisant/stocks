@@ -20,12 +20,11 @@ needs to recognise which account they connected — masked on the way in.
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from stocks import atomic, storage
+from stocks import userstore
 from stocks.config import DATA_DIR
 
 STATE_PATH = DATA_DIR / "bank.json"
@@ -42,14 +41,7 @@ def _blank() -> dict:
 
 
 def load(path: Path = STATE_PATH) -> dict:
-    if not path.exists():
-        return _blank()
-    try:
-        data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return _blank()
-    if not isinstance(data, dict):
-        return _blank()
+    data = userstore.read(path)
     state = _blank()
     pending = data.get("pending")
     state["pending"] = pending if isinstance(pending, dict) else {}
@@ -59,9 +51,10 @@ def load(path: Path = STATE_PATH) -> dict:
 
 
 def save(state: dict, path: Path = STATE_PATH) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, state, indent=2)
-    storage.persist(path)
+    """Replace the file. A read-modify-write holds `userstore.lock(path)` from
+    its `load`: a pending `state` is consumed exactly once only if two
+    callbacks cannot both read it before either saves."""
+    userstore.write(path, state)
 
 
 def _now() -> float:
@@ -80,26 +73,28 @@ def add_pending(
     path: Path, *, state: str, email: str, aspsp: dict, ttl: int = PENDING_TTL
 ) -> None:
     """Remember an authorisation we are about to send the user off to."""
-    data = load(path)
-    data["pending"][state] = {
-        "email": email.strip().lower(),
-        "aspsp": {"name": aspsp.get("name", ""), "country": aspsp.get("country", "")},
-        "expires": _now() + ttl,
-    }
-    # Pruned after the insert, not before: pruning first would leave room for
-    # the new entry and let the cap drift one higher on every attempt.
-    data["pending"] = _prune_pending(data["pending"], _now())
-    save(data, path)
+    with userstore.lock(path):
+        data = load(path)
+        data["pending"][state] = {
+            "email": email.strip().lower(),
+            "aspsp": {"name": aspsp.get("name", ""), "country": aspsp.get("country", "")},
+            "expires": _now() + ttl,
+        }
+        # Pruned after the insert, not before: pruning first would leave room for
+        # the new entry and let the cap drift one higher on every attempt.
+        data["pending"] = _prune_pending(data["pending"], _now())
+        save(data, path)
 
 
 def take_pending(path: Path, state: str, email: str) -> dict | None:
     """Consume a pending authorisation. None when it is unknown, expired or
     belongs to another account — the caller must then refuse the code."""
-    data = load(path)
-    entry = data["pending"].get(state)
-    data["pending"] = _prune_pending(data["pending"], _now())
-    data["pending"].pop(state, None)  # single use, valid or not
-    save(data, path)
+    with userstore.lock(path):
+        data = load(path)
+        entry = data["pending"].get(state)
+        data["pending"] = _prune_pending(data["pending"], _now())
+        data["pending"].pop(state, None)  # single use, valid or not
+        save(data, path)
     if not entry:
         return None
     if float(entry.get("expires", 0)) <= _now():
@@ -149,15 +144,16 @@ def add_connection(path: Path, session: dict, *, aspsp: dict | None = None) -> d
         "connected_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "accounts": _account_rows(session),
     }
-    data = load(path)
-    data["connections"] = [
-        c
-        for c in data["connections"]
-        if c.get("aspsp", {}).get("name") != conn["aspsp"]["name"]
-        or c.get("aspsp", {}).get("country") != conn["aspsp"]["country"]
-    ]
-    data["connections"].append(conn)
-    save(data, path)
+    with userstore.lock(path):
+        data = load(path)
+        data["connections"] = [
+            c
+            for c in data["connections"]
+            if c.get("aspsp", {}).get("name") != conn["aspsp"]["name"]
+            or c.get("aspsp", {}).get("country") != conn["aspsp"]["country"]
+        ]
+        data["connections"].append(conn)
+        save(data, path)
     return conn
 
 
@@ -173,13 +169,14 @@ def find(path: Path, session_id: str) -> dict | None:
 
 
 def remove_connection(path: Path, session_id: str) -> bool:
-    data = load(path)
-    kept = [c for c in data["connections"] if c.get("session_id") != session_id]
-    if len(kept) == len(data["connections"]):
-        return False
-    data["connections"] = kept
-    save(data, path)
-    return True
+    with userstore.lock(path):
+        data = load(path)
+        kept = [c for c in data["connections"] if c.get("session_id") != session_id]
+        if len(kept) == len(data["connections"]):
+            return False
+        data["connections"] = kept
+        save(data, path)
+        return True
 
 
 def expired(conn: dict, now: datetime | None = None) -> bool:
@@ -202,18 +199,19 @@ def record_fetch(
 ) -> None:
     """Cache what an account last reported, with the time it was fetched —
     the fetch budget is the bank's, and it is small."""
-    data = load(path)
-    for conn in data["connections"]:
-        if conn.get("session_id") != session_id:
-            continue
-        for acc in conn.get("accounts", []):
-            if acc.get("uid") == account_uid:
-                acc["snapshot"] = {
-                    "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                    "balances": balances,
-                }
-                save(data, path)
-                return
+    with userstore.lock(path):
+        data = load(path)
+        for conn in data["connections"]:
+            if conn.get("session_id") != session_id:
+                continue
+            for acc in conn.get("accounts", []):
+                if acc.get("uid") == account_uid:
+                    acc["snapshot"] = {
+                        "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                        "balances": balances,
+                    }
+                    save(data, path)
+                    return
 
 
 # --------------------------------------------------------------- balances
@@ -259,8 +257,9 @@ DEAD = "1970-01-01T00:00:00Z"
 def mark_expired(path: Path, session_id: str) -> None:
     """Record a consent the API just refused, so the card offers a reconnect
     instead of a button that cannot work."""
-    data = load(path)
-    for conn in data["connections"]:
-        if conn.get("session_id") == session_id:
-            conn["valid_until"] = DEAD
-    save(data, path)
+    with userstore.lock(path):
+        data = load(path)
+        for conn in data["connections"]:
+            if conn.get("session_id") == session_id:
+                conn["valid_until"] = DEAD
+        save(data, path)

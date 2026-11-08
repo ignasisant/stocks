@@ -13,9 +13,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { TickerCell } from "../home/ui";
 import type { DailyAnalysis, DailyCard, DailyTable } from "../home/types";
 import { tone } from "./card";
+import { TickerCell } from "../../shell/tickers";
 
 /** One line's analysis: absent while closed. */
 export type Panel =
@@ -165,7 +165,11 @@ function AnalysisTable({ table }: { table: DailyTable }) {
                 <td className="td-an-name">
                   {row.ticker ? (
                     <span className="td-an-who">
-                      <TickerCell ticker={row.ticker} name={false} />
+                      <TickerCell
+                        className="hm-ticker"
+                        ticker={row.ticker}
+                        name={false}
+                      />
                       {row.label ? (
                         <span className="td-an-label">{row.label}</span>
                       ) : null}

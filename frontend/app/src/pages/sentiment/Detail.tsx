@@ -26,7 +26,7 @@ import {
   fixed,
   grouped,
   maybe,
-  percent,
+  signedPercent,
   sectorKey,
   share,
   signed,
@@ -566,7 +566,7 @@ function Table({
     // since the column would otherwise be read as the latter.
     spec.key === "inflation" ? t("sentiment.inflation_momentum_help") : "",
     capture !== null && spec.key === "rotation"
-      ? t("sentiment.rotation_capture", { value: percent(capture, 2) })
+      ? t("sentiment.rotation_capture", { value: signedPercent(capture, 2) })
       : "",
     conditions && conditions.value !== null
       ? t("sentiment.nfci_note", {

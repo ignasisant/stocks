@@ -12,7 +12,6 @@ import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { tone } from "./format";
 import { Chip as Pill, Help, Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
-import { TickerCell as Cell } from "../../shell/tickers";
 import { DenseRows, Responsive, StackCards, type DenseSpec } from "../../ui/Rows";
 import { Segmented as Seg } from "../../ui/Segmented";
 
@@ -98,11 +97,6 @@ export function Warn({ children }: { children: ReactNode }) {
 
 export function Info({ children }: { children: ReactNode }) {
   return <p className="pf-info">{said(children)}</p>;
-}
-
-/** A ticker is always a way into its own page — never a bare string. */
-export function TickerCell({ ticker }: { ticker: string }) {
-  return <Cell ticker={ticker} className="pf-ticker" />;
 }
 
 /** A signed figure as the app's pill, coloured by its own sign. */

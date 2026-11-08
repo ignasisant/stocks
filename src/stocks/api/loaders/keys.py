@@ -5,6 +5,7 @@ mtimes.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 from stocks.api.cache import ttl_cache
 from stocks.portfolio.ledger import all_transactions
@@ -27,8 +28,19 @@ def db_mtime(db: str) -> float:
     return path.stat().st_mtime if path.exists() else 0.0
 
 
-def ledger_state(db: str, mtime: float, base: str = "EUR", matching: str = "fifo"):
-    """Ledger + share-matching replay -> (transactions, positions, realized).
+class LedgerState(NamedTuple):
+    """One replay of the ledger. Shared by every caller of the memo: read it,
+    never change the lists in place."""
+
+    txs: list
+    positions: list
+    realized: list
+
+
+def ledger_state(
+    db: str, mtime: float, base: str = "EUR", matching: str = "fifo"
+) -> LedgerState:
+    """Ledger + share-matching replay: `.txs`, `.positions`, `.realized`.
 
     `matching` is in the key as well as the arguments: FIFO and s.104 produce
     different realized parcels — and different basis left behind — from the
@@ -43,10 +55,10 @@ def ledger_state(db: str, mtime: float, base: str = "EUR", matching: str = "fifo
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=32)
-def _ledger_state(db: str, mtime: float, base: str, matching: str):
+def _ledger_state(db: str, mtime: float, base: str, matching: str) -> LedgerState:
     txs = all_transactions(Path(db))
     positions, realized = build(txs, base=base, matching=matching) if txs else ([], [])
-    return txs, positions, realized
+    return LedgerState(txs, positions, realized)
 
 
 ledger_state.cache_clear = _ledger_state.cache_clear  # ty: ignore[unresolved-attribute]

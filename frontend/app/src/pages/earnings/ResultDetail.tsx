@@ -38,19 +38,9 @@ import type {
   QuarterFigures,
   ResultDetailData,
 } from "./data";
-import {
-  eps,
-  longDate,
-  money,
-  pct,
-  plain,
-  quarterLabel,
-  signedFrac,
-  signedNum,
-  signedPct,
-  tone,
-} from "./format";
+import { longDate, plain, quarterLabel, tone } from "./format";
 import type { T } from "./format";
+import { compact, DASH, decimal, percent } from "../../shell/format";
 
 /** Surprise bars shown — two years of prints is the record worth reading. */
 const SURPRISE_QUARTERS = 8;
@@ -184,7 +174,7 @@ function Meters({
           <Kpi
             key={item.label}
             label={item.label}
-            value={pct(item.fraction)}
+            value={percent(item.fraction, { digits: 1, tight: true }) ?? DASH}
             chip={item.chip}
           >
             <span className="earn-meter-track">
@@ -326,16 +316,28 @@ function RevenueSection({
         tiles={[
           {
             label: t("earnings.tile_revenue"),
-            value: money(q.revenue, prefix),
+            value: compact(q.revenue, { prefix: prefix }) ?? DASH,
             chip: chip(
-              t("earnings.chip_yoy", { pct: signedFrac(q.revenue_yoy) }),
+              t("earnings.chip_yoy", {
+                pct:
+                  percent(q.revenue_yoy, {
+                    digits: 1,
+                    signed: "always",
+                    tight: true,
+                  }) ?? DASH,
+              }),
               q.revenue_yoy,
             ),
           },
-          { label: t("earnings.tile_qoq"), value: signedFrac(q.revenue_qoq) },
+          {
+            label: t("earnings.tile_qoq"),
+            value:
+              percent(q.revenue_qoq, { digits: 1, signed: "always", tight: true }) ??
+              DASH,
+          },
           {
             label: t("earnings.tile_ttm_revenue"),
-            value: money(breakdown.revenue_ttm, prefix),
+            value: compact(breakdown.revenue_ttm, { prefix: prefix }) ?? DASH,
             tip: t("earnings.tip_ttm"),
           },
         ]}
@@ -344,7 +346,7 @@ function RevenueSection({
         rows={trend.map((x) => ({
           label: quarterLabel(x.end, t),
           value: x.revenue,
-          text: money(x.revenue, prefix),
+          text: compact(x.revenue, { prefix: prefix }) ?? DASH,
           // The reported quarter in the brand colour, its neighbours muted.
           fill: x.end === q.end ? "now" : "past",
         }))}
@@ -361,10 +363,12 @@ function RevenueSection({
           key: x.end,
           cells: [
             quarterLabel(x.end, t),
-            money(x.revenue, prefix),
-            signedFrac(x.revenue_yoy),
-            signedFrac(x.revenue_qoq),
-            money(x.gross_profit, prefix),
+            compact(x.revenue, { prefix: prefix }) ?? DASH,
+            percent(x.revenue_yoy, { digits: 1, signed: "always", tight: true }) ??
+              DASH,
+            percent(x.revenue_qoq, { digits: 1, signed: "always", tight: true }) ??
+              DASH,
+            compact(x.gross_profit, { prefix: prefix }) ?? DASH,
           ],
         }))}
       />
@@ -387,7 +391,12 @@ function MarginSection({
     chip:
       bps === null
         ? null
-        : chip(t("earnings.chip_bps", { bps: signedNum(bps, 0) }), bps),
+        : chip(
+            t("earnings.chip_bps", {
+              bps: decimal(bps, { digits: 0, signed: "always" }),
+            }),
+            bps,
+          ),
   });
   return (
     <Section title={t("earnings.sec_margins")} sub={t("earnings.sub_margins")}>
@@ -418,10 +427,10 @@ function MarginSection({
           key: x.end,
           cells: [
             quarterLabel(x.end, t),
-            pct(x.gross_margin),
-            pct(x.operating_margin),
-            pct(x.net_margin),
-            pct(x.rnd_intensity),
+            percent(x.gross_margin, { digits: 1, tight: true }) ?? DASH,
+            percent(x.operating_margin, { digits: 1, tight: true }) ?? DASH,
+            percent(x.net_margin, { digits: 1, tight: true }) ?? DASH,
+            percent(x.rnd_intensity, { digits: 1, tight: true }) ?? DASH,
           ],
         }))}
         caption={t("earnings.margins_caption")}
@@ -448,26 +457,39 @@ function GaapSection({
         tiles={[
           {
             label: t("earnings.tile_net_income"),
-            value: money(q.net_income, prefix),
+            value: compact(q.net_income, { prefix: prefix }) ?? DASH,
             chip: chip(
-              t("earnings.chip_yoy", { pct: signedFrac(breakdown.net_income_yoy) }),
+              t("earnings.chip_yoy", {
+                pct:
+                  percent(breakdown.net_income_yoy, {
+                    digits: 1,
+                    signed: "always",
+                    tight: true,
+                  }) ?? DASH,
+              }),
               breakdown.net_income_yoy,
             ),
           },
-          { label: t("earnings.tile_pretax"), value: money(q.pretax_income, prefix) },
+          {
+            label: t("earnings.tile_pretax"),
+            value: compact(q.pretax_income, { prefix: prefix }) ?? DASH,
+          },
           {
             label: t("earnings.tile_tax_rate"),
-            value: pct(q.tax_rate),
+            value: percent(q.tax_rate, { digits: 1, tight: true }) ?? DASH,
             tip: t("earnings.tip_tax_rate"),
           },
           {
             label: t("earnings.tile_shares"),
             // A count, not money: the same compact form with no currency.
-            value: money(q.diluted_shares),
+            value: compact(q.diluted_shares) ?? DASH,
             // Dilution is the bad direction here: fewer shares (buybacks)
             // lift per-share value, more shares thin it — so the tone flips.
             chip: chip(
-              t("earnings.chip_yoy", { pct: signedFrac(shares) }),
+              t("earnings.chip_yoy", {
+                pct:
+                  percent(shares, { digits: 1, signed: "always", tight: true }) ?? DASH,
+              }),
               shares === null ? null : -shares,
             ),
             tip: t("earnings.tip_shares"),
@@ -491,13 +513,13 @@ function GaapSection({
           key: x.end,
           cells: [
             quarterLabel(x.end, t),
-            money(x.revenue, prefix),
-            money(x.gross_profit, prefix),
-            money(x.operating_income, prefix),
-            money(x.pretax_income, prefix),
-            money(x.tax_provision, prefix),
-            money(x.net_income, prefix),
-            eps(x.diluted_eps),
+            compact(x.revenue, { prefix: prefix }) ?? DASH,
+            compact(x.gross_profit, { prefix: prefix }) ?? DASH,
+            compact(x.operating_income, { prefix: prefix }) ?? DASH,
+            compact(x.pretax_income, { prefix: prefix }) ?? DASH,
+            compact(x.tax_provision, { prefix: prefix }) ?? DASH,
+            compact(x.net_income, { prefix: prefix }) ?? DASH,
+            decimal(x.diluted_eps, { digits: 2 }) ?? DASH,
           ],
         }))}
       />
@@ -526,13 +548,13 @@ function EpsSection({
         tiles={[
           {
             label: t("earnings.reported_eps"),
-            value: eps(printed.reported_eps),
+            value: decimal(printed.reported_eps, { digits: 2 }) ?? DASH,
             chip:
               printed.surprise_pct === null
                 ? null
                 : chip(
                     t("earnings.surprise_vs_est", {
-                      pct: signedNum(printed.surprise_pct),
+                      pct: decimal(printed.surprise_pct, { signed: "always" }),
                     }),
                     printed.surprise_pct,
                   ),
@@ -540,18 +562,23 @@ function EpsSection({
           },
           {
             label: t("earnings.tile_gaap_eps"),
-            value: eps(gaap),
+            value: decimal(gaap, { digits: 2 }) ?? DASH,
             // The gap is the adjustment, not a verdict — grey either way.
             chip:
               gap === null
                 ? null
                 : {
-                    text: t("earnings.chip_vs_gaap", { delta: signedNum(gap) }),
+                    text: t("earnings.chip_vs_gaap", {
+                      delta: decimal(gap, { signed: "always" }),
+                    }),
                     tone: "flat",
                   },
             tip: t("earnings.tip_gaap_eps"),
           },
-          { label: t("earnings.eps_estimate"), value: eps(printed.eps_estimate) },
+          {
+            label: t("earnings.eps_estimate"),
+            value: decimal(printed.eps_estimate, { digits: 2 }) ?? DASH,
+          },
         ]}
       />
       {surprises.length > 0 && (
@@ -561,7 +588,12 @@ function EpsSection({
             rows={surprises.map((x) => ({
               label: quarterLabel(x.date, t),
               value: x.surprise_pct,
-              text: signedPct(x.surprise_pct),
+              text:
+                percent(x.surprise_pct, {
+                  digits: 1,
+                  signed: "always",
+                  points: true,
+                }) ?? DASH,
               fill: (x.surprise_pct ?? 0) >= 0 ? "beat" : "miss",
             }))}
           />
@@ -579,9 +611,10 @@ function EpsSection({
             key: x.date,
             cells: [
               longDate(x.date, t),
-              eps(x.eps_estimate),
-              eps(x.reported_eps),
-              signedPct(x.surprise_pct),
+              decimal(x.eps_estimate, { digits: 2 }) ?? DASH,
+              decimal(x.reported_eps, { digits: 2 }) ?? DASH,
+              percent(x.surprise_pct, { digits: 1, signed: "always", points: true }) ??
+                DASH,
             ],
             classes: ["", "", "", tone(x.surprise_pct)],
           }))}
@@ -594,7 +627,11 @@ function EpsSection({
 /** "+12.0% YoY · 28 analysts", skipping whichever half is unknown. */
 function consensusNote(t: T, growth: number | null, analysts: number | null): string {
   return [
-    growth === null ? "" : t("earnings.chip_yoy", { pct: signedFrac(growth) }),
+    growth === null
+      ? ""
+      : t("earnings.chip_yoy", {
+          pct: percent(growth, { digits: 1, signed: "always", tight: true }) ?? DASH,
+        }),
     analysts ? t("earnings.chip_analysts", { n: analysts }) : "",
   ]
     .filter(Boolean)
@@ -619,7 +656,7 @@ function OutlookSection({
             low={outlook.rev_low}
             avg={outlook.rev_avg}
             high={outlook.rev_high}
-            fmt={(value) => money(value, prefix)}
+            fmt={(value) => compact(value, { prefix: prefix }) ?? DASH}
             note={consensusNote(t, outlook.rev_growth, outlook.rev_analysts)}
           />
         )}
@@ -629,7 +666,7 @@ function OutlookSection({
             low={outlook.eps_low}
             avg={outlook.eps_avg}
             high={outlook.eps_high}
-            fmt={eps}
+            fmt={(v) => decimal(v, { digits: 2 }) ?? DASH}
             note={consensusNote(t, outlook.eps_growth, outlook.eps_analysts)}
           />
         )}
@@ -649,11 +686,12 @@ function OutlookSection({
             key: view.period,
             cells: [
               key ? t(key) : view.period,
-              eps(view.eps_avg),
-              `${eps(view.eps_low)} – ${eps(view.eps_high)}`,
-              money(view.rev_avg, view.currency_prefix),
-              `${money(view.rev_low, view.currency_prefix)} – ${money(view.rev_high, view.currency_prefix)}`,
-              signedFrac(view.rev_growth),
+              decimal(view.eps_avg, { digits: 2 }) ?? DASH,
+              `${decimal(view.eps_low, { digits: 2 }) ?? DASH} – ${decimal(view.eps_high, { digits: 2 }) ?? DASH}`,
+              compact(view.rev_avg, { prefix: view.currency_prefix }) ?? DASH,
+              `${compact(view.rev_low, { prefix: view.currency_prefix }) ?? DASH} – ${compact(view.rev_high, { prefix: view.currency_prefix }) ?? DASH}`,
+              percent(view.rev_growth, { digits: 1, signed: "always", tight: true }) ??
+                DASH,
             ],
           };
         })}
@@ -794,21 +832,30 @@ function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
               tiles={[
                 {
                   label: t("earnings.reported_eps"),
-                  value: eps(printed.reported_eps),
+                  value: decimal(printed.reported_eps, { digits: 2 }) ?? DASH,
                   chip:
                     printed.surprise_pct === null
                       ? null
                       : chip(
                           t("earnings.surprise_vs_est", {
-                            pct: signedNum(printed.surprise_pct),
+                            pct: decimal(printed.surprise_pct, { signed: "always" }),
                           }),
                           printed.surprise_pct,
                         ),
                 },
-                { label: t("earnings.eps_estimate"), value: eps(printed.eps_estimate) },
+                {
+                  label: t("earnings.eps_estimate"),
+                  value: decimal(printed.eps_estimate, { digits: 2 }) ?? DASH,
+                },
                 {
                   label: t("earnings.price_reaction"),
-                  value: data ? signedPct(data.price_reaction, 2) : "…",
+                  value: data
+                    ? (percent(data.price_reaction, {
+                        digits: 2,
+                        signed: "always",
+                        points: true,
+                      }) ?? DASH)
+                    : "…",
                   tip: t("earnings.price_reaction_caption"),
                 },
               ]}

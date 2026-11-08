@@ -22,13 +22,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { moneyIn, percent, shares } from "../pages/portfolio/format";
 import { useLang } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
 import { Kpi, type Tone, toneOf } from "../ui/Kpi";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 import { type Line, LineChart } from "./chart";
 import { AllocationDonut } from "./donut";
+import { moneyIn, percent, shares } from "../shell/format";
 
 type Component = { id: string; component: string } & Record<string, unknown>;
 
@@ -338,7 +338,7 @@ function TradeFigures({ part, data }: Draw) {
   );
   if (!impact) return null;
   const money = moneyIn(lang, str(part.currency) || "EUR");
-  const count = (value: number) => shares(lang, value) ?? "";
+  const count = (value: number) => shares(value, { lang }) ?? "";
   const { held, after, gain, avg } = impact;
   return (
     <div className="ag-a2ui-row">
@@ -358,7 +358,7 @@ function TradeFigures({ part, data }: Draw) {
             label={labels.gain ?? ""}
             value={money(gain.amount, { digits: 2, signed: true })}
             valueTone={toneOf(gain.amount)}
-            note={percent(lang, gain.ratio, { signed: true })}
+            note={percent(gain.ratio, { lang, signed: true })}
           />
         </div>
       )}

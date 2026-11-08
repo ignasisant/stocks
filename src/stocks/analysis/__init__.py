@@ -19,3 +19,10 @@ def naive_dates(index) -> pd.DatetimeIndex:
     if out.tz is None:
         return out
     return out.tz_localize(None)
+
+
+def naive_series(series: pd.Series) -> pd.Series:
+    """`series` on naive dates, one value a day, oldest first, gaps dropped."""
+    out = series.dropna().copy()
+    out.index = naive_dates(out.index)
+    return out[~out.index.duplicated(keep="last")].sort_index()

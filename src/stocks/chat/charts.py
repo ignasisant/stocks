@@ -528,7 +528,7 @@ def book_for(db, base: str) -> Callable[[], Book | None]:
         hist, _twr, _missing = loaders.history(path, mtime, base)
         if hist is None or "value" not in hist:
             return None
-        flows = flow_series(loaders.ledger_state(path, mtime, base)[0], base=base)
+        flows = flow_series(loaders.ledger_state(path, mtime, base).txs, base=base)
         return Book(hist["value"], flows)
 
     return fetch

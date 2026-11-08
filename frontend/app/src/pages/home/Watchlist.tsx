@@ -22,9 +22,11 @@ import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { Chip, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
-import { Card, Note, TickerCell } from "./ui";
-import { decimal, percent, priceDigits } from "./format";
-import type { CloseRow, Closes, Watchlist, WatchlistEntry } from "./types";
+import { Card, Note } from "./ui";
+import { priceDigits } from "./format";
+import type { CloseRow, Closes, WatchlistEntry } from "./types";
+import { decimal, percent } from "../../shell/format";
+import { TickerCell } from "../../shell/tickers";
 
 export function WatchlistGroups({
   nonce,
@@ -40,7 +42,7 @@ export function WatchlistGroups({
    */
   holdsPositions?: boolean;
 }) {
-  const query = useApi(() => get<Watchlist>("/watchlist"), []);
+  const query = useApi(() => get("/watchlist"), []);
   return (
     <Loaded query={query} skeleton={<Skeleton shape="table" rows={5} />}>
       {(data) =>
@@ -187,15 +189,16 @@ function Group({
             <tbody>
               {tickers.map((ticker) => {
                 const row = prices?.get(ticker.toUpperCase()) ?? null;
-                const move = percent(row?.pct, lang, { signed: true });
+                const move = percent(row?.pct, { lang, digits: 2, signed: "always" });
                 return (
                   <tr key={ticker}>
                     {/* Names ellipsise rather than wrap, as the extremes do. */}
                     <td className="hm-tick-cell">
-                      <TickerCell ticker={ticker} />
+                      <TickerCell className="hm-ticker" ticker={ticker} />
                     </td>
                     <td className="hm-num">
-                      {decimal(row?.close, lang, priceDigits(row?.close)) ?? na}
+                      {decimal(row?.close, { lang, digits: priceDigits(row?.close) }) ??
+                        na}
                     </td>
                     <td className="hm-num">
                       {move === null ? (
@@ -218,14 +221,13 @@ function Group({
               ticker: (ticker) => ticker,
               names: true,
               value: (ticker) =>
-                decimal(
-                  prices?.get(ticker.toUpperCase())?.close,
+                decimal(prices?.get(ticker.toUpperCase())?.close, {
                   lang,
-                  priceDigits(prices?.get(ticker.toUpperCase())?.close),
-                ) ?? na,
+                  digits: priceDigits(prices?.get(ticker.toUpperCase())?.close),
+                }) ?? na,
               delta: (ticker) => {
                 const row = prices?.get(ticker.toUpperCase()) ?? null;
-                const move = percent(row?.pct, lang, { signed: true });
+                const move = percent(row?.pct, { lang, digits: 2, signed: "always" });
                 return move === null ? (
                   na
                 ) : (

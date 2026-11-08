@@ -10,7 +10,6 @@
 import type { ReactNode } from "react";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { TickerCell as Cell } from "../../shell/tickers";
 import type { Query } from "../../shell/useApi";
 
 export function Card({
@@ -79,27 +78,4 @@ export function CardQuery<T>({
       {(data) => children(data)}
     </Loaded>
   );
-}
-
-/**
- * A ticker, always as a link to its own page.
- *
- * House rule: every symbol on screen opens its analysis, behind its mirrored
- * logo. The shell's cell collects a whole table's worth of names into one
- * `/market/profiles` call, so the marks cost one request per screen rather
- * than one per row.
- */
-export function TickerCell({
-  ticker,
-  name = true,
-}: {
-  ticker: string;
-  /**
-   * Print the company name after the symbol. Off in the movers and
-   * recent-transactions tables and where the cell is a chip with no room for
-   * it.
-   */
-  name?: boolean;
-}) {
-  return <Cell ticker={ticker} className="hm-ticker" name={name} />;
 }

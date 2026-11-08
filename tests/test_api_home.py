@@ -34,6 +34,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
+from stocks.api.loaders.keys import LedgerState
 from stocks.api.routes import home as home_routes
 from stocks.chat import daily, daily_analysis
 from tests.patching import patch_loaders
@@ -518,7 +519,7 @@ def test_a_row_is_converted_at_its_own_trade_date(client, account, monkeypatch):
     ]
     patch_loaders(
         monkeypatch, "ledger_state",
-        lambda db, mtime, base="EUR", matching="fifo": (rows, [], []),
+        lambda db, mtime, base="EUR", matching="fifo": LedgerState(rows, [], []),
     )
     seen = []
 

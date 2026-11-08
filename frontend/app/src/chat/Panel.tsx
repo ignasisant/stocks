@@ -387,6 +387,9 @@ export default function Panel({
   // The opening read paints the thread before the state lands (`useChat`):
   // the turns are drawn, the composer waits.
   const early = !state && view === "thread" && chat.turns.length > 0;
+  // A file dropped on an empty thread is its first message: the starters make
+  // way for the reading line and the card.
+  const dropped = chat.reading || chat.preview || chat.imported > 0;
   const provider = state?.providers.find((p) => p.id === state.answering);
   const byok = provider?.needs_key ?? false;
   // Null is not zero: an account the free chain never served has no counter,
@@ -681,7 +684,7 @@ export default function Panel({
                   // Not the starters: they are an empty thread's, and this one
                   // is only empty until its turns arrive.
                   <Status label={t("common.loading")} />
-                ) : !state ? null : needsSetup(state) ? (
+                ) : !state || dropped ? null : needsSetup(state) ? (
                   <Setup
                     state={state}
                     onSave={(patch) => void chat.settings(patch)}

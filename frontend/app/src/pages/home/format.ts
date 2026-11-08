@@ -1,15 +1,14 @@
 /**
- * Turning API numbers into cells, with one rule running through all of it: a
+ * Turning API values into cells, with one rule running through all of it: a
  * value that could not be computed comes back as `null`, and the caller prints
  * `home.na`. Nothing here ever substitutes a zero for a missing figure — that
  * is the whole reason the API sends null in the first place.
  *
- * Money and percentages go through `Intl`, keyed on the account's language, so
- * a Spanish reader gets `1.234,5 %` without this file owning a second table of
- * separators.
+ * Money and percentages come from `shell/format`; what stays here is the
+ * Home page's own vocabulary: the catalog's markup, per-unit price digits and
+ * the calendar-day helpers.
  */
 
-import { formatter } from "../../shell/numbers";
 import { calendarDay } from "../../shell/dates";
 
 export type Translate = (
@@ -32,10 +31,6 @@ export function plain(label: string): string {
   return label.replace(MARKUP, "").trim();
 }
 
-function finite(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
 /**
  * Decimals a per-unit price needs: cents for most, more for a sub-euro coin,
  * where "0,04 €" would hide a price that moves in the third decimal.
@@ -44,59 +39,6 @@ export function priceDigits(value: number | null | undefined): number {
   const abs = Math.abs(value ?? 0);
   if (abs === 0 || abs >= 1) return 2;
   return abs >= 0.1 ? 3 : 4;
-}
-
-export function money(
-  value: number | null | undefined,
-  currency: string,
-  lang: string,
-  opts?: { digits?: number; signed?: boolean },
-): string | null {
-  if (!finite(value)) return null;
-  const digits = opts?.digits ?? 0;
-  const options: Intl.NumberFormatOptions = {
-    style: "currency",
-    currency,
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: opts?.signed ? "always" : "auto",
-  };
-  try {
-    return formatter(lang, options).format(value);
-  } catch {
-    // A ledger row can carry a currency Intl does not know (a broker's own
-    // code). The figure is still worth printing — the code just trails it.
-    return `${decimal(value, lang, digits) ?? ""} ${currency}`.trim();
-  }
-}
-
-export function percent(
-  value: number | null | undefined,
-  lang: string,
-  opts?: { digits?: number; signed?: boolean },
-): string | null {
-  if (!finite(value)) return null;
-  const digits = opts?.digits ?? 2;
-  return formatter(lang, {
-    style: "percent",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: opts?.signed ? "always" : "auto",
-  }).format(value);
-}
-
-export function decimal(
-  value: number | null | undefined,
-  lang: string,
-  digits = 2,
-  opts?: { signed?: boolean },
-): string | null {
-  if (!finite(value)) return null;
-  return formatter(lang, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    signDisplay: opts?.signed ? "always" : "auto",
-  }).format(value);
 }
 
 /**

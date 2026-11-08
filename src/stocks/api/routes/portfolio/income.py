@@ -47,7 +47,7 @@ def fees_(
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
-    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    txs = loaders.ledger_state(db, mtime, ccy).txs
     if year is not None:
         txs = [t for t in txs if t.date.startswith(f"{year}-")]
     brokers = fees.by_broker(txs, base=ccy)
@@ -124,7 +124,7 @@ def dividends_(account: Account, base: Base = None) -> Dividends:
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
-    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    txs = loaders.ledger_state(db, mtime, ccy).txs
     booked = dividends.by_year(txs, base=ccy)
 
     estimated: dict[int, dividends.EstimatedYear] = {}

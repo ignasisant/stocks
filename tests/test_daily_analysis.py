@@ -370,7 +370,7 @@ def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(briefing, "_card_closes", lambda: series)
+    monkeypatch.setattr(briefing, "card_closes", lambda: series)
     monkeypatch.setattr(ev, "_closes", lambda tickers: {t: series[t] for t in tickers})
     tbl = pd.DataFrame(
         {"weight": [0.25], "value": [3400.0], "pnl": [-1520.4], "pnl_pct": [-0.312]},

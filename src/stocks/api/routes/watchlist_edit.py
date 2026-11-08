@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from stocks import watchlist as wl
 from stocks.api.deps import Account, Writer
 from stocks.api.schemas import AlertRule, Alerts, TagEdit, Tags, WatchlistEntry
-from stocks.config import ALERT_TYPES, load_watchlist
+from stocks.config import load_watchlist
 from stocks.data.crypto import is_crypto
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
@@ -301,16 +301,14 @@ def set_alerts(account: Writer, ticker: Symbol, body: AlertsBody) -> Alerts:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{ticker.upper()} is not on this watchlist",
         )
-    unknown = sorted({a.type for a in body.alerts} - ALERT_TYPES)
-    if unknown:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"unknown alert type(s): {', '.join(unknown)}",
+    try:
+        rules = wl.replace_alerts(
+            [rule.model_dump(exclude_none=True) for rule in body.alerts]
         )
-    wl.set_alerts(
-        account.watchlist,
-        ticker,
-        [rule.model_dump(exclude_none=True) for rule in body.alerts],
-    )
+    except wl.AlertError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    wl.set_alerts(account.watchlist, ticker, rules)
     symbol = ticker.strip().upper()
     return Alerts(ticker=symbol, alerts=_alerts(account.watchlist, symbol))

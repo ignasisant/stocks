@@ -18,6 +18,7 @@ import { type ReactNode, useEffect, useId, useState } from "react";
 import { findTickers } from "../../shell/findTickers";
 import { useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
+import { useDebounced } from "../../shell/useDebounced";
 import type { SearchMatch } from "../ticker/types";
 import { VerdictChip } from "./Explain";
 import type { ReviewRow } from "./types";
@@ -26,8 +27,6 @@ import type { ReviewRow } from "./types";
 const SHOWN = 8;
 /** The market's rows: a few, under the page's own. */
 const MARKET = 4;
-/** The top bar's wait: a five-letter symbol is one request, not five. */
-const DEBOUNCE_MS = 220;
 
 /**
  * The market's answer for `query`, minus the names `known` already holds
@@ -37,23 +36,21 @@ function useMarket(query: string, known: Set<string>, off: boolean) {
   const [found, setFound] = useState<{ query: string; rows: SearchMatch[] } | null>(
     null,
   );
+  const settled = useDebounced(query);
   useEffect(() => {
-    if (off || !query) return;
+    if (off || !settled) return;
     let live = true;
-    const timer = window.setTimeout(() => {
-      findTickers<SearchMatch>(query, { limit: 8 })
-        .then((answer) => {
-          if (live) setFound({ query, rows: answer.matches });
-        })
-        .catch(() => {
-          if (live) setFound({ query, rows: [] });
-        });
-    }, DEBOUNCE_MS);
+    findTickers<SearchMatch>(settled, { limit: 8 })
+      .then((answer) => {
+        if (live) setFound({ query: settled, rows: answer.matches });
+      })
+      .catch(() => {
+        if (live) setFound({ query: settled, rows: [] });
+      });
     return () => {
       live = false;
-      window.clearTimeout(timer);
     };
-  }, [query, off]);
+  }, [settled, off]);
   if (off || !query) return { rows: [], busy: false };
   // A reply for an older query stays up until the new one lands: rows
   // jumping out and back on every keystroke read as flicker.

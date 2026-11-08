@@ -186,7 +186,16 @@ def compute_digest_data(
             values, frozen = position_value_frames(positions, period="1mo", base=base)
             if not values.empty:
                 last = values.iloc[-1].dropna()
-                data.total = float(last.sum()) if not last.empty else None
+                # A name the price pass missed stands in at its ledger cost
+                # (`priced_totals` / `value_weights`): stale, but nearer its
+                # value than the zero that leaves the book short by its size.
+                held_at_cost = sum(
+                    p.cost for p in positions if p.ticker not in last.index
+                )
+                data.total = (
+                    float(last.sum()) + float(held_at_cost)
+                    if not last.empty else None
+                )
                 data.day = basket_change(values, 1)
                 # Same frame, same anchoring as `day` — so the contributions
                 # sum to the day change the header just reported.
@@ -231,7 +240,7 @@ def compute_digest_data(
 
     with obs.swallow("digest.ex_dividends", tickers=len(tickers)):
         data.ex_dividends = upcoming_ex_dividends(tickers, within_days=WINDOW_DAYS)
-        data.dividend_cash = _dividend_cash(data.ex_dividends, positions, base)
+        data.dividend_cash = dividend_cash(data.ex_dividends, positions, base)
 
     if txs:
         with obs.swallow("digest.dividends_received"):
@@ -314,7 +323,7 @@ def stale_import_days(
     return days if days >= STALE_IMPORT_DAYS else None
 
 
-def _dividend_cash(
+def dividend_cash(
     events: list[DividendEvent], positions, base: str
 ) -> dict[str, float]:
     """Estimated gross cash per upcoming ex-date, in `base`, keyed by ticker.
@@ -555,7 +564,7 @@ def digest_delivered(user, state: dict, data: DigestData) -> None:
     if data.tax_deadlines:
         remember_tax_reminders(state, data.tax_deadlines)
     if data.highlight or data.tax_deadlines:
-        save_state(state, user.state_path)
+        save_state(state, user.state_path, only=("highlights", "tax_reminded"))
 
 
 def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:

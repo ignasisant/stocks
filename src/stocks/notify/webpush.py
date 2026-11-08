@@ -63,7 +63,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from stocks import atomic, obs, storage
+from stocks import obs, storage, userstore
 from stocks.secrets_env import secret
 
 FILE = "push.json"
@@ -80,6 +80,8 @@ PRESENT_S = 45
 TTL_S = 6 * 3600
 TIMEOUT_S = 10
 
+# Guards `_seen`, the in-memory presence map; the files lock per path
+# (`userstore.lock`).
 _lock = threading.Lock()
 
 
@@ -200,22 +202,15 @@ def _row_id(endpoint: str) -> str:
 
 
 def _read(path: Path) -> dict[str, dict]:
-    try:
-        data = json.loads(path.read_text())
-    except FileNotFoundError:
+    rows = userstore.read(path).get("subscriptions")
+    if not isinstance(rows, dict):
         return {}
-    except (OSError, ValueError) as exc:
-        obs.error("push.store_unreadable", error_type=type(exc).__name__)
-        return {}
-    rows = data.get("subscriptions") if isinstance(data, dict) else None
     return {k: v for k, v in (rows or {}).items() if isinstance(v, dict)}
 
 
 def _write(path: Path, rows: dict[str, dict]) -> None:
     newest = sorted(rows, key=lambda k: float(rows[k].get("created") or 0))[-MAX_ROWS:]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic.write_json(path, {"subscriptions": {k: rows[k] for k in newest}}, indent=1)
-    storage.persist(path)
+    userstore.write(path, {"subscriptions": {k: rows[k] for k in newest}}, indent=1)
 
 
 def _valid_endpoint(endpoint: str) -> bool:
@@ -241,7 +236,7 @@ def subscribe(path: Path, *, endpoint: str, p256dh: str, auth: str,
     except (ValueError, TypeError):
         return False
     now = time.time() if now is None else now
-    with _lock:
+    with userstore.lock(path):
         rows = _read(path)
         key = _row_id(endpoint)
         rows[key] = {
@@ -254,7 +249,7 @@ def subscribe(path: Path, *, endpoint: str, p256dh: str, auth: str,
 
 
 def unsubscribe(path: Path, endpoint: str) -> bool:
-    with _lock:
+    with userstore.lock(path):
         rows = _read(path)
         if rows.pop(_row_id(endpoint), None) is None:
             return False
@@ -358,36 +353,26 @@ def _snippet(text: str, limit: int = 110) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def _log_rows(raw: bytes | str | None) -> list[dict]:
-    try:
-        data = json.loads(raw) if raw else {}
-    except ValueError:
-        return []
+def _log_rows(data: object) -> list[dict]:
     rows = data.get("sent") if isinstance(data, dict) else None
     return [r for r in rows or () if isinstance(r, dict) and r.get("id")]
 
 
 def history(path: Path) -> list[dict]:
     """What this account was pushed, newest first (`log`)."""
-    try:
-        raw = path.with_name(LOG_FILE).read_text()
-    except OSError:
-        return []
-    return _log_rows(raw)[::-1]
+    return _log_rows(userstore.read(path.with_name(LOG_FILE)))[::-1]
 
 
 def log(path: Path, message: dict, *, topic: str, devices: int, took: int) -> None:
     """Keep one push in the account's log. The bucket's copy is merged in
     first, as `journal._merged` does: a cron in another process may have
     logged since this one restored the file. Never raises."""
-    with obs.swallow("push.log"):
-        target = path.with_name(LOG_FILE)
+    target = path.with_name(LOG_FILE)
+    with obs.swallow("push.log"), userstore.lock(target):
+        mine = _log_rows(userstore.read(target))
         try:
-            mine = _log_rows(target.read_text())
-        except OSError:
-            mine = []
-        try:
-            theirs = _log_rows(storage.read(target))
+            raw = storage.read(target)
+            theirs = _log_rows(json.loads(raw) if raw else {})
         except Exception:  # noqa: BLE001 — the local log still gets the line
             theirs = []
         at = time.time()
@@ -401,9 +386,7 @@ def log(path: Path, message: dict, *, topic: str, devices: int, took: int) -> No
         known = {r["id"] for r in mine}
         rows = mine + [r for r in theirs if r["id"] not in known] + [row]
         rows.sort(key=lambda r: float(r.get("at") or 0))
-        target.parent.mkdir(parents=True, exist_ok=True)
-        atomic.write_json(target, {"sent": rows[-LOG_ROWS:]}, indent=1)
-        storage.persist(target)
+        userstore.write(target, {"sent": rows[-LOG_ROWS:]}, indent=1)
 
 
 def send_all(path: Path, message: dict, *, topic: str = "") -> int:

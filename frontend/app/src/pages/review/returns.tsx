@@ -18,8 +18,8 @@ import { useLang, useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Segmented } from "../../ui/Segmented";
-import { percent } from "./format";
 import type { NameReturns, ReviewReturns, ScorePoint } from "./types";
+import { percent } from "../../shell/format";
 
 export const WINDOWS = ["1m", "6m", "1y", "2y"] as const;
 export type ReturnWindow = (typeof WINDOWS)[number];
@@ -162,12 +162,12 @@ function useReturnText() {
   const t = useT();
   const lang = useLang();
   const signed = (value: number) =>
-    `${value > 0 ? "+" : ""}${percent(value, lang) ?? ""}`;
+    `${value > 0 ? "+" : ""}${percent(value, { lang }) ?? ""}`;
   return {
     own: (value: number) => signed(value),
     gap: (value: number) =>
       t("review.pp", {
-        value: `${value > 0 ? "+" : ""}${percent(value, lang)?.replace(/\s?%/, "") ?? ""}`,
+        value: `${value > 0 ? "+" : ""}${percent(value, { lang })?.replace(/\s?%/, "") ?? ""}`,
       }),
   };
 }

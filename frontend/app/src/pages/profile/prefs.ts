@@ -9,7 +9,7 @@
  * must not leave the form looking like it took.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { NotSignedIn, send } from "../../shell/api";
 import { useSession, type Prefs } from "../../shell/session";
 import { describe } from "./errors";
@@ -31,6 +31,7 @@ type Writable = {
   notify_briefing: boolean;
   notify_digest: boolean;
   notify_weekly: boolean;
+  notify_weekly_email: boolean;
   notify_alerts: boolean;
   chat_panel_open: boolean;
   setup_card_dismissed: boolean;
@@ -60,21 +61,35 @@ export function useSettings(offline: string): Settings {
   const [prefs, setPrefs] = useState<Prefs>(session.prefs);
   const [saving, setSaving] = useState<keyof Writable | null>(null);
   const [failure, setFailure] = useState<Settings["failure"]>(null);
+  // A switch flipped twice in a second is two PATCHes. Sent one after the
+  // other, so the server applies them in the order they were made; and only
+  // the newest one's answer is rendered, since each answer is the whole stored
+  // object and an older one landing last would put the flip back.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const turn = useRef(0);
 
   const save = useCallback(
     <K extends keyof Writable>(field: K, value: Writable[K]) => {
       const before = prefs;
+      const mine = ++turn.current;
       setPrefs({ ...prefs, [field]: value } as Prefs);
       setSaving(field);
       setFailure(null);
-      send<Prefs>("PATCH", "/prefs", { [field]: value }).then(
+      const sent = queue.current.then(() =>
+        send<Prefs>("PATCH", "/prefs", { [field]: value }),
+      );
+      queue.current = sent.catch(() => undefined);
+      sent.then(
         (fresh) => {
-          setSaving(null);
-          setPrefs(fresh);
           // The shell holds its own copy, and the whole app reads it.
           if (WHOLE_APP.has(field)) session.reload();
+          if (mine !== turn.current) return;
+          setSaving(null);
+          setPrefs(fresh);
         },
         (error: unknown) => {
+          // A newer save is on its way, and its answer is the stored truth.
+          if (mine !== turn.current) return;
           setSaving(null);
           setPrefs(before);
           // A session that ended mid-edit is not this page's error to word:

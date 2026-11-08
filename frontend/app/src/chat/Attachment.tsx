@@ -672,22 +672,46 @@ export function Attachment({
       )}
     </>
   );
-  const acts = (long: boolean) => (
-    <div className="ag-chat-import-acts">
-      <button
-        type="button"
-        className="ag-chat-btn ag-chat-btn-on"
-        disabled={busy || !origin || !count}
-        onClick={write}
-      >
-        {t(long ? "chat.import_button_long" : "chat.import_button", { n: count })}
-      </button>
-      <button type="button" className="ag-chat-btn" disabled={busy} onClick={onDiscard}>
-        {t(long ? "chat.import_cancel_file" : "chat.import_cancel")}
-      </button>
-    </div>
+  // Every row the file holds is already in the book and none was ticked back
+  // in: there is nothing to press Import for, and the card says so instead.
+  // Ticking a duplicate in the wide view brings the button back.
+  const settled = preview.fresh.length === 0 && dupes.length > 0 && !count;
+  const acts = (long: boolean) =>
+    settled ? (
+      <div className="ag-chat-import-acts">
+        <button
+          type="button"
+          className="ag-chat-btn ag-chat-btn-on"
+          onClick={onDiscard}
+        >
+          {t("chat.import_close")}
+        </button>
+      </div>
+    ) : (
+      <div className="ag-chat-import-acts">
+        <button
+          type="button"
+          className="ag-chat-btn ag-chat-btn-on"
+          disabled={busy || !origin || !count}
+          onClick={write}
+        >
+          {t(long ? "chat.import_button_long" : "chat.import_button", { n: count })}
+        </button>
+        <button
+          type="button"
+          className="ag-chat-btn"
+          disabled={busy}
+          onClick={onDiscard}
+        >
+          {t(long ? "chat.import_cancel_file" : "chat.import_cancel")}
+        </button>
+      </div>
+    );
+  const safe = (
+    <p className="ag-chat-hint">
+      {settled ? t("chat.import_all_held", { n: dupes.length }) : t("chat.import_safe")}
+    </p>
   );
-  const safe = <p className="ag-chat-hint">{t("chat.import_safe")}</p>;
   const warnLine = lines.flagged.length > 0 && (
     <p className="ag-chat-import-warn">
       {t("chat.import_warn_line", { n: lines.flagged.length })}
@@ -818,7 +842,7 @@ export function Attachment({
         </button>
       )}
 
-      {open ? null : brokerBlock}
+      {open || settled ? null : brokerBlock}
       {safe}
       {acts(false)}
       {open &&

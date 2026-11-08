@@ -24,9 +24,9 @@ from stocks.analysis import naive_dates
 from stocks.analysis.listing import price_units, quote_unit
 from stocks.analysis.portfolio.clock import (
     _session_move,
-    _snapshot,
     market_active,
     market_live,
+    quote_snapshot,
     session_moves,
     session_quote,
     session_quotes,
@@ -95,7 +95,7 @@ __all__ = [
     "_audit_twr",
     "_profile",
     "_session_move",
-    "_snapshot",
+    "quote_snapshot",
     "allocation",
     "allocation_parts",
     "analyze",
@@ -993,10 +993,7 @@ window_span = _window
 
 
 def _naive_index(series: pd.Series) -> pd.Series:
-    idx = pd.DatetimeIndex(series.index)
-    if idx.tz is not None:
-        idx = idx.tz_localize(None)
-    out = series.set_axis(midnights(idx))
+    out = series.set_axis(midnights(naive_dates(series.index)))
     return out[~out.index.duplicated(keep="last")].sort_index()
 
 

@@ -15,8 +15,8 @@ import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
 import type { Attribution, AttributionMover, RiskPeriod } from "./api";
 import { Waterfall, type WaterfallBar } from "./charts";
-import { compactMoneyIn, moneyIn } from "./format";
 import { Caption, Card, MissingPrices } from "./ui";
+import { compactMoneyIn, moneyIn } from "../../shell/format";
 
 /** The bars in the order they add up; a step that is zero is not drawn. */
 export function waterfallBars(

@@ -26,7 +26,7 @@ import {
   snap,
   type EventLine,
 } from "./events";
-import { latest, money, signed, signedPercent, type Translate } from "./format";
+import { latest, type Translate } from "./format";
 import {
   averageRow,
   eventRows,
@@ -47,7 +47,6 @@ import {
   YGrid,
   YLabels,
   bounds,
-  fitHeight,
   frame,
   plotHeight,
   plotWidth,
@@ -56,8 +55,10 @@ import {
   tickDigits,
   type TipLine,
 } from "./plot";
+import { fitHeight } from "../../ui/chart/fit";
 import type { Marker, Overlay } from "./layout";
 import type { Bars, CycleEvent, EarningsEvent, Trade } from "./types";
+import { DASH, decimal, money, percent } from "../../shell/format";
 
 const ALL_OVERLAYS: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const ALL_MARKERS: readonly Marker[] = ["results", "dividends"];
@@ -106,12 +107,21 @@ function segments(values: (number | null)[], from: number, to: number): number[]
   return runs;
 }
 
-/** An axis label for a bar: the date, or the clock when the window is intraday. */
-function labeller(
+/**
+ * An axis label for a bar: the date, or the clock when the window is intraday.
+ * Over several sessions a bare clock cannot say which day it belongs to, so
+ * `days` adds the weekday and day number in front of it.
+ */
+export function labeller(
   lang: string,
   intraday: boolean,
   short = false,
+  days = false,
 ): (stamp: string) => string {
+  const day = new Intl.DateTimeFormat(lang || undefined, {
+    weekday: "short",
+    day: "numeric",
+  });
   const format = new Intl.DateTimeFormat(
     lang || undefined,
     intraday
@@ -122,7 +132,13 @@ function labeller(
   );
   return (stamp: string) => {
     const at = Date.parse(stamp.replace(" ", "T"));
-    return Number.isNaN(at) ? stamp.slice(0, 10) : format.format(new Date(at));
+    if (Number.isNaN(at)) return stamp.slice(0, 10);
+    const when = new Date(at);
+    // Two formatters, not one: a single weekday+day+hour pattern comes out as
+    // "7 Thu, 03:30 PM" in English.
+    return intraday && days
+      ? `${day.format(when)}, ${format.format(when)}`
+      : format.format(when);
   };
 }
 
@@ -572,9 +588,14 @@ export function PriceChart({
 
   const { y, traces, area, averages: averageRuns, candleMarks } = drawing;
   const dateLabel = labeller(lang, intraday);
+  // The window on screen, not the whole fetch: zoomed into one session the
+  // clock alone is enough again.
+  const manyDays =
+    intraday &&
+    (bars.dates[from] ?? "").slice(0, 10) !== (bars.dates[to] ?? "").slice(0, 10);
   // Three labels over a phone's plot have no room for a day each: the month is
   // what tells them apart, so long as the window is wider than a month.
-  const axisLabel = labeller(lang, intraday, mobile && n > 40);
+  const axisLabel = labeller(lang, intraday, mobile && n > 40, manyDays);
   // A 390px screen fits about three date labels; more of them overlap into an
   // unreadable smear. Wider, as many as the plot has room for.
   const axisLabels = mobile
@@ -717,11 +738,13 @@ export function PriceChart({
   const ends = close.slice(from, to + 1).filter((v): v is number => v != null);
   const label = whole
     ? t("ticker.price_summary", {
-        start: `${hoverTitle(bars.dates[whole.a] ?? "", intraday)} ${money(whole.start, 2)}`,
-        end: `${hoverTitle(bars.dates[whole.z] ?? "", intraday)} ${money(whole.end, 2)}`,
-        pct: signedPercent(whole.pct / 100),
-        lo: money(Math.min(...ends), 2),
-        hi: money(Math.max(...ends), 2),
+        start: `${hoverTitle(bars.dates[whole.a] ?? "", intraday)} ${money(whole.start, { digits: 2 }) ?? DASH}`,
+        end: `${hoverTitle(bars.dates[whole.z] ?? "", intraday)} ${money(whole.end, { digits: 2 }) ?? DASH}`,
+        pct:
+          percent(whole.pct / 100, { digits: 2, signed: "always", tight: true }) ??
+          DASH,
+        lo: money(Math.min(...ends), { digits: 2 }) ?? DASH,
+        hi: money(Math.max(...ends), { digits: 2 }) ?? DASH,
       })
     : t("ticker.price");
   const digits = tickDigits(range.lo, range.hi);
@@ -805,21 +828,23 @@ export function PriceChart({
       // not fit its width is cut from the end.
       lines: [
         {
-          text: `${signed(delta, digits)} ${signedPercent(move.pct / 100)}`,
+          text: `${decimal(delta, { digits: digits, signed: "always" }) ?? DASH} ${percent(move.pct / 100, { digits: 2, signed: "always", tight: true }) ?? DASH}`,
           parts: [
             { text: `${t("ticker.span_change")} `, tone: "dim" },
             {
-              text: `${signed(delta, digits)} ${signedPercent(move.pct / 100)}`,
+              text: `${decimal(delta, { digits: digits, signed: "always" }) ?? DASH} ${percent(move.pct / 100, { digits: 2, signed: "always", tight: true }) ?? DASH}`,
               bold: true,
               tone,
             },
           ],
         },
         {
-          text: `${money(move.start, digits)} → ${money(move.end, digits)}`,
+          text: `${money(move.start, { digits: digits }) ?? DASH} → ${money(move.end, { digits: digits }) ?? DASH}`,
           parts: [
             { text: `${t("ticker.price")} `, tone: "dim" },
-            { text: `${money(move.start, digits)} → ${money(move.end, digits)}` },
+            {
+              text: `${money(move.start, { digits: digits }) ?? DASH} → ${money(move.end, { digits: digits }) ?? DASH}`,
+            },
           ],
         },
         {
@@ -902,7 +927,7 @@ export function PriceChart({
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => money(v, digits)}
+          format={(v) => money(v, { digits: digits }) ?? DASH}
           inside={mobile}
         />
 
@@ -1136,7 +1161,7 @@ export function PriceChart({
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => money(v, digits)}
+          format={(v) => money(v, { digits: digits }) ?? DASH}
           inside={mobile}
         />
       </Chart>
@@ -1174,7 +1199,7 @@ export function PriceChart({
               {move ? (
                 <span className={`tk-is-${move.pct >= 0 ? "green" : "red"}`}>
                   {t("ticker.range_change", {
-                    pct: `${signed(move.pct)}%`,
+                    pct: `${decimal(move.pct, { digits: 2, signed: "always" }) ?? DASH}%`,
                     start: dateLabel(bars.dates[move.a] ?? ""),
                     end: dateLabel(bars.dates[move.z] ?? ""),
                   })}

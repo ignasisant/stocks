@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
-from datetime import date
+from datetime import UTC, date
 from typing import Annotated, Literal, cast
 
 import pandas as pd
@@ -81,7 +81,11 @@ from stocks.api.schemas import (
     EuShortPositions,
     Financials,
     Fund,
+    FundFit,
     FundHolding,
+    FundOverlap,
+    FundSectorRow,
+    FundWrapper,
     Insiders,
     InsiderSummary,
     InsiderTrade,
@@ -230,20 +234,42 @@ def trend(symbol: Symbol) -> Trend:
 
 def read_trend(ticker: str) -> trend_model.TrendRead:
     """`trend`'s read, for the chat and the connector to share with the page."""
-    if loaders.asset_kind(ticker) in (MONEY_MARKET, BOND_FUND):
+    kind = loaders.asset_kind(ticker)
+    if kind in (MONEY_MARKET, BOND_FUND):
         return trend_model.TrendRead()
-    # The company's country only matters on a German floor, where APC.DE is
-    # Apple and the DAX says nothing about it; elsewhere it is not asked.
-    country = (
-        loaders.listing_country(ticker) if trend_model.on_german_floor(ticker) else None
-    )
-    bench = trend_model.benchmark_for(ticker, country)
+    bench = _fund_benchmark(ticker) if kind in FUND_KINDS else None
+    if bench is None:
+        # The company's country only matters on a German floor, where APC.DE
+        # is Apple and the DAX says nothing about it; elsewhere it is not asked.
+        country = (
+            loaders.listing_country(ticker)
+            if trend_model.on_german_floor(ticker)
+            else None
+        )
+        bench = trend_model.benchmark_for(ticker, country)
     with ThreadPoolExecutor(max_workers=2) as pool:
         bars = pool.submit(loaders.daily_bars, ticker)
         index = pool.submit(loaders.daily_closes, bench.ticker, "2y") if bench else None
         return trend_model.trend_read(
             bars.result(), index.result() if index else None, bench
         )
+
+
+def _fund_benchmark(ticker: str):
+    """The index of the market a fund's basket trades in, or None.
+
+    EIMI.L is an emerging-markets fund quoted in London: against the FTSE 100
+    it reads as a bet on Britain. Its name says where its stocks are
+    (`fund_wrapper`); the profile is the one the page's fund card asked for.
+    A fund that is its own exposure's index line (EEM) keeps the listing's.
+    """
+    from stocks.analysis import fund_wrapper
+
+    profile = loaders.fund_profile(ticker)
+    if profile is None:
+        return None
+    bench = fund_wrapper.read(ticker, profile.name, profile.category).benchmark
+    return bench if bench is not None and bench.ticker != ticker else None
 
 
 @router.get("/{symbol}/compare", response_model=Comparison, summary="Against the index")
@@ -546,7 +572,7 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
     fills = _trades(db, mtime, ticker, code)
     held = restate_position(
         loaders.native_positions(db, mtime).get(ticker),
-        loaders.ledger_state(db, mtime)[0],
+        loaders.ledger_state(db, mtime).txs,
         code,
     )
     if held is None:
@@ -1020,7 +1046,7 @@ def _trades(
     """
     from stocks.portfolio.corporate import own_fills
 
-    rows = restate_trades(loaders.ledger_state(db, mtime)[0], ticker, code)
+    rows = restate_trades(loaders.ledger_state(db, mtime).txs, ticker, code)
     return [
         Trade(date=f.date, action=f.action, price=f.price, quantity=f.quantity)
         for f in own_fills(rows, ticker)
@@ -1622,6 +1648,164 @@ def fund(symbol: Symbol) -> Fund:
         sectors=[[label, weight] for label, weight in profile.sectors],
         asset_classes=[[label, weight] for label, weight in profile.asset_classes],
         cash=_cash_yield(ticker, profile) if kind == MONEY_MARKET else None,
+        average_traded=_num(profile.average_traded),
+        traded_currency=profile.traded_currency,
+        wrapper=_wrapper(ticker, profile),
+    )
+
+
+@router.get(
+    "/{symbol}/fund/fit", response_model=FundFit, summary="The fund against your book"
+)
+def fund_fit(symbol: Symbol, account: Account, base: Base = None) -> FundFit:
+    """What the fund repeats of the book and what it adds, and what it cost.
+
+    The fund's disclosed top holdings the book already holds directly; the
+    book's sector split beside the fund's, and without the fund when it is
+    held; the plan's cap on one sector; and the spread and commission the
+    reader's own fills of it paid (`portfolio.fees`, the Fees tab's own
+    estimate). An empty answer for a company, or a book with nothing in it:
+    the card then says nothing.
+
+    Each half degrades on its own: a backtest that cannot be read costs the
+    sector rows, a bar download the spread, never the overlap.
+    """
+    from stocks.analysis import fund_fit as fit_model
+    from stocks.analysis.portfolio import value_weights
+    from stocks.portfolio import fees
+    from stocks.portfolio import plan as plans
+    from stocks.portfolio.tax import prefs as tax_prefs
+
+    ticker = symbol.strip().upper()
+    profile = loaders.fund_profile(ticker)
+    if profile is None:
+        return FundFit(ticker=ticker)
+    ccy = reporting_currency(account, base)
+    db = str(account.db)
+    mtime = loaders.db_mtime(db)
+    stored = tax_prefs.load(account.prefs)
+    jurisdiction, _ = tax_prefs.resolve(stored)
+    cap = plans.load(stored).limits.max_sector_pct
+    answer = FundFit(
+        ticker=ticker,
+        base=ccy,
+        disclosed_weight=profile.disclosed_weight,
+        sector_cap=cap / 100 if cap else None,
+        jurisdiction=jurisdiction,
+    )
+    try:
+        table = loaders.positions_table(db, mtime, ccy)
+    except Exception as exc:  # noqa: BLE001 — a fund page without the book
+        obs.warn("api.fund_fit_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return answer
+    if table.empty:
+        return answer
+
+    weights = value_weights(table)
+    labels = [str(label) for label in table.index]
+    symbols = {label: _symbol_of(label) for label in labels}
+    own = [
+        label for label in labels
+        if label.upper() == ticker or symbols[label].upper() == ticker
+    ]
+    share = float(sum(w for label in own if pd.notna(w := weights.get(label))))
+    answer.held = bool(own)
+    answer.fund_share = share if own and share > 0 else None
+
+    names = loaders.listing_names([symbols[label] for label in labels])
+    book = [
+        fit_model.Held(
+            label=label,
+            symbol=symbols[label],
+            name=names.get(symbols[label], ""),
+            weight=float(w) if pd.notna(w := weights.get(label)) else 0.0,
+        )
+        for label in labels
+        if label not in own
+    ]
+    matched = fit_model.overlap(
+        [(h.symbol, h.name, h.weight) for h in profile.holdings], book
+    )
+    answer.overlap = [
+        FundOverlap(
+            symbol=m.held.symbol,
+            name=m.held.name or m.name,
+            fund_weight=m.fund_weight,
+            book_weight=m.held.weight,
+        )
+        for m in matched
+    ]
+    answer.overlap_weight = float(sum(m.fund_weight for m in matched))
+
+    try:
+        report = loaders.basket_report(db, mtime, ccy, "2y")
+        if report is not None and report.weights:
+            split = loaders.allocation_weights(
+                db, mtime, ccy, report.meta, "sector",
+                report.allocation("sector").to_dict(),
+            )
+            answer.sectors = [
+                FundSectorRow(**asdict(row))
+                for row in fit_model.sectors(
+                    split, dict(profile.sectors), answer.fund_share
+                )
+            ]
+    except Exception as exc:  # noqa: BLE001 — the card goes on without them
+        obs.warn("api.fund_fit_sectors_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+
+    if own:
+        txs = [
+            t for t in loaders.ledger_state(db, mtime, ccy).txs
+            if t.ticker in own or t.action == "split"
+        ]
+        trades = [t for t in txs if t.action in ("buy", "sell")]
+        answer.trades = len(trades)
+        brokers = fees.by_broker(trades, base=ccy)
+        volume = sum(b.volume for b in brokers.values())
+        if volume:
+            answer.commission = sum(b.commission for b in brokers.values()) / volume
+        try:
+            spreads = fees.spread_by_broker(
+                txs, loaders.trade_bars(db, mtime), base=ccy
+            )
+            measured = sum(s.measured_volume for s in spreads.values())
+            if measured:
+                answer.spread = sum(s.spread for s in spreads.values()) / measured
+        except Exception as exc:  # noqa: BLE001 — an estimate, see `fees_`
+            obs.warn("api.fund_fit_spread_failed", ticker=ticker,
+                     error_type=type(exc).__name__, error=str(exc)[:300])
+    return answer
+
+
+def _symbol_of(label: str) -> str:
+    with obs.swallow("api.fund_fit_symbol"):
+        return loaders.display_symbol(label) or label
+    return label
+
+
+def _wrapper(ticker: str, profile) -> FundWrapper:
+    """The fund's name read for its wrapper, and today's trading window."""
+    from stocks.analysis import fund_wrapper
+    from stocks.data.symbols import isin_for_symbol
+
+    read = fund_wrapper.read(
+        ticker, profile.name, profile.category, isin_for_symbol(ticker)
+    )
+    window = fund_wrapper.trade_window(ticker, read.exposure, date.today())
+    span = window if isinstance(window, tuple) else None
+    return FundWrapper(
+        share_class=read.share_class,
+        domicile=read.domicile,
+        ucits=read.ucits,
+        hedged=read.hedged,
+        synthetic=read.synthetic,
+        tracks=read.tracks,
+        exposure=read.exposure,
+        window_start=span[0].astimezone(UTC).isoformat() if span else None,
+        window_end=span[1].astimezone(UTC).isoformat() if span else None,
+        underlying_closed=window is False,
     )
 
 

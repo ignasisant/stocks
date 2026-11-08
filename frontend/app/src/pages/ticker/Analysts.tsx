@@ -16,15 +16,7 @@
 
 import { useLang, useT } from "../../shell/i18n";
 import { Kpi, KpiGrid, toneOf, type Tone } from "../../ui/Kpi";
-import {
-  DASH,
-  currencySymbol,
-  known,
-  money,
-  percent,
-  signedPercent,
-  type Translate,
-} from "./format";
+import { currencySymbol, type Translate } from "./format";
 import { Banner, Card, Note, Scroll, Subhead, useMobile } from "./ui";
 import type {
   AnalystMonth,
@@ -34,6 +26,7 @@ import type {
   RatingChange,
 } from "./types";
 import { num } from "../../shell/numbers";
+import { DASH, isNum, money, percent } from "../../shell/format";
 
 /** The five buckets, strongest buy first — the order every bar is drawn in. */
 const BUCKETS = ["strong_buy", "buy", "hold", "sell", "strong_sell"] as const;
@@ -92,7 +85,7 @@ export function AnalystsSection({
           help={t("ticker.analysts_rating_help")}
           value={ratingLabel(t, data.rating)}
           chip={
-            known(data.rating_mean)
+            isNum(data.rating_mean)
               ? {
                   text: `${num(data.rating_mean, 1)} / 5`,
                   tone: ratingTone(data.rating_mean),
@@ -100,7 +93,7 @@ export function AnalystsSection({
               : null
           }
         >
-          {known(data.rating_mean) ? <RatingScale mean={data.rating_mean} /> : null}
+          {isNum(data.rating_mean) ? <RatingScale mean={data.rating_mean} /> : null}
         </Kpi>
         <Kpi label={t("ticker.analysts_count")} value={String(data.analysts)} />
         {targets ? (
@@ -119,14 +112,14 @@ export function AnalystsSection({
             <Kpi
               label={t("ticker.analysts_dispersion")}
               help={t("ticker.analysts_dispersion_help")}
-              value={percent(targets.dispersion, 0)}
+              value={percent(targets.dispersion, { digits: 0, tight: true }) ?? DASH}
             />
           </>
         ) : null}
         {options?.listed ? <OptionsKpis options={options} /> : null}
       </KpiGrid>
 
-      {targets && known(targets.dispersion) && targets.dispersion >= WIDE_DISPERSION ? (
+      {targets && isNum(targets.dispersion) && targets.dispersion >= WIDE_DISPERSION ? (
         <Banner tone="warn">{t("ticker.analysts_wide")}</Banner>
       ) : null}
       {raising ? <Banner tone="good">{t("ticker.analysts_raising")}</Banner> : null}
@@ -155,11 +148,11 @@ function OptionsKpis({ options }: { options: OptionsView }) {
   const lang = useLang();
   return (
     <>
-      {known(options.iv) ? (
+      {isNum(options.iv) ? (
         <Kpi
           label={t("ticker.options_iv")}
           help={t("ticker.options_iv_help")}
-          value={percent(options.iv, 0)}
+          value={percent(options.iv, { digits: 0, tight: true }) ?? DASH}
           note={
             options.iv_expiry
               ? t("ticker.options_iv_note", { date: shortDay(options.iv_expiry, lang) })
@@ -167,14 +160,14 @@ function OptionsKpis({ options }: { options: OptionsView }) {
           }
         />
       ) : null}
-      {known(options.put_call_oi) ? (
+      {isNum(options.put_call_oi) ? (
         <Kpi
           label={t("ticker.options_pc_oi")}
           help={t("ticker.options_pc_oi_help")}
           value={num(options.put_call_oi, 2)}
         />
       ) : null}
-      {known(options.put_call_volume) ? (
+      {isNum(options.put_call_volume) ? (
         <Kpi
           label={t("ticker.options_pc_vol")}
           help={t("ticker.options_pc_vol_help")}
@@ -217,9 +210,9 @@ function Changes({
   const lang = useLang();
   const mobile = useMobile();
   const target = (row: RatingChange) => {
-    if (!known(row.target)) return DASH;
+    if (!isNum(row.target)) return DASH;
     const now = targetMoney(row.target, currency);
-    return known(row.prior_target) && row.prior_target !== row.target
+    return isNum(row.prior_target) && row.prior_target !== row.target
       ? `${targetMoney(row.prior_target, currency)} → ${now}`
       : now;
   };
@@ -318,8 +311,8 @@ function TargetRange({ data }: { data: Analysts }) {
   const t = useT();
   const targets = data.targets!;
   const { low, high, median, mean } = targets;
-  if (!known(low) || !known(high) || high <= low) return null;
-  const now = known(data.price) ? data.price : null;
+  if (!isNum(low) || !isNum(high) || high <= low) return null;
+  const now = isNum(data.price) ? data.price : null;
   const from = Math.min(low, now ?? low);
   const to = Math.max(high, now ?? high);
   const at = (value: number) => `${((value - from) / (to - from)) * 100}%`;
@@ -333,10 +326,10 @@ function TargetRange({ data }: { data: Analysts }) {
           className="tk-targets-band"
           style={{ left: at(low), width: `calc(${at(high)} - ${at(low)})` }}
         />
-        {known(median) ? (
+        {isNum(median) ? (
           <span className="tk-targets-tick" style={{ left: at(median) }} />
         ) : null}
-        {known(mean) ? (
+        {isNum(mean) ? (
           <span
             className="tk-targets-tick tk-targets-tick-mean"
             style={{ left: at(mean) }}
@@ -409,7 +402,7 @@ function RatingSplit({ months }: { months: AnalystMonth[] }) {
               )}
             </span>
             <span className="tk-ratings-mean">
-              {known(month.mean) ? num(month.mean, 1) : DASH}
+              {isNum(month.mean) ? num(month.mean, 1) : DASH}
             </span>
           </li>
         ))}
@@ -536,13 +529,19 @@ function Line({
  * their unit after the figure: "£" in front of a pence target is off by 100.
  */
 function targetMoney(value: number | null, currency: string | null): string {
-  if (!known(value)) return DASH;
-  if (currency === "GBp" || currency === "GBX") return `${money(value, 2)}p`;
-  return `${currencySymbol(currency)}${money(value, 2)}`;
+  if (!isNum(value)) return DASH;
+  if (currency === "GBp" || currency === "GBX")
+    return `${money(value, { digits: 2 }) ?? DASH}p`;
+  return `${currencySymbol(currency)}${money(value, { digits: 2 }) ?? DASH}`;
 }
 
 function upsideChip(value: number | null) {
-  return known(value) ? { text: signedPercent(value, 1), tone: toneOf(value) } : null;
+  return isNum(value)
+    ? {
+        text: percent(value, { digits: 1, signed: "always", tight: true }) ?? DASH,
+        tone: toneOf(value),
+      }
+    : null;
 }
 
 /** 1–2.5 is a buy side, 3.5–5 a sell side, the middle a hold. */
@@ -580,16 +579,16 @@ function monthLabel(month: string, lang: string): string {
 /** Rounded to the tenth of a point it prints at, so a drift too small to
  *  show reads 0.0% in neutral, not a red "-0.0%". */
 function shown(value: number | null): number | null {
-  return known(value) ? Math.round(value * 1000) / 1000 || 0 : value;
+  return isNum(value) ? Math.round(value * 1000) / 1000 || 0 : value;
 }
 
 function move(value: number | null): string {
-  return signedPercent(shown(value), 1);
+  return percent(shown(value), { digits: 1, signed: "always", tight: true }) ?? DASH;
 }
 
 function toneClass(value: number | null): string | undefined {
   const rounded = shown(value);
-  if (!known(rounded) || rounded === 0) return undefined;
+  if (!isNum(rounded) || rounded === 0) return undefined;
   return rounded > 0 ? "tk-is-green" : "tk-is-red";
 }
 
@@ -600,6 +599,6 @@ function toneClass(value: number | null): string | undefined {
 function trend(rows: EpsRevisionRow[], sign: 1 | -1): boolean {
   if (rows.length < 2) return false;
   return rows.every(
-    (row) => known(row.change_30d) && row.change_30d * sign >= REVISION_MOVE,
+    (row) => isNum(row.change_30d) && row.change_30d * sign >= REVISION_MOVE,
   );
 }

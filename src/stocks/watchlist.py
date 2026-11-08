@@ -27,7 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from stocks import atomic, storage
-from stocks.config import load_watchlist, yaml_dump, yaml_load
+from stocks.config import ALERT_TYPES, load_watchlist, yaml_dump, yaml_load
 
 # `persist` defaults to None and is resolved at call time rather than being
 # bound as a default argument. A default captures the function object at import,
@@ -186,6 +186,39 @@ def set_alerts(
             entry.pop("alerts", None)
 
     update_entry(path, ticker, _set, persist=persist)
+
+
+class AlertError(ValueError):
+    """A rule set that cannot be saved; the message is for the person."""
+
+
+def checked_alerts(alerts: list[dict]) -> list[dict]:
+    """The rules as they are stored: empty fields dropped, repeats kept once,
+    and refused when a rule names a type the app does not evaluate.
+
+    Every surface that writes alerts (the chat, the API, the connector) goes
+    through here, so a rule one of them accepts is a rule the others read back.
+    """
+    clean = [
+        {k: v for k, v in alert.items() if v is not None and v != ""}
+        for alert in alerts
+    ]
+    clean = [alert for alert in clean if alert.get("type")]
+    unknown = sorted({str(a["type"]) for a in clean} - ALERT_TYPES)
+    if unknown:
+        raise AlertError(f"unknown alert type(s): {', '.join(unknown)}")
+    return unique_alerts(clean)
+
+
+def replace_alerts(alerts: list[dict]) -> list[dict]:
+    """The set a ticker ends up with when `alerts` is all it should have."""
+    return checked_alerts(alerts)
+
+
+def add_alerts(existing: list[dict], new: list[dict]) -> list[dict]:
+    """The set a ticker ends up with when `new` joins what it already has;
+    a rule it already carries is not added twice."""
+    return checked_alerts([*existing, *new])
 
 
 def set_position(

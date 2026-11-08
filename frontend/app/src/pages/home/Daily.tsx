@@ -33,149 +33,61 @@
  * `home.daily_computed_note` in place of the model disclaimer.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { get, send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { openAssistant, openThread } from "../../shell/assistant";
+import { POLL_MS } from "../../shell/poll";
 import { Link } from "../../shell/router";
 import { Glyph } from "../../chat/icons";
 import { Badge } from "../../ui/Badge";
 import { Status } from "../../ui/Status";
-import {
-  POLL_MS,
-  badgeKey,
-  noteKey,
-  stampOf,
-  teaserOf,
-  wantsWriting,
-} from "../today/card";
-import { Card, TickerCell } from "./ui";
+import { badgeKey, noteKey, stampOf, teaserOf } from "../today/card";
+import { useCardFlow, type CardSource } from "../today/cardFlow";
+import { Card } from "./ui";
 import { Go } from "./Go";
 import { monthDay } from "./format";
 import type { DailyCard, DailyItem } from "./types";
-
-type State =
-  | { kind: "loading" }
-  | { kind: "failed" }
-  /** The first write of the day is out and there is nothing current to show. */
-  | { kind: "writing" }
-  | { kind: "card"; card: DailyCard };
+import { TickerCell } from "../../shell/tickers";
 
 export function Daily() {
   const t = useT();
   const lang = useLang();
-  const [state, setState] = useState<State>({ kind: "loading" });
-  // Which action day this page has already asked the server to write. The
-  // server has its own once-a-day guard; this one stops a re-render from
-  // firing a second POST while the first is still out.
-  const asked = useRef<string | null>(null);
-  // A Regenerate is out. The poll stands down meanwhile: a GET answered before
-  // the server has registered the new job would hand back the card the reader
-  // just dismissed.
-  const posting = useRef(false);
-  const write = useCallback(
-    (force: boolean) =>
-      send<DailyCard>(
-        "POST",
-        `/daily?${new URLSearchParams({ lang, force: String(force) }).toString()}`,
-      ),
+  // The language is part of the card's standing, not decoration — a reader who
+  // switched the app to Spanish should not be left holding an English card.
+  const source = useMemo<CardSource<DailyCard>>(
+    () => ({
+      read: () => get<DailyCard>("/daily", { lang }),
+      write: (force) =>
+        send<DailyCard>(
+          "POST",
+          `/daily?${new URLSearchParams({ lang, force: String(force) }).toString()}`,
+        ),
+      card: (card) => card,
+      // Uncapped: the teaser has no retry to offer, and the server's job
+      // times out on its own.
+      next: (card) => (card.pending ? POLL_MS.card : null),
+      blank: (card) => ({
+        ...card,
+        headline: null,
+        bullets: [],
+        items: [],
+        focus: [],
+        book: null,
+        sections: [],
+        pending: true,
+      }),
+    }),
     [lang],
   );
-
-  // First paint: read what is stored, and ask for today's if it no longer
-  // stands. The language is part of that check, not decoration — a reader who
-  // switched the app to Spanish should not be left holding an English card.
-  useEffect(() => {
-    let live = true;
-    setState({ kind: "loading" });
-    (async () => {
-      const stored = await get<DailyCard>("/daily", { lang });
-      if (!live) return;
-      if (!wantsWriting(stored, asked.current)) {
-        setState({ kind: "card", card: stored });
-        return;
-      }
-      asked.current = stored.action_day;
-      setState({ kind: "writing" });
-      try {
-        const card = await write(false);
-        if (live) setState({ kind: "card", card });
-      } catch {
-        // The write is the extra; the stored card is still worth showing.
-        if (live) setState({ kind: "card", card: stored });
-      }
-    })().catch(() => {
-      // Never takes the dashboard down with it — on any failure the slot
-      // simply empties.
-      if (live) setState({ kind: "failed" });
-    });
-    return () => {
-      live = false;
-    };
-  }, [lang, write]);
-
-  // The poll: only while a briefing is being written, and one request at a
-  // time — the next is scheduled when the last one has answered.
-  const pending = state.kind === "card" && state.card.pending;
-  useEffect(() => {
-    if (!pending) return;
-    let live = true;
-    const timer = window.setTimeout(() => {
-      if (posting.current) {
-        setState((current) => ({ ...current }));
-        return;
-      }
-      get<DailyCard>("/daily", { lang }).then(
-        (card) => live && setState({ kind: "card", card }),
-        // A failed poll keeps the card it has; the next render polls again.
-        () => live && setState((current) => ({ ...current })),
-      );
-    }, POLL_MS);
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [pending, lang, state]);
-
-  const regenerate = useCallback(() => {
-    setState((current) =>
-      current.kind === "card"
-        ? {
-            kind: "card",
-            card: {
-              ...current.card,
-              headline: null,
-              bullets: [],
-              items: [],
-              focus: [],
-              book: null,
-              sections: [],
-              pending: true,
-            },
-          }
-        : current,
-    );
-    posting.current = true;
-    write(true)
-      .finally(() => {
-        posting.current = false;
-      })
-      .then(
-        (card) => setState({ kind: "card", card }),
-        // Refused (rate limit, a dropped connection): put back whatever the
-        // server says is current rather than leave the wait line up for good.
-        () =>
-          get<DailyCard>("/daily", { lang }).then(
-            (card) => setState({ kind: "card", card }),
-            () => setState({ kind: "failed" }),
-          ),
-      );
-  }, [write, lang]);
+  const { state, regenerate } = useCardFlow(source);
 
   if (state.kind === "loading") return <Skeleton rows={4} />;
+  // Never takes the dashboard down with it: on any failure the slot empties.
   if (state.kind === "failed") return null;
-  if (state.kind === "writing") {
+  // The first write of the day is out: an older card is not what was asked for.
+  if (state.writing) {
     return (
       <Card className="hm-daily">
         <Waiting title="home.daily_wait_title" />
@@ -183,7 +95,7 @@ export function Daily() {
     );
   }
 
-  const card = state.card;
+  const card = state.view;
   // Nothing to brief on (no positions and no watchlist), or nothing stored and
   // nothing being written: the section stays off the page.
   if (!card.headline && !card.pending) return null;
@@ -272,7 +184,12 @@ function Lines({ items }: { items: DailyItem[] }) {
           {item.tickers.length > 0 ? (
             <span className="hm-daily-tks">
               {item.tickers.map((ticker) => (
-                <TickerCell key={ticker} ticker={ticker} name={false} />
+                <TickerCell
+                  className="hm-ticker"
+                  key={ticker}
+                  ticker={ticker}
+                  name={false}
+                />
               ))}
             </span>
           ) : null}

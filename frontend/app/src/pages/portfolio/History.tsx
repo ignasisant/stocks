@@ -18,8 +18,8 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { History as HistoryData } from "./api";
 import { BookHistory } from "./charts";
-import { compactMoneyIn, moneyIn, percent } from "./format";
 import { Caption, Card, MissingPrices, Segmented } from "./ui";
+import { compactMoneyIn, moneyIn, percent } from "../../shell/format";
 
 // The codes the API accepts. Only "all" is translated: the rest are read as
 // durations in every language this ships in.
@@ -39,8 +39,21 @@ export default function History() {
     [base, window],
   );
 
-  const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
+  // Months name a long window's ticks; inside one the three ticks would read
+  // "oct 26, oct 26, nov 26", so a window shorter than a year names the day.
+  const date = new Intl.DateTimeFormat(
+    lang,
+    window === "1y" || window === "all"
+      ? { month: "short", year: "2-digit" }
+      : { day: "numeric", month: "short" },
+  );
   const formatDate = (iso: string) => date.format(new Date(`${iso}T00:00:00`));
+  const day = new Intl.DateTimeFormat(lang, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const formatDay = (iso: string) => day.format(new Date(`${iso}T00:00:00`));
 
   return (
     <Card title={t("portfolio.injected_vs_value")}>
@@ -71,16 +84,15 @@ export default function History() {
                   profit: t("portfolio.series_value_profit"),
                   loss: t("portfolio.series_value_loss"),
                   pnl: t("portfolio.hist_pnl"),
-                  reset: t("portfolio.zoom_reset"),
                 }}
                 money={(value, signed) => money(value, { signed }) ?? ""}
                 axisMoney={(value) => axisMoney(value) ?? ""}
-                percent={(value) => percent(lang, value, { signed: true }) ?? ""}
+                percent={(value) => percent(value, { lang, signed: true }) ?? ""}
                 formatDate={formatDate}
+                formatDay={formatDay}
               />
               <Caption>
-                {t("portfolio.hist_note_injected")} {t("portfolio.zoom_hint")}{" "}
-                {t("portfolio.span_hint")}
+                {t("portfolio.hist_note_injected")} {t("portfolio.hist_span_hint")}
               </Caption>
               <MissingPrices tickers={history.missing} />
             </>

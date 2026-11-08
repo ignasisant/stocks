@@ -156,7 +156,7 @@ def _entitled(db: str, mtime: float, base: str) -> tuple:
     from stocks.data.fetch import throttle_remaining
     from stocks.portfolio import dividends as div
 
-    txs = ledger_state(db, mtime, base)[0]
+    txs = ledger_state(db, mtime, base).txs
     tickers = sorted(
         {t.ticker for t in transfers.relabel(txs) if t.action in HELD_ACTIONS}
     )
