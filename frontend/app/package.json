@@ -24,15 +24,15 @@
     "web-vitals": "^6.2.3"
   },
   "devDependencies": {
-    "@ag-ui/core": "^1.0.3",
+    "@ag-ui/core": "^1.0.4",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^6.1.2",
-    "knip": "^6.44.0",
-    "preact": "^11.1.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "knip": "^6.44.1",
+    "preact": "^11.2.0",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   }
 }
