@@ -24,9 +24,9 @@ from pydantic import BaseModel, Field
 
 from stocks import watchlist as wl
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import AlertRule, Alerts, TagEdit, Tags, WatchlistEntry
 from stocks.config import load_watchlist
 from stocks.data.crypto import is_crypto
+from stocks.schemas import AlertRule, Alerts, TagEdit, Tags, WatchlistEntry
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
@@ -182,11 +182,10 @@ def suggestions(account: Account) -> Suggestions:
     page that offers them adds them through `POST /watchlist` like any other
     entry.
     """
-    from stocks import accounts
-    from stocks.web import auth
+    from stocks import accounts, userprefs
 
     prefs = accounts.load_prefs(account.prefs)
-    rows = auth.focus_suggestions(auth.load_profile(prefs), account.watchlist)
+    rows = userprefs.focus_suggestions(userprefs.load_profile(prefs), account.watchlist)
     return Suggestions(
         suggestions=[
             Suggestion(

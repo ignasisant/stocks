@@ -11,7 +11,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import obs
+from stocks import loaders, obs
 from stocks.analysis.monthly import window as book_window
 from stocks.analysis.portfolio import (
     annualized_return,
@@ -24,10 +24,9 @@ from stocks.analysis.portfolio import (
     money_weighted_return,
 )
 from stocks.analysis.return_attribution import attribution as decompose
-from stocks.api import loaders
 from stocks.api.deps import Account, Base, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import Attribution, AttributionMover, Performance
+from stocks.jsonsafe import num as _num
+from stocks.schemas import Attribution, AttributionMover, Performance
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -323,10 +322,10 @@ def _in_index(hist: pd.DataFrame, base: str) -> dict[str, float]:
     account and cached. Best-effort — the line is an overlay, and a failed
     download must not take the chart under it down too.
     """
-    from stocks.analysis import naive_dates
     from stocks.analysis.portfolio import same_money
-    from stocks.api import briefing
     from stocks.chat import daily_book
+    from stocks.frames import naive_dates
+    from stocks.views import briefing
 
     try:
         series = daily_book.index_in_currency(

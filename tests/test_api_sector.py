@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from stocks import loaders
 from stocks.analysis.sectors import SECTORS, SectorScan
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from tests.patching import patch_loaders
 

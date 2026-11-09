@@ -9,9 +9,9 @@ from typing import cast
 
 import pandas as pd
 
-from stocks.analysis import naive_dates
 from stocks.config import Holding
 from stocks.data.crypto import is_crypto
+from stocks.frames import naive_dates
 
 TRADING_DAYS = 252
 

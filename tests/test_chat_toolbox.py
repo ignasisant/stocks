@@ -99,7 +99,7 @@ def test_ticker_data_needs_a_ticker_and_known_parts():
 
 def test_the_dcf_block_tells_margin_of_safety_from_upside(monkeypatch):
     from stocks.api.routes import ticker as routes
-    from stocks.api.schemas import Dcf
+    from stocks.schemas import Dcf
 
     monkeypatch.setattr(routes, "dcf", lambda code: Dcf(
         ticker=code, currency="USD", price=150.0, value=200.0, upside=1 / 3,
@@ -116,7 +116,7 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
     import pandas as pd
 
     from stocks.api.routes import ticker as routes
-    from stocks.api.schemas import Valuation, ValuationWindow
+    from stocks.schemas import Valuation, ValuationWindow
 
     monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
         ticker=code, source="SEC EDGAR", current=20.9, windows=[ValuationWindow(
@@ -141,7 +141,7 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
 
 
 def test_search_web_formats_the_hits(monkeypatch):
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     monkeypatch.setattr(chat_web, "collect", lambda queries: [
         chat_web.Result("ASML Q3", "https://ex.com/a", "snip", "the article text"),
@@ -175,7 +175,7 @@ def test_market_positioning_says_so_when_the_cftc_is_down(monkeypatch):
 
 
 def test_search_web_without_a_query_does_not_search(monkeypatch):
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     monkeypatch.setattr(chat_web, "collect",
                         lambda q: (_ for _ in ()).throw(AssertionError("searched")))
@@ -188,21 +188,21 @@ def test_read_page_refuses_a_non_url():
 
 
 def test_read_page_returns_the_article(monkeypatch):
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     monkeypatch.setattr(chat_web, "read_page", lambda url, **kw: "the body")
     assert _run("read_page", {"url": "https://ex.com/a"}).endswith("the body")
 
 
 def test_an_unreadable_page_says_so(monkeypatch):
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     monkeypatch.setattr(chat_web, "read_page", lambda url, **kw: "")
     assert "could not read" in _run("read_page", {"url": "https://ex.com/a"}).lower()
 
 
 def test_a_long_result_is_capped_before_the_model_sees_it(monkeypatch):
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     monkeypatch.setattr(chat_web, "read_page", lambda url, **kw: "x" * 50_000)
     got = _run("read_page", {"url": "https://ex.com/a"})
@@ -650,7 +650,7 @@ def test_the_calendar_and_income_tools_read_the_engines(monkeypatch, tmp_path):
     from stocks.chat import income, reports
 
     ctx = replace(_book(tmp_path), watchlist=tmp_path / "watchlist.yaml")
-    monkeypatch.setattr(reports, "build", lambda watchlist, db, days, back=False:
+    monkeypatch.setattr(reports, "build", lambda watchlist, db, days, back=False, **_kw:
                         reports.Ahead(days=days, due=(), checked=3, held=2,
                                       undated=(), skipped=(), back=back))
     assert "next 30 days" in _run("upcoming_earnings", {"days": 30}, ctx)

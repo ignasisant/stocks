@@ -1,9 +1,9 @@
 """Editing one account's watchlist.yaml, without a UI framework.
 
-Split out of `web.auth` for the same reason `stocks.accounts` was: more than
-one runtime edits a watchlist, and two implementations of "what a watchlist
-edit means" would drift. `web.auth` binds these to the app's own
-bucket-failure handling.
+Its own module for the same reason `stocks.accounts` is: more than one
+runtime edits a watchlist, and two implementations of "what a watchlist edit
+means" would drift. Callers pass `userstore.persist` to bind these to the
+app's own bucket-failure handling.
 
 Two rules hold across everything here:
 

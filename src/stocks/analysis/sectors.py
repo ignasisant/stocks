@@ -29,6 +29,7 @@ both belong in the copy, not just here:
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -403,7 +404,7 @@ PAUSE_S = 5.0
 def run_scan(
     names: tuple[str, ...] = (),
     *,
-    widen: bool = True,
+    propose: Callable[[str, tuple[str, ...], int], list[str]] | None = None,
     pause_s: float = PAUSE_S,
     dry_run: bool = False,
 ) -> dict[str, str]:
@@ -416,10 +417,12 @@ def run_scan(
     fails tonight keeps the cohort it had, and the file is never published
     half-empty. A throttle part-way through costs the sectors after it, not
     the ones already stored.
+
+    `propose(sector, known, count)` widens each ETF cohort with candidate
+    names (the CLI passes `chat.sector_ai.widen`); without it the cohort is
+    the ETF basket alone. Its symbols are validated here, never trusted.
     """
     import time
-
-    from stocks.chat import engine, sector_ai
 
     wanted = tuple(names) or SECTORS
     stored = load_scan()
@@ -429,15 +432,12 @@ def run_scan(
         if index:
             time.sleep(pause_s)
         extra: tuple[str, ...] = ()
-        if widen:
+        if propose is not None:
             # A widening that fails is a sector with its ETF cohort — worse,
             # but working. It must never cost the scan.
             try:
                 base = tuple(etf_candidates(sector))
-                proposed = sector_ai.propose_peers(
-                    {}, sector, base, EXTRA_PER_SECTOR,
-                    spend_free=engine.spend_free_global,
-                )
+                proposed = propose(sector, base, EXTRA_PER_SECTOR)
                 extra = tuple(validate_symbols(proposed, sector, known=base))
             except Exception as exc:
                 obs.warn("sector.widen_failed", sector=sector,

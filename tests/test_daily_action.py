@@ -55,7 +55,7 @@ def free_pot(monkeypatch, tmp_path):
 
 @pytest.fixture
 def providers(monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     fakes = {"free": FakeProvider("free", reply=json.dumps(REPLY))}
     monkeypatch.setattr(llm, "PROVIDERS", fakes)

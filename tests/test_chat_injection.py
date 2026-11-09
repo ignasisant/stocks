@@ -37,7 +37,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import engine, learnings
-from stocks.web import chat_web
+from stocks.chat import websearch as chat_web
 from tests.patching import patch_engine
 
 EMAIL = "reader@example.com"
@@ -106,7 +106,7 @@ class Obedient(Recorder):
 
     def run_tools(self, api_key, model, system, messages, tools, execute,
                   max_rounds=3, stop=None):
-        from stocks.web.llm import ToolCall, ToolRun
+        from stocks.llm import ToolCall, ToolRun
 
         page_args = {"url": PAGE.url}
         page = execute("read_page", page_args)

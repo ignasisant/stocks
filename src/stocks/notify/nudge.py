@@ -113,7 +113,7 @@ def gather(user, number: int, days: int, today: date) -> NudgeData:
 def render(data: NudgeData, lang: str) -> dict:
     """The push (`render.message`): the book when there is one, the importer
     otherwise — which is also where the tap leads."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)

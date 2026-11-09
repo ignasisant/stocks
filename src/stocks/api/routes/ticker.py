@@ -19,7 +19,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
+from stocks import loaders, obs
 from stocks.analysis import crypto_market, review
 from stocks.analysis import dcf as dcf_model
 from stocks.analysis import trend as trend_model
@@ -47,21 +47,38 @@ from stocks.analysis.fundamentals import (
     verdict,
 )
 from stocks.analysis.history import PERIODS, bar_interval, listed, rangebreaks, ranges
-from stocks.analysis.listing import (
-    listing_currencies,
-    restate_position,
-    restate_trades,
-)
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
 from stocks.analysis.portfolio import market_live, session_quote
 from stocks.analysis.sentiment import SECTOR_ETFS
-from stocks.api import loaders
-from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, Writer, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.jsonsafe import scalar as _scalar
-from stocks.api.schemas import (
+from stocks.cache import carried
+from stocks.config import CURRENCIES
+from stocks.data import shorts as short_data
+from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
+from stocks.data.bafin import insider_transactions as bafin_transactions
+from stocks.data.cnmv import insider_transactions as cnmv_transactions
+from stocks.data.cnmv import spanish_listing
+from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
+from stocks.data.estimates import (
+    MIN_COVERAGE,
+    consensus,
+    eps_revisions,
+    estimate_currency,
+    projection,
+    rating_trend,
+    target_dispersion,
+)
+from stocks.data.funds import is_fund
+from stocks.data.insiders import CODE_LABELS, summarize
+from stocks.data.listing import listing_currencies
+from stocks.jsonsafe import num as _num
+from stocks.jsonsafe import scalar as _scalar
+from stocks.portfolio import platforms
+from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
+from stocks.portfolio.custody import mix as custody_mix
+from stocks.portfolio.restate import restate_position, restate_trades
+from stocks.schemas import (
     AnalystMonth,
     Analysts,
     AnalystTargets,
@@ -119,27 +136,6 @@ from stocks.api.schemas import (
     Valuation,
     ValuationWindow,
 )
-from stocks.config import CURRENCIES
-from stocks.data import shorts as short_data
-from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
-from stocks.data.bafin import insider_transactions as bafin_transactions
-from stocks.data.cnmv import insider_transactions as cnmv_transactions
-from stocks.data.cnmv import spanish_listing
-from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
-from stocks.data.estimates import (
-    MIN_COVERAGE,
-    consensus,
-    eps_revisions,
-    estimate_currency,
-    projection,
-    rating_trend,
-    target_dispersion,
-)
-from stocks.data.funds import is_fund
-from stocks.data.insiders import CODE_LABELS, summarize
-from stocks.portfolio import platforms
-from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
-from stocks.portfolio.custody import mix as custody_mix
 
 router = APIRouter(prefix="/ticker", tags=["ticker"])
 
@@ -489,8 +485,8 @@ def _price_in(
     fetched — the same refusal `_market_cap_in` makes, generalised past
     dollars: a listing's own quote currency can be anything, not just USD.
     """
-    from stocks.analysis.listing import quote_unit
     from stocks.data.fx import spot
+    from stocks.data.listing import quote_unit
 
     iso, scale = quote_unit(native)
     if iso is None or iso == base:
@@ -567,7 +563,7 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
     # watchlist alias can make that another venue than the one the shares
     # were bought on (Revolut's dollar ASML, charted off the euro ASML.AS).
     # The basis and the fills are restated into the listing's quote so they
-    # sit on the chart's axis (stocks.analysis.listing.restate_trades).
+    # sit on the chart's axis (stocks.portfolio.restate.restate_trades).
     code = listing_currencies([ticker]).get(ticker)
     fills = _trades(db, mtime, ticker, code)
     held = restate_position(

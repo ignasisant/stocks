@@ -63,7 +63,7 @@ def _stamp(now: float | None = None) -> str:
     return time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime(now))
 
 
-# The API's persisted memos (stocks.api.cache): price frames that refetch
+# The API's persisted memos (stocks.cache): price frames that refetch
 # themselves, mirrored so a fresh host can answer while Yahoo says no. Not
 # user data — a snapshot that carried them would grow by megabytes a day for
 # nothing anyone would ever restore.

@@ -461,7 +461,7 @@ def fetch_profile(ticker: str, info: dict | None = None) -> FundProfile | None:
     except Exception:
         pass  # a fund with no disclosed basket still has its costs below
 
-    from stocks.analysis.listing import quote_unit
+    from stocks.data.listing import quote_unit
 
     traded_ccy, scale = quote_unit(info.get("currency"))
     volume = finite(info.get("averageVolume"))

@@ -53,7 +53,7 @@ def _digest(raw: str) -> str:
 
 def _language(request: Request, email: str | None) -> str:
     """Profile language, then the browser's, then English — like the app."""
-    from stocks.web import i18n
+    from stocks import i18n
 
     if email:
         try:
@@ -69,7 +69,7 @@ def _language(request: Request, email: str | None) -> str:
 
 def _t(key: str, lang: str, **kw: str) -> str:
     """Translated and HTML-escaped, slots included."""
-    from stocks.web import i18n
+    from stocks import i18n
 
     escaped = {k: html.escape(v) for k, v in kw.items()}
     return i18n.translate(f"connector.{key}", lang, **escaped)

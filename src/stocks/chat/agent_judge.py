@@ -25,8 +25,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from stocks.chat import structured
-from stocks.web.llm import Provider, ToolCall
+from stocks.llm import Provider, ToolCall, structured
 
 VERDICTS = ("met", "not_met", "unclear")
 

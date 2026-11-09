@@ -238,7 +238,7 @@ def _alert_line(
     holding = next((h for h in holdings if h.ticker == hit.ticker), None)
     if holding is None or not holding.is_position:
         return line
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     context = [translate("notify.shares", lang, n=f"{holding.shares:g}")]
     frame = frames.get(hit.ticker)
@@ -253,7 +253,7 @@ def alerts_message(
     lines: list[str], tickers: list[str], note: str | None, lang: str
 ) -> dict:
     """The fired rules as a push: one name opens its page, several the book."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     names = sorted(set(tickers))
     url = links.ticker_path(names[0]) if len(names) == 1 else links.path(links.PORTFOLIO)

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from stocks.analysis import naive_series
+from stocks.frames import naive_series
 
 INDEX_NAME = "S&P 500"
 INDEX_SYMBOL = "SPY"
@@ -81,7 +81,7 @@ def index_series(closes: dict | None, currency: str) -> tuple[pd.Series | None, 
     """(SPY's closes in the reader's currency, the currency they are in).
     Only the euro pair is downloaded, so another base reads the index in its
     own dollars."""
-    from stocks.api.briefing import index_in_base
+    from stocks.views.briefing import index_in_base
 
     series = index_in_base(closes or {}, currency)
     if series is None or len(series) < 2:

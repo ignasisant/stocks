@@ -885,7 +885,7 @@ def test_every_open_position_is_asked_for_a_price(tmp_path):
     price frame, so the market-value tile summed a fraction of the book
     against the whole of its cost basis.
     """
-    from stocks.api import loaders
+    from stocks import loaders
     from stocks.portfolio import ledger
 
     db = tmp_path / "book.db"

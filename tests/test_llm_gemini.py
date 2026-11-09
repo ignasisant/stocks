@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from google.genai import errors
 
-from stocks.web import llm
+from stocks import llm
 
 BUSY = {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}}
 
@@ -189,7 +189,7 @@ def test_usage_is_the_largest_count_seen_in_the_stream(monkeypatch):
     missing, and a 9k-token answer was metered as 600 tokens."""
     from types import SimpleNamespace as Chunk
 
-    from stocks.web import metering
+    from stocks.llm import metering
 
     _fake_client(monkeypatch, [
         Chunk(text="Ho", usage_metadata=Chunk(

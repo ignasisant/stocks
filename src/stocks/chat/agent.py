@@ -33,8 +33,7 @@ from dataclasses import dataclass, field
 
 from stocks import obs
 from stocks.chat import clock, stopping, toolbox
-from stocks.web import metering
-from stocks.web.llm import Provider, ToolCall, ToolSpec
+from stocks.llm import Provider, ToolCall, ToolSpec, metering
 
 # The gather runs before a single character is on screen, so it is pure latency.
 # Past this the answer goes out on whatever was collected so far.
@@ -525,7 +524,7 @@ def gather(
                   profile=profile.name, kept=len(budget.kept), **_spent(t0))
         raise
     except Exception as exc:
-        from stocks.web import llm
+        from stocks import llm
 
         llm.note_failure(provider, api_key, exc)
         kept = budget.salvage()

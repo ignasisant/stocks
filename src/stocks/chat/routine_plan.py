@@ -34,7 +34,8 @@ from datetime import date
 from pathlib import Path
 
 from stocks import obs
-from stocks.chat import engine, learnings, structured
+from stocks.chat import engine, learnings
+from stocks.llm import structured
 
 # The groups a routine can ask to be quoted, each a short fixed list so the
 # card's fetch stays bounded. "core" is what "the market" means when the

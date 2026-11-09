@@ -1,4 +1,4 @@
-"""The live layer over a book's closes (stocks.api.loaders._overlay_live).
+"""The live layer over a book's closes (stocks.loaders._overlay_live).
 
 What matters: the last bar is the live regular price when the quote is newer
 or of the same session; pre/after-hours and older quotes leave the bars
@@ -12,8 +12,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from stocks import loaders
 from stocks.analysis.portfolio import quote_snapshot
-from stocks.api import loaders
 from tests.patching import patch_loaders
 
 

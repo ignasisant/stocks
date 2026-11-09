@@ -30,7 +30,7 @@ from pydantic import field_validator
 from stocks import obs
 from stocks.chat import engine
 from stocks.chat.daily import audit
-from stocks.chat.structured import Contract, decode, render
+from stocks.llm.structured import Contract, decode, render
 
 # The verdict is read on a page that is already waiting on Yahoo; the daily
 # card's budget is the right one, for the same reason.
@@ -94,6 +94,12 @@ def peers_prompt(sector: str, known: tuple[str, ...], count: int) -> str:
         f"List up to {count} listed companies in this sector outside the "
         f"United States."
     )
+
+
+def widen(sector: str, known: tuple[str, ...], count: int) -> list[str]:
+    """`propose_peers` for the nightly sector scan: no account, the global
+    free budget (`analysis.sectors.run_scan`'s `propose`)."""
+    return propose_peers({}, sector, known, count, spend_free=engine.spend_free_global)
 
 
 def propose_peers(
@@ -314,7 +320,7 @@ def computed(facts: dict, lang: str) -> Verdict:
     What is left is what the podium has no room for — which of the three the
     reader already owns — plus the honest admission that nothing was written.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"sector.fb_{key}", lang, **kw)

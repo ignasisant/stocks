@@ -527,7 +527,7 @@ def test_a_slow_rule_carries_its_run_and_its_passage_to_the_card():
 
 
 def test_the_rules_met_on_the_card_s_job_go_first_within_the_cap():
-    from stocks.api.briefing import with_fired
+    from stocks.views.briefing import with_fired
 
     near = [{"kind": signals.CRITERION_NEAR, "key": f"criterion_near:T{i}:below"}
             for i in range(3)]
@@ -580,7 +580,7 @@ def test_a_red_flag_is_shown_once_unless_a_new_filing_raises_it():
 
 
 def test_red_flags_follow_the_rules_that_fired_within_their_cap():
-    from stocks.api.briefing import with_flags
+    from stocks.views.briefing import with_flags
 
     reports = {t: [_report("8-K", 1, item)]
                for t, item in (("AMD", "4.02"), ("ASML", "4.01"), ("NVDA", "1.03"))}

@@ -14,7 +14,7 @@ from stocks.chat import (
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 # gpt-oss cites as "【2†L13-L17】", pointers into a browser it does not have

@@ -9,8 +9,6 @@ from pathlib import Path
 from fastapi import HTTPException, status
 
 from stocks import obs
-from stocks.analysis.listing import quote_unit
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.import_statement.lookups import (
     LOOKUP_BUDGET_S,
     SPLITS_BUDGET_S,
@@ -18,11 +16,9 @@ from stocks.api.routes.import_statement.lookups import (
     _within,
 )
 from stocks.api.routes.import_statement.upload import StatementRow
-from stocks.api.schemas import (
-    ImportIssue,
-    ImportRow,
-)
 from stocks.data import fetch, fx, openfigi, symbols
+from stocks.data.listing import quote_unit
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import (
     demo,
     ledger,
@@ -33,6 +29,10 @@ from stocks.portfolio import (
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.statement import ParseResult
 from stocks.portfolio.validate import known_tickers, validate
+from stocks.schemas import (
+    ImportIssue,
+    ImportRow,
+)
 from stocks.web import tx_text
 
 

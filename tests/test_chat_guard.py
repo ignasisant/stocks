@@ -11,8 +11,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from stocks.chat import engine, guard, stopping
-from stocks.web import auth
+from stocks.chat import conversations, engine, guard, stopping
 
 REFUSAL = "Aquí solo te ayudo con inversión y tu cartera."
 OFF_TOPIC = "Escríbeme una receta de paella para seis personas"
@@ -140,7 +139,7 @@ def paths(tmp_path):
 
 @pytest.fixture
 def free(monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     judged = Judged()
     monkeypatch.setattr(llm, "PROVIDERS", {"free": judged})
@@ -163,7 +162,7 @@ def test_an_off_topic_message_is_refused_filed_and_not_charged(
     reply = engine.answer(prefs={"chat_skills_mode": "off"}, message=OFF_TOPIC,
                           lang="es", **paths)
     assert reply.text == REFUSAL and reply.error is None
-    saved = auth.load_chat(paths["chat_path"])
+    saved = conversations.load_chat(paths["chat_path"])
     assert saved[-1]["action"] == "refused" and saved[-1]["content"] == REFUSAL
     assert _day_spent(paths["prefs_path"]) == 0
 
@@ -178,7 +177,7 @@ def test_an_answer_that_recites_the_prompt_is_replaced_under_block(
                           lang="es", **paths)
     refusal = engine._tr("chat.guard_refusal", "es")
     assert reply.text == refusal
-    assert auth.load_chat(paths["chat_path"])[-1]["content"] == refusal
+    assert conversations.load_chat(paths["chat_path"])[-1]["content"] == refusal
 
 
 # ------------------------------------------------------- injected phrases

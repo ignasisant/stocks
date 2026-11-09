@@ -5,9 +5,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from stocks.api.daily_card import _book
 from stocks.chat import daily_book
 from stocks.chat.daily import attribution
+from stocks.views.daily_card import _book
 
 META = {
     "MSFT": {"sector": "Technology"},

@@ -21,7 +21,7 @@ import pytest
 
 from stocks.api.app import app as fastapi_app
 from stocks.config import ALERT_TYPES
-from stocks.web.i18n import catalog
+from stocks.i18n import catalog
 
 REPO = Path(__file__).resolve().parents[1]
 # The rebuilt page lives inside the app shell (`frontend/app`), which owns the

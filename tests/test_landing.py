@@ -205,7 +205,7 @@ def test_the_lens_strip_names_every_skill_the_assistant_actually_ships(as_lang):
     (`kind: industry`) are the company's to pick, not the reader's, and would
     turn the strip into a wall.
     """
-    from stocks.web import chat_skills
+    from stocks.chat import skills as chat_skills
 
     assert set(landing._LENSES) == {s.id for s in chat_skills.pickable()}
     as_lang("en")

@@ -114,7 +114,7 @@ _NOT_GUIDE_RE = re.compile(
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])|\s*•\s*")
 # The EDGAR wrapper a filing's text opens with: "EX-99.1 2 sezl-…htm EX-99.1
 # Document", then the dateline run straight into the title.
-_EDGAR_HEAD_RE = re.compile(
+EDGAR_HEAD_RE = re.compile(
     r"^\s*EX-\d+(?:\.\d+)?\s+\d+\s+\S+\s+EX-\d+(?:\.\d+)?\s+Document")
 # The 8-K items a row can name, each with a `today.item_<code>` label.
 ITEM_TOPICS = ("1.01", "1.02", "1.03", "1.05", "2.01", "2.02", "2.03", "2.04", "2.05",
@@ -324,7 +324,7 @@ def guidance_of(text: str) -> str:
     next quarter or the year — cut to `GUIDANCE_CHARS` at a word; "" when
     none. The call's logistics and the safe-harbour boilerplate, which name
     the future too, are skipped."""
-    text = _EDGAR_HEAD_RE.sub("", " ".join(str(text or "").split()))
+    text = EDGAR_HEAD_RE.sub("", " ".join(str(text or "").split()))
     for sentence in _SENTENCE_RE.split(text):
         line = sentence.strip()
         if (len(line) < 30 or not _GUIDE_RE.search(line) or _NOT_GUIDE_RE.search(line)
@@ -644,7 +644,7 @@ def _in_base(series, unit: str | None, base: str | None, closes: dict):
     Yahoo's own pair when the closes carry it, else the ECB's rate the book
     is valued at; with neither, the series stays in its own currency, and the
     row says which."""
-    from stocks.analysis import naive_series
+    from stocks.frames import naive_series
 
     if series is None or series.dropna().empty:
         return None, unit
@@ -675,7 +675,7 @@ def _measure(symbol: str, closes: dict, currencies: dict[str, str],
              base: str | None, moves: dict[str, dict]) -> tuple[dict, str | None]:
     """(`evidence.perf` of `symbol` in `base`, the currency it ended in),
     remembered in `moves` so the rows and the benchmarks measure a name once."""
-    from stocks.api.evidence import perf
+    from stocks.views.evidence import perf
 
     if symbol not in moves:
         series, unit = _in_base(closes.get(symbol), _unit(symbol, currencies), base,
@@ -686,7 +686,7 @@ def _measure(symbol: str, closes: dict, currencies: dict[str, str],
 
 def book_start(hist):
     """The book's first day with money in it, or None without a history."""
-    from stocks.analysis import naive_series
+    from stocks.frames import naive_series
 
     if hist is None or getattr(hist, "empty", True) or "value" not in hist:
         return None
@@ -752,7 +752,7 @@ def _index_all(hist, start, series) -> float | None:
 
 
 def _days_since(hist, start) -> int | None:
-    from stocks.analysis import naive_series
+    from stocks.frames import naive_series
 
     if start is None:
         return None
@@ -1136,7 +1136,7 @@ def gather(
     are weighed at cost; one among the compared that has no history either
     leaves the section missing its prices.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     started = time.monotonic()
     sources = sources or Sources()

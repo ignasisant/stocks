@@ -43,9 +43,9 @@ def _persona(lang: str, task: str, prefs: dict | None = None) -> str:
     the same assistant as the chat, writing to the same person."""
     who = ""
     if prefs is not None:
-        from stocks.web import auth
+        from stocks import userprefs
 
-        who = engine.persona(auth.load_profile(prefs))
+        who = engine.persona(userprefs.load_profile(prefs))
     return (
         "You are the portfolio assistant for TopStocks, a stock-tracking app. "
         f"{who}{task} in {_LANG_NAME.get(lang, 'English')}. Plain text only: no "

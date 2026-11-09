@@ -26,8 +26,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts, obs
-from stocks.api import loaders
+from stocks import accounts, loaders, obs
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.portfolio import _ledger_csv
 from stocks.portfolio import ledger
@@ -357,7 +356,7 @@ def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
 
 
 def _index_closes(monkeypatch, closes_by_symbol):
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "closes_since", lambda first: closes_by_symbol)
 
@@ -371,7 +370,7 @@ def test_the_index_is_only_sent_when_asked_for(client, book, priced, monkeypatch
     def refuse(first):
         raise AssertionError("downloaded an index nobody asked for")
 
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "closes_since", refuse)
     assert all(p["in_index"] is None for p in get(client)["points"])
@@ -444,7 +443,7 @@ def test_a_failed_index_download_leaves_the_book_drawn(client, book, priced, mon
     def boom(first):
         raise RuntimeError("yahoo said no")
 
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "closes_since", boom)
     points = get(client, index="true")["points"]

@@ -370,8 +370,7 @@ def test_a_name_one_account_invented_never_renders_for_a_guest(monkeypatch):
     allowlisted routes; optimise the argument away and one account's label
     renders on the demo pages.
     """
-    from stocks import identity
-    from stocks.api import loaders
+    from stocks import identity, loaders
 
     loaders._company_name.cache_clear()
     monkeypatch.setattr(

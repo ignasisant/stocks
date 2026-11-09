@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks.web import metering
-from stocks.web.metering import Meter, Use
+from stocks.llm import metering
+from stocks.llm.metering import Meter, Use
 
 
 def test_a_listed_model_has_a_price_and_an_unlisted_one_none():

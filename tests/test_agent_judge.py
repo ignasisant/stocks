@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 
 from stocks.chat import agent_eval, agent_judge
-from stocks.web.llm import ToolCall
+from stocks.llm import ToolCall
 
 GOALS = ("Says the tax is about 731 EUR", "Answers in Spanish")
 

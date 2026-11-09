@@ -31,11 +31,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from stocks import obs
+from stocks import accounts, obs
 from stocks.chat.hybrid import DIM, EMBEDDER, available, embed, fts_query, load_vec
 from stocks.chat.hybrid import fuse as _fuse
 
-FILE = "chat_memory.db"
+FILE = accounts.MEMORY_FILE
 
 # Turns shorter than this are not memories — "ok", "gracias", "y eso?" carry no
 # meaning to find later, and every one of them dilutes a search.

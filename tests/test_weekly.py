@@ -43,7 +43,7 @@ def full_data(**over) -> wk.WeeklyData:
 
 
 def tr(lang: str = "en"):
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return lambda key, **kw: translate(f"notify.{key}", lang, **kw)
 
