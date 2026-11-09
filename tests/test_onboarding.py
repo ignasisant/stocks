@@ -27,8 +27,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks import navigation
-from stocks.web import auth, i18n, onboarding
+from stocks import accounts, i18n, navigation
+from stocks.chat import conversations
+from stocks.web import onboarding
 
 LOCALES = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "locales"
 
@@ -469,38 +470,40 @@ def test_the_claude_card_needs_the_public_url(monkeypatch, origin, shown):
 def account(tmp_path):
     """A signed-in account's own dir. The predicates are handed it, so nothing
     here has to pretend to be a session."""
-    paths = auth.paths_for("newbie@example.com", users_dir=tmp_path)
+    paths = accounts.paths_for("newbie@example.com", users_dir=tmp_path)
     paths.root.mkdir(parents=True, exist_ok=True)
     return paths
 
 
 def test_a_freshly_seeded_account_has_tried_nothing(account):
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     assert onboarding.explore_state({}, account) == {
         "search": False, "ask": False, "watchlist": False,
     }
 
 
 def test_a_looked_up_ticker_counts_as_the_search_tried(account):
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     state = onboarding.explore_state({"recent_searches": ["NVDA"]}, account)
     assert state["search"] is True
 
 
 def test_an_answered_conversation_counts_as_the_assistant_tried(account):
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
-    auth.save_chat([{"role": "user", "content": "how is my book?"}], account.chat)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
+    conversations.save_chat(
+        [{"role": "user", "content": "how is my book?"}], account.chat
+    )
     assert onboarding.explore_state({}, account)["ask"] is True
 
 
 def test_an_empty_conversation_does_not_count(account):
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     account.chat.write_text('{"conversations": [{"id": "a", "messages": []}]}')
     assert onboarding.explore_state({}, account)["ask"] is False
 
 
 def test_editing_the_seeded_watchlist_is_what_makes_it_the_users_own(account):
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     assert onboarding.explore_state({}, account)["watchlist"] is False
     account.watchlist.write_text("watchlist:\n  - ticker: NVDA\n")
     assert onboarding.explore_state({}, account)["watchlist"] is True
@@ -514,7 +517,7 @@ def test_explore_state_is_kept_apart_from_the_setup_capabilities(account):
     """Two strips, two meanings. The tour badges every connectable step from
     setup_state, so a key that drifted across would badge a step for something
     there is nothing to connect."""
-    account.watchlist.write_text(auth.STARTER_WATCHLIST)
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     explore = set(onboarding.explore_state({}, account))
     setup = set(onboarding.setup_state({}, account, signed_in=True))
     assert explore == {"search", "ask", "watchlist"}

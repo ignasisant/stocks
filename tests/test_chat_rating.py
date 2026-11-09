@@ -19,8 +19,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from stocks.chat import engine
-from stocks.web import auth, chat_web, feedback, llm
+from stocks import llm
+from stocks.chat import conversations, engine
+from stocks.chat import websearch as chat_web
+from stocks.web import feedback
 from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
@@ -38,7 +40,7 @@ from .test_api_chat import (  # noqa: F401 — fixtures
     token,
 )
 
-# Recent, so the thread is not an idle one (`auth.KEEP_DAYS`); fixed, so a
+# Recent, so the thread is not an idle one (`conversations.KEEP_DAYS`); fixed, so a
 # rating that touched `updated` would show.
 STAMP = (datetime.now(UTC) - timedelta(days=1)).isoformat(timespec="seconds")
 
@@ -75,19 +77,20 @@ def test_rate_turn_sets_and_clears_without_touching_updated(tmp_path):
         "messages": [{"role": "user", "content": "why up?"},
                      {"role": "assistant", "content": "because", "id": "a1"}],
     }], "active": "c1"}
-    auth.save_book(book, path)
+    conversations.save_book(book, path)
 
-    found = auth.rate_turn("a1", "down", path)
+    found = conversations.rate_turn("a1", "down", path)
     assert found["question"] == "why up?"
     assert found["answer"]["rating"] == "down"
-    conv = auth.load_book(path)["conversations"][0]
+    conv = conversations.load_book(path)["conversations"][0]
     assert conv["messages"][1]["rating"] == "down"
     assert conv["updated"] == STAMP
 
-    auth.rate_turn("a1", None, path)
-    assert "rating" not in auth.load_book(path)["conversations"][0]["messages"][1]
-    assert auth.rate_turn("nope", "up", path) is None
-    assert auth.rate_turn("", "up", path) is None
+    conversations.rate_turn("a1", None, path)
+    book = conversations.load_book(path)
+    assert "rating" not in book["conversations"][0]["messages"][1]
+    assert conversations.rate_turn("nope", "up", path) is None
+    assert conversations.rate_turn("", "up", path) is None
 
 
 def test_every_answer_keeps_its_own_rating(tmp_path):
@@ -106,11 +109,11 @@ def test_every_answer_keeps_its_own_rating(tmp_path):
             {"role": "assistant", "content": "three", "id": "b1", "rating": "up"},
         ]},
     ], "active": "c1"}
-    auth.save_book(book, path)
+    conversations.save_book(book, path)
 
-    auth.rate_turn("a1", "up", path)
-    found = auth.rate_turn("a2", "down", path)
-    c1, c2 = auth.load_book(path)["conversations"]
+    conversations.rate_turn("a1", "up", path)
+    found = conversations.rate_turn("a2", "down", path)
+    c1, c2 = conversations.load_book(path)["conversations"]
     assert c1["messages"][1]["rating"] == "up"
     assert c1["messages"][3]["rating"] == "down"
     # Another conversation's rating is its own.
@@ -357,7 +360,7 @@ class _Researcher(FakeProvider):
 
     def run_tools(self, api_key, model, system, messages, tools, execute,
                   max_rounds=3, stop=None):
-        from stocks.web.llm import ToolCall, ToolRun
+        from stocks.llm import ToolCall, ToolRun
 
         out = execute("get_quotes", {"tickers": "SHOP"})
         return ToolRun("DONE", [ToolCall("get_quotes", {"tickers": "SHOP"}, out)])

@@ -28,10 +28,10 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from stocks.analysis import naive_dates
 from stocks.analysis.indicators import atr, rsi, sma
 from stocks.analysis.sentiment import INDICES, Index
 from stocks.data.crypto import is_crypto
+from stocks.frames import naive_dates
 
 SMA_LONG = 200
 SMA_MID = 50

@@ -32,7 +32,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 # What the ledger accepts as a symbol: bare ("AAPL"), suffixed ("MC.PA",
 # "BRK-B"). Deliberately NOT the ISIN shape validate.py also tolerates — an
@@ -112,7 +112,7 @@ def obvious(label: str) -> str | None:
 
 def _parse_reply(raw: str, labels: list[str]) -> dict[str, str | None]:
     """The model's JSON as a label -> ticker map, keeping only usable answers."""
-    from stocks.chat import structured
+    from stocks.llm import structured
 
     try:
         data = structured.parse(raw, "ResolveSymbols")
@@ -155,7 +155,7 @@ def resolve(labels: list[str], provider: Provider, api_key: str = "",
     for label in unknown[MAX_LABELS:]:
         out[label] = None
     batch = unknown[:MAX_LABELS]
-    from stocks.chat import structured
+    from stocks.llm import structured
 
     system, messages = structured.render(
         "ResolveSymbols", _SYSTEM, json.dumps(batch, ensure_ascii=False)

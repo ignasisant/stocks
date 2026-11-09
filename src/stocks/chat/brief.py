@@ -41,12 +41,12 @@ from typing import TYPE_CHECKING, SupportsFloat
 from pydantic import field_validator
 
 from stocks import atomic, obs, storage
-from stocks.chat import structured
+from stocks.chat import skills as chat_skills
 from stocks.config import DATA_DIR
-from stocks.web import chat_skills
+from stocks.llm import structured
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 ANGLES = ("full", "bear", "earnings", "fit")
 
@@ -223,7 +223,7 @@ def holding_line(ticker: str, watchlist: Path, db: Path, currency: str) -> str:
 
 def earnings_lines(ticker: str, today: date | None = None) -> tuple[str, bool]:
     """(the report lines, whether one landed in the last `RECENT_DAYS`)."""
-    from stocks.api import loaders
+    from stocks import loaders
 
     today = today or date.today()
     try:

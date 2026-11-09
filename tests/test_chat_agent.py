@@ -4,7 +4,7 @@ from pathlib import Path
 
 from stocks.chat import agent, toolbox
 from stocks.chat.agent import Evidence
-from stocks.web.llm import ToolCall, ToolRun
+from stocks.llm import ToolCall, ToolRun
 
 
 class _Provider:
@@ -302,7 +302,7 @@ def test_the_loop_is_told_to_stop_once_the_budget_is_spent(monkeypatch):
 
 
 def test_a_deep_gather_stops_once_its_tokens_are_spent(monkeypatch):
-    from stocks.web import metering
+    from stocks.llm import metering
 
     p = _Provider()
     seen = []
@@ -322,7 +322,7 @@ def test_a_deep_gather_stops_once_its_tokens_are_spent(monkeypatch):
 
 
 def test_a_fast_gather_has_no_token_cap():
-    from stocks.web import metering
+    from stocks.llm import metering
 
     p = _Provider()
     seen = []

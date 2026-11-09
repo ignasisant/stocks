@@ -37,3 +37,26 @@ def midnight(stamp) -> pd.Timestamp:
 def weekdays(df: pd.DataFrame):
     """Monday=0 .. Sunday=6 for every bar."""
     return dates(df).day_of_week
+
+
+def naive_dates(index) -> pd.DatetimeIndex:
+    """`index` as a tz-naive DatetimeIndex.
+
+    Price histories arrive with a mix of tz-aware and naive indexes depending
+    on the market and the interval, and everything downstream compares them
+    against plain dates — so they are flattened on the way in. pandas types a
+    frame's `.index` as the plain `Index` base, which carries none of the
+    datetime methods; naming the real class once, here, keeps every caller
+    free of that.
+    """
+    out = pd.DatetimeIndex(pd.to_datetime(index))
+    if out.tz is None:
+        return out
+    return out.tz_localize(None)
+
+
+def naive_series(series: pd.Series) -> pd.Series:
+    """`series` on naive dates, one value a day, oldest first, gaps dropped."""
+    out = series.dropna().copy()
+    out.index = naive_dates(out.index)
+    return out[~out.index.duplicated(keep="last")].sort_index()

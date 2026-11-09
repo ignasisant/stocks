@@ -27,7 +27,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from stocks import obs
-from stocks.chat import engine, structured
+from stocks.chat import engine
+from stocks.llm import structured
 
 JUDGE_TIMEOUT_S = 20.0
 PASSAGE_CHARS = 2000  # `journal.EXCERPT_CHARS` already cut it to this

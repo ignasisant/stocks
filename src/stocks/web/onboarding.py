@@ -20,10 +20,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from stocks import accounts, userprefs
+from stocks.chat import conversations
 from stocks.config import load_watchlist
 from stocks.notify import mail, webpush
 from stocks.portfolio import demo
-from stocks.web import auth
 
 # ------------------------------------------------------------- prefs / state
 # prefs.json keys. `tour_seen_version` is the newest RELEASES version this
@@ -212,7 +213,7 @@ STEPS: tuple[Step, ...] = (
         page="profile",
         session={"profile_tab": "iv"},
         gated=True,
-        done=lambda prefs, _paths=None: auth.profile_is_set(prefs),
+        done=lambda prefs, _paths=None: userprefs.profile_is_set(prefs),
     ),
     Step(
         id="plan",
@@ -615,7 +616,7 @@ def _has_searched(prefs: dict) -> bool:
 def _has_asked(_prefs: dict, paths) -> bool:
     """Whether any conversation with the assistant has a turn in it."""
     try:
-        book = auth.load_book(paths.chat)
+        book = conversations.load_book(paths.chat)
     except Exception:
         return False
     return any(c.get("messages") for c in book.get("conversations", []))
@@ -630,7 +631,7 @@ def _watchlist_is_own(_prefs: dict, paths) -> bool:
     untouched, which is a shrug, not a bug.
     """
     try:
-        return paths.watchlist.read_text() != auth.STARTER_WATCHLIST
+        return paths.watchlist.read_text() != accounts.STARTER_WATCHLIST
     except OSError:
         return False
 
@@ -736,7 +737,7 @@ def account_gaps(
         rows = []
 
     def fixes() -> Gap | None:
-        from stocks.api import loaders
+        from stocks import loaders
         from stocks.api.routes.import_statement.book_checkup import _FIXABLE
         from stocks.portfolio import doctor
         from stocks.portfolio import held as held_sales
@@ -775,7 +776,7 @@ def account_gaps(
 
         names = held
         if names is None:
-            from stocks.api.briefing import held_symbols
+            from stocks.views.briefing import held_symbols
 
             names = held_symbols(paths)
         if not names:

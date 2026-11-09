@@ -27,7 +27,7 @@ import pytest
 
 from stocks import obs
 from stocks.api import runs
-from stocks.web import auth
+from stocks.chat import conversations
 from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
@@ -313,7 +313,7 @@ def test_an_answer_lands_on_the_thread_it_was_asked_on(
     # empty on disk, and New must not hand it back as the blank one.
     elsewhere = fresh_thread(signed_in)
     assert elsewhere != asked
-    assert auth.active_conversation(account.chat)["id"] == elsewhere
+    assert conversations.active_conversation(account.chat)["id"] == elsewhere
     gate.set()
     ended(account)
     assert [m["content"] for m in turns(signed_in, asked)] == ["hola", "Hola mundo"]
@@ -324,15 +324,15 @@ def test_an_answer_whose_thread_was_deleted_is_dropped_not_misfiled(
     account, monkeypatch
 ):
     warned = []
-    monkeypatch.setattr(auth.obs, "warn", lambda name, **kw: warned.append(name))
-    auth.save_chat([{"role": "user", "content": "otra"}], account.chat)
-    kept = auth.load_chat(account.chat)
-    auth.save_chat(
+    monkeypatch.setattr(obs, "warn", lambda name, **kw: warned.append(name))
+    conversations.save_chat([{"role": "user", "content": "otra"}], account.chat)
+    kept = conversations.load_chat(account.chat)
+    conversations.save_chat(
         [{"role": "user", "content": "hola"},
          {"role": "assistant", "content": "Hola mundo"}],
         account.chat, "c_gone",
     )
-    assert auth.load_chat(account.chat) == kept
+    assert conversations.load_chat(account.chat) == kept
     assert warned == ["chat.thread_gone"]
 
 

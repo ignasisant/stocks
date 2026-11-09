@@ -61,10 +61,10 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-from stocks import obs, userstore
-from stocks.chat import structured
+from stocks import accounts, obs, userstore
+from stocks.llm import structured
 
-FILE = "chat_learnings.json"
+FILE = accounts.LEARNINGS_FILE
 
 MAX_ITEMS = 40
 MAX_CHARS = 240

@@ -25,9 +25,9 @@ import os
 import sys
 import time
 
-from stocks import obs
+from stocks import llm, obs
 from stocks.chat import router_eval
-from stocks.web import chat_skills, llm
+from stocks.chat import skills as chat_skills
 
 
 def _args() -> argparse.Namespace:

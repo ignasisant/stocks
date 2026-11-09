@@ -27,7 +27,7 @@ class Conversation(BaseModel):
     updated: str
     messages: int
     active: bool
-    # The day of a daily card's thread (`auth.save_card_thread`), "" otherwise.
+    # The day of a daily card's thread (`conversations.save_card_thread`), "" otherwise.
     daily: str = ""
     # The job a scheduled run's thread came from (`notify/schedule.py`):
     # "briefing", "digest" or "weekly"; "" for any other thread.
@@ -97,7 +97,7 @@ def conversations(paths: Account) -> Conversations:
     `answering` marks a thread with an answer still being written — the reader
     moved to another one meanwhile, and the panel says when it lands.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if not paths.chat.exists():
         return Conversations(conversations=[])
@@ -105,7 +105,7 @@ def conversations(paths: Account) -> Conversations:
     return Conversations(
         conversations=[
             Conversation(**c, answering=c["id"] in live)
-            for c in auth.list_conversations(paths.chat, cards=False)
+            for c in conversations.list_conversations(paths.chat, cards=False)
         ]
     )
 
@@ -118,10 +118,10 @@ def conversations(paths: Account) -> Conversations:
 def thread(cid: str, paths: Account, request: Request) -> Thread:
     """The thread, and the run still answering on it. One a restart cut short
     is started again here (`_resumed`), so it is still answering."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     lang = str(_prefs(paths).get("language") or "en")
-    book = auth.load_book(paths.chat)
+    book = conversations.load_book(paths.chat)
     for conv in book["conversations"]:
         if conv["id"] == cid:
             run = runs.on_thread(str(paths.chat), cid) or _resumed(
@@ -152,10 +152,11 @@ def thread(cid: str, paths: Account, request: Request) -> Thread:
 )
 def start(body: NewThread, paths: Writer) -> Conversation:
     """New thread, activated. An active thread that is still empty is reused,
-    so pressing New twice cannot stack blank threads (`auth.new_conversation`).
+    so pressing New twice cannot stack blank threads (`conversations.new_conversation`).
     One started `from_share` is always new; 404 when that link is gone.
     """
-    from stocks.web import auth, shares
+    from stocks.chat import conversations
+    from stocks.web import shares
 
     if body.from_share:
         found = shares.load(body.from_share)
@@ -167,11 +168,11 @@ def start(body: NewThread, paths: Writer) -> Conversation:
             )
         cid = shares.continue_from(paths, found)
     else:
-        cid = auth.new_conversation(paths.chat, body.title,
+        cid = conversations.new_conversation(paths.chat, body.title,
                                     busy=runs.live_threads(str(paths.chat)))
     return next(
         Conversation(**c)
-        for c in auth.list_conversations(paths.chat)
+        for c in conversations.list_conversations(paths.chat)
         if c["id"] == cid
     )
 
@@ -182,21 +183,21 @@ def start(body: NewThread, paths: Writer) -> Conversation:
     summary="Rename a thread or make it active",
 )
 def edit(cid: str, body: EditThread, paths: Writer) -> Conversation:
-    from stocks.web import auth
+    from stocks.chat import conversations
 
-    metas = {c["id"]: c for c in auth.list_conversations(paths.chat)}
+    metas = {c["id"]: c for c in conversations.list_conversations(paths.chat)}
     if cid not in metas:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
         )
     if body.title is not None:
         # Pins the title: auto-titling never overwrites a name a user chose.
-        auth.rename_conversation(cid, body.title, paths.chat)
+        conversations.rename_conversation(cid, body.title, paths.chat)
     if body.active:
-        auth.set_active_conversation(cid, paths.chat)
+        conversations.set_active_conversation(cid, paths.chat)
     return next(
         Conversation(**c)
-        for c in auth.list_conversations(paths.chat)
+        for c in conversations.list_conversations(paths.chat)
         if c["id"] == cid
     )
 
@@ -212,13 +213,13 @@ def drop(cid: str, paths: Writer) -> None:
     404 on an unknown id rather than a silent 204: a client that deleted the
     wrong thing and a client that deleted nothing look identical otherwise.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
-    if not any(c["id"] == cid for c in auth.list_conversations(paths.chat)):
+    if not any(c["id"] == cid for c in conversations.list_conversations(paths.chat)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
         )
-    auth.delete_conversation(cid, paths.chat)
+    conversations.delete_conversation(cid, paths.chat)
 
 
 class Rating(BaseModel):
@@ -253,9 +254,10 @@ def rate(tid: str, body: Rating, paths: Writer) -> Rated:
     404 for an id no thread holds: an answer written before turns had ids, or
     a thread since deleted.
     """
-    from stocks.web import auth, feedback
+    from stocks.chat import conversations
+    from stocks.web import feedback
 
-    found = auth.rate_turn(tid, body.vote, paths.chat)
+    found = conversations.rate_turn(tid, body.vote, paths.chat)
     if found is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no answer {tid}"

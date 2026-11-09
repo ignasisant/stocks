@@ -29,7 +29,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stocks import obs
+from stocks import llm, obs
 from stocks.chat import (
     a2ui,
     agent,
@@ -48,10 +48,10 @@ from stocks.chat import (
     rebalance,
     reports,
     stopping,
-    tokens,
     whatif,
 )
 from stocks.chat import brief as ticker_brief
+from stocks.chat import websearch as chat_web
 from stocks.chat.engine.actions import (
     PAGE_TICKERS,
     _allocation,
@@ -221,11 +221,11 @@ from stocks.chat.engine.turn import (
     clean_focus,
     view_context,
 )
-from stocks.web import chat_web, llm, metering
+from stocks.llm import metering, tokens
 
 if TYPE_CHECKING:
     from stocks.chat.checkpoint import Checkpoint
-    from stocks.web.llm import Provider, ToolCall
+    from stocks.llm import Provider, ToolCall
 
 __all__ = [
     "ANSWER_KEEP_S",
@@ -446,10 +446,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     turn, and a full analysis or a bear case runs deep and argued. "" is a
     typed question.
     """
-    from stocks.chat import tools
-    from stocks.web import auth, llm
+    from stocks import llm, userprefs
+    from stocks.chat import conversations, tools
 
-    history = auth.load_chat(chat_path, thread)
+    history = conversations.load_chat(chat_path, thread)
     history.append({"role": "user", "content": message})
 
     # A proposal waiting on the turn above, answered in words: "sí" is the
@@ -474,7 +474,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # — the model is never given the chance to describe an import that did
     # not happen (the same ban system_prompt states).
     if tools.wants_import(message):
-        from stocks.web.i18n import translate
+        from stocks.i18n import translate
 
         # `staged_import` names a statement the client is already showing a
         # preview of. Then the step that does work is the button under it, not
@@ -487,7 +487,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         nav = {"page": "import"}
         history.append({"role": "assistant", "content": note,
                         "action": "import", "nav": nav})
-        auth.save_chat(history, chat_path, thread)
+        conversations.save_chat(history, chat_path, thread)
         return None, Reply(text=note, nav=nav)
 
     # "Recuerda que…" / "olvida lo de…": the user editing the memory in words.
@@ -507,7 +507,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             if learned:
                 done["learned"] = learned
             history.append(done)
-            auth.save_chat(history, chat_path, thread)
+            conversations.save_chat(history, chat_path, thread)
             return None, Reply(text=note, learned=tuple(learned))
 
     def settled(reply: Reply) -> tuple[None, Reply]:
@@ -560,7 +560,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind, "proposal": offer,
                                    "id": tid, "provider": provider.id}))
-            auth.save_chat(history, chat_path, thread)
+            conversations.save_chat(history, chat_path, thread)
             autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
             obs.event("chat.action_proposed", action=act.kind)
@@ -581,7 +581,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind, "id": tid,
                                    "provider": provider.id}))
-            auth.save_chat(history, chat_path, thread)
+            conversations.save_chat(history, chat_path, thread)
             autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
             return settled(Reply(text=note, provider_id=provider.id,
@@ -688,7 +688,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             lambda: _harvest(message, db, prefs_path, lang, told) if one else None,
             lambda: (_rebalance(message, watchlist, db, prefs_path, focus, lang,
                                 told) if one else None),
-            lambda: _reports_ahead(message, watchlist, db, lang, told),
+            lambda: _reports_ahead(message, watchlist, db, lang, told,
+                                   journal=journal.path_for(chat_path),
+                                   currency=reporting_currency(prefs)),
             lambda: _income(message, db, prefs_path, lang, told),
             lambda: _plan_builder(message, prefs, db, lang, told) if one else None,
             # A company met for the first time this month gets its notes
@@ -790,7 +792,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     recalled_notes, recalled = earlier(prefs, chat_path, message, known)
     note_used(prefs, chat_path, message, known)
     system = system_prompt(
-        auth.load_profile(prefs),
+        userprefs.load_profile(prefs),
         # The turn's own part: where the reader is, what the surface draws
         # for them, and — on the walkthrough's thread only — the fence.
         context + view + (charts.PROMPT if draws else "") + fence,
@@ -830,7 +832,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                               reports.Ahead, income.Income, plan_builder.Known)):
             msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
-    # the newest turn are the biggest thing in the request (chat/tokens.py).
+    # the newest turn are the biggest thing in the request (llm/tokens.py).
     msgs = tokens.fit(msgs, system=system)
 
     # Argued off the fitted messages — the analysts read what the answer
@@ -974,8 +976,7 @@ def _charge(prefs: dict, prefs_path: Path, provider: Provider,
     """
     if provider.id != "free":
         return True
-    from stocks import accounts
-    from stocks.web import auth
+    from stocks import accounts, userprefs
 
     # Checked against the file, not the dict this turn read minutes ago, and
     # under the file's lock: two turns of one account racing for the last unit
@@ -984,7 +985,7 @@ def _charge(prefs: dict, prefs_path: Path, provider: Provider,
         _fresh_free_count(prefs, prefs_path)
         if not spend_free_quota(prefs, units):
             return False
-        auth.save_prefs(prefs, prefs_path)
+        userprefs.save_prefs(prefs, prefs_path)
     return True
 
 
@@ -1007,10 +1008,10 @@ def _refund(prefs: dict, prefs_path: Path, provider: Provider,
     """Give back the units taken for a call that never answered."""
     if provider.id != "free":
         return
-    from stocks.web import auth
+    from stocks import userprefs
 
     refund_free_quota(prefs, units)
-    auth.save_prefs(prefs, prefs_path)
+    userprefs.save_prefs(prefs, prefs_path)
 
 
 def _provider_failed(exc: Exception, provider: Provider, model: str,
@@ -1072,7 +1073,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     `grace` is how long the answer waits for this question's memory read
     (`learn`) still out — LEARN_GRACE unless the caller can afford more.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     # What was learned unasked rides on the answer: this question's if its
     # read is done (a moment's grace, it is usually ahead of the answer), and
@@ -1125,7 +1126,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         polish(entry)
         text = str(entry.get("content") or "")
     turn.history.append(entry)
-    auth.save_chat(turn.history, chat_path, turn.thread)
+    conversations.save_chat(turn.history, chat_path, turn.thread)
     autotitle(chat_path, provider, key, turn.history, turn.lang, turn.thread)
     _keep_byok(prefs, prefs_path)
     obs.event("chat.answered", provider=provider.id, model=model,
@@ -1144,13 +1145,13 @@ def _refused(text: str, history: list[dict], chat_path: Path,
              provider_id: str) -> Reply:
     """File and return the guard's refusal (`chat/guard.py`) as the answer:
     the reader sees why nothing else came, and the thread keeps it."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     text = text or _tr("chat.guard_refusal", lang)
     tid = turn_id or secrets.token_hex(6)
     history.append({"role": "assistant", "content": text, "action": "refused",
                     "id": tid, "provider": provider_id})
-    auth.save_chat(history, chat_path, thread)
+    conversations.save_chat(history, chat_path, thread)
     obs.event("chat.refused")
     return Reply(text=text, provider_id=provider_id, turn_id=tid)
 
@@ -1492,8 +1493,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     if turn.recalled:
         yield ("recalled", list(turn.recalled))
 
-    from stocks.web.i18n import translate
-    from stocks.web.llm import Cut
+    from stocks.i18n import translate
+    from stocks.llm import Cut
 
     capped = False
     # A run picked up after a restart that had already paid for its answer

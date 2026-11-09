@@ -1,7 +1,7 @@
 export type { Position, Custodian } from "../../api.gen";
 /**
  * The shapes `/api/v1/portfolio/*` actually sends, transcribed from
- * `src/stocks/api/schemas/`.
+ * `src/stocks/schemas/`.
  *
  * Every `| null` here is one the API means: a position nobody could price has
  * no value and no weight, a book with no span has no return, a spread nobody

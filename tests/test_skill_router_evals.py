@@ -8,7 +8,7 @@ scripts/eval_router.py."""
 import pytest
 
 from stocks.chat import router_eval
-from stocks.web import chat_skills
+from stocks.chat import skills as chat_skills
 
 CASES = router_eval.load()
 ROWS = router_eval.score(chat_skills.heuristic, CASES)

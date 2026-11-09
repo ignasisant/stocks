@@ -19,7 +19,7 @@ import threading
 import pandas as pd
 import pytest
 
-from stocks.api import loaders
+from stocks import loaders
 from stocks.data import fetch
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
@@ -295,7 +295,7 @@ def test_a_refused_month_is_a_refused_download(book, yahoo, monkeypatch):
     to a whole-history request per name."""
     import time
 
-    from stocks.api import cache
+    from stocks import cache
 
     tickers = [f"T{i}" for i in range(8)]
     db = book(*(("2024-01-02", t) for t in tickers))
@@ -373,7 +373,7 @@ def test_the_book_answers_from_the_last_process_while_it_downloads(
 ):
     """The first visit of a morning, on a new process: last night's prices
     answer at once, marked, and the download lands behind them."""
-    from stocks.api import cache
+    from stocks import cache
 
     db = book(("2024-01-02", "AAPL"))
     y = yahoo({"AAPL": _bars(100.0)})

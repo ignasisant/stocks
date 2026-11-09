@@ -18,9 +18,10 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from stocks import accounts
 from stocks.api.app import app as fastapi_app
-from stocks.chat import a2ui
-from stocks.web import auth, shares
+from stocks.chat import a2ui, conversations
+from stocks.web import shares
 
 from .test_api_chat import (  # noqa: F401 — fixtures
     EMAIL,
@@ -43,7 +44,7 @@ def _surface(sid: str) -> dict:
 
 def _book(path, *, answer_id: str = "a1", earlier: list | None = None,
           later: list | None = None) -> None:
-    auth.save_book({"conversations": [{
+    conversations.save_book({"conversations": [{
         "id": "c1", "title": "t", "updated": STAMP,
         "messages": [
             *(earlier or []),
@@ -105,7 +106,7 @@ def test_the_same_cut_is_the_same_link_and_the_other_cut_a_second_one(account):
     open_ = shares.create(account, "a1", masked=False, lang="es")
     assert open_["id"] != first["id"]
     assert "4.200" in open_["content"]
-    stamped = auth.find_answer("a1", account.chat)["answer"]["shares"]
+    stamped = conversations.find_answer("a1", account.chat)["answer"]["shares"]
     assert {(k["id"], k["masked"]) for k in stamped} == {
         (first["id"], True), (open_["id"], False)}
     assert shares.load(first["id"]) is not None, "a link already sent keeps working"
@@ -162,7 +163,7 @@ def test_a_link_made_before_the_thread_was_kept_gets_it_on_the_next_share(accoun
 def test_a_link_outlives_the_thread_it_came_from(account):
     _book(account.chat)
     share = shares.create(account, "a1", masked=True, lang="es")
-    auth.delete_conversation("c1", account.chat)
+    conversations.delete_conversation("c1", account.chat)
     assert shares.load(share["id"])["content"] == share["content"]
 
 
@@ -170,11 +171,11 @@ def test_revoke_takes_down_every_link_and_only_for_its_owner(account, tmp_path):
     _book(account.chat)
     one = shares.create(account, "a1", masked=True, lang="es")
     two = shares.create(account, "a1", masked=False, lang="es")
-    stranger = auth.accounts.paths_in(tmp_path / "users" / "someone")
+    stranger = accounts.paths_in(tmp_path / "users" / "someone")
     assert not shares.revoke(stranger, one["id"])
     assert shares.revoke(account, one["id"])
     assert shares.load(one["id"]) is None and shares.load(two["id"]) is None
-    assert "shares" not in auth.find_answer("a1", account.chat)["answer"]
+    assert "shares" not in conversations.find_answer("a1", account.chat)["answer"]
 
 
 def test_purge_owner_deletes_only_that_accounts_links(account, store):

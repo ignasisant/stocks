@@ -133,9 +133,9 @@ def rates_into(
     dollars (`listing._lookup` asks Yahoo only for the names that can differ);
     anything else unknown is left off rather than measured in the wrong money.
     """
-    from stocks.analysis.listing import quote_unit
     from stocks.analysis.portfolio import fx_frame
     from stocks.data.crypto import is_crypto
+    from stocks.data.listing import quote_unit
 
     isos: dict[str, str] = {}
     unpriced: set[str] = set()

@@ -57,9 +57,9 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from stocks import obs
+from stocks import llm, obs
 from stocks.chat import agent, agent_eval, agent_judge
-from stocks.web import llm, metering
+from stocks.llm import metering
 
 # What a turn gives its gather in the app (`engine.answer_stream` timeout_s);
 # the gather runs on the longer of it and the profile's own.

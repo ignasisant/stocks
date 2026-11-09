@@ -25,7 +25,7 @@ from pathlib import Path
 
 from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR
-from stocks.web.i18n import DEFAULT_LANG
+from stocks.i18n import DEFAULT_LANG
 
 FEEDBACK_DIR = DATA_DIR / "feedback"
 KINDS = ("bug", "idea", "other")

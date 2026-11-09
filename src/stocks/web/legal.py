@@ -13,8 +13,8 @@ in full.
 
 from __future__ import annotations
 
+from stocks.i18n import DEFAULT_LANG, LANGUAGES
 from stocks.web import csp
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES
 from stocks.web.landing import GITHUB_URL
 from stocks.web.markup import esc
 

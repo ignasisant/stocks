@@ -56,9 +56,9 @@ from pathlib import Path
 
 import httpx
 
-from stocks import session
+from stocks import llm, session
 from stocks.chat import agent_judge, prod_eval
-from stocks.web import llm, upstream
+from stocks.web import upstream
 
 RUNS = prod_eval.CATALOG.parent / "runs"
 DEFAULT_EMAIL = "ai-eval@topstocks.eval"

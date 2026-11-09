@@ -20,8 +20,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import cache, loaders
+from stocks import accounts, cache, loaders
 from stocks.api.app import app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction

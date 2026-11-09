@@ -11,7 +11,7 @@ from fastapi import APIRouter, Response
 
 from stocks import progress as registry
 from stocks.api.deps import Account
-from stocks.api.schemas import Progress, ProgressJob
+from stocks.schemas import Progress, ProgressJob
 
 router = APIRouter(tags=["progress"])
 

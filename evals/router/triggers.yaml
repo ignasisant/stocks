@@ -1,4 +1,4 @@
-# Trigger evals for the chat's skill auto-router (src/stocks/web/chat_skills.py).
+# Trigger evals for the chat's skill auto-router (src/stocks/chat/skills.py).
 #
 # One block per skill in src/stocks/web/skills/. `should` are questions the
 # router must pick the skill for (EN + ES, the way an investor types them);

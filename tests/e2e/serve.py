@@ -98,7 +98,7 @@ def _seal_accounts(root: Path) -> None:
     # The import diagnostics are written under the checkout's `data/imports`
     # otherwise — the suite's accounts landed in the developer's own list.
     diagnostics.DIAGNOSTICS_DIR = root / "imports"
-    from stocks.api import cache
+    from stocks import cache
     from stocks.data import insiders
 
     cache.MEMO_DIR = root / "memo"

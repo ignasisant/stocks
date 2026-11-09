@@ -436,7 +436,7 @@ class Chart:
 
 def _closes(symbol: str, window: str) -> pd.Series | None:
     """The window's closes, from the Ticker page's own cached download."""
-    from stocks.api import loaders
+    from stocks import loaders
 
     bars = loaders.price_bars(symbol, "1y" if window == "ytd" else window)
     if bars is None or bars.empty or "Close" not in bars:
@@ -495,7 +495,7 @@ def book_days(value: pd.Series, window: str,
     the line rather than spent as its starting point. Counted back from the
     series' own last day, as `/portfolio/history` counts its windows, and
     never before the first day anything was held."""
-    from stocks.analysis import naive_dates
+    from stocks.frames import naive_dates
 
     value = value.dropna()
     value.index = naive_dates(value.index)
@@ -518,8 +518,8 @@ def book_for(db, base: str) -> Callable[[], Book | None]:
     from pathlib import Path
 
     def fetch() -> Book | None:
+        from stocks import loaders
         from stocks.analysis.portfolio import flow_series
-        from stocks.api import loaders
 
         path = str(db)
         if not Path(path).exists():
@@ -542,8 +542,8 @@ def race(book: Book, axis: pd.DatetimeIndex,
     whose closes open more than `_LATE` after the book's first day races from
     its own first day instead; one with no close on the axis is left out.
     Days with nothing in are dropped."""
-    from stocks.analysis import naive_dates
     from stocks.analysis.portfolio import flow_matched_curves
+    from stocks.frames import naive_dates
 
     def level(path: pd.Series) -> pd.Series:
         return (100 * (1 + path)).dropna()

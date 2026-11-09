@@ -18,7 +18,7 @@ place to let a model edit the user's watchlist on a hunch.
 
 Results are strings because that is what every provider's tool_result carries.
 Each is capped: a tool that returns half a website spends the context budget
-the answer needs (chat/tokens.py).
+the answer needs (llm/tokens.py).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from pathlib import Path
 
 from stocks import obs
 from stocks.chat.journal import CRITERION_RULES, THESIS_RULES
-from stocks.web.llm import ToolSpec
+from stocks.llm import ToolSpec
 
 MAX_RESULT_CHARS = 4000  # per tool result, before the model ever sees it
 
@@ -83,7 +83,7 @@ def _cap(text: str) -> str:
 
 
 def _search_web(args: dict, ctx: Context) -> str:
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     query = str(args.get("query") or "").strip()
     if not query:
@@ -96,7 +96,7 @@ def _search_web(args: dict, ctx: Context) -> str:
 
 
 def _read_page(args: dict, ctx: Context) -> str:
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     url = str(args.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
@@ -201,8 +201,8 @@ def _page_valuation(code: str, ctx: Context) -> str:
 def _earnings_quality(code: str, trailing: float | None) -> list[str]:
     """What the trailing P/E's earnings carry (`analysis/one_offs.py`), and
     the forward multiple beside it with what the gap between them means."""
+    from stocks import loaders
     from stocks.analysis import one_offs
-    from stocks.api import loaders
 
     raw = loaders.fundamentals(code)
     lines = []
@@ -339,7 +339,7 @@ def _ticker_data(args: dict, ctx: Context) -> str:
 
 
 def _market_positioning(args: dict, ctx: Context) -> str:
-    from stocks.api import loaders
+    from stocks import loaders
     from stocks.data import cot
 
     try:
@@ -661,7 +661,8 @@ def _upcoming_earnings(args: dict, ctx: Context) -> str:
         days = reports.DEFAULT_DAYS
     ahead = reports.build(ctx.watchlist, ctx.db or _NO_DB,
                           max(0, min(days, reports.MAX_DAYS)),
-                          back=bool(args.get("past")))
+                          back=bool(args.get("past")), journal=ctx.journal,
+                          currency=ctx.currency)
     return _engine_line(ahead) if ahead else "The user holds and follows nothing."
 
 
@@ -670,7 +671,7 @@ def _propose(args: dict, ctx: Context) -> str:
     written: the engine reads the call back (`engine._proposed`) and files it
     as a card under the answer, which is where the reader decides."""
     from stocks.chat import tools
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     if not ctx.proposes or ctx.watchlist is None:
         return "Nothing can be proposed here."

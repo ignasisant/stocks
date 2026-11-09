@@ -21,11 +21,10 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
-from stocks.chat import book, engine, tools
+from stocks.chat import book, conversations, engine, tools
 from stocks.chat.tools import Action
 from stocks.portfolio import edits
 from stocks.portfolio.ledger import Transaction, add, add_many, all_transactions
-from stocks.web import auth
 from tests.patching import patch_engine
 
 EMAIL = "holder@example.com"
@@ -300,7 +299,7 @@ def test_the_form_answered_in_words_is_put_away(account, signed_in, hears):
     _, again = ask(signed_in, hears, replace(SALE_SAID, args={
         **SALE_SAID.args, "quantity": 100.0}))
     assert again["result"]["proposal"]["book"]["ops"]
-    stored = [e.get("proposal") for e in auth.load_chat(account.chat)]
+    stored = [e.get("proposal") for e in conversations.load_chat(account.chat)]
     (old,) = [o for o in stored if o and o["id"] == pid]
     assert old["state"] == "cancelled"
 
@@ -355,7 +354,7 @@ def test_approved_it_is_journalled_and_undo_puts_the_book_back(
     assert undone.json()["proposal"]["state"] == "undone"
     assert all_transactions(account.db) == before
     # The thread says so, under the turn that still says it was done.
-    last = auth.load_chat(account.chat)[-1]
+    last = conversations.load_chat(account.chat)[-1]
     assert last["action"] == "undo_change"
     assert signed_in.post(f"/v1/chat/proposals/{pid}/undo").status_code == 409
     assert signed_in.post("/v1/chat/proposals/nope/undo").status_code == 404
@@ -537,7 +536,7 @@ DUST = [
 
 
 def _translate(key, **kw):
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(key, "en", **kw)
 

@@ -4,7 +4,7 @@ each at the account's own time and filed in its chat.
 Three jobs of the reader's, each switched by its `notify_<job>` key and timed by
 `schedules[job]` ({"time": "HH:MM", "days": [0-6, Monday = 0]}) in the
 account's `timezone`. Each run is filed as a chat thread of its own
-(`auth.save_scheduled_thread`; the briefing is the daily card's thread,
+(`conversations.save_scheduled_thread`; the briefing is the daily card's thread,
 marked) and pushed to the account's devices with that thread as the tap's
 target, so the notification opens what it said and the rest it folded away.
 
@@ -367,7 +367,7 @@ def _notify_user(account: Account):
 
 
 def _title(job: str, day: date, lang: str) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(
         f"chat.scheduled_{job}_title", lang,
@@ -376,9 +376,9 @@ def _title(job: str, day: date, lang: str) -> str:
 
 
 def _digest(account: Account, day: date) -> str:
+    from stocks.chat import conversations
     from stocks.notify import digest
     from stocks.notify.state import load_state
-    from stocks.web import auth
 
     user = _notify_user(account)
     state = load_state(user.state_path)
@@ -386,7 +386,7 @@ def _digest(account: Account, day: date) -> str:
     if isinstance(data, str):
         return f"skipped: {data}"
     lang = account.lang
-    cid = auth.save_scheduled_thread(
+    cid = conversations.save_scheduled_thread(
         "digest", day.isoformat(), _title("digest", day, lang),
         digest.digest_markdown(data, lang), account.paths.chat,
     )
@@ -397,9 +397,9 @@ def _digest(account: Account, day: date) -> str:
 
 
 def _weekly(account: Account, day: date) -> str:
+    from stocks.chat import conversations
     from stocks.notify import weekly
     from stocks.notify.state import load_state
-    from stocks.web import auth
 
     user = _notify_user(account)
     state = load_state(user.state_path)
@@ -407,7 +407,7 @@ def _weekly(account: Account, day: date) -> str:
     if isinstance(data, str):
         return f"skipped: {data}"
     lang = account.lang
-    cid = auth.save_scheduled_thread(
+    cid = conversations.save_scheduled_thread(
         "weekly", day.isoformat(), _title("weekly", day, lang),
         weekly.weekly_markdown(data, lang), account.paths.chat,
     )
@@ -420,7 +420,7 @@ def _current_card(account: Account):
     """Home's daily card for the action day now, asked for as Home asks for it
     (`daily_card.request`: a card that already stands costs nothing) and
     waited on; None when none was stored for that day."""
-    from stocks.api import briefing, daily_card
+    from stocks.views import briefing, daily_card
 
     daily_card.request(account.paths, account.lang, force=False)
     deadline = clock.monotonic() + BRIEFING_WAIT_S
@@ -442,15 +442,16 @@ def _card(account: Account, session: date) -> str:
 def _briefing(account: Account, day: date) -> str:
     """The current card — written the evening before (`_card`), or now if
     that run missed it — with its thread marked as this run's and pushed."""
-    from stocks.chat import daily
+    from stocks.chat import conversations, daily
     from stocks.notify import render
-    from stocks.web import auth
 
     card = _current_card(account)
     if card is None:
         return "skipped: no card"
     cid = card.thread or daily.record(account.paths.chat, card)
-    if not cid or not auth.mark_scheduled(cid, "briefing", card.day, account.paths.chat):
+    if not cid or not conversations.mark_scheduled(
+        cid, "briefing", card.day, account.paths.chat
+    ):
         return "not filed"
     lines = [i.get("line") for i in card.items] or [e.get("line") for e in card.entries]
     message = render.message(

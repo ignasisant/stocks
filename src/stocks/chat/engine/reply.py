@@ -58,7 +58,7 @@ class Reply:
 
 def _keep_byok(prefs: dict, prefs_path: Path) -> None:
     """After a served turn: drop the stored keys that have expired."""
-    from stocks.web import auth
+    from stocks import userprefs
 
     if prune_byok(prefs):
-        auth.save_prefs(prefs, prefs_path)
+        userprefs.save_prefs(prefs, prefs_path)

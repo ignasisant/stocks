@@ -12,11 +12,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Query
 
-from stocks import accounts, search
-from stocks.api import loaders
+from stocks import accounts, loaders, search
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import Recents, SearchMatch, SearchResults
 from stocks.config import load_watchlist
+from stocks.schemas import Recents, SearchMatch, SearchResults
 
 router = APIRouter(tags=["search"])
 

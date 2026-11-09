@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from stocks import navigation
 from stocks.api.app import app as fastapi_app
-from stocks.web.i18n import catalog
+from stocks.i18n import catalog
 
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

@@ -121,7 +121,8 @@ def enriched_frame(db: Path, base: str = "EUR") -> pd.DataFrame | None:
     spot — and could tell the reader a total the Portfolio tile did not show.
     None when there is no ledger, no open position, or Yahoo is refusing (the
     assistant answers from the rest of its context rather than failing)."""
-    from stocks.api import home, loaders
+    from stocks import loaders
+    from stocks.views import home
 
     try:
         tbl = home.enriched(str(db), loaders.db_mtime(str(db)), base)
@@ -155,8 +156,8 @@ def sector_exposure(tbl: pd.DataFrame | None) -> str:
     unclassified. Empty when the split cannot be read: the snapshot stands
     without it.
     """
-    from stocks.api import briefing
     from stocks.chat.signals import NOT_EQUITY
+    from stocks.views import briefing
 
     try:
         sectors = briefing.book_sectors(tbl)

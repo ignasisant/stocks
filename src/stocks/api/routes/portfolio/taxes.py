@@ -7,16 +7,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from stocks import obs
-from stocks.api import loaders
-from stocks.api.cache import ttl_cache
+from stocks import loaders, obs
 from stocks.api.deps import Account, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import TaxAllYears, TaxFlag, TaxKpi, TaxNote, TaxReport, TaxSale
-from stocks.api.schemas import TaxPeriod as TaxPeriodOut
+from stocks.cache import ttl_cache
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import dividends, tax
 from stocks.portfolio.tax import month_range
 from stocks.portfolio.tax import prefs as tax_prefs
+from stocks.schemas import TaxAllYears, TaxFlag, TaxKpi, TaxNote, TaxReport, TaxSale
+from stocks.schemas import TaxPeriod as TaxPeriodOut
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 

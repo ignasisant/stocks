@@ -46,12 +46,12 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
-from stocks import accounts, obs
+from stocks import accounts, i18n, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import ChatTurn, Writer
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes import import_statement as page
 from stocks.chat import a2ui
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import (
     demo,
     diagnostics,
@@ -62,7 +62,7 @@ from stocks.portfolio import (
 )
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.portfolio.statement import ParseResult
-from stocks.web import i18n, tx_text
+from stocks.web import tx_text
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -265,20 +265,20 @@ def _file_at(paths: UserPaths, cid: str | None) -> None:
     The same rule `POST /chat/runs` is under: turns land in the *active*
     conversation, so naming one means activating it first.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if cid is None:
         return
-    if not any(c["id"] == cid for c in auth.list_conversations(paths.chat)):
+    if not any(c["id"] == cid for c in conversations.list_conversations(paths.chat)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
         )
-    auth.set_active_conversation(cid, paths.chat)
+    conversations.set_active_conversation(cid, paths.chat)
 
 
 def _say(paths: UserPaths, content: str) -> Message:
     """File one assistant turn on the active thread and hand it back."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     turn = {
         "role": "assistant",
@@ -286,9 +286,9 @@ def _say(paths: UserPaths, content: str) -> Message:
         "action": "import",
         "ts": time.time(),
     }
-    history = auth.load_chat(paths.chat)
+    history = conversations.load_chat(paths.chat)
     history.append(turn)
-    auth.save_chat(history, paths.chat)
+    conversations.save_chat(history, paths.chat)
     return Message(role="assistant", content=content, action="import")
 
 
@@ -427,7 +427,7 @@ def attach(
     }
     note = _note(lang, summary, body.filename)
 
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     return Preview(
         filename=body.filename,
@@ -468,7 +468,7 @@ def attach(
         ],
         note=note,
         message=_say(paths, note),
-        conversation=auth.active_conversation(paths.chat)["id"],
+        conversation=conversations.active_conversation(paths.chat)["id"],
         surface=(
             a2ui.column_mapping(found.mapping, list(found.columns),
                                 lambda key: i18n.translate(key, lang))

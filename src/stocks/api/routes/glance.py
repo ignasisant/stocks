@@ -5,7 +5,7 @@ facts with three different lifetimes — a briefing is written once a day, mover
 change every few minutes, and an extreme changes on a close. A client that wants
 all three asks for all three; one that only shows movers does not pay for a
 model's prose. The one write here, `POST /daily`, is what asks for that prose;
-the machinery behind it is `api/briefing.py`.
+the machinery behind it is `views/briefing.py`.
 
 The rest of that page is already here: the KPI row is `/portfolio/summary` and
 `/portfolio/performance`, the transactions strip is `/portfolio/transactions`,
@@ -20,16 +20,16 @@ from typing import Annotated
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 
+from stocks import loaders
 from stocks.analysis.portfolio import (
     market_active,
     money_change,
     ticker_changes,
     ticker_day_changes,
 )
-from stocks.api import book_moves, briefing, daily_card, home, loaders
 from stocks.api.deps import Account, Base, Writer, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import (
+from stocks.jsonsafe import num as _num
+from stocks.schemas import (
     DailyAnalysis,
     DailyCard,
     Extreme,
@@ -37,6 +37,7 @@ from stocks.api.schemas import (
     Mover,
     Movers,
 )
+from stocks.views import book_moves, briefing, daily_card, home
 
 router = APIRouter(tags=["glance"])
 
@@ -49,7 +50,7 @@ WINDOWS = {"day": 1, "week": 7, "month": 30}
 # being a glance. `all=true` lifts the cut for the card's "show all".
 SHOWN = 7
 
-# How close to an extreme still counts as being at it — `api/home.py` owns the
+# How close to an extreme still counts as being at it — `views/home.py` owns the
 # number, because the daily card's 52-week line reads the same scan.
 EDGE_BAND = home.EDGE_BAND
 
@@ -130,9 +131,9 @@ def card_analysis(
     leaves the computed analysis, so this always ends in one. 404 when the
     card has no line `key` with a trigger behind it.
     """
-    from stocks.web import auth
+    from stocks import userprefs
 
-    prefs = auth.load_prefs(account.prefs)
+    prefs = userprefs.load_prefs(account.prefs)
     found = briefing.analysis(account, prefs, key)
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such line on today's card.")

@@ -191,7 +191,7 @@ def client(monkeypatch):
 @pytest.fixture
 def ran(monkeypatch):
     """What `warm_recent` was called with, and whether refreshes ran in place."""
-    from stocks.api import cache
+    from stocks import cache
 
     calls: list[dict] = []
 
@@ -219,7 +219,7 @@ def test_a_signed_in_account_cannot_warm_everybodys_book(client, ran, monkeypatc
 
 
 def test_the_route_warms_in_place_within_its_budget(client, ran):
-    from stocks.api import cache
+    from stocks import cache
 
     res = client.post("/v1/warm", headers={"Authorization": f"Bearer {TOKEN}"})
     assert res.status_code == 200
@@ -243,7 +243,7 @@ def test_in_place_a_stale_entry_is_refreshed_not_served():
     value where a reader would be answered with the old one at once."""
     import threading
 
-    from stocks.api import cache
+    from stocks import cache
 
     def ask():
         store = {("k",): (0.0, "old", 0.0)}

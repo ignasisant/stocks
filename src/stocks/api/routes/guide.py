@@ -35,12 +35,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, obs
+from stocks import accounts, i18n, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
 from stocks.chat import engine, guide_ai
-from stocks.web import guide, i18n, onboarding
-from stocks.web.i18n import translate
+from stocks.i18n import translate
+from stocks.web import guide, onboarding
 
 router = APIRouter(prefix="/guide", tags=["onboarding"])
 
@@ -199,14 +199,14 @@ def _ensure_thread(paths: UserPaths, prefs: dict, lang: str) -> None:
     `new_conversation` reuses an empty active conversation, so a brand-new
     account gets its one blank thread titled rather than a second one.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     cid = str(prefs.get(guide.PREF_THREAD) or "")
-    known = {c["id"] for c in auth.list_conversations(paths.chat)}
+    known = {c["id"] for c in conversations.list_conversations(paths.chat)}
     if cid and cid in known:
-        auth.set_active_conversation(cid, paths.chat)
+        conversations.set_active_conversation(cid, paths.chat)
         return
-    prefs[guide.PREF_THREAD] = auth.new_conversation(
+    prefs[guide.PREF_THREAD] = conversations.new_conversation(
         paths.chat, translate("guide.thread_title", lang)
     )
 
@@ -236,13 +236,13 @@ def _sync(paths: UserPaths, prefs: dict, lang: str) -> bool:
     thread: the walkthrough must never append a card to a conversation the
     reader started.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     step = guide.current(prefs)
     cid = str(prefs.get(guide.PREF_THREAD) or "")
     if step is None or not cid:
         return False
-    book = auth.load_book(paths.chat)
+    book = conversations.load_book(paths.chat)
     conv = next((c for c in book["conversations"] if c["id"] == cid), None)
     if conv is None:
         return False
@@ -263,7 +263,7 @@ def _sync(paths: UserPaths, prefs: dict, lang: str) -> bool:
         history.append({"role": "assistant",
                         "content": translate("guide.finished", lang),
                         "guide": {"step": "", "state": "end"}})
-        auth.save_book(book, paths.chat)
+        conversations.save_book(book, paths.chat)
         return True
 
     if changed:
@@ -272,7 +272,7 @@ def _sync(paths: UserPaths, prefs: dict, lang: str) -> bool:
         history.append(_card(step, lang))
         changed = True
     if changed:
-        auth.save_book(book, paths.chat)
+        conversations.save_book(book, paths.chat)
         accounts.save_prefs(paths.prefs, prefs)
     return changed
 
@@ -291,7 +291,7 @@ def _narrate(
     own timeout per provider — the drawer shows its status line meanwhile —
     and a silent chain costs the reader nothing but that.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     step = guide_ai.due_narration(prefs)
     cid = str(prefs.get(guide.PREF_THREAD) or "")
@@ -309,12 +309,12 @@ def _narrate(
     if not line:
         obs.event("guide.narration_skipped", via="api")
         return False
-    book = auth.load_book(paths.chat)
+    book = conversations.load_book(paths.chat)
     conv = next((c for c in book["conversations"] if c["id"] == cid), None)
     if conv is None:
         return False
     conv["messages"].append(guide_ai.note_turn(step, line))
-    auth.save_book(book, paths.chat)
+    conversations.save_book(book, paths.chat)
     return True
 
 

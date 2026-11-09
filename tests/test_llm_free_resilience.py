@@ -3,8 +3,8 @@ OpenRouter's model list, tool results kept under a TPM cap. No network."""
 
 import pytest
 
-import stocks.web.llm as llm
-from stocks.web.llm import FreeTierExhausted, _FreeBackend
+import stocks.llm as llm
+from stocks.llm import FreeTierExhausted, _FreeBackend
 
 
 class _HttpError(Exception):
@@ -206,7 +206,7 @@ def test_tool_loop_retries_a_short_rate_limit_once(monkeypatch, slept):
 
 
 def test_tool_results_are_squeezed_to_the_backends_cap():
-    from stocks.chat import tokens
+    from stocks.llm import tokens
 
     convo = [{"role": "system", "content": "sys"},
              {"role": "user", "content": "q"},

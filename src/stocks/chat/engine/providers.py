@@ -9,13 +9,12 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from stocks import obs
+from stocks import llm, obs
 from stocks.secrets_env import secret
-from stocks.web import llm
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 # Remembered-key lifetime, counted from the moment the key was entered and

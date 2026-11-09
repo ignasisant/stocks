@@ -76,7 +76,7 @@ def build_facts(
     some real trigger did not get.
 
     Args:
-        tbl: the live-priced positions frame (api/home.enriched) —
+        tbl: the live-priced positions frame (views/home.enriched) —
             value/cost/pnl/weight/day_pct per ticker, plus the
             `day_asof` stamp saying which session each day_pct is from (the
             last completed one, off-hours).

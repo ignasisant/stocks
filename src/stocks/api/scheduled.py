@@ -13,7 +13,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from stocks.api import cache, security
+from stocks import cache
+from stocks.api import security
 
 router = APIRouter(include_in_schema=False)
 _running = threading.Lock()

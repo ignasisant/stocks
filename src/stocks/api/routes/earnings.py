@@ -17,27 +17,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query
 
-from stocks import obs
-from stocks.api import loaders
-from stocks.api.cache import ttl_cache
+from stocks import loaders, obs
 from stocks.api.deps import Account, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import (
-    CalendarDividend,
-    CalendarEvent,
-    CalendarPayment,
-    CalendarResult,
-    CalendarTrade,
-    CentralBankDecision,
-    ConsensusPeriod,
-    EarningsCalendar,
-    EarningsResultDetail,
-    MarketHoliday,
-    QuarterBreakdown,
-    QuarterFigures,
-    RepurchaseWindow,
-    TaxDeadline,
-)
+from stocks.cache import ttl_cache
 from stocks.config import currency_symbol, load_watchlist
 from stocks.data import fx, macro_calendar, market_holidays
 from stocks.data.crypto import is_crypto
@@ -62,11 +44,28 @@ from stocks.data.estimates import (
     quarter_outlook,
 )
 from stocks.data.funds import is_fund
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import dividends as dividend_book
 from stocks.portfolio import tax, transfers
 from stocks.portfolio.ledger import RETURN_OF_CAPITAL
 from stocks.portfolio.tax import deadlines
 from stocks.portfolio.tax import prefs as tax_prefs
+from stocks.schemas import (
+    CalendarDividend,
+    CalendarEvent,
+    CalendarPayment,
+    CalendarResult,
+    CalendarTrade,
+    CentralBankDecision,
+    ConsensusPeriod,
+    EarningsCalendar,
+    EarningsResultDetail,
+    MarketHoliday,
+    QuarterBreakdown,
+    QuarterFigures,
+    RepurchaseWindow,
+    TaxDeadline,
+)
 
 router = APIRouter(tags=["earnings"])
 

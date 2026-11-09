@@ -54,7 +54,7 @@ from stocks.portfolio.statement import ParseResult
 if TYPE_CHECKING:
     import pandas as pd
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 LAYOUTS = ("rows", "swaps", "ledger")
 
@@ -1129,7 +1129,7 @@ def map_crypto(provider: Provider, api_key: str, grid: list[list[str]]) -> Spec 
 
     A model that could not be reached raises llm_map.ProviderUnavailable.
     """
-    from stocks.chat import structured
+    from stocks.llm import structured
     from stocks.portfolio import llm_map
 
     raw = llm_map._ask(provider, api_key, "MapCrypto", _SYSTEM, llm_map.sample(grid))

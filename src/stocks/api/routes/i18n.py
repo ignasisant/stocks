@@ -88,8 +88,8 @@ async def catalog(
         ),
     ] = None,
 ) -> Catalog | Response:
-    from stocks.web.i18n import DEFAULT_LANG, supported, version
-    from stocks.web.i18n import catalog as strings_for
+    from stocks.i18n import DEFAULT_LANG, supported, version
+    from stocks.i18n import catalog as strings_for
 
     code = supported(lang) or DEFAULT_LANG
     current = version()

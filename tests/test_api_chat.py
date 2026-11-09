@@ -50,7 +50,7 @@ PREFS = {"currency": "EUR", "chat_skills_mode": "off"}
 class FakeProvider:
     """A backend that answers from a list, or raises on cue.
 
-    Shaped like `web.llm.Provider` only as far as the engine actually uses it:
+    Shaped like `llm.Provider` only as far as the engine actually uses it:
     the engine asks for `stream`, `complete`, `id` and `default_model`, so a
     real Provider here would add a dataclass to keep in sync for nothing.
     """
@@ -273,13 +273,13 @@ def test_renaming_pins_the_title(client, account, signed_in):
 
 
 def test_a_daily_card_is_not_listed_until_it_is_opened(client, account, signed_in):
-    """Home's card is filed as a thread (`auth.save_card_thread`), but the list
+    """Home's card is filed as a thread (`conversations.save_card_thread`), but the list
     is the reader's conversations: the card joins it when its "Ask" opens it,
     and stays once they write in it."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     mine = signed_in.post("/v1/chat/conversations", json={"title": "Mine"}).json()
-    cid = auth.save_card_thread("2026-10-03", "Daily action · Oct 3", "**NVDA**",
+    cid = conversations.save_card_thread("2026-10-03", "Daily action · Oct 3", "**NVDA**",
                                 account.chat)
 
     listed = signed_in.get("/v1/chat/conversations").json()["conversations"]
@@ -368,7 +368,7 @@ def lists(monkeypatch):
     """Give `pid` a vendor listing that answers `served` and records the key."""
     import dataclasses
 
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "_model_lists", {})
     asked: list[str] = []
@@ -445,7 +445,7 @@ def test_the_catalogue_is_asked_with_the_reader_s_own_key(
 def test_the_catalogue_falls_back_to_the_curated_list(
     client, account, signed_in, lists
 ):
-    from stocks.web import llm
+    from stocks import llm
 
     lists("anthropic", RuntimeError("vendor down"))
     no_key = signed_in.get("/v1/chat/models/anthropic").json()
@@ -459,7 +459,7 @@ def test_the_catalogue_falls_back_to_the_curated_list(
 
 
 def test_the_keyless_chain_has_no_catalogue(client, account, signed_in, monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "_free_backends", lambda: ["one"])
     assert signed_in.get("/v1/chat/models/free").status_code == 409
@@ -1035,7 +1035,7 @@ def test_the_research_streams_while_it_happens(
     and as it returns — inside the "gathering" step, before any word of the
     answer — and its result is the trace's line, never the page it read."""
     from stocks.chat import toolbox
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     class Researcher(FakeProvider):
         classifier_model = "fake-1"
@@ -1045,7 +1045,7 @@ def test_the_research_streams_while_it_happens(
 
         def run_tools(self, api_key, model, system, messages, tools, execute,
                       max_rounds=3, stop=None):
-            from stocks.web.llm import ToolCall, ToolRun
+            from stocks.llm import ToolCall, ToolRun
 
             out = execute("search_web", {"query": "nvidia guidance"})
             return ToolRun("", [ToolCall("search_web", {"query": "nvidia guidance"},
@@ -1473,7 +1473,7 @@ def _researched(monkeypatch, said=None, **args):
     """A gather that ends by drafting `args` with `propose_action`; `said` is
     what the tool answered (drafted, unless given)."""
     from stocks.chat import agent, toolbox
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
     seen = []
     said = said or toolbox.DRAFTED + " card"

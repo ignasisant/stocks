@@ -579,7 +579,7 @@ def material(
     """What the judge reads as the answer's evidence: the app's reference
     first (labelled as such: the truths, then each read in `refs`), then
     what the run fetched."""
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
     def ref(args: dict, value: Any) -> ToolCall:
         text = json.dumps(value, ensure_ascii=False, default=str)[:TRUTH_CHARS]

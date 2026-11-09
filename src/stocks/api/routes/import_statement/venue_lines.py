@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from stocks import obs
 from stocks.api.deps import Writer
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.import_statement.lookups import (
     _UNANSWERED,
     LOOKUP_BUDGET_S,
@@ -20,6 +19,7 @@ from stocks.api.routes.import_statement.lookups import (
     _within,
 )
 from stocks.data import fetch, symbols
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import (
     venue,
 )
