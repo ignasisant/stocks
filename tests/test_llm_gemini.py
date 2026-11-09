@@ -245,7 +245,7 @@ def test_listing_models_keeps_the_client_open_across_pages(monkeypatch):
             yield _Model("gemini-3-flash")
 
     class _Client:
-        def __init__(self, api_key):
+        def __init__(self, api_key, http_options=None):
             self._api = _Api()
             self.models = _Models(self._api)
 

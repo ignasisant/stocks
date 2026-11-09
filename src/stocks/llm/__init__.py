@@ -707,12 +707,17 @@ _GEMINI_USAGE = ("prompt_token_count", "cached_content_token_count",
                  "candidates_token_count", "thoughts_token_count")
 
 
+# google-genai 3 talks to v1 by default, where the `-latest` aliases the
+# chain runs on (gemini-flash-latest, gemini-flash-lite-latest) do not exist.
+GEMINI_API_VERSION = "v1beta"
+
+
 def _gemini_stream_once(api_key, model, system, messages, thinking=""):
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
-        timeout=_GEMINI_TIMEOUT_MS))
+        api_version=GEMINI_API_VERSION, timeout=_GEMINI_TIMEOUT_MS))
     # Gemini roles are "user"/"model"; map the assistant turns accordingly.
     contents = [
         {
@@ -1465,10 +1470,12 @@ def _openai_models(api_key: str) -> list[str]:
 
 def _gemini_models(api_key: str) -> list[str]:
     from google import genai
+    from google.genai import types
 
     # Held for the whole loop: the pager fetches later pages through this
     # client, and a collected Client closes its HTTP client under the pager.
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
+        api_version=GEMINI_API_VERSION))
     out = []
     for m in client.models.list():
         actions = getattr(m, "supported_actions", None) or []
