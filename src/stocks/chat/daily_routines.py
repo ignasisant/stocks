@@ -215,9 +215,14 @@ def earnings_fact(scope: str, names: list[str], followed: tuple[str, ...], *,
             continue
         row: dict = {"ticker": r.ticker, "date": r.date.isoformat(), "days_ago": ago,
                      "mine": r.ticker.upper() in own}
+        mixed = bool(getattr(r, "mixed_basis", False))
         for key in ("reported_eps", "eps_estimate", "surprise_pct"):
+            if mixed and key == "surprise_pct":
+                continue
             if (n := _num(getattr(r, key, None))) is not None:
                 row[key] = round(n, 4)
+        if mixed:
+            row["mixed_basis"] = True
         if r.beat is not None:
             row["beat"] = r.beat
         out["reported"].append(row)
@@ -262,9 +267,18 @@ def asks(routines: list[learnings.Learning]) -> list[dict]:
 def symbols(names, known: dict[str, str]) -> list[str]:
     """The ticker-shaped words of a brief that are worth quoting. A capital on
     its own in a paragraph is a placeholder ("vender X, comprar Y"), not a
-    listing: a one-letter symbol counts only when the reader follows it."""
+    listing: a one-letter symbol counts only when the reader follows it.
+
+    Nor is a word the chat's stop-list knows ("la Fed y el BCE"), unless the
+    reader follows it: a routine saved before BCE joined that list still
+    carries it as a ticker, and the brief fetched BCE Inc.'s 13F holders and
+    its 8-Ks for a reader who meant the European Central Bank."""
     followed = set(known.values())
-    return [n for n in names if n and (len(n) > 1 or n in followed)]
+    return [
+        n for n in names
+        if n and (len(n) > 1 or n in followed)
+        and (n not in market.NOT_TICKERS or n in followed)
+    ]
 
 
 def recipe_of(routines: list[learnings.Learning]) -> routine_plan.Recipe:
@@ -561,7 +575,7 @@ def gather(
     if recipe.markets:
         tasks["markets"] = lambda: _markets(recipe)
     if recipe.earnings:
-        names = [*tickers, *recipe.symbols]
+        names = symbols([*tickers, *recipe.symbols], known)
         tasks["earnings"] = lambda: earnings_fact(
             recipe.earnings, _scope_names(recipe.earnings, names, sources.followed),
             sources.followed, day=day, calendar=calendar)
@@ -571,7 +585,7 @@ def gather(
         tasks["exits"] = lambda: exits_fact(sources)
     # Per-name sources: (where the rows land, task prefix, names, one name's
     # fact). The brief's own names first, then the largest positions.
-    named = _companies([*tickers, *recipe.symbols, *sources.held])
+    named = _companies([*symbols([*tickers, *recipe.symbols], known), *sources.held])
     per_name: list[tuple[str, str, list[str], Callable[[str], dict]]] = []
     if "insiders" in recipe.topics and (insiders := sources.insiders) is not None:
         per_name.append(("insiders", "insider", _sec_names(sources.held), lambda t: (

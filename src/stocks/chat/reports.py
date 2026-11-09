@@ -158,6 +158,7 @@ class Printed:
     reported_eps: float | None
     eps_estimate: float | None
     surprise_pct: float | None
+    mixed_basis: bool = False  # `EarningsResult.mixed_basis`
     reaction: float | None = None  # % from the last close before to the first after
     # `print_facts`: revenue, revenue_yoy_pct, currency, operating_margin_pct,
     # release (the press release's text, US filers).
@@ -167,6 +168,11 @@ class Printed:
     def said(self) -> str:
         if self.reported_eps is None:
             figures = "the figures are not on file yet"
+        elif self.mixed_basis:
+            figures = (
+                f"EPS {self.reported_eps:.2f}; the consensus on file "
+                f"({self.eps_estimate:.2f}) looks like another basis "
+                "(GAAP against adjusted), so it is no beat or miss")
         else:
             figures = f"EPS {self.reported_eps:.2f} against " + (
                 f"a consensus of {self.eps_estimate:.2f}"
@@ -522,7 +528,8 @@ def build(watchlist: Path, db: Path, days: int = DEFAULT_DAYS,
                 continue
             seen.add(r.ticker)
             printed.append(Printed(r.ticker, r.date, ago, r.ticker in held,
-                                   r.reported_eps, r.eps_estimate, r.surprise_pct))
+                                   r.reported_eps, r.eps_estimate, r.surprise_pct,
+                                   mixed_basis=r.mixed_basis))
         printed.sort(key=lambda p: (not p.held, p.days_ago, p.ticker))
         printed = _with_facts(_with_reaction(printed))
         if journal is not None and journal.exists():

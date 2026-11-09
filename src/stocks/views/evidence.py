@@ -313,15 +313,19 @@ def history(results, closes: pd.Series | None) -> dict:
             before, after = s[s.index < day], s[s.index > day]
             if not before.empty and not after.empty and float(before.iloc[-1]):
                 move = _pct(float(after.iloc[0]) / float(before.iloc[-1]) - 1)
-        rows.append(
-            {
-                "date": r.date.isoformat(),
-                "eps_estimate": _r(r.eps_estimate, 2),
-                "reported_eps": _r(r.reported_eps, 2),
-                "surprise_pct": _r(r.surprise_pct),
-                "move_pct": move,
-            }
-        )
+        # A GAAP print against an adjusted consensus is no surprise at all,
+        # and one of them (UBER's +287 % in 2023) would swamp the average.
+        mixed = bool(getattr(r, "mixed_basis", False))
+        row = {
+            "date": r.date.isoformat(),
+            "eps_estimate": _r(r.eps_estimate, 2),
+            "reported_eps": _r(r.reported_eps, 2),
+            "surprise_pct": None if mixed else _r(r.surprise_pct),
+            "move_pct": move,
+        }
+        if mixed:
+            row["mixed_basis"] = True
+        rows.append(row)
     if not rows:
         return {}
     surprises = [row["surprise_pct"] for row in rows if row["surprise_pct"] is not None]

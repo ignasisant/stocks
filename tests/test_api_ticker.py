@@ -410,6 +410,7 @@ class FakeResult:
     eps_estimate: float | None = None
     reported_eps: float | None = None
     surprise_pct: float | None = None
+    mixed_basis: bool = False
 
     @property
     def beat(self) -> bool | None:
@@ -691,6 +692,25 @@ def test_the_grid_is_the_domain_s_nine_tiles_and_names_its_strings(
     assert len(body["kpis"]) > len(body["grid"]), "kpis is the whole table"
     # Nothing translated, and nothing converted until somebody asks.
     assert body["market_cap_base"] is None and body["base"] is None
+
+
+def test_the_grid_is_read_at_the_price_the_caller_quotes(monkeypatch, no_fetch):
+    """Prod 2026-11-09: ticker_details quoted NVDA at 178.25 over a grid priced
+    at 173.97, the cached fundamentals pull's price. Given the quote, every
+    price-bound KPI moves to it; the business figures stay."""
+    from stocks.api.routes import ticker as routes
+
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.compute_metrics",
+        lambda raw: {"currency": "USD", "price": 100.0, "pe_ttm": 30.0,
+                     "roe": 0.25},
+    )
+    kpis = {k.key: k.value for k in routes.metrics_at("AAPL", price=110.0).kpis}
+    assert kpis["price"] == 110.0
+    assert kpis["pe_ttm"] == pytest.approx(33.0)
+    assert kpis["roe"] == 0.25
+    # No price given: the pull's own.
+    assert {k.key: k.value for k in routes.metrics_at("AAPL").kpis}["price"] == 100.0
 
 
 def test_a_dollar_market_cap_is_restated_only_when_a_base_is_asked_for(

@@ -192,7 +192,11 @@ class Financials(BaseModel):
     currency: str | None = None
     annual: list[AnnualRow] = Field(default_factory=list)
     quarterly_eps: list[dict] = Field(
-        default_factory=list, description='[{"period": "2024Q1", "eps": 1.53}, …]'
+        default_factory=list,
+        description=(
+            '[{"period": "2024Q1", "eps": 1.53}, …]. `period` is the fiscal '
+            'quarter: "FY2027Q2" when the fiscal year does not end in December.'
+        ),
     )
     projection: list[ProjectedRow] = Field(
         default_factory=list,

@@ -165,19 +165,45 @@ def _longest(value: Any) -> list | None:
     return best
 
 
+# Enough to name every holding a book has; the count says the rest.
+_OMITTED_NAMES = 150
+
+
+def _tickers(rows: list) -> list[str]:
+    """The tickers a trimmed run of rows named, in order, once each."""
+    seen: list[str] = []
+    for row in rows:
+        name = row.get("ticker") if isinstance(row, dict) else None
+        if isinstance(name, str) and name and name not in seen:
+            seen.append(name)
+    return seen
+
+
 def _fit(data: dict) -> tuple[dict, str]:
     """`data` and its JSON, longest lists halved until it fits `TEXT_LIMIT`.
 
     Lists are built most-important-first (largest holding, newest trade), so
-    the half kept is the one to keep. A trimmed result says so.
+    the half kept is the one to keep. A trimmed result says so, and `omitted`
+    says what went: how many rows, and the tickers they named. A list in
+    another order (alphabetical, say) otherwise just stops, and the reader
+    cannot tell a holding with no rule from one that was cut (prod
+    2026-11-09: `kill_criteria_status` ended at METIS-EUR).
     """
     text = _dump(data)
+    rows, names = 0, []
     while len(text) > TEXT_LIMIT:
+        data.pop("omitted", None)
         biggest = _longest(data)
         if biggest is None or len(biggest) <= 1:
             break
+        cut = biggest[max(1, len(biggest) // 2):]
+        rows += len(cut)
+        # Each cut sits before the last one, and the cap keeps the front.
+        names = [n for n in _tickers(cut) if n not in names] + names
         del biggest[max(1, len(biggest) // 2):]
         data["truncated"] = True
+        data["omitted"] = {"rows": rows, **(
+            {"tickers": names[:_OMITTED_NAMES]} if names else {})}
         text = _dump(data)
     if len(text) > TEXT_LIMIT:
         text = text[:TEXT_LIMIT] + "…"
@@ -561,10 +587,12 @@ async def ticker_details(ticker: Ticker, base: Base = None) -> CallToolResult:
         from stocks.api.routes import ticker as routes
 
         code = _symbol(ticker)
-        metrics = routes.metrics(code, base)
+        quote = routes.quote(code, base)
+        # The grid at the price this answer quotes, not the cached pull's.
+        metrics = routes.metrics_at(code, base, price=quote.price)
         return {
             "kind": "ticker",
-            "quote": _plain(routes.quote(code, base)),
+            "quote": _plain(quote),
             "metrics": {
                 **_plain(metrics, kpis=True, grid=True),
                 "kpis": [_plain(k, desc=True) for k in metrics.kpis],
@@ -662,7 +690,14 @@ async def ticker_trend(ticker: Ticker) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
         from stocks.api.routes import ticker as routes
 
-        return {"kind": "trend", **_plain(routes.trend(_symbol(ticker)))}
+        return {
+            "kind": "trend",
+            **_plain(routes.trend(_symbol(ticker))),
+            "note": (
+                "high_52w / low_52w are daily closes; ticker_details' quote "
+                "carries the intraday range, so its high reads higher."
+            ),
+        }
 
     return await _run("ticker_trend", work)
 

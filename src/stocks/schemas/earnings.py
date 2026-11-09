@@ -28,7 +28,19 @@ class CalendarResult(BaseModel):
     surprise_pct: float | None = None
     beat: bool | None = Field(
         default=None,
-        description="Null when there was nothing to compare, never False.",
+        description=(
+            "Null when there was nothing to compare or the two figures are "
+            "not on the same basis (`mixed_basis`)."
+        ),
+    )
+    mixed_basis: bool = Field(
+        default=False,
+        description=(
+            "The reported EPS and the estimate are too far apart to be the "
+            "same kind of figure, typically GAAP against an adjusted "
+            "consensus: `surprise_pct` and `beat` are null, and no beat or "
+            "miss should be read from the pair."
+        ),
     )
 
 

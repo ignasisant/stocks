@@ -880,15 +880,19 @@ def _result_signals(results, held: set[str], today: date) -> list[Signal]:
         owned = result.ticker in held
         estimate = finite(getattr(result, "eps_estimate", None))
         surprise = finite(getattr(result, "surprise_pct", None))
+        mixed = bool(getattr(result, "mixed_basis", False))
         data = {
             "date": when.isoformat(),
             "days_ago": ago,
             "held": owned,
             "reported_eps": _round(reported),
             "eps_estimate": _round(estimate),
-            "surprise_pct": _round(surprise),
+            "surprise_pct": None if mixed else _round(surprise),
         }
-        if estimate is not None:
+        if mixed:
+            # GAAP against an adjusted consensus: no beat or miss to state.
+            data["mixed_basis"] = True
+        elif estimate is not None:
             data["beat"] = reported >= estimate
         urgency = _URGENCY[EARNINGS_RESULT] - ago * 3
         if not owned:

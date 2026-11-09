@@ -306,7 +306,7 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
             date=_short_date(action.get("date")),
         )
     if kind == signals.EARNINGS_RESULT:
-        if action.get("eps_estimate") is None:
+        if action.get("eps_estimate") is None or action.get("mixed_basis"):
             return translate(
                 f"{key}_plain", lang, ticker=ticker,
                 date=_short_date(action.get("date")),
