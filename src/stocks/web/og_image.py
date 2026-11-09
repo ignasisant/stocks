@@ -31,7 +31,7 @@ from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, translate
+from stocks.i18n import DEFAULT_LANG, LANGUAGES, translate
 
 if TYPE_CHECKING:
     from PIL import ImageDraw, ImageFont

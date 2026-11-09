@@ -37,16 +37,16 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, obs
-from stocks.api import cache, deps
-from stocks.api.schemas import AlertRule
+from stocks import accounts, cache, obs
+from stocks.api import deps
 from stocks.connector import store
 from stocks.portfolio.edits import EditError
+from stocks.schemas import AlertRule
 from stocks.web import ratelimit
 
 if TYPE_CHECKING:
     from stocks.accounts import UserPaths
-    from stocks.api.schemas import Comparison, Projection, RiskCurves, Valuation
+    from stocks.schemas import Comparison, Projection, RiskCurves, Valuation
 
 # Per account, on top of the site's per-IP floor: claude.ai calls from shared
 # addresses, so the IP bucket cannot tell one person from another.
@@ -318,7 +318,7 @@ def _logo(ticker: str, origin: str | None) -> str | None:
     logo only the third-party CDN has is left to the view's initials rather
     than handed over as a URL it would be refused.
     """
-    from stocks.api import loaders
+    from stocks import loaders
 
     src = loaders.logo(ticker)
     if not origin or not src or not src.startswith("/") or src.startswith("//"):
@@ -585,9 +585,9 @@ def _skill_for(code: str) -> str:
     `brief.pick_skills`' lens: the wrapper's for a fund or a coin, else the
     one the company's industry or sector calls for. Off the fundamentals pull
     `routes.metrics` has just cached, so it costs no second download."""
-    from stocks.api import loaders
+    from stocks import loaders
+    from stocks.chat import skills as chat_skills
     from stocks.chat.brief import KIND_SKILL
-    from stocks.web import chat_skills
 
     info = loaders.fundamentals(code).info or {}
     kind = KIND_SKILL.get(str(info.get("quoteType") or "").upper(), "")
@@ -779,7 +779,7 @@ def _since(raw: str | None, default_days: int) -> date:
 
 
 def _read_passages(ticker: str, since: date) -> list[dict]:
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     try:
         return briefing.thesis_passages(ticker, since)
@@ -833,8 +833,8 @@ async def check_thesis(
     nothing written. Spends one judgement from the account's allowance, and
     only out of what the morning card does not need."""
     def work(paths: UserPaths) -> dict:
-        from stocks.api import briefing
         from stocks.chat import engine, exit_judge, journal
+        from stocks.views import briefing
 
         code = _symbol(ticker)
         passages = _read_passages(code, date.today() - timedelta(days=days))
@@ -869,8 +869,8 @@ async def kill_criteria_status() -> CallToolResult:
     """Every live exit rule by holding, with what its last check found, and
     the holdings left without any rule or without a thesis rule."""
     def work(paths: UserPaths) -> dict:
-        from stocks.api import briefing
         from stocks.chat import journal
+        from stocks.views import briefing
 
         held = briefing.held_symbols(paths)
         return {"kind": "criteria_status",
@@ -888,8 +888,8 @@ async def daily_brief() -> CallToolResult:
     section sets the book against the indexes on the same money, from the
     book's first day (`since`) as well as the shorter spans."""
     def work(paths: UserPaths) -> dict:
-        from stocks.api import briefing, daily_card
         from stocks.api.routes import today
+        from stocks.views import briefing, daily_card
 
         lang = str(accounts.load_prefs(paths.prefs).get("language") or "en")
         _, day = briefing.now_day(paths)
@@ -940,7 +940,7 @@ SkillId = Annotated[str, Field(
 
 async def list_skills() -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.web import chat_skills
+        from stocks.chat import skills as chat_skills
 
         return {"kind": "skills", "skills": [
             {"id": s.id, "name": s.name, "description": s.description,
@@ -953,7 +953,7 @@ async def list_skills() -> CallToolResult:
 
 async def read_skill(skill: SkillId) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.web import chat_skills
+        from stocks.chat import skills as chat_skills
 
         want = skill.strip().lower()
         hit = next((s for s in chat_skills.catalog() if s.id == want), None)
@@ -1307,7 +1307,7 @@ async def rename_security(
     plan_token: PlanToken = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.api import loaders
+        from stocks import loaders
         from stocks.portfolio import ledger_ops
 
         if not ids and not label:
@@ -1354,7 +1354,7 @@ async def apply_fix(
     plan_token: PlanToken = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
-        from stocks.api import loaders
+        from stocks import loaders
         from stocks.portfolio import ledger_ops
 
         fix = ledger_ops.fix_by_key(_rows(paths), key, paths.db,
@@ -1642,8 +1642,8 @@ async def set_kill_criteria_batch(
 async def send_test_push() -> CallToolResult:
     """One test notification to every device the account switched on."""
     def work(paths: UserPaths) -> dict:
+        from stocks.i18n import translate
         from stocks.notify import webpush
-        from stocks.web.i18n import translate
 
         if not webpush.configured():
             raise _Refused("Notifications are not set up on this server.")

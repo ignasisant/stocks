@@ -7,14 +7,10 @@ from typing import Annotated, Literal, cast, get_args
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from stocks import obs
-from stocks.api import loaders
+from stocks import loaders, obs
 from stocks.api.deps import Account, Writer
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.import_statement.validation import _real_rows
-from stocks.api.schemas import (
-    BookFinding,
-)
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import (
     doctor,
     edits,
@@ -23,6 +19,9 @@ from stocks.portfolio import (
     platforms,
 )
 from stocks.portfolio.ledger import add_many
+from stocks.schemas import (
+    BookFinding,
+)
 
 router = APIRouter(prefix="/import", tags=["import"])
 

@@ -6,20 +6,12 @@ import re
 import pytest
 import yaml
 
-from stocks import accounts, secrets_env, session
+from stocks import accounts, secrets_env, session, storage
 from stocks import watchlist as wl
+from stocks.accounts import DEFAULT_PREFS, paths_for, slug
+from stocks.accounts import legacy_slug as _legacy_slug
 from stocks.config import DATA_DIR, PROJECT_ROOT, load_watchlist
-from stocks.web import auth
-from stocks.web.auth import (
-    DEFAULT_PREFS,
-    _legacy_slug,
-    all_tags,
-    load_prefs,
-    paths_for,
-    save_prefs,
-    set_tags,
-    slug,
-)
+from stocks.userprefs import load_prefs, save_prefs
 
 
 def restore(paths, legacy_root=None) -> bool:
@@ -83,7 +75,7 @@ def test_starter_watchlist_is_a_spread_of_live_tickers_and_no_positions(tmp_path
     starter list into a fake portfolio in an app that also files tax reports.
     """
     p = tmp_path / "starter.yaml"
-    p.write_text(auth.STARTER_WATCHLIST)
+    p.write_text(accounts.STARTER_WATCHLIST)
     holdings = load_watchlist(p)
 
     assert not any(h.is_position for h in holdings)
@@ -314,40 +306,44 @@ def test_add_entries_lists_the_lot_in_one_write_and_keeps_the_rest(tmp_path):
 def test_set_tags_and_all_tags(tmp_path):
     path = tmp_path / "watchlist.yaml"
     path.write_text(yaml.safe_dump({"watchlist": [{"ticker": "NVDA"}]}))
+    def set_tags(ticker, tags, path):
+        return wl.set_tags(path, ticker, tags, persist=lambda _p: None)
+
     assert set_tags("NVDA", ["semis", " AI ", "ai"], path) == ["semis", "AI"]
     assert set_tags("baba", ["EM"], path) == ["EM"]  # unlisted -> entry created
-    assert all_tags(path) == ["AI", "EM", "semis"]  # case-insensitive sort
+    assert wl.all_tags(path) == ["AI", "EM", "semis"]  # case-insensitive sort
     assert set_tags("NVDA", [], path) == []  # clearing removes the key
     raw = yaml.safe_load(path.read_text())
     assert "tags" not in raw["watchlist"][0]
-    assert all_tags(path) == ["EM"]
+    assert wl.all_tags(path) == ["EM"]
 
 
 # ------------------------------------------------------------ account deletion
 
 
 def _deletion_sandbox(monkeypatch, tmp_path):
-    """auth's world rooted at tmp_path, with a dict standing in for the bucket."""
-    from stocks.web import auth
+    """The erase route's world rooted at tmp_path, with a dict standing in for
+    the bucket."""
+    from stocks.api.routes import account as account_route
 
     users = tmp_path / "data" / "users"
-    monkeypatch.setattr(auth, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(auth, "USERS_DIR", users)
-    monkeypatch.setattr(auth, "GUEST_DIR", users / "_guest")
+    monkeypatch.setattr(account_route, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(accounts, "USERS_DIR", users)
+    monkeypatch.setattr(accounts, "GUEST_DIR", users / "_guest")
 
     bucket: dict[str, bytes] = {}
-    monkeypatch.setattr(auth.storage, "enabled", lambda: True)
+    monkeypatch.setattr(storage, "enabled", lambda: True)
     monkeypatch.setattr(
-        auth.storage,
+        storage,
         "list_keys",
         lambda prefix="": sorted(k for k in bucket if k.startswith(prefix)),
     )
-    monkeypatch.setattr(auth.storage, "delete_key", bucket.pop)
-    return auth, users, bucket
+    monkeypatch.setattr(storage, "delete_key", bucket.pop)
+    return account_route, users, bucket
 
 
 def test_delete_account_erases_disk_and_bucket(monkeypatch, tmp_path):
-    auth, users, bucket = _deletion_sandbox(monkeypatch, tmp_path)
+    account_route, users, bucket = _deletion_sandbox(monkeypatch, tmp_path)
     p = paths_for("jane@example.com", users_dir=users)
     p.root.mkdir(parents=True)
     p.watchlist.write_text("watchlist: []")
@@ -361,7 +357,7 @@ def test_delete_account_erases_disk_and_bucket(monkeypatch, tmp_path):
         "watchlist.yaml": b"root",
     })
 
-    auth.delete_account(p)
+    account_route.delete_account(p)
 
     assert not p.root.exists()
     # Only this account's keys are gone; the neighbour and the root survive.
@@ -372,14 +368,14 @@ def test_delete_account_ends_its_connections_and_no_one_elses(monkeypatch, tmp_p
     """An app the owner let in must not keep reading after the erase."""
     from stocks.connector import store
 
-    auth, users, _ = _deletion_sandbox(monkeypatch, tmp_path)
+    account_route, users, _ = _deletion_sandbox(monkeypatch, tmp_path)
     p = paths_for("jane@example.com", users_dir=users)
     p.root.mkdir(parents=True)
     for email in ("jane@example.com", "bob@example.com"):
         store.ledger().issue(email=email, client_id="c", client_name="Claude",
                              client_kind="cimd", redirect_host="claude.ai")
 
-    auth.delete_account(p)
+    account_route.delete_account(p)
 
     assert store.ledger().grants_for("jane@example.com") == []
     assert len(store.ledger().grants_for("bob@example.com")) == 1
@@ -388,17 +384,17 @@ def test_delete_account_ends_its_connections_and_no_one_elses(monkeypatch, tmp_p
 def test_delete_account_refuses_owner_and_guest(monkeypatch, tmp_path):
     import pytest
 
-    auth, users, _ = _deletion_sandbox(monkeypatch, tmp_path)
+    account_route, users, _ = _deletion_sandbox(monkeypatch, tmp_path)
     owner = paths_for("me@x.com", owner_email="me@x.com", users_dir=users)
     with pytest.raises(ValueError):
-        auth.delete_account(owner)
-    guest = auth.guest_paths()
+        account_route.delete_account(owner)
+    guest = accounts.guest_paths()
     with pytest.raises(ValueError):
-        auth.delete_account(guest)
+        account_route.delete_account(guest)
     # Nor anything outside the users dir, whatever it is named.
     stray = type(guest)(**{**guest.__dict__, "root": tmp_path / "elsewhere"})
     with pytest.raises(ValueError):
-        auth.delete_account(stray)
+        account_route.delete_account(stray)
 
 
 

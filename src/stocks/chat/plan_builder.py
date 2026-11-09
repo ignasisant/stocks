@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from stocks.chat import a2ui
 from stocks.portfolio import plan as plans
-from stocks.web.auth import PROFILE_HORIZON, PROFILE_RISK
+from stocks.userprefs import PROFILE_HORIZON, PROFILE_RISK
 
 SURFACE_ID = "plan_builder"
 DRAFT = "draft"

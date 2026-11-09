@@ -106,7 +106,7 @@ class _View:
     unsubscribe: str | None = None
 
     def tr(self, key: str, **kw) -> str:
-        from stocks.web.i18n import translate
+        from stocks.i18n import translate
 
         return translate(f"email.{key}", self.lang, **kw)
 
@@ -218,7 +218,7 @@ def fired_rules(journal_path, today: date) -> list[Fired]:
 
 def _rule_text(f: Fired, lang: str) -> str:
     """'Loss of 20 % on cost' — the journal's own wording for the rule."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     text = translate(f"journal.crit_{f.rule}", lang, level=f.level, pillars=f.pillars)
     if f.quarters > 1:

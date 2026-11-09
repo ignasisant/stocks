@@ -28,14 +28,13 @@ import pandas as pd
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs, progress
-from stocks.analysis import naive_dates
 from stocks.data.fetch import (
     failure_kind,
     reset_crumb,
     throttle_remaining,
     trip_throttle,
 )
-from stocks.frames import midnights
+from stocks.frames import midnights, naive_dates
 
 SPARK_URL = "https://query1.finance.yahoo.com/v7/finance/spark"
 

@@ -116,7 +116,7 @@ def _chat_keeps_forgotten():
     already imported are touched."""
     import sys
 
-    if (chat_web := sys.modules.get("stocks.web.chat_web")) is not None:
+    if (chat_web := sys.modules.get("stocks.chat.websearch")) is not None:
         chat_web._SEARCHED.clear()
         chat_web._READ.clear()
     if (engine := sys.modules.get("stocks.chat.engine")) is not None:
@@ -517,7 +517,7 @@ def _web_off():
     by patching `chat_web.available` itself.
     Restored by hand for the reason `_own_free_llm_counter` gives.
     """
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     before = chat_web.available
     chat_web.available = lambda: False
@@ -534,7 +534,7 @@ def _no_provider_logos():
     marks patches `loaders.provider_logo` itself.
     Restored by hand for the reason `_own_free_llm_counter` gives.
     """
-    from stocks.api import loaders
+    from stocks import loaders
 
     before = loaders.provider_logo
     loaders.provider_logo = lambda provider, domain: None
@@ -565,7 +565,7 @@ def _own_logo_cache(_scratch):
 @pytest.fixture(autouse=True)
 def _forget_listing_names():
     """Names one test's fake spark taught `listing_names` stay in that test."""
-    from stocks.api import loaders
+    from stocks import loaders
 
     loaders._LISTING_NAMES.clear()
     yield
@@ -580,7 +580,7 @@ def _own_world_search_memo(_scratch):
     `data/symbol_search.json`: a suite that serves a fake MIPS.ST would
     otherwise teach the dev server, and the next test, a listing that isn't.
     """
-    from stocks.api import loaders
+    from stocks import loaders
 
     memo = loaders.WORLD_MEMO
     before = memo.path
@@ -595,14 +595,14 @@ def _own_world_search_memo(_scratch):
 def _listing_at_the_ledgers_word():
     """Answer "which currency is this price series in" with "unknown".
 
-    `analysis.listing` asks the checkout's real profile memo (`data/profiles.
+    `data.listing` asks the checkout's real profile memo (`data/profiles.
     json`) and, for an aliased name it has never seen, Yahoo — on every path
     that turns a close into money. Unknown falls back to the ledger row's
     currency, which is what every suite here was written against; a test about
     listing currencies says what the listing is by patching `_lookup` itself.
     Restored by hand for the reason `_own_free_llm_counter` gives.
     """
-    from stocks.analysis import listing
+    from stocks.data import listing
 
     before = listing._lookup
     listing._lookup = lambda ticker: None
@@ -670,13 +670,13 @@ def sign_in(cookie_secret):
 
 @pytest.fixture(autouse=True)
 def _own_memo_dir(_scratch):
-    """The API cache's persisted memos (stocks.api.cache) land under a
+    """The API cache's persisted memos (stocks.cache) land under a
     per-test directory, never in the checkout's data/memo — a test that
     priced a book would otherwise leave its frames for the next run to serve.
     Saved and restored by hand, like the fixtures above, for the same reason.
     The book frames a refresh extends (`loaders._bases`) go with them, and so
     do the refreshes a test left refused (`cache._refused`)."""
-    from stocks.api import cache, loaders
+    from stocks import cache, loaders
 
     before = cache.MEMO_DIR
     cache.MEMO_DIR = _scratch / "memo"
@@ -860,8 +860,9 @@ def _own_today_market(_scratch):
     `briefing._market_start` back. Restored by hand for the reason
     `_own_free_llm_counter` gives.
     """
-    from stocks.api import briefing, loaders
+    from stocks import loaders
     from stocks.chat import today_market
+    from stocks.views import briefing
 
     before = (today_market.FILE, briefing._market_start)
     builds: list[tuple[str, str]] = []

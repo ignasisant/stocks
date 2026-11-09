@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stocks import obs
+from stocks import llm, obs
 from stocks.chat import (
     allocation,
     charts,
@@ -31,27 +31,26 @@ from stocks.chat.engine.book import (
 from stocks.chat.engine.parallel import (
     in_parallel,
 )
-from stocks.web import llm
 
 if TYPE_CHECKING:
 
     from stocks.chat.tools import Action
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
 
 def action_context(watchlist: Path) -> str:
     """What the action parser needs, headless: the watchlist (resolves
     company names to symbols) and existing groups. No 'current view' — there
     is none headless."""
+    from stocks import watchlist as wl
     from stocks.config import load_watchlist
-    from stocks.web import auth
 
     bits = [f"Today: {clock.today().isoformat()}"]
     holds = load_watchlist(watchlist)
     if holds:
         bits.append("Watchlist: " + ", ".join(
             f"{h.ticker} ({h.name})" if h.name else h.ticker for h in holds))
-    tags = auth.all_tags(watchlist)
+    tags = wl.all_tags(watchlist)
     if tags:
         bits.append("Existing groups: " + ", ".join(tags))
     return "\n".join(bits)
@@ -63,7 +62,7 @@ def action_reply(act: Action, lang: str) -> str:
     The per-tool wording lives with the tools (chat/tools.py); this only
     binds the recipient's language to the translator they hand it."""
     from stocks.chat import tools
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return tools.reply(act, lambda key, **kw: translate(key, lang, **kw))
 
@@ -170,9 +169,12 @@ def _allocation(message: str, prefs: dict, db: Path, lang: str,
 
 
 def _reports_ahead(message: str, watchlist: Path, db: Path, lang: str,
-                   told: Callable[[dict], None]) -> object:
+                   told: Callable[[dict], None], journal: Path | None = None,
+                   currency: str = "") -> object:
     """The report dates of the reader's names (`chat/reports.py`), or None
-    for a message that does not ask when they report. Told as a tool line."""
+    for a message that does not ask when they report. Told as a tool line.
+    Looking back, `journal` and `currency` add the exit rules and the book
+    against the index (`reports.build`)."""
     if not reports.wants(message):
         return None
     days = reports.days_asked(message)
@@ -181,7 +183,8 @@ def _reports_ahead(message: str, watchlist: Path, db: Path, lang: str,
     args = {"days": days, "past": True} if back else {"days": days}
     told({"id": cid, "tool": "upcoming_earnings", "arg": str(days), "args": args})
     try:
-        ahead = reports.build(watchlist, db, days, back=back)
+        ahead = reports.build(watchlist, db, days, back=back,
+                              journal=journal, currency=currency)
     except Exception as exc:  # noqa: BLE001 — the answer goes on without it
         obs.warn("chat.reports_failed", error_type=type(exc).__name__,
                  error=str(exc)[:300])
@@ -371,7 +374,7 @@ def _plan_builder(message: str, prefs: dict, db: Path, lang: str,
     try:
         tbl = enriched_frame(db, base) if db.exists() else None
         if tbl is not None and not tbl.empty and "weight" in tbl:
-            from stocks.api import loaders
+            from stocks import loaders
 
             shares = plans.buckets(tbl["weight"].to_dict(), loaders.asset_kind)
     except Exception as exc:  # noqa: BLE001 — the card asks without today's mix
@@ -427,6 +430,6 @@ def _sale_step(sale: whatif.Scenario, lang: str) -> dict:
 
 
 def _tr(key: str, lang: str, **slots) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(key, lang, **slots)

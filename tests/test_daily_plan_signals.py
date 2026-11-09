@@ -346,7 +346,7 @@ def test_every_link_lands_on_a_page_the_shell_serves():
 
 
 def test_a_plan_that_holds_is_what_a_quiet_day_says():
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     investor = _plan(mix=MIX, contribution={"amount": 500, "day": 1})
     fact = briefing.plan_fact(investor, _signals(investor, KEPT), DAY)
@@ -358,7 +358,7 @@ def test_a_plan_that_holds_is_what_a_quiet_day_says():
 
 
 def test_a_drift_already_said_still_means_the_plan_does_not_hold():
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     investor = _plan(mix={"targets": {"stocks": 40, "equity_funds": 60}})
     found = _signals(investor, {"NVDA": 0.6, "VWCE.DE": 0.4})
@@ -369,6 +369,6 @@ def test_a_drift_already_said_still_means_the_plan_does_not_hold():
 
 
 def test_no_plan_no_plan_fact():
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     assert briefing.plan_fact(plans.Plan(), [], DAY) is None

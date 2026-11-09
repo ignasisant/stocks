@@ -32,7 +32,7 @@ Three properties shape everything here:
     writes every section, and the card spends at most FREE_UNITS of the
     account's free allowance a day (`spend_unit`): that is what makes an
     always-on card affordable on the free chain, so the stored copy
-    (auth.load_action / save_action) is authoritative and a reload never
+    (`paths.action`, through `userstore`) is authoritative and a reload never
     regenerates.
 
   - It never blocks the dashboard. Generation runs through
@@ -47,7 +47,7 @@ Three properties shape everything here:
     extra network work.
 
 Headless by construction: paths and language come in as arguments, and
-stocks/api/briefing.py is the layer over it.
+stocks/views/briefing.py is the layer over it.
 """
 
 from __future__ import annotations
@@ -389,7 +389,7 @@ def to_store(
 
 # -------------------------------------------------------------- the thread
 # Every card the reader is shown is also filed in the chat, as a thread of its
-# own (`auth.save_card_thread`): it is one assistant, and what it said on Home
+# own (`conversations.save_card_thread`): it is one assistant, and what it said on Home
 # is something it said. The thread is what the card's "Ask" opens, so a
 # question about a line is asked with the line above it; it joins the list of
 # the reader's conversations once they open or write in it; and it is indexed
@@ -406,7 +406,7 @@ def card_path(chat_path: Path) -> Path:
 
 def thread_title(day: str, lang: str) -> str:
     """"Daily action · 3 Oct" — the card's day, in the card's language."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     when = date.fromisoformat(day)
     return translate(
@@ -436,10 +436,10 @@ def record(chat_path, action: DailyAction) -> str:
 
     Never raises: a card that could not be filed is still the card, and its
     "Ask" falls back to opening the assistant on whatever thread is active."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     try:
-        return auth.save_card_thread(
+        return conversations.save_card_thread(
             action.day, thread_title(action.day, action.lang),
             thread_text(action), chat_path,
         )
@@ -468,7 +468,7 @@ def filed(previous: DailyAction | None, action: DailyAction, chat_path) -> str:
 def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
     """One action's computed "what happened" paragraph."""
     from stocks.formatting import compact_money
-    from stocks.web.i18n import has, translate
+    from stocks.i18n import has, translate
 
     kind = str(action.get("kind") or "")
     ticker = str(action.get("ticker") or "")
@@ -596,7 +596,7 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
 
 def _with_history(text: str, source: dict, lang: str) -> str:
     """A rate paragraph with the bank's last move appended, when known."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     history = source.get("history") or []
     if len(history) < 2:

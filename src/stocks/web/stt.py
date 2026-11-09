@@ -19,8 +19,7 @@ import io
 import time
 import wave
 
-from stocks import obs
-from stocks.web import llm
+from stocks import llm, obs
 
 # Groq's turbo Whisper: the cheapest of the three it serves and the only one
 # that is multilingual *and* fast enough to keep a voice note inside the pause

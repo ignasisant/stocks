@@ -194,7 +194,7 @@ class Run(RunAgentInput):
 
 def _view(view: str, focus: str, lang: str, tab: str = "") -> tuple[str, str]:
     """(the prompt's "Current view" sentence, the clean focused symbol)."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     slug = (view or "").strip().lower()
     label = _VIEW_LABELS.get(slug)
@@ -216,9 +216,9 @@ def _rewind(paths: UserPaths) -> tuple[str, dict]:
     Asking the same question again is what regenerating *is* — the thread ends
     up holding one pair, the new one.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
-    history = auth.load_chat(paths.chat)
+    history = conversations.load_chat(paths.chat)
     if len(history) < 2 or history[-1].get("role") != "assistant":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -230,7 +230,7 @@ def _rewind(paths: UserPaths) -> tuple[str, dict]:
             status_code=status.HTTP_409_CONFLICT,
             detail="the answer on this thread has no question above it",
         )
-    auth.save_chat(history[:-2], paths.chat)
+    conversations.save_chat(history[:-2], paths.chat)
     # The same prompt again, to get another answer: not the one kept for it.
     engine.forget_answers(paths.chat)
     briefed = asked.get("brief")
@@ -291,11 +291,12 @@ def ask(
     (`POST /chat/runs/{runId}/stop`). A thread already being answered is a
     409.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if body.thread_id:
         if not any(
-            c["id"] == body.thread_id for c in auth.list_conversations(paths.chat)
+            c["id"] == body.thread_id
+            for c in conversations.list_conversations(paths.chat)
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -305,7 +306,7 @@ def ask(
         # and the bot have always meant by "the conversation". The answer is
         # pinned to it all the same (`thread=` into the engine), so a reader
         # who switches threads mid-answer does not move where it lands.
-        auth.set_active_conversation(body.thread_id, paths.chat)
+        conversations.set_active_conversation(body.thread_id, paths.chat)
 
     props = body.props
     prefs = _prefs(paths)
@@ -317,7 +318,7 @@ def ask(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="a run carries one of: a user message, regenerate, or resume",
         )
-    thread = body.thread_id or auth.active_conversation(paths.chat)["id"]
+    thread = body.thread_id or conversations.active_conversation(paths.chat)["id"]
 
     if body.resume:
         entry = body.resume[0]
@@ -351,7 +352,7 @@ def ask(
     view, focus = _view(where.view, where.focus, lang, where.tab)
     # The engine writes the active thread, so that is the one to test: a turn
     # lands on the walkthrough's thread exactly when it is the active one.
-    guided = guide_ai.owns(auth.active_conversation(paths.chat)["id"], prefs)
+    guided = guide_ai.owns(conversations.active_conversation(paths.chat)["id"], prefs)
     answering = runs.on_thread(str(paths.chat), thread)
     if props.regenerate and answering is not None and answering.live:
         # Checked before the rewind, which would otherwise take the pair off

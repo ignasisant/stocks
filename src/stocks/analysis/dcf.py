@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 
 from stocks.analysis import fundamentals as fnd
 from stocks.analysis import review
-from stocks.analysis.listing import quote_unit
 from stocks.data.fundamentals import RawFundamentals
+from stocks.data.listing import quote_unit
 
 YEARS = 5
 #: The growth band the default is clipped to: a trailing CAGR over a few

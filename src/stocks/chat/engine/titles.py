@@ -13,7 +13,7 @@ from stocks.chat.engine.instructions import (
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 TITLE_MAX_CHARS = 60
@@ -91,13 +91,13 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
     thread must not cost the user an answer."""
     if len(history) != 2 or history[0]["role"] != "user":
         return
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     try:
-        conv = auth.active_conversation(chat_path, thread)
+        conv = conversations.active_conversation(chat_path, thread)
         if conv.get("title") or not conv.get("title_auto", True):
             return
-        auth.autotitle_conversation(
+        conversations.autotitle_conversation(
             conv["id"], title_for(provider, api_key, history[0]["content"], lang),
             chat_path,
         )

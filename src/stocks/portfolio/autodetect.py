@@ -65,7 +65,7 @@ from stocks.portfolio import llm_map, platforms
 from stocks.portfolio.statement import ParseResult
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 LLM_KEY = "llm"  # the "platform" recorded for a mapped import
 

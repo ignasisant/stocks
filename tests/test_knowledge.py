@@ -430,7 +430,7 @@ def test_a_cited_document_opens_the_screen_it_is_about():
 
 def test_the_gather_step_lists_the_documents_it_read():
     from stocks.chat.agent import Evidence
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
     result = knowledge.block([knowledge.section("tax-spain", "Savings base")])
     ev = Evidence(calls=[ToolCall("lookup_knowledge", {"query": "tramos"}, result),

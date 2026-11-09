@@ -246,7 +246,7 @@ def _crypto(scan: dict) -> dict:
 def facts(day: date) -> dict:
     """Every figure the read is written from, each block on its own: a block
     whose source failed is named under `missing` and left out."""
-    from stocks.api import loaders
+    from stocks import loaders
 
     out: dict[str, Any] = {"day": day.isoformat(), "missing": []}
 
@@ -286,7 +286,7 @@ def facts(day: date) -> dict:
 
 
 def _sector_name(name: str, lang: str) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(f"sentiment.sector_{name.lower().replace(' ', '_')}", lang)
 
@@ -298,7 +298,7 @@ def _signed(value: float, digits: int, lang: str) -> str:
 def computed(f: dict, lang: str) -> dict:
     """The read with no model: a line per block from templates, and a headline
     naming the regime. Every figure is the facts' own."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def t(key: str, **kw) -> str:
         return translate(f"today.market_fb_{key}", lang, **kw)
@@ -403,7 +403,8 @@ _DECIMALS = {
 
 
 def prompt(f: dict, lang: str) -> tuple[str, list[dict]]:
-    from stocks.chat import knowledge, structured
+    from stocks.chat import knowledge
+    from stocks.llm import structured
 
     language = _LANG_NAME.get(lang, "English")
     system = "\n\n".join(filter(None, [
@@ -475,7 +476,7 @@ def parse(raw: str, f: dict, lang: str) -> dict | None:
     """The reply as the stored read, or None to try the next provider: a
     headline that misquotes, or fewer than MIN_LINES lines left standing once
     every line with an unsourced figure is dropped."""
-    from stocks.chat import structured
+    from stocks.llm import structured
 
     try:
         data = structured.parse(raw, "WriteMarketDay")

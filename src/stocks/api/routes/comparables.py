@@ -17,6 +17,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from stocks import loaders
 from stocks.analysis.fundamentals import (
     METRIC_ORDER,
     comp_medals,
@@ -26,8 +27,7 @@ from stocks.analysis.fundamentals import (
     format_value,
     peer_band,
 )
-from stocks.api import loaders
-from stocks.api.schemas import Comparables
+from stocks.schemas import Comparables
 
 router = APIRouter(tags=["comparables"])
 

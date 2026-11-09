@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 from stocks import obs
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 _ASK_RE = re.compile(
     r"deber[ií]a\s+(?:comprar|vender|entrar|salir|mantener|a[ñn]adir)|"

@@ -183,7 +183,7 @@ class CloudLoggingFormatter(logging.Formatter):
 
 
 class PlainFormatter(logging.Formatter):
-    """Human-readable dev output: `12:04:31 WARN stocks.web.llm msg k=v`."""
+    """Human-readable dev output: `12:04:31 WARN stocks.llm msg k=v`."""
 
     def format(self, record: logging.LogRecord) -> str:
         fields = {**_fields(), **_extras(record)}

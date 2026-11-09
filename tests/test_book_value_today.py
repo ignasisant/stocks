@@ -1,6 +1,6 @@
 import pandas as pd
 
-from stocks.api import loaders
+from stocks import loaders
 from tests.patching import patch_loaders
 
 

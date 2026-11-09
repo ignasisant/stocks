@@ -2,8 +2,9 @@
 
 import pytest
 
+from stocks import i18n
 from stocks.portfolio.validate import Issue
-from stocks.web import i18n, tx_text
+from stocks.web import tx_text
 
 
 def test_action_labels_translate_and_unknown_verbs_pass_through():
@@ -69,7 +70,7 @@ def test_every_named_reason_ships_a_name_and_a_why(lang):
     from pathlib import Path
 
     catalog = json.loads(
-        (Path(i18n.__file__).parent / "locales" / lang / "import.json").read_text(
+        (Path(i18n.__file__).parent / "web" / "locales" / lang / "import.json").read_text(
             encoding="utf-8"
         )
     )

@@ -13,8 +13,7 @@ import json
 
 import pytest
 
-from stocks import identity
-from stocks.api import loaders
+from stocks import identity, loaders
 from stocks.data import edgar, fetch, symbols
 
 FIXTURE = {

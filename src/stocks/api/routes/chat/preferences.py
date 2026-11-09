@@ -6,14 +6,14 @@ from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from stocks import accounts, obs
+from stocks import accounts, llm, loaders, obs
 from stocks.accounts import UserPaths
-from stocks.api import loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.routes import chat_attach
 from stocks.chat import engine
+from stocks.chat import skills as chat_skills
 from stocks.portfolio import autodetect
-from stocks.web import chat_skills, llm, stt
+from stocks.web import stt
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

@@ -9,11 +9,13 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import obs
-from stocks.api import loaders
+from stocks import loaders, obs
 from stocks.api.deps import Account, Writer
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import (
+from stocks.api.security import Authed
+from stocks.jsonsafe import num as _num
+from stocks.portfolio import demo, doctor, edits, last_import
+from stocks.portfolio.ledger import all_transactions, clear
+from stocks.schemas import (
     BookFinding,
     BookHealth,
     Change,
@@ -24,9 +26,6 @@ from stocks.api.schemas import (
     RowChange,
     Transaction,
 )
-from stocks.api.security import Authed
-from stocks.portfolio import demo, doctor, edits, last_import
-from stocks.portfolio.ledger import all_transactions, clear
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 

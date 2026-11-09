@@ -67,7 +67,7 @@ def test_each_row_carries_what_the_selector_draws_it_with(client):
 def test_the_label_keys_are_ones_the_catalogs_actually_ship(client):
     """The other half: a key nobody wrote copy for renders as a dotted key on
     screen, and the selector would read `profile.tax_residence_jp`."""
-    from stocks.web.i18n import catalog
+    from stocks.i18n import catalog
 
     for lang in ("en", "es"):
         strings = catalog(lang)
@@ -140,9 +140,9 @@ def test_the_codes_are_ones_the_prefs_patch_would_accept(client):
 
 
 def test_the_profile_vocabulary_is_the_forms_own(client):
-    """Same claim as the jurisdictions: against `web.auth`'s tuples, which are
+    """Same claim as the jurisdictions: against `userprefs`' tuples, which are
     the ones `chat.engine.persona` has English wording for."""
-    from stocks.web.auth import (
+    from stocks.userprefs import (
         PROFILE_CONSTRAINTS,
         PROFILE_FOCUS,
         PROFILE_HORIZON,
@@ -169,7 +169,7 @@ def test_the_scales_are_offered_low_to_high(client):
 def test_every_option_has_copy_in_both_catalogs(client):
     """`profile.iv_<group>_<option>` is the key a client builds. An option with
     no copy renders as a dotted key inside a chip."""
-    from stocks.web.i18n import catalog
+    from stocks.i18n import catalog
 
     payload = client.get("/v1/profile-options", headers=AUTH).json()
     for lang in ("en", "es"):
@@ -231,7 +231,7 @@ def test_the_note_stems_are_ones_both_catalogs_word(client):
     """The stem is a catalog key with the page's own prefix in front of it, so
     `home.premarket_note` and `portfolio.market_closed_note` both have to
     exist — otherwise the client prints the key."""
-    from stocks.web.i18n import catalog
+    from stocks.i18n import catalog
 
     for lang in ("en", "es"):
         strings = catalog(lang)

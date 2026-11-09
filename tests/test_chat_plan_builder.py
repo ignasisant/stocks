@@ -125,6 +125,6 @@ def test_the_prompt_says_the_card_is_drawn_and_forbids_figures():
 def test_the_profile_press_asks_in_words_the_builder_hears(lang):
     """Profile → My plan's AI press sends `profile.plan_ask_prompt`; a
     rewording the detector misses would answer with prose and no card."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     assert pb.wants(translate("profile.plan_ask_prompt", lang))

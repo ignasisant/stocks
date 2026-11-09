@@ -3,7 +3,7 @@
 The Review page's engine. Pure: it is handed each name's fundamentals, its
 weight in the book and its share of the book's risk, and answers a verdict key
 and the reason codes behind it. Fetching, pricing and the tax a sale would
-cost are the route's (`stocks.api.routes.review`); nothing here touches the
+cost are the route's (`stocks.views.review`); nothing here touches the
 network, so every threshold below is testable with a dict.
 
 **Two scores, both 0-100, both from the KPIs the ticker page already shows.**

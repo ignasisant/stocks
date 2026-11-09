@@ -32,10 +32,9 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from stocks import obs
-from stocks.chat import stopping, structured
+from stocks.chat import stopping
+from stocks.llm import Provider, metering, structured
 from stocks.secrets_env import secret
-from stocks.web import metering
-from stocks.web.llm import Provider
 
 MODES = ("off", "log", "block")
 # Seconds the answer may be held for a verdict still out once the research is

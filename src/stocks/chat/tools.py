@@ -35,11 +35,11 @@ from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict
 
-from stocks import obs
-from stocks.chat import structured
+from stocks import obs, userstore
+from stocks.llm import structured
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 # Symbols as the app knows them: Yahoo tickers, broker codes, crypto pairs
 # (BTC-EUR), class shares (BRK.B).
@@ -310,7 +310,9 @@ def _parse_criteria(data: dict) -> dict | None:
 
 # ------------------------------------------------------------------ runners
 # Applied to the account's own watchlist. Alerts and tags are additive: the
-# entry's existing values are read back and merged, because auth.set_* replace.
+# entry's existing values are read back and merged, because the watchlist's
+# set_* replace. Every edit mirrors through `userstore.persist`: a bucket outage
+# is a logged warning, not an exception out of a write that already landed.
 
 
 def _holding(ticker: str, path: Path):
@@ -321,18 +323,18 @@ def _holding(ticker: str, path: Path):
     )
 
 
-def _auth():
-    from stocks.web import auth  # deferred: parsing never needs it
+def _watchlist():
+    from stocks import watchlist  # deferred: parsing never needs it
 
-    return auth
+    return watchlist
 
 
 def _run_favorite(act: Action, path: Path) -> None:
-    _auth().set_favorite(act.ticker, True, path)
+    _watchlist().set_favorite(path, act.ticker, True, persist=userstore.persist)
 
 
 def _run_unfavorite(act: Action, path: Path) -> None:
-    _auth().set_favorite(act.ticker, False, path)
+    _watchlist().set_favorite(path, act.ticker, False, persist=userstore.persist)
 
 
 def _run_set_alerts(act: Action, path: Path) -> None:
@@ -345,34 +347,40 @@ def _run_set_alerts(act: Action, path: Path) -> None:
         {k: v for k, v in asdict(a).items() if v is not None}
         for a in (holding.alerts if holding else [])
     ]
-    _auth().set_alerts(act.ticker, wl.add_alerts(existing, act.alerts), path)
+    wl.set_alerts(
+        path, act.ticker, wl.add_alerts(existing, act.alerts), persist=userstore.persist
+    )
 
 
 def _run_tag(act: Action, path: Path) -> None:
     holding = _holding(act.ticker, path)
-    _auth().set_tags(act.ticker, (holding.tags if holding else []) + act.tags, path)
+    _watchlist().set_tags(
+        path, act.ticker, (holding.tags if holding else []) + act.tags,
+        persist=userstore.persist,
+    )
 
 
 def _run_untag(act: Action, path: Path) -> None:
     holding = _holding(act.ticker, path)
     drop = {t.lower() for t in act.tags}
     kept = [t for t in (holding.tags if holding else []) if t.lower() not in drop]
-    _auth().set_tags(act.ticker, kept, path)
+    _watchlist().set_tags(path, act.ticker, kept, persist=userstore.persist)
 
 
 def _run_add_ticker(act: Action, path: Path) -> None:
     # One company name cannot belong to several symbols.
     name = act.args.get("name", "") if len(act.tickers) == 1 else ""
-    _auth().add_entry(act.ticker, name, path)
+    _watchlist().add_entry(path, act.ticker, name, persist=userstore.persist)
 
 
 def _run_remove_ticker(act: Action, path: Path) -> None:
-    _auth().remove_entry(act.ticker, path)
+    _watchlist().remove_entry(path, act.ticker, persist=userstore.persist)
 
 
 def _run_set_position(act: Action, path: Path) -> None:
-    _auth().set_position(
-        act.ticker, act.args.get("shares"), act.args.get("cost"), path
+    _watchlist().set_position(
+        path, act.ticker, act.args.get("shares"), act.args.get("cost"),
+        persist=userstore.persist,
     )
 
 
@@ -835,7 +843,7 @@ def detect(
     message was read, and reading it twice more is a bill for a guess.
 
     A reply that is not the requested object at all gets one repair turn
-    (chat/structured.py); a reply that *is* the object and says "no action"
+    (llm/structured.py); a reply that *is* the object and says "no action"
     does not, so the common case (a question, not a command) stays one call."""
     user = (context + "\n\n" if context else "") + f"User message: {message}"
     for prov, key in ((provider, api_key), *fallbacks):

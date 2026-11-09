@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 
 from stocks import obs
 from stocks.api.deps import Account, Writer
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.import_statement.validation import _real_rows
 from stocks.data import fetch
+from stocks.jsonsafe import num as _num
 from stocks.portfolio import (
     corporate,
 )

@@ -1,5 +1,5 @@
 /**
- * The `/api/v1` payloads this page reads, transcribed from `api/schemas/`.
+ * The `/api/v1` payloads this page reads, transcribed from `schemas/`.
  *
  * `null` is load-bearing in every one of these: an unpriced position has no
  * value, a book with no history has no basket move, a name sitting on its

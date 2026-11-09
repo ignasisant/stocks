@@ -3,7 +3,7 @@ reader's own card (alerts, their book, news, insiders, comparisons).
 
 Two layers with two lifetimes. The market read is written once a morning by
 cron for everyone (`chat/today_market.py`); the personal card is the daily
-card Home's teaser shows, written on open by `api/briefing.py`. `GET /today`
+card Home's teaser shows, written on open by `views/briefing.py`. `GET /today`
 composes both and never spends — only the book rows are redone live, off
 cached prices (`daily_card.live_book`); `POST /today` asks for the
 personal card, sharing its job with `POST /daily` so the teaser and the page
@@ -20,12 +20,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
 from stocks import obs
-from stocks.api import briefing, daily_card
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import BookCompare, DailyChartLine, MarketCard, TodayCard
 from stocks.api.security import Who
 from stocks.chat import daily_book
-from stocks.web.i18n import supported
+from stocks.i18n import supported
+from stocks.schemas import BookCompare, DailyChartLine, MarketCard, TodayCard
+from stocks.views import briefing, daily_card
 
 router = APIRouter(tags=["glance"])
 

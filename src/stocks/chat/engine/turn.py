@@ -16,7 +16,7 @@ from stocks.chat.engine.quota import (
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 # Prepended for a surface that renders markdown — the web assistant panel and

@@ -105,6 +105,8 @@ def test_the_prints_of_the_window_with_the_move_across_them(tmp_path, monkeypatc
          EarningsResult("RDDT", date(2026, 10, 28), 0.5, 0.6, 20.0),
          EarningsResult("SHOP", date(2026, 8, 6), 0.3, 0.3, 0.0)]))
     monkeypatch.setattr(reports, "_reaction_cache", {})
+    monkeypatch.setattr(reports, "_facts_cache", {})
+    monkeypatch.setattr(reports, "_print_facts", lambda _t, _day: {})
     monkeypatch.setattr(earnings, "price_reaction", lambda t, _day: (
         22.1 if t == "DUOL" else None))
     behind = reports.build(watchlist, db, 7, today=today, back=True)
@@ -119,6 +121,112 @@ def test_the_prints_of_the_window_with_the_move_across_them(tmp_path, monkeypatc
     assert "RDDT" not in line and "NVDA" not in line
     assert "reported in the last 7 days" in line
     assert "never fill one in from memory" in line
+
+
+RELEASE = (
+    "EX-99.1 2 shop-ex991.htm EX-99.1 Document Shopify Q3 2026 revenue grew "
+    "31% to $2.84 billion, with gross merchandise volume up 29% and free cash "
+    "flow margin of 19%. " + "Merchant Solutions led the quarter. " * 12
+    + "For the fourth quarter, we expect revenue to grow at a mid-twenties "
+    "percentage rate, to between $3.2 and $3.3 billion.")
+
+
+def test_a_print_read_back_carries_the_quarter_the_release_and_the_rules(
+        tmp_path, monkeypatch):
+    """Prod 2026-11-09: the reader expected each print's revenue, margin,
+    outlook and release, and whether it touched the thesis they wrote; and
+    named the held names with no exit rule."""
+    from stocks.chat import journal
+
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist:\n- ticker: SHOP\n- ticker: BKNG\n"
+                         "- ticker: NVDA\n- ticker: MNDY\n")
+    db = tmp_path / "prices.db"
+    db.touch()
+    patch_loaders(monkeypatch, "held", lambda *_a: ("SHOP", "BKNG"))
+    patch_loaders(monkeypatch, "db_mtime", lambda *_a: 0.0)
+    today = date(2026, 11, 9)
+    patch_loaders(monkeypatch, "earnings_calendar", lambda _t: (
+        [EarningsEvent("MNDY", date(2026, 11, 9)),
+         EarningsEvent("NVDA", date(2026, 11, 19))],
+        [EarningsResult("SHOP", date(2026, 11, 4), 0.33, 0.41, 24.2),
+         EarningsResult("BKNG", date(2026, 11, 3), 60.1, 62.0, 3.2)]))
+    monkeypatch.setattr(reports, "_reaction_cache", {})
+    monkeypatch.setattr(reports, "_facts_cache", {})
+    monkeypatch.setattr(earnings, "price_reaction", lambda _t, _day: None)
+    monkeypatch.setattr(reports, "_print_facts", lambda t, _day: {
+        "SHOP": {"revenue": 2.84e9, "currency": "USD", "revenue_yoy_pct": 31.0,
+                 "operating_margin_pct": 15.2, "release": RELEASE},
+    }.get(t, {}))
+    log = tmp_path / "journal.json"
+    log.write_text("[]")
+    rules = [journal.Entry(
+        id="k1", type="criterion", source="chat", action="thesis",
+        subject="criterion:SHOP", ticker="SHOP", state="open", day="2026-10-01",
+        snapshot={"rule": "thesis",
+                  "pillars": ["GMV grows over 20%", "Take rate holds"],
+                  "watch": ["0:2026-11-05"]})]
+    monkeypatch.setattr(journal, "load", lambda _p: rules)
+
+    behind = reports.build(watchlist, db, 7, today=today, back=True,
+                           journal=log)
+    line = behind.line()
+    assert ("SHOP (held): 2026-11-04, 5 days ago; EPS 0.41 against a consensus "
+            "of 0.33 (surprise +24.2%); revenue 2.84B USD (+31.0% on the year); "
+            "operating margin 15.2%; no price move on file") in line
+    assert ('outlook in the release: "For the fourth quarter, we expect '
+            "revenue to grow") in line
+    assert 'release opens: "Shopify Q3 2026 revenue grew 31%' in line
+    assert "EX-99.1" not in line
+    assert ("exit rule: the thesis breaks: GMV grows over 20% / Take rate "
+            "holds; pillar on watch since 2026-11-05: GMV grows over 20%") in line
+    bkng = line.split("- BKNG (held)")[1].split("\n- ")[0]
+    assert "no exit rule saved for it" in bkng
+    assert "Reporting in the next 7 days: MNDY 2026-11-09 (followed)" in line
+    assert "NVDA 2026-11-19" not in line
+    assert "name the held names that reported with no rule saved" in line
+
+
+def test_a_headline_is_not_quoted_as_the_outlook():
+    """AAPL 2026-11-02: the headline ran into the dateline and read as a
+    sentence about the fourth quarter, quoted twice."""
+    release = ("Exhibit 99.1Apple reports fourth quarter resultsSeptember "
+               "quarter records for total company revenue, iPhone revenue, and "
+               "EPSServices revenue reaches new all-time highCUPERTINO — Apple "
+               "today announced results for its fiscal 2026 fourth quarter.")
+    p = reports.Printed("AAPL", date(2026, 11, 2), 7, True, 2.1, 2.03, 3.6,
+                        facts={"release": release})
+    detail = p.detail()
+    assert not any(line.startswith("outlook") for line in detail)
+    assert detail[0].startswith('release opens: "Apple reports fourth quarter')
+
+
+def test_the_book_s_week_beside_the_index_on_the_same_money(tmp_path, monkeypatch):
+    """CLAUDE.md: a book against an index runs on the same money, and also
+    from the book's first day."""
+    import pandas as pd
+
+    from stocks.chat import daily_book
+    from stocks.views import briefing
+
+    days = pd.date_range(end=pd.Timestamp.today().normalize(), periods=120)
+    hist = pd.DataFrame({"value": [1000.0 + i for i in range(120)],
+                         "injected": [1000.0] * 120}, index=days)
+    patch_loaders(monkeypatch, "history", lambda *_a: (hist, None, None))
+    patch_loaders(monkeypatch, "db_mtime", lambda *_a: 0.0)
+    monkeypatch.setattr(briefing, "closes_since", lambda _first: {})
+    monkeypatch.setattr(daily_book, "index_in_currency",
+                        lambda _c, _ccy: pd.Series(500.0, index=days))
+    db = tmp_path / "prices.db"
+    db.touch()
+    book = reports._book(db, "EUR", 7)
+    assert [r[0] for r in book.rows] == [7, 30, 119]
+    assert book.since == days[0].date().isoformat()
+    line = book.line()
+    assert "- the book over the last 7 days: +0.6" in line
+    assert "+7 EUR" in line
+    assert f"- the book since the book's first day ({book.since}): +11.90%" in line
+    assert line.count("the S&P 500 bought with the same money: +0.00%") == 3
 
 
 def test_the_consensus_is_the_window_s_row_for_that_print(monkeypatch):

@@ -291,7 +291,7 @@ def test_a_window_opens_on_the_first_session_on_or_after_its_day():
 
 @pytest.fixture
 def returns_offline(monkeypatch):
-    from stocks.api.routes import review as review_route
+    from stocks.views import review as review_route
 
     # SPY's sessions: weekdays up to a Friday, so a window opening on a weekend
     # moves to the Monday, as the price chart starts it.
@@ -408,7 +408,7 @@ def test_a_past_filing_places_the_name_on_its_business_then(
     moves today's score by what that filing at that price reads against
     today's filings, and a window older than every filing keeps the replay."""
     from stocks.analysis import review
-    from stocks.api.routes import review as review_route
+    from stocks.views import review as review_route
 
     weaker = {**TRAIL_METRICS["ESTC"], "roic": 0.08, "op_margin": 0.05}
     entry = {"filed": "2025-06-01", "then": weaker, "base": TRAIL_METRICS["ESTC"]}

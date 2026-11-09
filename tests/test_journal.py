@@ -575,7 +575,7 @@ def test_the_route_returns_the_outcome(book):
 def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
     import pandas as pd
 
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     asked = []
 
@@ -914,8 +914,8 @@ def test_a_long_release_is_judged_on_the_stretch_that_says_it(path):
 @pytest.mark.parametrize(("left", "charged"), [(5, True), (3, True), (2, False),
                                                (0, False)])
 def test_the_judge_never_takes_the_cards_free_units(monkeypatch, left, charged):
-    from stocks.api import briefing
     from stocks.chat import daily
+    from stocks.views import briefing
 
     assert daily.FREE_UNITS == 2
     patch_engine(monkeypatch, "free_left", lambda prefs: left)

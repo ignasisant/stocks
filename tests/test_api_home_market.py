@@ -15,9 +15,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from stocks import loaders
 from stocks.analysis import sentiment as sm
 from stocks.analysis.sentiment import Pulse as PulseData
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import home
 from tests.patching import patch_loaders

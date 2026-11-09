@@ -67,12 +67,12 @@ def install_stubs():
     funds.TYPE_MEMO.clear()
     funds.TYPE_MEMO.path = scratch / "quote_types.json"
     funds._types = None
-    from stocks.api import loaders
+    from stocks import loaders
     loaders.WORLD_MEMO.clear()
     loaders.WORLD_MEMO.path = scratch / "symbol_search.json"
     # Memos on disk too: the dev memo dir would serve a run from the last one
     # and keep this bench's made-up prices for the dev server to read.
-    from stocks.api import cache
+    from stocks import cache
     cache.MEMO_DIR = scratch / "memo"
 
     # Any other socket = a fetch site this bench does not know about. Fail
@@ -90,11 +90,11 @@ def install_account(tmp: Path):
 
     from stocks import accounts
     from stocks.portfolio import demo
-    from stocks.web import auth, onboarding
+    from stocks.web import onboarding
 
-    paths = auth.paths_for("bench@example.com", users_dir=tmp)
+    paths = accounts.paths_for("bench@example.com", users_dir=tmp)
     paths.root.mkdir(parents=True, exist_ok=True)
-    prefs = dict(auth.DEFAULT_PREFS) | {
+    prefs = dict(accounts.DEFAULT_PREFS) | {
         "language": "en", "currency": "EUR", "email": "bench@example.com",
         "onboarding_dismissed": True, "setup_card_dismissed": True,
         onboarding.PREF_DONE: True,
@@ -103,7 +103,7 @@ def install_account(tmp: Path):
         "first_seen": "2026-01-01T00:00:00+00:00", "last_seen": "2026-09-15",
     }
     paths.prefs.write_text(json.dumps(prefs))
-    wl = yaml.safe_load(auth.STARTER_WATCHLIST) or {}
+    wl = yaml.safe_load(accounts.STARTER_WATCHLIST) or {}
     rows = list(wl.get("watchlist") or [])
     have = {str(r.get("ticker", "")).upper() for r in rows if isinstance(r, dict)}
     for t in [*demo.TICKERS, *WATCHLIST_EXTRA]:

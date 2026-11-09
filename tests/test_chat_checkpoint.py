@@ -14,10 +14,9 @@ import time
 import pytest
 
 from stocks.api import runs
-from stocks.chat import agent, checkpoint, engine, toolbox
+from stocks.chat import agent, checkpoint, conversations, engine, toolbox
 from stocks.chat.checkpoint import Checkpoint
-from stocks.web import auth
-from stocks.web.llm import ToolCall, ToolRun
+from stocks.llm import ToolCall, ToolRun
 from tests.patching import patch_engine
 
 from .test_api_chat import (  # noqa: F401 — fixtures
@@ -196,7 +195,7 @@ def test_opening_the_thread_picks_a_cut_run_back_up(
     assert said["running"]["run_id"] == "run-dead"
     assert said["running"]["question"] == "¿Qué tal ASML?"
     assert not _ended(account, "run-dead").failed
-    stored = auth.load_chat(account.chat, cid)
+    stored = conversations.load_chat(account.chat, cid)
     assert [(m["role"], m["content"]) for m in stored] == [
         ("user", "¿Qué tal ASML?"), ("assistant", "Hola mundo")]
     assert not checkpoint._path(account.chat, cid).exists()

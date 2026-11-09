@@ -103,7 +103,7 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     """
     press_ = body.action
     lang = (body.lang or _prefs(paths).get("language") or "en").strip().lower()
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(key, lang, **kw)
@@ -199,7 +199,7 @@ def _keep_plan(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     from stocks.api.routes.prefs import PlanWrite
     from stocks.portfolio import plan as plans
     from stocks.portfolio.plan import PREFS_KEY
-    from stocks.web.auth import load_profile
+    from stocks.userprefs import load_profile
 
     for q, choices in plan_builder.CHOICES.items():
         if context.get(q) not in choices:

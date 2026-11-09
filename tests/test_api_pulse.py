@@ -18,11 +18,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
+from stocks import accounts, loaders
 from stocks.analysis import sentiment as sm
 from stocks.analysis.sentiment import Component
 from stocks.analysis.sentiment import Pulse as PulseData
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data import cot
 from stocks.portfolio import ledger

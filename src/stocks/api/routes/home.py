@@ -6,7 +6,7 @@ burst only for names whose own exchange is shut, where the newest daily bar can
 be a flat premarket 0%. Printing a live premarket price under a "last close"
 header is the kind of small untruth this page exists not to tell. So the rows
 get their own route, reading the page's one year-of-closes download
-(`api/home.py`).
+(`views/home.py`).
 
 The market strip (`/home/market`) is the Pulse compressed to one card: its
 composite and a dozen of the series it already downloads, read over the day,
@@ -27,14 +27,15 @@ import pandas as pd
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from stocks import loaders
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import market_active
-from stocks.api import briefing, home, loaders
-from stocks.api.cache import carried
 from stocks.api.deps import Account, Writer
-from stocks.api.jsonsafe import num as _num
 from stocks.api.routes.pulse import _reason
-from stocks.api.schemas import Breadth, MarketGlance, MarketTile
+from stocks.cache import carried
+from stocks.jsonsafe import num as _num
+from stocks.schemas import Breadth, MarketGlance, MarketTile
+from stocks.views import briefing, home
 
 router = APIRouter(tags=["home"])
 

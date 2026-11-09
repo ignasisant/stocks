@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from stocks.web import llm, stt
+from stocks import llm
+from stocks.web import stt
 
 CATALOG = (Path(__file__).resolve().parents[1] / "src" / "stocks" / "web"
            / "locales")

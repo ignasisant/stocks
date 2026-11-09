@@ -105,7 +105,7 @@ def unsubscribe(body: Endpoint, paths: Writer) -> None:
 @router.post("/test", status_code=status.HTTP_204_NO_CONTENT)
 def test(body: Endpoint, paths: Writer, request: Request) -> None:
     """A notification to this device now: the Profile's "Send a test"."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     row = webpush.row(paths.push, body.endpoint)
     if row is None:

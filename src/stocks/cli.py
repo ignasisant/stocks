@@ -69,12 +69,14 @@ def cmd_alerts(args: argparse.Namespace) -> None:
 def cmd_sector_scan(args: argparse.Namespace) -> None:
     """Build tonight's sector cohorts. Market-wide, so no account fan-out."""
     from stocks.analysis.sectors import SECTORS, run_scan
+    from stocks.chat import sector_ai
 
     names = tuple(args.sector or ())
     unknown = [s for s in names if s not in SECTORS]
     if unknown:
         raise SystemExit(f"unknown sector(s): {', '.join(unknown)}")
-    status = run_scan(names, widen=not args.no_widen, dry_run=args.dry_run)
+    propose = None if args.no_widen else sector_ai.widen
+    status = run_scan(names, propose=propose, dry_run=args.dry_run)
     for sector, result in status.items():
         print(f"{sector}: {result}")
 
@@ -223,7 +225,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
     production data (that is the point — it proves the deploy's push key and
     the bucket roster, not the analytics).
     """
-    from stocks.web.i18n import DEFAULT_LANG, translate
+    from stocks.i18n import DEFAULT_LANG, translate
 
     if args.all_users or args.user:
         from stocks.notify import links, webpush

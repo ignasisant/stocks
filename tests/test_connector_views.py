@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from stocks import i18n
 from stocks.connector import tools, views
-from stocks.web import i18n
 from tests.patching import patch_loaders
 
 ORIGIN = "https://topstocks.example"

@@ -109,8 +109,8 @@ def index_closes(base: str, first) -> pd.Series | None:
     daily rate the book is valued at. Never the dollar series beside a euro
     book: a gap that is the exchange rate's is not the picks'.
     """
-    from stocks.api.briefing import closes_since
     from stocks.chat import daily_book
+    from stocks.views.briefing import closes_since
 
     return daily_book.index_in_currency(closes_since(first), base)
 
@@ -375,7 +375,7 @@ def _concentration_line(data: WeeklyData, tr) -> str | None:
 def _weekly_parts(data: WeeklyData, lang: str) -> tuple[str, list[str | None]]:
     """The review's title and its lines in reading order: the push shows the
     first few, the scheduled thread every one."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)

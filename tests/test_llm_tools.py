@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks.web import llm
-from stocks.web.llm import ToolSpec
+from stocks import llm
+from stocks.llm import ToolSpec
 
 _TOOLS = [ToolSpec("get_quotes", "live prices",
                    {"type": "object", "properties": {}})]
@@ -438,7 +438,7 @@ def test_an_unconfigured_free_chain_has_nothing_to_run(monkeypatch):
 def test_each_round_reports_its_tokens_to_the_turns_meter(monkeypatch):
     import openai
 
-    from stocks.web import metering
+    from stocks.llm import metering
 
     usage = SimpleNamespace(prompt_tokens=120, completion_tokens=8,
                             prompt_tokens_details=None)
@@ -458,7 +458,7 @@ def test_each_round_reports_its_tokens_to_the_turns_meter(monkeypatch):
 
 
 def test_anthropic_rounds_report_their_tokens(anthropic_client):
-    from stocks.web import metering
+    from stocks.llm import metering
 
     usage = SimpleNamespace(input_tokens=50, output_tokens=5,
                             cache_read_input_tokens=0,

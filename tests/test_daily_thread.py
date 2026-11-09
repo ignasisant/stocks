@@ -26,8 +26,7 @@ from pathlib import Path
 import pytest
 
 from stocks import accounts
-from stocks.chat import daily, engine, memory
-from stocks.web import auth
+from stocks.chat import conversations, daily, engine, memory
 
 DAY = "2026-10-03"
 
@@ -49,21 +48,24 @@ def card(day: str = DAY, headline: str = "NVDA crossed your alert",
 
 
 def thread_of(chat: Path, cid: str) -> dict:
-    return next(c for c in auth.load_book(chat)["conversations"] if c["id"] == cid)
+    book = conversations.load_book(chat)
+    return next(c for c in book["conversations"] if c["id"] == cid)
 
 
 # ------------------------------------------------------------------ filing
 
 
 def test_a_card_is_filed_as_its_own_thread_titled_with_its_day(chat):
-    auth.save_chat([{"role": "user", "content": "hola"}], chat)
-    active = auth.active_conversation(chat)["id"]
+    conversations.save_chat([{"role": "user", "content": "hola"}], chat)
+    active = conversations.active_conversation(chat)["id"]
 
     cid = daily.record(chat, card())
 
     assert cid and cid != active
-    assert auth.active_conversation(chat)["id"] == active, "never takes the active slot"
-    meta = next(c for c in auth.list_conversations(chat) if c["id"] == cid)
+    assert conversations.active_conversation(chat)["id"] == active, (
+        "never takes the active slot"
+    )
+    meta = next(c for c in conversations.list_conversations(chat) if c["id"] == cid)
     assert meta["title"] == "Daily action · Oct 3"
     assert meta["daily"] == DAY and not meta["title_auto"]
     (turn,) = thread_of(chat, cid)["messages"]
@@ -81,10 +83,10 @@ def test_the_title_is_in_the_cards_language(chat):
 
 def test_a_card_on_an_account_that_never_chatted_starts_the_book(chat):
     cid = daily.record(chat, card())
-    convs = auth.list_conversations(chat)
+    convs = conversations.list_conversations(chat)
     assert any(c["id"] == cid for c in convs)
-    assert auth.active_conversation(chat)["id"] != cid
-    assert auth.load_chat(chat) == [], "the reader's next message goes elsewhere"
+    assert conversations.active_conversation(chat)["id"] != cid
+    assert conversations.load_chat(chat) == [], "the reader's next message goes elsewhere"
 
 
 def test_the_same_card_twice_changes_nothing(chat):
@@ -103,11 +105,11 @@ def test_a_rewritten_card_replaces_its_turn_until_somebody_answers(chat):
 
 def test_a_card_rewritten_after_the_reader_answered_lands_after_their_turns(chat):
     cid = daily.record(chat, card(headline="Stand-in"))
-    auth.set_active_conversation(cid, chat)
-    asked = [*auth.load_chat(chat),
+    conversations.set_active_conversation(cid, chat)
+    asked = [*conversations.load_chat(chat),
              {"role": "user", "content": "¿por qué NVDA?"},
              {"role": "assistant", "content": "Porque cruzó tu alerta."}]
-    auth.save_chat(asked, chat)
+    conversations.save_chat(asked, chat)
 
     daily.record(chat, card(headline="Written"))
 
@@ -125,30 +127,32 @@ def test_a_card_rewritten_after_the_reader_answered_lands_after_their_turns(chat
 
 
 def test_a_card_nobody_wrote_in_is_not_in_the_panels_list(chat):
-    auth.save_chat([{"role": "user", "content": "hola"}], chat)
+    conversations.save_chat([{"role": "user", "content": "hola"}], chat)
     cid = daily.record(chat, card())
 
-    assert cid not in {c["id"] for c in auth.list_conversations(chat, cards=False)}
-    assert cid in {c["id"] for c in auth.list_conversations(chat)}, "by id it exists"
+    listed = {c["id"] for c in conversations.list_conversations(chat, cards=False)}
+    assert cid not in listed
+    every = {c["id"] for c in conversations.list_conversations(chat)}
+    assert cid in every, "by id it exists"
 
 
 def test_the_card_thread_is_listed_while_it_is_the_open_one(chat):
-    auth.save_chat([{"role": "user", "content": "hola"}], chat)
+    conversations.save_chat([{"role": "user", "content": "hola"}], chat)
     cid = daily.record(chat, card())
-    auth.set_active_conversation(cid, chat)
+    conversations.set_active_conversation(cid, chat)
 
-    listed = auth.list_conversations(chat, cards=False)
+    listed = conversations.list_conversations(chat, cards=False)
     assert [c["id"] for c in listed if c["active"]] == [cid]
 
 
 def test_a_card_thread_the_reader_wrote_in_stays_listed(chat):
     cid = daily.record(chat, card())
-    auth.set_active_conversation(cid, chat)
-    auth.save_chat([*auth.load_chat(chat),
+    conversations.set_active_conversation(cid, chat)
+    conversations.save_chat([*conversations.load_chat(chat),
                     {"role": "user", "content": "¿por qué NVDA?"}], chat)
-    auth.new_conversation(chat, "")  # the reader moves on
+    conversations.new_conversation(chat, "")  # the reader moves on
 
-    assert cid in {c["id"] for c in auth.list_conversations(chat, cards=False)}
+    assert cid in {c["id"] for c in conversations.list_conversations(chat, cards=False)}
 
 
 def test_each_day_is_its_own_thread(chat):
@@ -161,7 +165,7 @@ def test_a_card_that_cannot_be_filed_keeps_the_days_thread(chat, monkeypatch):
     def broken(*a, **k):
         raise OSError("disk full")
 
-    monkeypatch.setattr(auth, "save_card_thread", broken)
+    monkeypatch.setattr(conversations, "save_card_thread", broken)
     assert daily.record(chat, card()) == ""
     earlier = daily.DailyAction.from_dict({**card().to_dict(), "thread": "c_keep"})
     assert daily.filed(earlier, card(), chat) == "c_keep"
@@ -193,7 +197,7 @@ def _thread(i: int, *, daily_day: str = "", user: bool = True) -> dict:
         turns.append({"role": "assistant", "content": "card", "daily": daily_day})
     if user:
         turns.append({"role": "user", "content": str(i)})
-    # Recent stamps: an idle thread is dropped on its own (`auth.KEEP_DAYS`),
+    # Recent stamps: an idle thread is dropped on its own (`conversations.KEEP_DAYS`),
     # and this is the count cap under test.
     when = datetime.now(UTC) - timedelta(hours=1, seconds=-i)
     return {"id": f"c_{i:04d}", "title": str(i), "title_auto": True,
@@ -203,31 +207,31 @@ def _thread(i: int, *, daily_day: str = "", user: bool = True) -> dict:
 
 
 def test_unanswered_cards_are_capped_apart_from_conversations(chat):
-    talk = [_thread(i) for i in range(auth.MAX_CONVERSATIONS)]
+    talk = [_thread(i) for i in range(conversations.MAX_CONVERSATIONS)]
     cards = [_thread(1000 + i, daily_day=f"2026-{1 + i // 28:02d}-{1 + i % 28:02d}",
                      user=False)
-             for i in range(auth.MAX_CARD_THREADS + 10)]
-    book = auth.load_book(chat)
+             for i in range(conversations.MAX_CARD_THREADS + 10)]
+    book = conversations.load_book(chat)
     book["conversations"] = talk + cards
     book["active"] = talk[0]["id"]
-    auth.save_book(book, chat)
+    conversations.save_book(book, chat)
 
-    kept = {c["id"] for c in auth.list_conversations(chat)}
+    kept = {c["id"] for c in conversations.list_conversations(chat)}
     assert {c["id"] for c in talk} <= kept, "no conversation made room for a card"
     kept_cards = [c for c in cards if c["id"] in kept]
-    assert len(kept_cards) == auth.MAX_CARD_THREADS
+    assert len(kept_cards) == conversations.MAX_CARD_THREADS
     assert cards[-1]["id"] in kept and cards[0]["id"] not in kept  # newest kept
 
 
 def test_a_card_the_reader_answered_is_kept_like_a_conversation(chat):
     answered = _thread(1, daily_day="2026-01-01", user=True)
     cards = [_thread(100 + i, daily_day=f"2026-02-{1 + i:02d}", user=False)
-             for i in range(auth.MAX_CARD_THREADS)]
-    book = auth.load_book(chat)
+             for i in range(conversations.MAX_CARD_THREADS)]
+    book = conversations.load_book(chat)
     book["conversations"] = [answered, *cards]
     book["active"] = cards[0]["id"]
-    auth.save_book(book, chat)
-    assert answered["id"] in {c["id"] for c in auth.list_conversations(chat)}
+    conversations.save_book(book, chat)
+    assert answered["id"] in {c["id"] for c in conversations.list_conversations(chat)}
 
 
 # ------------------------------------------------------------- the chat
@@ -267,8 +271,8 @@ def test_an_old_or_missing_card_is_not_quoted(chat):
 
 def test_the_other_surfaces_do_not_read_old_cards_back_as_the_user(chat, monkeypatch):
     cid = daily.record(chat, card())
-    other = auth.active_conversation(chat)["id"]
-    auth.save_chat([{"role": "user", "content": "x"}], chat)
+    other = conversations.active_conversation(chat)["id"]
+    conversations.save_chat([{"role": "user", "content": "x"}], chat)
     hits = [
         memory.Memory(thread=cid, role="assistant", when=DAY, text="NVDA card", rank=1),
         memory.Memory(thread=cid, role="user", when=DAY, text="NVDA me", rank=2),

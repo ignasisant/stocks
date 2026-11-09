@@ -5,7 +5,8 @@ from __future__ import annotations
 import sys
 import types
 
-from stocks.web import llm, metering
+from stocks import llm
+from stocks.llm import metering
 
 
 def test_a_plain_string_is_one_marked_block_and_a_prompt_one_per_part():

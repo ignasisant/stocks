@@ -11,9 +11,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from stocks.api.deps import Account
-from stocks.api.schemas import Watchlist, WatchlistEntry
 from stocks.config import load_watchlist
 from stocks.data.crypto import is_crypto
+from stocks.schemas import Watchlist, WatchlistEntry
 
 router = APIRouter(tags=["watchlist"])
 

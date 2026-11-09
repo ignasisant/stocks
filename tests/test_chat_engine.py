@@ -9,8 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks.chat import engine
-from stocks.web import auth
+from stocks.chat import conversations, engine
 from tests.patching import patch_engine
 
 
@@ -48,7 +47,7 @@ class FakeProvider:
 
 @pytest.fixture
 def providers(monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     fakes = {
         "anthropic": FakeProvider("anthropic", reply="BYOK answer."),
@@ -267,7 +266,7 @@ def test_a_charge_checks_the_cap_against_the_file_not_a_stale_read(
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "2")
     patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
-    monkeypatch.setattr(auth, "_persist", lambda path: None)
+    monkeypatch.setattr(conversations, "_persist", lambda path: None)
     path = tmp_path / "prefs.json"
     key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
     accounts.save_prefs(path, {key: 1}, persist=lambda p: None)
@@ -428,30 +427,32 @@ def test_the_title_of_a_whole_turn_hears_the_callers_locale(providers, paths):
 
 
 def test_autotitle_leaves_a_renamed_thread_alone(providers, tmp_path):
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     chat = tmp_path / "chat.json"
-    auth.save_chat([{"role": "user", "content": "q"},
+    conversations.save_chat([{"role": "user", "content": "q"},
                     {"role": "assistant", "content": "a"}], chat)
-    auth.rename_conversation(auth.active_conversation(chat)["id"], "Mine", chat)
+    conversations.rename_conversation(
+        conversations.active_conversation(chat)["id"], "Mine", chat
+    )
 
-    engine.autotitle(chat, providers["free"], "", auth.load_chat(chat))
-    assert auth.active_conversation(chat)["title"] == "Mine"
+    engine.autotitle(chat, providers["free"], "", conversations.load_chat(chat))
+    assert conversations.active_conversation(chat)["title"] == "Mine"
     assert not providers["free"].calls  # not even asked
 
 
 def test_autotitle_only_fires_on_the_opening_pair(providers, tmp_path):
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     chat = tmp_path / "chat.json"
     history = [{"role": "user", "content": "q1"},
                {"role": "assistant", "content": "a1"},
                {"role": "user", "content": "q2"},
                {"role": "assistant", "content": "a2"}]
-    auth.save_chat(history, chat)
+    conversations.save_chat(history, chat)
 
     engine.autotitle(chat, providers["free"], "", history)
-    assert auth.active_conversation(chat)["title"] == ""
+    assert conversations.active_conversation(chat)["title"] == ""
 
 
 # ------------------------------------------------------------------ answer
@@ -495,7 +496,7 @@ def test_answer_free_happy_path(providers, paths):
                           **paths)
     assert reply.text == "Free answer." and reply.error is None
     assert reply.provider_id == "free"
-    saved = auth.load_chat(paths["chat_path"])
+    saved = conversations.load_chat(paths["chat_path"])
     assert [m["role"] for m in saved] == ["user", "assistant"]
     # quota spent and persisted
     day_key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
@@ -507,7 +508,7 @@ def test_answer_free_happy_path(providers, paths):
     assert "no open positions" in system
     assert "Tax rules the app applies to this account" in system
     # the brand-new thread was named from the opening question
-    assert auth.active_conversation(paths["chat_path"])["title"] == "Free answer"
+    assert conversations.active_conversation(paths["chat_path"])["title"] == "Free answer"
 
 
 @dataclass
@@ -557,7 +558,7 @@ def test_answer_refuses_to_import_from_a_message(providers, paths):
     assert reply.error is None
     assert "Importar" in reply.text  # the deterministic locale line
     assert providers["free"].calls == []  # no model call, no quota spent
-    saved = auth.load_chat(paths["chat_path"])
+    saved = conversations.load_chat(paths["chat_path"])
     assert [m["role"] for m in saved] == ["user", "assistant"]
     assert saved[-1]["action"] == "import"
 
@@ -658,7 +659,7 @@ def test_patient_callers_take_the_free_chain_one_at_a_time(providers):
 
 
 def test_a_patient_free_call_sits_out_a_longer_rate_limit(providers):
-    from stocks.web import llm
+    from stocks import llm
 
     seen = []
 
@@ -706,7 +707,7 @@ def test_an_answer_that_only_writes_a_tool_call_fails_over(providers, enc, paths
 @pytest.mark.parametrize("written", [WRITTEN_CALL, JSON_CALL])
 def test_a_streamed_written_tool_call_never_reaches_the_reader(
         providers, enc, paths, monkeypatch, written):
-    from stocks.web import llm
+    from stocks import llm
 
     streamers = {
         "anthropic": Streamer("anthropic", reply=written),
@@ -751,7 +752,7 @@ class Crowded(Streamer):
 
 @pytest.fixture
 def crowded(providers, monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     gemini = Crowded("gemini", reply="Gemini answer.")
     monkeypatch.setattr(llm, "PROVIDERS", {**providers, "gemini": gemini})
@@ -796,7 +797,7 @@ def test_a_tool_call_inside_an_answer_is_scrubbed_from_it(providers, paths):
     providers["free"].reply = f"Adyen beat consensus.\n\n{WRITTEN_CALL}"
     reply = engine.answer(prefs=dict(BASE_PREFS), message="ADYYF?", **paths)
     assert reply.text == "Adyen beat consensus."
-    assert auth.load_chat(paths["chat_path"])[-1]["content"] == reply.text
+    assert conversations.load_chat(paths["chat_path"])[-1]["content"] == reply.text
 
 
 def test_prose_that_names_a_tool_is_not_a_call():
@@ -817,7 +818,7 @@ def test_an_answer_headed_with_the_bare_date_loses_it(providers, paths):
 
 def test_a_streamed_date_head_never_reaches_the_reader(
         providers, enc, paths, monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "PROVIDERS", {
         **providers, "anthropic": Streamer("anthropic", reply=DATED)})
@@ -890,7 +891,7 @@ def test_answer_appends_to_existing_thread(providers, paths):
         [{"role": "user", "content": "old"},
          {"role": "assistant", "content": "old answer"}]))
     engine.answer(prefs=dict(BASE_PREFS), message="follow-up", **paths)
-    saved = auth.load_chat(paths["chat_path"])
+    saved = conversations.load_chat(paths["chat_path"])
     assert len(saved) == 4 and saved[2]["content"] == "follow-up"
     # the model saw the prior turns
     *_, messages = providers["free"].calls[-1]
@@ -992,7 +993,7 @@ def test_answer_injects_live_quotes(providers, paths, monkeypatch):
     assert "Live market data" in sent
     assert "last 227.98 USD" in sent
     # The stored turn keeps the user's own text, unaugmented.
-    assert auth.load_chat(paths["chat_path"])[0]["content"] == "how is NVDA?"
+    assert conversations.load_chat(paths["chat_path"])[0]["content"] == "how is NVDA?"
 
 
 def test_a_gather_that_quoted_nothing_still_gets_the_live_quotes(
@@ -1006,7 +1007,7 @@ def test_a_gather_that_quoted_nothing_still_gets_the_live_quotes(
     seen = []
     monkeypatch.setattr(engine.market, "lookup_for", lambda message, *a, **k: (
         seen.append(k.get("earlier")) or [Quote("TSM", price=412.1, currency="USD")]))
-    auth.save_chat([{"role": "user", "content": "¿A qué precio compro TSM?"},
+    conversations.save_chat([{"role": "user", "content": "¿A qué precio compro TSM?"},
                     {"role": "assistant", "content": "**TSM** cerca de soportes."}],
                    paths["chat_path"])
     reply = engine.answer(prefs=dict(BASE_PREFS), message="Dámelos", **paths)
@@ -1250,7 +1251,7 @@ def test_a_capped_account_makes_no_model_call_at_all(providers, paths):
                           **paths)
     assert reply.error == engine.FREE_CAP_ERRORS[engine.free_cap_reason(prefs)]
     assert providers["free"].calls == []
-    assert auth.load_chat(paths["chat_path"]) == []  # no dangling user turn
+    assert conversations.load_chat(paths["chat_path"]) == []  # no dangling user turn
 
 
 def test_a_capped_free_chain_hands_the_preflight_to_the_byok_key(
@@ -1277,7 +1278,7 @@ def test_answerable_leaves_a_chain_without_free_alone(providers):
 def test_the_sector_line_gives_both_the_book_and_its_equity_share(monkeypatch):
     import pandas as pd
 
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "book_sectors", lambda tbl: pd.Series(
         {"Technology": 0.4, "Healthcare": 0.2, "Crypto": 0.3, "Unknown": 0.1}))
@@ -1291,7 +1292,7 @@ def test_the_sector_line_gives_both_the_book_and_its_equity_share(monkeypatch):
 
 
 def test_a_sector_lookup_that_fails_leaves_the_snapshot_without_it(monkeypatch):
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     def boom(tbl):
         raise RuntimeError("yahoo")
@@ -1303,7 +1304,7 @@ def test_a_sector_lookup_that_fails_leaves_the_snapshot_without_it(monkeypatch):
 def test_the_snapshot_carries_the_sector_line(monkeypatch, tmp_path):
     import pandas as pd
 
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "book_sectors",
                         lambda tbl: pd.Series({"Technology": 1.0}))
@@ -1327,8 +1328,8 @@ def test_the_snapshot_dates_each_day_move_with_its_session(monkeypatch, tmp_path
 
     import pandas as pd
 
-    from stocks.api import briefing
     from stocks.chat import clock
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "book_sectors", lambda tbl: pd.Series(dtype=float))
     monkeypatch.setattr(clock, "today", lambda: date(2026, 10, 29))
@@ -1414,13 +1415,13 @@ class _MeteredProvider(FakeProvider):
     """Reports usage the way llm's providers do."""
 
     def complete(self, api_key, model, system, messages) -> str:
-        from stocks.web import metering
+        from stocks.llm import metering
 
         metering.note("gpt-4o-mini", input=1000, output=100)
         return super().complete(api_key, model, system, messages)
 
     def stream(self, api_key, model, system, messages):
-        from stocks.web import metering
+        from stocks.llm import metering
 
         yield "Free "
         metering.note("gpt-4o-mini", input=1000, output=100)
@@ -1441,7 +1442,7 @@ def _costs(monkeypatch) -> list[dict]:
 
 
 def test_a_turn_logs_what_its_model_calls_cost(monkeypatch, paths):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     seen = _costs(monkeypatch)
@@ -1456,7 +1457,7 @@ def test_a_streamed_turn_logs_its_cost_though_each_chunk_ran_elsewhere(
         monkeypatch, paths):
     import threading
 
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     seen = _costs(monkeypatch)
@@ -1477,7 +1478,7 @@ def test_a_streamed_turn_logs_its_cost_though_each_chunk_ran_elsewhere(
 
 def test_the_turns_log_lines_carry_the_id_its_rating_will_name(
         monkeypatch, paths):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     seen: list[dict] = []
@@ -1497,7 +1498,7 @@ def test_the_turns_log_lines_carry_the_id_its_rating_will_name(
 
 def test_a_call_the_model_explained_carries_its_reason_not_as_its_argument():
     from stocks.chat import engine
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
     call = ToolCall("harvest_losses",
                     {"reason": "  <b>Pérdidas</b> que   compensan " + "x" * 80},
@@ -1522,7 +1523,7 @@ def _today() -> str:
 
 def test_an_in_depth_question_takes_more_of_the_free_allowance(
         monkeypatch, paths):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
     patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
@@ -1539,14 +1540,14 @@ def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
     """The gather runs before the answer is charged, so a reader without the
     units for a deep one gets the quick one — never a deep read the wall
     then refuses to answer."""
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
     patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
     from stocks import accounts
 
-    monkeypatch.setattr(auth, "_persist", lambda path: None)
+    monkeypatch.setattr(conversations, "_persist", lambda path: None)
     seen = _costs(monkeypatch)
     prefs = {**BASE_PREFS, _today(): 4}
     # On file too: the charge re-reads the counter there (`_fresh_free_count`).
@@ -1802,7 +1803,7 @@ def test_web_and_document_sources_are_both_kept_once():
 
 
 def _router_says(monkeypatch, hard):
-    from stocks.web import chat_skills
+    from stocks.chat import skills as chat_skills
 
     def classify(*_a, **_k):
         picked = chat_skills.Pick([])
@@ -1815,7 +1816,7 @@ def _router_says(monkeypatch, hard):
 def _answered_on(provider) -> list[str]:
     """The models asked for the answer itself — the title is asked too, on
     the cheapest model, with a plain-string system."""
-    from stocks.web import llm
+    from stocks import llm
 
     return [m for _k, m, system, _msgs in provider.calls
             if isinstance(system, llm.Prompt)]
@@ -1888,7 +1889,7 @@ def test_the_answer_thinks_by_the_turns_depth():
 def test_a_keyed_turn_says_the_rules_first_so_the_prefix_is_cacheable():
     """Gemini caches a prefix of 1,024 tokens or more; the fixed paragraphs
     alone are about 600, and every Gemini turn read cached=0."""
-    from stocks.chat import tokens
+    from stocks.llm import tokens
 
     base = dict(memories="MEMORIES\n\n", book="BOOK\n\n")
     first = engine.system_prompt({"set": False}, "VIEW", ["tech"], "es",
@@ -1932,7 +1933,7 @@ def test_the_same_prompt_again_is_answered_without_a_model_call(
 
 def test_a_streamed_repeat_says_who_answered_then_the_text(
         providers, enc, paths, monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     streamer = Streamer("anthropic", reply="El P/E es precio entre beneficio.")
     monkeypatch.setattr(llm, "PROVIDERS", {**providers, "anthropic": streamer})
@@ -1973,7 +1974,7 @@ def test_an_answer_that_did_something_is_never_a_repeat(paths):
 
 
 def test_a_cut_answer_is_not_kept(providers, enc, paths, monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     @dataclass
     class Cutting(Streamer):

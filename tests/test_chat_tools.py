@@ -456,7 +456,7 @@ def test_kinds_tracks_the_registry():
 
 def test_search_step_names_the_queries_behind_the_hits():
     from stocks.chat import engine
-    from stocks.web import chat_web
+    from stocks.chat import websearch as chat_web
 
     hits = [chat_web.Result("a", "https://a", "", query="HODO stock news"),
             chat_web.Result("b", "https://b", "", query="HODO stock news"),
@@ -537,7 +537,7 @@ def test_the_exit_rule_card_round_trips_its_fields():
 
 
 def test_the_exit_rule_confirmation_names_each_rule():
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     act = _criteria_action()
     for lang in ("en", "es"):
@@ -584,7 +584,7 @@ def test_slow_rules_round_trip_the_card_with_their_run_and_boxes():
 
 
 def test_slow_rules_read_in_the_confirmation():
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     act = _slow_criteria_action()
     for lang in ("en", "es"):
