@@ -21,10 +21,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from stocks import accounts
+from stocks import accounts, i18n
 from stocks.api.deps import Account, Writer
 from stocks.api.security import Who
-from stocks.web import i18n, onboarding
+from stocks.web import onboarding
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 

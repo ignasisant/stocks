@@ -16,7 +16,7 @@ line by line, and none of the rest is the answer.
 
 The id is random (`token_urlsafe`), so a link is found only by being sent.
 The sharer's answer is stamped with the links it went out under
-(`auth.stamp_share`), one per cut — the masked link and the unmasked one are
+(`conversations.stamp_share`), one per cut — the masked link and the unmasked one are
 different pages, and a link already sent must keep working when the other is
 made. `revoke` takes every one of them down, and so does deleting the
 account (`purge_owner`).
@@ -43,9 +43,8 @@ from pathlib import Path
 from stocks import obs, storage, userstore
 from stocks import watchlist as wl
 from stocks.accounts import UserPaths
-from stocks.chat import share_mask
+from stocks.chat import conversations, share_mask
 from stocks.config import DATA_DIR, PROJECT_ROOT
-from stocks.web import auth
 
 SHARES_DIR = DATA_DIR / "shares"
 # What `secrets.token_urlsafe(8)` spells, give or take: the route and the
@@ -72,7 +71,7 @@ def _path(share_id: str) -> Path | None:
 
 
 def snapshot(found: dict, masked: bool) -> dict:
-    """What a link to the answer `found` (`auth.find_answer`) shows: the
+    """What a link to the answer `found` (`conversations.find_answer`) shows: the
     exchange, the thread's earlier ones above it, and the cut."""
     return {**_exchange(found["question"], found["answer"], masked),
             "turns": _turns(found.get("earlier") or [], masked),
@@ -129,7 +128,7 @@ def sharer(claims: dict | None) -> str:
 def preview(paths: UserPaths, tid: str, masked: bool, by: str = "") -> dict | None:
     """The page `create` would publish, published nowhere. None for an id no
     thread holds."""
-    found = auth.find_answer(tid, paths.chat)
+    found = conversations.find_answer(tid, paths.chat)
     return {**snapshot(found, masked), "by": by} if found else None
 
 
@@ -139,7 +138,7 @@ def create(
     """Publish the answer `tid`, signed with `by` (`sharer`); returns the
     stored share, or None for an id no thread holds. The same answer cut the
     same way is the same link."""
-    found = auth.find_answer(tid, paths.chat)
+    found = conversations.find_answer(tid, paths.chat)
     if found is None:
         return None
     links = _links(found["answer"])
@@ -159,7 +158,9 @@ def create(
     userstore.write(SHARES_DIR / f"{share_id}.json", share,
                     ensure_ascii=False, indent=2)
     links = [k for k in links if k["masked"] != masked]
-    auth.stamp_share(tid, [*links, {"id": share_id, "masked": masked}], paths.chat)
+    conversations.stamp_share(
+        tid, [*links, {"id": share_id, "masked": masked}], paths.chat
+    )
     # A first read builds the list from the stamps, this one's included.
     with userstore.lock(paths.shares):
         _write_list(paths, [_entry(share),
@@ -292,14 +293,14 @@ def revoke(paths: UserPaths, share_id: str) -> bool:
         obs.event("share.revoked", share=share_id, links=1)
         return True
     tid = str(share.get("answer_id") or "")
-    found = auth.find_answer(tid, paths.chat)
+    found = conversations.find_answer(tid, paths.chat)
     # The answer may be gone from the thread (pruned), the link still up.
     links = _links(found["answer"]) if found else []
     ids = {share_id, *(k["id"] for k in links)}
     for each in ids:
         _drop(each)
     if found:
-        auth.stamp_share(tid, [], paths.chat)
+        conversations.stamp_share(tid, [], paths.chat)
     with userstore.lock(paths.shares):
         _write_list(paths, [k for k in listed(paths)
                             if k["id"] not in ids and k["answer_id"] != tid])
@@ -344,7 +345,7 @@ def listed(paths: UserPaths) -> list[dict]:
             return [r for r in rows if isinstance(r, dict)
                     and ID_RE.match(str(r.get("id") or ""))]
     entries = []
-    for conv in auth.load_book(paths.chat)["conversations"]:
+    for conv in conversations.load_book(paths.chat)["conversations"]:
         for message in conv["messages"]:
             for link in _links(message):
                 if (share := load(link["id"])) is not None:
@@ -382,7 +383,7 @@ def continue_from(paths: UserPaths, share: dict) -> str:
     messages[-1]["shared_from"] = str(share.get("id") or "")
     title = next((str(t.get("question") or "") for t in exchanges
                   if t.get("question")), "")
-    cid = auth.seed_conversation(title, messages, paths.chat)
+    cid = conversations.seed_conversation(title, messages, paths.chat)
     obs.event("share.continued", share=str(share.get("id") or ""))
     return cid
 

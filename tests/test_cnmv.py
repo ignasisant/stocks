@@ -251,7 +251,7 @@ def test_a_partial_read_says_so_and_the_next_one_is_fuller(slow_site):
 
 
 def test_the_loader_does_not_freeze_a_partial_read(slow_site, monkeypatch):
-    from stocks.api import loaders
+    from stocks import loaders
 
     patch_loaders(monkeypatch, "issuer_name", lambda t: "Banco Santander")
     loaders._clear_eu_insiders()

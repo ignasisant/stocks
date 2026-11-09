@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from stocks.chat import engine, memory, structured
+from stocks.chat import engine, memory
 from stocks.chat.daily.card import (
     _LANG_NAME,
     BULLET_CHARS,
@@ -20,6 +20,7 @@ from stocks.chat.daily.card import (
     SECTION_LINES,
     TITLE_CHARS,
 )
+from stocks.llm import structured
 
 _TASK = (
     "Write today's DAILY card for the dashboard of TopStocks, a personal "

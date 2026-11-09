@@ -67,7 +67,7 @@ def test_a_catalog_comes_back_flat_and_dotted(client):
 def test_an_untranslated_key_reads_in_english_not_as_a_key(client):
     """Mirrors i18n.translate's per-key fallback. Without it a missing
     translation renders as `ticker.price` on somebody's screen."""
-    from stocks.web.i18n import catalog
+    from stocks.i18n import catalog
 
     english, spanish = catalog("en"), catalog("es")
     served = client.get("/v1/i18n/es").json()["strings"]
@@ -126,7 +126,7 @@ def test_a_catalog_carries_an_etag_and_answers_304_to_it(client):
 
 
 def test_a_catalog_under_the_current_stamp_is_immutable(client):
-    from stocks.web.i18n import version
+    from stocks.i18n import version
 
     stamp = version()
     assert len(stamp) == 12 and stamp == version()

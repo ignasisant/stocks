@@ -1,6 +1,6 @@
 /**
  * The shapes `/api/v1/ticker/*` and the handful of routes beside it actually
- * send, transcribed from `src/stocks/api/schemas/`.
+ * send, transcribed from `src/stocks/schemas/`.
  *
  * Every `| null` here is one the API means. A position nobody could price has
  * no value, an indicator still warming up has no reading, a company no

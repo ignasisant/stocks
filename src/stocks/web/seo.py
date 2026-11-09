@@ -31,8 +31,8 @@ from collections.abc import Iterable
 from urllib.parse import quote
 
 from stocks import navigation
+from stocks.i18n import DEFAULT_LANG, LANGUAGES, translate
 from stocks.web import landing
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, translate
 from stocks.web.landing import (
     ASSET_BASE,
     FAQ_COUNT,

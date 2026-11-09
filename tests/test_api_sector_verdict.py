@@ -19,9 +19,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
+from stocks import accounts, loaders
 from stocks.analysis.sectors import SectorScan
-from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.chat import sector_ai
 from tests.patching import patch_loaders

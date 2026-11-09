@@ -692,7 +692,7 @@ def _with_crypto(
 
 
 def _scan() -> dict:
-    from stocks.api import loaders
+    from stocks import loaders
 
     return loaders.crypto_scan()
 

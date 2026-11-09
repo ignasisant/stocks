@@ -9,16 +9,16 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from stocks import loaders
 from stocks.analysis.portfolio import (
     market_active,
     market_live,
     us_extended_session,
     us_market_open,
 )
-from stocks.api import loaders
 from stocks.api.deps import Account
-from stocks.api.schemas import Profile, Profiles, Quote, Quotes
 from stocks.api.security import Who
+from stocks.schemas import Profile, Profiles, Quote, Quotes
 
 router = APIRouter(prefix="/market", tags=["market"])
 

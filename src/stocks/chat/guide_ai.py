@@ -117,7 +117,7 @@ def prompt_fence(prefs: dict, conv_id: str | None, lang: str) -> str:
     guide's own thread. Titles are given in the reader's language, the one
     their question arrived in, because that is what the model will quote back.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     if not owns(conv_id, prefs):
         return ""
@@ -278,7 +278,7 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
     (`engine.user_memory`), so a walkthrough resumed after a few conversations
     speaks to the same person they do.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     spent: list[int] = []
 

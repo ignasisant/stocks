@@ -31,12 +31,12 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import briefing, home, loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
-from stocks.api.loaders.keys import LedgerState
 from stocks.api.routes import home as home_routes
 from stocks.chat import daily, daily_analysis
+from stocks.loaders.keys import LedgerState
+from stocks.views import briefing, home
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
@@ -332,7 +332,7 @@ def store_card(account) -> None:
 @pytest.fixture
 def no_fetch(monkeypatch):
     """The evidence without the network: what `evidence.gather` would bring."""
-    from stocks.api import evidence
+    from stocks.views import evidence
 
     calls = []
 

@@ -818,8 +818,7 @@ async def status(request: Request) -> Response:
     no storage or market-data probe — this must stay cheap enough to curl in
     a loop mid-incident. See docs/RUNBOOK.md.
     """
-    from stocks import memstat, storage
-    from stocks.api import cache
+    from stocks import cache, memstat, storage
 
     body = {
         "status": "ok",
@@ -972,7 +971,7 @@ def _shell_lang(request: Request) -> str:
     answer the client router reaches once it runs, taken one step earlier for
     the one reader that never runs it: the unfurler fetching a pasted link.
     """
-    from stocks.web.i18n import DEFAULT_LANG, supported
+    from stocks.i18n import DEFAULT_LANG, supported
 
     asked = supported(request.query_params.get("lang"))
     if asked:
@@ -1045,10 +1044,10 @@ def _boot(request: Request) -> dict | None:
     None when anything in it fails: the shell then fetches the pair itself,
     which is what it did before.
     """
+    from stocks import i18n
     from stocks.api import deps
     from stocks.api.routes import me as identity
     from stocks.api.routes import prefs as settings
-    from stocks.web import i18n
 
     if upstream.BASE:
         # The account is production's (`web/upstream.py`): the shell asks it.
@@ -1097,7 +1096,7 @@ def _catalog_lang(request: Request, boot: dict) -> str:
     exactly as `shell/i18n.browserLang` walks it. A wrong guess costs one
     unused preload and nothing else.
     """
-    from stocks.web.i18n import LANGUAGES, supported
+    from stocks.i18n import LANGUAGES, supported
 
     guest = boot["me"].get("kind") == "guest"
     if not guest and (stored := supported(boot["prefs"].get("language"))):

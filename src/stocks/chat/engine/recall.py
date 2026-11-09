@@ -111,15 +111,15 @@ def talk_about(prefs: dict, chat_path: Path, names: list[str], *,
     thread, and keeps what the user said there: the card reading its own
     past lines back as "the user talking to you" would be the card quoting
     itself — it has its own memory of those (`daily.past_lines`)."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if not names or not recall_on(prefs) or not chat_path.exists():
         return []
-    book = {c["id"]: c for c in auth.list_conversations(chat_path)}
+    book = {c["id"]: c for c in conversations.list_conversations(chat_path)}
     # Over-fetched when some are going to be dropped, so the cap still counts
     # what is left.
     depth = limit if cards else limit * 3
-    hits = [h for h in memory.about(auth.memory_path(chat_path), names,
+    hits = [h for h in memory.about(conversations.memory_path(chat_path), names,
                                     limit=depth, exclude_thread=exclude_thread)
             if h.thread in book]
     if not cards:
@@ -267,18 +267,18 @@ def earlier(prefs: dict, chat_path: Path, message: str,
     `known` is the watchlist's names (`market.watchlist_names`): with it, a
     holding is found under every name it goes by (`market.aliases`), so
     "Nvidia" also brings back the turn that said "NVDA"."""
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     names = market.named(message) if recall_on(prefs) else []
     if recall_on(prefs) and known:
         names = market.aliases(names, message, known)
     if not names or not chat_path.exists():
         return [], []
-    current = auth.active_conversation(chat_path)["id"]
+    current = conversations.active_conversation(chat_path)["id"]
     hits = talk_about(prefs, chat_path, names, exclude_thread=current)
     if not hits:
         return [], []
-    book = {c["id"]: c for c in auth.list_conversations(chat_path)}
+    book = {c["id"]: c for c in conversations.list_conversations(chat_path)}
     hits = [h for h in hits if h.thread in book]
     threads: dict[str, dict] = {}
     for h in hits:
@@ -295,11 +295,11 @@ def _thread_id(chat_path: Path) -> str:
     yet — every read of a missing chat.json makes up a new one — so it is
     pinned before it is named."""
     from stocks.accounts import writable
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if chat_path.exists():
-        return auth.active_conversation(chat_path)["id"]
-    return auth.new_conversation(writable(chat_path))
+        return conversations.active_conversation(chat_path)["id"]
+    return conversations.new_conversation(writable(chat_path))
 
 
 def remember(order: learnings.Command, *, prefs: dict, chat_path: Path,

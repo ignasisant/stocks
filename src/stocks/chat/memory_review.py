@@ -29,7 +29,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from stocks import obs, userstore
-from stocks.chat import learnings, structured
+from stocks.chat import learnings
+from stocks.llm import structured
 
 REVIEW_DAYS = 7  # between two reviews of one account
 RECENT_DAYS = 14  # of the user's messages read against the list
@@ -308,8 +309,7 @@ def start(prefs: dict, chat_path: Path, *, day: str | None = None,
     A free-chain call spends the shared pot (`spend_free_global`), like the
     unasked learning: the user never asked for it."""
     from stocks.accounts import GuestIsReadOnly, writable
-    from stocks.chat import engine, memory
-    from stocks.web import auth
+    from stocks.chat import conversations, engine, memory
 
     if not engine.memory_on(prefs):
         return None
@@ -335,7 +335,7 @@ def start(prefs: dict, chat_path: Path, *, day: str | None = None,
             found = plain(items, learnings.usage(path), day)
             since = (date.fromisoformat(day)
                      - timedelta(days=RECENT_DAYS)).isoformat()
-            said = (memory.said_since(auth.memory_path(chat_path), since)
+            said = (memory.said_since(conversations.memory_path(chat_path), since)
                     if engine.recall_on(prefs) else [])
             words = "\n".join([*said, *(i.text for i in items)])
             model = engine.complete_attempts(

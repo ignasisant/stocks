@@ -159,17 +159,17 @@ def test_the_assistant_is_told_the_plan_in_one_sentence():
 
 
 def test_the_persona_carries_the_plan_with_or_without_a_profile():
+    from stocks import userprefs
     from stocks.chat.engine import persona
-    from stocks.web import auth
 
     plan = {"set": True, "limits": {"max_position_pct": 10}}
-    bare = persona(auth.load_profile({"investor_plan": plan}))
+    bare = persona(userprefs.load_profile({"investor_plan": plan}))
     assert bare.startswith("The signed-in user is an aggressive")
     assert "at most 10% in one position" in bare
-    assert "plan" not in persona(auth.load_profile({}))
+    assert "plan" not in persona(userprefs.load_profile({}))
     # A plan nobody saved is not said.
     assert "Their own plan" not in persona(
-        auth.load_profile({"investor_plan": {**plan, "set": False}})
+        userprefs.load_profile({"investor_plan": {**plan, "set": False}})
     )
 
 

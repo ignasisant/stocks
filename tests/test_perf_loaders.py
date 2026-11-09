@@ -172,7 +172,7 @@ def test_a_range_of_fx_rates_is_one_request_per_process(monkeypatch):
 def test_daily_labels_under_a_year_share_one_bars_download(monkeypatch):
     """1m, 3m, 6m and 1y are one 2y/1d frame cut four ways; the memo has to
     key on the download, or flipping through them is four fetches."""
-    from stocks.api import loaders
+    from stocks import loaders
 
     loaders.price_bars.cache_clear()
     calls: list[tuple[str, str]] = []
@@ -196,7 +196,7 @@ def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
 ):
     """`Adj Close` and `Close` come out of one unadjusted request; the two
     memos read their own column of it."""
-    from stocks.api import loaders
+    from stocks import loaders
     from stocks.data import fetch as data_fetch
     from stocks.portfolio import ledger
     from stocks.portfolio.ledger import Transaction
@@ -239,7 +239,7 @@ def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
 def test_home_reads_held_names_off_the_book_download(monkeypatch):
     """The watchlist's year asks Yahoo only for the names the ledger does not
     hold; a held name's twelve months are sliced from the book's own frames."""
-    from stocks.api import home
+    from stocks.views import home
 
     days = pd.bdate_range("2022-01-03", periods=700)
     book = {"AAPL": pd.Series(range(700), index=days, dtype=float)}
@@ -262,7 +262,7 @@ def test_home_reads_held_names_off_the_book_download(monkeypatch):
 
 
 def test_one_book_is_one_replay_however_its_defaults_are_spelled(monkeypatch):
-    from stocks.api import loaders
+    from stocks import loaders
 
     replays = []
     patch_loaders(
@@ -285,8 +285,8 @@ def test_the_backtest_answers_from_the_last_process_while_it_downloads(monkeypat
     marked, instead of the whole book downloading again on the request."""
     import threading
 
+    from stocks import cache, loaders
     from stocks.analysis import portfolio
-    from stocks.api import cache, loaders
 
     position = type("P", (), {"ticker": "AAPL"})()
     patch_loaders(
@@ -330,7 +330,7 @@ def test_a_throttled_dividend_history_is_not_kept_as_pays_nothing(monkeypatch):
     names it dropped may well pay."""
     from yfinance.exceptions import YFRateLimitError
 
-    from stocks.api import loaders
+    from stocks import loaders
     from stocks.data import dividends
     from stocks.data import fetch as data_fetch
 

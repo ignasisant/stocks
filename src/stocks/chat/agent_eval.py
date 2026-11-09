@@ -35,7 +35,7 @@ import yaml
 
 from stocks import atomic
 from stocks.chat import toolbox
-from stocks.web.llm import ToolCall
+from stocks.llm import ToolCall
 
 CASES = Path(__file__).resolve().parents[3] / "evals" / "agent" / "cases.yaml"
 RUNS = CASES.parent / "runs"

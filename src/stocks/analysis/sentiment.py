@@ -37,7 +37,7 @@ from typing import cast
 
 import pandas as pd
 
-from stocks.analysis import naive_dates
+from stocks.frames import naive_dates
 
 TRADING_YEAR = 252
 # Percentile windows need enough history to mean anything; below this a rank

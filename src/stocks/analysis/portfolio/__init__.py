@@ -20,8 +20,6 @@ import numpy as np
 import pandas as pd
 
 from stocks import obs
-from stocks.analysis import naive_dates
-from stocks.analysis.listing import price_units, quote_unit
 from stocks.analysis.portfolio.clock import (
     _session_move,
     market_active,
@@ -77,7 +75,8 @@ from stocks.analysis.portfolio.stats import (
     weights_from_holdings,
 )
 from stocks.config import Holding, load_watchlist
-from stocks.frames import midnights
+from stocks.data.listing import price_units, quote_unit
+from stocks.frames import midnights, naive_dates
 from stocks.portfolio import consistency, transfers
 
 __all__ = [
@@ -294,7 +293,7 @@ def book_history(
         closes = load_closes(tickers, period=f"{months}mo", currencies=traded_in)
     closes = {t: s for t, s in closes.items() if t in set(tickers)}
     # The closes convert at their listing's rate, the cash at the trade's —
-    # so the FX paths are the union of both (stocks.analysis.listing).
+    # so the FX paths are the union of both (stocks.data.listing).
     units = price_units(closes, {t.ticker: t.currency for t in held})
     fx = {
         ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
@@ -447,7 +446,7 @@ def market_value(
 ) -> float | None:
     """Live market value of a position in `base`; None if a lookup fails.
 
-    `currency`/`scale` are the *listing's* (stocks.analysis.listing): the
+    `currency`/`scale` are the *listing's* (stocks.data.listing): the
     price is the resolved symbol's quote, so it converts at that venue's rate,
     pence scaled to pounds first.
     """
@@ -481,7 +480,7 @@ def market_values(positions, max_workers: int = 8, base: str = "EUR") -> dict[st
     per-ticker lookup, concurrently.
 
     Each close converts at its own listing's rate, not the ledger row's
-    (stocks.analysis.listing): an alias that prices Revolut's dollar ASML off
+    (stocks.data.listing): an alias that prices Revolut's dollar ASML off
     the euro ASML.AS listing would otherwise read a euro close as dollars.
 
     Positions whose price or FX is unavailable are absent from the result. A
@@ -641,7 +640,7 @@ def positions_frame(
     lines up with `value` when the ledger was replayed in this same base.
 
     `ccy` is the currency the row is *priced* in — its listing's, in the major
-    unit (stocks.analysis.listing) — not the one it was bought in. It is the
+    unit (stocks.data.listing) — not the one it was bought in. It is the
     label on the one native figure the tables print, the share price backed
     out of `value` (value / shares / spot(ccy)), and that division only
     recovers a real quote at the rate `value` was built with. Everything else
@@ -846,7 +845,7 @@ def position_value_frames(
     px = px.ffill()
 
     # Each series converts at its listing's rate, pence scaled to pounds —
-    # not the ledger row's currency (stocks.analysis.listing).
+    # not the ledger row's currency (stocks.data.listing).
     units = price_units(
         [p.ticker for p in positions if p.ticker in px.columns],
         {p.ticker: p.currency for p in positions},

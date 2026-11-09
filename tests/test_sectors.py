@@ -12,6 +12,7 @@ import pytest
 from yfinance.exceptions import YFRateLimitError
 
 from stocks.analysis import sectors
+from stocks.chat import sector_ai
 from stocks.data.funds import FundHolding, FundProfile
 
 # Six higher-is-better KPIs per row, so every ticker clears comp_scores' own
@@ -299,20 +300,21 @@ def cron(cohort, monkeypatch):
 
 
 def test_a_run_widens_the_cohort_and_stores_it(cron):
-    status = sectors.run_scan(("Technology",), pause_s=0)
+    status = sectors.run_scan(("Technology",), pause_s=0, propose=sector_ai.widen)
     assert status == {"Technology": "scanned 4"}
     assert sectors.load_scan()["Technology"].tickers[-1] == "ASML.AS"
 
 
 def test_a_sector_yahoo_refuses_keeps_yesterdays_cohort(cron, monkeypatch):
-    sectors.run_scan(("Technology",), pause_s=0)
+    sectors.run_scan(("Technology",), pause_s=0, propose=sector_ai.widen)
     yesterday = sectors.load_scan()["Technology"]
 
     def refused(*a, **kw):
         raise YFRateLimitError()
 
     monkeypatch.setattr(sectors, "scan_sector", refused)
-    assert sectors.run_scan(("Technology",), pause_s=0) == {"Technology": "kept"}
+    status = sectors.run_scan(("Technology",), pause_s=0, propose=sector_ai.widen)
+    assert status == {"Technology": "kept"}
     assert sectors.load_scan()["Technology"].tickers == yesterday.tickers
 
 
@@ -323,7 +325,7 @@ def test_a_failed_widening_still_scans_the_etf_basket(cron, monkeypatch):
         raise RuntimeError("every provider down")
 
     monkeypatch.setattr(sector_ai, "propose_peers", dead)
-    status = sectors.run_scan(("Technology",), pause_s=0)
+    status = sectors.run_scan(("Technology",), pause_s=0, propose=sector_ai.widen)
     assert status == {"Technology": "scanned 3"}  # the basket, unwidened
 
 
@@ -333,7 +335,7 @@ def test_no_widen_never_asks_a_model(cron, monkeypatch):
     asked = []
     monkeypatch.setattr(sector_ai, "propose_peers",
                         lambda *a, **kw: asked.append(1) or [])
-    sectors.run_scan(("Technology",), widen=False, pause_s=0)
+    sectors.run_scan(("Technology",), pause_s=0)
     assert asked == []
 
 
@@ -346,14 +348,18 @@ def test_one_sector_failing_does_not_lose_the_others(cron, monkeypatch):
         return real(sector, extra, **kw)
 
     monkeypatch.setattr(sectors, "scan_sector", flaky)
-    status = sectors.run_scan(("Technology", "Energy"), pause_s=0)
+    status = sectors.run_scan(
+        ("Technology", "Energy"), pause_s=0, propose=sector_ai.widen
+    )
     assert status["Technology"].startswith("scanned")
     assert status["Energy"] == "failed"  # never stored, so nothing to keep
     assert set(sectors.load_scan()) == {"Technology"}
 
 
 def test_a_dry_run_scans_without_publishing(cron):
-    status = sectors.run_scan(("Technology",), pause_s=0, dry_run=True)
+    status = sectors.run_scan(
+        ("Technology",), pause_s=0, dry_run=True, propose=sector_ai.widen
+    )
     assert status["Technology"].startswith("scanned")
     assert sectors.load_scan() == {}
 

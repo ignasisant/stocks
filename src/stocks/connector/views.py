@@ -33,7 +33,7 @@ _PREFIX = "connector.view_"
 
 def config(origin: str) -> str:
     """The `<script type="application/json">` the view reads at start."""
-    from stocks.web import i18n
+    from stocks import i18n
 
     strings = {
         lang: {k: v for k, v in i18n.catalog(lang).items() if k.startswith(_PREFIX)}

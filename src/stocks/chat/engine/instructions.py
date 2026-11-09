@@ -6,18 +6,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from stocks import llm
 from stocks.chat import brief as ticker_brief
 from stocks.chat import (
     clock,
 )
+from stocks.chat import skills as chat_skills
 from stocks.chat.engine.investor import (
     persona,
 )
-from stocks.web import chat_skills, llm
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 # How many past messages to actually send the model per request. The full
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 MAX_CONTEXT_MSGS = 20
 
 # ...and the same tail measured in tokens, applied after the web extracts and
-# quotes are appended. The message count is a cheap first cut; chat/tokens.py
+# quotes are appended. The message count is a cheap first cut; llm/tokens.py
 # is the one that knows how big the request actually got.
 
 

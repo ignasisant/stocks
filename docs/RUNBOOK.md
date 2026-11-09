@@ -31,7 +31,7 @@ process.
    `concurrent: 1` names the culprit; above 1 the line lists every path that
    ran together and the growth is shared — read it as a lead.
 3. A `cgroup_mb` well above `rss_mb` means files: check `memo_mb` and the
-   `disk_max` of the memo that grew (`api/loaders/`).
+   `disk_max` of the memo that grew (`loaders/`).
 4. What is *holding* the memory: `/status` `.memory.caches` lists the memos
    with the most (`cache_mb` in all, an estimate of the arrays they keep).
    `--event mem.sample` gives the same level every 5 minutes while requests

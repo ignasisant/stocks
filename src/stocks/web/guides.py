@@ -24,8 +24,8 @@ import re
 from functools import lru_cache
 
 from stocks import learn
+from stocks.i18n import translate
 from stocks.web import csp
-from stocks.web.i18n import translate
 from stocks.web.landing import (
     ASSET_BASE,
     PATH_EN,

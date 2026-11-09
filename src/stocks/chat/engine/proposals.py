@@ -30,7 +30,7 @@ from stocks.chat.engine.reply import (
 if TYPE_CHECKING:
 
     from stocks.chat.tools import Action
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 
 def _proposal(act: Action) -> dict:
@@ -244,9 +244,9 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     Raises LookupError for an id this thread does not hold, and ProposalError
     for one already settled or an edit that does not parse.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
-    history = auth.load_chat(chat_path)
+    history = conversations.load_chat(chat_path)
     for entry in reversed(history):
         offer = entry.get("proposal")
         if isinstance(offer, dict) and offer.get("id") == proposal_id:
@@ -268,7 +268,7 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     entry["content"] = note
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
-    auth.save_chat(history, chat_path)
+    conversations.save_chat(history, chat_path)
     return Reply(text=note, proposal=dict(offer))
 
 
@@ -282,7 +282,7 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     asking turn keeps its question, and the outcome is a new answer under the
     "yes" rather than a rewrite above it.
     """
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     offer = history[index]["proposal"]
     try:
@@ -295,7 +295,7 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
     history.append(entry)
-    auth.save_chat(history, chat_path, thread)
+    conversations.save_chat(history, chat_path, thread)
     return Reply(text=note, proposal=dict(offer))
 
 
@@ -309,10 +309,9 @@ def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
     ProposalError for one that is not an applied ledger edit, or whose rows
     something has changed since.
     """
-    from stocks.chat import book
-    from stocks.web import auth
+    from stocks.chat import book, conversations
 
-    history = auth.load_chat(chat_path)
+    history = conversations.load_chat(chat_path)
     for entry in reversed(history):
         offer = entry.get("proposal")
         if isinstance(offer, dict) and offer.get("id") == proposal_id:
@@ -327,7 +326,7 @@ def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
         raise ProposalError(exc.code) from exc
     offer["state"] = "undone"
     history.append({"role": "assistant", "content": note, "action": "undo_change"})
-    auth.save_chat(history, chat_path)
+    conversations.save_chat(history, chat_path)
     obs.event("chat.action_undone", action=offer.get("kind"))
     return Reply(text=note, proposal=dict(offer))
 
@@ -342,8 +341,7 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
     `typed` is a surface with no card to press (a headless caller), so the
     question ends by saying how to answer it in words.
     """
-    from stocks.chat import book
-    from stocks.web import auth
+    from stocks.chat import book, conversations
 
     try:
         drafted = book.draft(act, db=db, resolve=book.resolver(),
@@ -381,6 +379,6 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
                     and "fill" in shown["book"]):
                 shown["state"] = "cancelled"
     history.append(stored(entry))
-    auth.save_chat(history, chat_path, thread)
+    conversations.save_chat(history, chat_path, thread)
     return Reply(text=entry["content"], proposal=dict(offer) if offer else None,
                  turn_id=entry["id"])

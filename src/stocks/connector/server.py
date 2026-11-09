@@ -225,7 +225,7 @@ def _prompts() -> list[Prompt]:
     the same text through `read_skill`, which is why the tools stay the road
     the instructions name. Industry playbooks are left to `ticker_details`'
     `skill`: they are picked by the company, not by the reader."""
-    from stocks.web import chat_skills
+    from stocks.chat import skills as chat_skills
 
     def render(skill: chat_skills.Skill) -> Callable[..., str]:
         def fn(subject: Annotated[str, Field(

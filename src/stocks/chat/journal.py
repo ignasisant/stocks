@@ -56,9 +56,9 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import SupportsFloat
 
-from stocks import obs, storage, userstore
+from stocks import accounts, obs, storage, userstore
 
-FILE = "decisions.json"
+FILE = accounts.JOURNAL_FILE
 
 TYPES = ("proposal", "criterion", "event")
 SOURCES = ("daily", "review", "chat")

@@ -15,7 +15,7 @@ from types import ModuleType
 
 import pytest
 
-from stocks.api import loaders
+from stocks import loaders
 from stocks.api.routes import import_statement
 from stocks.chat import engine
 

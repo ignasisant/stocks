@@ -18,8 +18,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from stocks.analysis import listing
 from stocks.analysis import portfolio as ap
+from stocks.data import listing
+from stocks.portfolio import restate
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.positions import Position
 
@@ -163,7 +164,7 @@ def test_the_positions_table_is_priced_in_the_listing_and_pl_has_no_fx_jump(
     """Cost stays what was paid (at each trade date's rate), value is the
     listing's close at its own rate, and `ccy` labels the price the table backs
     out of `value` — so that price is the listing's real quote."""
-    from stocks.api.loaders import native_price
+    from stocks.loaders import native_price
 
     monkeypatch.setattr(ap, "load_closes", lambda tickers, period="5d": CLOSES)
     tbl = ap.positions_frame(_positions(), base="EUR")
@@ -298,32 +299,32 @@ def test_the_chart_view_restates_basis_and_fills_at_each_trade_dates_rate(
     asml = next(p for p in held if p.ticker == "ASML")
     assert asml.cost_native == pytest.approx(1441.5 + 691.5)
 
-    restated = listing.restate_position(asml, REVOLUT_ASML, "EUR")
+    restated = restate.restate_position(asml, REVOLUT_ASML, "EUR")
     assert restated.currency == "EUR"
     assert restated.quantity == 3.0
     assert restated.cost_native == pytest.approx(1441.5 * 0.9 + 691.5 * 0.86)
     assert restated.cost == asml.cost, "the reporting basis is not touched"
 
-    fills = own_fills(listing.restate_trades(REVOLUT_ASML, "ASML", "EUR"), "ASML")
+    fills = own_fills(restate.restate_trades(REVOLUT_ASML, "ASML", "EUR"), "ASML")
     assert [f.price for f in fills] == pytest.approx([720 * 0.9, 690 * 0.86])
     # Another name's rows pass through as they were.
-    rows = listing.restate_trades(REVOLUT_ASML, "ASML", "EUR")
+    rows = restate.restate_trades(REVOLUT_ASML, "ASML", "EUR")
     assert rows[2].price == 200.0 and rows[2].currency == "USD"
 
 
 def test_the_chart_view_is_untouched_when_the_listing_agrees_or_is_unknown():
     pos = Position("AAPL", 1.0, cost=180.0, cost_native=200.0, currency="USD")
-    assert listing.restate_position(pos, REVOLUT_ASML, "USD") is pos
-    assert listing.restate_position(pos, REVOLUT_ASML, None) is pos
+    assert restate.restate_position(pos, REVOLUT_ASML, "USD") is pos
+    assert restate.restate_position(pos, REVOLUT_ASML, None) is pos
 
 
 def test_a_pence_chart_gets_a_pence_basis():
     book = [Transaction("2024-01-02", "VOD.L", "buy", 100, 0.70, "GBP", 0.0)]
     pos = Position("VOD.L", 100.0, cost=84.0, cost_native=70.0, currency="GBP")
-    restated = listing.restate_position(pos, book, "GBp")
+    restated = restate.restate_position(pos, book, "GBp")
     assert restated.currency == "GBp"
     assert restated.avg_cost_native == pytest.approx(70.0)  # pence
-    fills = listing.restate_trades(book, "VOD.L", "GBp")
+    fills = restate.restate_trades(book, "VOD.L", "GBp")
     assert fills[0].price == pytest.approx(70.0)
 
 
@@ -333,6 +334,6 @@ def test_a_missing_rate_keeps_the_trade_currency(monkeypatch):
 
     monkeypatch.setattr("stocks.data.fx.rate_on", down)
     pos = Position("ASML", 3.0, cost=0.0, cost_native=2133.0, currency="USD")
-    assert listing.restate_position(pos, REVOLUT_ASML, "EUR") is pos
-    rows = listing.restate_trades(REVOLUT_ASML, "ASML", "EUR")
+    assert restate.restate_position(pos, REVOLUT_ASML, "EUR") is pos
+    rows = restate.restate_trades(REVOLUT_ASML, "ASML", "EUR")
     assert [r.currency for r in rows] == ["USD", "USD", "USD"]

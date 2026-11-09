@@ -9,9 +9,9 @@ import pytest
 
 from stocks.data.dividends import DividendEvent
 from stocks.data.earnings import EarningsEvent
+from stocks.i18n import translate
 from stocks.notify import digest as dg
 from stocks.notify import render
-from stocks.web.i18n import translate
 
 D = date(2026, 8, 14)  # a Friday
 

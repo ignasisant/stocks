@@ -197,7 +197,7 @@ def test_an_eligible_account_still_gets_it(policy, monkeypatch):
     policy()
     import dataclasses
 
-    from stocks.web import llm
+    from stocks import llm
 
     free = dataclasses.replace(llm.PROVIDERS["free"], _available=lambda: True)
     monkeypatch.setitem(llm.PROVIDERS, "free", free)

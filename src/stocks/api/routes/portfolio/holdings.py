@@ -9,7 +9,7 @@ from typing import Annotated
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
-from stocks import obs
+from stocks import loaders, obs
 from stocks.analysis.portfolio import (
     market_active,
     market_live,
@@ -17,12 +17,16 @@ from stocks.analysis.portfolio import (
     priced_totals,
     value_weights,
 )
-from stocks.api import loaders
-from stocks.api.cache import carried, ttl_cache
 from stocks.api.deps import Account, Base, reporting_currency
-from stocks.api.jsonsafe import num as _num
 from stocks.api.paging import Page, page
-from stocks.api.schemas import (
+from stocks.cache import carried, ttl_cache
+from stocks.data import fetch
+from stocks.jsonsafe import num as _num
+from stocks.portfolio import demo, edits
+from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
+from stocks.portfolio.custody import mix as custody_mix
+from stocks.portfolio.platforms import broker_label
+from stocks.schemas import (
     Custodian,
     Position,
     Positions,
@@ -30,11 +34,6 @@ from stocks.api.schemas import (
     Transaction,
     Transactions,
 )
-from stocks.data import fetch
-from stocks.portfolio import demo, edits
-from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
-from stocks.portfolio.custody import mix as custody_mix
-from stocks.portfolio.platforms import broker_label
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 

@@ -15,7 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import APIRouter
 
-from stocks.api.schemas import Health
+from stocks.schemas import Health
 
 router = APIRouter(tags=["health"])
 

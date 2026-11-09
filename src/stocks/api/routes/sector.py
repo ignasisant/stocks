@@ -23,17 +23,17 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts
+from stocks import accounts, loaders, userstore
 from stocks.analysis import review as engine
 from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.analysis.technicals import TECH_METRIC_ORDER
-from stocks.api import holds, loaders
+from stocks.api import holds
 from stocks.api.deps import Account, Writer
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import (
+from stocks.jsonsafe import num as _num
+from stocks.schemas import (
     CohortJudged,
     CohortRow,
     SectorCohort,
@@ -291,9 +291,8 @@ def _stored(paths, scan, lang: str):
     allowance resets.
     """
     from stocks.chat import sector_ai
-    from stocks.web import auth
 
-    raw = auth.load_verdicts(paths.verdicts).get(scan.sector)
+    raw = userstore.read(paths.verdicts).get(scan.sector)
     if not isinstance(raw, dict):
         return None
     verdict = sector_ai.Verdict.from_dict(raw)
@@ -365,8 +364,8 @@ def write_verdict(
     the stand-in comes back with `written: false` rather than an error: the
     reader asked for a read and gets the one that exists.
     """
+    from stocks import userprefs
     from stocks.chat import engine, sector_ai
-    from stocks.web import auth
 
     scan = _scan_or_404(_resolve(sector))
     code = _lang(paths, lang)
@@ -386,12 +385,12 @@ def write_verdict(
 
     written = sector_ai.generate(prefs, facts, code, spend_free=spend)
     if spent:
-        auth.save_prefs(prefs, paths.prefs)
+        userprefs.save_prefs(prefs, paths.prefs)
     if written is None:
         return _answer(sector_ai.computed(facts, code), written=False)
-    kept = auth.load_verdicts(paths.verdicts)
+    kept = userstore.read(paths.verdicts)
     kept[written.sector] = written.to_dict()
-    auth.save_verdicts(kept, paths.verdicts)
+    userstore.write(paths.verdicts, kept)
     return _answer(written, written=True)
 
 

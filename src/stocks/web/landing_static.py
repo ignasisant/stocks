@@ -24,9 +24,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from stocks.i18n import DEFAULT_LANG, LANGUAGES
 from stocks.web import landing, seo
 from stocks.web.ds import ds_vars_css
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES
 
 # The reset, and only what the design assumes: no page gutter, and the page
 # colour painted over the full viewport (`.ag-l` colours itself, but a short

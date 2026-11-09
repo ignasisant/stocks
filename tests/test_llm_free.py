@@ -1,4 +1,4 @@
-"""Free-chain fallback semantics (web/llm.py) — pure, no network, no secrets."""
+"""Free-chain fallback semantics (llm/__init__.py) — pure, no network, no secrets."""
 
 import json
 import time
@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-import stocks.web.llm as llm
+import stocks.llm as llm
 from stocks import storage
 from stocks.chat import engine
-from stocks.web.llm import FreeTierExhausted, _FreeBackend
+from stocks.llm import FreeTierExhausted, _FreeBackend
 from tests.patching import patch_engine
 
 
@@ -211,7 +211,7 @@ def test_a_turn_over_the_cap_tries_the_uncapped_backend_first(monkeypatch):
 
 
 def test_groq_is_the_last_resort_with_the_thread_cut_to_its_cap(monkeypatch):
-    from stocks.chat import tokens
+    from stocks.llm import tokens
 
     seen = []
     thread = _thread(40)
@@ -235,7 +235,7 @@ def test_a_system_prompt_over_the_cap_skips_the_backend(monkeypatch):
 
 
 def test_tool_schemas_count_against_the_cap(monkeypatch):
-    from stocks.chat import tokens
+    from stocks.llm import tokens
 
     thread = _thread(1, words=20)
     backends = [_capped("groq", ["g"], 1000, []), _capped("openrouter", [], 0, [])]
@@ -323,7 +323,7 @@ def test_an_empty_answer_gets_one_more_try(monkeypatch):
 
 def test_a_413_learns_the_skew_and_retries_groq_cut_last(monkeypatch):
     # Prod 2026-10-14: groq counted 8095 for a thread we had sized under 7200.
-    from stocks.chat import tokens
+    from stocks.llm import tokens
 
     seen = []
     thread = _thread(17, words=410)  # ~7100 by our count: fits, until 1.15x

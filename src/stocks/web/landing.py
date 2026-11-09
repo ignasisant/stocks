@@ -33,8 +33,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 from stocks.formatting import DECIMAL_COMMA
+from stocks.i18n import DEFAULT_LANG, LANGUAGES, has, translate
 from stocks.portfolio import tax
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, has, translate
 from stocks.web.landing_css import CSS, MOBILE_RULES, TINY_CSS
 from stocks.web.markup import esc
 
@@ -690,7 +690,7 @@ _LENSES = (
 # (unfavorite, untag, remove_ticker) and read as filler in a chip strip.
 _AI_ACTIONS = ("alert", "tag", "watchlist", "position", "favourite")
 
-# The BYOK providers, in registry order (web/llm.py PROVIDERS). Brand names, so
+# The BYOK providers, in registry order (llm/__init__.py PROVIDERS). Brand names, so
 # they are literal; the free tier in front of them is a phrase that translates.
 _AI_MODELS = ("CLAUDE", "CHATGPT", "GEMINI")
 

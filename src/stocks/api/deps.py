@@ -211,15 +211,9 @@ def reporting_currency(paths: UserPaths, override: str | None = None) -> str:
                 detail=f"base must be one of {', '.join(CURRENCIES)}",
             )
         return code
-    if paths.root == accounts.GUEST_DIR:
-        # Same reasoning as `GET /prefs`: one file serves every anonymous
-        # visitor, so nothing in it is this reader's preference. EUR is what a
-        # brand-new account gets, and `?base=` above is how a guest changes the
-        # question for the length of one request.
-        return "EUR"
-    stored = accounts.stored_prefs(paths.prefs).get("currency")
-    code = str(stored or "EUR").upper()
-    return code if code in CURRENCIES else "EUR"
+    # A guest's `?base=` above is how it changes the question for the length
+    # of one request; nothing stored speaks for it (`accounts.reporting_currency`).
+    return accounts.reporting_currency(paths)
 
 
 Base = Annotated[

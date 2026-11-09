@@ -29,8 +29,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import loaders
+from stocks import accounts, loaders
 from stocks.connector import oauth, store
 from stocks.connector.server import Door, build
 from tests import csp_check

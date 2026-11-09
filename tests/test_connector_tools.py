@@ -17,8 +17,7 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import loaders
+from stocks import accounts, loaders
 from stocks.connector import oauth, store, tools
 from stocks.connector.server import Door
 from stocks.portfolio import ledger
@@ -298,7 +297,7 @@ def test_the_server_tells_claude_to_read_the_memory_first():
 
 
 def test_claude_reads_the_frameworks_the_assistant_analyses_with(site, token):
-    from stocks.web import chat_skills
+    from stocks.chat import skills as chat_skills
 
     listed_ = ok(call(site, token, "list_skills"))["skills"]
     assert {s["id"] for s in listed_} == chat_skills.valid_ids()
@@ -311,7 +310,7 @@ def test_claude_reads_the_frameworks_the_assistant_analyses_with(site, token):
 
 
 def test_every_pinnable_lens_is_a_prompt_that_carries_its_framework(site, token):
-    from stocks.web import chat_skills
+    from stocks.chat import skills as chat_skills
 
     prompts = rpc(site, token, "prompts/list").json()["result"]["prompts"]
     assert {p["name"] for p in prompts} == {s.id for s in chat_skills.pickable()}
@@ -383,7 +382,7 @@ def test_money_can_be_asked_for_in_another_currency(site, token, monkeypatch):
 
 def test_quotes_are_deduplicated_and_upper_cased(site, token, monkeypatch):
     from stocks.api.routes import market
-    from stocks.api.schemas import Quotes
+    from stocks.schemas import Quotes
 
     asked: list[str] = []
 
@@ -849,7 +848,7 @@ def test_ticker_research_asks_the_section_its_route(
 def test_peers_come_with_their_side_by_side_table(site, token, monkeypatch):
     from stocks.api.routes import comparables
     from stocks.api.routes import ticker as routes
-    from stocks.api.schemas import Comparables, Peer, Peers
+    from stocks.schemas import Comparables, Peer, Peers
 
     asked: list[str] = []
 
@@ -868,7 +867,7 @@ def test_peers_come_with_their_side_by_side_table(site, token, monkeypatch):
 
 def test_a_long_pe_history_is_thinned_to_its_bands_and_a_path(site, token, monkeypatch):
     from stocks.api.routes import ticker as routes
-    from stocks.api.schemas import Valuation
+    from stocks.schemas import Valuation
 
     days = [f"2020-01-{i:04d}" for i in range(1000)]
     monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
@@ -898,7 +897,7 @@ def test_a_window_a_breakdown_does_not_take_says_so(site, token):
 
 
 def test_the_book_against_the_index_is_cut_to_its_end_and_a_path():
-    from stocks.api.schemas import RiskCurves
+    from stocks.schemas import RiskCurves
 
     n = 500
     curves = RiskCurves(
@@ -946,7 +945,7 @@ NEWS = [
 
 
 def test_news_is_what_the_rules_read_newest_first(site, token, monkeypatch):
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     asked = []
     monkeypatch.setattr(briefing, "thesis_passages",
@@ -960,8 +959,8 @@ def test_news_is_what_the_rules_read_newest_first(site, token, monkeypatch):
 
 
 def test_a_thesis_is_tried_without_writing_a_rule(site, token, book, monkeypatch):
-    from stocks.api import briefing
     from stocks.chat import exit_judge
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "thesis_passages", lambda t, since: NEWS)
 
@@ -982,7 +981,7 @@ def test_a_thesis_is_tried_without_writing_a_rule(site, token, book, monkeypatch
 
 def test_the_status_lists_rules_by_holding_and_the_bare_ones(
         site, editor, book, monkeypatch):
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     monkeypatch.setattr(briefing, "held_symbols", lambda paths: {"AAPL", "MSFT", "NVDA"})
     ok(call(site, editor, "set_kill_criteria_batch", holdings=[
@@ -1013,8 +1012,8 @@ def test_a_batch_names_each_ticker_once_and_needs_the_write_scope(site, token, e
 
 
 def test_the_brief_reads_the_stored_card_and_never_writes(site, token, monkeypatch):
-    from stocks.api import daily_card
     from stocks.api.routes import today
+    from stocks.views import daily_card
 
     monkeypatch.setattr(today, "_market", lambda lang: (None, True))
     monkeypatch.setattr(daily_card, "request", lambda *a, **k: pytest.fail("wrote"))

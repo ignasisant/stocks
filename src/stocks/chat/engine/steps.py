@@ -19,7 +19,7 @@ from stocks.chat.engine.actions import (
 
 if TYPE_CHECKING:
 
-    from stocks.web.llm import ToolCall
+    from stocks.llm import ToolCall
 
 
 _STEP_ARG_CHARS = 56  # of a tool's argument kept on its line
@@ -48,7 +48,7 @@ def _step_arg(args: dict) -> str:
 def _step_out(call, lang: str) -> str:
     """A search counted in hits; anything else in the characters that reached
     the prompt — a page read that hit a paywall says so by being tiny."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     result = call.result or ""
     if call.name == "search_web":
@@ -83,7 +83,7 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
     Which one ran is plumbing — what a reader wants is the list of things the
     answer was built on.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     steps = [
         {"tool": call.name, "arg": _step_arg(call.args), "out": _step_out(call, lang),

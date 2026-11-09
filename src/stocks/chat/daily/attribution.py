@@ -97,7 +97,7 @@ def session_pct(series: pd.Series | None, on: str | None) -> float | None:
         return None
     clean = series.dropna()
     if on:
-        from stocks.analysis import naive_dates
+        from stocks.frames import naive_dates
 
         clean = clean.copy()
         clean.index = naive_dates(clean.index)
@@ -265,7 +265,7 @@ def alpha(hist: pd.DataFrame | None, index: pd.Series | None,
     """
     if hist is None or hist.empty or index is None:
         return None
-    from stocks.analysis import naive_dates
+    from stocks.frames import naive_dates
 
     book = hist.sum(axis=1, min_count=1).dropna()
     book.index = naive_dates(book.index)

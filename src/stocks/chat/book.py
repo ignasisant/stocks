@@ -269,8 +269,8 @@ def market_close(ticker: str, day: str, currency: str) -> tuple[float, float] | 
     and converted at that day's rate, and the product of the splits since —
     Yahoo's closes are restated for them, a reader's fill is not.
     """
-    from stocks.analysis.listing import listing_currencies, quote_unit
     from stocks.data import fetch, fx
+    from stocks.data.listing import listing_currencies, quote_unit
 
     close = fetch.close_on(ticker, day)
     if not close or close <= 0:

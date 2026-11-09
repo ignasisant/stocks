@@ -2,7 +2,7 @@
 
 import pytest
 
-from stocks.chat import tokens
+from stocks.llm import tokens
 
 
 def _msgs(*pairs):

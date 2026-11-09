@@ -24,9 +24,8 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, loadtest, memstat, obs
+from stocks import accounts, cache, loadtest, memstat, obs
 from stocks.api import (
-    cache,
     errors,
     guest,
     guestbook,

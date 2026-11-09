@@ -13,8 +13,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import memstat, obs
-from stocks.api import cache
+from stocks import cache, memstat, obs
 from stocks.api.app import app
 
 # The module, not `stocks.api.app` the attribute, which is the app itself.

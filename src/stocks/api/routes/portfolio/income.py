@@ -9,11 +9,11 @@ from urllib.error import URLError
 from fastapi import APIRouter, Query
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
-from stocks.api import loaders
+from stocks import loaders, obs
 from stocks.api.deps import Account, Base, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import (
+from stocks.jsonsafe import num as _num
+from stocks.portfolio import dividends, fees
+from stocks.schemas import (
     BrokerCost,
     Dividends,
     DividendYear,
@@ -22,7 +22,6 @@ from stocks.api.schemas import (
     UnbookedDividend,
     UnbookedDividends,
 )
-from stocks.portfolio import dividends, fees
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 

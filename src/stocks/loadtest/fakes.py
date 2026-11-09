@@ -368,7 +368,7 @@ def install_upstream() -> None:
     logo.mirror_logo = lambda t, d: None
     logo.logo_url = lambda t: None
 
-    from stocks.api import loaders
+    from stocks import loaders
     loaders.sec_matches = lambda q: []
     loaders.world_matches = lambda q: []
     loaders.sec_title = lambda t: None

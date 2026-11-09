@@ -360,7 +360,7 @@ async def logout_page(request: Request) -> Response:
     """
     if not session.signed_in_email(request.cookies):
         return _home(request)
-    from stocks.web.i18n import negotiated, translate
+    from stocks.i18n import negotiated, translate
     from stocks.web.markup import esc
 
     lang = negotiated(
