@@ -136,7 +136,8 @@ To reproduce an answer, re-ask the rated question locally against the same
 provider (`uv run stocks dashboard --reload`, chat drawer) or through
 `/api/v1/chat`. A quality fix comes with a test of the step that missed (router,
 tool, prompt builder); a knowledge-base miss gets a golden case in
-[test_knowledge.py](../../../tests/test_knowledge.py).
+[test_knowledge.py](../../../tests/test_knowledge.py). And every failed
+question, fixed or not, becomes a prod eval case (phase 3).
 
 ## Phase 2: file the tasks
 
@@ -186,9 +187,9 @@ names and ratios only. Never amounts, quantities, emails, statement contents
 or a user's free text longer than a short quote.
 
 Not filing twice: the IDs restart every run, so the commits are the memory.
-Before listing, check `git log --oneline -i --grep '<event or ticker>' origin/main`
-and the unmerged `fix/triage-*` branches (`git branch -a --no-merged origin/main`).
-A cause already fixed there goes under **Ya resuelto, sin desplegar**.
+Before listing, check `git log --oneline -i --grep '<event or ticker>' main origin/main`
+(local `main` carries triage commits not pushed yet). A cause already fixed
+there goes under **Ya resuelto, sin desplegar**.
 
 Then the count per section and priority. With `solo-tareas`, stop here.
 
@@ -196,11 +197,16 @@ Then the count per section and priority. With `solo-tareas`, stop here.
 
 Follow [fix-review](../fix-review/SKILL.md) steps 2 and 3 on this list. Skip
 its step 1 (reading review docs) and step 4 (ticking a doc): there is no doc.
-Its other rules apply: worktree, one commit per ID or root, tests. What can't
-be resolved stays open with one line in the report saying why. Differences
-for production tasks:
+Its other rules apply: one commit per ID or root, tests. What can't be
+resolved stays open with one line in the report saying why. Differences for
+production tasks:
 
-- **Branch** `fix/triage-<fecha>` in `../stocks-triage-<fecha>`.
+- **On `main`, in the main checkout** (`/Users/ignasi/Documents/stocks`), not
+  in a worktree or a branch: this overrides fix-review's "Where". `git pull`
+  first. The checkout usually carries someone's uncommitted work: stage only
+  the fix's own files by path (never `git add -A`/`.`), and never stash, reset
+  or revert what is not yours. A file you need that is already dirty: stop and
+  ask.
 - **Reproduce first.** A log-driven fix needs a test that fails the way prod
   did: the event's fields, `stocks imports replay <id>`, the rated question,
   the 5xx URL. If you can't reproduce it, say what you tried in the report and
@@ -211,6 +217,18 @@ for production tasks:
   or a migration for the books it already touched.
 - **AI items**: change the prompt, the skill markdown, the tool or the router.
   Never special-case the rated question.
+- **Every failed question joins the prod eval.** A thumbs-down, a
+  `chat.failed` or a Q/A that shows the miss adds a case to
+  [evals/prod/questions.yaml](../../../evals/prod/questions.yaml), in the
+  same commit as its fix (or alone, if the item stays open): the reader's
+  question as typed (only the question, no figures or names from their book),
+  `kind: book` when it reads their book, goals that say what the answer
+  missed, a `truth` path to the app's own API that answers it, and a comment
+  with the rating's date. Same question already in the catalog: sharpen its
+  goals instead. Add two or three sibling phrasings of the same need (another
+  window, the other language) so the case tests the need, not one string.
+  Check with `uv run pytest tests/test_prod_eval.py -q` and
+  `uv run python scripts/eval_prod.py --dry-run`.
 - **Config items** (dead free-LLM slug, missing secret, expired workflow
   token): the fix may be outside the repo. Write the exact step in the report
   and leave it for the user. Secrets and Secret Manager are theirs.
@@ -223,7 +241,7 @@ report whether the event stopped.
 
 ## Report
 
-In chat: per section the counts (filed, fixed, open), the branch and commits
+In chat: per section the counts (filed, fixed, open), the commits on `main`
 (hash · IDs), what stays open and why (config steps for the user, decisions
 with their question), what was left out as noise, in one line each, and the
 full-suite line (`N passed`).
