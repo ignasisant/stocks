@@ -402,6 +402,7 @@
   "chat.harvest_note": "Estimación a precios de hoy con el motor de la pestaña fiscal, vendiendo cada candidata entera. No se vende nada.",
   "chat.step_income": "{count} años de dividendos",
   "chat.step_reports": "{count} con fecha en {days} días",
+  "chat.step_reports_past": "{count} publicados en los últimos {days} días",
   "chat.step_harvest": "{count} candidatas · ahorro {saving}",
   "chat.rebalance_title": "Llevarla a un peso",
   "chat.rebalance_target": "Peso objetivo (%)",

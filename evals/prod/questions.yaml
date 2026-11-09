@@ -429,6 +429,43 @@
     - Points to the earnings calendar page
   opens: earnings
 
+# Rated down in prod 2026-11-08: read fourteen days forward, answered that
+# nothing had been reported.
+- id: earnings-past-week
+  area: earnings
+  kind: book
+  message: "resultados semana pasada de acciones en mi cartera"
+  goals:
+    - Lists the book's companies that reported in the last seven days, from the calendar's past results
+    - Gives each one's reported EPS against the consensus, and says where there is none
+    - Does not claim nothing was reported when the calendar has prints in the window
+  truth:
+    - {get: /earnings, label: "Earnings calendar (results = past prints)"}
+  forbids: ["no hay registros"]
+
+# Rated down 2026-10-29: consensus filled from memory, quarters two years old.
+- id: earnings-week-consensus
+  area: earnings
+  kind: book
+  message: "¿Qué empresas de mi cartera presentan resultados en los próximos 7 días? Para cada una: fecha, antes/después de apertura, BPA e ingresos de consenso."
+  goals:
+    - Gives the report dates of the book's companies inside seven days, from the app's calendar
+    - Quotes consensus EPS and revenue only where the app has them, and says so where it does not
+    - Does not ask which tickers the reader owns
+  truth:
+    - {get: /earnings, label: "Earnings calendar (upcoming)"}
+
+- id: earnings-yesterday-move
+  area: earnings
+  kind: book
+  lang: en
+  message: "Which of my holdings reported earnings yesterday, and how did the stock react?"
+  goals:
+    - Names the holdings with a print dated yesterday, or says plainly there were none
+    - Gives the reported EPS against the estimate and the share move across the print
+  truth:
+    - {get: /earnings, label: "Earnings calendar (results = past prints)"}
+
 # ------------------------------------------------------------------- learn
 
 - id: learn-start

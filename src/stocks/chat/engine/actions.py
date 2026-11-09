@@ -176,11 +176,12 @@ def _reports_ahead(message: str, watchlist: Path, db: Path, lang: str,
     if not reports.wants(message):
         return None
     days = reports.days_asked(message)
+    back = reports.looks_back(message)
     cid = f"tool_reports_{secrets.token_hex(4)}"
-    args = {"days": days}
+    args = {"days": days, "past": True} if back else {"days": days}
     told({"id": cid, "tool": "upcoming_earnings", "arg": str(days), "args": args})
     try:
-        ahead = reports.build(watchlist, db, days)
+        ahead = reports.build(watchlist, db, days, back=back)
     except Exception as exc:  # noqa: BLE001 — the answer goes on without it
         obs.warn("chat.reports_failed", error_type=type(exc).__name__,
                  error=str(exc)[:300])
@@ -215,9 +216,12 @@ def _income_step(found: income.Income, lang: str) -> dict:
 
 
 def _reports_step(ahead: reports.Ahead, lang: str) -> dict:
-    return {"tool": "upcoming_earnings", "arg": str(ahead.days),
-            "out": _tr("chat.step_reports", lang, count=len(ahead.due),
-                       days=ahead.days)}
+    if ahead.back:
+        out = _tr("chat.step_reports_past", lang, count=len(ahead.printed),
+                  days=ahead.days)
+    else:
+        out = _tr("chat.step_reports", lang, count=len(ahead.due), days=ahead.days)
+    return {"tool": "upcoming_earnings", "arg": str(ahead.days), "out": out}
 
 
 # Companies whose ticker page rides on a weighing question on the fixed path.

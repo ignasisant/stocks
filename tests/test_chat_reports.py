@@ -8,7 +8,7 @@ import pytest
 
 from stocks.chat import reports
 from stocks.data import earnings, finnhub
-from stocks.data.earnings import Consensus, EarningsEvent
+from stocks.data.earnings import Consensus, EarningsEvent, EarningsResult
 from tests.patching import patch_loaders
 
 TODAY = date(2026, 10, 29)
@@ -71,6 +71,54 @@ def test_dates_of_held_and_followed_names_inside_the_window(tmp_path, monkeypatc
     assert "do not ask the reader which tickers" in line
     assert "NVDA" not in line.split("\n- left out")[0].split(":\n", 1)[1]
 
+
+
+@pytest.mark.parametrize(("said", "back", "days"), [
+    ("resultados semana pasada de acciones en mi cartera", True, 7),
+    ("which of my holdings reported earnings last week?", True, 7),
+    ("¿qué empresas de mi cartera presentaron resultados ayer?", True, 1),
+    ("resultados de mis acciones en los últimos 10 días", True, 10),
+    ("¿qué empresas de mi cartera presentan resultados esta semana?", False, 7),
+    ("¿mis empresas presentan resultados pasado mañana?", False, 1),
+])
+def test_a_window_behind_today_reads_the_prints_already_out(said, back, days):
+    """Prod 2026-11-08: "resultados semana pasada…" was read fourteen days
+    forward and answered that nothing had been reported."""
+    assert reports.wants(said)
+    assert reports.looks_back(said) is back
+    assert reports.days_asked(said) == days
+
+
+def test_the_prints_of_the_window_with_the_move_across_them(tmp_path, monkeypatch):
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist:\n- ticker: DUOL\n- ticker: RDDT\n"
+                         "- ticker: SHOP\n- ticker: NVDA\n")
+    db = tmp_path / "prices.db"
+    db.touch()
+    patch_loaders(monkeypatch, "held", lambda *_a: ("DUOL", "RDDT", "SHOP"))
+    patch_loaders(monkeypatch, "db_mtime", lambda *_a: 0.0)
+    today = date(2026, 11, 9)
+    patch_loaders(monkeypatch, "earnings_calendar", lambda _t: (
+        [EarningsEvent("NVDA", date(2026, 11, 19))],
+        [EarningsResult("SHOP", date(2026, 11, 4), 0.33, 0.41, 24.2),
+         EarningsResult("DUOL", date(2026, 11, 5), None, 1.3, None),
+         EarningsResult("RDDT", date(2026, 10, 28), 0.5, 0.6, 20.0),
+         EarningsResult("SHOP", date(2026, 8, 6), 0.3, 0.3, 0.0)]))
+    monkeypatch.setattr(reports, "_reaction_cache", {})
+    monkeypatch.setattr(earnings, "price_reaction", lambda t, _day: (
+        22.1 if t == "DUOL" else None))
+    behind = reports.build(watchlist, db, 7, today=today, back=True)
+    assert [(p.ticker, p.days_ago) for p in behind.printed] == [
+        ("DUOL", 4), ("SHOP", 5)]
+    assert behind.due == ()
+    line = behind.line()
+    assert ("DUOL (held): 2026-11-05, 4 days ago; EPS 1.30 against no consensus "
+            "on file; shares +22.1% across the print") in line
+    assert ("SHOP (held): 2026-11-04, 5 days ago; EPS 0.41 against a consensus "
+            "of 0.33 (surprise +24.2%); no price move on file") in line
+    assert "RDDT" not in line and "NVDA" not in line
+    assert "reported in the last 7 days" in line
+    assert "never fill one in from memory" in line
 
 
 def test_the_consensus_is_the_window_s_row_for_that_print(monkeypatch):

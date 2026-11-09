@@ -47,15 +47,27 @@ CONSENSUS_TTL_S = 6 * 3600  # the calendar's own cache
 # Matched with the accents folded away. Results being asked about...
 _EARNINGS_RE = re.compile(
     r"\bresultados\b|\bearnings\b|\bpresenta[nr]?\b|\bpublica[nr]? (?:sus )?cuentas\b|"
-    r"\breport(?:s|ing)?\b|\bcuentas trimestrales\b|\btrimestrales\b",
+    r"\breport(?:s|ed|ing)?\b|\bcuentas trimestrales\b|\btrimestrales\b|"
+    r"\bpresentaron\b|\bhan presentado\b",
     re.IGNORECASE,
 )
-# ... as dates, not as figures already out ("¿qué tal los resultados de Meta?").
+# ... over a span of the calendar, not one company's figures ("¿qué tal los
+# resultados de Meta?").
 _WHEN_RE = re.compile(
     r"\bcuando\b|\bwhen\b|\bproxim[oa]s?\b|\bnext\b|\bupcoming\b|\bsoon\b|"
     r"\bpronto\b|\besta semana\b|\bthis week\b|\beste mes\b|\bthis month\b|"
     r"\bdias?\b|\bdays?\b|\bsemanas?\b|\bweeks?\b|\bcalendario\b|\bcalendar\b|"
-    r"\bfecha\b|\bdates?\b|\bmanana\b|\btomorrow\b|\bhoy\b|\btoday\b",
+    r"\bfecha\b|\bdates?\b|\bmanana\b|\btomorrow\b|\bhoy\b|\btoday\b|"
+    r"\bayer\b|\byesterday\b|\bmes pasado\b|\blast month\b",
+    re.IGNORECASE,
+)
+# The span lies behind: the prints already out, not the dates ahead. Prod
+# 2026-11-08: "resultados semana pasada de acciones en mi cartera" was read
+# fourteen days forward and answered "no hay registros".
+_PAST_RE = re.compile(
+    r"\bpasad[oa]s?\b(?! manana)|\bultim[oa]s\b|\blast\b|\bpast\b|\bprevious\b|"
+    r"\banterior\b|\bayer\b|\byesterday\b|\bpresentaron\b|\bhan presentado\b|"
+    r"\breported\b",
     re.IGNORECASE,
 )
 # ... of the reader's own names, not of one company the message names.
@@ -77,6 +89,9 @@ _NAMED_WINDOWS = (
                 re.IGNORECASE), 7),
     (re.compile(r"\beste mes\b|\bthis month\b|\bproximo mes\b|\bnext month\b",
                 re.IGNORECASE), 31),
+    (re.compile(r"\bayer\b|\byesterday\b", re.IGNORECASE), 1),
+    (re.compile(r"\bsemana pasada\b|\blast week\b|\bpast week\b", re.IGNORECASE), 7),
+    (re.compile(r"\bmes pasado\b|\blast month\b|\bpast month\b", re.IGNORECASE), 31),
 )
 
 
@@ -103,6 +118,11 @@ def days_asked(message: str) -> int:
                 DEFAULT_DAYS)
 
 
+def looks_back(message: str) -> bool:
+    """Whether the window asked about is behind today: the prints already out."""
+    return bool(_PAST_RE.search(_fold(message)))
+
+
 @dataclass(frozen=True)
 class Due:
     ticker: str
@@ -110,6 +130,31 @@ class Due:
     in_days: int
     held: bool
     consensus: Consensus | None = None
+
+
+@dataclass(frozen=True)
+class Printed:
+    ticker: str
+    day: date
+    days_ago: int
+    held: bool
+    reported_eps: float | None
+    eps_estimate: float | None
+    surprise_pct: float | None
+    reaction: float | None = None  # % from the last close before to the first after
+
+    def said(self) -> str:
+        if self.reported_eps is None:
+            figures = "the figures are not on file yet"
+        else:
+            figures = f"EPS {self.reported_eps:.2f} against " + (
+                f"a consensus of {self.eps_estimate:.2f}"
+                if self.eps_estimate is not None else "no consensus on file")
+            if self.surprise_pct is not None:
+                figures += f" (surprise {self.surprise_pct:+.1f}%)"
+        move = (f"shares {self.reaction:+.1f}% across the print"
+                if self.reaction is not None else "no price move on file")
+        return f"{figures}; {move}"
 
 
 _WHEN = {"bmo": "before the open", "amc": "after the close"}
@@ -143,9 +188,14 @@ class Ahead:
     held: int  # of them, open positions
     undated: tuple[str, ...]  # looked up, no date announced yet
     skipped: tuple[str, ...]  # coins and funds: they never report
+    # Looking back instead: the prints of the last `days` days, newest first.
+    back: bool = False
+    printed: tuple[Printed, ...] = ()
 
     def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: every date in the window, quoted."""
+        if self.back:
+            return self._behind()
         rows = [
             f"- {d.ticker} ({'held' if d.held else 'followed, not held'}): "
             f"{d.day.isoformat()}, "
@@ -175,41 +225,87 @@ class Ahead:
             + ("\n- " + "; ".join(tail) if tail else "")
         )
 
+    def _behind(self) -> str:
+        rows = [
+            f"- {p.ticker} ({'held' if p.held else 'followed, not held'}): "
+            f"{p.day.isoformat()}, "
+            + ("yesterday" if p.days_ago == 1 else f"{p.days_ago} days ago")
+            + f"; {p.said()}"
+            for p in self.printed[:MAX_ROWS]
+        ]
+        found = "\n".join(rows) if rows else (
+            "- none of them reported inside the window")
+        tail = ("\n- left out because coins and funds do not report: "
+                + ", ".join(self.skipped[:12])) if self.skipped else ""
+        return (
+            "\n\n---\nThe app's earnings calendar for the reader's own names "
+            f"(the {self.checked} companies they hold or follow, {self.held} of "
+            f"them held), the results they reported in the last {self.days} "
+            "days, newest first. Answer from these, held names first; do not "
+            "ask the reader which tickers they own. Each row is the EPS "
+            "reported against the street's consensus for that print, and the "
+            "share price from the last close before it to the first close "
+            "after: quote only these, and where a row has none say there is "
+            "none — never fill one in from memory. A name not listed did not "
+            "report inside the window:\n" + found + tail
+        )
+
 
 _consensus_cache: dict[tuple[str, date], tuple[float, Consensus | None]] = {}
+_reaction_cache: dict[tuple[str, date], tuple[float, float | None]] = {}
 
 
-def _with_consensus(due: list[Due]) -> list[Due]:
-    """`due` with each quoted row's consensus, looked up at once and kept
-    `CONSENSUS_TTL_S`; a lookup that fails or overruns leaves the row bare."""
-    from stocks.data import earnings
-
+def _looked_up(keys: list[tuple[str, date]], fetch, cache: dict) -> dict:
+    """`fetch(ticker, day)` for every key, all at once and kept
+    `CONSENSUS_TTL_S` in `cache`; a lookup that fails or overruns
+    `CONSENSUS_TIMEOUT_S` is left out."""
     now = time.monotonic()
-    rows = due[:MAX_ROWS]
-    fresh = {(d.ticker, d.day): hit[1] for d in rows
-             if (hit := _consensus_cache.get((d.ticker, d.day)))
-             and now - hit[0] < CONSENSUS_TTL_S}
-    missing = [d for d in rows if (d.ticker, d.day) not in fresh]
+    fresh = {k: hit[1] for k in keys
+             if (hit := cache.get(k)) and now - hit[0] < CONSENSUS_TTL_S}
+    missing = [k for k in keys if k not in fresh]
     if missing:
         pool = ThreadPoolExecutor(max_workers=min(CONSENSUS_WORKERS, len(missing)))
         try:
-            futures = {pool.submit(earnings.consensus, d.ticker, d.day): d
-                       for d in missing}
+            futures = {pool.submit(fetch, *k): k for k in missing}
             done, _ = wait(list(futures), timeout=CONSENSUS_TIMEOUT_S)
             for future in done:
-                d = futures[future]
+                k = futures[future]
                 got = future.result() if future.exception() is None else None
-                fresh[(d.ticker, d.day)] = got
-                _consensus_cache[(d.ticker, d.day)] = (now, got)
+                fresh[k] = got
+                cache[k] = (now, got)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+    return fresh
+
+
+def _with_consensus(due: list[Due]) -> list[Due]:
+    """`due` with each quoted row's consensus; a lookup that fails or
+    overruns leaves the row bare."""
+    from stocks.data import earnings
+
+    rows = due[:MAX_ROWS]
+    fresh = _looked_up([(d.ticker, d.day) for d in rows], earnings.consensus,
+                       _consensus_cache)
     looked = [replace(d, consensus=fresh.get((d.ticker, d.day))) for d in rows]
     return looked + due[MAX_ROWS:]
 
 
+def _with_reaction(printed: list[Printed]) -> list[Printed]:
+    """`printed` with each quoted row's move across the print, the calendar
+    dialog's own (`earnings.price_reaction`)."""
+    from stocks.data import earnings
+
+    rows = printed[:MAX_ROWS]
+    fresh = _looked_up([(p.ticker, p.day) for p in rows], earnings.price_reaction,
+                       _reaction_cache)
+    looked = [replace(p, reaction=fresh.get((p.ticker, p.day))) for p in rows]
+    return looked + printed[MAX_ROWS:]
+
+
 def build(watchlist: Path, db: Path, days: int = DEFAULT_DAYS,
-          today: date | None = None) -> Ahead | None:
-    """The calendar over the reader's names, or None when they have none."""
+          today: date | None = None, back: bool = False) -> Ahead | None:
+    """The calendar over the reader's names, or None when they have none.
+    `back` reads the window behind today: the prints already out."""
     from stocks.api import loaders
     from stocks.config import load_watchlist
     from stocks.data.crypto import is_crypto
@@ -224,9 +320,26 @@ def build(watchlist: Path, db: Path, days: int = DEFAULT_DAYS,
     # Cache-only fund test, as the calendar page: a cold cache keeps the name.
     skipped = tuple(t for t in names if is_crypto(t) or is_fund(t, fetch=False))
     reporting = tuple(t for t in names if t not in skipped)
-    events, _results = loaders.earnings_calendar(reporting)
+    events, results = loaders.earnings_calendar(reporting)
     when = {e.ticker: e for e in events}
     today = today or date.today()
+    checked, held_n = len(reporting), sum(1 for t in reporting if t in held)
+    if back:
+        printed, seen = [], set()
+        for r in results:  # newest first
+            ago = (today - r.date).days
+            if r.ticker in seen or not 0 <= ago <= days:
+                continue
+            seen.add(r.ticker)
+            printed.append(Printed(r.ticker, r.date, ago, r.ticker in held,
+                                   r.reported_eps, r.eps_estimate, r.surprise_pct))
+        printed.sort(key=lambda p: (not p.held, p.days_ago, p.ticker))
+        printed = _with_reaction(printed)
+        obs.event("chat.reports_behind", days=days, names=checked,
+                  printed=len(printed))
+        return Ahead(days=days, due=(), checked=checked, held=held_n,
+                     undated=(), skipped=skipped, back=True,
+                     printed=tuple(printed))
     due = []
     for e in events:
         if e.date is None:
@@ -239,6 +352,5 @@ def build(watchlist: Path, db: Path, days: int = DEFAULT_DAYS,
     undated = tuple(t for t in reporting
                     if when.get(t) is None or when[t].date is None)
     obs.event("chat.reports_ahead", days=days, names=len(reporting), due=len(due))
-    return Ahead(days=days, due=tuple(due), checked=len(reporting),
-                 held=sum(1 for t in reporting if t in held),
+    return Ahead(days=days, due=tuple(due), checked=checked, held=held_n,
                  undated=undated, skipped=skipped)

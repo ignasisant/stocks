@@ -660,7 +660,8 @@ def _upcoming_earnings(args: dict, ctx: Context) -> str:
     except (TypeError, ValueError):
         days = reports.DEFAULT_DAYS
     ahead = reports.build(ctx.watchlist, ctx.db or _NO_DB,
-                          max(0, min(days, reports.MAX_DAYS)))
+                          max(0, min(days, reports.MAX_DAYS)),
+                          back=bool(args.get("past")))
     return _engine_line(ahead) if ahead else "The user holds and follows nothing."
 
 
@@ -1016,10 +1017,13 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "upcoming_earnings",
             "The report dates of the companies the user holds and follows, "
             "from the app's earnings calendar, inside the next `days`. Use "
-            "for which of their companies report soon.",
+            "for which of their companies report soon. With `past` true, the "
+            "results they reported in the last `days` instead: EPS against "
+            "the consensus and the share move across the print.",
             {"type": "object",
              "properties": {"days": {"type": "integer", "minimum": 0,
-                                     "maximum": 120}},
+                                     "maximum": 120},
+                            "past": {"type": "boolean"}},
              "required": []},
         ), _upcoming_earnings),
         (ToolSpec(

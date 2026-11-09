@@ -402,6 +402,7 @@
   "chat.harvest_note": "Una stima ai prezzi di oggi con il motore della scheda Tasse, ogni candidata venduta per intero. Non viene venduto nulla.",
   "chat.step_income": "{count} anni di dividendi",
   "chat.step_reports": "{count} con data entro {days} giorni",
+  "chat.step_reports_past": "{count} pubblicati negli ultimi {days} giorni",
   "chat.step_harvest": "{count} candidate · risparmio {saving}",
   "chat.rebalance_title": "Portala a un peso",
   "chat.rebalance_target": "Peso obiettivo (%)",
