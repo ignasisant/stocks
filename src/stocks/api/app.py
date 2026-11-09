@@ -233,7 +233,37 @@ async def _bind_user(request: Request, call_next):
 # climb towards an OOM can be read back as the requests that made it.
 # Overlapping requests share one resident set, so they report as one burst
 # (`memstat.Steps`): one line, every path in it, `concurrent` > 1.
+#
+# Two more readings ride on the same requests. `mem.sample` is the level every
+# `memstat.SAMPLE_EVERY_S` — the process, the container and what the memos
+# hold (`cache.footprint`) — so the climb between steps is visible too. And a
+# burst that closes with the process grown past the last trim gets one
+# (`memstat.trim` after `cache.sweep`): the dead entries go, the garbage is
+# collected and glibc's free pages go back to the kernel. It runs on a worker
+# thread while the closing request is still open, which is when Cloud Run
+# gives the CPU, and after its body has gone out, so nobody waits for it.
 _steps = memstat.Steps()
+_trims = memstat.Trims()
+_samples = memstat.Every(memstat.SAMPLE_EVERY_S)
+
+
+def _trim() -> None:
+    try:
+        swept = cache.sweep()
+        done = memstat.trim()
+    except Exception as exc:  # noqa: BLE001 — upkeep never fails a request
+        _trims.done(None)
+        obs.warn("mem.trim_failed", error_type=type(exc).__name__)
+        return
+    _trims.done(done["rss_mb"])
+    obs.event("mem.trim", swept=swept, **done)
+
+
+def _sample() -> None:
+    with obs.swallow("mem.sample"):
+        footprint = cache.footprint(top=5)
+        top = ", ".join(f"{c['memo']} {c['mb']}" for c in footprint.pop("caches"))
+        obs.event("mem.sample", **memstat.snapshot(), **footprint, top=top)
 
 
 @app.middleware("http")
@@ -248,18 +278,22 @@ async def _mem_step(request: Request, call_next):
         _steps.end(None)
         raise
 
-    def report() -> None:
-        step = _steps.end(memstat.rss_mb())
-        if step is None:
-            return
-        used, limit = memstat.cgroup_mb()
-        obs.warn("mem.step", **step, cgroup_mb=used, limit_mb=limit)
+    async def report() -> None:
+        rss = memstat.rss_mb()
+        closed, step = _steps.end(rss)
+        if step is not None:
+            used, limit = memstat.cgroup_mb()
+            obs.warn("mem.step", **step, cgroup_mb=used, limit_mb=limit)
+        if _samples.due():
+            await anyio.to_thread.run_sync(_sample)
+        if closed and _trims.due(rss):
+            await anyio.to_thread.run_sync(_trim)
 
     # A streamed answer (the chat) does its work after the headers go out,
     # which is when `call_next` returns — so the reading waits for the body.
     body = getattr(response, "body_iterator", None)
     if body is None:
-        report()
+        await report()
         return response
 
     async def measured():
@@ -267,7 +301,7 @@ async def _mem_step(request: Request, call_next):
             async for chunk in body:
                 yield chunk
         finally:
-            report()
+            await report()
 
     response.body_iterator = measured()
     return response

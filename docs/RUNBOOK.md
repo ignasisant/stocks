@@ -32,6 +32,15 @@ process.
    ran together and the growth is shared — read it as a lead.
 3. A `cgroup_mb` well above `rss_mb` means files: check `memo_mb` and the
    `disk_max` of the memo that grew (`api/loaders/`).
+4. What is *holding* the memory: `/status` `.memory.caches` lists the memos
+   with the most (`cache_mb` in all, an estimate of the arrays they keep).
+   `--event mem.sample` gives the same level every 5 minutes while requests
+   come in, with the top five memos in `top` — the climb between steps.
+5. `--event mem.trim` — after a burst that grew the process 10 MB past the
+   last trim (at most every 30 s): `freed_mb` is what the garbage collector
+   and `malloc_trim` handed back, `swept` the expired memo entries dropped.
+   Trims that free little while `rss_mb` keeps climbing mean the memory is
+   live: shrink the memo in `caches`, not the allocator.
 
 ## Alert: `/healthz` down (uptime check)
 

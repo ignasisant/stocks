@@ -27,6 +27,7 @@ from stocks.api.cache import (
     coalesced,
     disk_path,
     read_entry,
+    register,
     ttl_cache,
     write_entry,
 )
@@ -585,6 +586,7 @@ def _on_download(fn):
     store: dict[tuple, tuple[object, object]] = {}
     flights: dict[tuple, Flight] = {}
     lock = threading.Lock()
+    register(f"{fn.__module__.rsplit('.', 1)[-1]}.{fn.__qualname__}", store, lock)
 
     @wraps(fn)
     def wrapper(db: str, mtime: float, base: str = "EUR"):

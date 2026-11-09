@@ -51,6 +51,7 @@ import contextvars
 import hashlib
 import pickle
 import queue
+import sys
 import threading
 import time
 import zlib
@@ -58,7 +59,8 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from types import ModuleType
+from typing import Any, NamedTuple, TypeVar, cast
 
 from stocks import atomic, obs
 from stocks.config import DATA_DIR
@@ -396,6 +398,108 @@ def _land(
     return entry[1]
 
 
+# --------------------------------------------------------------- the registry
+# Every memo in the process, so `/status` can say which one holds the memory
+# and an idle moment can sweep them all. `mem.step` names the request that grew
+# the process; this names what is still holding it afterwards.
+class _Memo(NamedTuple):
+    name: str
+    store: dict[tuple, Entry]
+    lock: threading.Lock
+    expired: Callable[[Entry], bool] | None
+
+
+_MEMOS: list[_Memo] = []
+
+
+def register(
+    name: str,
+    store: dict[tuple, Entry],
+    lock: threading.Lock,
+    expired: Callable[[Entry], bool] | None = None,
+) -> None:
+    """List a memo's store for `footprint` and `sweep`."""
+    _MEMOS.append(_Memo(name, store, lock, expired))
+
+
+def sweep() -> int:
+    """Drop every entry that can never answer again, in every memo; how many.
+
+    A landing sweeps its own memo, but a memo nobody calls again keeps its
+    dead entries — whole frames — until the process ends.
+    """
+    dropped = 0
+    for memo in _MEMOS:
+        if memo.expired is None:
+            continue
+        with memo.lock:
+            dead = [k for k, e in memo.store.items() if memo.expired(e)]
+            for key in dead:
+                del memo.store[key]
+        dropped += len(dead)
+    return dropped
+
+
+def footprint(top: int = 10) -> dict:
+    """What the memos hold: entries and an estimate in MB, biggest `top` named.
+
+    The estimate is the arrays' buffers plus the containers around them, not
+    an allocator figure: objects shared between memos (a book's closes inside
+    the frames built from them) count once, for the first memo that holds them.
+    """
+    seen: set[int] = set()
+    rows = []
+    for memo in _MEMOS:
+        with memo.lock:
+            values = [entry[1] for entry in memo.store.values()]
+        if not values:
+            continue
+        size = sum(_bytes(value, seen) for value in values)
+        rows.append((size, memo.name, len(values)))
+    rows.sort(reverse=True)
+    mb = 1024 * 1024
+    return {
+        "cache_mb": round(sum(row[0] for row in rows) / mb, 1),
+        "cache_entries": sum(row[2] for row in rows),
+        "caches": [
+            {"memo": name, "entries": n, "mb": round(size / mb, 1)}
+            for size, name, n in rows[:top]
+        ],
+    }
+
+
+def _bytes(obj: object, seen: set[int], depth: int = 0) -> int:
+    if id(obj) in seen or depth > 6:
+        return 0
+    seen.add(id(obj))
+    import numpy as np
+    import pandas as pd
+
+    if isinstance(obj, pd.DataFrame):
+        return int(obj.memory_usage(index=False).sum()) + _bytes(
+            obj.index, seen, depth + 1
+        )
+    if isinstance(obj, pd.Series):
+        return int(obj.memory_usage(index=False)) + _bytes(obj.index, seen, depth + 1)
+    if isinstance(obj, pd.Index):
+        return int(obj.memory_usage())
+    if isinstance(obj, np.ndarray):
+        return int(obj.nbytes)
+    size = sys.getsizeof(obj, 0)
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            size += _bytes(key, seen, depth + 1) + _bytes(value, seen, depth + 1)
+    elif isinstance(obj, list | tuple | set | frozenset):
+        size += sum(_bytes(item, seen, depth + 1) for item in obj)
+    # A record's fields, never a module's or a function's namespace: those are
+    # the process's, not the memo's.
+    elif hasattr(obj, "__dict__") and not (
+        isinstance(obj, type | ModuleType) or callable(obj)
+    ):
+        size += _bytes(vars(obj), seen, depth + 1)
+    return size
+
+
 # ------------------------------------------------------------------- the disk
 def disk_path(name: str, key: tuple) -> Path:
     digest = hashlib.sha256(repr(key).encode("utf-8")).hexdigest()[:24]
@@ -575,6 +679,12 @@ def ttl_cache(
         flights: dict[tuple, Flight] = {}
         lock = threading.Lock()
         cleared_at = [0.0]
+        name = getattr(fn, "__qualname__", "")
+
+        def expired(entry: Entry) -> bool:
+            return time.monotonic() - entry[0] >= ttl_s + grace
+
+        register(f"{fn.__module__.rsplit('.', 1)[-1]}.{name}", store, lock, expired)
 
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -603,11 +713,11 @@ def ttl_cache(
                 )
                 if persist
                 else None,
-                expired=lambda entry: time.monotonic() - entry[0] >= ttl_s + grace,
+                expired=expired,
                 marked=(lambda entry: time.monotonic() - entry[0] >= ttl_s + quiet_s)
                 if quiet_s is not None
                 else None,
-                name=getattr(fn, "__qualname__", ""),
+                name=name,
             )
 
         def cache_clear(expire: bool = True) -> None:
