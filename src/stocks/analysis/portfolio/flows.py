@@ -11,14 +11,14 @@ import numpy as np
 import pandas as pd
 
 from stocks import obs
-from stocks.analysis import naive_dates
-from stocks.analysis.listing import price_units
 from stocks.analysis.portfolio.stats import (
     annualized_return,
     annualized_volatility,
     portfolio_returns,
 )
 from stocks.data.fx import ToBase, converter
+from stocks.data.listing import price_units
+from stocks.frames import naive_dates
 from stocks.portfolio import consistency, transfers
 
 # (amount, currency, iso_date) -> the reporting currency, injectable so tests
@@ -332,7 +332,7 @@ def injected_vs_value(
     `closes` = native-currency close series per ticker; `fx` = daily
     currency->`base` rate series (the base currency itself implied 1.0).
     `units` = ticker -> (ISO currency, scale) each close series is quoted in
-    (stocks.analysis.listing.price_units); a ticker missing from it is taken
+    (stocks.data.listing.price_units); a ticker missing from it is taken
     to be quoted in its ledger rows' currency. The distinction is the whole
     point: an alias can price a dollar trade off a euro listing, and the close
     converts at the listing's rate — the trade currency only converts the

@@ -20,10 +20,10 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import briefing, daily_card, loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.chat import daily_book, today_market
+from stocks.views import briefing, daily_card
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
@@ -353,7 +353,7 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
 
     import pandas as pd
 
-    from stocks.api import home
+    from stocks.views import home
 
     monkeypatch.delenv("EDGAR_USER_AGENT", raising=False)
     monkeypatch.setattr(home, "enriched", lambda db, mtime, ccy: pd.DataFrame(
@@ -407,7 +407,7 @@ def test_today_weighs_a_name_the_price_pass_missed_at_its_cost():
 
 
 def _card_with_book() -> daily_card.DailyCard:
-    from stocks.api.schemas import DailyBook, DailyBookRow, DailyCard
+    from stocks.schemas import DailyBook, DailyBookRow, DailyCard
 
     rows = [DailyBookRow(window="day", pct=3.43, amount=4613.0, index_pct=1.0),
             DailyBookRow(window="week", pct=0.29, amount=402.0, index_pct=0.5)]
@@ -418,7 +418,7 @@ def _card_with_book() -> daily_card.DailyCard:
 def test_the_book_rows_are_the_ones_home_prints_now(account, monkeypatch):
     """The card is the morning's; its rows are figures Home's tiles print
     live. Served together they would read +402 € and −110 € for one week."""
-    from stocks.api import book_moves
+    from stocks.views import book_moves
 
     monkeypatch.setattr(book_moves, "moves", lambda db, mtime, ccy: {
         "day": (3835.0, 0.0284), "week": (-110.0, -0.0008), "month": None})
@@ -434,7 +434,7 @@ def test_the_book_rows_are_the_ones_home_prints_now(account, monkeypatch):
 
 
 def test_rows_that_cannot_be_redone_stay_as_written(account, monkeypatch):
-    from stocks.api import book_moves
+    from stocks.views import book_moves
 
     def boom(*a, **k):
         raise RuntimeError("prices down")

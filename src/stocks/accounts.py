@@ -1,13 +1,14 @@
 """Account identity and per-account data paths.
 
-This is the half of `stocks.web.auth` that has nothing to do with a browser
-session: given an email, where does that account's watchlist, ledger, prefs
-and chat memory live, and how is a brand-new account seeded from the bucket.
+Nothing here has to do with a browser session: given an email, where does that
+account's watchlist, ledger, prefs and chat memory live, and how is a brand-new
+account seeded from the bucket.
 
 It lives here rather than in `web/` because more than one runtime needs it:
 
 * the web app (`stocks.web.oidc`, whose callback provisions the account, and
-  `stocks.web.auth`, which reads and writes the files under it),
+  `stocks.userprefs` / `stocks.chat.conversations`, which read and write the
+  files under it),
 * the internal HTTP API (`stocks.api`), which authenticates with a bearer
   token and is handed an account address,
 * headless jobs — the digest, the CLI — which have a prefs.json and
@@ -30,21 +31,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stocks import atomic, storage, userstore
-from stocks.chat import journal, learnings, memory
-from stocks.config import DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
+from stocks.config import CURRENCIES, DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
 from stocks.secrets_env import secret
 
 USERS_DIR = DATA_DIR / "users"
 GUEST_DIR = USERS_DIR / "_guest"
 
+# The chat's own files, named here because this module owns the account dir's
+# layout: the conversation index (chat/memory.py), the memories it keeps about
+# the user (chat/learnings.py), the proposals it has made them (chat/journal.py).
+MEMORY_FILE = "chat_memory.db"
+LEARNINGS_FILE = "chat_learnings.json"
+JOURNAL_FILE = "decisions.json"
+
 # The files that make up one account, used by the legacy-dir migration and by
-# the bucket restore. `memory.FILE` is the chat's conversation index and
-# `learnings.FILE` the memories it keeps about the user, `journal.FILE` the
-# proposals it has made them.
+# the bucket restore.
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
-    "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE, journal.FILE, "devices.json", "push.json", "push_log.json",
+    "bank.json", "daily_action.json", "sector_verdict.json", MEMORY_FILE,
+    LEARNINGS_FILE, JOURNAL_FILE, "devices.json", "push.json", "push_log.json",
     "shares.json", "alerts_state.json",
 )
 
@@ -84,7 +89,7 @@ class UserPaths:
     @property
     def memory_index(self) -> Path:
         """The chat's conversation index (chat/memory.py), beside chat.json."""
-        return memory.path_for(self.chat.parent)
+        return self.chat.with_name(MEMORY_FILE)
 
     @property
     def devices(self) -> Path:
@@ -117,13 +122,13 @@ class UserPaths:
     @property
     def learnings(self) -> Path:
         """What the chat keeps about the user (chat/learnings.py)."""
-        return learnings.path_for(self.chat)
+        return self.chat.with_name(LEARNINGS_FILE)
 
     @property
     def journal(self) -> Path:
         """What the assistant has proposed, and what became of it
         (chat/journal.py)."""
-        return journal.path_for(self.chat)
+        return self.chat.with_name(JOURNAL_FILE)
 
 
 def slug(email: str) -> str:
@@ -517,6 +522,18 @@ def stored_prefs(prefs: Path) -> dict:
     brand-new account starts anyway.
     """
     return userstore.read(prefs)
+
+
+def reporting_currency(paths: UserPaths) -> str:
+    """The currency this account reckons its money in: its preference, else EUR.
+
+    A guest never has one. One file serves every anonymous visitor, so nothing
+    in it is this reader's preference; EUR is what a brand-new account gets.
+    """
+    if paths.root == GUEST_DIR:
+        return "EUR"
+    code = str(stored_prefs(paths.prefs).get("currency") or "EUR").upper()
+    return code if code in CURRENCIES else "EUR"
 
 
 class LoadedPrefs(dict):

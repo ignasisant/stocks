@@ -19,10 +19,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
-from stocks.api.loaders.keys import LedgerState
+from stocks.loaders.keys import LedgerState
 from stocks.portfolio.custody import Custody
 from stocks.portfolio.ledger import Transaction
 from tests.patching import patch_loaders
@@ -1115,7 +1114,7 @@ def test_a_dollar_buy_charted_off_a_euro_listing_is_restated_onto_its_axis(
     patch_loaders(monkeypatch, "positions_table", lambda db, m, base: pd.DataFrame())
     monkeypatch.setattr("stocks.portfolio.corporate.split_factors", lambda txs: {})
     monkeypatch.setattr(
-        "stocks.analysis.listing._lookup", lambda t: {"ASML": "EUR"}.get(t)
+        "stocks.data.listing._lookup", lambda t: {"ASML": "EUR"}.get(t)
     )
     monkeypatch.setattr(
         "stocks.data.fx.rate_on", lambda day, ccy, base: rates[str(day)]

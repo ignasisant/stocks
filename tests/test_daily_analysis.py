@@ -25,9 +25,9 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from stocks.api import evidence as ev
 from stocks.chat import daily
 from stocks.chat import daily_analysis as da
+from stocks.views import evidence as ev
 from tests.patching import patch_loaders
 
 TODAY = date(2026, 9, 29)
@@ -328,9 +328,9 @@ def test_a_record_says_who_wrote_it():
 
 
 def test_gather_builds_the_company_comparison_from_the_loaders(monkeypatch):
-    from stocks.api import briefing
     from stocks.data.estimates import RawEstimates
     from stocks.data.fundamentals import RawFundamentals
+    from stocks.views import briefing
 
     info = {
         "DSGX": {

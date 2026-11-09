@@ -25,11 +25,11 @@ from pydantic import BaseModel, Field, field_validator
 from stocks import accounts
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import HomeSlot, Prefs, ScheduleSlot
 from stocks.api.security import Caller, Who
 from stocks.config import CURRENCIES
 from stocks.notify.schedule import JOBS, PREFS_KEY, slots, valid_zone
 from stocks.portfolio import tax
+from stocks.schemas import HomeSlot, Prefs, ScheduleSlot
 
 router = APIRouter(tags=["prefs"])
 
@@ -56,7 +56,7 @@ def _languages() -> frozenset[str]:
     Imported here rather than at module scope, the same way `/i18n` does it:
     the catalogs live under `web/` and a headless caller never needs them.
     """
-    from stocks.web.i18n import LANGUAGES
+    from stocks.i18n import LANGUAGES
 
     return frozenset(LANGUAGES)
 
@@ -318,7 +318,7 @@ def _profile_options() -> tuple[tuple[str, ...], ...]:
     ones `chat.engine.persona` has English wording for — a value this route
     invented would store fine and then describe nobody.
     """
-    from stocks.web.auth import (
+    from stocks.userprefs import (
         PROFILE_CONSTRAINTS,
         PROFILE_FOCUS,
         PROFILE_HORIZON,
@@ -449,7 +449,7 @@ def profile(account: Account) -> InvestorProfile:
     risk scale rather than one end, because this is a guess about somebody we
     know nothing about.
     """
-    from stocks.web.auth import load_profile
+    from stocks.userprefs import load_profile
 
     return _with_persona(load_profile(accounts.load_prefs(account.prefs)))
 
@@ -462,7 +462,7 @@ def save(account: Writer, body: ProfileWrite) -> InvestorProfile:
     rather than a rewrite of it (`accounts.update_prefs`), so another tab open
     on the same account keeps whatever it saved next door.
     """
-    from stocks.web.auth import load_profile
+    from stocks.userprefs import load_profile
 
     stored = accounts.update_prefs(
         account.prefs,
@@ -625,10 +625,10 @@ class InvestorPlan(PlanWrite):
 def _actual(paths: UserPaths, investable: float = 0.0) -> dict[str, float]:
     """Today's mix by bucket, with the stated `investable` cash in the cash
     bucket (`plan.with_cash`), or {} when the book cannot be read."""
-    from stocks import obs
-    from stocks.api import home, loaders
+    from stocks import loaders, obs
     from stocks.api.deps import reporting_currency
     from stocks.portfolio import plan as plans
+    from stocks.views import home
 
     try:
         db = str(paths.db)

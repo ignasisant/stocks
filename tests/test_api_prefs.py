@@ -391,7 +391,7 @@ def test_the_lists_come_back_in_the_order_the_form_offers_them(
     Profile page autosaves on a field-by-field difference against what is
     stored, so a list stored in click order would read as an edit on every
     load and toast "saved" at a reader who touched nothing."""
-    from stocks.web.auth import PROFILE_CONSTRAINTS, PROFILE_FOCUS
+    from stocks.userprefs import PROFILE_CONSTRAINTS, PROFILE_FOCUS
 
     saved = signed_in.put(
         "/v1/profile",
@@ -489,7 +489,7 @@ def test_what_is_saved_is_what_the_assistant_is_actually_told(
     Which is also why the field names are the stored ones — a rename here is a
     persona that quietly loses a clause."""
     from stocks.chat.engine import persona
-    from stocks.web.auth import load_profile
+    from stocks.userprefs import load_profile
 
     signed_in.put(
         "/v1/profile",
@@ -517,7 +517,7 @@ def no_book(monkeypatch):
     """The plan's `actual` reads positions; an empty book reads nothing."""
     import pandas as pd
 
-    from stocks.api import home
+    from stocks.views import home
 
     monkeypatch.setattr(home, "enriched", lambda db, mtime, base: pd.DataFrame())
 

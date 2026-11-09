@@ -33,7 +33,7 @@ _FREE_TURN = threading.Lock()
 
 
 def _patiently(complete, *args):
-    from stocks.web import llm
+    from stocks import llm
 
     with llm.patient():
         return complete(*args)

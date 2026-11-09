@@ -10,15 +10,14 @@ import pandas as pd
 from fastapi import APIRouter, Query
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, obs
+from stocks import accounts, loaders, obs
 from stocks.accounts import UserPaths
 from stocks.analysis.portfolio import flow_series, project_sleeves
-from stocks.api import loaders
 from stocks.api.deps import Account, Base, reporting_currency
-from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import Projection, ProjectionPlan, ProjectionSleeve
 from stocks.data import fx
 from stocks.frames import midnight
+from stocks.jsonsafe import num as _num
+from stocks.schemas import Projection, ProjectionPlan, ProjectionSleeve
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -306,7 +305,7 @@ def _projection_plan(paths: UserPaths, ccy: str) -> ProjectionPlan:
     The plan states money in the reporting currency; read in another `base`
     with no rate to hand, the contribution is left out rather than guessed."""
     from stocks.portfolio import plan as plans
-    from stocks.web.auth import load_profile
+    from stocks.userprefs import load_profile
 
     prefs = accounts.load_prefs(paths.prefs)
     investor = plans.load(prefs)

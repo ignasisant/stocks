@@ -68,14 +68,14 @@ def _page(lang: str, title: str, body: str, form: str = "",
 
 
 def _lang(request: Request) -> str:
-    from stocks.web.i18n import negotiated
+    from stocks.i18n import negotiated
 
     return negotiated(request.query_params.get("lang"),
                       request.headers.get("accept-language"))
 
 
 def _say(key: str, lang: str) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(f"email.{key}", lang)
 
@@ -106,7 +106,7 @@ async def stop(request: Request) -> Response:
     token = str(form.get("t") or request.query_params.get("t") or "")
     lang = _lang(request)
     if form.get("lang"):
-        from stocks.web.i18n import negotiated
+        from stocks.i18n import negotiated
 
         lang = negotiated(str(form.get("lang")), None)
     label = unsubscribe_label(token)

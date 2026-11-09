@@ -13,8 +13,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction

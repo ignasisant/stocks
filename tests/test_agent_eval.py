@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from stocks.chat import agent, agent_eval, toolbox
-from stocks.web.llm import ToolCall
+from stocks.llm import ToolCall
 
 CASES = agent_eval.load()
 

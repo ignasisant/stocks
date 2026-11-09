@@ -15,8 +15,8 @@ from dataclasses import replace
 
 import pytest
 
+from stocks import llm
 from stocks.chat import learnings, market, memory_review
-from stocks.web import llm
 
 
 @pytest.fixture

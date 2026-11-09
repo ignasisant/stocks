@@ -127,7 +127,7 @@ def brief(paths: Account) -> Brief:
 def save(body: BriefText, paths: RoutineSave) -> Brief:
     """Save the brief, planned now. The card is rewritten for it on the next
     load (`glance._key`). 409 when the memory has no room for it."""
-    from stocks.api import briefing
+    from stocks.views import briefing
 
     text, tickers = body.text, _tickers(paths, body.text)
     kept = _kept(paths)

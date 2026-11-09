@@ -67,7 +67,7 @@ export function NumbersIn({ lang, children }: { lang: string; children: ReactNod
   );
 }
 
-/** The languages the catalogs ship — `stocks.web.i18n.LANGUAGES`. */
+/** The languages the catalogs ship — `stocks.i18n.LANGUAGES`. */
 const LANGUAGES = ["en", "es", "it"];
 
 /** `tag`'s language when a catalog ships it, else English. */

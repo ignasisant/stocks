@@ -25,11 +25,11 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import book_moves, briefing, home, loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
-from stocks.api.loaders.keys import LedgerState
 from stocks.api.routes import glance
+from stocks.loaders.keys import LedgerState
+from stocks.views import book_moves, briefing, home
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"

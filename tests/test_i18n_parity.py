@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from stocks.web.i18n import DEFAULT_LANG, LANGUAGES
+from stocks.i18n import DEFAULT_LANG, LANGUAGES
 
 LOCALES = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "locales"
 OTHER_LANGS = sorted(set(LANGUAGES) - {DEFAULT_LANG})
@@ -97,7 +97,7 @@ def test_every_language_has_a_flag_on_both_sides():
     """The Profile selector draws each language with a flag from
     `profile/data.ts`, the copy of `LANGUAGE_FLAGS`. A language added to
     `LANGUAGES` and not to both tables ships flagless in that selector."""
-    from stocks.web.i18n import LANGUAGE_FLAGS
+    from stocks.i18n import LANGUAGE_FLAGS
 
     assert set(LANGUAGE_FLAGS) == set(LANGUAGES)
     data = (

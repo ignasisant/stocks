@@ -23,8 +23,7 @@ import pytest
 from fastapi.testclient import TestClient
 from itsdangerous import URLSafeTimedSerializer
 
-from stocks import accounts, secrets_env, session
-from stocks.api import loaders
+from stocks import accounts, loaders, secrets_env, session
 from stocks.api.app import app as fastapi_app
 from tests.conftest import AUTH_COOKIE_SECRET as SECRET
 

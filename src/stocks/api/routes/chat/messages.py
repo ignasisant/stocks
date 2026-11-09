@@ -211,7 +211,7 @@ def _activities(raw: dict, lang: str) -> list[dict]:
     """The surfaces a stored turn draws. Built from what the turn holds rather
     than stored beside it: a pending proposal's form is a pure function of the
     proposal, and a second copy on disk would be one more thing to go stale."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     stored = [
         a for a in (raw.get("activities") or [])

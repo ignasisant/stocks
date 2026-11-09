@@ -14,8 +14,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from stocks import obs
-from stocks.api.cache import ttl_cache
 from stocks.api.deps import Writer
+from stocks.cache import ttl_cache
 from stocks.data import fetch, profiles, symbols
 from stocks.portfolio import buy_dates
 

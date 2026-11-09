@@ -476,7 +476,7 @@ def test_an_insider_cluster_buy():
 
 
 def test_one_insider_is_singular_and_millions_read_as_millions():
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key, **kw):
         return translate(key, "es", **kw)
@@ -634,7 +634,7 @@ def _compare(out) -> dict:
 def test_a_euro_reader_measures_everything_in_euros():
     """AAPL and SPY quoted in dollars, the dollar falling: each move is the
     one a euro holder had, and the gap is not the exchange rate's."""
-    from stocks.api.evidence import perf
+    from stocks.views.evidence import perf
 
     tech = next(n for n, e in sm.SECTOR_ETFS.items() if e == "XLK")
     closes = _closes() | {"EURUSD=X": _series(0.0002, 1.0)}

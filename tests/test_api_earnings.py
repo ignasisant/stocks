@@ -16,8 +16,7 @@ from datetime import date, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
-from stocks.api import loaders
+from stocks import accounts, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data.dividends import DividendEvent, DividendHistory
 from stocks.data.earnings import EarningsEvent, EarningsResult

@@ -86,7 +86,7 @@ def test_erasing_needs_the_address_typed_back(client, account, signed_in):
 def test_erasing_removes_the_account(client, account, signed_in, monkeypatch):
     gone: list = []
     monkeypatch.setattr(
-        "stocks.web.auth.delete_account", lambda paths: gone.append(paths.root)
+        "stocks.api.routes.account.delete_account", lambda paths: gone.append(paths.root)
     )
     response = signed_in.request("DELETE", "/v1/account", json={"confirm": EMAIL})
     assert response.status_code == 200
@@ -99,7 +99,7 @@ def test_erasing_removes_the_account(client, account, signed_in, monkeypatch):
 def test_the_address_is_matched_case_insensitively(
     client, account, signed_in, monkeypatch
 ):
-    monkeypatch.setattr("stocks.web.auth.delete_account", lambda paths: None)
+    monkeypatch.setattr("stocks.api.routes.account.delete_account", lambda paths: None)
     assert (
         signed_in.request(
             "DELETE", "/v1/account", json={"confirm": EMAIL.upper()}
@@ -117,7 +117,7 @@ def test_a_refused_deletion_says_so_and_removes_nothing(
     def refuse(paths):
         raise ValueError("refusing to delete the owner or guest data")
 
-    monkeypatch.setattr("stocks.web.auth.delete_account", refuse)
+    monkeypatch.setattr("stocks.api.routes.account.delete_account", refuse)
     response = signed_in.request("DELETE", "/v1/account", json={"confirm": EMAIL})
     assert response.status_code == 403
     assert account.watchlist.exists()

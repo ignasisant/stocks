@@ -19,10 +19,10 @@ from typing import Literal
 import pandas as pd
 
 from stocks.analysis import ranking
-from stocks.analysis.listing import quote_unit
 from stocks.analysis.moat import moat_score
 from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
+from stocks.data.listing import quote_unit
 from stocks.portfolio import consistency
 
 

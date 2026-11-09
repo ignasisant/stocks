@@ -11,8 +11,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from stocks import loaders
 from stocks.analysis.cash import annualised, is_flat, policy_level
-from stocks.api import loaders
 
 
 def drift(days: int, rate: float, start: float = 100.0) -> pd.Series:

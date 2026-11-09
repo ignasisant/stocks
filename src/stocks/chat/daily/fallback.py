@@ -45,7 +45,7 @@ def _money(amount: float, currency: str, lang: str = "en") -> str:
 
 def _when(days, lang: str) -> str:
     """"today" / "tomorrow" / "in 5 days", for a date ahead."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     n = int(days or 0)
     if n <= 0:
@@ -56,7 +56,7 @@ def _when(days, lang: str) -> str:
 
 
 def _bank(action: dict, lang: str) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(f"home.daily_bank_{action.get('bank') or 'fed'}", lang)
 
@@ -72,7 +72,7 @@ def _rate(action: dict, lang: str = "en") -> str:
 
 def _deadline(action: dict, lang: str) -> str:
     """A tax deadline's own name — the tax calendar already carries one."""
-    from stocks.web.i18n import has, translate
+    from stocks.i18n import has, translate
 
     slug = f"earnings.tax_{action.get('deadline') or ''}"
     if has(slug):
@@ -83,7 +83,7 @@ def _deadline(action: dict, lang: str) -> str:
 def _short_line(action: dict, lang: str) -> str:
     """A few words naming one action — what a computed headline strings
     together into "the day in one line"."""
-    from stocks.web.i18n import has, translate
+    from stocks.i18n import has, translate
 
     kind = str(action.get("kind") or "")
     slug = f"home.daily_short_{kind}"
@@ -127,7 +127,7 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     """The placeholders of an exit-rule line: the rule in words, the figure
     it reads today and how far it still is (or how far past)."""
     from stocks.chat import journal
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     rule = str(action.get("rule") or "below")
     price = rule == "below"
@@ -169,13 +169,13 @@ def _share(value, lang: str, digits: int = 0) -> str:
 
 def _bucket(name, lang: str) -> str:
     """A plan bucket's own label, the one the plan form shows."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(f"profile.plan_bucket_{name or 'stocks'}", lang)
 
 
 def _sector_label(sector: str, lang: str) -> str:
-    from stocks.web.i18n import has, translate
+    from stocks.i18n import has, translate
 
     slug = f"sentiment.sector_{sector.lower().replace(' ', '_')}"
     return translate(slug, lang) if has(slug) else sector
@@ -183,7 +183,7 @@ def _sector_label(sector: str, lang: str) -> str:
 
 def _plan_line(action: dict, lang: str, ccy: str) -> str:
     """A line about the reader's plan (`signals.plan_candidates`)."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     kind = str(action.get("kind") or "")
     key = f"home.daily_act_{kind}"
@@ -269,7 +269,7 @@ def _criterion_key(key: str, action: dict) -> str:
 def _flag(action: dict, lang: str) -> str:
     """What a filing flag's filing says, in a clause: "it says past accounts
     can no longer be relied on"."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     flag = str(action.get("flag") or "late").replace(".", "_")
     return translate(f"home.daily_flag_{flag}", lang)
@@ -277,7 +277,7 @@ def _flag(action: dict, lang: str) -> str:
 
 def _action_line(action: dict, lang: str, ccy: str) -> str:
     """One computed action as a sentence. Empty for a kind with no template."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     kind = str(action.get("kind") or "")
     ticker = str(action.get("ticker") or "")
@@ -424,7 +424,7 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         # The sector labels are Yahoo's English spellings; the Pulso page
         # already carries a translation for each, so the card borrows it and
         # prints the raw label only for a bucket that has none.
-        from stocks.web.i18n import has
+        from stocks.i18n import has
 
         sector = str(action.get("sector") or "")
         slug = f"sentiment.sector_{sector.lower().replace(' ', '_')}"
@@ -478,7 +478,7 @@ def computed(facts: dict, lang: str, day: date) -> DailyAction:
     model answers those. The card says whether its brief is still being
     fetched or was missed today (`brief`), and stands in with the default.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"home.daily_fb_{key}", lang, **kw)
@@ -578,7 +578,7 @@ def _brief_state(facts: dict) -> str:
 
 def _book_label(facts: dict, lang: str) -> str:
     """"Portfolio +0.80% vs S&P 500 +0.30%" — the computed headline's lead."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     own = (facts.get("day") or {}).get("pct")
     index = facts.get("index") or {}

@@ -2,8 +2,8 @@
 
 import json
 
-from stocks.web import chat_web
-from stocks.web.chat_web import Result, augment, parse_queries, plan, sources
+from stocks.chat import websearch as chat_web
+from stocks.chat.websearch import Result, augment, parse_queries, plan, sources
 
 # ------------------------------------------------------------------ parse
 

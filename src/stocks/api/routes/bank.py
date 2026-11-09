@@ -31,19 +31,19 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field
 
+from stocks import loaders
 from stocks.accounts import UserPaths
-from stocks.api import loaders
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import (
+from stocks.api.security import Authed
+from stocks.bank import access, enablebanking, store
+from stocks.bank.enablebanking import BankError, ConsentError, RateLimited
+from stocks.schemas import (
     BankAccount,
     BankAuth,
     BankChoice,
     BankConnection,
     BankState,
 )
-from stocks.api.security import Authed
-from stocks.bank import access, enablebanking, store
-from stocks.bank.enablebanking import BankError, ConsentError, RateLimited
 
 router = APIRouter(prefix="/bank", tags=["bank"])
 

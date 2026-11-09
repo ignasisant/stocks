@@ -7,7 +7,8 @@ R2 restores, the logo mirror). Neither number was visible anywhere: the
 platform's utilization metric says how full the instance is, never which
 request filled it. `/status` reports these, and `api.app` logs `mem.step`
 for a request, or a burst of overlapping ones (`Steps`), that grew the
-process by more than `STEP_MB`.
+process by more than `STEP_MB`, a `mem.sample` every `SAMPLE_EVERY_S` while
+requests come in, and a `mem.trim` when a closed burst hands memory back.
 
 Every read is a small file under /proc or /sys, so this is cheap enough to
 run around every request. Off Linux (a laptop) the figures that need /proc
@@ -16,9 +17,12 @@ read None rather than raise.
 
 from __future__ import annotations
 
+import ctypes
+import gc
 import resource
 import sys
 import threading
+import time
 from pathlib import Path
 
 from stocks.config import DATA_DIR
@@ -26,6 +30,17 @@ from stocks.config import DATA_DIR
 # A request that grows the process by this much is worth a log line: the
 # steps that end in an OOM are tens of MB each, a normal request is noise.
 STEP_MB = 20.0
+
+# A level, not a jump: what the process holds between steps. Only while
+# requests come in — with no request the CPU is throttled and nobody asks.
+SAMPLE_EVERY_S = 300.0
+
+# Python frees a request's frames into its own heap and glibc keeps the
+# pages: the resident set climbs a burst at a time and comes back down only
+# with the process. A burst that ends with the process this much above where
+# the last trim left it is worth one, at most once per `TRIM_EVERY_S`.
+TRIM_MIN_MB = 10.0
+TRIM_EVERY_S = 30.0
 
 _STATUS = Path("/proc/self/status")
 # cgroup v2, then v1 — whichever the runtime mounts.
@@ -138,21 +153,112 @@ class Steps:
             else:
                 self._more += 1
 
-    def end(self, rss: float | None) -> dict | None:
-        """The step to log, once the last request of the burst ends."""
+    def end(self, rss: float | None) -> tuple[bool, dict | None]:
+        """Whether this request closed its burst, and the step to log when
+        that burst grew the process by `STEP_MB` or more."""
         with self._lock:
             self._open -= 1
-            if self._open or rss is None or rss - self._before < STEP_MB:
-                return None
+            if self._open:
+                return False, None
+            if rss is None or rss - self._before < STEP_MB:
+                return True, None
             path = ", ".join(self._paths)
             if self._more:
                 path += f" (+{self._more} more)"
-            return {
+            return True, {
                 "path": path,
                 "concurrent": self._peak,
                 "delta_mb": round(rss - self._before, 1),
                 "rss_mb": rss,
             }
+
+
+class Every:
+    """Due at most once per `every_s`; the first time one period after it is
+    made, so a fresh process does not report before it has done anything."""
+
+    def __init__(self, every_s: float) -> None:
+        self._every = every_s
+        self._lock = threading.Lock()
+        self._next = time.monotonic() + every_s
+
+    def due(self) -> bool:
+        with self._lock:
+            now = time.monotonic()
+            if now < self._next:
+                return False
+            self._next = now + self._every
+            return True
+
+
+class Trims:
+    """When a closed burst is worth a trim (`TRIM_MIN_MB`, `TRIM_EVERY_S`).
+
+    The floor is where the last trim left the process: what it could not hand
+    back is live, and trimming again before the process grows past it would
+    pay a full collection for nothing.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._at = float("-inf")
+        self._floor = 0.0
+        self._running = False
+
+    def due(self, rss: float | None) -> bool:
+        with self._lock:
+            now = time.monotonic()
+            if (
+                rss is None
+                or self._running
+                or now - self._at < TRIM_EVERY_S
+                or rss - self._floor < TRIM_MIN_MB
+            ):
+                return False
+            self._running, self._at = True, now
+            return True
+
+    def done(self, rss: float | None) -> None:
+        with self._lock:
+            self._running = False
+            if rss is not None:
+                self._floor = rss
+
+
+def _libc_trim() -> bool:
+    """`malloc_trim(0)`: glibc returns the free pages of its heaps to the
+    kernel. False where there is no glibc (a laptop)."""
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+    except OSError:
+        return False
+    libc.malloc_trim(0)
+    return True
+
+
+def trim() -> dict:
+    """Collect what is unreachable and hand the freed heap back to the kernel.
+
+    Nothing a reader is waiting on lives here: the caches keep their entries
+    (`api.cache.sweep` drops only what can never answer again), so the next
+    request finds what this one left. What goes is garbage and the pages it
+    sat in.
+    """
+    before = rss_mb()
+    started = time.perf_counter()
+    collected = gc.collect()
+    trimmed = _libc_trim()
+    after = rss_mb()
+    return {
+        "rss_before_mb": before,
+        "rss_mb": after,
+        "freed_mb": round(before - after, 1)
+        if before is not None and after is not None
+        else None,
+        "collected": collected,
+        "malloc_trim": trimmed,
+        "ms": round((time.perf_counter() - started) * 1000),
+    }
 
 
 def snapshot() -> dict:

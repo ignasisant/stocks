@@ -45,14 +45,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from stocks import obs
-from stocks.chat import structured
 from stocks.data import crypto
+from stocks.llm import structured
 from stocks.portfolio import instruments, lexicon, platforms, upload_guard
 from stocks.portfolio.ledger import ACTIONS, RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import ParseResult
 
 if TYPE_CHECKING:
-    from stocks.web.llm import Provider
+    from stocks.llm import Provider
 
 # What the model is shown. Enough rows to see the shape of the data (and any
 # preamble above the header), few enough to stay a cheap classifier call.
@@ -111,7 +111,7 @@ class ProviderUnavailable(Exception):
 
 def _ask(provider: Provider, api_key: str, fn: str, system: str,
          content: str) -> str:
-    """The raw reply to BAML function `fn` (chat/structured.py renders it)."""
+    """The raw reply to BAML function `fn` (llm/structured.py renders it)."""
     system, messages = structured.render(fn, system, content)
     return _send(provider, api_key, system, messages[0]["content"])
 

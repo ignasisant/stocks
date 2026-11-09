@@ -1,9 +1,9 @@
 """Erasing an account, and taking its data away — the two promises the legal
 page makes by name.
 
-`web/auth.delete_account` is the whole of it — bucket copies first, then disk,
-refusing the owner and guest directories — and it is deliberately not reopened
-here. What this route adds is the part that belongs to a front end: an
+`delete_account` is the whole of it — bucket copies first, then disk,
+refusing the owner and guest directories. What the route adds is the part
+that belongs to a front end: an
 irreversible action has to be *named* by the caller who wants it, not merely
 requested, which is the same bar `DELETE /portfolio/transactions` sets for
 emptying a ledger.
@@ -22,11 +22,56 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from stocks import devices, obs, session
+from stocks import accounts, devices, obs, session, storage
+from stocks.accounts import UserPaths
 from stocks.api.deps import Writer
 from stocks.api.security import Authed
+from stocks.config import PROJECT_ROOT
 
 router = APIRouter(tags=["account"])
+
+
+def delete_account(paths: UserPaths) -> None:
+    """Erase one account's data everywhere: bucket copies first, then disk.
+
+    The GDPR-shaped promise on the legal page: everything under the account's
+    data dir goes, cloud copies included. Bucket keys are enumerated (not just
+    the fixed accounts.USER_FILES) so nothing generated later survives. Bucket first
+    and loudly: if the cloud delete fails the local copies stay too, so a
+    retry still sees a consistent account instead of resurrecting the bucket
+    from a half-deleted disk on the next write.
+
+    Refuses the owner account (its "data dir" is the repo root — deleting it
+    would take the CLI's own book and reference data with it) and the shared
+    guest dir. Backup snapshots are immutable history and expire on their own
+    schedule; the legal copy says so.
+    """
+    root = paths.root.resolve()
+    if root in (PROJECT_ROOT.resolve(), accounts.GUEST_DIR.resolve()):
+        raise ValueError("refusing to delete the owner or guest data")
+    if accounts.USERS_DIR.resolve() not in root.parents:
+        raise ValueError(f"not an account dir: {root}")
+
+    # Connections first: whatever happens to the files below, nothing outside
+    # this app keeps reading an account its owner asked to erase.
+    from stocks.connector import store
+
+    store.revoke_account(paths)
+    # Shared answers live outside the account dir (anybody may read them),
+    # so the sweep below would miss them.
+    from stocks.web import shares
+
+    shares.purge_owner(shares.owner_of(paths))
+
+    if storage.enabled():
+        prefix = root.relative_to(PROJECT_ROOT.resolve()).as_posix()
+        for key in storage.list_keys(prefix + "/"):
+            storage.delete_key(key)
+    if root.exists():
+        import shutil
+
+        shutil.rmtree(root)
+
 
 
 class Erase(BaseModel):
@@ -66,15 +111,13 @@ def erase(caller: Authed, account: Writer, body: Erase) -> Erased:
     Backup snapshots are immutable history and expire on their own schedule.
     The legal page says so, and this route does not pretend otherwise.
     """
-    from stocks.web import auth
-
     if body.confirm.strip().lower() != (caller.email or "").lower():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="confirm must be the signed-in address, exactly",
         )
     try:
-        auth.delete_account(account)
+        delete_account(account)
     except ValueError as exc:
         # The owner or the shared guest directory. Neither is an account and
         # neither is this route's to remove.

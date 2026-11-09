@@ -5,10 +5,10 @@
 Replays a short session over one book — a question on Home, a follow-up, the
 same thread from Portfolio, a question the router sends to other skills, a
 turn after prices moved — and prices the system prompt's input tokens under
-Anthropic's list prices (web/metering.py) two ways: one breakpoint on the
+Anthropic's list prices (llm/metering.py) two ways: one breakpoint on the
 whole prompt (how it shipped before), and one per part (`llm.Prompt`: persona
 with memories, book, the turn's own context). Counts are the engine's own
-estimate (chat/tokens.py); the thread's turns are the same in both layouts
+estimate (llm/tokens.py); the thread's turns are the same in both layouts
 and left out. Offline: nothing is sent anywhere.
 """
 
@@ -20,8 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from stocks.chat import engine, tokens  # noqa: E402
-from stocks.web import metering  # noqa: E402
+from stocks.chat import engine
+from stocks.llm import (
+    metering,  # noqa: E402
+    tokens,  # noqa: E402
+)
 
 BOOK = (
     "Holdings (live market data, EUR). Total book 101,240 €, unrealised P/L "
@@ -87,7 +90,7 @@ def main() -> None:
     args = ap.parse_args()
     price = metering.price(args.model)
     if price is None:
-        raise SystemExit(f"{args.model} is unpriced in web/metering.py")
+        raise SystemExit(f"{args.model} is unpriced in llm/metering.py")
 
     prompts = [prompt(v, s, b) for _, v, s, b in SESSION]
     sizes = [tokens.count(p.blocks[0]), tokens.count(p.blocks[1]),

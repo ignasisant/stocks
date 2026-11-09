@@ -430,7 +430,7 @@ def calendar_lines(data: DigestData, lang: str) -> list[str]:
     which outranks one coming, which outranks cash; the stale-import reminder
     is last because it is the only one that is about the app, not the book.
     """
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)
@@ -481,7 +481,7 @@ def calendar_lines(data: DigestData, lang: str) -> list[str]:
 def _digest_parts(data: DigestData, lang: str) -> tuple[str, list[str | None]]:
     """The digest's title and its lines in reading order: the push shows the
     first few, the scheduled thread every one."""
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     def tr(key: str, **kw) -> str:
         return translate(f"notify.{key}", lang, **kw)

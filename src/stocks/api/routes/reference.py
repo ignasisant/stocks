@@ -14,7 +14,9 @@ from pydantic import BaseModel, Field
 
 from stocks import navigation
 from stocks.analysis.fundamentals import KPI_SOURCES
-from stocks.api.schemas import (
+from stocks.config import ALERT_FORMS
+from stocks.portfolio import tax
+from stocks.schemas import (
     AlertForm,
     AlertForms,
     KpiSourceRow,
@@ -22,8 +24,6 @@ from stocks.api.schemas import (
     NavDestination,
     Navigation,
 )
-from stocks.config import ALERT_FORMS
-from stocks.portfolio import tax
 
 router = APIRouter(tags=["reference"])
 
@@ -265,7 +265,7 @@ def profile_options() -> InvestorProfileOptions:
     written, and — worse — keeps offering whatever was removed, which this API
     then refuses on save.
     """
-    from stocks.web.auth import (
+    from stocks.userprefs import (
         PROFILE_CONSTRAINTS,
         PROFILE_FOCUS,
         PROFILE_HORIZON,

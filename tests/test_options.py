@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from yfinance.exceptions import YFRateLimitError
 
-from stocks.api import loaders
+from stocks import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.data import options as options_data
 from stocks.data.estimates import rating_changes

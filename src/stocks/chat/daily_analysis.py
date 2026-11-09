@@ -7,7 +7,7 @@ be worth comparing its outlook with its sector's", which is the work the reader
 opened it for. This module is the replacement. Each line opens on its own, and
 opening it runs the comparison the line invites:
 
-* `api/evidence.py` fetches the other side of it — peers, the sector ETF, the
+* `views/evidence.py` fetches the other side of it — peers, the sector ETF, the
   index, business figures and consensus, the tax arithmetic, the attribution
   of a month behind the index — with every difference already computed;
 * the model is told to *do* the analysis on that evidence: a verdict, then a
@@ -18,7 +18,7 @@ opening it runs the comparison the line invites:
 * the tables under it are computed, never written: the reader checks the
   prose against them, so they cannot come from the prose's author.
 
-Pure: no network and no files. `api/briefing.analysis` fetches, calls and
+Pure: no network and no files. `views/briefing.analysis` fetches, calls and
 stores.
 """
 
@@ -29,8 +29,9 @@ import re
 from datetime import date
 
 from stocks import obs
-from stocks.chat import daily, engine, memory, signals, structured
+from stocks.chat import daily, engine, memory, signals
 from stocks.formatting import DECIMAL_COMMA
+from stocks.llm import structured
 
 VERDICT_CHARS = 160
 TITLE_CHARS = 48
@@ -332,14 +333,14 @@ def _day(iso) -> str:
 
 
 def _sector_name(name: str, lang: str) -> str:
-    from stocks.web.i18n import has, translate
+    from stocks.i18n import has, translate
 
     slug = f"sentiment.sector_{str(name or '').lower().replace(' ', '_')}"
     return translate(slug, lang) if has(slug) else str(name or "")
 
 
 def _t(key: str, lang: str, **kw) -> str:
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     return translate(f"home.daily_an_{key}", lang, **kw)
 

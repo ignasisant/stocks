@@ -20,7 +20,6 @@ import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import atomic, obs
-from stocks.analysis import naive_dates
 from stocks.config import DATA_DIR, ticker_aliases
 from stocks.data import funds, profiles, twelvedata
 from stocks.data.crypto import COINGECKO_IDS, split_pair
@@ -33,6 +32,7 @@ from stocks.data.symbols import (
     symbol_for_code,
     symbol_for_isin,
 )
+from stocks.frames import naive_dates
 
 # ----------------------------------------------------- yfinance's page cache
 # `YfData.cache_get` is an `lru_cache(maxsize=64)` of whole HTTP responses,
@@ -521,7 +521,7 @@ def _place_codes(missing: list[str], currencies: dict[str, str]) -> list[str]:
 # move (sector, country) and facts that move by the second (premarket price),
 # so it is pinned to the faster of the two — the point is to collapse the
 # several calls *within one render*, not to hold quotes. The API's own
-# `ttl_cache` wrappers (api/cache.py) still bound how often a render happens.
+# `ttl_cache` wrappers (cache.py) still bound how often a render happens.
 _INFO_TTL_S = 120.0
 _info_memo: dict[str, tuple[float, dict]] = {}
 _info_lock = threading.Lock()

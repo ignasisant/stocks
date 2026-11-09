@@ -50,7 +50,7 @@ def data() -> DigestData:
 
 @pytest.fixture
 def providers(monkeypatch):
-    from stocks.web import llm
+    from stocks import llm
 
     fakes = {
         "anthropic": FakeProvider("anthropic", reply="BYOK line."),

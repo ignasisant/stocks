@@ -39,12 +39,13 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from stocks.data.fx import ToBase, converter, prefetch
+
 # `listing_currencies` is re-exported: the loaders of both front ends stamp
 # their bars through `fees.listing_currencies`. The answer itself lives in
-# stocks.analysis.listing, shared with every path that turns a close into money.
-from stocks.analysis.listing import listing_currencies as listing_currencies
-from stocks.analysis.listing import quote_unit
-from stocks.data.fx import ToBase, converter, prefetch
+# stocks.data.listing, shared with every path that turns a close into money.
+from stocks.data.listing import listing_currencies as listing_currencies
+from stocks.data.listing import quote_unit
 from stocks.portfolio.ledger import Transaction
 
 # How far past the day's high/low an execution may print and still be read as
@@ -156,7 +157,7 @@ def _bar_currency(df: pd.DataFrame | None) -> tuple[str | None, float]:
     """(ISO currency, unit scale) the frame's prices are quoted in.
 
     Minor units (London in pence) scale to the major one before any FX:
-    `fx` knows GBP, not GBp (stocks.analysis.listing.quote_unit).
+    `fx` knows GBP, not GBp (stocks.data.listing.quote_unit).
     """
     return quote_unit(df.attrs.get("currency") if df is not None else None)
 

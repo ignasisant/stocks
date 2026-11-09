@@ -46,8 +46,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from stocks import obs
-from stocks.api import cache, loaders, security
+from stocks import cache, loaders, obs
+from stocks.api import security
 from stocks.config import CURRENCIES, load_watchlist
 
 ENV_FLAG = "STOCKS_BOOT_WARM"
@@ -87,7 +87,7 @@ def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     then fill the memos one Home, one Portfolio and one Today read: the book's
     close download and the three frames built from it, the watchlist's year,
     then what Today's sections fetch for the largest names."""
-    from stocks.api.home import closes_tuple, year_closes
+    from stocks.views.home import closes_tuple, year_closes
 
     repair_splits(db)
     heal_book(db)

@@ -284,7 +284,7 @@ matter most and phrases them:
 The assistant is **BYOK** — you supply your own API key and pay your own
 provider bill; the app ships no keys and makes no calls on its own account
 (unless the deploy opts into the free chain below). Three BYOK providers ship
-in the registry ([`llm.py`](src/stocks/web/llm.py)), each with a model picker:
+in the registry ([`llm.py`](src/stocks/llm/__init__.py)), each with a model picker:
 
 | Provider | Models | Get a key |
 |---|---|---|
@@ -732,11 +732,14 @@ src/stocks/
   web/landing_static.py  the landing as a standalone HTML document
   web/seo.py           title/description/canonical/hreflang/OG/JSON-LD, robots.txt, sitemap.xml
   web/oidc.py          Google sign-in round trip, minting the session cookie
-  web/auth.py          per-account data files: prefs, chat book, watchlist
+  userprefs.py         per-account preferences and investor profile
+  chat/conversations.py  per-account chat book: threads, turns, ratings
+  views/               what a screen, the chat and the pushes read, composed once
   web/onboarding.py    guided tour + per-release "what's new" (one step registry)
-  web/llm.py           multi-provider LLM registry (Claude/ChatGPT/Gemini), streaming + error map
+  llm/__init__.py           multi-provider LLM registry (Claude/ChatGPT/Gemini), streaming + error map
   chat/engine/         portfolio-aware assistant: context + BYOK key + conversation
   api/                 the HTTP API every app page reads and writes through
+  schemas/             the API's pydantic payloads, shared with the views
   cli.py               `stocks` command
 frontend/app/              the React shell: one page per route, the chat drawer
 scripts/update_prices.py   standalone refresh (cron-friendly)
@@ -899,8 +902,8 @@ a different piece of work.
 
 Two things about how it serves, by design:
 
-- **A TTL memo keyed on the file.** The loaders in `stocks/api/loaders/`
-  cache through `api/cache.py` on `(db path, ledger mtime, base currency)`, so
+- **A TTL memo keyed on the file.** The loaders in `stocks/loaders/`
+  cache through `cache.py` on `(db path, ledger mtime, base currency)`, so
   an import invalidates a book the moment the file changes.
 - **No app cookie.** `/api/*` is exempt from `ts_app` and from the canonical-host
   redirect: a client is not a browser that has "been to the app", and a cross-host
@@ -916,11 +919,11 @@ A third seam came out of the same work: `stocks.identity` resolves a stored
 broker label to the symbol it stands for, finds a company name for it and
 locates its logo. The ledger keeps what the broker wrote — an ISIN, a local
 Revolut code — because that string is the audit trail; every screen prints what
-it resolves to, and `api/loaders/names.py` caches it on the TTL memo.
+it resolves to, and `loaders/names.py` caches it on the TTL memo.
 
 Shared arithmetic lives in the domain, not in a caller:
 `analysis.portfolio.book_history` computes injected-vs-value, the flow-adjusted
-TWR and the list of names it could not price, and `api/loaders/book.py` calls it.
+TWR and the list of names it could not price, and `loaders/book.py` calls it.
 `stocks.search` owns which search tier answers first and how the tiers dedup,
 and the CLI, the chat and `/api/v1/search` all read it. When a number or a
 ranking needs changing it changes once.

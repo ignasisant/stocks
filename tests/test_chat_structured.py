@@ -8,8 +8,8 @@ prone to the parser's stringifying fallback.
 import pytest
 from pydantic import field_validator
 
-from stocks.chat import structured
-from stocks.chat.structured import OffContract
+from stocks.llm import structured
+from stocks.llm.structured import OffContract
 
 FN = "PlanQueries"
 

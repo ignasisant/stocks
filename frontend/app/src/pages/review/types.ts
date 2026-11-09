@@ -1,6 +1,6 @@
 /**
  * What `/api/v1/review` answers with. Mirrors `Review` / `ReviewRow` in
- * `src/stocks/api/schemas/`.
+ * `src/stocks/schemas/`.
  *
  * Verdicts and reasons are keys: the words are the catalog's
  * (`review.verdict_<key>`, `review.reason_<code>`). Every figure that could not

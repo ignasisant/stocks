@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import date
 
 from stocks import obs
-from stocks.chat import daily_book, signals, structured
+from stocks.chat import daily_book, signals
 from stocks.chat.daily.card import (
     _FIRED,
     _SOURCE_LLM,
@@ -48,6 +48,7 @@ from stocks.chat.daily.number_audit import (
     audit,
     figures,
 )
+from stocks.llm import structured
 
 
 def parse(

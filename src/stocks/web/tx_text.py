@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from stocks.i18n import translate as _t
 from stocks.portfolio import degiro
-from stocks.web.i18n import translate as _t
 
 
 def action_label(action: str, lang: str | None = None) -> str:

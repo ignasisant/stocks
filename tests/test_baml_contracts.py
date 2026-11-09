@@ -14,7 +14,8 @@ import pytest
 
 from stocks.baml_client import b
 from stocks.baml_client import types as baml_types
-from stocks.chat import structured, tools
+from stocks.chat import tools
+from stocks.llm import structured
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "stocks"
 FUNCTIONS = sorted(n for n in dir(b.parse) if not n.startswith("_"))
@@ -44,8 +45,9 @@ def test_the_callers_no_longer_spell_out_the_shape_themselves():
     """One description of the reply per prompt: BAML's. A second, hand-kept
     copy in the instructions is how the two drift apart."""
     from stocks.chat import daily, daily_analysis, learnings, sector_ai
+    from stocks.chat import skills as chat_skills
+    from stocks.chat import websearch as chat_web
     from stocks.portfolio import instruments, llm_map
-    from stocks.web import chat_skills, chat_web
 
     prompts = {
         "chat_skills": chat_skills._CLASSIFIER_SYSTEM,

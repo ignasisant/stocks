@@ -430,17 +430,24 @@
   opens: earnings
 
 # Rated down in prod 2026-11-08: read fourteen days forward, answered that
-# nothing had been reported.
+# nothing had been reported. 2026-11-09 the reader showed the recap they
+# expected: the book against the index, then each print with its quarter,
+# outlook and the exit rules they wrote.
 - id: earnings-past-week
   area: earnings
   kind: book
   message: "resultados semana pasada de acciones en mi cartera"
   goals:
-    - Lists the book's companies that reported in the last seven days, from the calendar's past results
+    - Opens with the book's week against the S&P 500 bought with the same money, and the same from the book's first day
+    - Lists the held companies that reported in the last seven days, from the calendar's past results, before the followed ones
     - Gives each one's reported EPS against the consensus, and says where there is none
+    - Adds the quarter's revenue growth, margin or outlook and how the shares moved across the print, where the app has them
+    - Says whether a print bears on the exit rules the reader saved, and names held names that reported with no rule
+    - Ends with who reports in the coming days
     - Does not claim nothing was reported when the calendar has prints in the window
   truth:
     - {get: /earnings, label: "Earnings calendar (results = past prints)"}
+    - {get: /portfolio/positions, label: "Open positions"}
   forbids: ["no hay registros"]
 
 # Rated down 2026-10-29: consensus filled from memory, quarters two years old.

@@ -75,7 +75,7 @@ def free_pot(monkeypatch, tmp_path):
 
 @pytest.fixture
 def provider(monkeypatch) -> Recorder:
-    from stocks.web import llm
+    from stocks import llm
 
     fake = Recorder()
     monkeypatch.setattr(llm, "PROVIDERS", {"free": fake})

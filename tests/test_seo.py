@@ -14,8 +14,8 @@ from xml.etree import ElementTree
 
 import pytest
 
+from stocks.i18n import LANGUAGES, translate
 from stocks.web import landing, markup, seo
-from stocks.web.i18n import LANGUAGES, translate
 from stocks.web.landing import (
     ASSET_BASE,
     FAQ_COUNT,

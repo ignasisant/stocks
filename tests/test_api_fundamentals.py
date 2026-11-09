@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks.api import loaders
+from stocks import loaders
 from stocks.api.app import app as fastapi_app
 from tests.patching import patch_loaders
 

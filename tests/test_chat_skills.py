@@ -3,7 +3,7 @@ no network."""
 
 import pytest
 
-from stocks.web import chat_skills
+from stocks.chat import skills as chat_skills
 
 EXPECTED_IDS = {
     "tech", "energy", "value", "financials", "healthcare", "crypto",

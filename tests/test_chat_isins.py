@@ -12,10 +12,9 @@ from dataclasses import dataclass
 import pytest
 
 from stocks import identity
-from stocks.chat import engine, guard, isins
+from stocks.chat import conversations, engine, guard, isins
 from stocks.data import openfigi
 from stocks.data.openfigi import Security
-from stocks.web import auth
 
 HY = "IE00B66F4759"  # iShares € High Yield Corp Bond, real
 WORLD = "IE00B4L5Y983"  # iShares Core MSCI World, real
@@ -123,7 +122,7 @@ class _Writes:
 
 
 def test_the_stored_answer_is_the_checked_one(registry, monkeypatch, tmp_path):
-    from stocks.web import llm
+    from stocks import llm
 
     monkeypatch.setattr(guard, "mode", lambda: "off")
     monkeypatch.setattr(llm, "PROVIDERS", {"free": _Writes(
@@ -138,4 +137,4 @@ def test_the_stored_answer_is_the_checked_one(registry, monkeypatch, tmp_path):
                           message="¿ETFs de bonos en euros?", lang="es", **paths)
     expected = f"Short duration: (1-3yr). High yield: **{HY}**."
     assert reply.text == expected
-    assert auth.load_chat(paths["chat_path"])[-1]["content"] == expected
+    assert conversations.load_chat(paths["chat_path"])[-1]["content"] == expected

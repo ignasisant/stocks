@@ -15,18 +15,18 @@ from stocks.chat import (
     market,
     toolbox,
 )
+from stocks.chat import websearch as chat_web
 from stocks.chat.engine.book import (
     reporting_currency,
 )
 from stocks.chat.engine.recall import (
     recall_on,
 )
-from stocks.web import chat_web
 
 if TYPE_CHECKING:
 
     from stocks.chat.checkpoint import Checkpoint
-    from stocks.web.llm import Provider, ToolCall
+    from stocks.llm import Provider, ToolCall
 
 
 def web_enabled() -> bool:
@@ -157,8 +157,8 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     puts the turn back on the fixed path."""
     if not web_enabled():
         return agent.Evidence(ok=False)
-    from stocks.web import auth
-    from stocks.web.llm import ToolCall
+    from stocks.chat import conversations
+    from stocks.llm import ToolCall
 
     if checkpoint is not None and (done := checkpoint.evidence) is not None:
         calls = [ToolCall(c["name"], c["args"], c["result"]) for c in done["calls"]]
@@ -182,8 +182,8 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     if chat_path is not None:
         # Off by the account's own switch: the earlier conversations stay on
         # disk (they are the threads list), but no answer reads them.
-        memory_db = auth.memory_path(chat_path) if recall_on(prefs) else None
-        thread = auth.active_conversation(chat_path)["id"]
+        memory_db = conversations.memory_path(chat_path) if recall_on(prefs) else None
+        thread = conversations.active_conversation(chat_path)["id"]
         decisions = journal.path_for(chat_path)
     # `focus` is what "this" and "it" mean: the ticker on the reader's screen.
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,

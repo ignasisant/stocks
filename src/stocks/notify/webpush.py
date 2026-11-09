@@ -411,7 +411,7 @@ def answer_ready(path: Path, owner: str, *, thread: str, question: str) -> int:
     """After a run: push "your answer is ready" unless the reader is looking."""
     if not configured() or present(owner):
         return 0
-    from stocks.web.i18n import translate
+    from stocks.i18n import translate
 
     took = 0
     message: dict = {}

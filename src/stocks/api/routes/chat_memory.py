@@ -148,11 +148,11 @@ class Settled(BaseModel):
 
 
 def _titles(paths: UserPaths) -> dict[str, str]:
-    from stocks.web import auth
+    from stocks.chat import conversations
 
     if not paths.chat.exists():
         return {}
-    return {c["id"]: c["title"] for c in auth.list_conversations(paths.chat)}
+    return {c["id"]: c["title"] for c in conversations.list_conversations(paths.chat)}
 
 
 def _out(item: learnings.Learning, titles: dict[str, str],
