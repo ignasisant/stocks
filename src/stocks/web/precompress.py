@@ -37,7 +37,7 @@ PACKED = frozenset({".js", ".css", ".svg", ".json", ".map"})
 
 def _brotli() -> ModuleType | None:
     try:
-        import brotli  # ty: ignore[unresolved-import] — a build-time extra
+        import brotli  # ty: ignore[import-not-found] — a build-time extra
     except ImportError:
         return None
     return brotli
