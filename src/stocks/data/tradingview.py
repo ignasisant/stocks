@@ -127,7 +127,7 @@ def _analyze(sym: Symbol, interval: str):
 
     Isolated so tests monkeypatch here and never touch the network.
     """
-    # ty: ignore[unresolved-import]  (the optional `tv` extra)
+    # ty: ignore[import-not-found]  (the optional `tv` extra)
     from tradingview_ta import Interval, TA_Handler
 
     handler = TA_Handler(
