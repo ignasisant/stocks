@@ -762,3 +762,44 @@ def test_trailing_pe_drops_one_offs():
     m = compute_metrics(raw)
     assert m["pe_ttm"] == 38.0
     assert m["one_off_share"] is None
+
+
+def test_forward_pe_is_the_next_twelve_months_not_next_fiscal_year():
+    """Prod 2026-11-09: NVDA read 10.9x on FY2028 EPS (Yahoo's forwardPE),
+    a year that had not begun, with FY2027 still a quarter and a half out."""
+    from datetime import UTC, date, datetime
+
+    from stocks.analysis.fundamentals import forward_pe
+
+    end = datetime(2027, 1, 25, tzinfo=UTC).timestamp()
+    info = {"forwardPE": 11.03, "epsCurrentYear": 9.31, "epsForward": 15.92,
+            "nextFiscalYearEnd": end}
+    pe = forward_pe(info, 175.68, today=date(2026, 11, 9))
+    ahead = 77 / 365
+    assert abs(pe - 175.68 / (ahead * 9.31 + (1 - ahead) * 15.92)) < 1e-9
+    # Days after the year closes, before Yahoo rolls its "next" end: the
+    # following year's end is the one ahead.
+    later = forward_pe(info, 175.68, today=date(2027, 2, 1))
+    assert later is not None and abs(later - 175.68 / (0.98 * 9.31 + 0.02 * 15.92)) < 0.1
+    # Without the estimates Yahoo's own figure stands.
+    assert forward_pe({"forwardPE": 11.03}, 175.68) == 11.03
+
+
+def test_quarter_labels_are_the_companys_fiscal_quarters():
+    """Prod 2026-11-09: NVDA's quarter to July 2026 read "2026Q3"; it is the
+    second quarter of fiscal 2027."""
+    from datetime import date
+
+    from stocks.analysis.fundamentals import fiscal_quarter
+
+    nvda = date(2026, 1, 25)
+    assert fiscal_quarter(date(2026, 7, 26), nvda) == "FY2027Q2"
+    assert fiscal_quarter(date(2026, 10, 25), nvda) == "FY2027Q3"
+    assert fiscal_quarter(date(2026, 1, 25), nvda) == "FY2026Q4"
+    assert fiscal_quarter(date(2026, 4, 26), nvda) == "FY2027Q1"
+    apple = date(2025, 9, 27)
+    assert fiscal_quarter(date(2025, 12, 27), apple) == "FY2026Q1"
+    assert fiscal_quarter(date(2026, 9, 26), apple) == "FY2026Q4"
+    # A calendar-year filer, or one whose year end is unknown, keeps "YYYYQn".
+    assert fiscal_quarter(date(2026, 9, 30), date(2025, 12, 31)) == "2026Q3"
+    assert fiscal_quarter(date(2026, 9, 30), None) == "2026Q3"

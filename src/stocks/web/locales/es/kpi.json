@@ -9,7 +9,7 @@
   "kpi.pe_ttm.label": "P/E (TTM)",
   "kpi.pe_ttm.desc": "Precio / beneficio por acción de los últimos doce meses. Cuanto más bajo, más barato por unidad de beneficio actual.",
   "kpi.pe_fwd.label": "P/E (fwd)",
-  "kpi.pe_fwd.desc": "Precio / EPS de consenso del próximo año. Por debajo del P/E (TTM) significa que los analistas esperan que crezcan los beneficios.",
+  "kpi.pe_fwd.desc": "Precio / EPS de consenso de los próximos doce meses. Por debajo del P/E (TTM) significa que los analistas esperan que crezcan los beneficios.",
   "kpi.peg.label": "P/E por crecimiento",
   "kpi.peg.desc": "P/E entre el crecimiento sostenido de ventas por acción (neto de dilución). 1x o menos es barato para su crecimiento; 2,5x, caro.",
   "kpi.peg.note": "crecimiento con tope del 40 %; en blanco sin P/E ni crecimiento positivos",

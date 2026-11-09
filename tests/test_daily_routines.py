@@ -826,3 +826,27 @@ def test_the_exits_fact_carries_the_written_rules(tmp_path):
     assert daily_routines.exits_fact(sources)["rules"] == [
         {"ticker": "AMD", "rule": "drawdown_cost", "level": 30.0, "state": "open",
          "thesis": "Share gains"}]
+
+
+def test_a_central_bank_saved_as_a_ticker_is_not_quoted():
+    """Prod 2026-11-09: a routine saved 2026-10-11 ("…la Fed y el BCE") kept
+    tickers ["BCE"] from before the stop-list had it, and the brief fetched
+    BCE Inc.'s 13F holders and 8-Ks for a reader who meant the ECB."""
+    from stocks.chat import learnings, routine_plan
+    from stocks.chat.daily_routines import symbols
+
+    assert symbols(["BCE", "NVDA"], {}) == ["NVDA"]
+    # A reader who follows BCE Inc. still gets it.
+    assert symbols(["BCE"], {"BCE Inc.": "BCE"}) == ["BCE"]
+    routine = learnings.Learning(
+        id="m_1", text="Cuáles de mis empresas han publicado resultados; la Fed y el BCE",
+        kind="routine", created="2026-10-11", tickers=("BCE",))
+    assert routine_plan.current(routine).earnings == "book"
+
+
+def test_the_card_prompt_forbids_relative_days():
+    """Prod 2026-11-09: a card written on 8 Nov said "mañana, 9 de noviembre"
+    and was still on screen on the 9th. The prompt asks for weekday + date."""
+    from stocks.chat.daily.instructions import _WHEN
+
+    assert "'tomorrow'" in _WHEN and "weekday and date" in _WHEN

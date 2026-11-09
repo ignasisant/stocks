@@ -533,7 +533,9 @@ def events(symbol: Symbol) -> PriceEvents:
                 date=str(day),
                 eps_estimate=(r := reported.get(day)) and r.eps_estimate,
                 reported_eps=r.reported_eps if r else None,
-                surprise_pct=r.surprise_pct if r else None,
+                surprise_pct=(
+                    r.surprise_pct if r and not r.mixed_basis else None
+                ),
                 beat=r.beat if r else None,
             )
             for day in dates
@@ -777,9 +779,27 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
     cheap/fair/expensive band where one exists, and absent where it does not —
     never a neutral default, which would read as "fairly valued".
     """
+    return metrics_at(symbol, base)
+
+
+def metrics_at(
+    symbol: str, base: str | None = None, price: float | None = None
+) -> Metrics:
+    """`metrics`, with every price-bound KPI moved to `price` when one is given.
+
+    The fundamentals pull is cached for hours, so its price trails the quote a
+    caller drew beside it (prod 2026-11-09: NVDA quoted 178.25 over a grid
+    priced at 173.97). A caller holding the live quote passes it, and the
+    multiples are read at the price on the same screen; the business is the
+    one the filings describe either way (`review.at_price`).
+    """
     ticker = symbol.strip().upper()
     raw = loaders.fundamentals(ticker)
     computed = compute_metrics(raw)
+    taken = _num(computed.get("price"))
+    if price and taken and price > 0 and taken > 0:
+        computed = review.at_price(computed, price / taken)
+        computed["price"] = price
     # No account dependency: every figure here is the company's, not the
     # reader's, and a route that demanded one would stop answering the scripts
     # that hold a token and name nobody. The single per-reader line — the market

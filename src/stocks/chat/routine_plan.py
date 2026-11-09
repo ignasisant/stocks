@@ -34,7 +34,7 @@ from datetime import date
 from pathlib import Path
 
 from stocks import obs
-from stocks.chat import engine, learnings
+from stocks.chat import engine, learnings, market
 from stocks.llm import structured
 
 # The groups a routine can ask to be quoted, each a short fixed list so the
@@ -246,7 +246,10 @@ def current(routine: learnings.Learning) -> Recipe:
     from before topics existed still gets the topics its words plainly ask
     for."""
     stored = routine.recipe or {}
-    hint = rules(routine.text, routine.tickers)
+    # A routine saved before a word joined the stop-list still carries it
+    # ("la Fed y el BCE" kept as ["BCE"]): no name to scope results to.
+    named = tuple(t for t in routine.tickers if t not in market.NOT_TICKERS)
+    hint = rules(routine.text, named)
     if stored.get("by") == "model" and stored.get("wording") == routine.text:
         planned = _from_dict(stored)
         return replace(planned, topics=planned.widened(hint).topics)

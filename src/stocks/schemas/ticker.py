@@ -96,8 +96,14 @@ class Trend(BaseModel):
     pct_from_high: float | None = Field(
         default=None, description="Distance below the 52-week closing high (<= 0)."
     )
-    high_52w: float | None = None
-    low_52w: float | None = None
+    high_52w: float | None = Field(
+        default=None,
+        description=(
+            "The year's highest daily close. Below the quote's `high_52w`, "
+            "which is the highest traded price, intraday included."
+        ),
+    )
+    low_52w: float | None = Field(default=None, description="…and its lowest close.")
     rs_6m: float | None = Field(
         default=None, description="Return minus the home index's over six months."
     )

@@ -397,7 +397,7 @@ def test_quotes_are_deduplicated_and_upper_cased(site, token, monkeypatch):
 
 @pytest.mark.parametrize("tool, arguments, module, handler, expected", [
     ("ticker_details", {"ticker": "aapl", "base": "USD"},
-     "ticker", "metrics", ("AAPL", "USD")),
+     "ticker", "quote", ("AAPL", "USD")),
     ("ticker_trend", {"ticker": "san.mc"}, "ticker", "trend", ("SAN.MC",)),
     ("search_tickers", {"query": " apple ", "limit": 5},
      "search", "find", ("<paths>", "apple", 5)),
@@ -501,6 +501,13 @@ def test_a_long_answer_is_cut_to_fit_and_says_so():
     assert len(text) <= tools.TEXT_LIMIT
     assert data["truncated"] is True
     assert json.loads(text) == data
+    # What went is named, so a cut list is not read as the whole of it.
+    kept = {row["ticker"] for row in data["positions"]}
+    assert data["omitted"]["rows"] == 500 - len(kept)
+    # Named from the first row cut, up to the cap.
+    first = len(kept)
+    assert data["omitted"]["tickers"] == [
+        f"T{i}" for i in range(first, min(500, first + tools._OMITTED_NAMES))]
 
 
 def test_floats_lose_noise_not_meaning():

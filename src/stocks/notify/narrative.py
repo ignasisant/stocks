@@ -104,6 +104,7 @@ def _prompt(
                 "date": r.date.isoformat(),
                 "beat": r.beat,
                 "reported_eps": r.reported_eps,
+                "mixed_basis": r.mixed_basis,
                 "eps_estimate": r.eps_estimate,
                 "move_pct": getattr(data, "result_moves", {}).get(r.ticker),
             }

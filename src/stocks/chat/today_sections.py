@@ -373,12 +373,17 @@ def print_data(result, source: dict | None, series, when: date) -> dict:
             surprise = (eps / estimate - 1) * 100 if estimate > 0 else None
         if eps is not None:
             data["reported_eps"] = round(eps, 2)
-        if estimate is not None:
-            data["eps_estimate"] = round(estimate, 2)
-        if surprise is not None:
-            data["surprise_pct"] = round(surprise, 1)
-        if eps is not None and estimate is not None:
-            data["beat"] = eps >= estimate
+        if getattr(result, "mixed_basis", False):
+            # GAAP against an adjusted consensus (`EarningsResult.mixed_basis`):
+            # the estimate is left out so no line sets the two side by side.
+            data["mixed_basis"] = True
+        else:
+            if estimate is not None:
+                data["eps_estimate"] = round(estimate, 2)
+            if surprise is not None:
+                data["surprise_pct"] = round(surprise, 1)
+            if eps is not None and estimate is not None:
+                data["beat"] = eps >= estimate
     source = source or {}
     if (revenue := finite(source.get("revenue"))) is not None:
         data["revenue"] = round(revenue, 2)

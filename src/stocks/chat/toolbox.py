@@ -203,12 +203,14 @@ def _earnings_quality(code: str, trailing: float | None) -> list[str]:
     the forward multiple beside it with what the gap between them means."""
     from stocks import loaders
     from stocks.analysis import one_offs
+    from stocks.analysis.fundamentals import forward_pe
 
     raw = loaders.fundamentals(code)
     lines = []
-    forward = (raw.info or {}).get("forwardPE")
+    info = raw.info or {}
+    forward = forward_pe(info, info.get("currentPrice") or info.get("regularMarketPrice"))
     if isinstance(forward, (int, float)) and forward > 0:
-        lines.append(f"Forward P/E on consensus EPS for the next fiscal year: "
+        lines.append(f"Forward P/E on consensus EPS for the next twelve months: "
                      f"{forward:.1f}x. Below the trailing one, consensus expects "
                      "EPS to rise; above it, to fall, or the trailing year holds "
                      "a one-off gain. Say which when you quote both.")

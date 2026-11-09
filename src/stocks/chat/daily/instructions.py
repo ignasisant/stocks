@@ -94,7 +94,9 @@ _KINDS = (
     "candidate whose print may open or close the entry case.\n"
     "- earnings_result: a name reported on `date` (`days_ago`): EPS "
     "`reported_eps` against `eps_estimate` expected, a `surprise_pct` "
-    "surprise (`beat`). The question is whether it changes the thesis.\n"
+    "surprise (`beat`). `mixed_basis` true: the two are not the same kind of "
+    "EPS (GAAP against adjusted) — state no beat or miss from them. The "
+    "question is whether it changes the thesis.\n"
     "- macro_event: a central bank (`bank`: fed = US Federal Reserve, ecb = "
     "European Central Bank) decides rates on `date`, in `in_days` days; the "
     "rate stands at `rate` (the Fed's is a range from `rate_low`).\n"
@@ -218,7 +220,8 @@ _BRIEF_DATA = (
     "against the previous close), `markets` (the same for the indices, "
     "rates, currencies or commodities, each with its `name`), `earnings` "
     "(results `reported` `days_ago` days back — EPS `reported_eps` against "
-    "`eps_estimate`, `surprise_pct`, `beat`, the session's `change_pct` — and "
+    "`eps_estimate`, `surprise_pct`, `beat`, `mixed_basis` = GAAP against "
+    "adjusted, no beat or miss to state; the session's `change_pct` — and "
     "`upcoming` in `in_days` days; `mine` marks the user's names), `charts` "
     "(for ask `n`: each line's change over `window`; a `portfolio` line is "
     "the user's book), `events` (the next `days` days: `earnings` and "
@@ -297,7 +300,8 @@ _BRIEF_SHAPE = (
 # hours a "day move" is the *last completed* session — a different date from
 # `date`, and two sessions back on a Monday morning or after a holiday. Left
 # unsaid, every model writes "today" over it (see the 3 Sep card that reported
-# NOW at -4.32%, which was 2 Sep's close).
+# NOW at -4.32%, which was 2 Sep's close). And the card outlives its day:
+# one written on 8 Nov said "tomorrow, 9 November" to a reader on 9 Nov.
 _WHEN = (
     "DATES. `date` is today. `session.date` is the trading day the market "
     "figures describe and `session.is_today` says whether the two are the same "
@@ -305,7 +309,11 @@ _WHEN = (
     "`as_of`. Write 'today' about a figure only when its `as_of` equals `date`. "
     "Otherwise name the session it came from — 'in the last session (2 Sep)', "
     "'at Tuesday's close' — in the reader's language. Never present an older "
-    "session's move as today's, and never date a figure by any other means."
+    "session's move as today's, and never date a figure by any other means. "
+    "The card stays on screen until the next one is written, often into the "
+    "next day, so a date ahead or behind is never 'tomorrow', 'yesterday' or "
+    "'in N days' (`in_days` is for ranking, not for the text): write its "
+    "weekday and date — 'on Monday 9 Nov' — in the reader's language."
 )
 
 # The app draws the breakdown under the day's figure; the model only needs to

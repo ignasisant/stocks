@@ -9,7 +9,7 @@
   "kpi.pe_ttm.label": "P/E (TTM)",
   "kpi.pe_ttm.desc": "Price / earnings per share over the trailing twelve months. Lower = cheaper per unit of current profit.",
   "kpi.pe_fwd.label": "P/E (fwd)",
-  "kpi.pe_fwd.desc": "Price / next-year consensus EPS. Below the TTM P/E means analysts expect earnings to grow.",
+  "kpi.pe_fwd.desc": "Price / consensus EPS for the next twelve months. Below the TTM P/E means analysts expect earnings to grow.",
   "kpi.peg.label": "P/E per growth",
   "kpi.peg.desc": "P/E over sustained sales growth per share (net of dilution). 1x or under is cheap for its growth; 2.5x is dear.",
   "kpi.peg.note": "growth capped at 40%; blank without a positive P/E and positive growth",

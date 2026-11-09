@@ -39,6 +39,13 @@ class EarningsEvent:
     days_until: int | None = None
 
 
+# A surprise this large on an estimate at least this big is read as two
+# bases set against each other (`EarningsResult.mixed_basis`). Below the floor
+# a few cents either way is a large percentage and nothing more.
+MIXED_BASIS_SURPRISE_PCT = 50.0
+MIXED_BASIS_MIN_ESTIMATE = 0.20
+
+
 @dataclass
 class EarningsResult:
     """A reported quarter: what the street expected vs what printed."""
@@ -50,8 +57,32 @@ class EarningsResult:
     surprise_pct: float | None = None
 
     @property
+    def mixed_basis(self) -> bool:
+        """The reported figure and the estimate are too far apart to be the
+        same kind of EPS: a GAAP print set against an adjusted consensus.
+
+        Both feeds do it. Finnhub carried UBER's Q3 2026 as 0.25 (GAAP, a
+        476 M$ revaluation loss inside) against 0.98 (the adjusted
+        consensus) and called a beat a -74.6 % miss; Yahoo has FISV-style
+        GAAP charges and tax releases that land hundreds of percent off. A
+        real miss or beat past half the estimate on an estimate this size is
+        rare enough that saying "not comparable" costs less than a verdict
+        that is wrong. Inferred, not known: no feed says which basis it is.
+        """
+        estimate = self.eps_estimate
+        if estimate is None or abs(estimate) < MIXED_BASIS_MIN_ESTIMATE:
+            return False
+        surprise = self.surprise_pct
+        if surprise is None and self.reported_eps is not None:
+            surprise = (self.reported_eps - estimate) / abs(estimate) * 100
+        return surprise is not None and abs(surprise) >= MIXED_BASIS_SURPRISE_PCT
+
+    @property
     def beat(self) -> bool | None:
-        """True beat / False miss / None when there's nothing to compare."""
+        """True beat / False miss / None when there's nothing to compare —
+        including a print whose figures are not on the same basis."""
+        if self.mixed_basis:
+            return None
         if self.surprise_pct is not None:
             return self.surprise_pct >= 0
         if self.reported_eps is not None and self.eps_estimate is not None:
@@ -201,7 +232,42 @@ def fetch_earnings(ticker: str) -> tuple[list[date], list[EarningsResult]]:
                 for d in raw if isinstance(raw, (list, tuple)) else [raw]:
                     if (dd := _to_date(d)) is not None:
                         found.add(dd)
+    with obs.swallow("earnings.window_overlay", ticker=ticker):
+        _prefer_window(ticker, symbol, found, results)
     return sorted(found), sorted(results.values(), key=lambda r: r.date)
+
+
+def _prefer_window(
+    ticker: str, symbol: str, found: set[date], results: dict[date, EarningsResult]
+) -> None:
+    """Swap Yahoo's figures for Finnhub's on a print both carry, in place.
+
+    The calendar answers most US names from Finnhub's window and the rest
+    from Yahoo, so without this one week's prints come from two feeds that
+    disagree on what EPS is: DUOL Q3 2026 was 0.57 against 0.58 in the
+    window and 1.32 against 1.59 in Yahoo's table, the only one the calendar
+    read because the window had no next date for it. The window is already in
+    memory; a name it does not list keeps Yahoo's figures.
+    """
+    if not finnhub.covers(symbol):
+        return
+    window = finnhub.earnings_window()
+    rows = (window or {}).get(finnhub.spelling(symbol))
+    if not rows:
+        return
+    for printed in from_window(ticker, rows)[1]:
+        near = [
+            d for d in results
+            if abs((d - printed.date).days) <= CONSENSUS_SLACK_DAYS
+        ]
+        # Yahoo's date stays: it is the one in `found`, and the chart's
+        # markers and the calendar's cells are keyed on it.
+        day = near[0] if near else printed.date
+        for d in near:
+            del results[d]
+        printed.date = day
+        results[day] = printed
+        found.add(day)
 
 
 def earnings_dates(ticker: str) -> list[date]:

@@ -132,7 +132,7 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
         info={"forwardPE": 17.2}, income_q=income))
     got = toolbox._page_valuation("META", Context())
     assert "today in the 7th percentile" in got
-    assert "Forward P/E on consensus EPS for the next fiscal year: 17.2x" in got
+    assert "Forward P/E on consensus EPS for the next twelve months: 17.2x" in got
     assert "2026Q1: tax -25% of pretax income" in got
     assert "without them: 23.4x" in got
 

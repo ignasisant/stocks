@@ -14,6 +14,7 @@ import math
 import statistics
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 import pandas as pd
@@ -83,10 +84,13 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "P/E (fwd)",
         "x",
         "consensus",
-        "yfinance info.forwardPE",
+        "yfinance epsCurrentYear + epsForward blended to the next twelve "
+        "months (else info.forwardPE)",
         "Koyfin/TIKR analyst consensus",
-        desc="Price / next-year consensus EPS. Below the TTM P/E means analysts expect "
-        "earnings to grow.",
+        "NTM: this fiscal year's and next year's consensus EPS weighted by the "
+        "time left in each",
+        desc="Price / consensus EPS over the next twelve months. Below the TTM P/E "
+        "means analysts expect earnings to grow.",
     ),
     "peg": KpiSource(
         "P/E per growth",
@@ -498,7 +502,10 @@ def annual_financials(raw: RawFundamentals) -> pd.DataFrame:
 def quarterly_eps(raw: RawFundamentals) -> pd.DataFrame:
     """Quarterly Diluted (fallback Basic) EPS for charting — oldest-first.
 
-    Index is a "YYYYQn" period label. Empty DataFrame when the quarterly
+    Index is the fiscal quarter the company itself calls it: "2026Q3" for a
+    calendar-year filer, "FY2027Q2" for one whose year ends elsewhere
+    (NVDA's July 2026 quarter, which "2026Q3" misnamed). Without the fiscal
+    year end it is the calendar quarter. Empty DataFrame when the quarterly
     income statement or an EPS row is unavailable.
     """
     income = raw.income_q
@@ -511,11 +518,38 @@ def quarterly_eps(raw: RawFundamentals) -> pd.DataFrame:
         return pd.DataFrame()
     df = income.loc[[eps_label]].T
     df.columns = ["EPS"]
+    year_end = _finite(raw.info.get("lastFiscalYearEnd"))
+    end = datetime.fromtimestamp(year_end, tz=UTC).date() if year_end else None
     df.index = [
-        f"{c.year}Q{c.quarter}" if hasattr(c, "quarter") else str(c) for c in df.index
+        fiscal_quarter(c.date(), end) if hasattr(c, "date") else str(c)
+        for c in df.index
     ]
     df = df.apply(pd.to_numeric, errors="coerce")
     return df.iloc[::-1]  # yfinance is newest-first; charts read left-to-right
+
+
+# A 52/53-week year ends on a weekday, not a date: a quarter closing this
+# close to the year's anniversary closes that year.
+_YEAR_END_SLACK_DAYS = 15
+
+
+def fiscal_quarter(period_end: date, year_end: date | None) -> str:
+    """The fiscal quarter a period ending `period_end` is, given any one of
+    the company's fiscal year ends. A year is named after the calendar year
+    it ends in (NVDA's year to January 2027 is FY2027)."""
+    if year_end is None or year_end.month == 12:
+        return f"{period_end.year}Q{(period_end.month - 1) // 3 + 1}"
+    try:
+        closing = year_end.replace(year=period_end.year)
+    except ValueError:  # 29 February
+        closing = date(period_end.year, year_end.month, 28)
+    if (period_end - closing).days > _YEAR_END_SLACK_DAYS:
+        fiscal, opened = period_end.year + 1, closing
+    else:
+        fiscal, opened = period_end.year, closing - timedelta(days=365)
+    months = round((period_end - opened).days / 30.44)
+    quarter = min(max(math.ceil(months / 3), 1), 4)
+    return f"FY{fiscal}Q{quarter}"
 
 
 def _statement_fx(info: dict) -> float | None:
@@ -654,6 +688,40 @@ def _cash_backing(raw: RawFundamentals) -> float | None:
     return float(sum(float(cfo[y]) for y in years)) / profit
 
 
+def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
+    """Price over the next twelve months' consensus EPS.
+
+    Yahoo's `forwardPE` divides by `forwardEps`, which is next fiscal year's
+    figure (+1y) whatever the date: NVDA on 2026-11-09 read 10.9x on FY2028
+    EPS, a year that had not begun, and the PEG built on it read 0.27. The
+    blend is the analysts' NTM convention: this year's EPS for the part of
+    it still ahead, next year's for the rest. Without both estimates and a
+    fiscal-year end, Yahoo's figure stands.
+    """
+    fallback = _finite(info.get("forwardPE"))
+    this_year = _finite(info.get("epsCurrentYear"))
+    next_year = _finite(info.get("epsForward") or info.get("forwardEps"))
+    end = _finite(info.get("nextFiscalYearEnd"))
+    price = _finite(price)
+    if this_year is None or next_year is None or end is None or not price:
+        return fallback
+    today = today or date.today()
+    year_end = datetime.fromtimestamp(end, tz=UTC).date()
+    while year_end < today:  # Yahoo's "next" end is the current year's
+        year_end += timedelta(days=365)
+    ahead = min(max((year_end - today).days, 0), 365) / 365
+    eps = ahead * this_year + (1 - ahead) * next_year
+    return price / eps if eps else fallback
+
+
+def _finite(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     """All KPIs for one ticker. Missing data -> None, never invented."""
     info = raw.info
@@ -671,7 +739,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["market_cap"] = info.get("marketCap")
     m["ev"] = info.get("enterpriseValue")
     m["pe_ttm"] = info.get("trailingPE")
-    m["pe_fwd"] = info.get("forwardPE")
+    m["pe_fwd"] = forward_pe(info, m["price"])
     m["pb"] = info.get("priceToBook")
     m["ev_ebitda"] = info.get("enterpriseToEbitda")
     m["ev_sales"] = info.get("enterpriseToRevenue")

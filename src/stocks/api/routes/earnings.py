@@ -80,8 +80,9 @@ def _result(result: EarningsResult) -> CalendarResult:
         date=result.date.isoformat(),
         eps_estimate=_num(result.eps_estimate),
         reported_eps=_num(result.reported_eps),
-        surprise_pct=_num(result.surprise_pct),
+        surprise_pct=None if result.mixed_basis else _num(result.surprise_pct),
         beat=result.beat,
+        mixed_basis=result.mixed_basis,
     )
 
 

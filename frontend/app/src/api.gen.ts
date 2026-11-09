@@ -431,6 +431,7 @@ export type CalendarResult = {
   "reported_eps": number | null;
   "surprise_pct": number | null;
   "beat": boolean | null;
+  "mixed_basis": boolean;
 };
 
 export type CalendarTrade = {

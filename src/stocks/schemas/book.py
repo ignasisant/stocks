@@ -480,8 +480,9 @@ class Quote(BaseModel):
     high_52w: float | None = Field(
         default=None,
         description=(
-            "The year's highest regular-session price, in the listing's own "
-            "currency, off the same quote row. Null when the feed had no year "
+            "The year's highest regular-session price, intraday included (so "
+            "above the trend's closing high), in the listing's own currency, "
+            "off the same quote row. Null when the feed had no year "
             "(a Finnhub fallback, a listing younger than that)."
         ),
     )

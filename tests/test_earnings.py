@@ -321,3 +321,69 @@ def test_without_a_window_every_name_goes_to_yahoo(two_sources):
     install(None)  # keyless, or a read that failed
     calendar_events([Holding("AAPL"), Holding("SAN.MC")], ref=REF)
     assert asked == ["AAPL", "SAN.MC"]
+
+
+# ----------------------------------------------------- one basis per surprise
+# Prod 2026-11-09: UBER's Q3 read as a -74.6 % miss (GAAP 0.25 against an
+# adjusted 0.98 consensus) and DUOL's as 1.32 against 1.59 from Yahoo while
+# the window carried 0.57 against 0.58.
+
+
+def test_a_gaap_print_against_an_adjusted_consensus_is_no_verdict():
+    from stocks.data.earnings import EarningsResult
+
+    uber = EarningsResult("UBER", date(2026, 11, 4), 0.9838, 0.25, -74.6)
+    assert uber.mixed_basis and uber.beat is None
+    charge = EarningsResult("FISV", date(2026, 11, 3), 1.75, -11.17)
+    assert charge.mixed_basis and charge.beat is None
+    # An ordinary miss, and a large move on a few cents, keep their verdict.
+    meli = EarningsResult("MELI", date(2026, 11, 4), 9.27, 8.83, -4.75)
+    assert not meli.mixed_basis and meli.beat is False
+    tiny = EarningsResult("SMOL", date(2026, 11, 4), 0.04, 0.09)
+    assert not tiny.mixed_basis and tiny.beat is True
+
+
+def test_the_calendar_row_drops_the_surprise_of_a_mixed_print():
+    from stocks.api.routes.earnings import _result
+    from stocks.data.earnings import EarningsResult
+
+    row = _result(EarningsResult("UBER", date(2026, 11, 4), 0.98, 0.25, -74.6))
+    assert row.mixed_basis and row.surprise_pct is None and row.beat is None
+    assert row.reported_eps == 0.25 and row.eps_estimate == 0.98
+
+
+def test_yahoo_figures_give_way_to_the_windows_on_the_same_print(monkeypatch):
+    import pandas as pd
+    import yfinance as yf
+
+    from stocks.data import earnings
+
+    table = pd.DataFrame(
+        {"EPS Estimate": [1.71, 1.59, 1.54],
+         "Reported EPS": [float("nan"), 1.32, 1.24],
+         "Surprise(%)": [float("nan"), -16.81, -19.66]},
+        index=pd.to_datetime(["2027-02-25", "2026-11-03", "2026-08-05"]),
+    )
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.calendar = {}
+
+        def get_earnings_dates(self, limit):
+            return table
+
+    monkeypatch.setattr(earnings, "resolve", lambda t: t)
+    monkeypatch.setattr(yf, "Ticker", Ticker)
+    monkeypatch.setattr(finnhub, "earnings_window", lambda ref=None: {
+        # A day off Yahoo's date: the same print, kept under Yahoo's date.
+        "DUOL": [_row("DUOL", date(2026, 11, 4), estimate=0.5758, actual=0.57)],
+    })
+    dates, results = earnings.fetch_earnings("DUOL")
+    by_day = {r.date: r for r in results}
+    assert by_day[date(2026, 11, 3)].reported_eps == 0.57
+    assert by_day[date(2026, 11, 3)].eps_estimate == 0.5758
+    assert by_day[date(2026, 8, 5)].reported_eps == 1.24  # the window lacks it
+    assert date(2026, 11, 4) not in dates
+    # A listing the window does not cover keeps Yahoo's figures.
+    _, results = earnings.fetch_earnings("DUOL.L")
+    assert {r.reported_eps for r in results} == {1.32, 1.24}
