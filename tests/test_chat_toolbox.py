@@ -650,10 +650,13 @@ def test_the_calendar_and_income_tools_read_the_engines(monkeypatch, tmp_path):
     from stocks.chat import income, reports
 
     ctx = replace(_book(tmp_path), watchlist=tmp_path / "watchlist.yaml")
-    monkeypatch.setattr(reports, "build", lambda watchlist, db, days: reports.Ahead(
-        days=days, due=(), checked=3, held=2, undated=(), skipped=()))
+    monkeypatch.setattr(reports, "build", lambda watchlist, db, days, back=False:
+                        reports.Ahead(days=days, due=(), checked=3, held=2,
+                                      undated=(), skipped=(), back=back))
     assert "next 30 days" in _run("upcoming_earnings", {"days": 30}, ctx)
     assert "next 14 days" in _run("upcoming_earnings", {"days": "x"}, ctx)
+    assert "reported in the last 7 days" in _run(
+        "upcoming_earnings", {"days": 7, "past": True}, ctx)
     monkeypatch.setattr(income, "build", lambda db, prefs: income.Income(
         currency="EUR", spanish=True, years=()))
     assert "no dividend booked" in _run("income_report", {}, ctx)

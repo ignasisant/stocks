@@ -402,6 +402,7 @@
   "chat.harvest_note": "An estimate at today's prices from the Tax tab's engine, each candidate sold whole. Nothing is sold.",
   "chat.step_income": "{count} years of dividends",
   "chat.step_reports": "{count} dated in {days} days",
+  "chat.step_reports_past": "{count} reported in the last {days} days",
   "chat.step_harvest": "{count} candidates · saves {saving}",
   "chat.rebalance_title": "Take it to a weight",
   "chat.rebalance_target": "Target weight (%)",

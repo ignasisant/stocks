@@ -294,7 +294,7 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
-  "description": "The report dates of the companies the user holds and follows, from the app's earnings calendar, inside the next `days`. Use for which of their companies report soon.",
+  "description": "The report dates of the companies the user holds and follows, from the app's earnings calendar, inside the next `days`. Use for which of their companies report soon. With `past` true, the results they reported in the last `days` instead: EPS against the consensus and the share move across the print.",
   "name": "upcoming_earnings",
   "schema": {
    "properties": {
@@ -302,6 +302,9 @@ The reader asked to be told at a price. Once the material gives you the level, c
      "maximum": 120,
      "minimum": 0,
      "type": "integer"
+    },
+    "past": {
+     "type": "boolean"
     }
    },
    "required": [],
