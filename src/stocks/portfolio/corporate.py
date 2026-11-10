@@ -29,6 +29,10 @@ with one split left out, the broker already adjusted for that one and adding
 it would multiply a real position by twenty. Anything in between, or a close
 Yahoo won't hand over, is not evidence — and this module proposes nothing it
 cannot price. Nothing here writes; the caller decides.
+
+Sells are priced the same way as buys, and the latest trade before each
+split speaks for it; with several splits those trades are read together
+(`_fit`), because one alone cannot tell a 2:1 then 1:2 from neither.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ from dataclasses import dataclass
 from stocks import obs
 from stocks.portfolio import consistency
 from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.positions import replay_order
 
 # splits(ticker) -> [(YYYY-MM-DD, ratio), …]; see data.fetch.splits.
 SplitLookup = Callable[[str], list[tuple[str, float]]]
@@ -55,6 +60,10 @@ _PRICE_TOLERANCE = 0.12
 # The tightest split this module believes, either way: 1.5 forward, 1/1.5
 # reverse. Anything closer to 1 hides inside the tolerance above.
 _MIN_RATIO = 1.5
+
+# How many trades before a split are asked for a close: the latest one Yahoo
+# can price, without a round trip for every fill in the book.
+_EVIDENCE_TRIES = 3
 
 
 @dataclass
@@ -89,11 +98,12 @@ def missing_splits(
 ) -> list[MissingSplit]:
     """Splits, forward or reverse, the ledger is missing, oldest first.
 
-    A candidate has to clear all of: the ledger holds shares the day before
-    it, no `split` row already covers that day, and the pre-split price
-    evidence above. Tickers whose lookups fail are skipped, never guessed.
-    Each one found is a `data.inconsistency` line, `source` saying which
-    screen asked.
+    A candidate has to clear all of: no `split` row already covers that
+    day, and the pre-split price evidence above. A name sold out before it
+    is proposed too (nothing held, nothing to say when unproven): its
+    history is priced off the split-adjusted close all the same. Tickers
+    whose lookups fail are skipped, never guessed. Each one found is a
+    `data.inconsistency` line, `source` saying which screen asked.
     """
     by_ticker: dict[str, list[Transaction]] = {}
     for t in transactions:
@@ -137,9 +147,33 @@ def _ticker_gaps(
         return []
     events.sort()
 
-    rows = sorted(rows, key=lambda t: (t.date, t.id or 0))
-    have = {t.date for t in rows if t.action == "split" and t.quantity > 0}
+    rows = sorted(rows, key=replay_order)
+    have = {t.date: t.quantity for t in rows if t.action == "split" and t.quantity > 0}
     currency = next((t.currency for t in rows if t.currency), "USD")
+    trades = [t for t in rows if t.action in ("buy", "sell") and t.price > 0]
+
+    evidence = _evidence(
+        ticker, trades, [d for d, _ in events if d not in have], close_on
+    )
+    fills = list({id(e[0]): e for e in evidence.values() if e}.values())
+    chosen, off = _fit(fills, events, have)
+    for t, close in off:
+        quotient = t.price / close
+        # No reading of the splits explains the row's scale. A split's worth
+        # away from its day's close — pence booked as pounds, another name
+        # under the symbol, a typo — is a contradiction worth a line; closer
+        # than that is a volatile day, which is not. About a hundred off is
+        # the minor-unit slip, counted apart since a scale fixes it.
+        if quotient >= _MIN_RATIO or quotient <= 1 / _MIN_RATIO:
+            consistency.report(
+                "currency_off" if consistency.unit_slip(quotient) else "price_off_market",
+                source=source,
+                ticker=ticker,
+                key=t.date,
+                traded=t.date,
+                off=consistency.ratio(t.price, close),
+            )
+    unexplained = {id(t) for t, _ in off}
 
     # Only the candidates accepted below: the ledger's own split rows are in
     # `rows` already, and counting them twice would square the share count.
@@ -148,40 +182,27 @@ def _ticker_gaps(
     for day, ratio in events:
         if day in have:
             continue
+        # A name sold out before the split still needs it: the closes are
+        # split-adjusted, and the replay restates the earlier fills by the
+        # ledger's split rows only, so without one every fill read the close
+        # 20x off and the whole series was rejected — the book's history held
+        # at cost (AMZN, GOOGL, NVDA closed in 2022, prod 2026-11-10). Nothing
+        # held is nothing to say, though: a flat name proposes only on proof.
         held = _held_at(rows, day, applied)
-        if held <= 1e-9:
+        if held < -1e-9:
             continue
-        buy = _last_buy_before(rows, day)
-        if buy is None:
-            _unproven(ticker, day, "no_buy", source)
+        flat = held <= 1e-9
+        found = evidence.get(day)
+        if found is None:
+            if not flat:
+                before = any(t.date < day for t in trades)
+                _unproven(ticker, day, "no_close" if before else "no_buy", source)
             continue
-        close = _close(close_on, ticker, buy.date)
-        if close is None or close <= 0 or buy.price <= 0:
-            _unproven(ticker, day, "no_close", source)
-            continue
-        quotient = buy.price / close
-        unadjusted = _unadjusted_splits(quotient, events, buy.date)
-        if unadjusted is None:
-            # No split explains the row's scale. A split's worth away from
-            # its day's close — pence booked as pounds, another name under
-            # the symbol, a typo — is a contradiction worth a line; closer
-            # than that is a volatile day, which is not. About a hundred off
-            # is the minor-unit slip, counted apart since a scale fixes it.
-            if quotient >= _MIN_RATIO or quotient <= 1 / _MIN_RATIO:
-                consistency.report(
-                    "currency_off"
-                    if consistency.unit_slip(quotient)
-                    else "price_off_market",
-                    source=source,
-                    ticker=ticker,
-                    key=buy.date,
-                    traded=buy.date,
-                    off=consistency.ratio(buy.price, close),
-                )
-            continue
-        if not any(d == day for d, _ in unadjusted):
-            # The row already carries this split, or two readings fit it.
-            _unproven(ticker, day, "restated", source)
+        trade, close = found
+        if day not in chosen:
+            # The rows already carry this split, or two readings fit them.
+            if not flat and id(trade) not in unexplained:
+                _unproven(ticker, day, "restated", source)
             continue
         applied.append((day, ratio))
         out.append(
@@ -194,13 +215,81 @@ def _ticker_gaps(
                     currency=currency,
                     note=f"{ratio:g}:1 split (Yahoo corporate action)",
                 ),
-                held_before=held,
-                priced_at=buy.price,
-                priced_on=buy.date,
+                held_before=max(0.0, held),
+                priced_at=trade.price,
+                priced_on=trade.date,
                 market_close=close,
             )
         )
     return out
+
+
+def _evidence(
+    ticker: str, trades: list[Transaction], days: list[str], close_on: CloseLookup
+) -> dict[str, tuple[Transaction, float] | None]:
+    """Split day -> the latest trade before it Yahoo can price, and that close.
+
+    A few trades back at most, each asked once: the scan runs over a whole
+    book from the warm cron, and a close per fill would be a round trip per
+    row.
+    """
+    asked: dict[int, float | None] = {}
+    out: dict[str, tuple[Transaction, float] | None] = {}
+    for day in days:
+        out[day] = None
+        before = [t for t in trades if t.date < day]
+        for t in reversed(before[-_EVIDENCE_TRIES:]):
+            if id(t) not in asked:
+                asked[id(t)] = _close(close_on, ticker, t.date)
+            close = asked[id(t)]
+            if close is not None and close > 0:
+                out[day] = (t, close)
+                break
+    return out
+
+
+def _fit(
+    fills: list[tuple[Transaction, float]],
+    events: list[tuple[str, float]],
+    have: dict[str, float],
+) -> tuple[set[str], list[tuple[Transaction, float]]]:
+    """The missing splits the ledger needs, and the fills no reading explains.
+
+    A fill's price over the adjusted close is every split after it that the
+    row was not restated for. A statement restates the splits that had
+    happened when it printed, so what a book lacks is a *suffix* of them:
+    the most recent ones. Read one fill at a time, a forward and a reverse
+    split that cancel (2:1 then 1:2) fit both or neither, and a later fill
+    proved the second alone: the book got half the pair and the shares
+    before it were halved (tests/test_split_scenarios.py). So every suffix
+    is scored by how many fills it puts on their close, then by how close
+    (3:1, 3:1, 1:10 multiply to 0.9, inside the tolerance of no split at
+    all), and the best one wins; between equals, the shortest, which writes
+    the fewest rows and, for a pair that cancels, none — the price path is
+    right without it.
+    """
+    first = min((t.date for t, _ in fills), default=None)
+    missing = [
+        (d, r) for d, r in events if d not in have and first is not None and d > first
+    ]
+    restated = []
+    for t, close in fills:
+        on_ledger = math.prod(r for d, r in have.items() if d > t.date)
+        restated.append((t, t.price / close / on_ledger))
+    best: tuple[int, float, list[tuple[str, float]]] = (-1, 0.0, [])
+    explained: set[int] = set()
+    for cut in range(len(missing), -1, -1):
+        suffix = missing[cut:]
+        hits, error = set(), 0.0
+        for t, quotient in restated:
+            product = math.prod(r for d, r in suffix if d > t.date)
+            if abs(quotient - product) <= _PRICE_TOLERANCE * product:
+                hits.add(id(t))
+                error += abs(math.log(quotient / product))
+        explained |= hits
+        if len(hits) > best[0] or (len(hits) == best[0] and error < best[1] - 1e-9):
+            best = (len(hits), error, suffix)
+    return {d for d, _ in best[2]}, [f for f in fills if id(f[0]) not in explained]
 
 
 def _unproven(ticker: str, day: str, why: str, source: consistency.Source) -> None:
@@ -218,47 +307,11 @@ def _believable(ratio: float) -> bool:
     return ratio >= _MIN_RATIO or 0 < ratio <= 1 / _MIN_RATIO
 
 
-def _unadjusted_splits(
-    quotient: float, events: list[tuple[str, float]], bought: str
-) -> list[tuple[str, float]] | None:
-    """Which splits after `bought` a price of `quotient` x the adjusted close
-    has NOT been restated for.
-
-    A broker restates the splits that had already happened when it printed the
-    statement, so the ones a row still carries at face value are a *suffix* of
-    the event list: the most recent ones. With splits all one way each suffix
-    has a distinct product (every ratio is at least 1.5 from 1, far outside
-    the tolerance), so the quotient names exactly one of them — including the
-    empty suffix, which is a row already on today's scale and needs no split
-    at all. A forward and a reverse split can cancel (2:1 then 1:2), and a
-    quotient two suffixes fit is ambiguous: no evidence, an empty list. A
-    quotient that fits none of them is None — the row's price is off its
-    market on a scale no split explains, which the caller may say.
-    """
-    after = [(d, r) for d, r in events if d > bought]
-    fits = []
-    for cut in range(len(after) + 1):
-        suffix = after[cut:]
-        product = math.prod(r for _, r in suffix)
-        if abs(quotient - product) <= _PRICE_TOLERANCE * product:
-            fits.append(suffix)
-    if not fits:
-        return None
-    return fits[0] if len(fits) == 1 else []
-
-
 def _close(close_on: CloseLookup, ticker: str, day: str) -> float | None:
     try:
         return close_on(ticker, day)
     except Exception:
         return None
-
-
-def _last_buy_before(rows: list[Transaction], day: str) -> Transaction | None:
-    """The most recent buy strictly before `day` — the row whose price says
-    which scale this ticker's ledger is on."""
-    buys = [t for t in rows if t.action == "buy" and t.date < day and t.price > 0]
-    return buys[-1] if buys else None
 
 
 def _held_at(
@@ -267,23 +320,28 @@ def _held_at(
     """Shares held the instant before `day`, with `applied` splits replayed.
 
     A sell recorded in post-split shares against a ledger still counting
-    pre-split ones drives this negative; clamping at zero keeps such a book
-    from proposing a split on a position it cannot even price.
+    pre-split ones drives this negative, and the caller proposes nothing on
+    a position it cannot even price.
     """
     qty = 0.0
+    # Replayed in date order with the rows, not after them: a sell between
+    # two splits is in the first one's shares (tests/test_split_scenarios.py).
+    pending = sorted(applied)
     for t in rows:
         if t.date >= day:
             break
+        while pending and pending[0][0] <= t.date:
+            qty *= pending.pop(0)[1]
         if t.action == "buy":
             qty += t.quantity
         elif t.action == "sell":
             qty -= t.quantity
         elif t.action == "split" and t.quantity > 0:
             qty *= t.quantity
-    for split_day, ratio in applied:
+    for split_day, ratio in pending:
         if split_day < day:
             qty *= ratio
-    return max(0.0, qty)
+    return qty
 
 
 # --------------------------------------------------- putting trades on one scale

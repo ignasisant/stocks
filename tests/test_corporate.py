@@ -86,12 +86,59 @@ def test_split_before_the_first_buy_changed_nothing_held():
     )
 
 
-def test_position_sold_out_before_the_split_is_not_proposed():
-    ledger = [
-        _buy("2022-05-24", 1.0, 2050.0),
-        Transaction(date="2022-06-01", ticker="AMZN", action="sell",
-                    quantity=1.0, price=2100.0, currency="USD"),
-    ]
+def _sell(day, qty, price, ticker="AMZN"):
+    return Transaction(
+        date=day, ticker=ticker, action="sell", quantity=qty, price=price,
+        currency="USD",
+    )
+
+
+def test_position_sold_out_before_the_split_still_gets_it():
+    """Nothing held at the split, but the replay prices 2022 off the
+    split-adjusted close: without the row every fill reads it 20x off and
+    the name's whole history is held at cost (prod 2026-11-10)."""
+    ledger = [_buy("2022-05-24", 1.0, 2050.0), _sell("2022-06-01", 1.0, 2100.0)]
+    found = missing_splits(
+        ledger, splits=_splits(AMZN_SPLITS), close_on=RAW_CLOSES
+    )
+    assert [(g.tx.date, g.ratio) for g in found] == [("2022-06-06", 20.0)]
+    assert found[0].held_before == found[0].held_after == 0.0
+
+
+@pytest.fixture
+def unproven(monkeypatch) -> list[dict]:
+    from stocks import obs
+
+    said: list[dict] = []
+    real = obs.event
+    monkeypatch.setattr(
+        obs, "event",
+        lambda name, **f: said.append(f) if name == "portfolio.split_unproven"
+        else real(name, **f),
+    )
+    return said
+
+
+def test_sold_out_position_the_broker_restated_is_left_alone(unproven):
+    ledger = [_buy("2022-05-24", 20.0, 102.50), _sell("2022-06-01", 20.0, 105.0)]
+    assert not missing_splits(
+        ledger, splits=_splits(AMZN_SPLITS), close_on=RAW_CLOSES
+    )
+    assert not unproven
+
+
+def test_sold_out_position_without_a_close_says_nothing(unproven):
+    ledger = [_buy("2022-05-24", 1.0, 2050.0), _sell("2022-06-01", 1.0, 2100.0)]
+    assert not missing_splits(
+        ledger, splits=_splits(AMZN_SPLITS), close_on=lambda t, d: None
+    )
+    assert not unproven
+
+
+def test_oversold_position_proposes_nothing():
+    """A sell in post-split shares against an as-traded ledger: the count
+    the split would scale is not one the book can price."""
+    ledger = [_buy("2022-05-24", 1.0, 2050.0), _sell("2022-06-01", 20.0, 105.0)]
     assert not missing_splits(
         ledger, splits=_splits(AMZN_SPLITS), close_on=RAW_CLOSES
     )
