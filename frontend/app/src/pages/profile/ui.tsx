@@ -63,19 +63,30 @@ export function Prose({ text, className }: { text: string; className?: string })
   return <div className={className ?? "pr-prose"}>{blocks}</div>;
 }
 
+/**
+ * A titled group of settings. `id` makes it a place an index jumps to: it
+ * takes focus there, so a keyboard carries on from the section it landed in.
+ */
 export function Card({
+  id,
   title,
   sub,
   note,
   children,
 }: {
+  id?: string;
   title?: string;
   sub?: string;
   note?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="pr-card">
+    <section
+      className="pr-card"
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      aria-label={id ? title : undefined}
+    >
       {title !== undefined && (
         <div className="pr-cardhead">
           <span className="pr-cardtitle">{title}</span>

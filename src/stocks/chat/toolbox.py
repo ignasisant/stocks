@@ -1075,7 +1075,12 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                                     "(a growth or margin may be 0 or "
                                     "negative), with quarters 1-4 running "
                                     "for the fundamental ones; ceo_change, "
-                                    "guidance_cut, dividend_cut: no level.",
+                                    "guidance_cut, dividend_cut: no level. "
+                                    "The buy_* rules are buy zones, on a "
+                                    "name held or not: buy_below a price, "
+                                    "buy_drawdown_high and the *_above "
+                                    "ones percent, buy_pe_fwd_below a "
+                                    "forward P/E.",
                      "items": {"type": "object",
                                "properties": {
                                    "rule": {"type": "string",

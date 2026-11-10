@@ -39,9 +39,34 @@ import { Fragment, type ReactNode } from "react";
 import { TickerCell, useTickerProfile } from "../shell/tickers";
 
 /**
- * escape · inline code · bold emphasis · bold · strike · [text](url) ·
- * emphasis · a bare link. Where two could start at the same character the
- * earlier one here wins, so `***` is tried before `**` and `**` before `*`.
+ * Where a figure came from, as the research block labels it and the answers
+ * copy: `[fact]`, `[consensus]`… Each kind is one look, so a column of
+ * figures reads by provenance at a glance instead of as bracketed noise.
+ */
+const SOURCES: Record<string, string> = {
+  fact: "fact",
+  reported: "fact",
+  hecho: "fact",
+  dato: "fact",
+  reportado: "fact",
+  consensus: "consensus",
+  consenso: "consensus",
+  derived: "derived",
+  derivado: "derived",
+  estimate: "derived",
+  estimado: "derived",
+  estimación: "derived",
+  "not found": "missing",
+  "no encontrado": "missing",
+};
+
+const SOURCE = new RegExp(`\\[(?:${Object.keys(SOURCES).join("|")})\\]`);
+
+/**
+ * escape · inline code · a source tag · bold emphasis · bold · strike ·
+ * [text](url) · emphasis · a bare link. Where two could start at the same
+ * character the earlier one here wins, so `***` is tried before `**` and `**`
+ * before `*`.
  *
  * Bold takes a lone `*` inside it ("**P/E 7x * 2**"), and emphasis has to
  * hug its words, so "3 * 4 * 5" stays arithmetic. Underscores are the same
@@ -52,6 +77,7 @@ const INLINE = new RegExp(
   `(${[
     /\\[!-/:-@[-`{-~]/,
     /`[^`\n]+`/,
+    SOURCE,
     /\*\*\*[^*\n]+\*\*\*/,
     /\*\*(?:[^*\n]|\*(?!\*))+?\*\*/,
     /__[^_\n]+__/,
@@ -155,6 +181,27 @@ function Link({ url, children }: { url: string; children: ReactNode }) {
   );
 }
 
+/**
+ * A move with its sign written out: "-0.22%", "+6.1 %". The sign is the
+ * model saying which way, so it is drawn in the market's colours. A dash
+ * after a letter or digit is a range ("5-10%"), not a sign, and stays text.
+ */
+const SIGNED = /([+\-−]\d+(?:[.,]\d+)?\s?%)/;
+
+/** Plain text, its signed moves coloured. */
+function Plain({ text }: { text: string }): ReactNode {
+  const parts = text.split(SIGNED);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    if (i % 2 === 0 || WORD.test(parts[i - 1]?.slice(-1) ?? "")) return part;
+    return (
+      <span className={part.startsWith("+") ? "ag-chat-rise" : "ag-chat-fall"} key={i}>
+        {part}
+      </span>
+    );
+  });
+}
+
 /** One inline run: the spans inside a paragraph, a heading or a list item. */
 export function Inline({ text }: { text: string }): ReactNode {
   // A capturing split alternates plain text and tokens, so the odd slots are
@@ -163,8 +210,17 @@ export function Inline({ text }: { text: string }): ReactNode {
   return (
     <>
       {parts.map((part, i) => {
-        if (i % 2 === 0 || !part) return part;
+        if (i % 2 === 0) return part && <Plain text={part} key={i} />;
+        if (!part) return part;
         if (part.startsWith("\\")) return part.slice(1);
+        const word = part.slice(1, -1);
+        if (part.startsWith("[") && SOURCES[word]) {
+          return (
+            <span className={`ag-chat-src ag-chat-src-${SOURCES[word]}`} key={i}>
+              {word}
+            </span>
+          );
+        }
         if (part.startsWith("_")) {
           const before = parts[i - 1]?.slice(-1) ?? "";
           const after = parts[i + 1]?.slice(0, 1) ?? "";
@@ -601,6 +657,181 @@ function Table({
   );
 }
 
+/**
+ * What a section is about, read from its title, and the emoji it wears.
+ * Emoji rather than the drawer's SVG glyphs, by the user's choice: they read
+ * as the answer's own voice, where a glyph reads as app chrome.
+ * First match wins, so "What the price assumes" is valuation before it is
+ * price, and "Red flags" a risk before it is guidance. English and Spanish,
+ * accents dropped; a title nothing here names keeps its number.
+ */
+const TOPICS: [RegExp, string][] = [
+  [/\b(scenarios?|escenarios?|bull|alcista)\b/, "🔮"],
+  [
+    /\b(risks?|riesgos?|kill|red flags?|bear|bajista|pre-mortem|breakers?|short)\b/,
+    "⚠️",
+  ],
+  [/\b(verdict|veredicto|thesis|tesis)\b/, "🎯"],
+  [
+    /\b(valuation|valoracion|price assumes|descuenta|multiples?|cheap|barat\w*|expensive|car[oa]s?)\b/,
+    "⚖️",
+  ],
+  [
+    /\b(tax\w*|fiscal\w*|impuestos?|withholding|retencion\w*|irpf|base del ahorro|wash)\b/,
+    "🧾",
+  ],
+  [
+    /\b(dividends?|dividendos?|yield|shareholder returns|buybacks?|recompras?|payout|income|rentas)\b/,
+    "💰",
+  ],
+  [/\b(cash flow|fcf|free cash|flujo de caja|caja)\b/, "💵"],
+  [
+    /\b(debt|deuda|balance sheet|balance|solvency|solvencia|leverage|apalancamiento|liquidity|liquidez|runway|capital)\b/,
+    "🏦",
+  ],
+  [/\b(dilution|dilucion|share count|sbc)\b/, "✂️"],
+  [
+    /\b(moat|foso|ventajas?|competitive advantage|pricing power|poder de precios|brand|marca)\b/,
+    "🏰",
+  ],
+  [
+    /\b(competition|competencia|competitors?|competidores?|rivals?|rivales|peers|comparables|market share|cuota)\b/,
+    "⚔️",
+  ],
+  [/\b(ai|ia|artificial)\b/, "🤖"],
+  [
+    /\b(regulation|regulacion|regulatory|regulatorio|legal|politic\w*|government|gobierno)\b/,
+    "🏛️",
+  ],
+  [/\b(currency|currencies|divisas?|moneda|fx)\b/, "💱"],
+  [
+    /\b(macro\w*|rates|tipos|inflation|inflacion|cycle|ciclo|emerging|emergentes|weather|economy|economia)\b/,
+    "🌍",
+  ],
+  [/\b(crypto\w*|cripto\w*|bitcoin|btc|ethereum|blockchain|tokens?)\b/, "🪙"],
+  [
+    /\b(commodit\w*|materias primas|oil|petroleo|gas|metals?|metales|gold|oro|steel|coal|reserves|reservas)\b/,
+    "🛢️",
+  ],
+  [
+    /\b(esg|climate|clima|sustainab\w*|sostenib\w*|transition|transicion|carbon\w*)\b/,
+    "🌱",
+  ],
+  [/\b(growth|crecimiento|expansion|tam)\b/, "🚀"],
+  [/\b(quarter|trimestre|results|resultados|numbers|cifras|kpis?|earnings)\b/, "📊"],
+  [/\b(guidance|outlook|forecast|previsi\w*|perspectivas?)\b/, "🧭"],
+  [
+    /\b(moved|movio|margins?|margen(es)?|drivers?|mix|pricing|precios|profitability|unit economics)\b/,
+    "🔍",
+  ],
+  [/\b(history|historia|track record|trayectoria|past|pasado)\b/, "🕰️"],
+  [/\b(news|noticias|headlines|titulares)\b/, "📰"],
+  [/\b(analysts?|analistas|sentiment|sentimiento|consensus|consenso|ratings?)\b/, "🗣️"],
+  [
+    /\b(hedg\w*|cobertura|options|opciones|derivatives|derivados|protection|proteccion)\b/,
+    "🛡️",
+  ],
+  [
+    /\b(market|mercado|reaction|reaccion|price|precio|trend|tendencia|momentum|returns?|performance|rendimiento|technical|tecnico)\b/,
+    "📈",
+  ],
+  [
+    /\b(action|accion|what to do|que hacer|next steps|pasos|plan|recommendation|recomendacion)\b/,
+    "✅",
+  ],
+  [/\b(watch|vigilar|monitor\w*|seguimiento)\b/, "👀"],
+  [
+    /\b(next|proxim\w*|catalysts?|catalizador\w*|calendar|calendario|dates?|fechas?)\b/,
+    "📅",
+  ],
+  [/\b(management|direccion|directiva|equipo|ceo|insiders?|governance)\b/, "👥"],
+  [
+    /\b(pipeline|r&d|i\+d|products?|productos?|innovation|innovacion|patent\w*|technology|tecnologia)\b/,
+    "🔬",
+  ],
+  [
+    /\b(customers?|clientes?|users?|usuarios|demand|demanda|sales|ventas|volumes?|engagement)\b/,
+    "🛒",
+  ],
+  [
+    /\b(supply|suministro|production|produccion|manufactur\w*|capacity|capacidad|factory|fabrica\w*)\b/,
+    "🏭",
+  ],
+  [/\b(business|negocio|company|empresa|segments?|segmentos?|what it sells)\b/, "🏢"],
+  [
+    /\b(book|cartera|portfolio|fit|encaje|size|tamano|sizing|overlap|solapamiento|adds|aporta|rebalanc\w*|allocation|asignacion)\b/,
+    "💼",
+  ],
+  [
+    /\b(summary|resumen|bottom line|conclusions?|conclusion|takeaways?|change my mind|cambiar de opinion|key points|claves)\b/,
+    "💡",
+  ],
+];
+
+/** A title the model already opened on an emoji of its own choosing. */
+const OWN_EMOJI = /^\p{Extended_Pictographic}/u;
+
+function topic(title: string): string | null {
+  if (OWN_EMOJI.test(title.trim())) return null;
+  const text = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return TOPICS.find(([words]) => words.test(text))?.[1] ?? null;
+}
+
+/** A line that opens on a bold run: the run, and what follows it. */
+const LEAD = /^\*\*([^*\n]{1,80}?)\*\*\s*(?:[:—–-]\s*)?(.*)$/;
+
+/**
+ * An answer laid out as numbered sections — "1. **The quarter**" over its
+ * bullets, which is how every framework in chat/brief.py asks for it — is
+ * drawn as sections: a badge and the title on one row, the body under it.
+ * Only when every item opens on a bold title; a list of sentences that
+ * happen to bold a word stays a list.
+ */
+function sections(items: Block[][]): boolean {
+  return (
+    items.length > 1 &&
+    items.every((item) => {
+      const lead = item[0];
+      return lead?.kind === "p" && LEAD.test(lead.lines[0] ?? "");
+    })
+  );
+}
+
+function Section({ blocks: inner, n }: { blocks: Block[]; n: number }) {
+  const [lead, ...rest] = inner;
+  if (lead?.kind !== "p") return null;
+  const m = LEAD.exec(lead.lines[0] ?? "");
+  const title = (m?.[1] ?? "").replace(/:$/, "");
+  const glyph = symbols(title) ? null : topic(title);
+  const tail = [m?.[2] ?? "", ...lead.lines.slice(1)].filter((line) => line.trim());
+  return (
+    <li className="ag-chat-sec">
+      <div className="ag-chat-sec-head">
+        <span
+          className={
+            glyph ? "ag-chat-sec-badge ag-chat-sec-emoji" : "ag-chat-sec-badge"
+          }
+          aria-hidden="true"
+        >
+          {glyph ?? n}
+        </span>
+        <span className="ag-chat-sec-title">
+          <Inline text={`**${title}**`} />
+        </span>
+      </div>
+      {tail.length > 0 && (
+        <p className="ag-chat-p">
+          <Lines lines={tail} />
+        </p>
+      )}
+      {rest.length > 0 && <Blocks blocks={rest} />}
+    </li>
+  );
+}
+
 /** A paragraph's lines, its newlines kept as the breaks they meant. */
 function Lines({ lines }: { lines: string[] }): ReactNode {
   return lines.map((line, n) => (
@@ -631,12 +862,19 @@ function Item({ blocks: inner }: { blocks: Block[] }) {
 function Blocks({ blocks: list }: { blocks: Block[] }): ReactNode {
   return list.map((block, i) => {
     if (block.kind === "hr") return <hr className="ag-chat-hr" key={i} />;
-    if (block.kind === "h")
+    if (block.kind === "h") {
+      const glyph = symbols(block.text.replace(/\*\*/g, "")) ? null : topic(block.text);
       return (
         <div className="ag-chat-h" key={i}>
+          {glyph && (
+            <span className="ag-chat-h-emoji" aria-hidden="true">
+              {glyph}
+            </span>
+          )}
           <Inline text={block.text} />
         </div>
       );
+    }
     if (block.kind === "code")
       return (
         <pre className="ag-chat-pre" key={i}>
@@ -645,6 +883,14 @@ function Blocks({ blocks: list }: { blocks: Block[] }): ReactNode {
       );
     if (block.kind === "table")
       return <Table head={block.head} align={block.align} rows={block.rows} key={i} />;
+    if (block.kind === "list" && block.ordered && sections(block.items))
+      return (
+        <ol className="ag-chat-secs" key={i}>
+          {block.items.map((item, n) => (
+            <Section blocks={item} n={block.start + n} key={n} />
+          ))}
+        </ol>
+      );
     if (block.kind === "list") {
       const items = block.items.map((item, n) => <Item blocks={item} key={n} />);
       return block.ordered ? (

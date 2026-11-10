@@ -137,13 +137,11 @@ describe("lists", () => {
 
   it("nests an indented list inside its item", () => {
     const out = html(
-      ["1. **Sells:**", "   - SNPS", "   - HUBS", "2. **Buys:**", "   - PDD"].join(
-        "\n",
-      ),
+      ["1. Sells:", "   - SNPS", "   - HUBS", "2. Buys:", "   - PDD"].join("\n"),
     );
     expect(out).toBe(
-      '<ol class="ag-chat-list"><li><strong>Sells:</strong><ul class="ag-chat-list">' +
-        "<li>SNPS</li><li>HUBS</li></ul></li><li><strong>Buys:</strong>" +
+      '<ol class="ag-chat-list"><li>Sells:<ul class="ag-chat-list">' +
+        "<li>SNPS</li><li>HUBS</li></ul></li><li>Buys:" +
         '<ul class="ag-chat-list"><li>PDD</li></ul></li></ol>',
     );
   });
@@ -191,7 +189,7 @@ describe("headings", () => {
   });
 
   it("drops a closing run of hashes", () => {
-    expect(html("## Plan ##")).toContain('<div class="ag-chat-h">Plan</div>');
+    expect(html("## Notes ##")).toContain('<div class="ag-chat-h">Notes</div>');
   });
 });
 
@@ -297,5 +295,81 @@ describe("citation marks", () => {
     expect(html("Volatility stays【2†L1")).toBe(
       '<p class="ag-chat-p">Volatility stays</p>',
     );
+  });
+});
+
+describe("sections", () => {
+  const review = [
+    "1. **The quarter**",
+    "   - **Revenue**: not found [not found].",
+    "2. **Guidance** — raised for the year [consensus].",
+    "3. **Odds and ends:**",
+    "   - nothing else",
+  ].join("\n");
+
+  it("draws bold-titled numbered items as sections with their topic's emoji", () => {
+    const out = html(review);
+    expect(out).toContain('<ol class="ag-chat-secs">');
+    expect(out.match(/class="ag-chat-sec"/g)).toHaveLength(3);
+    expect(out.match(/ag-chat-sec-emoji/g)).toHaveLength(2);
+    expect(out).toContain("📊");
+    // A title no topic names keeps its number, its colon gone.
+    expect(out).toContain('aria-hidden="true">3</span>');
+    expect(out).toContain("<strong>Odds and ends</strong>");
+    // What follows the title on its own line is the section's first paragraph.
+    expect(out).toContain('<p class="ag-chat-p">raised for the year');
+  });
+
+  it("leaves a numbered list of plain sentences a list", () => {
+    expect(html("1. Buy **NVDA** now\n2. Sell later")).toContain(
+      '<ol class="ag-chat-list">',
+    );
+  });
+
+  it("keeps the model's own emoji instead of adding a second", () => {
+    const out = html("1. **🚀 The quarter**\n   - a\n2. **Guidance**\n   - b");
+    expect(out.match(/📊/g)).toBeNull();
+    expect(out).toContain("🚀 The quarter");
+    expect(html("### 🔥 Valuation")).not.toContain("⚖️");
+  });
+
+  it.each([
+    ["Dividends and yield", "💰"],
+    ["Foreign dividend withholding", "🧾"],
+    ["Balance sheet", "🏦"],
+    ["Competencia", "⚔️"],
+    ["Pricing power", "🏰"],
+    ["Price and mix", "🔍"],
+    ["What the price assumes", "⚖️"],
+    ["Bear / base / bull scenarios", "🔮"],
+    ["The strongest bear case", "⚠️"],
+    ["Emerging markets", "🌍"],
+    ["Exposición a la IA", "🤖"],
+    ["Position sizing", "💼"],
+    ["Qué vigilar", "👀"],
+  ])("draws %s as %s", (title, emoji) => {
+    expect(html(`### ${title}`)).toContain(`>${emoji}</span>`);
+  });
+
+  it("gives a heading its topic's emoji", () => {
+    expect(html("### Valuation")).toContain("⚖️");
+    expect(html("### Notes")).not.toContain("ag-chat-h-emoji");
+  });
+});
+
+describe("source tags and signed moves", () => {
+  it("draws a source tag as its own mark", () => {
+    const out = html("Margin 56.8% [fact], EPS 0.23 [consensus], sales [not found].");
+    expect(out).toContain('<span class="ag-chat-src ag-chat-src-fact">fact</span>');
+    expect(out).toContain('class="ag-chat-src ag-chat-src-consensus"');
+    expect(out).toContain('class="ag-chat-src ag-chat-src-missing">not found<');
+    expect(html("a [link](https://x.io)")).toContain("<a ");
+  });
+
+  it("colours a signed move and leaves a range alone", () => {
+    const out = html("down -0.22% today, up +6.1 % on the year, 5-10% range");
+    expect(out).toContain('<span class="ag-chat-fall">-0.22%</span>');
+    expect(out).toContain('<span class="ag-chat-rise">+6.1 %</span>');
+    expect(out).toContain("5-10% range");
   });
 });

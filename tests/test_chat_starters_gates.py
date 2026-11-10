@@ -4,9 +4,9 @@ A suggestion is a prefilled question, and the ones on the drawer's empty
 thread (`frontend/app/src/chat/Empty.tsx`) are there to show what the app
 works out rather than the model: the book against an index, the split with
 funds looked through, the losses the tax engine would offset, a position
-sized to a weight, the bull-and-bear debate, a chart. Each of those is gated
-on the wording of the message, so a reworded suggestion can quietly stop
-opening its surface, or open a second one beside it. This reads the copy in
+sized to a weight. Each of those is gated on the wording of the message, so
+a reworded suggestion can quietly stop opening its surface, or open a second
+one beside it. This reads the copy in
 every language, fills its slots the way the drawer does and runs it through
 every gate.
 """
@@ -21,7 +21,7 @@ import pytest
 from stocks.chat import allocation, charts, debate, harvest, rebalance, whatif
 
 LOCALES = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "locales"
-SLOTS = {"a": "NVDA", "b": "MSFT", "top": "ASML.AS", "n": 12}
+SLOTS = {"top": "ASML.AS", "n": 12}
 GATES = {
     "chart": charts.wants,
     "mix": allocation.wants,
@@ -31,13 +31,12 @@ GATES = {
 }
 # The surface each suggestion opens; None for one answered in prose.
 OPENS = {
+    "howto": None,
     "benchmark": "chart",
     "exposure": "mix",
     "harvest": "harvest",
     "rebalance": "rebalance",
     "movers": None,
-    "debate": "debate",
-    "chart": "chart",
     "earnings": None,
 }
 
@@ -76,10 +75,3 @@ def test_the_rebalance_names_the_position_and_the_weight(lang):
     asked = _asked(lang, "rebalance")
     assert whatif.target(asked, None, "") == SLOTS["top"]
     assert rebalance.target_asked(asked) == SLOTS["n"]
-
-
-@pytest.mark.parametrize("lang", ["en", "es"])
-def test_the_chart_draws_both_tickers_and_the_index(lang):
-    asked = _asked(lang, "chart")
-    assert set(charts.targets(asked, {}, "", "EUR", lookup=lambda _n: "")) == {
-        "NVDA", "MSFT", "^IXIC"}

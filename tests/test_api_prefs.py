@@ -214,36 +214,25 @@ def test_the_written_settings_are_what_the_tax_engine_then_reads(
     assert (code, how) == ("UK", "chosen")
 
 
-# ------------------------------------------------------------ the weekly review
+# ------------------------------------------------------------ the daily summary
 
 
-def test_the_weekly_review_toggle_is_readable(client, account):
-    """It was writable on the Profile page and missing from this API, so a
-    client could see two of the three deliveries and never the third."""
+def test_an_untouched_summary_reads_on_because_it_is_on(client, account):
+    """The scheduler (`notify.schedule.slot`) sends it unless switched off; a
+    client drawing the switch off beside it would ship a lie."""
     payload = client.get("/v1/prefs", params=WHO, headers=AUTH).json()
-    assert payload["notify_weekly"] is True
+    assert payload["notify_briefing"] is True
+    assert payload["schedules"]["briefing"]["close"] is False
 
 
-def test_an_untouched_weekly_toggle_reads_on_because_it_is_on(client, account):
-    """The one that would ship a lie quietly. Unlike its two neighbours this key
-    is absent from `accounts.DEFAULT_PREFS`, so a plain `.get()` returns None —
-    and a client would draw the switch off beside a review the cron
-    (`notify.fanout.iter_notify_users`, which defaults it True) is delivering
-    every Sunday."""
-    stored = json.loads(account.prefs.read_text())
-    assert "notify_weekly" not in stored  # nothing has ever written it
-    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
-        "notify_weekly"
-    ] is True
-
-
-def test_the_weekly_review_can_be_turned_off(client, account, signed_in):
-    """And the write has to land in the file the cron reads, not just in the
-    response — the two are different machines."""
-    assert signed_in.patch("/v1/prefs", json={"notify_weekly": False}).json()[
-        "notify_weekly"
-    ] is False
-    assert json.loads(account.prefs.read_text())["notify_weekly"] is False
+def test_the_retired_runs_are_not_settings_any_more(client, account, signed_in):
+    """The evening numbers and the weekly review were retired (2026-11-10):
+    one summary a day. Their switches are neither drawn nor written."""
+    payload = client.get("/v1/prefs", params=WHO, headers=AUTH).json()
+    assert "notify_digest" not in payload and "notify_weekly" not in payload
+    assert set(payload["schedules"]) == {"briefing"}
+    for key in ("notify_digest", "notify_weekly"):
+        assert signed_in.patch("/v1/prefs", json={key: False}).status_code == 422, key
 
 
 def test_the_friday_email_reads_on_until_switched_off(client, account, signed_in):
@@ -261,8 +250,7 @@ def test_every_delivery_the_profile_page_writes_is_writable_here(
     """The sweep, pinned. The Profile page writes exactly these keys from its
     notification and email cards; one added there and not here would save on
     one surface and 422 on the other."""
-    for key in ("notify_briefing", "notify_digest", "notify_weekly", "notify_alerts",
-                "notify_weekly_email"):
+    for key in ("notify_briefing", "notify_alerts", "notify_weekly_email"):
         response = signed_in.patch("/v1/prefs", json={key: False})
         assert response.status_code == 200, key
         assert response.json()[key] is False, key
@@ -633,3 +621,47 @@ def test_the_rating_prompt_is_asked_once_per_account(client, account, signed_in)
     assert response.status_code == 200
     assert response.json()["rate_prompt_done"] is True
     assert json.loads(account.prefs.read_text())["rate_prompt_done"] is True
+
+
+def test_entry_criteria_sit_beside_the_plan(account, signed_in, no_book):
+    """Their own key: writing the plan whole keeps them, and writing them
+    keeps the plan."""
+    assert signed_in.get("/v1/plan/entry").json() == {
+        "rules": [], "note": "", "set": False}
+    signed_in.put("/v1/plan", json={"limits": {"max_position_pct": 10}})
+    body = {"rules": [{"rule": "pe_fwd_max", "level": 30},
+                      {"rule": "revenue_growth_min", "level": 15}],
+            "note": "  no pre-revenue biotech "}
+    saved = signed_in.put("/v1/plan/entry", json=body)
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {
+        "rules": [{"rule": "revenue_growth_min", "level": 15.0},
+                  {"rule": "pe_fwd_max", "level": 30.0}],
+        "note": "no pre-revenue biotech",
+        "set": True,
+    }
+    signed_in.put("/v1/plan", json={"limits": {"max_position_pct": 8}})
+    assert signed_in.get("/v1/plan/entry").json()["set"] is True
+    assert signed_in.get("/v1/plan").json()["limits"]["max_position_pct"] == 8
+    persona = signed_in.get("/v1/profile").json()["persona"]
+    assert "forward P/E at most 30x" in persona and "pre-revenue" in persona
+
+
+def test_entry_criteria_refuse_what_they_cannot_read(account, signed_in, no_book):
+    put = lambda rules: signed_in.put("/v1/plan/entry", json={"rules": rules})  # noqa: E731
+    assert put([{"rule": "beta_max", "level": 1}]).status_code == 422
+    assert put([{"rule": "pe_fwd_max", "level": -5}]).status_code == 422
+    assert put([{"rule": "weight_max", "level": 150}]).status_code == 422
+    assert signed_in.put("/v1/plan/entry", json={"note": "x" * 601}).status_code == 422
+
+
+def test_an_empty_checklist_clears_it(account, signed_in, no_book):
+    signed_in.put("/v1/plan/entry", json={"rules": [{"rule": "roic_min", "level": 12}]})
+    cleared = signed_in.put("/v1/plan/entry", json={"rules": [], "note": " "}).json()
+    assert cleared["set"] is False
+    assert json.loads(account.prefs.read_text())["entry_criteria"] is None
+
+
+def test_a_token_cannot_write_entry_criteria(client, account):
+    response = client.put("/v1/plan/entry", params=WHO, headers=AUTH, json={})
+    assert response.status_code in (401, 403)

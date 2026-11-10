@@ -550,6 +550,48 @@ def test_the_exit_rule_confirmation_names_each_rule():
         assert "AMD" in asked and "chat." not in asked
 
 
+def _buy_criteria_action() -> Action:
+    return parse_action(json.dumps({
+        "action": "set_criteria", "ticker": "NVDA",
+        "criteria": [{"rule": "buy_below", "level": 100},
+                     {"rule": "buy_pe_fwd_below", "level": 30}],
+        "thesis": "Inference demand",
+    }))
+
+
+def test_a_buy_zone_card_shows_no_exit_price_fields():
+    names = tools.form_names(_buy_criteria_action())
+    assert {"crit_buy_below", "crit_buy_pe_fwd_below"} <= set(names)
+    assert not {"crit_below", "crit_drawdown_cost", "crit_weight_above"} & set(names)
+    assert "crit_buy_gross_margin_above" not in names
+
+
+def test_the_buy_zone_card_round_trips_and_says_entry():
+    act = _buy_criteria_action()
+    form = tools.form_of(act)
+    assert form["crit_buy_below"] == "100" and form["crit_buy_pe_fwd_below"] == "30"
+    revised = tools.revise(act, "NVDA", tools.args_from_form(
+        "set_criteria", {**form, "crit_buy_below": "95"}))
+    assert revised.args["criteria"] == [{"rule": "buy_below", "level": 95.0},
+                                        {"rule": "buy_pe_fwd_below", "level": 30.0}]
+    assert tools._reply_key(act) == "chat.action_entry_set"
+    both = parse_action(json.dumps({
+        "action": "set_criteria", "ticker": "NVDA",
+        "criteria": [{"rule": "buy_below", "level": 100},
+                     {"rule": "below", "level": 80}]}))
+    assert tools._reply_key(both) == "chat.action_rules_set"
+    assert tools._reply_key(_criteria_action()) == "chat.action_criteria_set"
+
+
+def test_a_buy_zone_follows_the_name_so_its_closes_are_fetched(tmp_path):
+    from stocks.chat import journal
+
+    watchlist = tmp_path / "watchlist.yaml"
+    execute(_buy_criteria_action(), watchlist, journal_path=tmp_path / "journal.json")
+    assert "NVDA" in watchlist.read_text()
+    rules = journal.criteria(journal.load(tmp_path / "journal.json"), side="buy")
+    assert {r.snapshot["rule"] for r in rules} == {"buy_below", "buy_pe_fwd_below"}
+
 def _slow_criteria_action() -> Action:
     return parse_action(json.dumps({
         "action": "set_criteria", "ticker": "AMD",

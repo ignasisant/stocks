@@ -27,28 +27,29 @@ import { CAP_PATHS, CapGlyph } from "./icons";
 import { Inline } from "./markdown";
 
 /**
+ * Both sets open on how to get the most out of the app, answered from the
+ * tour and the methodology documents (`chat/knowledge.py`).
+ *
  * With a ledger behind it the assistant's best trick is the reader's own book,
- * so those are the questions the opening screen offers — one per thing the
- * app works out rather than the model: the book against an index, the split
- * with funds looked through, the losses the tax engine would offset, and a
- * position sized to a weight. Each is worded to open its own surface under
+ * so those are the questions the opening screen offers next — one per thing
+ * the app works out rather than the model: the book against an index, the
+ * split with funds looked through, the losses the tax engine would offset, and
+ * a position sized to a weight. Each is worded to open its own surface under
  * the answer (`tests/test_chat_starters_gates.py`). A fresh account has no
  * ledger and would be offered four questions it cannot answer, so it gets the
- * watchlist set instead — live quotes, the bull-and-bear debate, a chart and
- * the earnings calendar all work with no import at all.
+ * watchlist set instead — live quotes and the earnings calendar work with no
+ * import at all. It names no ticker: the starter watchlist is the reader's
+ * chosen focus, and a suggestion to buy one of its crypto pairs read as advice
+ * nobody asked for.
  */
 const BOOK = [
+  "chat.starter_howto",
   "chat.starter_benchmark",
   "chat.starter_exposure",
   "chat.starter_harvest",
   "chat.starter_rebalance",
 ];
-const FRESH = [
-  "chat.starter_movers",
-  "chat.starter_debate",
-  "chat.starter_chart",
-  "chat.starter_earnings",
-];
+const FRESH = ["chat.starter_howto", "chat.starter_movers", "chat.starter_earnings"];
 
 /** Analyse what you hold · research with the web · import a statement · alert. */
 const CAPS = [
@@ -63,24 +64,6 @@ type Book = {
   /** The rows are the example book, not an import. */
   demo?: boolean;
 };
-type Watch = { entries: { ticker: string; favorite: boolean }[] };
-
-/**
- * Two tickers to name in the suggestions: favorites first, then order.
- *
- * Falls back to the two the copy reads least oddly with when the watchlist is
- * short or empty — a suggestion is only ever a prefilled question, so a
- * generic pair is better than hiding the row.
- */
-function pair(entries: Watch["entries"]): [string, string] {
-  const picked = [
-    ...entries.filter((e) => e.favorite).map((e) => e.ticker),
-    ...entries.map((e) => e.ticker),
-    "AAPL",
-    "MSFT",
-  ];
-  return [picked[0] as string, picked.find((x) => x !== picked[0]) as string];
-}
 
 /**
  * The position the rebalance suggestion names, and the weight it asks for:
@@ -123,8 +106,7 @@ export function Empty({
 
   const loaded = account.state === "loaded" ? account.data : null;
   const held = loaded?.held ?? 0;
-  const [a, b] = pair(loaded?.entries ?? []);
-  const { top, n } = loaded?.heaviest ?? { top: a, n: 5 };
+  const { top, n } = loaded?.heaviest ?? { top: "AAPL", n: 5 };
   // A failed read shows no number at all rather than a zero: "it reads your 0
   // positions" is a claim about the account, and this one was never counted.
   const intro =
@@ -179,7 +161,7 @@ export function Empty({
           </div>
         ) : (
           starters.map((key) => {
-            const prompt = t(key, { a, b, top, n });
+            const prompt = t(key, { top, n });
             return (
               <button
                 type="button"

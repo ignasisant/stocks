@@ -361,8 +361,19 @@ def surface(k: Known, translate) -> list[dict]:
 
 
 def moved(k: Known, picked: Mapping[str, object], translate) -> list[dict]:
-    """The draft again, for the answers the chips now hold."""
-    return [a2ui.data_update(SURFACE_ID, "/view", view(k, picked, translate))]
+    """The draft again, for the answers the chips now hold — and the answers
+    themselves: the drawer redraws its data from the surface's messages, so a
+    pick the server does not echo snaps back to the one the surface opened on.
+    Typed fields come back as typed, a chip as the answer the draft used."""
+    went = answers(k, picked)
+    a = {q: getattr(went, q) for q in CHOICES}
+    typed = {AMOUNT: f"{k.amount:g}" if k.amount else "",
+             INVESTABLE: f"{k.investable:g}" if k.investable is not None else ""}
+    a |= {q: "" if picked.get(q) is None else str(picked[q]) if q in picked else was
+          for q, was in typed.items()}
+    a["every"] = went.every
+    return [a2ui.data_update(SURFACE_ID, "/a", a),
+            a2ui.data_update(SURFACE_ID, "/view", view(k, picked, translate))]
 
 
 def saved(plan: Mapping, translate) -> list[dict]:

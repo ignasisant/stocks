@@ -34,8 +34,8 @@ class AlertRule {
 // `level` a figure or text; chat/journal.py clean_rules drops what it cannot
 // read.
 class CriterionRule {
-  rule string? @description("below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut")
-  level (float | string)? @description("a price for below, a percent for the price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut")
+  rule string? @description("an exit rule: below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut; or a buy rule: buy_below, buy_drawdown_high, buy_revenue_growth_above, buy_gross_margin_above, buy_operating_margin_above or buy_pe_fwd_below")
+  level (float | string)? @description("a price for below and buy_below, a forward P/E for buy_pe_fwd_below, a percent for the other price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut")
   quarters int? @description("fundamental rules only: how many quarters in a row, 1 to 4")
 }
 

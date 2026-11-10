@@ -80,8 +80,6 @@ class PrefsPatch(BaseModel):
     tax_niit: bool | None = None
     tax_church_rate: float | None = None
     tax_subnational_rate: float | None = None
-    notify_digest: bool | None = None
-    notify_weekly: bool | None = None
     notify_weekly_email: bool | None = None
     notify_alerts: bool | None = None
     notify_briefing: bool | None = None
@@ -190,14 +188,6 @@ def _view(stored: dict) -> Prefs:
         tax_niit=bool(stored.get("tax_niit")),
         tax_church_rate=float(stored.get("tax_church_rate") or 0.0),
         tax_subnational_rate=float(stored.get("tax_subnational_rate") or 0.0),
-        notify_digest=bool(stored.get("notify_digest")),
-        # Defaulted here rather than read off the merged file, because unlike
-        # its two neighbours this one is missing from `accounts.DEFAULT_PREFS`.
-        # The cron sends on the assumption it is on
-        # (`notify.fanout.iter_notify_users`), so reporting False for an
-        # account that never touched it would draw the switch off beside a
-        # review that is being delivered every Sunday.
-        notify_weekly=bool(stored.get("notify_weekly", True)),
         notify_weekly_email=bool(stored.get("notify_weekly_email", True)),
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
@@ -274,18 +264,18 @@ def update(
     "/schedules/{job}", response_model=Prefs, summary="Time one scheduled run"
 )
 def save_schedule(account: Writer, job: str, body: ScheduleSlot) -> Prefs:
-    """Switch one run on or off and set its time and days, whole.
+    """Switch one run on or off and set its time, days and mode, whole.
 
     `on` is the job's `notify_<job>` key, the switch the Notifications screen
-    already drew; the time and days merge into `schedules` beside the other
-    jobs'. Neither the run's last day nor its zone moves: a run already sent
-    today is not sent again because its time changed.
+    already drew; the time, days and `close` merge into `schedules` beside the
+    other jobs'. Neither the run's last day nor its zone moves: a run already
+    sent today is not sent again because its time changed.
     """
     if job not in JOBS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no scheduled run {job!r}")
     stored = accounts.load_prefs(account.prefs).get(PREFS_KEY)
     merged = dict(stored) if isinstance(stored, dict) else {}
-    merged[job] = {"time": body.time, "days": body.days}
+    merged[job] = {"time": body.time, "days": body.days, "close": body.close}
     return _view(accounts.update_prefs(
         account.prefs, {f"notify_{job}": body.on, PREFS_KEY: merged},
     ))
@@ -704,3 +694,81 @@ def save_plan_contribution(account: Writer, body: PlanContribution) -> InvestorP
     raw["contribution"] = body.model_dump()
     stored = accounts.update_prefs(account.prefs, {plans.PREFS_KEY: {**raw, "set": True}})
     return _plan_out(account, stored)
+
+
+# ------------------------------------------------------------ entry criteria
+# What a buy or an add is held to (`stocks.portfolio.entry`): lines read on
+# every company plus a note the assistant reads. Beside the plan under its own
+# key, so a plan written whole (here, by the chat, by MCP) never drops it.
+
+
+class EntryLine(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    rule: str = Field(description="One of `stocks.portfolio.entry.RULES`.")
+    level: float = Field(
+        description="A percent for `pct` rules (15 for 15 %), a multiple for `x`."
+    )
+
+
+class EntryWrite(BaseModel):
+    """The whole checklist, replaced. No line and no note clears it."""
+
+    model_config = {"extra": "forbid"}
+
+    rules: list[EntryLine] = Field(default_factory=list)
+    note: str = Field(default="", description="Principles in the reader's words.")
+
+    @field_validator("rules")
+    @classmethod
+    def _known_lines(cls, value: list[EntryLine]) -> list[EntryLine]:
+        from stocks.portfolio import entry
+
+        for line in value:
+            if line.rule not in entry.RULES:
+                raise ValueError(f"unknown rule: {line.rule}")
+            if not entry.clean([line.model_dump()]):
+                raise ValueError(f"{line.rule}: level {line.level:g} is out of range")
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def _bounded_note(cls, value: str) -> str:
+        from stocks.portfolio.entry import MAX_NOTE
+
+        text = value.strip()
+        if len(text) > MAX_NOTE:
+            raise ValueError(f"note must be at most {MAX_NOTE} characters")
+        return text
+
+
+class EntryCriteria(EntryWrite):
+    model_config = {"extra": "ignore"}
+
+    set: bool = Field(description="Whether the account keeps a checklist.")
+
+
+def _entry_out(prefs: dict) -> EntryCriteria:
+    from stocks.portfolio import entry
+
+    checklist = entry.load(prefs)
+    if checklist is None:
+        return EntryCriteria(set=False)
+    return EntryCriteria(**(entry.stored(checklist) or {}), set=True)
+
+
+@router.get("/plan/entry", response_model=EntryCriteria, summary="The entry criteria")
+def entry_criteria(account: Account) -> EntryCriteria:
+    """The lines a buy or an add is held to, as the app reads them."""
+    return _entry_out(accounts.load_prefs(account.prefs))
+
+
+@router.put("/plan/entry", response_model=EntryCriteria, summary="Replace them")
+def save_entry_criteria(account: Writer, body: EntryWrite) -> EntryCriteria:
+    """Store the whole checklist; an empty one clears it. A merge into
+    prefs.json, so the plan beside it stays as it was."""
+    from stocks.portfolio import entry
+
+    kept = entry.stored(entry.parse(body.model_dump()))
+    stored = accounts.update_prefs(account.prefs, {entry.PREFS_KEY: kept})
+    return _entry_out(stored)

@@ -185,7 +185,7 @@ def test_the_export_bundles_what_the_account_holds_without_its_keys(
         "anthropic_key_enc": "gAAAAABn-not-for-export",
         "anthropic_key_saved_at": 1.0,
         "anthropic_key_first_at": 1.0,
-        "notify_digest": False,
+        "notify_alerts": False,
     }))
     account.chat.write_text(json.dumps({"conversations": []}))
     account.learnings.write_text("[]")
@@ -194,7 +194,7 @@ def test_the_export_bundles_what_the_account_holds_without_its_keys(
         "README.txt", "watchlist.yaml", "prefs.json", "chat.json", "chat_learnings.json",
     ]
     assert json.loads(bundle.read("prefs.json")) == {
-        "currency": "EUR", "notify_digest": False,
+        "currency": "EUR", "notify_alerts": False,
     }
     assert bundle.read("watchlist.yaml") == account.watchlist.read_bytes()
     assert bundle.read("chat.json") == account.chat.read_bytes()

@@ -11,7 +11,7 @@ It lives here rather than in `web/` because more than one runtime needs it:
   files under it),
 * the internal HTTP API (`stocks.api`), which authenticates with a bearer
   token and is handed an account address,
-* headless jobs — the digest, the CLI — which have a prefs.json and
+* headless jobs — the scheduled runs, the CLI — which have a prefs.json and
   no session at all.
 
 Nothing here talks to a user. `restore_account` raises `StorageUnavailable`
@@ -467,19 +467,13 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # The signed-in address, for the jobs that have a prefs.json and no
     # session (and for the free-chain allowlist). None until the next login.
     "email": None,
+    # The Friday review by email (notify/weekly_email.py): on for every account
+    # that imported a book, off by its one-click unsubscribe or the Profile
+    # toggle. Needs no device, unlike the push toggles.
+    "notify_weekly_email": True,
     # Push notifications: the toggles only take effect once a device has
     # subscribed (push.json). The cron (notify/fanout.py) reads them headless
     # straight from prefs.json.
-    "notify_digest": True,
-    # Absent here for a while, and read as `.get("notify_weekly", True)` by both
-    # the Profile toggle and the cron — so the review was delivered while a
-    # plain `.get()` on a loaded prefs dict answered None. Two truths about one
-    # switch; this is the one the senders already assume.
-    "notify_weekly": True,
-    # The Friday review by email (notify/weekly_email.py): on for every account
-    # that imported a book, off by its one-click unsubscribe or the Profile
-    # toggle. Needs no device, unlike the toggles above.
-    "notify_weekly_email": True,
     "notify_alerts": True,
     # Tax residence drives which jurisdiction's rules the Realized & tax tab
     # applies and which currency the ledger is replayed in (see
@@ -502,9 +496,9 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # whether it may search the account's earlier conversations (chat/memory.py).
     "chat_memory": True,
     "chat_recall": True,
-    # The scheduled runs (notify/schedule.py). The AI briefing is a run like
-    # the digest and the weekly review, switched by its own `notify_` key;
-    # `schedules` holds each run's time and days, None = the defaults, and
+    # The scheduled run (notify/schedule.py): the AI briefing, the one summary
+    # a day, switched by its own `notify_` key; `schedules` holds its time,
+    # days and morning-or-close mode, None = the defaults, and
     # `timezone` the zone they are read in (the browser's, sent by the shell).
     # `schedule_last` is the server's: the local day each run last went out.
     "notify_briefing": True,

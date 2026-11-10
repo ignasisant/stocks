@@ -118,6 +118,34 @@ describe("a surface", () => {
     expect(out).toMatch(/<option value="0" selected="">When · 02\/01<\/option>/);
   });
 
+  it("puts a chip row's question on screen, and leaves a bare row bare", () => {
+    const chips = (label?: string) =>
+      draw(
+        surface(
+          [
+            {
+              id: "root",
+              component: "ChoicePicker",
+              ...(label === undefined ? {} : { label }),
+              options: [
+                { label: "None", value: "none" },
+                { label: "A few months", value: "short" },
+              ],
+              value: { path: "/a/cushion" },
+              variant: "chips",
+            },
+          ],
+          { a: { cushion: "short" } },
+        ),
+      );
+    const asked = chips("Cushion outside the broker");
+    expect(asked).toContain(
+      '<span aria-hidden="true">Cushion outside the broker</span>',
+    );
+    expect(asked).toContain('aria-label="Cushion outside the broker"');
+    expect(chips()).not.toContain("ag-a2ui-field");
+  });
+
   it("draws a what-if: a slider over the holding and figures toned by the data", () => {
     const out = draw(
       surface(

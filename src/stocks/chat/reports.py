@@ -241,14 +241,15 @@ def _opening(text: str) -> str:
 
 
 def _rule_lines(entries, ticker: str) -> tuple[str, ...]:
-    """The reader's live exit rules for `ticker`, one line each: the rule,
+    """The reader's live exit and buy rules for `ticker`, one line each: the rule,
     whether it is met, and a thesis pillar the daily check is watching."""
     from stocks.chat import journal
 
     out = []
     for e in journal.criteria(entries, ticker):
         snap = e.snapshot
-        line = f"exit rule: {journal.criterion_text(e)}"
+        side = "buy" if journal.side_of_entry(e) == "buy" else "exit"
+        line = f"{side} rule: {journal.criterion_text(e)}"
         if e.state == "hit":
             line += f" — met on {snap.get('hit_day') or e.last}"
             if snap.get("pillar"):

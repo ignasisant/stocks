@@ -30,6 +30,14 @@ class ScheduleSlot(BaseModel):
     on: bool = True
     time: str = Field(description='Local wall-clock time, "HH:MM".')
     days: list[int] = Field(description="Weekdays it runs on, Monday = 0.")
+    close: bool = Field(
+        default=False,
+        description=(
+            "Goes out the evening of each US close, as soon as its card is "
+            "written, instead of at `time` (which is kept for switching back). "
+            "`days` are then the sessions' weekdays."
+        ),
+    )
 
     @field_validator("time")
     @classmethod
@@ -69,8 +77,6 @@ class Prefs(BaseModel):
     tax_niit: bool = False
     tax_church_rate: float = 0.0
     tax_subnational_rate: float = 0.0
-    notify_digest: bool = True
-    notify_weekly: bool = True
     # The Friday email (`notify/weekly_email.py`): on for every imported
     # book, device or not, until the reader turns it off.
     notify_weekly_email: bool = True
@@ -109,8 +115,8 @@ class Prefs(BaseModel):
     schedules: dict[str, ScheduleSlot] = Field(
         default_factory=dict,
         description=(
-            "The scheduled runs (`briefing`, `digest`, `weekly`) as the app "
-            "applies them, defaults filled in."
+            "The scheduled runs (`briefing`, the one summary a day) as the "
+            "app applies them, defaults filled in."
         ),
     )
 

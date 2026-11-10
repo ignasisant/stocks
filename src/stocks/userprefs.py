@@ -128,6 +128,11 @@ def load_profile(prefs: dict) -> dict:
     plan = prefs.get("investor_plan")
     if isinstance(plan, dict) and plan.get("set"):
         out["plan"] = plan
+    # And the entry criteria beside it (`stocks.portfolio.entry`): what a
+    # buy or an add is held to, said after the plan.
+    entry = prefs.get("entry_criteria")
+    if isinstance(entry, dict) and entry:
+        out["entry"] = entry
     return out
 
 

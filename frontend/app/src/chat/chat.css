@@ -1058,6 +1058,102 @@
   font-size: var(--ag-fs-lg);
 }
 
+.ag-chat-h-emoji {
+  margin-right: 6px;
+}
+
+/* Numbered sections ("1. **The quarter**" over its bullets): a badge — the
+   topic's emoji, or the number when the title names none — beside the title,
+   the body hung under the title rather than under the badge. */
+.ag-chat-secs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-chat-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ag-chat-sec-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ag-surface-sunken);
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+/* An emoji carries its own colour and shape: no disc behind it. */
+.ag-chat-sec-emoji {
+  background: none;
+  font-size: var(--ag-fs-lg);
+}
+
+.ag-chat-sec-title {
+  font-size: var(--ag-fs-md);
+}
+
+.ag-chat-sec > :not(.ag-chat-sec-head) {
+  margin-left: 32px;
+}
+
+.ag-chat-sec > .ag-chat-list {
+  margin-top: 0;
+  padding-left: 16px;
+}
+
+/* Where a figure came from: a quiet tag, so provenance reads at a glance
+   without outshouting the figure it labels. */
+.ag-chat-src {
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 5px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.5;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.ag-chat-src-consensus {
+  color: var(--ag-info);
+}
+
+.ag-chat-src-missing {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--ag-border);
+}
+
+/* A move the answer signed: "+6.1%", "-0.22%". */
+.ag-chat-rise,
+.ag-chat-fall {
+  white-space: nowrap;
+}
+
+.ag-chat-rise {
+  color: var(--ag-up);
+}
+
+.ag-chat-fall {
+  color: var(--ag-down);
+}
+
 .ag-chat-list {
   margin: 0 0 8px;
   padding-left: 20px;
@@ -3529,6 +3625,11 @@ a.ag-chat-btn {
   justify-content: center;
   min-width: 40px;
   text-transform: capitalize;
+}
+
+/* "At a time" / "After the US close": sentences, not weekday names. */
+.ag-sched-mode {
+  text-transform: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

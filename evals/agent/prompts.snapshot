@@ -359,7 +359,7 @@ The reader asked to be told at a price. Once the material gives you the level, c
      "type": "array"
     },
     "criteria": {
-     "description": "set_criteria only. below: a price in the quote currency; drawdown_cost, drawdown_high, weight_above and the fundamental *_below rules: percent (a growth or margin may be 0 or negative), with quarters 1-4 running for the fundamental ones; ceo_change, guidance_cut, dividend_cut: no level.",
+     "description": "set_criteria only. below: a price in the quote currency; drawdown_cost, drawdown_high, weight_above and the fundamental *_below rules: percent (a growth or margin may be 0 or negative), with quarters 1-4 running for the fundamental ones; ceo_change, guidance_cut, dividend_cut: no level. The buy_* rules are buy zones, on a name held or not: buy_below a price, buy_drawdown_high and the *_above ones percent, buy_pe_fwd_below a forward P/E.",
      "items": {
       "properties": {
        "level": {
@@ -381,7 +381,13 @@ The reader asked to be told at a price. Once the material gives you the level, c
          "operating_margin_below",
          "ceo_change",
          "guidance_cut",
-         "dividend_cut"
+         "dividend_cut",
+         "buy_below",
+         "buy_drawdown_high",
+         "buy_revenue_growth_above",
+         "buy_gross_margin_above",
+         "buy_operating_margin_above",
+         "buy_pe_fwd_below"
         ],
         "type": "string"
        }

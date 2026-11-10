@@ -52,9 +52,10 @@ KEEP_DAYS = 30
 # cards must not push the reader's conversations out of MAX_CONVERSATIONS. Nor
 # out of sight: the panel's list leaves them out (`list_conversations`, cards=
 # False) until the reader opens one or writes in it — the list is what they
-# said, not what they were told. The scheduled runs (save_scheduled_thread)
-# share the budget, and are the exception to "out of sight": they are listed
-# in a section of their own, which is how a pushed one is found again.
+# said, not what they were told. A card the briefing pushed (mark_scheduled),
+# and the evening and weekly runs filed before they were retired on
+# 2026-11-10, are the exception to "out of sight": they are listed in a section
+# of their own, which is how a pushed one is found again.
 MAX_CARD_THREADS = 60
 _TITLE_MAX = 80
 
@@ -495,43 +496,6 @@ def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     if msgs and msgs[-1].get("daily") == day:
         if msgs[-1].get("content") == text:
             return conv["id"]  # the same card again: nothing to file
-        msgs[-1] = turn
-    else:
-        msgs.append(turn)
-    conv["updated"] = _now()
-    save_book(book, path)
-    index = memory_path(path)
-    if memory.remember(index, msgs, conv["id"]):
-        _persist(index)
-    return conv["id"]
-
-
-@_locked
-def save_scheduled_thread(job: str, run: str, title: str, text: str, path: Path) -> str:
-    """File one scheduled run (`notify/schedule.py`) as a thread; returns its id.
-
-    `save_card_thread`'s rules, keyed on (job, run day) instead of the card
-    day: one thread per run, titled once, never made active, a same-day rerun
-    replacing its turn while nobody has answered it. Marked `scheduled` so the
-    panel lists it under its own section even unread."""
-    book = load_book(path)
-    conv = next(
-        (c for c in book["conversations"]
-         if c.get("scheduled") == job and c.get("run") == run),
-        None,
-    )
-    if conv is None:
-        conv = _blank_conversation(title[:_TITLE_MAX])
-        conv["title_auto"] = False
-        conv["scheduled"] = job
-        conv["run"] = run
-        book["conversations"].append(conv)
-    turn = {"role": "assistant", "content": text, "scheduled": job, "run": run,
-            **_filed()}
-    msgs = conv["messages"]
-    if msgs and msgs[-1].get("scheduled") == job and msgs[-1].get("run") == run:
-        if msgs[-1].get("content") == text:
-            return conv["id"]
         msgs[-1] = turn
     else:
         msgs.append(turn)

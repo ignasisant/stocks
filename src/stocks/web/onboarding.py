@@ -337,7 +337,6 @@ RELEASES: tuple[Release, ...] = (
             News(slug="demo", icon="science", step="import"),
             News(slug="pulse", icon="speed", step="pulse"),
             News(slug="profile", icon="tune", step="prefs"),
-            News(slug="weekly", icon="calendar_view_week", step="notify"),
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
     ),
@@ -570,9 +569,9 @@ RELEASES: tuple[Release, ...] = (
         version="2026.10.12",
         date="2026-10",
         items=(
-            # A capability there was none of: choosing when the briefing, the
-            # day's numbers and the weekly review run, each run kept as a
-            # conversation under "Scheduled" in the chat. Rides on the notify
+            # A capability there was none of: choosing when the daily summary
+            # goes out (a time of one's own or the US close), each one kept as
+            # a conversation under "Scheduled" in the chat. Rides on the notify
             # step, whose tab links to where the times are set.
             News(slug="scheduled", icon="schedule", step="notify"),
         ),
@@ -600,6 +599,18 @@ RELEASES: tuple[Release, ...] = (
             News(
                 slug="email", icon="mail", step="notify", needs=lambda: mail.configured()
             ),
+        ),
+    ),
+    Release(
+        version="2026.11.2",
+        date="2026-11",
+        items=(
+            # A line there was none of: what a buy or an add has to meet, held
+            # against every move Review proposes and counted on a company's
+            # page. It is a block of the plan tab, so it rides on that step.
+            # The per-name buy rules beside it are one more kind of the exit
+            # rules the journal already holds: a word in its step, no card.
+            News(slug="entry", icon="checklist", step="plan"),
         ),
     ),
 )
@@ -781,7 +792,7 @@ def account_gaps(
             names = held_symbols(paths)
         if not names:
             return None
-        live = journal.criteria(journal.load(paths.journal))
+        live = journal.criteria(journal.load(paths.journal), side="exit")
         ruled = {e.ticker.upper() for e in live}
         bare = sorted(t for t in names if t.upper() not in ruled)
         if not bare:
