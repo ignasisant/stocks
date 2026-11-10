@@ -160,7 +160,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   letter-spacing: 0.06em; color: var(--ag-purple-400);
 }
 .ag-l-hero h1 {
-  font-weight: 800; font-size: 46px; line-height: 1.08;
+  font-weight: 800; font-size: 54px; line-height: 1.05;
   letter-spacing: -0.02em; text-wrap: pretty;
 }
 .ag-l-lede {
@@ -259,7 +259,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   flex-direction: column;
   gap: 32px;
 }
-.ag-l-sec h2 { font-weight: 800; font-size: var(--ag-fs-3xl); }
+.ag-l-sec h2 { font-weight: 800; font-size: clamp(var(--ag-fs-3xl), 3vw, 38px); }
 .ag-l-head { display: flex; flex-direction: column; gap: 10px; max-width: 60ch; }
 .ag-l-head p { font-size: var(--ag-fs-lg); color: var(--ag-text-secondary); }
 
@@ -845,6 +845,291 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 """
 
 
+# The landing's motion and gradient layer, after the base rules so it wins on
+# source order (the 900px block inside BASE_CSS only sets sizes it leaves alone).
+FLAIR_CSS = """
+/* --- motion layer: gradient type, glows, pill buttons, reveal --- */
+/* Layered over the base rules, which stay the no-motion, no-JS page. Every
+   moving thing here stops under prefers-reduced-motion (end of the block). */
+.ag-l {
+  --l-grad: linear-gradient(100deg, var(--ag-landing-info),
+    var(--ag-brand-accent) 50%, var(--ag-purple-300));
+  --l-grad-btn: linear-gradient(100deg, var(--ag-brand-cta),
+    color-mix(in srgb, var(--ag-brand-cta) 55%, var(--ag-landing-info)));
+  --l-ease: cubic-bezier(.22, 1, .36, 1);
+  overflow-x: clip;  /* the glows run past the edges; clip keeps the bar sticky */
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+/* Display sizes set tight; the body's 1.5 leaves two-line heads gapped. */
+.ag-l h2 { line-height: 1.15; }
+.ag-l-grad {
+  background: var(--l-grad);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
+
+/* top bar: in-page links, while the bar has room for them */
+.ag-l-bar { backdrop-filter: blur(12px); }
+.ag-l-nav { display: flex; align-items: center; gap: 22px; margin-left: 12px; }
+.ag-l-nav a {
+  font-size: var(--ag-fs-md); font-weight: 500; color: var(--ag-text-secondary);
+}
+@media (hover: hover) { .ag-l-nav a:hover { color: var(--ag-text-primary); } }
+@media (max-width: 1080px) { .ag-l-nav { display: none; } }
+
+/* eyebrows are pills */
+.ag-l-eyebrow {
+  display: inline-flex; align-items: center; align-self: flex-start;
+  padding: 5px 12px; border-radius: var(--ag-radius-pill);
+  background: var(--ag-cta-tint); border: 1px solid var(--ag-cta-tint-edge);
+  font-size: var(--ag-fs-2xs); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.ag-l-badge i {
+  background: var(--ag-landing-up);
+  animation: ag-l-pulse 2.4s ease-out infinite;
+}
+@keyframes ag-l-pulse {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ag-landing-up) 60%, transparent); }
+  to { box-shadow: 0 0 0 8px color-mix(in srgb, var(--ag-landing-up) 0%, transparent); }
+}
+
+/* buttons: gradient pills that lift */
+.ag-l-cta {
+  border-radius: var(--ag-radius-pill); background: var(--l-grad-btn);
+  box-shadow: 0 6px 24px -6px var(--ag-cta-halo);
+  transition: translate 200ms var(--l-ease), box-shadow 200ms var(--l-ease),
+    filter 200ms var(--l-ease);
+}
+.ag-l-cta-ghost {
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in srgb, var(--ag-text-primary) 4%, transparent);
+}
+/* `.ag-l a` outranks a bare class, so the link colour is restated here. */
+.ag-l a.ag-l-cta { color: var(--ag-on-brand); }
+.ag-l a.ag-l-cta-ghost { color: var(--ag-text-primary); }
+@media (hover: hover) {
+  .ag-l a.ag-l-cta:hover { color: var(--ag-on-brand); }
+  .ag-l a.ag-l-cta-ghost:hover { color: var(--ag-text-primary); }
+  .ag-l-cta:hover {
+    background: var(--l-grad-btn); filter: brightness(1.08); translate: 0 -2px;
+    box-shadow: 0 12px 32px -8px var(--ag-cta-halo);
+  }
+}
+
+/* hero: glows drift behind the copy, the mock floats */
+.ag-l-hero { position: relative; isolation: isolate; }
+.ag-l-hero h1 { text-wrap: balance; }
+.ag-l-glow { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.ag-l-glow i {
+  position: absolute; width: 40rem; height: 40rem; border-radius: 50%;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ag-brand-cta) 30%, transparent), transparent);
+  animation: ag-l-drift 20s ease-in-out infinite alternate;
+}
+.ag-l-hero .ag-l-glow i:nth-child(1) {
+  top: -12rem; left: -14rem;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ag-landing-info) 22%, transparent), transparent);
+}
+.ag-l-hero .ag-l-glow i:nth-child(2) {
+  top: -4rem; right: -12rem;
+  animation-duration: 24s; animation-direction: alternate-reverse;
+}
+.ag-l-hero .ag-l-glow i:nth-child(3) {
+  bottom: -18rem; left: 30%; width: 30rem; height: 30rem; animation-duration: 18s;
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ag-brand-accent) 18%, transparent), transparent);
+}
+@keyframes ag-l-drift { to { transform: translate(6rem, 3rem) scale(1.12); } }
+.ag-l-hero .ag-l-card {
+  background: color-mix(in srgb, var(--ag-surface-raised) 88%, transparent);
+  backdrop-filter: blur(6px);
+  animation: ag-l-float 7s ease-in-out infinite;
+}
+@keyframes ag-l-float { 50% { translate: 0 -8px; } }
+
+/* scroll reveal (classes from _REVEAL_JS) */
+.ag-l.motion [data-reveal] {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity 700ms var(--l-ease), transform 700ms var(--l-ease);
+  transition-delay: calc(var(--i, 0) * 110ms);
+}
+.ag-l.motion [data-reveal].is-in { opacity: 1; transform: none; }
+
+/* section heads */
+.ag-l-sec h2, .ag-l-prov h2 { text-wrap: balance; }
+
+/* icon tiles */
+.ag-l-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+  background: var(--l-grad-btn); color: var(--ag-on-brand);
+  box-shadow: 0 8px 20px -10px var(--ag-cta-halo);
+}
+.ag-l-ico svg { width: 22px; height: 22px; }
+.ag-l-tile > .ag-l-ico { margin-bottom: 6px; }
+
+/* video */
+.ag-l-player {
+  border-radius: 20px; overflow: hidden;
+  border: 1px solid var(--ag-border-brand-band);
+  background: var(--ag-surface-card);
+  box-shadow: 0 30px 80px -30px var(--ag-cta-halo);
+}
+.ag-l-player video {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 9;
+  background: var(--ag-surface-card);
+}
+.ag-l-player p { padding: 24px; color: var(--ag-text-secondary); }
+.ag-l-dl {
+  align-self: flex-start; font-size: var(--ag-fs-md); font-weight: 600;
+  border-bottom: 1px solid currentColor;
+}
+
+/* use cases: each card a jump to the section that shows it */
+.ag-l-uses {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+.ag-l .ag-l-use {
+  display: flex; flex-direction: column; gap: 10px; padding: 24px;
+  border-radius: 18px; border: 1px solid var(--ag-border);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--ag-brand-cta) 14%, transparent),
+    color-mix(in srgb, var(--ag-surface-raised) 90%, transparent) 60%);
+  color: var(--ag-text-primary);
+  transition: border-color 200ms var(--l-ease), translate 200ms var(--l-ease);
+}
+.ag-l-use h3 { font-weight: 700; font-size: var(--ag-fs-lg); margin-top: 4px; }
+.ag-l-use p {
+  font-size: 13.5px; line-height: 1.55; color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+.ag-l-more {
+  margin-top: auto; padding-top: 6px;
+  font-size: var(--ag-fs-md); font-weight: 600; color: var(--ag-brand-accent);
+}
+.ag-l-more i {
+  font-style: normal; display: inline-block;
+  transition: translate 200ms var(--l-ease);
+}
+@media (hover: hover) {
+  .ag-l .ag-l-use:hover {
+    border-color: color-mix(in srgb, var(--ag-brand-accent) 55%, transparent);
+    translate: 0 -3px; color: var(--ag-text-primary);
+  }
+  .ag-l-use:hover .ag-l-more i { translate: 4px 0; }
+}
+
+/* privacy: the flow diagram, then the checks */
+.ag-l-flow {
+  margin: 0; padding: 28px; border-radius: var(--ag-radius-lg);
+  border: 1px solid var(--ag-border-brand-band);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ag-brand-cta) 10%, transparent),
+    var(--ag-surface-raised));
+  display: flex; flex-direction: column; gap: 20px;
+}
+.ag-l-flow-row {
+  display: grid; align-items: center; gap: 12px;
+  grid-template-columns:
+    auto minmax(min(60px, 100%), 1fr) auto minmax(min(60px, 100%), 1fr) auto;
+}
+.ag-l-node {
+  padding: 12px 18px; border-radius: var(--ag-radius-md);
+  border: 1px solid var(--ag-border); background: var(--ag-surface-page);
+  text-align: center;
+}
+.ag-l-node b { font-size: var(--ag-fs-base); font-weight: 600; }
+.ag-l-node.muted { border-style: dashed; color: var(--ag-text-muted); }
+.ag-l-node.brand {
+  background: var(--ag-cta-tint); border-color: var(--ag-cta-tint-edge);
+  color: var(--ag-purple-400);
+}
+.ag-l-link {
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  text-align: center;
+}
+.ag-l-link i { position: relative; display: block; height: 2px; border-radius: 1px; }
+.ag-l-link span { font-size: 11px; letter-spacing: 0.04em; }
+.ag-l-link.cut i {
+  background: repeating-linear-gradient(90deg,
+    var(--ag-landing-down) 0 6px, transparent 6px 12px);
+  opacity: 0.7;
+}
+.ag-l-link.cut span { color: var(--ag-landing-down); }
+.ag-l-link.live i { background: var(--l-grad); }
+.ag-l-link.live span { color: var(--ag-brand-accent); }
+.ag-l-link.live i::after {
+  content: ""; position: absolute; top: -3px; left: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ag-purple-300);
+  box-shadow: 0 0 10px var(--ag-brand-accent);
+  animation: ag-l-travel 2.6s var(--l-ease) infinite;
+}
+@keyframes ag-l-travel {
+  from { left: 0; opacity: 0; } 15% { opacity: 1; }
+  85% { opacity: 1; } to { left: calc(100% - 8px); opacity: 0; }
+}
+.ag-l-flow figcaption {
+  font-size: var(--ag-fs-md); color: var(--ag-text-secondary);
+  text-align: center; text-wrap: balance;
+}
+.ag-l-trustitem {
+  border: 1px solid var(--ag-border); border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-raised); padding: 20px;
+}
+.ag-l-trustitem svg { width: 20px; height: 20px; margin-bottom: 4px; }
+
+/* steps: numbered circles */
+.ag-l-stepnum {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--l-grad-btn); color: var(--ag-on-brand);
+  font-family: 'Epilogue', sans-serif; font-weight: 800; font-size: 20px;
+  box-shadow: 0 8px 24px -8px var(--ag-cta-halo);
+}
+.ag-l-step h3 { color: var(--ag-text-primary); }
+
+/* closing card */
+.ag-l-endcap { padding-top: 72px; padding-bottom: 72px; }
+.ag-l-final {
+  position: relative; isolation: isolate; overflow: hidden;
+  border-radius: 28px; border: 1px solid var(--ag-border-brand-band);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ag-brand-cta) 18%, transparent),
+    color-mix(in srgb, var(--ag-surface-raised) 60%, transparent));
+  padding-left: 32px; padding-right: 32px;
+}
+.ag-l-final .ag-l-eyebrow { align-self: center; }
+.ag-l-final p {
+  font-size: var(--ag-fs-lg); color: var(--ag-text-secondary); max-width: 52ch;
+}
+.ag-l-final .ag-l-glow i {
+  top: -24rem; left: calc(50% - 20rem);
+  background: radial-gradient(closest-side,
+    color-mix(in srgb, var(--ag-brand-cta) 38%, transparent), transparent);
+}
+
+/* footer: brand and tagline beside the links */
+.ag-l-foot-top {
+  display: flex; flex-wrap: wrap; gap: 20px 40px;
+  justify-content: space-between; align-items: flex-start;
+}
+.ag-l-foot-brand { display: flex; flex-direction: column; gap: 6px; }
+.ag-l-foot-brand p { font-size: var(--ag-fs-md); color: var(--ag-text-muted); }
+
+@media (pointer: coarse) {
+  .ag-l-dl { padding: 12px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-l-badge i, .ag-l-glow i, .ag-l-hero .ag-l-card,
+  .ag-l-link.live i::after { animation: none; }
+  .ag-l-cta, .ag-l .ag-l-use, .ag-l-more i { transition: none; }
+}
+"""
+
+
 # --------------------------------------------------------------- mobile rules
 # Phone layout. Kept as bare rules rather than a media block because it is
 # applied two ways (see _mobile_css()): by viewport width, and again by the
@@ -992,6 +1277,29 @@ MOBILE_RULES = """
 .ag-l-foot { padding-top: 24px; padding-bottom: 28px; gap: 14px; }
 .ag-l-foot-row { gap: 14px; }
 .ag-l-fine { font-size: var(--ag-fs-xs); }
+.ag-l-foot-top { flex-direction: column; gap: 16px; }
+
+/* --- motion layer --- */
+.ag-l-glow i { width: 24rem; height: 24rem; }
+.ag-l-hero .ag-l-card { animation: none; }  /* nothing drifts under a thumb */
+.ag-l-player { border-radius: 14px; }
+.ag-l-uses { grid-template-columns: 1fr; gap: 12px; }
+.ag-l .ag-l-use { padding: 20px; }
+.ag-l-flow { padding: 20px 16px; }
+.ag-l-flow-row { grid-template-columns: 1fr; justify-items: center; gap: 8px; }
+.ag-l-node { width: 100%; }
+.ag-l-link { align-items: center; }
+.ag-l-link i { width: 2px; height: 22px; }
+.ag-l-link.cut i {
+  background: repeating-linear-gradient(180deg,
+    var(--ag-landing-down) 0 5px, transparent 5px 10px);
+}
+.ag-l-link.live i::after { display: none; }
+.ag-l-trustitem { padding: 16px; }
+.ag-l-stepnum { width: 40px; height: 40px; font-size: 17px; }
+.ag-l-endcap { padding: 40px 16px; }
+.ag-l-final { padding-left: 20px; padding-right: 20px; border-radius: 22px; }
+.ag-l-final p { font-size: var(--ag-fs-base); }
 """
 
 # Small phones (iPhone SE and the like) — type only, the layout above holds.
@@ -1010,6 +1318,7 @@ TINY_CSS = """
 CSS = (
     "<style>"
     + BASE_CSS
+    + FLAIR_CSS
     + "@media (max-width: 640px) {"
     + MOBILE_RULES
     + "}"

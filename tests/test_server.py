@@ -140,7 +140,7 @@ def test_the_spanish_page_is_served_in_spanish(client):
     r = client.get("/es/")
     assert r.status_code == 200
     assert 'lang="es"' in r.text
-    assert "Un asistente de IA que ya se ha leído" in r.text
+    assert "Un asistente de IA que" in r.text  # the rest sits in a gradient span
 
 
 @pytest.mark.parametrize("path", ["/es", "/en-es", "/es-us"])
@@ -230,6 +230,18 @@ def test_the_share_card_is_served(client):
     r = client.get("/lp/og.png")
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/png"
+
+
+def test_the_walkthrough_seeks_without_refetching(client, tmp_path, monkeypatch):
+    """A player asks for byte ranges; a 200 with the whole file breaks seeking
+    in Safari and re-downloads the video on every scrub elsewhere."""
+    (tmp_path / "intro.mp4").write_bytes(bytes(4096))
+    monkeypatch.setattr(server, "_ASSETS", tmp_path)
+    r = client.get("/lp/intro.mp4", headers={"Range": "bytes=0-1023"})
+    assert r.status_code == 206
+    assert r.headers["content-type"] == "video/mp4"
+    assert r.headers["content-range"] == "bytes 0-1023/4096"
+    assert len(r.content) == 1024
 
 
 def test_the_app_installs_to_a_home_screen_and_opens_past_the_pitch(client):

@@ -69,7 +69,8 @@ def company_name(ticker: str, watchlist: Path | str) -> str | None:
     The account's own watchlist entry wins — a name someone set by hand is the
     name they meant — and it is matched under both the stored label and the
     resolved symbol, so a custom name set on a broker code is not lost by
-    resolving past it. Then the coin map, then the local fund catalog (which
+    resolving past it. Then the coin map, then the well-known indices, then
+    the local fund catalog (which
     covers the UCITS lines a EUR investor holds and the SEC map does not), then
     the SEC ticker map, then the name Yahoo gave the listing (non-US).
 
@@ -89,6 +90,10 @@ def company_name(ticker: str, watchlist: Path | str) -> str | None:
         from stocks.data.crypto import crypto_name
 
         if name := crypto_name(resolved):
+            return name
+        from stocks.data import indices
+
+        if name := indices.name(resolved):
             return name
         from stocks.data.funds import fund_name
 
