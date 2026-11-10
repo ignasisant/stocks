@@ -7,6 +7,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.testclient import TestClient
 
+from stocks import session
 from stocks.web import csp, landing, landing_static, server
 from tests.csp_check import assert_enforced
 from tests.patching import patch_loaders
@@ -72,6 +73,7 @@ def test_the_404_is_enforced(client):
 
 
 def test_the_app_shell_is_enforced(client):
+    client.cookies.set(session.GUEST_COOKIE, "1")
     r = client.get("/portfolio")
     assert r.status_code == 200
     assert "APP-SHELL" in r.text
@@ -83,6 +85,7 @@ def test_the_app_shell_is_enforced(client):
 
 
 def test_the_ticker_link_card_does_not_loosen_the_shell(client):
+    client.cookies.set(session.GUEST_COOKIE, "1")
     plain = client.get("/ticker").headers["content-security-policy"]
     r = client.get("/ticker?ticker=AAPL")
     assert 'property="og:title"' in r.text
@@ -127,6 +130,7 @@ def test_the_boot_block_is_data_and_changes_nothing_in_the_policy(
     patch_loaders(monkeypatch, "db_mtime", lambda db: 1.0)
     monkeypatch.setattr("stocks.storage.persist", lambda path: None)
 
+    client.cookies.set(session.GUEST_COOKIE, "1")
     guest = client.get("/portfolio")
     assert 'id="ag-boot"' in guest.text
     assert_enforced(guest)

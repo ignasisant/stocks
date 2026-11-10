@@ -1,6 +1,9 @@
 {
   "landing.skip": "Skip to content",
   "landing.nav_github": "GitHub",
+  "landing.langhint_ask": "Prefer English?",
+  "landing.langhint_go": "Read it in English",
+  "landing.langhint_close": "Dismiss",
   "landing.cta_guest": "Look around first — no account needed",
   "landing.cta_guest_short": "Look around first",
   "landing.hero_badge": "AI ASSISTANT · READS YOUR BOOK",

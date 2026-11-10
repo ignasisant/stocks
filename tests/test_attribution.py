@@ -27,6 +27,11 @@ CHROME = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/140.0 Safari/537.36"
 )
+SAFARI_IOS = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/16.1 Mobile/15E148 Safari/604.1"
+)
+BROWSER_HEADERS = {"accept-language": "es-ES,es;q=0.9", "sec-fetch-mode": "navigate"}
 
 
 # ------------------------------------------------------------- the vocabulary
@@ -86,6 +91,30 @@ def test_crawlers_and_scripts_are_not_readers(agent):
 
 def test_a_browser_is_a_reader():
     assert attribution.is_bot(CHROME) is False
+    assert attribution.is_bot(CHROME, BROWSER_HEADERS) is False
+    assert attribution.is_bot(SAFARI_IOS, {"accept-language": "es-ES"}) is False
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [
+        "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)",
+        "Mozilla/5.0 (compatible)",
+        "Go-http-client/2.0",
+    ],
+)
+def test_a_user_agent_no_engine_wrote_is_a_script(agent):
+    assert attribution.is_bot(agent) is True
+
+
+def test_a_browser_user_agent_without_a_browsers_headers_is_a_script():
+    """What the datacenter scanners in the funnel look like: a Chrome string
+    and nothing a Chrome page load also sends."""
+    assert attribution.is_bot(CHROME, {}) is True
+    assert attribution.is_bot(CHROME, {"accept-language": "en-US"}) is True
+    assert attribution.is_bot(CHROME, {"sec-fetch-mode": "navigate"}) is True
+    # Safari before 16.4 never sent fetch metadata; only the language is asked.
+    assert attribution.is_bot(SAFARI_IOS, {}) is True
 
 
 def test_fields_leaves_out_what_it_does_not_know():
@@ -141,7 +170,9 @@ def client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setattr(server, "secret", lambda *a, **k: "")
     routes = [r for r in server.routes if not isinstance(r, Mount)]
     app = Starlette(routes=routes, middleware=[Middleware(server.LandingGate)])
-    yield TestClient(app, base_url="https://topstocks.example")
+    # What a browser sends on every page load, so a Chrome User-Agent reads as
+    # a reader; a test that wants a script passes its own User-Agent.
+    yield TestClient(app, base_url="https://topstocks.example", headers=BROWSER_HEADERS)
     server._app_document.cache_clear()
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
@@ -168,7 +199,9 @@ def test_a_campaign_link_still_gets_the_pitch(client, events):
 
 
 def test_a_real_request_alongside_a_campaign_tag_still_opens_the_app(client, events):
-    r = client.get("/?ticker=AAPL&utm_source=rankia", headers={"User-Agent": CHROME})
+    r = client.get(
+        "/?guest=1&ticker=AAPL&utm_source=rankia", headers={"User-Agent": CHROME}
+    )
     assert "APP-SHELL" in r.text
 
 
@@ -202,11 +235,10 @@ def test_the_guest_cta_is_the_step_between_pitch_and_app(client, events):
     assert fields["src"] == "rankia"
 
 
-def test_a_bookmark_is_not_a_campaign(client, events):
-    client.get("/portfolio", headers={"User-Agent": CHROME})
-    _, fields = next(e for e in events if e[0] == "landing.cta")
-    assert fields["kind"] == "direct"
-    assert "src" not in fields
+def test_a_bookmark_without_the_button_is_the_pitch_not_a_crossing(client, events):
+    client.get("/portfolio?utm_source=rankia", headers={"User-Agent": CHROME})
+    assert [name for name, _ in events] == ["landing.view"]
+    assert dict(events)["landing.view"]["src"] == "rankia"
 
 
 def test_the_crossing_is_counted_once_per_browser(client, events):

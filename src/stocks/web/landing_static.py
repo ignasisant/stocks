@@ -89,7 +89,10 @@ def document(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
     with landing.render_language(code, jurisdiction):
         body = landing.page_body()
         script = (
-            landing.bar_script() + landing.reveal_script() + landing.source_script()
+            landing.bar_script()
+            + landing.reveal_script()
+            + landing.source_script()
+            + landing.hint_script()
         )
         head = seo.head(code, base_url, extra_styles=_styles())
     return (

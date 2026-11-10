@@ -1,6 +1,9 @@
 {
   "landing.skip": "Saltar al contenido",
   "landing.nav_github": "GitHub",
+  "landing.langhint_ask": "¿Prefieres español?",
+  "landing.langhint_go": "Verla en español",
+  "landing.langhint_close": "Cerrar",
   "landing.cta_guest": "Echa un vistazo primero — sin cuenta",
   "landing.cta_guest_short": "Echa un vistazo primero",
   "landing.hero_badge": "ASISTENTE DE IA · LEE TU CARTERA",

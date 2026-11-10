@@ -63,6 +63,13 @@ def client(monkeypatch):
 # ------------------------------------------------------------------ the gate
 
 
+@pytest.fixture
+def guest(client):
+    """A browser whose visitor pressed the landing's "look around first"."""
+    client.cookies.set(session.GUEST_COOKIE, "1")
+    return client
+
+
 def test_a_first_visit_gets_the_landing(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -76,43 +83,63 @@ def test_a_crawler_gets_the_landing(client):
     assert 'rel="canonical"' in r.text
 
 
-def test_a_cta_click_goes_to_the_app(client):
+def test_the_guest_button_opens_the_app_and_the_browser_remembers_it(client):
     r = client.get("/?guest=1")
     assert STUB in r.text
-
-
-def test_a_ticker_deep_link_goes_to_the_app(client):
-    r = client.get("/?ticker=AAPL")
-    assert STUB in r.text
-
-
-def test_the_app_response_marks_the_browser_and_the_next_visit_skips_the_pitch(client):
-    assert STUB in client.get("/?guest=1").text
-    assert client.cookies.get(server.APP_COOKIE) == "1"
-    # cookie now on the client — a bare "/" is a returning visitor
+    assert client.cookies.get(session.GUEST_COOKIE) == "1"
     assert STUB in client.get("/").text
+    assert STUB in client.get("/portfolio").text
 
 
-def test_the_landing_can_still_be_asked_for(client):
-    client.cookies.set(server.APP_COOKIE, "1")
-    assert 'property="og:title"' in client.get("/?landing=1").text
+def test_without_an_account_or_the_button_every_app_page_is_the_landing(client):
+    assert 'property="og:title"' in client.get("/?ticker=AAPL").text
+    r = client.get(
+        "/portfolio?utm_source=rankia&tab=fees&lang=es", follow_redirects=False
+    )
+    assert r.status_code == 302
+    assert r.headers["location"] == "/es/?utm_source=rankia"
+    assert r.headers["cache-control"] == "no-store"
+    assert client.get("/portfolio", follow_redirects=False).headers["location"] == "/"
+
+
+def test_an_account_skips_the_landing(client, monkeypatch):
+    monkeypatch.setattr(session, "signed_in_email", lambda cookies: "a@example.com")
+    assert STUB in client.get("/").text
+    assert STUB in client.get("/portfolio").text
+    assert session.GUEST_COOKIE not in client.cookies
+
+
+@pytest.mark.parametrize("query", ["?share=abc123", "?ticker=AAPL&src=share"])
+def test_a_shared_link_opens_as_sent_without_making_a_guest(client, query):
+    assert STUB in client.get("/" + query).text
+    assert session.GUEST_COOKIE not in client.cookies
+    assert 'property="og:title"' in client.get("/").text
+
+
+def test_the_landing_can_still_be_asked_for(guest):
+    assert 'property="og:title"' in guest.get("/?landing=1").text
+
+
+def test_the_retired_app_cookie_no_longer_opens_the_app_and_is_cleared(client):
+    client.cookies.set("ts_app", "1")
+    assert 'property="og:title"' in client.get("/").text
+    client.cookies.set(session.GUEST_COOKIE, "1")
+    r = client.get("/")
+    assert STUB in r.text
+    assert 'ts_app=""' in r.headers.get("set-cookie", "")
 
 
 def test_a_post_to_the_root_is_never_the_landing(client):
     assert 'property="og:title"' not in client.post("/").text
 
 
-def test_app_pages_are_untouched_by_the_gate(client):
-    assert STUB in client.get("/portfolio").text
-
-
 # --------------------------------------------------------------- index policy
 
 
-def test_the_app_is_marked_noindex(client):
+def test_the_app_is_marked_noindex(guest):
     """A JavaScript shell over somebody's positions has no business ranking."""
     for path in ("/portfolio", "/?guest=1"):
-        assert client.get(path).headers["x-robots-tag"] == "noindex, nofollow"
+        assert guest.get(path).headers["x-robots-tag"] == "noindex, nofollow"
 
 
 @pytest.mark.parametrize(
@@ -244,10 +271,8 @@ def test_the_walkthrough_seeks_without_refetching(client, tmp_path, monkeypatch)
     assert len(r.content) == 1024
 
 
-def test_the_app_installs_to_a_home_screen_and_opens_past_the_pitch(client):
-    """A home-screen app keeps its own cookie jar, so the first launch has no
-    app cookie: its start URL has to ask for something, or every install opens
-    on the landing."""
+def test_the_app_installs_to_a_home_screen(client):
+    """The landing and the app both carry the manifest and its icons."""
     import json
 
     r = client.get("/lp/manifest.webmanifest")
@@ -258,6 +283,10 @@ def test_the_app_installs_to_a_home_screen_and_opens_past_the_pitch(client):
     for icon in manifest["icons"]:
         assert client.get(icon["src"]).status_code == 200, icon["src"]
     assert any(i.get("purpose") == "maskable" for i in manifest["icons"])
+    # An installed app has its own cookie jar: without an account or the guest
+    # button it opens on the landing like any other first visit.
+    assert 'property="og:title"' in client.get(manifest["start_url"]).text
+    client.cookies.set(session.GUEST_COOKIE, "1")
     assert STUB in client.get(manifest["start_url"]).text
     for page in ("/portfolio", "/"):
         client.cookies.clear()
@@ -573,11 +602,11 @@ def test_an_unknown_api_path_is_the_apis_own_404(client):
     assert response.headers["content-type"].startswith("application/json")
 
 
-def test_the_api_never_sets_the_app_cookie(client):
-    """A cron job is not a browser that has been to the app, and a Set-Cookie
-    on its responses is a credential it never asked for."""
-    response = client.get("/api/v1/health")
-    assert server.APP_COOKIE not in response.cookies
+def test_the_api_never_makes_a_guest(client):
+    """A cron job is not a browser that pressed the guest button, and a
+    Set-Cookie on its responses is state it never asked for."""
+    response = client.get("/api/v1/health?guest=1")
+    assert session.GUEST_COOKIE not in response.cookies
 
 
 def test_the_api_is_kept_out_of_the_index(client):
@@ -699,12 +728,11 @@ def test_the_probes_an_uptime_monitor_hits_are_never_metered(metered):
 # and the gate's 404 for paths it does not recognise.
 
 
-def test_a_deep_link_gets_the_shell_rather_than_a_404(client):
+def test_a_deep_link_gets_the_shell_rather_than_a_404(guest):
     """/portfolio?tab=fees has to survive a reload, and the page it names is
     drawn in the browser — one document for every page is what does that."""
-    client.cookies.set(server.APP_COOKIE, "1")
     for path in ("/", "/portfolio", "/portfolio?tab=fees", "/ticker?ticker=AAPL"):
-        response = client.get(path)
+        response = guest.get(path)
         assert response.status_code == 200, path
         assert STUB in response.text, path
 
@@ -749,18 +777,18 @@ def test_the_mirrored_logos_are_served_at_the_root(client, tmp_path, monkeypatch
     assert client.get("/app/static/../../etc/passwd").status_code == 404
 
 
-def test_the_shell_carries_the_design_tokens_inlined(client):
+def test_the_shell_carries_the_design_tokens_inlined(guest):
     """Inlined so the page paints in the right colours on its first frame, and
     so the charts read their palette from those custom properties rather than
     fetching a second copy."""
-    body = client.get("/portfolio").text
+    body = guest.get("/portfolio").text
     assert "<!--AG-TOKENS-->" not in body
     assert "--ag-" in body
 
 
-def test_the_shell_document_is_never_cached(client):
+def test_the_shell_document_is_never_cached(guest):
     """It is a shell over somebody's book with their tokens inlined into it."""
-    assert client.get("/portfolio").headers["cache-control"] == "no-store"
+    assert guest.get("/portfolio").headers["cache-control"] == "no-store"
 
 
 def test_the_bundle_is_served_and_cached_briefly(client):
@@ -820,9 +848,9 @@ def test_the_bundle_route_will_not_walk_out_of_its_directory(client):
     assert client.get("/next-assets/../../../etc/passwd").status_code == 404
 
 
-def test_the_shell_is_kept_out_of_the_index(client):
+def test_the_shell_is_kept_out_of_the_index(guest):
     """Somebody's book behind a login has no business in a search index."""
-    assert client.get("/portfolio").headers["X-Robots-Tag"] == "noindex, nofollow"
+    assert guest.get("/portfolio").headers["X-Robots-Tag"] == "noindex, nofollow"
 
 
 def test_the_bundle_is_not_metered(client):
@@ -833,24 +861,24 @@ def test_the_bundle_is_not_metered(client):
     assert server.STATIC_PATH in server._UNMETERED
 
 
-def test_the_document_carries_the_typefaces_and_the_icon(client):
+def test_the_document_carries_the_typefaces_and_the_icon(guest):
     """Without them the CSS still names Instrument Sans and the browser paints
     system-ui — which looks like nothing being wrong. Same stylesheet the
     landing links, rather than a second list of faces."""
-    body = client.get("/portfolio").text
+    body = guest.get("/portfolio").text
     assert "<!--AG-FONTS-->" not in body, "the marker was replaced"
     assert "fonts.googleapis.com" in body and "Instrument+Sans" in body
     assert 'rel="icon"' in body
 
 
-def test_an_unbuilt_checkout_says_so(client, shell):
+def test_an_unbuilt_checkout_says_so(guest, shell):
     (shell / "index.html").unlink()
-    response = client.get("/portfolio")
+    response = guest.get("/portfolio")
     assert response.status_code == 503
     assert "npm run build" in response.text
 
 
-def test_a_dev_run_draws_the_source_from_vite(client, shell, tmp_path, monkeypatch):
+def test_a_dev_run_draws_the_source_from_vite(guest, shell, tmp_path, monkeypatch):
     """`dashboard --reload` names a Vite dev server: the document then loads the
     source from it, hot-reloaded, rather than the committed build that only
     `npm run build` changes — the build being stale is the whole point."""
@@ -861,7 +889,7 @@ def test_a_dev_run_draws_the_source_from_vite(client, shell, tmp_path, monkeypat
     )
     monkeypatch.setattr(server, "_APP_SOURCE", source)
     monkeypatch.setattr(server, "_VITE", "http://localhost:5301")
-    response = client.get("/portfolio")
+    response = guest.get("/portfolio")
     assert response.status_code == 200
     body = response.text
     assert STUB not in body, "not the build"
@@ -876,13 +904,13 @@ def test_a_dev_run_draws_the_source_from_vite(client, shell, tmp_path, monkeypat
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_a_dev_run_needs_no_build(client, shell, tmp_path, monkeypatch):
+def test_a_dev_run_needs_no_build(guest, shell, tmp_path, monkeypatch):
     (shell / "index.html").unlink()
     source = tmp_path / "index.html"
     source.write_text('<html><head></head><body><script src="/src/main.tsx"></script>')
     monkeypatch.setattr(server, "_APP_SOURCE", source)
     monkeypatch.setattr(server, "_VITE", "http://localhost:5301")
-    assert client.get("/portfolio").status_code == 200
+    assert guest.get("/portfolio").status_code == 200
 
 
 def test_the_dev_document_reads_the_real_source_entry():
@@ -949,9 +977,9 @@ def test_a_machine_endpoint_is_never_moved_to_the_canonical_host(pinned_client, 
     assert r.status_code != 301
 
 
-def test_the_connector_never_gets_the_app_cookie(client):
-    r = client.get("/.well-known/oauth-authorization-server")
-    assert server.APP_COOKIE not in r.cookies
+def test_the_connector_never_makes_a_guest(client):
+    r = client.get("/.well-known/oauth-authorization-server?guest=1")
+    assert session.GUEST_COOKIE not in r.cookies
 
 
 @pytest.mark.parametrize(
@@ -993,7 +1021,7 @@ def test_the_connector_opens_with_the_server_and_again_on_reboot(monkeypatch):
 # ------------------------------------------------------------ ticker share card
 
 
-def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypatch):
+def test_the_ticker_page_carries_a_link_preview_for_its_symbol(guest, monkeypatch):
     """The one app page a reader pastes into a chat: its unfurl says which
     ticker, from the query string alone, with the name the profiles memo
     already holds — never a fetch on a document request."""
@@ -1001,7 +1029,7 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypat
         "stocks.data.profiles.known",
         lambda symbol: {"name": "NVIDIA"} if symbol == "NVDA" else None,
     )
-    text = client.get("/ticker?ticker=nvda").text
+    text = guest.get("/ticker?ticker=nvda").text
     assert 'property="og:title" content="NVDA · NVIDIA · TopStocks"' in text
     assert (
         'property="og:url" content="https://topstocks.example/ticker?ticker=NVDA"' in text
@@ -1010,10 +1038,10 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypat
     # A name the memo has never seen is still a card, of the symbol alone.
     assert (
         'property="og:title" content="AMD · TopStocks"'
-        in client.get("/ticker?ticker=AMD").text
+        in guest.get("/ticker?ticker=AMD").text
     )
     # In the language the browser asks for, as the client router will resolve.
-    spanish = client.get(
+    spanish = guest.get(
         "/ticker?ticker=NVDA", headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.5"}
     ).text
     assert 'property="og:locale" content="es_ES"' in spanish
@@ -1022,8 +1050,8 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypat
 @pytest.mark.parametrize(
     "path", ["/portfolio", "/ticker", "/ticker?ticker=", "/ticker?ticker=%3Cscript%3E"]
 )
-def test_no_other_page_and_no_nonsense_symbol_gets_a_card(client, path):
-    text = client.get(path).text
+def test_no_other_page_and_no_nonsense_symbol_gets_a_card(guest, path):
+    text = guest.get(path).text
     assert "og:title" not in text
     # One inline script, the fonts flip the document always carries — and so
     # nothing of the query string was written out as markup.
@@ -1069,8 +1097,8 @@ def boot_of(text: str) -> dict:
     return json.loads(found.group(1))
 
 
-def test_the_document_carries_a_guests_boot(client):
-    r = client.get("/portfolio")
+def test_the_document_carries_a_guests_boot(guest):
+    r = guest.get("/portfolio")
     boot = boot_of(r.text)
     assert boot["me"]["kind"] == "guest"
     assert boot["prefs"]["currency"]
@@ -1095,9 +1123,9 @@ def test_the_document_carries_the_sessions_own_boot(client, sign_in, account):
     assert "/api/v1/i18n/es?v=" in r.text
 
 
-def test_a_bearer_header_on_a_document_reads_as_a_guest(client, monkeypatch):
+def test_a_bearer_header_on_a_document_reads_as_a_guest(guest, monkeypatch):
     monkeypatch.setenv("API_TOKEN", "t0ken-t0ken-t0ken")
-    r = client.get("/portfolio", headers={"Authorization": "Bearer t0ken-t0ken-t0ken"})
+    r = guest.get("/portfolio", headers={"Authorization": "Bearer t0ken-t0ken-t0ken"})
     assert boot_of(r.text)["me"]["kind"] == "guest"
 
 
@@ -1113,8 +1141,8 @@ def test_a_bearer_header_on_a_document_reads_as_a_guest(client, monkeypatch):
         ("en-GB", "?lang=xx", "en"),
     ],
 )
-def test_a_guests_catalog_follows_the_link_then_the_browser(client, accept, query, lang):
-    r = client.get(f"/portfolio{query}", headers={"Accept-Language": accept})
+def test_a_guests_catalog_follows_the_link_then_the_browser(guest, accept, query, lang):
+    r = guest.get(f"/portfolio{query}", headers={"Accept-Language": accept})
     assert f'href="/api/v1/i18n/{lang}?v=' in r.text
 
 
@@ -1125,14 +1153,14 @@ def test_the_boot_block_cannot_end_itself_early():
     assert "\\u0026" in tag and "<b>" not in tag
 
 
-def test_a_boot_that_fails_leaves_the_shell_to_fetch(client, monkeypatch):
+def test_a_boot_that_fails_leaves_the_shell_to_fetch(guest, monkeypatch):
     from stocks.api.routes import me as identity
 
     def broken(*a, **k):
         raise RuntimeError("no")
 
     monkeypatch.setattr(identity, "describe", broken)
-    r = client.get("/portfolio")
+    r = guest.get("/portfolio")
     assert r.status_code == 200
     assert STUB in r.text
     assert "ag-boot" not in r.text and "/api/v1/i18n/" not in r.text
@@ -1141,8 +1169,8 @@ def test_a_boot_that_fails_leaves_the_shell_to_fetch(client, monkeypatch):
 # --------------------------------------------------------------- the fonts
 
 
-def test_the_fonts_do_not_block_the_first_paint(client):
-    text = client.get("/portfolio").text
+def test_the_fonts_do_not_block_the_first_paint(guest):
+    text = guest.get("/portfolio").text
     assert 'rel="preload" as="style"' in text
     assert 'media="print" id="ag-fonts"' in text
     assert '<noscript><link rel="stylesheet"' in text
@@ -1176,8 +1204,8 @@ def manifest(shell):
     return MANIFEST
 
 
-def test_the_pages_chunk_is_preloaded_with_what_it_imports(client, manifest):
-    text = client.get("/portfolio").text
+def test_the_pages_chunk_is_preloaded_with_what_it_imports(guest, manifest):
+    text = guest.get("/portfolio").text
     assert '<link rel="modulepreload" href="/next-assets/Portfolio-p1.js">' in text
     assert '<link rel="modulepreload" href="/next-assets/chart-c1.js">' in text
     assert '<link rel="preload" as="style" href="/next-assets/Portfolio-p1.css">' in text
@@ -1185,22 +1213,22 @@ def test_the_pages_chunk_is_preloaded_with_what_it_imports(client, manifest):
     assert "app-abc.js" not in text
 
 
-def test_a_pages_alias_and_the_root_find_their_chunk(client, manifest):
-    assert "Import-i1.js" in client.get("/import_transactions").text
+def test_a_pages_alias_and_the_root_find_their_chunk(guest, manifest):
+    assert "Import-i1.js" in guest.get("/import_transactions").text
     assert (
-        "Home-h1.js" in client.get("/").text
-        or "Home-h1.js" in client.get("/", params={"app": "1"}).text
+        "Home-h1.js" in guest.get("/").text
+        or "Home-h1.js" in guest.get("/", params={"app": "1"}).text
     )
 
 
 def test_a_page_without_a_chunk_and_a_build_without_a_manifest_preload_nothing(
-    client, manifest
+    guest, manifest
 ):
-    assert "modulepreload" not in client.get("/ticker").text
+    assert "modulepreload" not in guest.get("/ticker").text
     server._manifest.cache_clear()
     (server._APP_BUILD / ".vite" / "manifest.json").unlink()
     server._manifest.cache_clear()
-    assert "modulepreload" not in client.get("/portfolio").text
+    assert "modulepreload" not in guest.get("/portfolio").text
 
 
 # ------------------------------------------------------------ shared answer card
@@ -1220,7 +1248,9 @@ def test_a_shared_answer_opens_the_app_with_its_own_link_preview(client, monkeyp
     monkeypatch.setattr(server.obs, "event",
                         lambda name, **f: events.append((name, f)))
     text = client.get(f"/?share={stored['id']}&src=share",
-                      headers={"User-Agent": "Mozilla/5.0 Safari"}).text
+                      headers={"User-Agent": "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 "
+                               "Version/18.0 Mobile Safari/604.1",
+                               "Accept-Language": "en-US"}).text
     assert STUB in text, "the app, not the landing"
     assert 'property="og:title" content="¿Vendo NVDA? · TopStocks"' in text
     assert ('property="og:description" content="TopStocks&#x27; AI answers: '

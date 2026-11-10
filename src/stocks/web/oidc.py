@@ -433,8 +433,9 @@ async def logout(request: Request) -> Response:
     response = _home(request)
     _clear(response, session.COOKIE, request)
     _clear(response, session.FLOW_COOKIE, request)
-    # `ts_app` is deliberately untouched. It is not a session and not a login —
-    # clearing it would send a returning visitor to the marketing landing.
+    # A signed-out reader is back on the landing like anybody else; leaving the
+    # guest mark would drop them on the sample book instead.
+    _clear(response, session.GUEST_COOKIE, request)
     return response
 
 

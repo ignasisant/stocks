@@ -20,6 +20,7 @@ from xml.etree import ElementTree
 import pytest
 from starlette.testclient import TestClient
 
+from stocks import session
 from stocks.web import guides, landing, landing_static, markup, seo, server
 
 BASE = "https://topstocks.example"
@@ -283,6 +284,7 @@ def test_served_landing_is_200_html_and_not_noindexed(client, path):
 
 
 def test_served_app_shell_is_noindex(client):
+    client.cookies.set(session.GUEST_COOKIE, "1")
     for path in ("/portfolio", "/home", "/review", "/ticker?ticker=AAPL"):
         r = client.get(path, follow_redirects=False)
         assert "noindex" in r.headers.get("x-robots-tag", ""), path

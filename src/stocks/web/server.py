@@ -4,7 +4,7 @@ Run: uv run stocks dashboard   (or: uv run uvicorn stocks.web.server:app)
 
 One process on one port, one Starlette app in front of everything:
 
-    /              the landing (English), or the app for a visitor who has one
+    /              the landing (English), or the app for an account or a guest
     /es/           the landing (Spanish)
     /lp/*          the landing's own assets — brand mark, share card
     /robots.txt    crawl rules, generated for whatever host we answer on
@@ -26,13 +26,14 @@ One process on one port, one Starlette app in front of everything:
     /legacy/*      the Streamlit app's address after the shell replaced it,
                    redirected the same way
 
-`/` is shared: a request for it gets the landing only when it carries no query
-parameter and no `ts_app` cookie, which is exactly the state of a first-time
-visitor and of every crawler. Any CTA click arrives with a parameter, and the
-cookie keeps returning visitors going straight to the app. Crawlers never send
-cookies, so the pages Google sees at `/` and `/es/` are the pages a first-time
-human sees. The app routes are marked `noindex` on the way out, because they are
-a JavaScript shell over somebody's positions.
+`/` is shared: the app answers it for a signed-in account and for a guest — a
+visitor who pressed the landing's sample-data button, remembered by
+`session.GUEST_COOKIE` — and the landing answers it for everyone else. Every
+other page of the app sends that same everyone else to the landing, except a
+link somebody shared, which opens as sent. Crawlers never sign in, so the pages
+Google sees at `/` and `/es/` are the pages a first-time human sees. The app
+routes are marked `noindex` on the way out, because they are a JavaScript shell
+over somebody's positions.
 
 The Streamlit app the shell replaced stayed mounted at `/legacy` for a while,
 for side-by-side checks, and is gone now. The last commit where it was the app
@@ -51,7 +52,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
@@ -71,6 +72,7 @@ from stocks import api, navigation, obs, session
 from stocks.api import security as api_security
 from stocks.connector import oauth as connector_oauth
 from stocks.connector.server import door as connector_door
+from stocks.i18n import LANGUAGES
 from stocks.secrets_env import secret
 from stocks.web import (
     attribution,
@@ -93,22 +95,24 @@ from stocks.web.landing import (
     PATH_ES,
     PATH_IT,
     variant_for,
+    variant_path,
 )
 
 _HERE = Path(__file__).parent
 _ASSETS = _HERE / "assets"
 
-# Marks a browser that has already been handed the app. Set on every app
-# response, read on `/` alone: without it that request is a first visit and
-# gets the pitch, with it the visitor goes where they left off. Not a session
-# and not a login — the app decides who is signed in, this only decides which
-# document `/` returns.
-APP_COOKIE = "ts_app"
-_APP_COOKIE_MAX_AGE = 400 * 24 * 3600  # the ceiling Chrome will honour
+# What `session.GUEST_COOKIE` replaced: set on any visit to the app, back when
+# having been once was enough to skip the landing for good. Nothing reads it;
+# it is expired wherever it is still sent, so a browser holds no cookie the
+# privacy page does not name.
+_RETIRED_APP_COOKIE = "ts_app"
 
-# Forces the landing even for a returning visitor: `/?landing=1`. Anything else
-# in the query string means "take me to the app".
+# Forces the landing at `/` even for an account: `/?landing=1`.
 PARAM_LANDING = "landing"
+
+# The source token the app's own share links carry (`share/link.ts`), next to
+# `?share=` on a shared answer and alone on a shared ticker.
+_SHARE_SOURCE = "share"
 
 # The app: the React shell (frontend/app), served as one document for every
 # page its client router answers (`navigation.SHELL_PATHS`), with its bundle
@@ -304,24 +308,61 @@ def landing_response(
     )
 
 
+def _is_app_document(path: str) -> bool:
+    """`/` or a page the shell answers: the documents the landing gate rules on."""
+    return path == PATH_EN or path in seo.app_page_paths()
+
+
+def _shared(params) -> bool:
+    """A link somebody made to show this reader something: it opens as sent."""
+    return seo.SHARE_PARAM in params or attribution.source(params) == _SHARE_SOURCE
+
+
 def _wants_landing(request: Request) -> bool:
-    """True when this request for `/` should get the pitch instead of the app.
+    """True when this request for a page of the app should get the pitch instead.
 
-    Nothing asked for in the query and no app cookie — a first-time visitor, or
-    a crawler, which sends neither. `?landing=1` asks for it explicitly.
+    The app is for an account, or for a visitor who pressed the landing's
+    sample-data button (`?guest=1`, remembered by `session.GUEST_COOKIE`).
+    Everyone else — a first visit, a signed-out account, a crawler — gets the
+    landing, whichever page of the app they asked for. A shared answer or
+    ticker is the exception: it is somebody's reason to come at all, so it
+    opens as sent.
 
-    Campaign parameters do not count as asking for anything: `?utm_source=` is
-    how every promoted link is written, and a reader who follows one has to
-    arrive at the pitch, not at an app shell over somebody else's demo book.
-    `web.attribution.is_passive` is the whole of that exception.
+    `?landing=1` asks for it explicitly, at `/`, from anyone.
     """
     if request.method not in ("GET", "HEAD"):
         return False
-    if PARAM_LANDING in request.query_params:
+    path = request.url.path
+    if not _is_app_document(path):
+        return False
+    params = request.query_params
+    if path == PATH_EN and PARAM_LANDING in params:
         return True
-    if any(not attribution.is_passive(k) for k in request.query_params):
-        return False  # a CTA click, a ?ticker= deep link, an OIDC return
-    return request.cookies.get(APP_COOKIE) != "1"
+    if landing.PARAM_GUEST in params or _shared(params):
+        return False
+    if request.cookies.get(session.GUEST_COOKIE) == "1":
+        return False
+    return not session.signed_in_email(request.cookies)
+
+
+def _to_landing(request: Request) -> Response:
+    """A page of the app, asked for by somebody it is not open to: the pitch.
+
+    Redirected rather than served in place, so the address the reader sees and
+    passes on is the landing's. A `?lang=` picks that language's page, and the
+    campaign tokens ride along: the visit still came from where it came from.
+    """
+    params = request.query_params
+    lang = params.get("lang", "")
+    target = variant_path(lang) if lang in LANGUAGES else PATH_EN
+    kept = urlencode(
+        [(k, v) for k, v in params.multi_items() if attribution.is_passive(k)]
+    )
+    response = RedirectResponse(
+        f"{target}?{kept}" if kept else target, status_code=302
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _request_origin(request: Request) -> str:
@@ -585,26 +626,36 @@ def _attribution(request: Request) -> dict:
         request.query_params,
         referer=request.headers.get("referer"),
         user_agent=request.headers.get("user-agent"),
+        headers=request.headers,
     )
 
 
-def _entry_kind(request: Request) -> str:
-    """Which door this browser came through on its first app document.
+def _mark_entry(request: Request, response: Response) -> None:
+    """Log the step from the pitch into the app; remember a guest's choice.
 
-    "guest" and "signin" are the landing's two calls to action; "share" a chat
-    answer somebody sent (`/?share=`); "link" is a URL somebody shared with a
-    source token on it (including the return leg of a sign-in, which carries
-    the token home); "direct" is everything else — a bookmark, a typed
-    address, a deep link from a chat window.
+    Two doors open the app without an account: the landing's sample-data
+    button, which this browser is remembered by from then on, and a shared
+    link, which opens as sent and nothing more. An account is neither — its
+    step is `auth.signup`.
     """
     params = request.query_params
     if landing.PARAM_GUEST in params:
-        return "guest"
-    if landing.PARAM_SIGNIN in params:
-        return "signin"
-    if seo.SHARE_PARAM in params:
-        return "share"
-    return "link" if attribution.source(params) else "direct"
+        kind = "guest"
+        response.set_cookie(
+            session.GUEST_COOKIE,
+            "1",
+            max_age=session.GUEST_MAX_AGE,
+            path="/",
+            httponly=True,
+            samesite="lax",
+        )
+    elif _shared(params) and not session.signed_in_email(request.cookies):
+        kind = "share"
+    else:
+        return
+    obs.event(
+        "landing.cta", kind=kind, path=request.url.path, **_attribution(request)
+    )
 
 
 class LandingGate(BaseHTTPMiddleware):
@@ -647,8 +698,10 @@ class LandingGate(BaseHTTPMiddleware):
                 f"{session.LOGIN_PATH}?next={quote(f'/{target}')}", status_code=302
             )
 
-        if path == PATH_EN and _wants_landing(request):
-            return landing_response(request, "en")
+        if _wants_landing(request):
+            if path == PATH_EN:
+                return landing_response(request, "en")
+            return _to_landing(request)
         if not _is_known_path(path):
             return not_found(request)
 
@@ -656,34 +709,16 @@ class LandingGate(BaseHTTPMiddleware):
 
         if not _is_marketing_path(path):
             # Everything that is not the marketing site is the app: a shell
-            # over private positions, or transport. Out of the index, and the
-            # browser is now known to have been there.
+            # over private positions, or transport. Out of the index.
             response.headers["X-Robots-Tag"] = "noindex, nofollow"
-            # …but only a browser gets marked as having been to the app. An API
-            # client is not one, and a Set-Cookie on its responses would be
-            # noise at best and a stored credential it never asked for at worst.
-            if (
-                not path.startswith(API_PREFIX)
-                and path not in connector_oauth.PATHS
-                and request.cookies.get(APP_COOKIE) != "1"
-            ):
-                # First app document this browser has been handed: the step
-                # between "read the pitch" and "has an account", and the only
-                # one no other event covers.
-                obs.event(
-                    "landing.cta",
-                    kind=_entry_kind(request),
-                    path=path,
-                    **_attribution(request),
-                )
-                response.set_cookie(
-                    APP_COOKIE,
-                    "1",
-                    max_age=_APP_COOKIE_MAX_AGE,
-                    path="/",
-                    httponly=True,
-                    samesite="lax",
-                )
+            # Only a page of the app touches the cookies: an API client is not
+            # a browser, and a Set-Cookie on its responses would be noise at
+            # best and a stored credential it never asked for at worst.
+            if _is_app_document(path):
+                if _RETIRED_APP_COOKIE in request.cookies:
+                    response.delete_cookie(_RETIRED_APP_COOKIE, path="/")
+                if request.cookies.get(session.GUEST_COOKIE) != "1":
+                    _mark_entry(request, response)
         return response
 
 
@@ -1022,8 +1057,7 @@ def _with_share_card(request: Request, document: bytes) -> bytes:
     share = shares.load(request.query_params.get(seo.SHARE_PARAM, ""))
     if share is None:
         return document
-    agent = request.headers.get("user-agent")
-    if not attribution.is_bot(agent):
+    if not attribution.is_bot(request.headers.get("user-agent"), request.headers):
         obs.event("share.opened", share=share["id"], **_attribution(request))
     title, tags = seo.share_head(share, base_url(request), _shell_lang(request))
     html = document.decode("utf-8")
@@ -1096,7 +1130,7 @@ def _catalog_lang(request: Request, boot: dict) -> str:
     exactly as `shell/i18n.browserLang` walks it. A wrong guess costs one
     unused preload and nothing else.
     """
-    from stocks.i18n import LANGUAGES, supported
+    from stocks.i18n import supported
 
     guest = boot["me"].get("kind") == "guest"
     if not guest and (stored := supported(boot["prefs"].get("language"))):

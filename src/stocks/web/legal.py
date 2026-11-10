@@ -88,9 +88,10 @@ _PRIVACY = {
                 "removes the connection along with everything else.",
             ]),
             ("Cookies", [
-                "One first-party cookie (ts_app) remembers that your browser "
-                "has used the app, so the address bar goes to the app instead "
-                "of the marketing page. Signing in sets the session cookies "
+                "One first-party cookie (ts_guest) remembers that you chose to "
+                "look around the app with sample data, so you are not sent "
+                "back to the presentation page. Signing out clears it. "
+                "Signing in sets the session cookies "
                 "the login needs. There are no advertising or cross-site "
                 "tracking cookies and no third-party analytics.",
             ]),
@@ -183,9 +184,10 @@ _PRIVACY = {
                 "cuenta elimina la conexión junto con todo lo demás.",
             ]),
             ("Cookies", [
-                "Una cookie propia (ts_app) recuerda que tu navegador ya usó "
-                "la app, para llevarte a ella en vez de a la página de "
-                "presentación. Iniciar sesión crea las cookies de sesión que "
+                "Una cookie propia (ts_guest) recuerda que elegiste ver la app "
+                "con datos de prueba, para no devolverte a la página de "
+                "presentación. Cerrar sesión la borra. "
+                "Iniciar sesión crea las cookies de sesión que "
                 "el login necesita. No hay cookies publicitarias ni de "
                 "seguimiento entre sitios, ni analítica de terceros.",
             ]),
@@ -287,9 +289,9 @@ _PRIVACY = {
                 "insieme a tutto il resto.",
             ]),
             ("Cookie", [
-                "Un solo cookie di prima parte (ts_app) ricorda che il tuo "
-                "browser ha già usato l'app, così che la barra degli "
-                "indirizzi porti all'app anziché alla pagina di presentazione. "
+                "Un solo cookie di prima parte (ts_guest) ricorda che hai "
+                "scelto di guardare l'app con dati di prova, così da non "
+                "riportarti alla pagina di presentazione. Uscire lo cancella. "
                 "L'accesso imposta i cookie di sessione necessari al login. "
                 "Non ci sono cookie pubblicitari né di tracciamento "
                 "cross-site e nessuno strumento di analisi di terze parti.",
