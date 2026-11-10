@@ -30,7 +30,7 @@ def test_the_terms_state_the_disclaimer_in_both_languages():
 def test_the_privacy_policy_names_the_deletion_path():
     for lang in ("en", "es"):
         html = legal.document("privacy", lang)
-        assert "ts_app" in html  # the one first-party cookie, by name
+        assert "ts_guest" in html  # the one first-party cookie, by name
         assert "Delete account" in html or "Eliminar cuenta" in html
 
 

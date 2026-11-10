@@ -28,10 +28,17 @@ from itsdangerous import BadSignature, URLSafeTimedSerializer
 from stocks import obs
 from stocks.secrets_env import secret
 
-#: The session itself. Sibling of `web.server.APP_COOKIE` ("ts_app"), which is
-#: explicitly not a login — this one is.
+#: The session itself. Sibling of GUEST_COOKIE, which is explicitly not a
+#: login — this one is.
 COOKIE = "ts_session"
 MAX_AGE = 30 * 24 * 3600
+
+#: A browser whose visitor pressed the landing's "look around first" button: the
+#: one way into the app without an account (`web.server.LandingGate`). Not a
+#: session — it opens the sample book and nothing of anyone's. Sign-out clears
+#: it, so a signed-out reader is back on the landing like anybody else.
+GUEST_COOKIE = "ts_guest"
+GUEST_MAX_AGE = 400 * 24 * 3600  # the ceiling Chrome will honour
 
 #: The in-flight OIDC round trip: state, nonce and PKCE verifier, for the ten
 #: minutes between leaving for Google and coming back.

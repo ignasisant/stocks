@@ -361,11 +361,11 @@ def test_signing_out_clears_the_session_and_the_flow(client, google):
         assert "Max-Age=0" in set_by[name], name
 
 
-def test_signing_out_leaves_the_returning_visitor_cookie_alone(client, google):
-    """`ts_app` is not a session and not a login: clearing it would send a
-    signed-out reader to the marketing landing instead of the app."""
+def test_signing_out_sends_the_reader_back_to_the_landing(client, google):
+    """The guest mark goes too: a signed-out reader sees the landing like
+    anybody else, not the sample book."""
     response = client.post(session.LOGOUT_PATH)
-    assert "ts_app" not in cookies_set(response)
+    assert "Max-Age=0" in cookies_set(response)[session.GUEST_COOKIE]
 
 
 def test_signing_out_does_not_send_the_reader_to_google(client, google):

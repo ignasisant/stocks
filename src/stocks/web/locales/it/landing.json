@@ -1,6 +1,9 @@
 {
   "landing.skip": "Vai al contenuto",
   "landing.nav_github": "GitHub",
+  "landing.langhint_ask": "Preferisci l'italiano?",
+  "landing.langhint_go": "Leggila in italiano",
+  "landing.langhint_close": "Chiudi",
   "landing.cta_guest": "Dai prima un'occhiata — senza account",
   "landing.cta_guest_short": "Dai prima un'occhiata",
   "landing.hero_badge": "ASSISTENTE IA · LEGGE IL TUO PORTAFOGLIO",

@@ -250,7 +250,7 @@ def test_the_language_toggle_stays_inside_the_jurisdiction(as_lang):
     en_us = landing.page_body()
     assert f'href="{landing.PATH_ES_US}"' in en_us
     assert '<span class="on">EN</span>' in en_us
-    assert f'href="{landing.PATH_ES}"' not in en_us
+    assert f'href="{landing.PATH_ES}"' not in landing._lang_toggle()
     assert "?lang=" not in en_us.replace("&lang=es", ""), "no ?lang= toggle links"
 
     as_lang("en", "ES")
@@ -356,3 +356,31 @@ def test_no_grid_track_can_outgrow_its_container():
     """
     bare = re.findall(r"minmax\(\d+px", landing_css.CSS)
     assert not bare, f"unclamped grid minimums: {bare}"
+
+
+# ------------------------------------------------------------- language hint
+
+
+def test_the_language_hint_offers_every_other_language_in_its_own_words(as_lang):
+    as_lang("en")
+    html = landing.page_body()
+    hints = re.findall(r'class="ag-l-langhint" data-lang="(\w+)" lang="\1" hidden>', html)
+    assert hints == ["es", "it"]
+    assert "¿Prefieres español?" in html and 'href="/es/"' in html
+    assert "Prefer English?" not in html
+
+
+def test_the_language_hint_goes_to_the_languages_own_country(as_lang):
+    """A Spanish browser is offered `/es/`, Spain's page, from either English
+    one — never `/es-us/`, which nobody reaches undecided."""
+    as_lang("en", "ES")
+    hint = re.search(r'data-lang="es".*?</aside>', landing.page_body()).group(0)
+    assert '<a href="/es/">' in hint
+
+
+def test_the_language_hint_waits_hidden_for_the_script():
+    """Hidden in the markup: a crawler and a no-JS reader see no offer, and the
+    stylesheet keeps `hidden` winning over the strip's own display."""
+    assert ".ag-l-langhint[hidden] { display: none; }" in landing_css.CSS
+    js = landing.hint_script()
+    assert "navigator.languages" in js and "localStorage" in js

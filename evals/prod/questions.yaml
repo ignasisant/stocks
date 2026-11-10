@@ -607,6 +607,42 @@
   goals:
     - Explains it logs AI proposals and the kill criteria to review them later
 
+# Thumbs-down 2026-11-10: "create a chart of rentability" drew nothing and the
+# answer sent the reader to the Portfolio page instead.
+- id: assistant-chart-returns
+  area: assistant
+  kind: book
+  lang: en
+  message: "create a chart of rentability"
+  goals:
+    - Draws the book's own return chart instead of saying it cannot chart
+    - Gives the book's return over the window the chart shows
+  forbids: ["cannot draw", "can't draw", "cannot create charts"]
+  truth:
+    - {get: /portfolio/performance, label: "Book TWR and IRR since inception"}
+
+- id: assistant-chart-returns-es
+  area: assistant
+  kind: book
+  message: "hazme un gráfico de la rentabilidad del último año"
+  goals:
+    - Draws the book's own return chart over the last year instead of saying it cannot chart
+    - Gives the book's return over that year
+  forbids: ["no puedo dibujar", "no puedo crear gráficos"]
+  truth:
+    - {get: "/portfolio/performance?window=1y", label: "Book TWR and IRR, last year"}
+
+- id: assistant-chart-performance
+  area: assistant
+  kind: book
+  lang: en
+  message: "plot my performance"
+  goals:
+    - Draws the book's own return chart instead of saying it cannot chart
+  forbids: ["cannot draw", "can't draw"]
+  truth:
+    - {get: /portfolio/performance, label: "Book TWR and IRR since inception"}
+
 # ----------------------------------------------------------------- concept
 
 - id: concept-pe

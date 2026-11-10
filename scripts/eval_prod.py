@@ -147,7 +147,7 @@ class Prod:
             sys.exit("no [auth] cookie_secret here: cannot sign in to prod")
         self.http = httpx.Client(
             base_url=base.rstrip("/") + "/api/v1",
-            cookies={session.COOKIE: cookie, "ts_app": "1"},
+            cookies={session.COOKIE: cookie},
             timeout=httpx.Timeout(timeout, connect=20.0),
         )
 

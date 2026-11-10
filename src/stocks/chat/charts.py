@@ -168,7 +168,8 @@ _NOT_NAMES = frozenset({
     "ultima", "ultimas", "last", "past", "este", "esta", "this", "hoy", "today",
     "ano", "anos", "year", "years", "mes", "meses", "month", "months", "semana",
     "week", "mis", "my", "mi", "tu", "your", "todo", "toda", "siempre", "cambio",
-    "valor", "value", "rentabilidad", "performance", "comparacion", "comparison",
+    "valor", "value", "rentabilidad", "rentability", "profitability",
+    "rendimiento", "return", "returns", "performance", "comparacion", "comparison",
     "tendencia", "tendencias", "trend", "trends", "prediccion", "prediction",
     "proyeccion", "projection", "pronostico", "forecast", "futuro", "future",
 })
@@ -194,6 +195,13 @@ _BOOK_RE = re.compile(
     r"investments|holdings|rentabilidad|rendimiento|returns?|performance)\b|"
     r"\bcomo voy\b|\bhow am i doing\b|\bhow have i done\b|\bam i beating\b|"
     r"\bestoy batiendo\b",
+    re.IGNORECASE,
+)
+# Returns with no owner named: "chart of rentability" asked with no ticker on
+# screen is the reader's, as "mi rentabilidad" is.
+_RETURNS_RE = re.compile(
+    r"\b(?:rentabilidad(?:es)?|rentability|profitability|rendimientos?|"
+    r"returns?|performance)\b",
     re.IGNORECASE,
 )
 _BEAT_RE = re.compile(r"\bbat(?:ir|iendo|o)\b|\bbeat(?:s|ing)?\b|\boutperform|"
@@ -315,6 +323,9 @@ def targets(message: str, known: dict[str, str] | None = None, focus: str = "",
                 continue
             add(lookup(name))
             break
+    if not out and not focus and _RETURNS_RE.search(text):
+        add(BOOK)
+        return out
     if book:
         # The page in focus never joins the book: "¿cómo voy?" is about the
         # reader's money, whichever ticker is on screen.

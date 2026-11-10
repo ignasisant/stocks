@@ -519,6 +519,34 @@ def _nav_items() -> tuple[tuple[str, str], ...]:
     return tuple(i for i in items if i[0] != "video" or _video_ready())
 
 
+def _lang_hint() -> str:
+    """One "prefer X?" strip per other language, each in its own words, hidden.
+
+    The page itself never switches on Accept-Language: one URL per language is
+    what keeps each indexable, and a crawler sees the page every reader sees.
+    `_HINT_JS` shows the strip for the browser's preferred language instead,
+    when that is not the one on screen. It links to that language's own
+    country, not this page's: `/` reaches a Spanish browser undecided, unlike
+    the toggle, which a reader pressed knowing which rules they were reading.
+    """
+    def strip(code: str) -> str:
+        def say(key: str) -> str:
+            return esc(translate(f"landing.langhint_{key}", code))
+
+        return (
+            f'<aside class="ag-l-langhint" data-lang="{code}" lang="{code}" hidden>'
+            f'<div class="ag-l-wrap ag-l-langhint-in">'
+            f'<span>{say("ask")}</span>'
+            f'<a href="{variant_path(code)}">{say("go")}</a>'
+            f'<button type="button" class="ag-l-langhint-x" '
+            f'aria-label="{say("close")}">&times;</button>'
+            f"</div></aside>"
+        )
+
+    here = active_language()
+    return "".join(strip(code) for code in LANGUAGES if code != here)
+
+
 def _top_bar() -> str:
     nav = "".join(
         f'<a href="#{anchor}">{esc(tr(key))}</a>' for anchor, key in _nav_items()
@@ -1325,6 +1353,40 @@ _SRC_JS = """
 """
 
 
+# The language hint (`_lang_hint`). The browser's first language this site has
+# a page in decides: when that is the page's own, nothing shows. Skipped after
+# a same-site navigation — a reader who just used the toggle has chosen — and
+# for good once dismissed. The link carries the query string, so a campaign's
+# source survives the switch.
+_HINT_JS = """
+<script>
+(function () {
+  try {
+    try { if (localStorage.getItem("ts_langhint") === "off") return; } catch (e) {}
+    const from = document.referrer && new URL(document.referrer).origin;
+    if (from === location.origin) return;
+    const page = document.documentElement.lang;
+    const wanted = navigator.languages || [navigator.language || ""];
+    for (const tag of wanted) {
+      const code = String(tag).slice(0, 2).toLowerCase();
+      if (code === page) return;
+      const hint = document.querySelector('.ag-l-langhint[data-lang="' + code + '"]');
+      if (!hint) continue;
+      const link = hint.querySelector("a");
+      link.setAttribute("href", link.getAttribute("href") + location.search);
+      hint.querySelector("button").addEventListener("click", () => {
+        hint.hidden = true;
+        try { localStorage.setItem("ts_langhint", "off"); } catch (e) {}
+      });
+      hint.hidden = false;
+      return;
+    }
+  } catch (e) {}
+})();
+</script>
+"""
+
+
 # Scroll reveal. Blocks marked `data-reveal` rise into place the first time
 # they cross into view, siblings staggered by their order. The hidden start
 # state is scoped to `.motion`, which only this script adds — so with no JS,
@@ -1409,6 +1471,11 @@ def source_script() -> str:
     return _SRC_JS
 
 
+def hint_script() -> str:
+    """The language-hint script, in its `<script>` element (`_HINT_JS`)."""
+    return _HINT_JS
+
+
 def page_body() -> str:
     """The whole page as one element — every section, in order.
 
@@ -1417,6 +1484,7 @@ def page_body() -> str:
     return (
         '<div class="ag-l">'
         + f'<a class="ag-l-skip" href="#ag-main">{esc(tr("landing.skip"))}</a>'
+        + _lang_hint()
         + _top_bar()
         + '<main id="ag-main">'
         + _hero()

@@ -68,6 +68,27 @@ BASE_CSS = """
 }
 @media (hover: hover) { .ag-l-ghlink:hover { color: var(--ag-text-primary); } }
 
+/* --- language hint --- */
+/* Above the sticky bar and scrolled away with the page: an offer, not chrome. */
+.ag-l-langhint[hidden] { display: none; }
+.ag-l-langhint {
+  background: var(--ag-surface-band);
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
+}
+.ag-l-langhint-in {
+  display: flex; align-items: center; gap: 12px; min-height: 40px;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.ag-l-langhint span { color: var(--ag-text-secondary); }
+.ag-l-langhint a { font-weight: 600; }
+.ag-l-langhint-x {
+  margin-left: auto; padding: 4px 10px; border: 0; background: none;
+  color: var(--ag-text-muted); font: inherit; font-size: var(--ag-fs-lg);
+  line-height: 1; cursor: pointer;
+}
+@media (hover: hover) { .ag-l-langhint-x:hover { color: var(--ag-text-primary); } }
+
 /* --- skip link and touch targets --- */
 /* First stop for a keyboard or screen-reader user: off-screen until focused,
    then pinned top-left above the sticky bar. */
@@ -83,6 +104,9 @@ html { scroll-padding-top: 72px; }
     min-height: 44px; display: inline-flex; align-items: center;
   }
   .ag-l-cta, .ag-l-cta-ghost, .ag-l-cta-text { min-height: 44px; }
+  .ag-l-langhint a, .ag-l-langhint-x {
+    min-height: 44px; min-width: 44px; display: inline-flex; align-items: center;
+  }
   .ag-l-foot-row a, .ag-l-jurswitch { padding: 12px 0; }
   .ag-l-q summary { padding: 6px 0; }
 }

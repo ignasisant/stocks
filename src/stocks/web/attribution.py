@@ -109,17 +109,46 @@ def ref_host(referer: str | None) -> str:
     return _token(host.removeprefix("www."))
 
 
-def is_bot(user_agent: str | None) -> bool:
-    """Whether this User-Agent is a crawler, a probe or a script.
+# Every browser engine in use names itself: WebKit and Blink as "AppleWebKit",
+# Firefox as "Gecko/<date>" ("like Gecko" alone is WebKit's). What has neither
+# is Internet Explorer, retired years ago, or a scanner that wrote "Mozilla/5.0
+# (compatible)" and stopped there.
+_ENGINES = ("applewebkit", "gecko/")
+# Chromium from 80 and Firefox from 90 send Sec-Fetch-* on every navigation;
+# a request claiming one of them without it was written by a script. Their iOS
+# builds (CriOS, FxiOS) are WebKit underneath and send it only on newer iOS.
+_FETCH_METADATA = re.compile(r"\b(chrome|firefox)/(\d+)")
+_FETCH_METADATA_SINCE = {"chrome": 80, "firefox": 90}
+
+
+def is_bot(user_agent: str | None, headers: Mapping[str, str] | None = None) -> bool:
+    """Whether this request is a crawler, a probe or a script.
 
     An empty User-Agent counts as one: browsers always send it, and a funnel
     that counts scripted requests as readers reports a conversion rate that is
-    wrong in the flattering direction.
+    wrong in the flattering direction. So does a User-Agent no engine wrote.
+
+    With the request's `headers`, a browser's User-Agent also has to come with
+    what that browser sends on a page load — an Accept-Language, and fetch
+    metadata from the engines that have it. Scanners on datacenter addresses
+    copy the User-Agent and little else.
     """
     agent = (user_agent or "").strip().lower()
     if not agent:
         return True
-    return any(mark in agent for mark in _BOTS)
+    if any(mark in agent for mark in _BOTS):
+        return True
+    if not any(engine in agent for engine in _ENGINES):
+        return True
+    if headers is None:
+        return False
+    if not headers.get("accept-language"):
+        return True
+    for name, version in _FETCH_METADATA.findall(agent):
+        recent = int(version) >= _FETCH_METADATA_SINCE[name]
+        if recent and not headers.get("sec-fetch-mode"):
+            return True
+    return False
 
 
 def fields(
@@ -127,6 +156,7 @@ def fields(
     *,
     referer: str | None = None,
     user_agent: str | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> dict:
     """The attribution fields for one request, ready to splat into `obs.event`.
 
@@ -142,7 +172,7 @@ def fields(
         out["campaign"] = camp
     if host := ref_host(referer):
         out["ref"] = host
-    if is_bot(user_agent):
+    if is_bot(user_agent, headers):
         out["bot"] = True
     return out
 
