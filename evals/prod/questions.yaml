@@ -568,6 +568,63 @@
     - Points to Profile, Preferences, in English
   opens: profile/prefs
 
+# The plan builder's chips and the plan tab's controls, asked about by name.
+# Prod feedback 2026-11-10: "qué significa ninguno, unos meses, cubierto"
+# about the builder's cushion chips, whose question was not on screen.
+- id: profile-plan-build
+  area: profile/plan
+  kind: action
+  message: "Móntame un plan de inversión"
+  goals:
+    - Says the card below asks only what the app does not already know and drafts the plan from the answers
+    - Says it is a starting point worked out by a fixed rule, not advice, and that Save stores it in Profile, My plan
+    - Gives no target percentages of its own beside the card's
+
+- id: profile-plan-entry-draft
+  area: profile/plan
+  kind: action
+  message: "Propón mis criterios de entrada"
+  goals:
+    - Invites the reader to adjust the drafted lines in the card below and save them
+    - Says it is a starting point drawn from their profile, not advice, and that a principle no figure measures goes in the note
+    - Proposes no ratios or levels of its own beside the card's
+  forbids: ["garantiza", "asegura"]
+
+- id: profile-plan-cushion
+  area: profile/plan
+  kind: howto
+  message: "al montar el plan, ¿qué significa 'no tengo', 'menos de 6 meses' o '6 meses o más'?"
+  goals:
+    - Says it is the emergency fund kept apart from the broker, counted in months of spending
+    - Says none keeps about 10 % of the book in cash, under six months 5 %, six or more none
+  mentions: [emergencia, emergency]
+
+- id: profile-plan-cushion-old
+  area: profile/plan
+  kind: howto
+  message: "en el plan del chat, ¿qué significa ninguno, unos meses o cubierto?"
+  goals:
+    - Recognises the emergency-fund question of the plan builder
+    - Explains how each answer changes the cash the plan keeps in the book
+  mentions: [emergencia, liquidez, efectivo]
+
+- id: profile-plan-crypto
+  area: profile/plan
+  kind: howto
+  message: "en el plan, ¿qué cambia si a la cripto le digo 'bastante'?"
+  goals:
+    - Says crypto is carved out of the equity share, larger with the risk chosen and never above a third of it
+  forbids: [garantiza, asegura]
+
+- id: profile-plan-entry
+  area: profile/plan
+  kind: howto
+  message: "¿qué son los criterios de entrada de Mi plan?"
+  goals:
+    - Explains they are lines every buy or add is held to (growth, margins, valuation, debt, weight), a blank field being no line
+    - Says Sell or add lists the lines a buy breaks and a company's page shows how many it meets
+  opens: profile/plan
+
 # -------------------------------------------------------------------- home
 
 - id: home-briefing

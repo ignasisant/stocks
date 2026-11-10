@@ -253,7 +253,7 @@ function Summary({ label, value }: { label: string; value: string }) {
  * not a note anybody meant to save. The same bargain the number fields on the
  * Preferences tab make.
  */
-function Notes({
+export function Notes({
   value,
   label,
   placeholder,

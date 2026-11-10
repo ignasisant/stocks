@@ -28,6 +28,11 @@ plan is where the reader writes those numbers down:
     ledger moves them (`cash_stale`). Neither enters a return or the book's
     value: they are the plan's, not the ledger's.
 
+The reader's entry criteria — what a company has to meet before they buy or
+add to it — sit beside the plan, under their own key (`portfolio.entry`):
+every writer here replaces the plan whole, and a checklist is not one of the
+blocks a plan builder drafts.
+
 Every block is optional and the plan is stored as the reader wrote it,
 percentages as percentages (`*_pct`, 0-100), under prefs["investor_plan"].
 Pure: weights and a kind lookup in, readings out. Nothing here fetches.

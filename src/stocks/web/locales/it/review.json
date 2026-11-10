@@ -368,5 +368,16 @@
   "review.metric_payout_ratio_help": "Quota degli utili distribuita come dividendi.",
   "review.move_new": "Nuova",
   "review.tax_in": "in {currency}",
-  "review.pending": "{count} titoli ancora in caricamento, si completano in pochi secondi"
+  "review.pending": "{count} titoli ancora in caricamento, si completano in pochi secondi",
+  "review.entry_breaks": "Viola i tuoi criteri: {lines}",
+  "review.entry_help": "I tuoi criteri di ingresso (Piano). Solo un avviso: il verdetto resta quello della revisione.",
+  "review.entry_rule_revenue_growth_min": "crescita ≥ {level}",
+  "review.entry_rule_op_margin_min": "margine op. ≥ {level}",
+  "review.entry_rule_fcf_yield_min": "FCF yield ≥ {level}",
+  "review.entry_rule_roic_min": "ROIC ≥ {level}",
+  "review.entry_rule_pe_fwd_max": "P/E fwd ≤ {level}",
+  "review.entry_rule_net_debt_ebitda_max": "debito netto/EBITDA ≤ {level}",
+  "review.entry_rule_dilution_max": "diluizione ≤ {level}",
+  "review.entry_rule_dividend_yield_min": "dividendo ≥ {level}",
+  "review.entry_rule_weight_max": "peso ≤ {level}"
 }

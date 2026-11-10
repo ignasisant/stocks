@@ -26,6 +26,7 @@ import type {
   CryptoHolding,
   CryptoPositioning,
   EntryFields,
+  EntryFit,
   Financials,
   Fund,
   FundFit,
@@ -120,6 +121,9 @@ export const getAnalysts = (ticker: string) => get<Analysts>(`${at(ticker)}/anal
 export const getOptions = (ticker: string) => get<OptionsView>(`${at(ticker)}/options`);
 
 export const getFund = (ticker: string) => get<Fund>(`${at(ticker)}/fund`);
+
+/** The reader's entry checklist on the name; `set: false` without one. */
+export const getEntryFit = (ticker: string) => get<EntryFit>(`${at(ticker)}/entry`);
 
 /** The fund against the reader's book: overlap, sectors, what their fills cost. */
 export const getFundFit = (ticker: string, base: string) =>

@@ -190,7 +190,7 @@ def iter_notify_users(kind: str) -> list[NotifyUser]:
     """Accounts with a device subscribed to push and `notify_<kind>` enabled,
     restored.
 
-    kind: "digest" | "weekly" | "alerts".
+    kind: "alerts" (the only fan-out that still reads the toggle per account).
     """
     return [
         u

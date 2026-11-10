@@ -256,6 +256,10 @@ def world_first(q: str, sec: Named) -> bool:
     for word from the start instead keeps "sandisc" on Sandisk Corp and
     "nvidia" on Nvidia Corp (above the leveraged NVDA ETFs Yahoo returns),
     while "bank of amrica" still lands on BANK OF AMERICA CORP.
+
+    A head the query merely extends is not a typo of it but a shorter word:
+    "spacex" scores .91 against the "Space" of Space Asset Acquisition Corp.,
+    and SpaceX itself only exists on the worldwide side.
     """
     key = _norm_name(q)
     for t, n in sec:
@@ -263,6 +267,9 @@ def world_first(q: str, sec: Named) -> bool:
             return False
         words = re.sub(r"[^A-Z0-9 ]", " ", n.upper()).split()
         head = " ".join(words[: len(q.split())])
+        stem = _norm_name(head)
+        if stem and key != stem and key.startswith(stem):
+            continue
         if head and fuzzy_ratio(q, head) >= STRONG_MATCH:
             return False
     return True

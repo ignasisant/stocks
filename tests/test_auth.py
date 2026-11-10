@@ -140,11 +140,11 @@ def test_stamp_login_leaves_prefs_untouched_within_the_day(tmp_path):
 def test_stamp_login_keeps_the_rest_of_prefs(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
     restore(p)
-    save_prefs({**DEFAULT_PREFS, "currency": "USD", "notify_digest": False}, p.prefs)
+    save_prefs({**DEFAULT_PREFS, "currency": "USD", "notify_alerts": False}, p.prefs)
     accounts.stamp_login(p, seeded=False)
     prefs = load_prefs(p.prefs)
     assert prefs["currency"] == "USD"
-    assert prefs["notify_digest"] is False
+    assert prefs["notify_alerts"] is False
 
 
 def test_restore_account_migrates_legacy_dir(tmp_path):

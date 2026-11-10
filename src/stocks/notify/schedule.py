@@ -1,12 +1,21 @@
-"""Scheduled runs: the AI briefing, the day's numbers and the weekly review,
-each at the account's own time and filed in its chat.
+"""Scheduled runs: the AI briefing, once a day at the account's own time and
+filed in its chat.
 
-Three jobs of the reader's, each switched by its `notify_<job>` key and timed by
-`schedules[job]` ({"time": "HH:MM", "days": [0-6, Monday = 0]}) in the
-account's `timezone`. Each run is filed as a chat thread of its own
-(`conversations.save_scheduled_thread`; the briefing is the daily card's thread,
-marked) and pushed to the account's devices with that thread as the tap's
+One summary a day and no more: the evening numbers and the Sunday review that
+used to ride beside it were retired (2026-11-10) — they told the same session
+again in less detail, and a reader pushed three summaries learns to swipe all
+of them away. The job is switched by `notify_briefing` and timed by
+`schedules["briefing"]` ({"time": "HH:MM", "days": [0-6, Monday = 0],
+"close": bool}) in the account's `timezone`. Its run is the daily card's
+thread, marked, pushed to the account's devices with that thread as the tap's
 target, so the notification opens what it said and the rest it folded away.
+
+**Two ways to read it.** By default the card is written after the US
+after-hours session (`daily.BRIEF_AT`) and pushed at the reader's morning
+time. With `close` the reader takes it the same evening: the account's card
+turns over at `daily.CLOSE_AT` instead (`turnover`), and the run is pushed as
+soon as that card is written — at whatever local hour the US close falls, so
+no time to keep.
 
 **Inside the app, not a cron.** A run writes chat.json, and the app's live
 instance owns that file (`storage`: single container, the local copy is the
@@ -16,9 +25,9 @@ with the API token every quarter of an hour (infra/cron.tf), and the tick
 runs whatever came due since — the request is the CPU, as for the warm.
 
 One more is the market's, not the reader's: the next day's card (`CARD`) is
-written after the US close, when `daily.action_day` turns over, so the
-morning's briefing files and pushes a card already written instead of
-waiting on a model at 08:30. It pushes nothing and is not a setting.
+written after the US close, when the account's `daily.action_day` turns over,
+so the morning's briefing files and pushes a card already written instead of
+waiting on a model at 08:30. It pushes nothing by itself and is not a setting.
 
 **Due** is a local wall-clock time on a listed weekday, not yet run that
 local day, and at most `CATCH_UP` late: a tick missed by an outage still
@@ -43,11 +52,12 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from stocks import obs
+from stocks.notify import links
 
 if TYPE_CHECKING:
     from stocks.accounts import UserPaths
 
-JOBS = ("briefing", "digest", "weekly")
+JOBS = ("briefing",)
 CARD = "card"
 # The Friday email (`notify/weekly_email.py`): not one of the reader's chat
 # runs, so not in JOBS, and read in one zone for everyone — 23:00 in Madrid is
@@ -56,9 +66,7 @@ CARD = "card"
 EMAIL = "weekly_email"
 EMAIL_ZONE = "Europe/Madrid"
 DEFAULTS: dict[str, dict] = {
-    "briefing": {"time": "08:30", "days": [0, 1, 2, 3, 4]},
-    "digest": {"time": "22:30", "days": [0, 1, 2, 3, 4]},
-    "weekly": {"time": "18:00", "days": [6]},
+    "briefing": {"time": "08:30", "days": [0, 1, 2, 3, 4], "close": False},
     EMAIL: {"time": "23:00", "days": [4]},
 }
 PREFS_KEY = "schedules"
@@ -115,20 +123,33 @@ def clean_days(days: object) -> list[int]:
 
 
 def slot(prefs: dict, job: str) -> dict:
-    """One job as the app applies it: {"on", "time", "days"}. A stored time or
-    day list that does not parse is the default's — a settings read must not
-    stop a run over one bad key."""
+    """One job as the app applies it: {"on", "time", "days", "close"}. A stored
+    time or day list that does not parse is the default's — a settings read
+    must not stop a run over one bad key."""
     stored = prefs.get(PREFS_KEY)
     mine = stored.get(job) if isinstance(stored, dict) else None
     mine = mine if isinstance(mine, dict) else {}
     default = DEFAULTS[job]
     at = mine.get("time") if parse_time(mine.get("time")) else default["time"]
     days = clean_days(mine.get("days")) if "days" in mine else default["days"]
-    return {"on": bool(prefs.get(f"notify_{job}", True)), "time": at, "days": days}
+    out = {"on": bool(prefs.get(f"notify_{job}", True)), "time": at, "days": days}
+    if "close" in default:
+        out["close"] = mine.get("close") is True
+    return out
 
 
 def slots(prefs: dict) -> dict[str, dict]:
     return {job: slot(prefs, job) for job in JOBS}
+
+
+def turnover(prefs: dict) -> time:
+    """When the account's card turns over, New York time: at the close for a
+    reader who takes the briefing that evening, after the after-hours session
+    otherwise. Read off the slot whether or not it is switched on: Home's card
+    keeps the day its reader chose to read it on."""
+    from stocks.chat import daily
+
+    return daily.CLOSE_AT if slot(prefs, "briefing")["close"] else daily.BRIEF_AT
 
 
 # ------------------------------------------------------------------ due
@@ -141,7 +162,8 @@ def due(job_slot: dict, tz: ZoneInfo, now: datetime, last: object) -> date | Non
     midnight; never one already run (`last`, the local day it last went out).
     """
     at = parse_time(job_slot.get("time"))
-    if not job_slot.get("on") or at is None:
+    # A `close` slot keeps no clock of its own: it goes out with the card.
+    if not job_slot.get("on") or job_slot.get("close") or at is None:
         return None
     local = now.astimezone(tz)
     for day in (local.date(), local.date() - timedelta(days=1)):
@@ -153,18 +175,32 @@ def due(job_slot: dict, tz: ZoneInfo, now: datetime, last: object) -> date | Non
     return None
 
 
-def card_due(now: datetime, last: object) -> date | None:
+def card_due(now: datetime, last: object, at: time | None = None) -> date | None:
     """The US session whose close the card build is due for at `now`, or None:
-    `daily.BRIEF_AT` New York time on a weekday the market traded."""
+    the account's turnover (`at`, `daily.BRIEF_AT` by default) New York time
+    on a weekday the market traded."""
     from stocks.chat import daily
     from stocks.data import market_holidays as mh
 
-    at = daily.BRIEF_AT.strftime("%H:%M")
-    day = due({"on": True, "time": at, "days": [0, 1, 2, 3, 4]},
+    clock_at = (at or daily.BRIEF_AT).strftime("%H:%M")
+    day = due({"on": True, "time": clock_at, "days": [0, 1, 2, 3, 4]},
               daily.CLOSE_ZONE, now, last)
     if day is None or mh.DAYS.get(mh.US, {}).get(day) == mh.CLOSED:
         return None
     return day
+
+
+def close_due(prefs: dict, session: date, last: object) -> date | None:
+    """The session an evening briefing goes out for, right after its card:
+    switched on, in `close` mode, on a listed weekday (the session's, New York
+    date) and not already sent that day — a reader who moved from morning to
+    evening after this morning's push is not pushed twice the same day."""
+    job_slot = slot(prefs, "briefing")
+    if not (job_slot["on"] and job_slot["close"]):
+        return None
+    if session.weekday() not in job_slot["days"]:
+        return None
+    return session if str(last or "") < session.isoformat() else None
 
 
 def eligible(prefs: dict, devices: int, today: date) -> bool:
@@ -253,8 +289,10 @@ def plan(now: datetime) -> list[Account]:
                 for job in JOBS
                 if (day := due(slot(prefs, job), tz, now, last.get(job))) is not None
             ]
-            if (session := card_due(now, last.get(CARD))) is not None:
+            if (session := card_due(now, last.get(CARD), turnover(prefs))) is not None:
                 runs.insert(0, (CARD, session))
+                if (after := close_due(prefs, session, last.get("briefing"))) is not None:
+                    runs.insert(1, ("briefing", after))
         if (friday := email_due(prefs, paths, now, last.get(EMAIL))) is not None:
             runs.append((EMAIL, friday))
         if runs:
@@ -332,6 +370,10 @@ def run(account: Account, job: str, day: date) -> str:
 # ------------------------------------------------------------------ the jobs
 
 
+# Where the briefing's "change" button lands: the switch and its clock.
+SETTINGS_URL = links.path(links.PROFILE, tab="notify", edit="briefing")
+
+
 def thread_url(cid: str) -> str:
     """Where a run's notification lands: its thread, opened in the drawer."""
     return f"/?thread={quote(cid, safe='')}"
@@ -347,73 +389,6 @@ def _status(filed: str, took: int) -> str:
     if not filed:
         return "not filed"
     return f"filed, pushed {took}" if took else "filed"
-
-
-def _notify_user(account: Account):
-    """The crons' account record, for the digest's and the review's builders,
-    over this process's own files."""
-    from stocks import storage
-    from stocks.notify.fanout import NotifyUser
-
-    # The one file a cron still writes beside the app (the hourly alerts):
-    # pulled fresh so its edges are not written back stale.
-    storage.restore(account.paths.alerts_state)
-    return NotifyUser(
-        label=account.label,
-        prefs=account.prefs,
-        paths=account.paths,
-        served=True,
-    )
-
-
-def _title(job: str, day: date, lang: str) -> str:
-    from stocks.i18n import translate
-
-    return translate(
-        f"chat.scheduled_{job}_title", lang,
-        day=day.day, month=translate(f"home.month_{day.month}", lang),
-    )
-
-
-def _digest(account: Account, day: date) -> str:
-    from stocks.chat import conversations
-    from stocks.notify import digest
-    from stocks.notify.state import load_state
-
-    user = _notify_user(account)
-    state = load_state(user.state_path)
-    data = digest.build_digest(user, state)
-    if isinstance(data, str):
-        return f"skipped: {data}"
-    lang = account.lang
-    cid = conversations.save_scheduled_thread(
-        "digest", day.isoformat(), _title("digest", day, lang),
-        digest.digest_markdown(data, lang), account.paths.chat,
-    )
-    took = _push(account, digest.digest_message(data, lang, thread_url(cid)), "digest")
-    # Filed is seen: the thread holds what the push would have said.
-    digest.digest_delivered(user, state, data)
-    return _status(cid, took)
-
-
-def _weekly(account: Account, day: date) -> str:
-    from stocks.chat import conversations
-    from stocks.notify import weekly
-    from stocks.notify.state import load_state
-
-    user = _notify_user(account)
-    state = load_state(user.state_path)
-    data = weekly.build_weekly(user, state)
-    if isinstance(data, str):
-        return f"skipped: {data}"
-    lang = account.lang
-    cid = conversations.save_scheduled_thread(
-        "weekly", day.isoformat(), _title("weekly", day, lang),
-        weekly.weekly_markdown(data, lang), account.paths.chat,
-    )
-    took = _push(account, weekly.weekly_message(data, lang, thread_url(cid)), "weekly")
-    weekly.weekly_delivered(user, state, data)
-    return _status(cid, took)
 
 
 def _current_card(account: Account):
@@ -443,6 +418,7 @@ def _briefing(account: Account, day: date) -> str:
     """The current card — written the evening before (`_card`), or now if
     that run missed it — with its thread marked as this run's and pushed."""
     from stocks.chat import conversations, daily
+    from stocks.i18n import translate
     from stocks.notify import render
 
     card = _current_card(account)
@@ -454,22 +430,22 @@ def _briefing(account: Account, day: date) -> str:
     ):
         return "not filed"
     lines = [i.get("line") for i in card.items] or [e.get("line") for e in card.entries]
+    # The way out is on the notification itself: one press to the switch and
+    # the clock, never a hunt through the settings.
+    change = {"action": "schedule", "url": SETTINGS_URL,
+              "title": translate("notify.briefing_change", card.lang)}
     message = render.message(
         daily.thread_title(card.day, card.lang),
-        [card.headline, *lines], thread_url(cid), "briefing",
+        [card.headline, *lines], thread_url(cid), "briefing", [change],
     )
     return _status(cid, _push(account, message, "briefing"))
 
 
 def _weekly_email(account: Account, day: date) -> str:
-    """Send the Friday email. Never moves the Sunday review's drift baseline
-    (`weekly.weekly_delivered`): that one is the push's to keep."""
+    """Send the Friday email."""
     from stocks.notify import weekly_email
 
     return weekly_email.send_for(account.label, account.paths, account.prefs, day)
 
 
-RUNNERS = {
-    CARD: _card, "briefing": _briefing, "digest": _digest, "weekly": _weekly,
-    EMAIL: _weekly_email,
-}
+RUNNERS = {CARD: _card, "briefing": _briefing, EMAIL: _weekly_email}

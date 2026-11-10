@@ -756,6 +756,9 @@ async def investor_context() -> CallToolResult:
             # The lines the reader drew: mix, caps, contribution, reserve,
             # with today's mix beside the targets (`GET /plan`).
             "plan": _plain(profile_routes.plan(paths)),
+            # The checklist every buy or add is held to, and the principles
+            # behind it in their words (`GET /plan/entry`).
+            "entry_criteria": _plain(profile_routes.entry_criteria(paths)),
             "memory_enabled": enabled,
             "memories": [
                 {"id": m.id, "kind": m.kind, "text": m.text,
@@ -914,6 +917,22 @@ async def kill_criteria_status() -> CallToolResult:
     return await _run("kill_criteria_status", work)
 
 
+async def entry_criteria_status() -> CallToolResult:
+    """Every live buy rule by name, the ones met, and the checklist every
+    buy or add is held to."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import prefs as profile_routes
+        from stocks.chat import journal
+        from stocks.views import briefing
+
+        held = briefing.held_symbols(paths)
+        return {"kind": "entry_status",
+                **journal.entry_status(journal.load(paths.journal), held),
+                "checklist": _plain(profile_routes.entry_criteria(paths))}
+
+    return await _run("entry_criteria_status", work)
+
+
 # ------------------------------------------------------------ the day, read
 
 
@@ -946,8 +965,7 @@ async def push_history(
     limit: Annotated[int, Field(ge=1, le=50)] = 20,
 ) -> CallToolResult:
     """The notifications this account's devices were sent, newest first:
-    alerts, the evening digest, the weekly review, exit rules met, answers
-    ready, tests."""
+    alerts, the daily AI summary, exit rules met, answers ready, tests."""
     def work(paths: UserPaths) -> dict:
         from stocks.notify import webpush
 
@@ -1631,7 +1649,7 @@ async def retire_kill_criterion(
 
         done = journal.retire(paths.journal, criterion_id)
         if done is None:
-            raise _Refused("No live exit rule by that id.")
+            raise _Refused("No live rule by that id.")
         return {"kind": "criterion_retired", **done.as_dict()}
 
     return await _run("retire_kill_criterion", work, write=True)
@@ -1674,6 +1692,50 @@ async def set_kill_criteria_batch(
     return await _run("set_kill_criteria_batch", work, write=True)
 
 
+class BuyRule(BaseModel):
+    """One buy zone, as `journal.clean_rules` keeps it."""
+
+    rule: Literal["buy_below", "buy_drawdown_high", "buy_revenue_growth_above",
+                  "buy_gross_margin_above", "buy_operating_margin_above",
+                  "buy_pe_fwd_below"] = Field(description=(
+        "buy_below: a closing price; buy_drawdown_high: % fall from the "
+        "52-week high; buy_revenue_growth_above / buy_gross_margin_above / "
+        "buy_operating_margin_above: a % the quarter's figure reaches; "
+        "buy_pe_fwd_below: a forward P/E, read daily."))
+    level: float = Field(description="The price, percent or P/E.")
+    quarters: int | None = Field(None, ge=1, le=4, description=(
+        "Fundamental rules only: quarters running the figure must stay over."))
+
+
+async def set_entry_criteria(
+    ticker: Ticker,
+    rules: Annotated[list[BuyRule], Field(min_length=1, max_length=6)],
+    thesis: Annotated[str, Field(
+        max_length=300,
+        description="Why they would buy it, in their words; kept on each rule.")] = "",
+) -> CallToolResult:
+    """The person's buy zones for one name, held or not, into the decision
+    journal the morning card checks them against. The name is followed too:
+    its closes are only fetched for the watchlist and the book."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import watchlist_edit
+        from stocks.chat import journal
+
+        code = _symbol(ticker)
+        asked = [r.model_dump(exclude_none=True) for r in rules]
+        written = journal.add_criteria(paths.journal, code, asked,
+                                       date.today(), thesis)
+        if not written:
+            raise _Refused("No rule was usable: a price level must be above "
+                           "zero, a percent under 100 and a P/E up to 500.")
+        watchlist_edit.add(paths, watchlist_edit.NewEntry(ticker=code))
+        return {"kind": "entry_criteria",
+                "written": [journal.rule_row(e) for e in written],
+                "dropped": len(asked) - len(written)}
+
+    return await _run("set_entry_criteria", work, write=True)
+
+
 async def send_test_push() -> CallToolResult:
     """One test notification to every device the account switched on."""
     def work(paths: UserPaths) -> dict:
@@ -1710,8 +1772,8 @@ async def set_preferences(
     tax_niit: bool | None = None,
     tax_church_rate: Annotated[float | None, Field(ge=0, le=1)] = None,
     tax_subnational_rate: Annotated[float | None, Field(ge=0, le=1)] = None,
-    notify_digest: bool | None = None,
-    notify_weekly: bool | None = None,
+    notify_briefing: Annotated[bool | None, Field(
+        description="The AI daily summary, the one scheduled push a day.")] = None,
     notify_alerts: bool | None = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
@@ -1723,8 +1785,7 @@ async def set_preferences(
             "tax_other_income": tax_other_income, "tax_niit": tax_niit,
             "tax_church_rate": tax_church_rate,
             "tax_subnational_rate": tax_subnational_rate,
-            "notify_digest": notify_digest, "notify_weekly": notify_weekly,
-            "notify_alerts": notify_alerts,
+            "notify_briefing": notify_briefing, "notify_alerts": notify_alerts,
         }
         patch = prefs.PrefsPatch.model_validate(
             {k: v for k, v in given.items() if v is not None}
@@ -1776,6 +1837,34 @@ async def set_plan(
     return await _run("set_plan", work, write=True)
 
 
+class ChecklistLine(BaseModel):
+    """One line of the entry checklist (`portfolio.entry.RULES`)."""
+
+    rule: Literal["revenue_growth_min", "op_margin_min", "fcf_yield_min",
+                  "roic_min", "pe_fwd_max", "net_debt_ebitda_max",
+                  "dilution_max", "dividend_yield_min", "weight_max"]
+    level: float = Field(description=(
+        "A percent for the *_min lines, dilution_max and weight_max (15 for "
+        "15 %); a multiple for pe_fwd_max and net_debt_ebitda_max."))
+
+
+async def set_entry_checklist(
+    rules: Annotated[list[ChecklistLine], Field(max_length=9)],
+    note: Annotated[str, Field(max_length=600, description=(
+        "Buying principles in their words, read by the assistant, never "
+        "measured."))] = "",
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes import prefs
+
+        body = prefs.EntryWrite.model_validate(
+            {"rules": [r.model_dump() for r in rules], "note": note})
+        return {"kind": "entry_checklist",
+                **_plain(prefs.save_entry_criteria(paths, body))}
+
+    return await _run("set_entry_checklist", work, write=True)
+
+
 # ------------------------------------------------------------------ catalog
 
 
@@ -1818,6 +1907,11 @@ TOOLS: tuple[Spec, ...] = (
          "preferences, decisions, constraints, and `routine` items they asked "
          "to see daily. Context to frame advice by, never a source of figures. "
          "Read it before advising."),
+    Spec(entry_criteria_status, "Buy rules status",
+         "Every live buy rule (a buy zone per name: price, fall from the "
+         "high, a quarter's growth or margin, forward P/E) with whether it "
+         "was met, and the checklist every buy or add is held to. Check a "
+         "suggested buy or add against both and say which lines it breaks."),
     Spec(decision_journal, "Decision journal",
          "Every move the TopStocks app proposed to this person and showed "
          "them — daily-card lines (fired alerts, loss harvesting, trims, "
@@ -2006,9 +2100,16 @@ TOOLS: tuple[Spec, ...] = (
          "set_kill_criteria for up to 60 holdings in one call, each with its "
          "own rules and thesis. Same rules apply: show the whole draft and "
          "write it only once the person agrees.", write=True),
-    Spec(retire_kill_criterion, "Retire an exit rule",
-         "Take down one live exit rule by its id from decision_journal; the "
-         "journal keeps it as retired.", write=True, destructive=True),
+    Spec(set_entry_criteria, "Set buy rules",
+         "Write the person's buy zones for one name, held or not — a price, a "
+         "fall from the high, a quarter's growth or margin, a forward P/E — "
+         "which the morning card then checks; the name is followed too. "
+         "Replaces a live rule on the same measure. Their rules, not yours: "
+         "show the draft and write it only once they agree.", write=True),
+    Spec(retire_kill_criterion, "Retire a rule",
+         "Take down one live exit or buy rule by its id from "
+         "decision_journal; the journal keeps it as retired.",
+         write=True, destructive=True),
     Spec(send_test_push, "Send a test notification",
          "Push one test notification to every device the person switched "
          "notifications on for, and say how many took it.", write=True),
@@ -2021,6 +2122,13 @@ TOOLS: tuple[Spec, ...] = (
          "schedule and a cash reserve — which Review and the morning card hold "
          "the book to. Written whole: parts left out are cleared. Their plan, "
          "not yours: show the draft and write it only once they agree.",
+         write=True, destructive=True),
+    Spec(set_entry_checklist, "Set the entry checklist",
+         "Replace the checklist every buy or add is held to — minimum growth, "
+         "margin, FCF yield, ROIC or dividend, maximum forward P/E, leverage, "
+         "dilution or weight — and a note of principles. Review and the "
+         "assistant warn when a buy breaks a line, never block it. Written "
+         "whole; none clears it. Show the draft first.",
          write=True, destructive=True),
 )
 

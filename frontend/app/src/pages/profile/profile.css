@@ -440,6 +440,12 @@
 .pr-selfstart {
   align-self: flex-start;
 }
+/* Buttons side by side in a card body, wrapping on a phone. */
+.pr-btnrow {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 /* The same for a lone button as a row's control: a Delete bar the width of
    the card reads as a banner, not a button. */
 .pr-row-ctl > .pr-btn {
@@ -529,6 +535,12 @@
   gap: 12px 20px;
   margin-bottom: 20px;
 }
+/* Inside the checklist card it sits under the head, on the rows' gutter; the
+   first row's hairline sets it off from the lines. */
+.pl-ask-entry {
+  margin: 0;
+  padding: 0 24px 16px;
+}
 .pl-ask-sub {
   margin: 0;
   max-width: 60ch;
@@ -595,6 +607,83 @@
 .pl-sum-off,
 .pl-warn {
   color: var(--ag-warn);
+}
+
+/* The plan's rail is its index: one line per card, where it stands, pressed
+   to land on it. The line being read is marked, so the rail also says where
+   on the page the reader is. Rows bleed to the card's edge so the mark and the
+   pressed state read as the row, not as a pill inside it. */
+.pl-idx {
+  list-style: none;
+  margin: 0 -12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pl-idx-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ag-dur-press) var(--ag-ease-out);
+}
+.pl-idx-l {
+  color: var(--ag-text-secondary);
+}
+.pl-idx-v {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  text-align: right;
+}
+.pl-idx-v.pl-warn {
+  color: var(--ag-warn);
+}
+.pl-idx-row[aria-current] {
+  background: var(--ag-surface-sunken);
+}
+.pl-idx-row[aria-current] .pl-idx-l {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+.pl-idx-row:active {
+  background: var(--ag-surface-hover);
+}
+@media (hover: hover) {
+  .pl-idx-row:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+@media (pointer: coarse) {
+  .pl-idx-row {
+    min-height: 44px;
+    align-items: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pl-idx-row {
+    transition: none;
+  }
+}
+/* A card the index lands on clears the top bar, and takes focus without a
+   ring after a press: the reader sent it there. A keyboard keeps the global
+   ring. */
+.pr-card[id] {
+  scroll-margin-top: 4rem;
+}
+.pr-card[id]:focus:not(:focus-visible) {
+  outline: none;
 }
 /* Where the contribution leads, and the way to the tab that draws it. On a
    finger the link is a full-height target of its own line. */
@@ -1041,6 +1130,11 @@
     flex: 1 1 auto;
     width: 100%;
   }
+  /* Except the plan's: an index under the six cards it indexes is no use, so
+     it leads, as a grouped list of settings does. */
+  .pl-rail {
+    order: -1;
+  }
 }
 
 /* Then the rows stack — control under its label — with a narrower gutter,
@@ -1057,6 +1151,9 @@
   .pr-row::before {
     left: 16px;
     right: 16px;
+  }
+  .pl-ask-entry {
+    padding: 0 16px 14px;
   }
   .pr-row-l {
     flex: 1 1 auto;

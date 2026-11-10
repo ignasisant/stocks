@@ -205,6 +205,8 @@ from stocks.schemas.pulse import (
     PulsePoint,
 )
 from stocks.schemas.review import (
+    EntryCheck,
+    EntryFit,
     NameReturns,
     Review,
     ReviewDrift,
@@ -321,6 +323,8 @@ __all__ = [
     "EarningsResultDetail",
     "EditEffect",
     "EditPlan",
+    "EntryCheck",
+    "EntryFit",
     "EpsRevisionRow",
     "EuShortPositions",
     "Extreme",

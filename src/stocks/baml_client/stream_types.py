@@ -108,8 +108,8 @@ class Columns(BaseModel):
     note: typing.Optional[int] = None
 
 class CriterionRule(BaseModel):
-    rule: typing.Optional[str] = Field(default=None, description='below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut')
-    level: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a price for below, a percent for the price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut')
+    rule: typing.Optional[str] = Field(default=None, description='an exit rule: below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut; or a buy rule: buy_below, buy_drawdown_high, buy_revenue_growth_above, buy_gross_margin_above, buy_operating_margin_above or buy_pe_fwd_below')
+    level: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a price for below and buy_below, a forward P/E for buy_pe_fwd_below, a percent for the other price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut')
     quarters: typing.Optional[int] = Field(default=None, description='fundamental rules only: how many quarters in a row, 1 to 4')
 
 class CryptoColumns(BaseModel):

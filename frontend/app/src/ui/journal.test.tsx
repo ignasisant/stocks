@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   type JournalEntry,
+  buyRule,
   JournalList,
   MetOn,
   factRows,
@@ -299,6 +300,25 @@ describe("the rules block", () => {
     expect(out).toContain('aria-label="journal.criteria_retire: ');
     expect(out).toContain("journal.criteria_edit");
     expect(out).not.toContain("journal.criteria_empty");
+  });
+
+  it("keeps buy zones in their own group, apart from the exit rules", () => {
+    const zone = rule({
+      id: "b1",
+      action: "buy_below",
+      subject: "criterion:AMD:buy_below",
+      snapshot: { rule: "buy_below", level: 80 },
+    });
+    expect(buyRule(zone)).toBe(true);
+    expect(buyRule(rule())).toBe(false);
+    expect(ruleText(echo, zone, "en")).toBe("journal.crit_buy_below(80.00)");
+    const out = renderToStaticMarkup(
+      <RulesBlock ticker="AMD" rules={[zone]} onChange={noop} onAsk={noop} />,
+    );
+    expect(out).toContain("journal.entry_title");
+    expect(out).toContain("journal.entry_edit");
+    // No exit rule yet: that side still offers to write one.
+    expect(out).toContain("journal.criteria_empty");
   });
 
   it("offers to write them with the assistant when there are none", () => {

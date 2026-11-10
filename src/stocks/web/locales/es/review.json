@@ -368,5 +368,16 @@
   "review.metric_payout_ratio_help": "Parte del beneficio que se reparte como dividendo.",
   "review.move_new": "Nueva",
   "review.tax_in": "en {currency}",
-  "review.pending": "{count} valor(es) aún cargando, se completan en unos segundos"
+  "review.pending": "{count} valor(es) aún cargando, se completan en unos segundos",
+  "review.entry_breaks": "Rompe tus criterios: {lines}",
+  "review.entry_help": "Tus criterios de entrada (Plan). Solo avisa: el veredicto sigue siendo el de la revisión.",
+  "review.entry_rule_revenue_growth_min": "crecimiento ≥ {level}",
+  "review.entry_rule_op_margin_min": "margen op. ≥ {level}",
+  "review.entry_rule_fcf_yield_min": "FCF yield ≥ {level}",
+  "review.entry_rule_roic_min": "ROIC ≥ {level}",
+  "review.entry_rule_pe_fwd_max": "PER fwd ≤ {level}",
+  "review.entry_rule_net_debt_ebitda_max": "deuda neta/EBITDA ≤ {level}",
+  "review.entry_rule_dilution_max": "dilución ≤ {level}",
+  "review.entry_rule_dividend_yield_min": "dividendo ≥ {level}",
+  "review.entry_rule_weight_max": "peso ≤ {level}"
 }

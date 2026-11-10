@@ -296,7 +296,7 @@ def _parse_position(data: dict) -> dict | None:
 
 
 def _parse_criteria(data: dict) -> dict | None:
-    """Exit rules: each a known measure with a level (journal.clean_rules),
+    """Exit rules or buy zones: each a known measure with a level (journal.clean_rules),
     and the optional thesis behind them. Rejects when no rule survives — a
     thesis with nothing to check is a note, not a rule."""
     from stocks.chat import journal
@@ -395,6 +395,14 @@ def _run_set_criteria(act: Action, path: Path) -> None:
                          date.today(), act.args.get("thesis") or "")
 
 
+def _buys(action: Action) -> bool:
+    """Whether a set_criteria action writes a buy zone."""
+    from stocks.chat import journal
+
+    return any(journal.rule_side(c.get("rule", "")) == "buy"
+               for c in action.args.get("criteria") or [])
+
+
 # ----------------------------------------------------------------- registry
 
 
@@ -481,8 +489,14 @@ TOOLS: dict[str, Tool] = {
             'a % the quarter\'s figure falls under, with "quarters" 1-4 when '
             "they say for how many quarters running; ceo_change, guidance_cut, "
             "dividend_cut: an event, no level. "
+            "Buy rules (a buy zone, held or not) the same way: buy_below: a "
+            "closing price; buy_drawdown_high: a % fall from the high; "
+            "buy_revenue_growth_above, buy_gross_margin_above, "
+            "buy_operating_margin_above: a % the figure reaches; "
+            "buy_pe_fwd_below: a forward P/E. "
             'Optionally "thesis": why they hold it, in their words. "stop", '
-            '"vendo si", "salgo si", "kill criteria", "regla de salida" -> this.',
+            '"vendo si", "salgo si", "kill criteria", "regla de salida", '
+            '"compro si", "zona de compra", "regla de compra" -> this.',
             _parse_criteria, _run_set_criteria, "chat.action_criteria_set",
             target="journal",
         ),
@@ -877,6 +891,11 @@ def execute(action: Action, path: Path, *, journal_path: Path | None = None) -> 
         target = journal_path
     for ticker in action.tickers:
         tool.run(Action(action.kind, ticker, action.args), target)
+        # A buy zone is met on the name's closes, and the nightly fetch only
+        # reads the watchlist's and the book's: one on a name not followed
+        # would never fire.
+        if action.kind == "set_criteria" and _buys(action):
+            _watchlist().add_entry(path, ticker, persist=userstore.persist)
 
 
 def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
@@ -915,6 +934,11 @@ def _rule_words(rule: dict, translate: Callable[..., str]) -> str:
 
 def _reply_key(action: Action) -> str:
     key = TOOLS[action.kind].reply_key
+    if action.kind == "set_criteria" and _buys(action):
+        # Buy zones alone, or both sides in one card.
+        exits = any(not c.get("rule", "").startswith("buy_")
+                    for c in action.args.get("criteria") or [])
+        return "chat.action_rules_set" if exits else "chat.action_entry_set"
     return f"{key}_many" if len(action.tickers) > 1 else key
 
 
@@ -973,6 +997,9 @@ FORMS: dict[str, tuple[str, ...]] = {
     "set_criteria": ("crit_below", "crit_drawdown_cost", "crit_drawdown_high",
                      "crit_weight_above", "crit_revenue_growth_below",
                      "crit_gross_margin_below", "crit_operating_margin_below",
+                     "crit_buy_below", "crit_buy_drawdown_high",
+                     "crit_buy_revenue_growth_above", "crit_buy_gross_margin_above",
+                     "crit_buy_operating_margin_above", "crit_buy_pe_fwd_below",
                      "crit_quarters", "crit_ceo_change", "crit_guidance_cut",
                      "crit_dividend_cut", "thesis"),
 }
@@ -981,27 +1008,36 @@ _CRIT = "crit_"
 # carries one of them: the price rules are the common case, and eleven
 # boxes under one card are a form nobody reads.
 _CRIT_FUNDAMENTAL = ("crit_revenue_growth_below", "crit_gross_margin_below",
-                     "crit_operating_margin_below")
+                     "crit_operating_margin_below", "crit_buy_revenue_growth_above",
+                     "crit_buy_gross_margin_above", "crit_buy_operating_margin_above")
+# The exit price rules every exit card offers, and the buy zones a card shows
+# only when its proposal carries one; a card of buy zones alone leaves the
+# exit boxes out.
+_CRIT_EXIT_PRICE = ("crit_below", "crit_drawdown_cost", "crit_drawdown_high",
+                    "crit_weight_above")
+_CRIT_BUY = ("crit_buy_below", "crit_buy_drawdown_high", "crit_buy_pe_fwd_below")
 CHECK_FIELDS = frozenset({"crit_ceo_change", "crit_guidance_cut",
                           "crit_dividend_cut"})
-NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below", "crit_below",
-                            "crit_drawdown_cost", "crit_drawdown_high",
-                            "crit_weight_above", *_CRIT_FUNDAMENTAL,
+NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below",
+                            *_CRIT_EXIT_PRICE, *_CRIT_BUY, *_CRIT_FUNDAMENTAL,
                             "crit_quarters"})
 
 
 def form_names(action: Action) -> tuple[str, ...]:
     """The fields `action`'s card shows: its tool's, less a set_criteria
-    card's fundamental and event fields its proposal does not use."""
+    card's fundamental, buy and event fields its proposal does not use."""
     names = FORMS.get(action.kind, ())
     if action.kind != "set_criteria":
         return names
     used = {f"{_CRIT}{c['rule']}" for c in action.args.get("criteria") or []}
     fundamental = bool(used & set(_CRIT_FUNDAMENTAL))
+    buy_only = bool(used) and all(n.startswith("crit_buy_") for n in used)
     return tuple(
         n for n in names
-        if not (n in _CRIT_FUNDAMENTAL or n in CHECK_FIELDS) or n in used
-        if n != "crit_quarters" or fundamental)
+        if not (n in _CRIT_FUNDAMENTAL or n in _CRIT_BUY or n in CHECK_FIELDS)
+        or n in used
+        if n != "crit_quarters" or fundamental
+        if not (buy_only and n in _CRIT_EXIT_PRICE))
 
 
 def _figure(value) -> str:

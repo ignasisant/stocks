@@ -187,11 +187,9 @@ function Chips({ part, data, set, fire, disabled }: Draw) {
   const bound = isBinding(part.value) ? part.value.path : "";
   const options = (Array.isArray(part.options) ? part.options : []) as Option[];
   const picked = str(resolve(part.value, data));
-  return (
-    <ToggleRow
-      className="ag-a2ui-chips"
-      label={part.label === undefined ? undefined : str(resolve(part.label, data))}
-    >
+  const label = part.label === undefined ? undefined : str(resolve(part.label, data));
+  const row = (
+    <ToggleRow className="ag-a2ui-chips" label={label}>
       {options.map((option) => {
         const value = str(option.value);
         return (
@@ -210,6 +208,17 @@ function Chips({ part, data, set, fire, disabled }: Draw) {
         );
       })}
     </ToggleRow>
+  );
+  // A labelled row is a question (the plan builder's), and a question that
+  // is not on screen leaves the reader with three answers to guess at. The
+  // group carries the same name, so the visible one is not read twice.
+  return label ? (
+    <div className="ag-a2ui-field">
+      <span aria-hidden="true">{label}</span>
+      {row}
+    </div>
+  ) : (
+    row
   );
 }
 

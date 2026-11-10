@@ -505,6 +505,15 @@ def test_an_armed_rule_within_reach_is_a_near_line():
     assert out[0].data["gap_pct"] == pytest.approx(2.0)
 
 
+def test_a_buy_rule_is_an_entry_line_not_an_exit_one():
+    hit = _rule("hit", rule="buy_below", hit_day="2026-09-03")
+    near = _rule(id="r2", ticker="NVDA", rule="buy_pe_fwd_below", level=30.0,
+                 value=31.0, gap_pct=1.0)
+    out = signals.candidates(today=TODAY, criteria=[hit, near])
+    assert sorted(s.kind for s in out) == sorted([signals.ENTRY_HIT,
+                                                  signals.ENTRY_NEAR])
+    assert {s.ticker for s in out if s.kind == signals.ENTRY_NEAR} == {"NVDA"}
+
 def test_each_rule_on_a_ticker_is_its_own_trigger():
     a = signals.key_of(signals.CRITERION_HIT, {"ticker": "ASML", "rule": "below"})
     b = signals.key_of(signals.CRITERION_HIT, {"ticker": "ASML", "rule": "weight_above"})

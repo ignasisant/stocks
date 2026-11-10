@@ -9,11 +9,12 @@ import pytest
 
 from stocks.data.dividends import DividendEvent
 from stocks.data.earnings import EarningsEvent
-from stocks.notify import render
 from stocks.notify import weekly as wk
 from stocks.portfolio.ledger import Transaction
 
 D = date(2026, 9, 13)  # a Sunday
+# The autouse fixture below stubs `wk.recent_dividends`; these tests want the real one.
+recent_dividends = wk.recent_dividends
 
 
 def full_data(**over) -> wk.WeeklyData:
@@ -32,101 +33,10 @@ def full_data(**over) -> wk.WeeklyData:
         earnings=[EarningsEvent("NVDA", date(2026, 9, 17), 4)],
         top_weight=0.68,
         effective_names=6.2,
-        drift=0.03,
         currency="EUR",
     )
     base.update(over)
     return wk.WeeklyData(**base)
-
-
-# ---------------------------------------------------------------- rendering
-
-
-def tr(lang: str = "en"):
-    from stocks.i18n import translate
-
-    return lambda key, **kw: translate(f"notify.{key}", lang, **kw)
-
-
-def test_the_push_carries_the_week_in_the_title_and_opens_the_portfolio():
-    msg = wk.weekly_message(full_data(highlight="Nvidia made the week."), "en")
-    assert msg["title"] == "Your week +1,940 € (+1.89%) · portfolio €104,820"
-    assert msg["body"].splitlines() == [
-        "Month +3,200 € (+3.15%) · YTD +12,400 € (+13.40%)",
-        "▲ NVDA +1,240 € (+8.1%) · ▼ MELI -820 € (-5.2%)",
-        "Nvidia made the week.",
-    ]
-    assert msg["url"] == "/portfolio" and msg["tag"] == "weekly"
-
-
-def test_the_push_is_translated():
-    msg = wk.weekly_message(full_data(), "es")
-    assert msg["title"] == "Tu semana +1,940 € (+1.89%) · cartera €104,820"
-    assert msg["body"].startswith("Mes +3,200 € (+3.15%) · Año +12,400 € (+13.40%)")
-
-
-def test_without_a_highlight_the_next_lines_move_up():
-    lines = wk.weekly_message(full_data(), "en")["body"].splitlines()
-    assert len(lines) == render.BODY_LINES
-    assert lines[2].startswith("Top 5 = 68% of the book")
-
-
-def test_benchmark_line_reads_the_same_windows_off_the_index():
-    assert wk._benchmark_line(full_data(), tr()) == (
-        "vs S&P 500 · Week +1.10% · Month +2.40% · YTD +9.80%"
-    )
-    assert wk._benchmark_line(full_data(benchmark={}), tr()) is None
-    assert wk._benchmark_line(full_data(benchmark={7: None}), tr()) is None
-
-
-def test_week_ahead_merges_prints_and_ex_dates_soonest_first():
-    assert wk._ahead_line(full_data(), "en", tr()) == (
-        "Week ahead: KO ex-date Tue 15 Sep ~€55, NVDA reports Thu 17 Sep"
-    )
-    assert wk._ahead_line(full_data(earnings=[], ex_dividends=[]), "en", tr()) is None
-
-
-def test_concentration_reports_the_drift_and_the_equal_name_equivalent():
-    assert wk._concentration_line(full_data(), tr()) == (
-        "Top 5 = 68% of the book (+3 pt this week)"
-        " · behaves like 6.2 equal-sized names"
-    )
-
-
-def test_concentration_drops_a_drift_too_small_to_mean_anything():
-    """Below the floor the book was re-priced, not rebalanced."""
-    line = wk._concentration_line(full_data(drift=0.004), tr())
-    assert line.startswith("Top 5 = 68% of the book ·") and "pt this week" not in line
-    # The first review of an account has nothing to compare against.
-    assert "pt this week" not in wk._concentration_line(full_data(drift=None), tr())
-
-
-def test_names_line_takes_the_top_of_each_side():
-    assert wk._names_line(full_data(worst=[])) == "▲ NVDA +1,240 € (+8.1%)"
-    assert wk._names_line(full_data(best=[], worst=[])) is None
-    no_pct = full_data(best=[("A", 10.0, None)], worst=[])
-    assert wk._names_line(no_pct) == "▲ A +10 €"
-
-
-def test_sections_render_alone():
-    msg = wk.weekly_message(wk.WeeklyData(date=D, total=1000.0), "en")
-    assert msg["title"] == "Your week in review · Sun 13 Sep"  # no week change
-    assert msg["body"] == ""
-
-
-def test_a_watchlist_only_account_renders_a_title_and_nothing_else():
-    msg = wk.weekly_message(wk.WeeklyData(date=D), "en")
-    assert msg["title"] == "Your week in review · Sun 13 Sep"
-    assert msg["body"] == ""
-
-
-def test_dividend_receipt_has_a_singular_form():
-    one = full_data(dividends_received=(38.0, 1))
-    assert wk._dividends_line(one, tr()) == "€38 received this week, from one payment"
-    assert "de un pago" in wk._dividends_line(one, tr("es"))
-    assert wk._dividends_line(full_data(), tr()) == (
-        "€212 received this week, from 3 payments"
-    )
 
 
 # ------------------------------------------------------------------ compute
@@ -299,7 +209,6 @@ def test_ytd_is_dropped_when_the_history_starts_after_new_year(tmp_path, monkeyp
 
     data = wk.compute_weekly_data(watchlist, tmp_path / "portfolio.db", today=D)
     assert data.week is not None and data.ytd is None
-    assert "YTD" not in wk.weekly_message(data, "en")["body"]
 
 
 def test_a_name_bought_mid_week_counts_from_its_purchase(tmp_path, monkeypatch):
@@ -336,9 +245,6 @@ def test_since_start_leads_and_the_index_is_on_the_same_money(tmp_path, monkeypa
     assert data.benchmark[data.since_days] == pytest.approx(0.10)
     assert data.benchmark_gain[data.since_days] == pytest.approx(100.0)
     assert data.as_of == date(2026, 9, 13)
-    line = wk._benchmark_line(data, tr())
-    assert line.startswith("vs S&P 500 · Since start +10.00% · Week")
-    assert wk._window_line(data, tr()).startswith("Since start +")
 
 
 def test_no_index_in_the_books_currency_means_no_comparison(tmp_path, monkeypatch):
@@ -371,3 +277,28 @@ def test_the_week_ahead_reads_held_names_not_the_watchlist(tmp_path, monkeypatch
     watchlist.write_text("watchlist:\n  - ticker: FOLLOWED\n")
     wk.compute_weekly_data(watchlist, tmp_path / "p.db", today=D)
     assert asked == ["A"]
+
+
+# ----------------------------------------------------------------- dividends
+
+
+def test_recent_dividends_nets_withholding_inside_the_window():
+    txs = [
+        Transaction(date="2026-09-12", ticker="KO", action="dividend",
+                    price=100.0, fee=15.0, currency="EUR"),
+        Transaction(date="2026-09-10", ticker="PG", action="dividend",
+                    price=40.0, fee=0.0, currency="EUR"),
+        Transaction(date="2026-07-01", ticker="JNJ", action="dividend",
+                    price=999.0, fee=0.0, currency="EUR"),   # outside window
+        Transaction(date="2026-09-11", ticker="KO", action="buy",
+                    quantity=1, price=50.0, currency="EUR"),  # not a dividend
+    ]
+    got = recent_dividends(txs, "EUR", today=D, to_base=lambda a, c, d: a)
+    assert got == (125.0, 2)  # (100-15) + 40
+
+
+def test_recent_dividends_is_none_when_the_window_is_empty():
+    txs = [Transaction(date="2026-01-01", ticker="KO", action="dividend",
+                       price=10.0, currency="EUR")]
+    assert recent_dividends(txs, "EUR", today=D, to_base=lambda a, c, d: a) is None
+    assert recent_dividends([], "EUR", today=D) is None

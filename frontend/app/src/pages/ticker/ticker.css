@@ -1762,6 +1762,11 @@
   font-size: var(--ag-fs-sm);
 }
 
+/* Beside it, the reader's own entry criteria on the name. */
+.tk-entry {
+  margin-bottom: 12px;
+}
+
 .tk-judged-why {
   margin: 6px 0 0;
   color: var(--ag-text-secondary);

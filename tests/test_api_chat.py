@@ -1988,8 +1988,8 @@ def test_a_plan_pick_is_redrawn_by_the_engine_not_a_model(
                         lambda prefs: pytest.fail("a model was asked"))
     response = signed_in.post("/v1/chat/actions", json=plan_press("draft", PLAN_PICKS))
     assert response.status_code == 200
-    (view,) = [m["updateDataModel"] for m in response.json()["messages"]]
-    assert view["path"] == "/view"
+    picks, view = [m["updateDataModel"] for m in response.json()["messages"]]
+    assert picks["path"] == "/a" and view["path"] == "/view"
     assert abs(sum(s["weight"] for s in view["value"]["slices"]) - 1) < 1e-9
 
 
@@ -2060,6 +2060,72 @@ def test_a_token_cannot_save_a_plan(client, account, signed_in):
                            json=plan_press("save", PLAN_PICKS))
     assert response.status_code == 403
     assert "investor_plan" not in json.loads(account.prefs.read_text())
+
+
+# ---------------------------------------------------------------- entry builder
+
+ENTRY_FIELDS = {"revenue_growth_min": "15", "pe_fwd_max": "32,5", "roic_min": "",
+                "weight_max": "7", "note": "solo rentables"}
+
+
+def entry_press(context: dict) -> dict:
+    return {"action": {"name": "save", "surfaceId": "entry_builder",
+                       "sourceComponentId": "save", "context": context}}
+
+
+def test_asking_for_entry_criteria_draws_the_checklist_not_the_plan(
+    client, account, signed_in, book, monkeypatch
+):
+    seen: list[list[dict]] = []
+
+    class Reader(FakeProvider):
+        def stream(self, api_key, model, system, messages):
+            seen.append(messages)
+            yield from super().stream(api_key, model, system, messages)
+
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    stream = events(signed_in.post(
+        "/v1/chat/runs", json=run("Crea criterios de entrada para mi plan")).text)
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == "entry_builder"
+    assert [c["name"] for c in calls(stream)] == ["entry_builder"]
+    assert "The app drew an entry checklist" in seen[0][-1]["content"]
+
+
+def test_saving_the_checklist_stores_the_fields_as_typed(client, account, signed_in):
+    response = signed_in.post("/v1/chat/actions", json=entry_press(ENTRY_FIELDS))
+    assert response.status_code == 200
+    (done,) = response.json()["messages"]
+    texts = [c.get("text") for c in done["updateComponents"]["components"]]
+    assert any("3" in str(t) for t in texts)
+    stored = signed_in.get("/v1/plan/entry").json()
+    assert stored["set"] is True and stored["note"] == "solo rentables"
+    assert {r["rule"]: r["level"] for r in stored["rules"]} == {
+        "revenue_growth_min": 15, "pe_fwd_max": 32.5, "weight_max": 7}
+
+
+def test_saving_every_field_blank_clears_the_checklist(client, account, signed_in):
+    signed_in.post("/v1/chat/actions", json=entry_press(ENTRY_FIELDS))
+    signed_in.post("/v1/chat/actions", json=entry_press({}))
+    assert signed_in.get("/v1/plan/entry").json()["set"] is False
+
+
+@pytest.mark.parametrize("change", [{"pe_fwd_max": "mucho"}, {"weight_max": "150"}])
+def test_a_checklist_save_with_a_bad_field_is_refused(
+    client, account, signed_in, change
+):
+    response = signed_in.post("/v1/chat/actions",
+                              json=entry_press({**ENTRY_FIELDS, **change}))
+    assert response.status_code == 422
+    assert "entry_criteria" not in json.loads(account.prefs.read_text())
+
+
+def test_a_token_cannot_save_a_checklist(client, account, signed_in):
+    client.cookies.clear()
+    response = client.post("/v1/chat/actions", params=WHO, headers=AUTH,
+                           json=entry_press(ENTRY_FIELDS))
+    assert response.status_code == 403
+    assert "entry_criteria" not in json.loads(account.prefs.read_text())
 
 
 # ---------------------------------------------------------------- debate

@@ -40,7 +40,9 @@ import type {
 } from "./types";
 import { num } from "../../shell/numbers";
 import { Link } from "../../shell/router";
-import { score, verdictTone } from "../review/format";
+import { useApi } from "../../shell/useApi";
+import { getEntryFit } from "./data";
+import { entryText, score, verdictTone } from "../review/format";
 import { useHelp } from "../review/lines";
 import { calendarDay } from "../../shell/dates";
 import { DASH, compact, decimal, money, percent } from "../../shell/format";
@@ -163,6 +165,45 @@ function Judged({
   );
 }
 
+/**
+ * The reader's own entry criteria on this name: how many it meets, and the
+ * ones it breaks. Nothing without a checklist, or before it answers — a count
+ * is not worth a skeleton. A line the feed could not read is neither met nor
+ * broken, so "3 of 5" can leave one unsaid.
+ */
+function EntryFitLine({ ticker }: { ticker: string }) {
+  const t = useT();
+  const lang = useLang();
+  const query = useApi(() => getEntryFit(ticker), [ticker]);
+  if (query.state !== "loaded" || !query.data.set || !query.data.total) return null;
+  const fit = query.data;
+  const broken = fit.lines.filter((line) => line.state === "fail");
+  const tone = fit.failed ? "warn" : fit.met === fit.total ? "up" : "flat";
+  return (
+    <div className="tk-entry" role="group" aria-label={t("ticker.entry_title")}>
+      <div className="tk-judged-head">
+        <span className="tk-watch-title">{t("ticker.entry_title")}</span>
+        <Chip
+          chip={{
+            text: t("ticker.entry_met", { met: fit.met, total: fit.total }),
+            tone,
+          }}
+        />
+        <Link className="tk-judged-link" page="profile" params={{ tab: "plan" }}>
+          {t("ticker.entry_link")}
+        </Link>
+      </div>
+      {broken.length > 0 ? (
+        <p className="tk-judged-why">
+          {t("review.entry_breaks", {
+            lines: broken.map((line) => entryText(line, t, lang)).join(" · "),
+          })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function MetricsSection({ metrics }: { metrics: Metrics }) {
   const t = useT();
   const byKey = new Map(metrics.kpis.map((kpi) => [kpi.key, kpi]));
@@ -197,6 +238,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
           cautions={metrics.cautions}
         />
       ) : null}
+      <EntryFitLine ticker={metrics.ticker} />
       <KpiGrid>
         {/* The tiles the server says this grid has, in its order, and every one
             of them drawn: a missing figure prints "n/a" rather than vanishing,

@@ -1,4 +1,4 @@
-"""Completions outside a chat turn (digest, alerts, the daily card), each
+"""Completions outside a chat turn (alerts, the daily card), each
 attempt sandboxed so an LLM failure degrades to None.
 """
 
@@ -52,8 +52,8 @@ def complete_attempts(
 ):
     """First resolved provider whose reply `accept` keeps, or None. Never raises.
 
-    The completion path for everything that is *not* a chat turn — the digest
-    and alert lines (notify/narrative.py), the dashboard's daily action
+    The completion path for everything that is *not* a chat turn — the alert
+    line (notify/narrative.py), the dashboard's daily action
     (chat/daily/). Those must never fail, or even stall, because of an LLM,
     so every attempt is sandboxed: a bad key, a rate limit or a hung provider
     falls through to the next candidate, and the whole loop degrades to None.
@@ -67,7 +67,7 @@ def complete_attempts(
     crons, which must not write that file) are both correct for their own
     caller and silently wrong for the other one.
 
-    `patient` is for a caller nobody is watching (a scheduled card, a digest
+    `patient` is for a caller nobody is watching (a scheduled card, an alert
     line): its free-chain attempt waits for `_FREE_TURN` and sits out the
     chain's rate limits (`llm.patient`) rather than race other such callers
     into them.
@@ -136,8 +136,8 @@ def spend_free_global(prefs: dict) -> bool:
     write an account's prefs.json — the live app owns that file — so they
     cannot carry the per-account "free_msgs::<date>" counter spend_free_quota()
     maintains. Skipping the account counter is safe here because the crons
-    decide when they run, not the user: at most one digest and one alert
-    narration per account per day, which no per-account cap would ever bind.
+    decide when they run, not the user: at most one alert
+    narration per account per run, which no per-account cap would ever bind.
     What does bind is the shared pot, since a fan-out grows with the roster —
     so that is the one this spends, and eligibility is still checked.
     """

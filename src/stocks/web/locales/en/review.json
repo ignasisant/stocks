@@ -368,5 +368,16 @@
   "review.metric_payout_ratio_help": "Share of earnings paid out as dividends.",
   "review.move_new": "New",
   "review.tax_in": "in {currency}",
-  "review.pending": "{count} name(s) still loading, they fill in a few seconds"
+  "review.pending": "{count} name(s) still loading, they fill in a few seconds",
+  "review.entry_breaks": "Breaks your criteria: {lines}",
+  "review.entry_help": "Your own entry criteria (Plan). A warning only: the verdict stays the review's.",
+  "review.entry_rule_revenue_growth_min": "growth ≥ {level}",
+  "review.entry_rule_op_margin_min": "op. margin ≥ {level}",
+  "review.entry_rule_fcf_yield_min": "FCF yield ≥ {level}",
+  "review.entry_rule_roic_min": "ROIC ≥ {level}",
+  "review.entry_rule_pe_fwd_max": "fwd P/E ≤ {level}",
+  "review.entry_rule_net_debt_ebitda_max": "net debt/EBITDA ≤ {level}",
+  "review.entry_rule_dilution_max": "dilution ≤ {level}",
+  "review.entry_rule_dividend_yield_min": "dividend ≥ {level}",
+  "review.entry_rule_weight_max": "weight ≤ {level}"
 }

@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-from stocks.notify import state as notify_state
 from stocks.portfolio import tax
 from stocks.portfolio.tax import deadlines
 
@@ -69,17 +68,6 @@ def test_due_soon_is_the_next_thirty_days_today_included():
         "es_modelo_721",
     }
     assert deadlines.due_soon("ES", date(2027, 4, 1)) == []
-
-
-def test_a_reminder_goes_once():
-    state: dict = {}
-    today = date(2027, 3, 5)
-    due = notify_state.tax_reminders_due(state, "ES", today)
-    assert len(due) == 2
-    notify_state.remember_tax_reminders(state, due)
-    assert notify_state.tax_reminders_due(state, "ES", today) == []
-    # Next year's 720 is a different deadline and is reminded afresh.
-    assert notify_state.tax_reminders_due(state, "ES", date(2028, 3, 5))
 
 
 @pytest.mark.parametrize("lang", ["en", "es"])

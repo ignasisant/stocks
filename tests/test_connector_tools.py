@@ -809,7 +809,34 @@ def test_exit_rules_are_written_to_the_journal_and_retired_by_id(site, editor, b
     assert gone["state"] != "open"
     again = call(site, editor, "retire_kill_criterion",
                  criterion_id=saved["written"][0]["id"])
-    assert again["isError"] is True and "No live exit rule" in result_text(again)
+    assert again["isError"] is True and "No live rule" in result_text(again)
+
+
+def test_buy_rules_are_written_apart_and_follow_the_name(site, editor, book):
+    saved = ok(call(site, editor, "set_entry_criteria", ticker="nvda",
+                    rules=[{"rule": "buy_below", "level": 120.0},
+                           {"rule": "buy_pe_fwd_below", "level": 30}]))
+    assert [e["side"] for e in saved["written"]] == ["buy", "buy"]
+    assert "NVDA" in book.watchlist.read_text()
+    status = ok(call(site, editor, "entry_criteria_status"))
+    assert [n["ticker"] for n in status["names"]] == ["NVDA"]
+    assert status["checklist"]["set"] is False
+    exits = ok(call(site, editor, "kill_criteria_status"))
+    assert exits["holdings"] == []
+
+
+def test_the_entry_checklist_is_written_whole(site, editor, token, book):
+    saved = ok(call(site, editor, "set_entry_checklist",
+                    rules=[{"rule": "pe_fwd_max", "level": 30}],
+                    note="No pre-revenue biotech"))
+    assert saved["set"] is True and saved["rules"][0]["rule"] == "pe_fwd_max"
+    context = ok(call(site, editor, "investor_context"))
+    assert context["entry_criteria"]["note"] == "No pre-revenue biotech"
+    bad = call(site, editor, "set_entry_checklist",
+               rules=[{"rule": "pe_fwd_max", "level": -3}])
+    assert bad["isError"] is True
+    refused = call(site, token, "set_entry_checklist", rules=[])
+    assert refused["isError"] is True and "can only read" in result_text(refused)
 
 
 def test_exit_rules_with_no_usable_level_write_nothing(site, editor, book):

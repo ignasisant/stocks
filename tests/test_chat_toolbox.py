@@ -630,7 +630,7 @@ def test_asks_rules_only_when_they_are_to_be_written(text, asks):
     assert toolbox.asks_rules(text) is asks
 
 
-def test_the_proposal_schema_offers_exit_rules():
+def test_the_proposal_schema_offers_exit_and_buy_rules():
     spec, _ = toolbox.TOOLS["propose_action"]
     props = spec.schema["properties"]
     assert "set_criteria" in props["action"]["enum"]
@@ -638,7 +638,10 @@ def test_the_proposal_schema_offers_exit_rules():
     assert set(rule["enum"]) == {"below", "drawdown_cost", "drawdown_high",
                                  "weight_above", "revenue_growth_below",
                                  "gross_margin_below", "operating_margin_below",
-                                 "ceo_change", "guidance_cut", "dividend_cut"}
+                                 "ceo_change", "guidance_cut", "dividend_cut",
+                                 "buy_below", "buy_drawdown_high",
+                                 "buy_revenue_growth_above", "buy_gross_margin_above",
+                                 "buy_operating_margin_above", "buy_pe_fwd_below"}
     item = props["criteria"]["items"]
     # An event rule has no level, and only a fundamental one a quarters run.
     assert item["required"] == ["rule"]

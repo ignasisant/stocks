@@ -59,16 +59,17 @@ def persona(prof: dict) -> str:
     """The 'who am I advising' sentence, from a loaded investor profile
     (auth.load_profile(prefs)). Falls back to the historical default when the user
     hasn't filled the form yet (prof['set'] is False). The investor plan, when
-    saved, follows either way (`portfolio.plan.describe`)."""
+    saved, follows either way (`portfolio.plan.describe`), and the entry
+    criteria after it (`portfolio.entry.describe`)."""
     return _who(prof) + _plan_said(prof)
 
 
 def _plan_said(prof: dict) -> str:
-    if not prof.get("plan"):
-        return ""
+    from stocks.portfolio import entry
     from stocks.portfolio import plan as plans
 
-    return plans.describe(plans.parse(prof["plan"]))
+    said = plans.describe(plans.parse(prof["plan"])) if prof.get("plan") else ""
+    return said + entry.describe(entry.parse(prof.get("entry")))
 
 
 def _who(prof: dict) -> str:

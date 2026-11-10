@@ -5,8 +5,8 @@
 
 import { type ChipSpec, type Tone, toneOf } from "../../ui/Kpi";
 import { parseDay } from "../home/format";
-import type { Review, Verdict } from "./types";
-import { isNum, money, percent } from "../../shell/format";
+import type { EntryCheck, Review, Verdict } from "./types";
+import { decimal, isNum, money, percent } from "../../shell/format";
 import { formatter } from "../../shell/numbers";
 
 /** A line the copy quotes: as few decimals as it needs (5 %, 0,25 %). */
@@ -204,4 +204,29 @@ export function pnlChip(
  */
 export function askAgain(read: Review, retried: string | null, asked: string): boolean {
   return (read.pending ?? 0) > 0 && retried !== asked;
+}
+
+// Entry checklist lines read in percent (`portfolio.entry.RULES`); the rest
+// are multiples.
+const ENTRY_PCT = new Set([
+  "revenue_growth_min",
+  "op_margin_min",
+  "fcf_yield_min",
+  "roic_min",
+  "dilution_max",
+  "dividend_yield_min",
+  "weight_max",
+]);
+
+/** One entry checklist line as the reader wrote it: "fwd P/E ≤ 30×". */
+export function entryText(
+  line: EntryCheck,
+  t: (key: string, values?: Record<string, string | number>) => string,
+  lang: string,
+): string {
+  const digits = Number.isInteger(line.level) ? 0 : 1;
+  const level = ENTRY_PCT.has(line.rule)
+    ? percent(line.level, { lang, digits, points: true })
+    : `${decimal(line.level, { lang, digits })}×`;
+  return t(`review.entry_rule_${line.rule}`, { level });
 }

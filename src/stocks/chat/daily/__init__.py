@@ -68,6 +68,7 @@ from stocks.chat.daily.card import (
     BRIEF_STATES,
     BRIEF_WRITTEN,
     BULLET_CHARS,
+    CLOSE_AT,
     CLOSE_ZONE,
     EARNINGS_DAYS,
     FOCUS_MAX,
@@ -156,6 +157,7 @@ __all__ = [
     "BRIEF_WRITTEN",
     "BULLET_CHARS",
     "BRIEF_AT",
+    "CLOSE_AT",
     "CLOSE_ZONE",
     "DailyAction",
     "EARNINGS_DAYS",
@@ -480,7 +482,8 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
     def num(name: str, spec: str = ",.2f") -> str:
         return format(float(action.get(name) or 0.0), spec)
 
-    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
+    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
+                signals.ENTRY_HIT, signals.ENTRY_NEAR):
         return translate(_criterion_key(key, action), lang,
                          **_criterion_slots(action, lang))
     if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):

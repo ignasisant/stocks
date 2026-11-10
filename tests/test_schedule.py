@@ -1,5 +1,6 @@
-"""Scheduled runs: the briefing, the day's numbers and the weekly review, each at
-the account's own time, filed as a chat thread and pushed to open it.
+"""Scheduled runs: the one summary a day (the AI briefing) at the account's own
+time or after the US close, filed as a chat thread and pushed to open it; and
+the Friday email.
 
 What is tested here:
 
@@ -7,11 +8,12 @@ What is tested here:
   catch-up window that stops a missed run going out at midnight, never twice
   the same local day, and across a daylight-saving change;
 * the settings as the app applies them, a bad stored value read as the
-  default; the next day's card built after each US close, whoever reads it;
+  default; the next day's card built after each US close, whoever reads it,
+  and pushed right then to a reader who takes it in the evening;
 * the tick: runs marked done even when they fail, and the ones it could not
   start left for the next tick;
-* each run's thread: listed with its job, replaced on a re-run of the same
-  day, and opened for the model with what it was;
+* each run's thread: listed with its job, rated, and opened for the model
+  with what it was — the retired runs' threads too;
 * the route: the API token alone, one tick at a time; the settings: a zone
   that does not exist and a job that does not exist are refused.
 """
@@ -100,11 +102,19 @@ def test_defaults_until_set_and_a_bad_value_reads_as_the_default():
         job: {"on": True, **schedule.DEFAULTS[job]} for job in schedule.JOBS
     }
     prefs = {
-        "notify_digest": False,
-        "schedules": {"digest": {"time": "25:99", "days": [5, 5, 9, 1]}},
+        "notify_briefing": False,
+        "schedules": {"briefing": {"time": "25:99", "days": [5, 5, 9, 1], "close": 1}},
     }
-    digest = schedule.slot(prefs, "digest")
-    assert digest == {"on": False, "time": "22:30", "days": [1, 5]}
+    briefing = schedule.slot(prefs, "briefing")
+    assert briefing == {"on": False, "time": "08:30", "days": [1, 5], "close": False}
+
+
+def test_one_summary_a_day_is_all_that_is_scheduled():
+    """The evening numbers and the Sunday review were retired: one push a
+    day, the briefing, and a stored setting for either is ignored."""
+    assert schedule.JOBS == ("briefing",)
+    prefs = {"notify_digest": True, "schedules": {"weekly": {"time": "18:00"}}}
+    assert set(schedule.slots(prefs)) == {"briefing"}
 
 
 def test_an_unknown_zone_is_the_default_one():
@@ -127,6 +137,43 @@ def test_an_unknown_zone_is_the_default_one():
 def test_the_card_is_built_after_each_us_close(utc, expected):
     assert schedule.card_due(at(utc), None) == expected
     assert schedule.card_due(at(utc), expected) is None  # once a session
+
+
+@pytest.mark.parametrize(
+    ("utc", "expected"),
+    [
+        ("2026-11-02T21:29", None),  # Monday 16:29 New York
+        ("2026-11-02T21:30", date(2026, 11, 2)),  # 16:30: the session closed
+        ("2026-07-06T20:30", date(2026, 7, 6)),  # summer time, same 16:30
+    ],
+)
+def test_an_evening_readers_card_is_built_at_the_close(utc, expected):
+    evening = {"schedules": {"briefing": {"close": True}}}
+    assert schedule.turnover(evening) == daily.CLOSE_AT
+    assert schedule.turnover({}) == daily.BRIEF_AT
+    assert schedule.card_due(at(utc), None, schedule.turnover(evening)) == expected
+
+
+def test_an_evening_slot_keeps_no_clock_and_goes_with_its_card():
+    evening = {
+        "schedules": {"briefing": {"time": "08:30", "days": WEEKDAYS, "close": True}}
+    }
+    # Its kept 08:30 never fires on its own.
+    assert schedule.due(schedule.slot(evening, "briefing"), MADRID,
+                        at("2026-11-02T07:31"), None) is None
+    monday = date(2026, 11, 2)
+    assert schedule.close_due(evening, monday, None) == monday
+    assert schedule.close_due(evening, monday, "2026-11-02") is None  # once a day
+    assert schedule.close_due({**evening, "notify_briefing": False}, monday, None) is None
+    assert schedule.close_due({}, monday, None) is None  # a morning reader
+    friday_off = {"schedules": {"briefing": {"days": [0], "close": True}}}
+    assert schedule.close_due(friday_off, date(2026, 11, 6), None) is None
+
+
+def test_switching_to_the_evening_does_not_send_a_second_one_that_day():
+    """The morning one went out today; tonight's close would be a second."""
+    evening = {"schedules": {"briefing": {"close": True}}}
+    assert schedule.close_due(evening, date(2026, 11, 3), "2026-11-03") is None
 
 
 def test_runs_are_spent_on_accounts_somebody_reads():
@@ -156,23 +203,23 @@ def test_a_run_that_fails_is_still_marked_run(account, monkeypatch):
     def broken(acc, day):
         raise RuntimeError("model down")
 
-    monkeypatch.setitem(schedule.RUNNERS, "digest", broken)
-    status = schedule.run(account, "digest", date(2026, 11, 2))
+    monkeypatch.setitem(schedule.RUNNERS, "briefing", broken)
+    status = schedule.run(account, "briefing", date(2026, 11, 2))
     assert status == "error: RuntimeError"
     stored = json.loads(account.paths.prefs.read_text())
-    assert stored["schedule_last"] == {"digest": "2026-11-02"}
+    assert stored["schedule_last"] == {"briefing": "2026-11-02"}
     assert stored["language"] == "en"
 
 
 def test_runs_past_the_budget_wait_for_the_next_tick(account, monkeypatch):
-    account.runs = [("digest", date(2026, 11, 2)), ("weekly", date(2026, 11, 2))]
+    account.runs = [("card", date(2026, 11, 2)), ("briefing", date(2026, 11, 2))]
     monkeypatch.setattr(schedule, "plan", lambda now: [account])
     ran: list[str] = []
     monkeypatch.setitem(
-        schedule.RUNNERS, "digest", lambda a, d: ran.append("digest") or "filed"
+        schedule.RUNNERS, "card", lambda a, d: ran.append("card") or "filed"
     )
     monkeypatch.setitem(
-        schedule.RUNNERS, "weekly", lambda a, d: ran.append("weekly") or "filed"
+        schedule.RUNNERS, "briefing", lambda a, d: ran.append("briefing") or "filed"
     )
 
     assert schedule.tick(at("2026-11-02T22:00"), budget_s=-1) == {
@@ -182,7 +229,7 @@ def test_runs_past_the_budget_wait_for_the_next_tick(account, monkeypatch):
     }
     assert ran == []
     assert schedule.tick(at("2026-11-02T22:00")) == {"due": 2, "ran": 2, "deferred": 0}
-    assert ran == ["digest", "weekly"]
+    assert ran == ["card", "briefing"]
 
 
 def test_the_plan_takes_only_whats_due(account, monkeypatch):
@@ -199,10 +246,30 @@ def test_the_plan_takes_only_whats_due(account, monkeypatch):
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
     # Monday 08:45 Madrid: the briefing already went out, nothing else is due.
     assert schedule.plan(at("2026-11-02T07:45")) == []
-    # 02:15: the next day's card, after the US after-hours, and the day's
-    # numbers still inside their catch-up.
+    # 02:15: the next day's card, after the US after-hours — and nothing
+    # else: there is no evening push any more.
     (due,) = schedule.plan(at("2026-11-03T01:15"))
-    assert due.runs == [("card", date(2026, 11, 2)), ("digest", date(2026, 11, 2))]
+    assert due.runs == [("card", date(2026, 11, 2))]
+
+
+def test_an_evening_reader_gets_the_card_pushed_as_it_is_written(account, monkeypatch):
+    account.paths.prefs.write_text(
+        json.dumps(
+            {
+                "language": "en",
+                "last_seen": "2026-11-01",
+                "schedules": {"briefing": {"time": "08:30", "close": True}},
+            }
+        )
+    )
+    monkeypatch.setattr(schedule, "_roster", lambda: [("jane", account.paths)])
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    # Monday 08:45 Madrid: the kept morning time sends nothing.
+    assert schedule.plan(at("2026-11-02T07:45")) == []
+    # 16:30 New York: the card, then its push, in the one tick.
+    monday = date(2026, 11, 2)
+    (due,) = schedule.plan(at("2026-11-02T21:30"))
+    assert due.runs == [("card", monday), ("briefing", monday)]
 
 
 # ------------------------------------------------------------------ the email
@@ -263,56 +330,9 @@ def chat(tmp_path) -> Path:
     return tmp_path / "chat.json"
 
 
-def test_a_run_is_a_thread_of_its_own_listed_with_its_job(chat, monkeypatch):
-    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
-    conversations.save_chat([{"role": "user", "content": "hola"}], chat)
-    active = conversations.active_conversation(chat)["id"]
-
-    cid = conversations.save_scheduled_thread(
-        "digest", "2026-11-02", "Day's numbers · Nov 2", "**€48,230**\n\n- NVDA +3%", chat
-    )
-
-    assert cid != active
-    assert conversations.active_conversation(chat)["id"] == active
-    listed = conversations.list_conversations(chat, cards=False)
-    meta = next(c for c in listed if c["id"] == cid)
-    assert meta["scheduled"] == "digest" and meta["title"] == "Day's numbers · Nov 2"
-
-
-def test_the_same_run_again_replaces_its_turn(chat, monkeypatch):
-    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
-    first = conversations.save_scheduled_thread("digest", "2026-11-02", "t", "one", chat)
-    again = conversations.save_scheduled_thread("digest", "2026-11-02", "t", "two", chat)
-    assert first == again
-    (turn,) = conversations.load_chat(chat, first)
-    assert turn["content"] == "two" and turn["scheduled"] == "digest"
-
-
-def test_a_run_can_be_rated_and_says_when_it_was_filed(chat, monkeypatch):
-    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
-    cid = conversations.save_scheduled_thread("digest", "2026-11-02", "t", "one", chat)
-    (turn,) = conversations.load_chat(chat, cid)
-    assert turn["id"] and turn["at"]
-    assert conversations.rate_turn(turn["id"], "up", chat)["thread"] == cid
-    (turn,) = conversations.load_chat(chat, cid)
-    assert turn["rating"] == "up"
-
-
-def test_a_run_filed_before_ids_gets_a_stable_one(chat, monkeypatch):
-    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
-    cid = conversations.save_scheduled_thread("digest", "2026-11-02", "t", "one", chat)
-    book = json.loads(chat.read_text())
-    for conv in book["conversations"]:
-        for m in conv["messages"]:
-            m.pop("id", None)
-    chat.write_text(json.dumps(book))
-    (turn,) = conversations.load_chat(chat, cid)
-    assert turn["id"] == f"{cid}-0"
-    assert conversations.load_chat(chat, cid)[0]["id"] == turn["id"]
-    assert conversations.rate_turn(turn["id"], "down", chat) is not None
-
-
-def test_the_model_is_told_what_the_thread_opened_with():
+def test_a_retired_runs_thread_still_opens_for_the_model():
+    """Threads the evening numbers filed before they were retired stay in
+    readers' books, and can still be written in."""
     history = [
         {
             "role": "assistant",
@@ -343,6 +363,32 @@ def test_the_briefing_thread_is_the_cards_marked(chat, monkeypatch):
     meta = next(c for c in listed if c["id"] == cid)
     assert meta["scheduled"] == "briefing" and meta["daily"] == "2026-11-02"
     assert not conversations.mark_scheduled("nope", "briefing", "2026-11-02", chat)
+    (turn,) = conversations.load_chat(chat, cid)
+    assert conversations.rate_turn(turn["id"], "up", chat)["thread"] == cid
+
+
+def test_the_briefing_notification_carries_the_way_to_its_clock(account, monkeypatch):
+    from stocks.views import briefing, daily_card
+
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    card = daily.DailyAction(day="2026-11-03", headline="Trim NVDA", bullets=["x"],
+                             lang="en", as_of="2026-11-02",
+                             items=[{"key": "k", "kind": "", "line": "x", "tickers": []}])
+    monkeypatch.setattr(daily_card, "request", lambda paths, lang, force: None)
+    monkeypatch.setattr(daily_card, "stored", lambda paths: card)
+    monkeypatch.setattr(briefing, "running", lambda paths: None)
+    now = datetime(2026, 11, 3, 8, 30, tzinfo=MADRID)
+    monkeypatch.setattr(briefing, "now_day", lambda paths=None: (now, date(2026, 11, 3)))
+    sent: list[dict] = []
+    monkeypatch.setattr(
+        schedule, "_push", lambda acc, message, job: sent.append(message) or 1
+    )
+
+    assert schedule._briefing(account, date(2026, 11, 3)) == "filed, pushed 1"
+    (message,) = sent
+    (change,) = message["actions"]
+    assert change["url"] == "/profile?tab=notify&edit=briefing"
+    assert change["title"] == "Change time"
 
 
 def test_the_notification_opens_the_thread():
@@ -409,7 +455,7 @@ def signed_in(client, sign_in, tmp_path, monkeypatch):
     paths = accounts.paths_for(EMAIL, None, users_dir=tmp_path / "users")
     paths.root.mkdir(parents=True)
     paths.watchlist.write_text("watchlist:\n  - ticker: AAPL\n")
-    paths.prefs.write_text(json.dumps({"currency": "EUR", "notify_weekly": True}))
+    paths.prefs.write_text(json.dumps({"currency": "EUR", "notify_briefing": True}))
     monkeypatch.setattr(accounts, "configured_owner", lambda: None)
     monkeypatch.setattr(
         accounts, "paths_for", lambda email, owner=None, users_dir=None: paths
@@ -424,26 +470,35 @@ def signed_in(client, sign_in, tmp_path, monkeypatch):
 
 def test_a_run_is_timed_and_switched_whole(signed_in):
     res = signed_in.put(
-        "/v1/schedules/weekly", json={"on": False, "time": "7:05", "days": [6, 5, 5]}
+        "/v1/schedules/briefing", json={"on": False, "time": "7:05", "days": [6, 5, 5]}
     )
     assert res.status_code == 200
-    assert res.json()["schedules"]["weekly"] == {
-        "on": False,
-        "time": "07:05",
-        "days": [5, 6],
+    assert res.json()["schedules"] == {
+        "briefing": {"on": False, "time": "07:05", "days": [5, 6], "close": False}
     }
-    assert res.json()["notify_weekly"] is False
-    assert res.json()["schedules"]["digest"]["time"] == "22:30"  # untouched
+    assert res.json()["notify_briefing"] is False
     stored = json.loads(signed_in.paths.prefs.read_text())
-    assert stored["schedules"] == {"weekly": {"time": "07:05", "days": [5, 6]}}
+    assert stored["schedules"] == {
+        "briefing": {"time": "07:05", "days": [5, 6], "close": False}
+    }
+
+
+def test_the_summary_moves_to_the_evening_keeping_its_time(signed_in):
+    res = signed_in.put(
+        "/v1/schedules/briefing",
+        json={"on": True, "time": "08:30", "days": [0, 1, 2, 3, 4], "close": True},
+    )
+    slot = res.json()["schedules"]["briefing"]
+    assert slot["close"] is True and slot["time"] == "08:30"
 
 
 @pytest.mark.parametrize(
     "job, body",
     [
         ("lunch", {"on": True, "time": "12:00", "days": [0]}),
-        ("digest", {"on": True, "time": "noon", "days": [0]}),
-        ("digest", {"on": True, "time": "12:00", "days": [7]}),
+        ("digest", {"on": True, "time": "12:00", "days": [0]}),  # retired
+        ("briefing", {"on": True, "time": "noon", "days": [0]}),
+        ("briefing", {"on": True, "time": "12:00", "days": [7]}),
     ],
 )
 def test_a_run_the_app_cannot_keep_is_refused(signed_in, job, body):
@@ -460,7 +515,7 @@ def test_the_browser_sends_its_zone_and_a_made_up_one_is_refused(signed_in):
 
 def test_a_token_cannot_time_anybodys_runs(signed_in):
     res = TestClient(fastapi_app).put(
-        "/v1/schedules/digest",
+        "/v1/schedules/briefing",
         params={"account": EMAIL},
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={"on": True, "time": "12:00", "days": [0]},

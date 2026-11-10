@@ -166,6 +166,11 @@ ALERT_HIT = "alert_hit"
 # moment, that this is when they would act.
 CRITERION_HIT = "criterion_hit"
 CRITERION_NEAR = "criterion_near"
+# And their buy zones, the other side (`journal.BUY_RULES`): a name reaching
+# the level they would buy it at. A candidate, not money at stake, so under
+# an exit rule and a fired alert.
+ENTRY_HIT = "entry_hit"
+ENTRY_NEAR = "entry_near"
 # A held company told the SEC something that puts its accounts or its listing
 # in doubt (`filing_signals`). Nobody has to have written a rule for it: an
 # auditor walking or a restatement is a re-read for any holder.
@@ -212,6 +217,7 @@ _URGENCY = {
     CRITERION_HIT: 92,
     ALERT_HIT: 90,
     FILING_FLAG: 88,
+    ENTRY_HIT: 80,
     HARVEST: 75,
     EARNINGS_RESULT: 72,
     EARNINGS: 70,
@@ -219,6 +225,7 @@ _URGENCY = {
     CONTRIBUTION_DUE: 64,
     TAX_DEADLINE: 62,
     CRITERION_NEAR: 61,
+    ENTRY_NEAR: 46,
     ALERT_NEAR: 60,
     MARKET: 58,
     MACRO_EVENT: 57,
@@ -250,6 +257,7 @@ WATCHED_DISCOUNT = 22
 _CAP = {
     CRITERION_HIT: 3,
     CRITERION_NEAR: 2,
+    ENTRY_HIT: 2,
     ALERT_HIT: 3,
     ALERT_NEAR: 2,
     FILING_FLAG: 2,
@@ -268,6 +276,8 @@ _CAP_DEFAULT = 1
 _FAMILY = {
     CRITERION_HIT: "criterion",
     CRITERION_NEAR: "criterion",
+    ENTRY_HIT: "entry",
+    ENTRY_NEAR: "entry",
     ALERT_HIT: "alert",
     ALERT_NEAR: "alert",
     EARNINGS: "earnings",
@@ -287,8 +297,8 @@ _FAMILY = {
     PLAN_MISSING: "plan",
     CASH_STALE: "plan",
 }
-_FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2,
-               "plan": 2}
+_FAMILY_CAP = {"criterion": 3, "entry": 2, "alert": 3, "earnings": 3, "macro": 2,
+               "tax": 2, "plan": 2}
 
 # The kinds a reader would see word for word again tomorrow, and so the ones
 # `decay()` sinks. Left out on purpose: events (an alert crossing, a print, a
@@ -297,7 +307,7 @@ _FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2,
 _STANDING = frozenset(
     {
         HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR,
-        TAX_BRACKET, CRITERION_NEAR, PLAN_DRIFT, PLAN_LIMIT, RESERVE,
+        TAX_BRACKET, CRITERION_NEAR, ENTRY_NEAR, PLAN_DRIFT, PLAN_LIMIT, RESERVE,
         NO_EXIT_RULE, CASH_STALE,
     }
 )
@@ -332,6 +342,8 @@ _MATERIAL: dict[str, dict] = {
     # A rule fires once, on its hit day; a new level is a new rule.
     CRITERION_HIT: {"rule": None, "level": None, "hit_day": None},
     CRITERION_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
+    ENTRY_HIT: {"rule": None, "level": None, "hit_day": None},
+    ENTRY_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     ALERT_HIT: {"rule": None, "level": None},
     ALERT_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     # A filing is said once; a later one about the same name is news again.
@@ -371,6 +383,8 @@ _MATERIAL: dict[str, dict] = {
 _COOLDOWN: dict[str, int | None] = {
     CRITERION_HIT: None,
     CRITERION_NEAR: 7,
+    ENTRY_HIT: None,
+    ENTRY_NEAR: 7,
     ALERT_HIT: None,
     ALERT_NEAR: 7,
     FILING_FLAG: None,
@@ -435,7 +449,7 @@ class Signal:
 
 def key_of(kind: str, data: dict) -> str:
     """`Signal.key` from a kind and its dict — what a stored action carries."""
-    if kind in (CRITERION_HIT, CRITERION_NEAR):
+    if kind in (CRITERION_HIT, CRITERION_NEAR, ENTRY_HIT, ENTRY_NEAR):
         # A ticker can carry several rules; each is its own trigger.
         return f"{kind}:{data.get('ticker') or ''}:{data.get('rule') or ''}"
     subject = (
@@ -518,7 +532,8 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
 def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
     """The reader's exit rules, already measured (`journal.measured`, after
     `journal.mark_hit`): one hit in the last few days, and one armed rule
-    within CRITERION_NEAR of its level.
+    within CRITERION_NEAR of its level. Their buy rules the same way, as
+    ENTRY_HIT and ENTRY_NEAR.
 
     A hit rule stays hit in the journal until the reader retires it; the card
     says so once (`_MATERIAL` keys it on the hit day, with no cooldown), and
@@ -548,16 +563,16 @@ def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
             **{k: str(row[k])[:200] for k in ("quote", "source", "pillar",
                                                "verdict") if row.get(k)},
         }
+        buy = journal.rule_side(data["rule"]) == "buy"
+        hit, near = (ENTRY_HIT, ENTRY_NEAR) if buy else (CRITERION_HIT, CRITERION_NEAR)
         if row.get("state") == "hit":
             if data["hit_day"] and data["hit_day"] >= fresh:
-                out.append(Signal(CRITERION_HIT, str(row["ticker"]),
-                                  _URGENCY[CRITERION_HIT], data))
+                out.append(Signal(hit, str(row["ticker"]), _URGENCY[hit], data))
             continue
         gap = finite(row.get("gap_pct"))
         if row.get("state") == "open" and gap is not None \
                 and 0 < gap <= journal.CRITERION_NEAR:
-            out.append(Signal(CRITERION_NEAR, str(row["ticker"]),
-                              _URGENCY[CRITERION_NEAR], data))
+            out.append(Signal(near, str(row["ticker"]), _URGENCY[near], data))
     return out
 
 
@@ -735,7 +750,11 @@ def _unguarded(weights, kind_of, holdings, criteria, cap: float) -> list[Signal]
     with neither an exit rule (`criteria`) nor a price alert on it — the
     position the reader has said least about what would make them sell.
     Funds are left out: a broad fund at a big weight is the plan working."""
-    guarded = {str(r.get("ticker")) for r in criteria or () if isinstance(r, dict)}
+    from stocks.chat import journal
+
+    guarded = {str(r.get("ticker")) for r in criteria or ()
+               if isinstance(r, dict)
+               and journal.rule_side(str(r.get("rule") or "")) == "exit"}
     guarded |= {h.ticker for h in holdings or () if getattr(h, "alerts", None)}
     floor = cap * UNGUARDED_SHARE
     best: tuple[str, float] | None = None

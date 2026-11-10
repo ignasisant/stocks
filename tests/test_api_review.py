@@ -969,3 +969,27 @@ def test_the_reserve_ceiling_is_where_idle_cash_is_named(client, book):
     assert [n for n in _get(client)["notes"] if n["key"] == "cash_heavy"]
     _plan(book, reserve={"max_pct": 90})
     assert not [n for n in _get(client)["notes"] if n["key"] == "cash_heavy"]
+
+
+def test_a_buy_or_an_add_is_read_against_the_entry_checklist(client, book):
+    prefs = json.loads(book.prefs.read_text())
+    prefs["entry_criteria"] = {"rules": [{"rule": "op_margin_min", "level": 30},
+                                         {"rule": "pe_fwd_max", "level": 8},
+                                         {"rule": "weight_max", "level": 2}]}
+    book.prefs.write_text(json.dumps(prefs))
+    body = _get(client)
+    held = {r["ticker"]: r for r in body["held"]}
+    states = {line["rule"]: line["state"] for line in held["ADBE"]["entry"]}
+    # ADBE weighs 3 % of the book: the add is past the 2 % line.
+    assert states == {"op_margin_min": "pass", "pe_fwd_max": "fail",
+                      "weight_max": "fail"}
+    assert held["AMD"]["entry"] == []  # a sale is not held to it
+    bkng = next(r for r in body["candidates"] if r["ticker"] == "BKNG")
+    # Not held, so the weight line passes; the verdict stays the page's own.
+    assert bkng["verdict"] == "buy"
+    assert {line["rule"]: line["state"] for line in bkng["entry"]}["weight_max"] == "pass"
+
+
+def test_without_a_checklist_no_row_carries_entry_lines(client, book):
+    body = _get(client)
+    assert all(not r.get("entry") for r in body["held"] + body["candidates"])

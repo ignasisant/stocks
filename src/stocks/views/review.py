@@ -56,9 +56,11 @@ from stocks.data.listing import listing_currencies, quote_unit
 from stocks.frames import midnight
 from stocks.jsonsafe import num as _num
 from stocks.portfolio import consistency, demo, tax
+from stocks.portfolio import entry as entry_rules
 from stocks.portfolio import plan as plans
 from stocks.portfolio.tax import prefs as tax_prefs
 from stocks.schemas import (
+    EntryCheck,
     NameReturns,
     Review,
     ReviewDrift,
@@ -775,6 +777,16 @@ def judge(
     # which kinds of asset take no more money, its contribution sizes what
     # new money buys. Without one every line is the page's own.
     investor = plans.load(stored)
+    # And the lines they hold a buy or an add to: read on those rows, shown
+    # beside the verdict, never weighed into it (`portfolio.entry`; aliased,
+    # since `entry` is a watchlist row below).
+    checklist = entry_rules.load(stored)
+
+    def entry_lines(verdict, weight: float | None) -> list[EntryCheck]:
+        if verdict.verdict not in (engine.ADD, engine.BUY):
+            return []
+        return [EntryCheck(**r.as_dict())
+                for r in entry_rules.check(checklist, verdict.metrics, weight)]
 
     # The held names are the ledger's, in the priced table's order; the prices
     # and the risk split download while the names' KPIs are fetched.
@@ -1024,6 +1036,7 @@ def judge(
                 new_money=_num(wish),
                 tax=tax_due,
                 buy_after=after,
+                entry=entry_lines(verdict, weight),
                 **watch(label, symbol),
             )
         )
@@ -1079,6 +1092,7 @@ def judge(
                 buy_after=buy_after(ticker, symbol)
                 if verdict.verdict == engine.BUY
                 else None,
+                entry=entry_lines(verdict, None),
                 **watch(ticker, symbol),
             )
         )

@@ -1114,6 +1114,39 @@ export type EntryBody = {
   "cost"?: number | null;
 };
 
+export type EntryCheck = {
+  "rule": string;
+  "level": number;
+  "value": number | null;
+  "state": string;
+};
+
+export type EntryCriteria = {
+  "rules": EntryLine[];
+  "note": string;
+  "set": boolean;
+};
+
+export type EntryFit = {
+  "ticker": string;
+  "set": boolean;
+  "met": number;
+  "failed": number;
+  "unknown": number;
+  "total": number;
+  "lines": EntryCheck[];
+};
+
+export type EntryLine = {
+  "rule": string;
+  "level": number;
+};
+
+export type EntryWrite = {
+  "rules"?: EntryLine[];
+  "note"?: string;
+};
+
 export type EpsRevisionRow = {
   "period": string;
   "current": number | null;
@@ -2204,8 +2237,6 @@ export type Prefs = {
   "tax_niit": boolean;
   "tax_church_rate": number;
   "tax_subnational_rate": number;
-  "notify_digest": boolean;
-  "notify_weekly": boolean;
   "notify_weekly_email": boolean;
   "notify_alerts": boolean;
   "setup_card_dismissed": boolean;
@@ -2230,8 +2261,6 @@ export type PrefsPatch = {
   "tax_niit"?: boolean | null;
   "tax_church_rate"?: number | null;
   "tax_subnational_rate"?: number | null;
-  "notify_digest"?: boolean | null;
-  "notify_weekly"?: boolean | null;
   "notify_weekly_email"?: boolean | null;
   "notify_alerts"?: boolean | null;
   "notify_briefing"?: boolean | null;
@@ -2742,6 +2771,7 @@ export type ReviewRow = {
   "watched": boolean;
   "favorite": boolean;
   "lists": string[];
+  "entry": EntryCheck[];
 };
 
 export type Risk = {
@@ -2854,6 +2884,7 @@ export type ScheduleSlot = {
   "on": boolean;
   "time": string;
   "days": number[];
+  "close": boolean;
 };
 
 export type ScorePoint = {
@@ -3814,6 +3845,7 @@ export interface Responses {
   "/nav": Navigation;
   "/onboarding": Onboarding;
   "/plan": InvestorPlan;
+  "/plan/entry": EntryCriteria;
   "/portfolio/attribution": Attribution;
   "/portfolio/changes": Changes;
   "/portfolio/dividends": Dividends;
@@ -3855,6 +3887,7 @@ export interface Responses {
   "/ticker/{symbol}/crypto/holding": CryptoHolding;
   "/ticker/{symbol}/crypto/positioning": CryptoPositioning | null;
   "/ticker/{symbol}/dcf": Dcf;
+  "/ticker/{symbol}/entry": EntryFit;
   "/ticker/{symbol}/events": PriceEvents;
   "/ticker/{symbol}/financials": Financials;
   "/ticker/{symbol}/fund": Fund;

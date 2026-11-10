@@ -305,7 +305,7 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
                     account=user.label,
                     error_type=type(exc).__name__,
                 )
-    # A book nobody opened lately is still read: the morning card, the digest
+    # A book nobody opened lately is still read: the morning card, the briefing
     # and the alerts price it every day, and a split it lacks is wrong in each
     # (a dormant book's BYND 1:30, triage 2026-11-03). Last and under the same
     # budget; the sweep's stamp makes an unchanged book a file read, and the

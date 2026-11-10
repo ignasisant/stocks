@@ -662,6 +662,8 @@ WRITES = {
     ("/v1/plan", "put"),
     # Only the contribution block: the Projection tab's "use in my plan".
     ("/v1/plan/contribution", "put"),
+    # The entry checklist, replaced whole: Review and the ticker page read it.
+    ("/v1/plan/entry", "put"),
     ("/v1/watchlist", "post"),
     ("/v1/watchlist/{ticker}", "patch"),
     ("/v1/watchlist/{ticker}", "delete"),

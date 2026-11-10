@@ -144,6 +144,17 @@ def test_the_query_buried_in_a_longer_name_proves_nothing():
     assert search.world_first("HERMES", [("FHI", "Federated Hermes, Inc.")]) is True
 
 
+def test_a_name_the_query_only_extends_is_not_a_typo_of_it():
+    """"spacex" scores .91 against the "Space" of Space Asset Acquisition —
+    a shorter word, not a misspelling, so SpaceX on the worldwide side leads."""
+    sec = [
+        ("EXR", "Extra Space Storage Inc."),
+        ("MDA", "MDA Space Ltd."),
+        ("SAAQ", "Space Asset Acquisition Corp."),
+    ]
+    assert search.world_first("SPACEX", sec) is True
+
+
 # ----------------------------------------------------------- the flat order
 
 

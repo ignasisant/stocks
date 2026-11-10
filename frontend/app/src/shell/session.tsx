@@ -42,8 +42,6 @@ export type Prefs = {
   tax_niit: boolean;
   tax_church_rate: number;
   tax_subnational_rate: number;
-  notify_digest: boolean;
-  notify_weekly: boolean;
   /** The Friday email, on for every imported book until switched off. */
   notify_weekly_email: boolean;
   notify_alerts: boolean;
@@ -61,12 +59,15 @@ export type Prefs = {
   notify_briefing?: boolean;
   /** The IANA zone the scheduled runs keep time in; null until the app sent one. */
   timezone?: string | null;
-  /** The scheduled runs (`briefing`, `digest`, `weekly`), defaults filled in. */
+  /** The scheduled runs (`briefing`, the one summary a day), defaults filled in. */
   schedules?: Record<string, Schedule>;
 };
 
-/** One scheduled run: on or off, its local "HH:MM", its weekdays (Monday = 0). */
-export type Schedule = { on: boolean; time: string; days: number[] };
+/**
+ * One scheduled run: on or off, its local "HH:MM", its weekdays (Monday = 0).
+ * `close` sends it after the US close instead, the time kept for going back.
+ */
+export type Schedule = { on: boolean; time: string; days: number[]; close?: boolean };
 
 /**
  * Settings and a refetch on both arms, `me` on only one.

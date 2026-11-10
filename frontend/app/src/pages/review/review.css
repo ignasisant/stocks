@@ -1886,3 +1886,11 @@
     grid-column: 1;
   }
 }
+
+/* The reader's own entry criteria a buy or an add breaks: a warning under
+   the reasons, never a verdict. */
+.ag-rev-entry {
+  margin: 0.25rem 0 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-warn);
+}

@@ -1147,3 +1147,68 @@ def test_many_holdings_write_once_and_an_unusable_one_writes_nothing(path, monke
     assert [len(w) for w in done] == [1, 0, 2] and len(saves) == 1
     assert done[0][0].ticker == "NVDA" and done[0][0].evidence == "AI capex"
     assert {e.ticker for e in journal.criteria(journal.load(path))} == {"NVDA", "MSFT"}
+
+
+# ---------------------------------------------------------------- buy rules
+
+
+def test_buy_rules_are_cleaned_like_their_exit_twins():
+    assert journal.clean_rules([
+        {"rule": "buy_below", "level": "80"},
+        {"rule": "buy_drawdown_high", "level": 120},  # a drawdown past 100 %
+        {"rule": "buy_gross_margin_above", "level": 40, "quarters": 9},
+        {"rule": "buy_pe_fwd_below", "level": 25},
+        {"rule": "buy_pe_fwd_below", "level": 0},  # no line, the 25 stands
+    ]) == [
+        {"rule": "buy_below", "level": 80.0},
+        {"rule": "buy_gross_margin_above", "level": 40.0,
+         "quarters": journal.MAX_QUARTERS},
+        {"rule": "buy_pe_fwd_below", "level": 25.0},
+    ]
+    assert journal.clean_rules([{"rule": "buy_pe_fwd_below",
+                                 "level": journal.MAX_PE + 1}]) == []
+    assert journal.rule_side("buy_below") == "buy"
+    assert journal.rule_side("below") == "exit"
+
+
+def test_a_buy_price_rule_reads_as_its_exit_twin():
+    prices = [100.0, 90.0, 80.0]
+    assert journal.measure_rule("buy_below", 85.0, prices, None) == \
+        journal.measure_rule("below", 85.0, prices, None)
+    value, gap, met = journal.measure_rule("buy_drawdown_high", 15.0, prices, None)
+    assert value == -20.0 and gap == -5.0 and met
+
+
+def test_a_buy_fundamental_rule_is_met_when_every_quarter_reaches_it():
+    met = journal.measure_fundamental("buy_gross_margin_above", 38.0, 2, BOOK)
+    assert met == {"value": 38.0, "gap": 0.0, "met": True,
+                   "quarter_end": "2026-09-30"}
+    short = journal.measure_fundamental("buy_gross_margin_above", 39.0, 2, BOOK)
+    assert short["gap"] == 1.0 and not short["met"]
+
+
+def test_a_forward_loss_is_never_under_a_pe_line():
+    assert journal.measure_value(25.0, {"pe_fwd": 20.0}) == \
+        {"value": 20.0, "gap": -5.0, "met": True}
+    assert journal.measure_value(25.0, {"pe_fwd": -4.0}) == \
+        {"value": -4.0, "gap": None, "met": False}
+    assert journal.measure_value(25.0, {}) is None
+
+
+def test_buy_and_exit_rules_are_read_apart(path):
+    journal.add_criteria(path, "AMD", [{"rule": "below", "level": 90}], DAY)
+    journal.add_criteria(path, "NVDA", [{"rule": "buy_below", "level": 100},
+                                        {"rule": "buy_pe_fwd_below", "level": 30}],
+                         DAY)
+    entries = journal.load(path)
+    assert {e.ticker for e in journal.criteria(entries, side="exit")} == {"AMD"}
+    assert {e.ticker for e in journal.criteria(entries, side="buy")} == {"NVDA"}
+    exits = journal.criteria_status(entries, {"AMD"})
+    assert [h["ticker"] for h in exits["holdings"]] == ["AMD"]
+    assert exits["not_held"] == []
+    buys = journal.entry_status(entries, {"AMD"})
+    assert [(n["ticker"], n["held"]) for n in buys["names"]] == [("NVDA", False)]
+    assert {r["rule"] for r in buys["names"][0]["rules"]} == \
+        {"buy_below", "buy_pe_fwd_below"}
+    assert all(r["side"] == "buy" for r in buys["names"][0]["rules"])
+    assert buys["met"] == []

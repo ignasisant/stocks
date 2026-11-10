@@ -998,7 +998,7 @@ _free_dead: set[str] = set()
 # groq's 429 says how long to wait ("Please try again in 1.6125s"). Up to this
 # is worth sitting out once on the same backend; past it, the next one's turn.
 _MAX_RETRY_WAIT_S = 5.0
-# What a caller nobody is watching (`patient()`: a scheduled card, a digest
+# What a caller nobody is watching (`patient()`: a scheduled card, an alert
 # line) sits out instead. groq's 8k tokens a minute fit about one card, so the
 # next card's 429 names most of a minute; past this wait, the free models
 # behind groq still get their turn.
@@ -1167,7 +1167,7 @@ def installed(module: str) -> bool:
 
 def _free_secrets() -> dict:
     cfg = secrets_env.section("free_llm")
-    # Env overlay so headless jobs (GitHub Actions digest) can run the chain
+    # Env overlay so headless jobs (GitHub Actions alerts) can run the chain
     # without a secrets.toml: FREE_LLM_GROQ, FREE_LLM_GROQ_MODEL, ...
     import os
 

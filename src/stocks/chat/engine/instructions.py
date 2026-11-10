@@ -231,8 +231,10 @@ def system_prompt(profile: dict, context: str,
 # thread starts with the card — an assistant turn nobody asked for — and a
 # conversation sent to a model has to open with the user.
 CARD_OPENER = "My daily action card on Home, for {day}."
-# The same for the other scheduled runs (`notify/schedule.py`): what each one
-# was, said as the reader would have asked for it.
+# The same for the runs `notify/schedule.py` filed before the evening numbers
+# and the weekly review were retired (2026-11-10): what each one was, said as
+# the reader would have asked for it. Their threads stay in readers' books and
+# can still be written in.
 SCHEDULED_OPENERS = {
     "digest": "My end-of-day numbers for {day}.",
     "weekly": "My weekly review, for the week to {day}.",
@@ -243,7 +245,7 @@ def recent(history: list[dict], limit: int = MAX_CONTEXT_MSGS) -> list[dict]:
     """The tail of the conversation sent to the model. Trims any leading
     assistant turn so the slice still opens with a user message (Anthropic
     requires it; the others don't care) — except a daily card's
-    (`auth.save_card_thread`) or a scheduled run's (`save_scheduled_thread`),
+    (`auth.save_card_thread`) or a retired scheduled run's (`SCHEDULED_OPENERS`),
     which is what the thread is about and gets its opener in front instead.
     Rebuilt as bare role/content dicts — stored turns carry extra keys (e.g.
     "skills") the provider APIs reject."""

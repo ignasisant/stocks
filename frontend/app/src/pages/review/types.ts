@@ -58,6 +58,19 @@ export type ReviewRow = {
   watched: boolean;
   favorite: boolean;
   lists: string[];
+  /** The reader's entry checklist read on a buy or an add, empty otherwise;
+   * a warning beside the verdict, never a change to it. Optional for an
+   * older server. */
+  entry?: EntryCheck[];
+};
+
+/** One checklist line on one company: `value` in the line's own unit (a
+ * percent or a multiple), null when the feed lacks it. */
+export type EntryCheck = {
+  rule: string;
+  level: number;
+  value: number | null;
+  state: "pass" | "fail" | "unknown";
 };
 
 export type Review = {

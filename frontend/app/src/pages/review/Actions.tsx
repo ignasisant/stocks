@@ -35,8 +35,8 @@ import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
 import { useReturns } from "./returns";
 import { planMoves, waitingMoves } from "./filter";
-import { longDay, verdictTone } from "./format";
-import type { Review, ReviewInvestorPlan, ReviewRow } from "./types";
+import { entryText, longDay, verdictTone } from "./format";
+import type { EntryCheck, Review, ReviewInvestorPlan, ReviewRow } from "./types";
 import { jurisdictionLabel } from "../portfolio/format";
 import { money, percent } from "../../shell/format";
 
@@ -454,6 +454,7 @@ function Move({
         <>
           <div className="ag-rev-mv-why">
             <Reasons reasons={row.reasons} limit={3} />
+            <EntryBreaks lines={row.entry} />
           </div>
           {note ? <span className="ag-rev-mv-note">{note}</span> : null}
           <span className="ag-rev-mv-more">
@@ -462,6 +463,25 @@ function Move({
         </>
       )}
     </li>
+  );
+}
+
+/**
+ * The reader's own entry criteria a buy or an add breaks, said under its
+ * reasons. A warning only: the verdict stays the review's, and a line the feed
+ * could not read is not counted as broken.
+ */
+function EntryBreaks({ lines }: { lines?: EntryCheck[] }) {
+  const t = useT();
+  const lang = useLang();
+  const broken = (lines ?? []).filter((line) => line.state === "fail");
+  if (!broken.length) return null;
+  return (
+    <p className="ag-rev-entry" title={t("review.entry_help")}>
+      {t("review.entry_breaks", {
+        lines: broken.map((line) => entryText(line, t, lang)).join(" · "),
+      })}
+    </p>
   );
 }
 

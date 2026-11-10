@@ -8,6 +8,9 @@
  * full (`chat/brief.py`): the company's lenses, the reader's position, the
  * report dates, the answer's structure. Always in a new conversation — an
  * analysis of LEU is not a follow-up to the thread about CBRS on screen.
+ * The last item is not about the share: it asks the assistant to draft the
+ * reader's entry checklist (`chat/entry_builder.py`), which the page's
+ * "N of M met" line reads, so it carries no brief.
  *
  * Only a share has angles: a fund, a coin or a money-market fund gets the
  * one press, still briefed by the server.
@@ -23,7 +26,9 @@ import {
 import { askAssistant, type Brief } from "../../shell/assistant";
 import { useT } from "../../shell/i18n";
 
-const MORE: readonly Exclude<Brief, "full">[] = ["bear", "earnings", "fit"];
+type Angle = Exclude<Brief, "full"> | "entry";
+
+const MORE: readonly Angle[] = ["bear", "earnings", "fit", "entry"];
 
 /** The page's side gutter the menu keeps clear of (DS phone gutter). */
 const GUTTER = 16;
@@ -51,10 +56,14 @@ export function AiAsk({
   const menu = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const ask = (brief: Brief) => {
+  const ask = (angle: Brief | "entry") => {
     setOpen(false);
-    const key = brief === "full" ? prompt : `ticker.ai_prompt_${brief}`;
-    askAssistant(t(key, { ticker, name }), { fresh: true, brief });
+    if (angle === "entry") {
+      askAssistant(t("ticker.ai_prompt_entry"), { fresh: true });
+      return;
+    }
+    const key = angle === "full" ? prompt : `ticker.ai_prompt_${angle}`;
+    askAssistant(t(key, { ticker, name }), { fresh: true, brief: angle });
   };
 
   useEffect(() => {
@@ -142,22 +151,22 @@ export function AiAsk({
               aria-label={t("ticker.ai_more")}
               onKeyDown={walk}
             >
-              {MORE.map((brief, n) => (
+              {MORE.map((angle, n) => (
                 <button
-                  key={brief}
+                  key={angle}
                   ref={(el) => {
                     items.current[n] = el;
                   }}
                   type="button"
                   role="menuitem"
                   className="tk-ai-item"
-                  onClick={() => ask(brief)}
+                  onClick={() => ask(angle)}
                 >
                   <span className="tk-ai-item-label">
-                    {t(`ticker.ai_angle_${brief}`)}
+                    {t(`ticker.ai_angle_${angle}`)}
                   </span>
                   <span className="tk-ai-item-hint">
-                    {t(`ticker.ai_angle_${brief}_hint`)}
+                    {t(`ticker.ai_angle_${angle}_hint`)}
                   </span>
                 </button>
               ))}

@@ -821,18 +821,19 @@ def held_symbols(paths) -> set[str]:
 
 def with_fired(actions: list[dict], fired: list[dict], held: set[str],
                day: date) -> list[dict]:
-    """The card's candidate actions with the exit rules the job found met
-    today put first, the family's cap kept (`signals._FAMILY_CAP`): the
+    """The card's candidate actions with the exit and buy rules the job found
+    met today put first, each family's cap kept (`signals._FAMILY_CAP`): the
     reader's own rule outranks anything the app computed."""
     new = [s.to_dict() for s in signals._criterion_signals(fired, held, day)]
     keys = {a["key"] for a in new}
     rest = [a for a in actions if a.get("key") not in keys]
-    cap = signals._FAMILY_CAP["criterion"]
-    out, crit = [], 0
+    seen: dict[str, int] = {}
+    out = []
     for a in [*new, *rest]:
-        if a.get("kind") in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
-            crit += 1
-            if crit > cap:
+        family = signals._FAMILY.get(str(a.get("kind") or ""))
+        if family in ("criterion", "entry"):
+            seen[family] = seen.get(family, 0) + 1
+            if seen[family] > signals._FAMILY_CAP[family]:
                 continue
         out.append(a)
     return out
@@ -1210,6 +1211,7 @@ def start(
             judge=exit_judge.make_judge(
                 prefs, spend_free=lambda p: spend_for_judge(p, spend)),
             budget_s=SLOW_RULES_BUDGET_S,
+            metrics_of=_metrics,
         ) or []
         if fired:
             facts["actions"] = with_fired(facts.get("actions") or [], fired,
@@ -1306,8 +1308,8 @@ def start(
 def now_day(paths=None) -> tuple[datetime, date]:
     """The reader's now, in the account's zone (`timezone`, sent by the
     browser; Madrid with no account or one whose settings do not read), and
-    the action day it falls in (`daily.action_day`: turned over at the US
-    close, the same moment for every reader).
+    the action day it falls in (`daily.action_day`: turned over after the US
+    close, at the account's `schedule.turnover`).
     """
     from stocks.notify import schedule
 
@@ -1318,7 +1320,7 @@ def now_day(paths=None) -> tuple[datetime, date]:
         except Exception:  # noqa: BLE001 — read as the defaults
             prefs = {}
     now = datetime.now(schedule.zone(prefs))
-    return now, daily.action_day(now)
+    return now, daily.action_day(now, schedule.turnover(prefs))
 
 
 # ------------------------------------------------------------------ analysis
@@ -1349,6 +1351,12 @@ def _quarters(ticker: str) -> tuple[list, str | None]:
 
     quarters = fetch_quarters(ticker)
     return quarters, fetch_statement_currency(ticker) if quarters else None
+
+
+def _metrics(ticker: str) -> dict:
+    """The Review page's figures for one name (forward P/E and the rest), as
+    a buy rule on valuation reads them."""
+    return loaders.review_metrics(ticker) or {}
 
 
 @ttl_cache(6 * 3600.0, max_entries=64)

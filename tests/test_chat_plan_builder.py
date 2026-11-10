@@ -92,6 +92,19 @@ def test_a_half_typed_amount_does_not_break_the_draft():
         pb.amount_of("12,,")
 
 
+def test_a_redraft_echoes_the_picks_so_the_chip_stays_pressed():
+    # The drawer redraws its data from the surface's messages: without `/a`
+    # back, a pressed chip snaps to the answer the card opened on.
+    k = pb.known({}, {})
+    picks, view = (m["updateDataModel"] for m in pb.moved(
+        k, {"cushion": "short", "risk": "yolo", "amount": "1.500,5"}, tr))
+    assert picks["path"] == "/a" and view["path"] == "/view"
+    assert set(picks["value"]) == {*pb.CHOICES, pb.AMOUNT, pb.INVESTABLE, "every"}
+    assert picks["value"]["cushion"] == "short"
+    assert picks["value"]["risk"] == "balanced"
+    assert picks["value"]["amount"] == "1.500,5"
+    assert picks["value"]["investable"] == ""
+
 def test_the_card_is_one_well_formed_surface():
     k = pb.known({}, {"stocks": 40.0, "cash": 60.0})
     messages = pb.surface(k, tr)

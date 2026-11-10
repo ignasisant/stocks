@@ -158,11 +158,11 @@ def test_finishing_the_tour_retires_it(client, account, signed_in):
 def test_the_stamp_leaves_the_rest_of_the_settings_alone(
     client, account, signed_in
 ):
-    account.prefs.write_text(json.dumps({"currency": "USD", "notify_digest": False}))
+    account.prefs.write_text(json.dumps({"currency": "USD", "notify_alerts": False}))
     signed_in.post("/v1/onboarding/seen", json={})
     stored = json.loads(account.prefs.read_text())
     assert stored["currency"] == "USD"
-    assert stored["notify_digest"] is False
+    assert stored["notify_alerts"] is False
 
 
 def test_a_token_cannot_mark_an_announcement_as_read(client, account):

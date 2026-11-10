@@ -130,7 +130,7 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     from stocks.i18n import translate
 
     rule = str(action.get("rule") or "below")
-    price = rule == "below"
+    price = rule in ("below", "buy_below", "buy_pe_fwd_below")
     level = float(action.get("level") or 0)
     value = float(action.get("value") or 0)
     text = translate(f"home.daily_crit_{rule}", lang,
@@ -145,10 +145,10 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     return {
         "ticker": str(action.get("ticker") or ""),
         "rule": text,
-        "value": fmt_num(value, 2, lang) if price
-        else f"{fmt_num(value, 1, lang)}%",
+        "value": fmt_num(value, 2 if rule != "buy_pe_fwd_below" else 1, lang)
+        if price else f"{fmt_num(value, 1, lang)}%",
         "gap": f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}"
-        + ("%" if price else " pp"),
+        + ("" if rule == "buy_pe_fwd_below" else "%" if price else " pp"),
         # An event rule reads a passage, not a figure (`chat/exit_judge.py`).
         "quote": str(action.get("quote") or ""),
         "source": str(action.get("source") or ""),
@@ -252,6 +252,8 @@ def go_of(item: dict) -> str:
     if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
                 signals.NO_EXIT_RULE):
         return "/profile?tab=journal"
+    if kind in (signals.ENTRY_HIT, signals.ENTRY_NEAR):
+        return f"/ticker?ticker={item.get('ticker') or ''}"
     if kind == signals.SECTOR_TILT:
         return "/sector"
     return ""
@@ -288,7 +290,8 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         in front of a loss reads as the opposite of what it is."""
         return _money(abs(float(value or 0.0)), ccy, lang).replace("+", "")
 
-    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
+    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
+                signals.ENTRY_HIT, signals.ENTRY_NEAR):
         return translate(_criterion_key(key, action), lang,
                          **_criterion_slots(action, lang))
     if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):

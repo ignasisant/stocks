@@ -1213,3 +1213,42 @@ def test_the_grid_carries_the_reviews_verdict_and_the_reported_pe(client, monkey
     monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: fund)
     body = client.get("/v1/ticker/SPY/metrics", headers=AUTH).json()
     assert body["judged"] is None and body["reported_pe"] is None
+
+
+# ---------------------------------------------------------------- entry fit
+
+
+def _entry(account, rules):
+    import json
+
+    account.prefs.write_text(json.dumps({"entry_criteria": {"rules": rules}}))
+
+
+def test_entry_fit_reads_the_checklist_on_the_company(client, account, monkeypatch):
+    monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: False)
+    patch_loaders(monkeypatch, "review_metrics",
+                  lambda t: {"op_margin": 0.30, "pe_fwd": 35.0})
+    _entry(account, [{"rule": "op_margin_min", "level": 20},
+                     {"rule": "pe_fwd_max", "level": 25},
+                     {"rule": "fcf_yield_min", "level": 3}])
+    r = client.get("/v1/ticker/aapl/entry", params={"account": EMAIL}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body["ticker"], body["set"]) == ("AAPL", True)
+    assert (body["met"], body["failed"], body["unknown"], body["total"]) == (1, 1, 1, 3)
+    # The catalog's order, whatever order they were written in.
+    assert [(line["rule"], line["state"]) for line in body["lines"]] == [
+        ("op_margin_min", "pass"), ("fcf_yield_min", "unknown"), ("pe_fwd_max", "fail")]
+
+
+def test_entry_fit_is_unset_without_a_checklist(client, account):
+    r = client.get("/v1/ticker/AAPL/entry", params={"account": EMAIL}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["set"] is False and r.json()["lines"] == []
+
+
+def test_a_fund_has_no_fundamentals_to_check(client, account, monkeypatch):
+    monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: True)
+    _entry(account, [{"rule": "op_margin_min", "level": 20}])
+    r = client.get("/v1/ticker/VWCE.DE/entry", params={"account": EMAIL}, headers=AUTH)
+    assert r.json()["set"] is True and r.json()["total"] == 0
