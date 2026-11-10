@@ -651,7 +651,7 @@ def _hero() -> str:
 
 
 def _video() -> str:
-    """The 40-second walkthrough: a native player, and the file to download.
+    """The 40-second walkthrough in a native player.
 
     `preload="none"` keeps the first paint free of video bytes — the poster
     stands in until the reader presses play. Nothing renders while the file
@@ -676,7 +676,6 @@ def _video() -> str:
         <a href="{src}" download>{download}</a></p>
     </video>
   </div>
-  <a class="ag-l-dl" href="{src}" download>{download}</a>
 </section>"""
 
 
