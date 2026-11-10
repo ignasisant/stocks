@@ -150,6 +150,26 @@ def test_the_reader_s_own_book_is_a_line_of_its_own(message, symbols):
     assert charts.targets(message, {}, "NVDA", lookup=_no_lookup) == symbols
 
 
+@pytest.mark.parametrize("message", [
+    "create a chart of rentability",
+    "chart of returns",
+    "gráfico de rentabilidad",
+    "hazme un gráfico del rendimiento",
+])
+def test_a_chart_of_returns_with_nothing_named_is_the_book_s(message):
+    # Asked in the drawer with no ticker in focus, "returns" are the reader's:
+    # read as a company name, the word found nothing and no chart was drawn.
+    assert charts.wants(message)
+    assert charts.targets(message, {}, "", lookup=_no_lookup) == [charts.BOOK]
+
+
+def test_a_chart_of_returns_names_a_ticker_or_the_page_before_the_book():
+    assert charts.targets("chart of AAPL returns", {}, "",
+                          lookup=_no_lookup) == ["AAPL"]
+    assert charts.targets("gráfico de rentabilidad", {}, "NVDA",
+                          lookup=_no_lookup) == ["NVDA"]
+
+
 @pytest.mark.parametrize("message", ["¿cómo voy?", "¿cómo va mi cartera?"])
 def test_a_book_question_with_nothing_to_measure_it_by_draws_nothing(message):
     assert not charts.wants(message)
