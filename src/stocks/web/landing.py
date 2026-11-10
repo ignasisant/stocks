@@ -29,8 +29,10 @@ Two things shape how this is written:
 
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 from contextvars import ContextVar
+from pathlib import Path
 
 from stocks.formatting import DECIMAL_COMMA
 from stocks.i18n import DEFAULT_LANG, LANGUAGES, has, translate
@@ -58,6 +60,13 @@ PATH_IT = "/it/"
 PATH_EN_ES = "/en-es/"  # English copy, Spanish rules
 PATH_ES_US = "/es-us/"  # Spanish copy, US rules
 ASSET_BASE = "/lp/"
+# The 40-second walkthrough, one cut per language (`scripts/landing_video.py`),
+# served from `ASSET_BASE` like the brand mark. A language without its own cut
+# shows the English one; the section and its nav link draw only while some cut
+# ships: a player with nothing to play is worse than no section.
+_ASSET_DIR = Path(__file__).parent / "assets"
+VIDEO_FILE = "topstocks-intro-{lang}.mp4"
+VIDEO_POSTER = "topstocks-intro-{lang}.jpg"
 # The public Spanish-tax guides (`web/guides.py`), one index per language.
 PATH_GUIDES_EN = "/guides/"
 PATH_GUIDES_ES = "/es/guias/"
@@ -277,6 +286,28 @@ def _rows(n: int) -> str:
     return tr("landing.row_n" if n == 1 else "landing.rows_n", n=n)
 
 
+_EMPHASIS = re.compile(r"\*(.+?)\*")
+
+
+def _grad(text: str) -> str:
+    """`text` escaped, with its `*…*` run painted in the brand gradient.
+
+    The catalog marks the words, not the code, so each language chooses which
+    part of its own sentence carries the colour.
+    """
+    return _EMPHASIS.sub(r'<span class="ag-l-grad">\1</span>', esc(text))
+
+
+def _head(eyebrow: str, title: str, sub: str = "") -> str:
+    """A section's eyebrow pill, heading and lead, revealed as one block."""
+    lead = f"<p>{esc(sub)}</p>" if sub else ""
+    return (
+        f'<div class="ag-l-head" data-reveal>'
+        f'<span class="ag-l-eyebrow">{esc(eyebrow)}</span>'
+        f"<h2>{_grad(title)}</h2>{lead}</div>"
+    )
+
+
 # ------------------------------------------------------------------- assets
 
 _G_MARK = (
@@ -312,6 +343,51 @@ _CHECK_MARK = (
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
     'aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>'
 )
+
+# Line icons for the feature and use-case tiles, by the copy key they head.
+# Stroke-only paths on a 24-unit box; the tile behind them carries the colour.
+_ICON_PATHS = {
+    "chart": '<path d="M3 3v18h18"></path><path d="M7 14l4-4 4 4 5-6"></path>',
+    "receipt": (
+        '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"></path>'
+        '<path d="M9 7h6M9 11h6M9 15h4"></path>'
+    ),
+    "search": '<circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path>',
+    "calendar": (
+        '<rect x="3" y="5" width="18" height="16" rx="2"></rect>'
+        '<path d="M3 10h18M8 3v4M16 3v4"></path>'
+    ),
+    "bell": (
+        '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>'
+        '<path d="M10 21a2 2 0 0 0 4 0"></path>'
+    ),
+    "coin": (
+        '<circle cx="12" cy="12" r="9"></circle>'
+        '<path d="M9.5 8h4a2 2 0 0 1 0 4h-4m0 0h4.5a2 2 0 0 1 0 4H9.5V8"></path>'
+    ),
+    "chat": '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path>',
+}
+_ICON_FOR = {
+    "landing.f_portfolio_title": "chart",
+    "landing.f_tax_title": "receipt",
+    "landing.f_deep_title": "search",
+    "landing.f_earnings_title": "calendar",
+    "landing.f_alerts_title": "bell",
+    "landing.f_crypto_title": "coin",
+    "landing.use1_h": "chart",
+    "landing.use2_h": "chat",
+    "landing.use3_h": "receipt",
+    "landing.use4_h": "bell",
+}
+
+
+def _icon(key: str) -> str:
+    paths = _ICON_PATHS[_ICON_FOR[key]]
+    return (
+        '<span class="ag-l-ico" aria-hidden="true"><svg viewBox="0 0 24 24" '
+        'fill="none" stroke="currentColor" stroke-width="1.8" '
+        f'stroke-linecap="round" stroke-linejoin="round">{paths}</svg></span>'
+    )
 
 
 # ------------------------------------------------------------------ sections
@@ -417,10 +493,40 @@ def _guest_link(label: str) -> str:
     return f'<a class="ag-l-cta-text" href="{href}">{esc(label)} →</a>'
 
 
+def _video_asset(pattern: str) -> str | None:
+    """The file `pattern` names in the page's language, else in English."""
+    for lang in dict.fromkeys((active_language(), "en")):
+        name = pattern.format(lang=lang)
+        if (_ASSET_DIR / name).is_file():
+            return name
+    return None
+
+
+def _video_ready() -> bool:
+    return _video_asset(VIDEO_FILE) is not None
+
+
+# In-page anchors the top bar jumps to: (section id, nav label). The narrower
+# the bar, the fewer survive — the tail goes first (`.ag-l-nav` rules).
+def _nav_items() -> tuple[tuple[str, str], ...]:
+    items = (
+        ("video", "landing.nav_video"),
+        ("features", "landing.nav_features"),
+        ("assistant", "landing.nav_assistant"),
+        ("privacy", "landing.nav_security"),
+        ("faq", "landing.nav_faq"),
+    )
+    return tuple(i for i in items if i[0] != "video" or _video_ready())
+
+
 def _top_bar() -> str:
+    nav = "".join(
+        f'<a href="#{anchor}">{esc(tr(key))}</a>' for anchor, key in _nav_items()
+    )
     return f"""
 <header class="ag-l-bar"><div class="ag-l-wrap ag-l-bar-in">
   <div class="ag-l-brand">{_mark()}<span>TopStocks</span></div>
+  <nav class="ag-l-nav">{nav}</nav>
   <div class="ag-l-spacer"></div>
   {_lang_toggle()}
   <a class="ag-l-ghlink" href="{esc(GITHUB_URL)}" target="_blank"
@@ -466,10 +572,11 @@ def _hero() -> str:
 
     return f"""
 <section class="ag-l-wrap ag-l-hero">
+  <div class="ag-l-glow" aria-hidden="true"><i></i><i></i><i></i></div>
   <div class="ag-l-hero-copy">
     <div class="ag-l-badge"><i></i>
       <b class="ag-l-mono">{esc(tr("landing.hero_badge"))}</b></div>
-    <h1>{esc(tr("landing.hero_title"))}</h1>
+    <h1>{_grad(tr("landing.hero_title"))}</h1>
     <p class="ag-l-lede">{esc(tr("landing.hero_sub"))}</p>
     <div class="ag-l-ctarow">
       {_signin_link("ag-l-cta", tr("common.sign_in_google"))}
@@ -477,7 +584,7 @@ def _hero() -> str:
     </div>
     <div class="ag-l-trust">{esc(tr("landing.trust_strip"))}</div>
   </div>
-  <div class="ag-l-card">
+  <div class="ag-l-card" data-reveal>
     <div class="ag-l-kpis">{kpi_html}</div>
     <div class="ag-l-tbl">
       <div class="ag-l-th">
@@ -512,6 +619,61 @@ def _hero() -> str:
       <div class="ag-l-axis ag-l-mono">{axis}</div>
     </div>
   </div>
+</section>"""
+
+
+def _video() -> str:
+    """The 40-second walkthrough: a native player, and the file to download.
+
+    `preload="none"` keeps the first paint free of video bytes — the poster
+    stands in until the reader presses play. Nothing renders while the file
+    is missing (`_video_ready`).
+    """
+    video = _video_asset(VIDEO_FILE)
+    if video is None:
+        return ""
+    src = esc(ASSET_BASE + video)
+    still = _video_asset(VIDEO_POSTER)
+    poster = f' poster="{esc(ASSET_BASE + still)}"' if still else ""
+    title = tr("landing.video_title")
+    download = esc(tr("landing.video_download"))
+    return f"""
+<section class="ag-l-wrap ag-l-sec ag-l-video" id="video">
+  {_head(tr("landing.video_eyebrow"), title, tr("landing.video_body"))}
+  <div class="ag-l-player" data-reveal>
+    <video controls playsinline preload="none"{poster}
+           aria-label="{esc(title)}">
+      <source src="{src}" type="video/mp4">
+      <p>{esc(tr("landing.video_fallback"))}
+        <a href="{src}" download>{download}</a></p>
+    </video>
+  </div>
+  <a class="ag-l-dl" href="{src}" download>{download}</a>
+</section>"""
+
+
+# The four jobs, each pointing at the section further down that shows it.
+_USES = (
+    ("landing.use1_h", "landing.use1_b", "real-return"),
+    ("landing.use2_h", "landing.use2_b", "assistant"),
+    ("landing.use3_h", "landing.use3_b", "tax"),
+    ("landing.use4_h", "landing.use4_b", "features"),
+)
+
+
+def _uses() -> str:
+    more = esc(tr("landing.uses_more"))
+    cards = "".join(
+        f'<a class="ag-l-use" href="#{anchor}" data-reveal>{_icon(head)}'
+        f"<h3>{esc(tr(head))}</h3><p>{esc(tr(body))}</p>"
+        f'<span class="ag-l-more">{more} <i aria-hidden="true">→</i></span></a>'
+        for head, body, anchor in _USES
+    )
+    return f"""
+<section class="ag-l-wrap ag-l-sec" id="uses">
+  {_head(tr("landing.uses_eyebrow"), tr("landing.uses_title"), tr("landing.uses_sub"))}
+  <div class="ag-l-uses">{cards}</div>
+  <a class="ag-l-dl" href="{_guides_path()}">{esc(tr("landing.uses_guides"))}</a>
 </section>"""
 
 
@@ -611,13 +773,13 @@ def _gap() -> str:
 </div>"""
 
     return f"""
-<section class="ag-l-band"><div class="ag-l-wrap ag-l-sec">
-  <div class="ag-l-head">
-    <h2>{esc(tr("landing.gap_title"))}</h2>
+<section class="ag-l-band" id="real-return"><div class="ag-l-wrap ag-l-sec">
+  <div class="ag-l-head" data-reveal>
+    <h2>{_grad(tr("landing.gap_title"))}</h2>
     <p>{esc(tr("landing.gap_sub"))}</p>
   </div>
-  <div class="ag-l-gaps">{blocks}</div>
-  <div class="ag-l-diagrams">{fifo}{fx}</div>
+  <div class="ag-l-gaps" data-reveal>{blocks}</div>
+  <div class="ag-l-diagrams" data-reveal>{fifo}{fx}</div>
 </div></section>"""
 
 
@@ -646,21 +808,24 @@ def _how() -> str:
     )
 
     return f"""
-<section class="ag-l-wrap ag-l-sec">
-  <h2>{esc(tr("landing.how_title"))}</h2>
+<section class="ag-l-wrap ag-l-sec" id="start">
+  {_head(tr("landing.steps_eyebrow"), tr("landing.how_title"))}
   <div class="ag-l-steps">
-    <div class="ag-l-step">
+    <div class="ag-l-step" data-reveal>
+      <span class="ag-l-stepnum" aria-hidden="true">1</span>
       <h3>{esc(tr("landing.step1_title"))}</h3>
       <div class="ag-l-gbtn"><span>{_G_MARK}
         {esc(tr("common.sign_in_google"))}</span></div>
       <p>{esc(tr("landing.step1_body"))}</p>
     </div>
-    <div class="ag-l-step">
+    <div class="ag-l-step" data-reveal>
+      <span class="ag-l-stepnum" aria-hidden="true">2</span>
       <h3>{esc(tr("landing.step2_title"))}</h3>
       <div class="ag-l-buckets">{bucket_html}</div>
       <p>{esc(tr("landing.step2_body"))}</p>
     </div>
-    <div class="ag-l-step">
+    <div class="ag-l-step" data-reveal>
+      <span class="ag-l-stepnum" aria-hidden="true">3</span>
       <h3>{esc(tr("landing.step3_title"))}</h3>
       <div class="ag-l-mini">
         <div class="ag-l-mini-h">
@@ -792,21 +957,17 @@ def _assistant() -> str:
     )
 
     return f"""
-<section class="ag-l-band"><div class="ag-l-wrap ag-l-sec">
-  <div class="ag-l-head">
-    <span class="ag-l-eyebrow">{esc(tr("landing.ai_eyebrow"))}</span>
-    <h2>{esc(tr("landing.ai_title"))}</h2>
-    <p>{esc(tr("landing.ai_body"))}</p>
-  </div>
-  <div class="ag-l-ai">{chat}{cards}</div>
-  <div class="ag-l-lenses">
+<section class="ag-l-band" id="assistant"><div class="ag-l-wrap ag-l-sec">
+  {_head(tr("landing.ai_eyebrow"), tr("landing.ai_title"), tr("landing.ai_body"))}
+  <div class="ag-l-ai" data-reveal>{chat}{cards}</div>
+  <div class="ag-l-lenses" data-reveal>
     <div class="ag-l-lenses-h">
       <h3>{esc(tr("landing.ai_lenses_title", n=len(_LENSES)))}</h3>
       <p>{esc(tr("landing.ai_lenses_sub"))}</p>
     </div>
     <div class="ag-l-lensgrid">{lenses}</div>
   </div>
-  <div class="ag-l-ainotes">{notes}</div>
+  <div class="ag-l-ainotes" data-reveal>{notes}</div>
 </div></section>"""
 
 
@@ -844,8 +1005,8 @@ def _provenance() -> str:
 
     return f"""
 <section class="ag-l-prov"><div class="ag-l-wrap ag-l-prov-in">
-  <h2>{esc(tr("landing.prov_title"))}</h2>
-  <div class="ag-l-provrow">{card_html}</div>
+  <h2 data-reveal>{_grad(tr("landing.prov_title"))}</h2>
+  <div class="ag-l-provrow" data-reveal>{card_html}</div>
   <p>{body}</p>
 </div></section>"""
 
@@ -876,18 +1037,20 @@ def _bento() -> str:
         ("landing.f_crypto_title", "landing.f_crypto_body"),
     )
     small_html = "".join(
-        f'<div class="ag-l-tile"><h3>{esc(tr(title))}</h3>'
+        f'<div class="ag-l-tile" data-reveal>{_icon(title)}<h3>{esc(tr(title))}</h3>'
         f"<p>{esc(tr(body))}</p></div>"
         for title, body in small
     )
 
     return f"""
-<section class="ag-l-wrap ag-l-sec">
-  <h2>{esc(tr("landing.bento_title"))}</h2>
+<section class="ag-l-wrap ag-l-sec" id="features">
+  {_head(tr("landing.features_eyebrow"), tr("landing.bento_title"))}
   <div class="ag-l-bento-lg">
-    <div class="ag-l-tile"><h3>{esc(tr("landing.f_portfolio_title"))}</h3>
+    <div class="ag-l-tile" data-reveal>{_icon("landing.f_portfolio_title")}
+      <h3>{esc(tr("landing.f_portfolio_title"))}</h3>
       <p>{esc(tr("landing.f_portfolio_body"))}</p>{pills(risk_pills)}</div>
-    <div class="ag-l-tile"><h3>{esc(tr("landing.f_tax_title"))}</h3>
+    <div class="ag-l-tile" data-reveal>{_icon("landing.f_tax_title")}
+      <h3>{esc(tr("landing.f_tax_title"))}</h3>
       <p>{esc(tr("landing.f_tax_body"))}</p>{pills(tax_pills)}</div>
   </div>
   <div class="ag-l-bento-sm">{small_html}</div>
@@ -912,12 +1075,12 @@ def _depth_a() -> str:
 
     return f"""
 <section class="ag-l-rule"><div class="ag-l-wrap ag-l-depth">
-  <div class="ag-l-depth-copy">
+  <div class="ag-l-depth-copy" data-reveal>
     <span class="ag-l-eyebrow">{esc(tr("landing.depthA_eyebrow"))}</span>
     <h2>{esc(tr("landing.depthA_title"))}</h2>
     <p>{esc(tr("landing.depthA_body"))}</p>
   </div>
-  <div class="ag-l-flat">
+  <div class="ag-l-flat" data-reveal>
     <span class="ag-l-mono ag-l-eyebrow-sm">MSFT ·
       {esc(tr("landing.depthA_label"))}</span>
     <div class="ag-l-legs">{"".join(leg_html)}</div>
@@ -968,13 +1131,13 @@ def _depth_b() -> str:
   <b class="ag-l-down">{esc(_money(-612, signed=True))}</b></div>"""
 
     return f"""
-<section class="ag-l-band"><div class="ag-l-wrap ag-l-depth">
-  <div class="ag-l-flat sunken">
+<section class="ag-l-band" id="tax"><div class="ag-l-wrap ag-l-depth">
+  <div class="ag-l-flat sunken" data-reveal>
     <span class="ag-l-mono ag-l-eyebrow-sm">
       {esc(tr("landing.irpf_label", year=_FISCAL_YEAR))}</span>
     <div class="ag-l-irpf">{rows}</div>
   </div>
-  <div class="ag-l-depth-copy">
+  <div class="ag-l-depth-copy" data-reveal>
     <span class="ag-l-eyebrow">{esc(tr("landing.depthB_eyebrow"))}</span>
     <h2>{esc(tr("landing.depthB_title"))}</h2>
     <p>{esc(tr("landing.depthB_body"))}</p>
@@ -984,15 +1147,46 @@ def _depth_b() -> str:
 </div></section>"""
 
 
+def _flow() -> str:
+    """Where a statement goes: broker, file, ledger — and the leg that is not there.
+
+    The broker never connects to us, so its link is drawn struck through; the
+    only line that carries anything runs from the reader's own file to their
+    own ledger.
+    """
+    def node(key: str, cls: str = "") -> str:
+        return f'<div class="ag-l-node {cls}"><b>{esc(tr(key))}</b></div>'
+
+    def link(key: str, cls: str) -> str:
+        return (
+            f'<div class="ag-l-link {cls}"><i aria-hidden="true"></i>'
+            f'<span class="ag-l-mono">{esc(tr(key))}</span></div>'
+        )
+
+    return f"""
+<figure class="ag-l-flow" data-reveal>
+  <div class="ag-l-flow-row">
+    {node("landing.flow_broker", "muted")}
+    {link("landing.flow_no_login", "cut")}
+    {node("landing.flow_file")}
+    {link("landing.flow_account", "live")}
+    {node("landing.flow_ledger", "brand")}
+  </div>
+  <figcaption>{esc(tr("landing.flow_caption"))}</figcaption>
+</figure>"""
+
+
 def _trust() -> str:
     items = "".join(
-        f'<div class="ag-l-trustitem"><b>{esc(tr(f"landing.t{i}_h"))}</b>'
+        f'<div class="ag-l-trustitem" data-reveal>{_CHECK_MARK}'
+        f'<b>{esc(tr(f"landing.t{i}_h"))}</b>'
         f'<span>{esc(tr(f"landing.t{i}_b"))}</span></div>'
         for i in range(1, 6)
     )
     return f"""
-<section class="ag-l-wrap ag-l-sec">
-  <h2>{esc(tr("landing.trust_title"))}</h2>
+<section class="ag-l-wrap ag-l-sec" id="privacy">
+  {_head(tr("landing.security_eyebrow"), tr("landing.trust_title"))}
+  {_flow()}
   <div class="ag-l-trustgrid">{items}</div>
 </section>"""
 
@@ -1004,7 +1198,7 @@ def _faq() -> str:
         for i in range(1, FAQ_COUNT + 1)
     )
     return f"""
-<section class="ag-l-band"><div class="ag-l-faq">
+<section class="ag-l-band" id="faq"><div class="ag-l-faq">
   <h2>{esc(tr("landing.faq_title"))}</h2>
   <div class="ag-l-qs">{qs}</div>
 </div></section>"""
@@ -1012,8 +1206,11 @@ def _faq() -> str:
 
 def _final() -> str:
     return f"""
-<section class="ag-l-rule"><div class="ag-l-wrap ag-l-final">
-  <h2>{esc(tr("landing.final_title"))}</h2>
+<section class="ag-l-wrap ag-l-endcap"><div class="ag-l-final" data-reveal>
+  <div class="ag-l-glow" aria-hidden="true"><i></i></div>
+  <span class="ag-l-eyebrow">{esc(tr("landing.final_eyebrow"))}</span>
+  <h2>{_grad(tr("landing.final_title"))}</h2>
+  <p>{esc(tr("landing.final_sub"))}</p>
   <div class="ag-l-ctarow">
     {_signin_link("ag-l-cta", tr("common.sign_in_google"))}
     {_guest_link(tr("landing.cta_guest_short"))}
@@ -1024,8 +1221,12 @@ def _final() -> str:
 def _footer() -> str:
     return f"""
 <footer class="ag-l-rule"><div class="ag-l-wrap ag-l-foot">
-  <div class="ag-l-foot-row">
+  <div class="ag-l-foot-top">
+  <div class="ag-l-foot-brand">
     <div class="ag-l-brand">{_mark()}<span>TopStocks</span></div>
+    <p>{esc(tr("landing.footer_tagline"))}</p>
+  </div>
+  <div class="ag-l-foot-row">
     <a href="{esc(GITHUB_URL)}" target="_blank"
        rel="noopener noreferrer">{esc(tr("landing.nav_github"))}</a>
     <a href="{_guides_path()}">{esc(tr("landing.footer_guides"))}</a>
@@ -1034,7 +1235,9 @@ def _footer() -> str:
     {_lang_toggle(footer=True)}
     {_jur_toggle(footer=True)}
   </div>
+  </div>
   <p class="ag-l-fine">{esc(tr("landing.footer_disclaimer"))}</p>
+  <p class="ag-l-fine">{esc(tr("landing.footer_rights"))}</p>
 </div></footer>"""
 
 
@@ -1122,6 +1325,39 @@ _SRC_JS = """
 """
 
 
+# Scroll reveal. Blocks marked `data-reveal` rise into place the first time
+# they cross into view, siblings staggered by their order. The hidden start
+# state is scoped to `.motion`, which only this script adds — so with no JS,
+# no IntersectionObserver or reduced motion asked for, every block is simply
+# there. The stagger index goes in through the CSSOM: the CSP allows no
+# `style` attributes in the markup.
+_REVEAL_JS = """
+<script>
+(function () {
+  if (window.__topstocksLandingReveal) return;  /* wire once */
+  window.__topstocksLandingReveal = true;
+  const root = document.querySelector(".ag-l");
+  if (!root || !("IntersectionObserver" in window)) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (!e.isIntersecting) return;
+      e.target.classList.add("is-in");
+      io.unobserve(e.target);
+    });
+  }, {rootMargin: "0px 0px -6% 0px", threshold: 0.08});
+  root.querySelectorAll("[data-reveal]").forEach((el) => {
+    const peers = Array.from(el.parentElement.children)
+      .filter((c) => c.hasAttribute("data-reveal"));
+    el.style.setProperty("--i", String(Math.min(peers.indexOf(el), 5)));
+    io.observe(el);
+  });
+  root.classList.add("motion");
+})();
+</script>
+"""
+
+
 def _mobile_css_body() -> str:
     """The phone rules again, at a wider breakpoint, for User-Agent gating.
 
@@ -1163,6 +1399,11 @@ def bar_script() -> str:
     return _BAR_JS
 
 
+def reveal_script() -> str:
+    """The scroll-reveal script, in its `<script>` element (`_REVEAL_JS`)."""
+    return _REVEAL_JS
+
+
 def source_script() -> str:
     """The CTA source-carrying script, in its `<script>` element (`_SRC_JS`)."""
     return _SRC_JS
@@ -1180,14 +1421,16 @@ def page_body() -> str:
         + '<main id="ag-main">'
         + _hero()
         + _brokers()
+        + _video()
+        + _uses()
         + _gap()
-        + _how()
         + _assistant()
         + _provenance()
         + _bento()
         + _depth_a()
         + _depth_b()
         + _trust()
+        + _how()
         + _faq()
         + _final()
         + "</main>"

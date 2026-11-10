@@ -39,9 +39,11 @@ def test_the_copy_is_in_the_response_not_behind_a_script(lang):
     html = landing_static.document(lang, BASE)
     with landing.render_language(lang):
         title = landing.tr("landing.hero_title")
-    # Compared on the fragment before the first comma: the headline is escaped
-    # into the markup, and its apostrophes would not match verbatim.
-    assert title.split(",")[0] in html
+    # Compared fragment by fragment, escaped: the `*…*` run is wrapped in its
+    # gradient span, and apostrophes reach the markup as entities.
+    for fragment in re.split(r"[*,]", title):
+        if fragment.strip():
+            assert escape(fragment.strip()) in html
 
 
 @pytest.mark.parametrize("lang", ["en", "es"])

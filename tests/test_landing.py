@@ -298,9 +298,49 @@ def test_the_brand_mark_is_absolute(body):
     assert f'src="{landing.ASSET_BASE}topstocks-icon.svg"' in body()
 
 
+@pytest.fixture
+def cuts(tmp_path, monkeypatch):
+    """An asset directory holding the walkthrough cuts for the given languages."""
+    monkeypatch.setattr(landing, "_ASSET_DIR", tmp_path)
+
+    def _ship(*langs):
+        for lang in langs:
+            (tmp_path / landing.VIDEO_FILE.format(lang=lang)).write_bytes(b"")
+            (tmp_path / landing.VIDEO_POSTER.format(lang=lang)).write_bytes(b"")
+
+    return _ship
+
+
+def test_no_cut_means_no_video_section_and_no_nav_link(body, cuts):
+    html = body()
+    assert 'id="video"' not in html and 'href="#video"' not in html
+
+
+def test_each_language_plays_its_own_cut(body, cuts):
+    cuts("en", "es")
+    html = body("es")
+    assert f'src="{landing.ASSET_BASE}topstocks-intro-es.mp4"' in html
+    assert f'poster="{landing.ASSET_BASE}topstocks-intro-es.jpg"' in html
+    assert 'href="#video"' in html
+
+
+def test_a_language_without_its_cut_plays_the_english_one(body, cuts):
+    cuts("en")
+    assert f'src="{landing.ASSET_BASE}topstocks-intro-en.mp4"' in body("es")
+
+
+def test_every_in_page_link_lands_on_a_section(body):
+    html = body()
+    ids = set(re.findall(r'id="([^"]+)"', html))
+    targets = set(re.findall(r'href="#([^"]+)"', html))
+    assert targets <= ids, f"anchors with no section: {sorted(targets - ids)}"
+
+
 def test_the_copy_actually_changes_language(body):
-    assert "An AI assistant that has already read" in body("en")
-    assert "Un asistente de IA que ya se ha leído" in body("es")
+    # Read as text: the headline's emphasis is a gradient span mid-sentence.
+    text = lambda lang: re.sub(r"<[^>]+>", "", body(lang))  # noqa: E731
+    assert "An AI assistant that has already read" in text("en")
+    assert "Un asistente de IA que ya se ha leído" in text("es")
 
 
 def test_the_faq_renders_every_question_the_structured_data_claims(body):
