@@ -354,6 +354,50 @@
   truth:
     - {get: /portfolio/summary, label: "Book summary"}
 
+# Rated down 2026-11-10: the daily card printed an after-hours print as the
+# day's move and the chat, asked where it came from and then to check it,
+# defended it and looped until cut. The move must name its session.
+- id: today-move-source
+  area: today/book
+  kind: book
+  message: "Ese porcentaje de la tarjeta diaria, ¿de dónde sale?"
+  goals:
+    - Says which session the day move is measured to (regular close, after hours or premarket) and from which previous close
+    - Separates the regular-session move from any after-hours move instead of presenting one as the other
+  truth:
+    - {get: "/movers?window=day&all=true", label: "Book day movers"}
+
+- id: today-move-check
+  area: today/book
+  kind: book
+  message: "Creo que no subió tanto, compruébalo en la web"
+  view: today
+  goals:
+    - Checks the figure against a quote or the web and says plainly whether it holds
+    - When it does not hold, corrects it (the session it ran to, the real close) instead of defending it
+  truth:
+    - {get: "/movers?window=day&all=true", label: "Book day movers"}
+
+- id: today-move-yesterday
+  area: today/book
+  kind: book
+  message: "¿Cuánto se movió ayer mi mayor posición, en sesión normal y fuera de hora?"
+  goals:
+    - Gives the largest position's move in the regular session and, apart, its pre- or after-hours move, each dated
+  truth:
+    - {get: "/movers?window=day&all=true", label: "Book day movers"}
+    - {get: /portfolio/positions, label: "Open positions"}
+
+- id: today-move-session-en
+  area: today/book
+  kind: book
+  message: "Is today's move on my card the close or an after-hours price?"
+  lang: en
+  goals:
+    - Says which session the card's move runs to and when the card was written
+  truth:
+    - {get: "/movers?window=day&all=true", label: "Book day movers"}
+
 - id: today-alerts-how
   area: today/alerts
   kind: howto
