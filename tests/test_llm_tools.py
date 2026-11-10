@@ -363,8 +363,8 @@ def test_the_free_chain_caps_retries_and_waits(monkeypatch):
     monkeypatch.setattr(llm, "_free_secrets", lambda: {"groq": "gsk-x"})
     run = llm._free_tools("", "auto", "sys", [], _TOOLS, _echo, 2)
     assert run.text == "DONE"
-    assert made[0]["max_retries"] == llm._FREE_CLIENT["max_retries"]
-    assert made[0]["timeout"] == llm._FREE_CLIENT["timeout"]
+    assert made[0]["max_retries"] == llm._FREE_TOOLS_CLIENT["max_retries"] == 0
+    assert made[0]["timeout"] == llm._FREE_TOOLS_CLIENT["timeout"]
 
 
 # ------------------------------------------------------------- free chain
@@ -375,7 +375,7 @@ def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
 
     def backend(base_url, **_opts):
         def run(api_key, model, system, messages, tools, execute, rounds,
-                cap=0, stop=None):
+                cap=0, stop=None, swap=None):
             tried.append(base_url)
             if base_url == "one":
                 raise RuntimeError("no tool support on this model")
@@ -401,7 +401,7 @@ def test_a_call_the_backend_could_not_parse_is_asked_again_once(monkeypatch):
 
     def backend(base_url, **_opts):
         def run(api_key, model, system, messages, tools, execute, rounds,
-                cap=0, stop=None):
+                cap=0, stop=None, swap=None):
             tried.append(base_url)
             if len(tried) == 1:
                 raise Unparsed("Error code: 400 - {'code': 'tool_use_failed'}")
