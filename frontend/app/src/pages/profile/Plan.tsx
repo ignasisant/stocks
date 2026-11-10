@@ -14,6 +14,11 @@
  * the mix, which is stored only once it adds up to the whole book — a mix
  * saved one target at a time would add up to 100 only by accident, so until
  * it does the card says how far off it is and nothing is sent.
+ *
+ * Under them the entry criteria (`stocks.portfolio.entry`), stored apart from
+ * the plan: the lines every buy or add is held to, and a note in the reader's
+ * words that only the assistant reads. Review warns when a move breaks one;
+ * nothing here blocks a buy.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -30,6 +35,7 @@ import { useApi } from "../../shell/useApi";
 import { MixBar } from "../../ui/MixBar";
 import type { Projection } from "../portfolio/api";
 import { describe } from "./errors";
+import { Notes } from "./Investor";
 import { Card, Failure, Row, Select } from "./ui";
 
 /** `stocks.portfolio.plan.BUCKETS`, in the order the server offers them. */
@@ -119,6 +125,9 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [targets, setTargets] = useState<Targets>(() => draftOf(stored.mix));
   const [band, setBand] = useState(stored.mix?.band_pp ?? 5);
+  // The entry checklist loads on its own; the index only counts its lines.
+  const [lines, setLines] = useState<number | null>(null);
+  const active = useActive(SECTIONS, lines !== null);
 
   function commit(next: PlanWrite) {
     setPlan({ ...plan, ...next });
@@ -225,13 +234,18 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
     : [];
   // A cash target the reserve rules out: the reserve is what is measured.
   const clash = mix && plan.reserve ? outside(mix.targets.cash, "cash", mix) : false;
+  const own = Object.values(plan.limits).filter((value) => value !== null).length;
 
   return (
     <>
       <Ask set={plan.set} />
       <div className="pr-body">
         <div className="pr-main">
-          <Card title={t("profile.plan_mix_title")} sub={t("profile.plan_mix_sub")}>
+          <Card
+            id="plan-mix"
+            title={t("profile.plan_mix_title")}
+            sub={t("profile.plan_mix_sub")}
+          >
             {BUCKETS.map((bucket) => (
               <Row
                 key={bucket}
@@ -285,6 +299,7 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
           </Card>
 
           <Card
+            id="plan-limits"
             title={t("profile.plan_limits_title")}
             sub={t("profile.plan_limits_sub")}
           >
@@ -330,6 +345,7 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
           </Card>
 
           <Card
+            id="plan-contribution"
             title={t("profile.plan_contribution_title")}
             sub={t("profile.plan_contribution_sub")}
           >
@@ -390,6 +406,7 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
           </Card>
 
           <Card
+            id="plan-reserve"
             title={t("profile.plan_reserve_title")}
             sub={t("profile.plan_reserve_sub")}
           >
@@ -424,7 +441,11 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
             )}
           </Card>
 
-          <Card title={t("profile.plan_cash_title")} sub={t("profile.plan_cash_sub")}>
+          <Card
+            id="plan-cash"
+            title={t("profile.plan_cash_title")}
+            sub={t("profile.plan_cash_sub")}
+          >
             <Row
               label={t("profile.plan_investable")}
               help={t("profile.plan_investable_help", { currency: plan.currency })}
@@ -475,58 +496,105 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
             )}
             <Failure message={failure} />
           </Card>
+
+          <Entry onLines={setLines} />
         </div>
 
-        <aside className="pr-rail">
+        <aside className="pr-rail pl-rail">
           <Card>
-            <div className="pr-sum">
+            <nav className="pr-sum" aria-label={t("profile.plan_idx_label")}>
               <span className="pr-sum-t">{t("profile.plan_sum_title")}</span>
-              <Summary
-                label={t("profile.plan_mix_title")}
-                value={
-                  !plan.mix
-                    ? t("profile.iv_sum_none")
-                    : !priced
-                      ? t("profile.plan_sum_unpriced")
-                      : off.length
-                        ? off
-                            .map((bucket) => t(`profile.plan_bucket_${bucket}`))
-                            .join(", ")
-                        : t("profile.plan_sum_inside")
-                }
-                warn={off.length > 0}
-              />
-              <Summary
-                label={t("profile.plan_sum_next")}
-                value={
-                  plan.contribution && plan.next_contribution
-                    ? `${calendarDay(plan.next_contribution)} · ${money(plan.contribution.amount)}`
-                    : t("profile.iv_sum_none")
-                }
-              />
-              <Summary
-                label={t("profile.plan_reserve_title")}
-                value={
-                  plan.reserve
-                    ? `${num(plan.reserve.min_pct ?? 0, 0)}–${num(
-                        plan.reserve.max_pct ?? 100,
-                        0,
-                      )}%`
-                    : t("profile.iv_sum_none")
-                }
-              />
-              <Summary
-                label={t("profile.plan_investable")}
-                value={
-                  plan.cash?.investable != null
-                    ? money(plan.cash.investable)
-                    : t("profile.iv_sum_none")
-                }
-                warn={Boolean(plan.cash_stale_days)}
-              />
+              <ol className="pl-idx">
+                <Section
+                  id="plan-mix"
+                  active={active}
+                  label={t("profile.plan_mix_title")}
+                  value={
+                    !plan.mix
+                      ? t("profile.iv_sum_none")
+                      : !priced
+                        ? t("profile.plan_sum_unpriced")
+                        : off.length
+                          ? off
+                              .map((bucket) => t(`profile.plan_bucket_${bucket}`))
+                              .join(", ")
+                          : t("profile.plan_sum_inside")
+                  }
+                  warn={off.length > 0}
+                />
+                <Section
+                  id="plan-limits"
+                  active={active}
+                  label={t("profile.plan_limits_title")}
+                  value={
+                    own === 0
+                      ? t("profile.plan_idx_app")
+                      : t(
+                          own === 1
+                            ? "profile.plan_idx_own_one"
+                            : "profile.plan_idx_own",
+                          {
+                            n: own,
+                          },
+                        )
+                  }
+                />
+                <Section
+                  id="plan-contribution"
+                  active={active}
+                  label={t("profile.plan_contribution_title")}
+                  value={
+                    plan.contribution && plan.next_contribution
+                      ? `${calendarDay(plan.next_contribution)} · ${money(plan.contribution.amount)}`
+                      : t("profile.iv_sum_none")
+                  }
+                />
+                <Section
+                  id="plan-reserve"
+                  active={active}
+                  label={t("profile.plan_reserve_title")}
+                  value={
+                    plan.reserve
+                      ? `${num(plan.reserve.min_pct ?? 0, 0)}–${num(
+                          plan.reserve.max_pct ?? 100,
+                          0,
+                        )}%`
+                      : t("profile.iv_sum_none")
+                  }
+                  warn={clash}
+                />
+                <Section
+                  id="plan-cash"
+                  active={active}
+                  label={t("profile.plan_cash_title")}
+                  value={
+                    plan.cash?.investable != null
+                      ? money(plan.cash.investable)
+                      : t("profile.iv_sum_none")
+                  }
+                  warn={Boolean(plan.cash_stale_days)}
+                />
+                <Section
+                  id="plan-entry"
+                  active={active}
+                  label={t("profile.entry_title")}
+                  value={
+                    lines === null
+                      ? ""
+                      : lines === 0
+                        ? t("profile.iv_sum_none")
+                        : t(
+                            lines === 1 ? "profile.entry_idx_one" : "profile.entry_idx",
+                            {
+                              n: lines,
+                            },
+                          )
+                  }
+                />
+              </ol>
               <div className="pr-sum-rule" />
               <span className="pr-sum-note">{t("profile.plan_privacy")}</span>
-            </div>
+            </nav>
           </Card>
         </aside>
       </div>
@@ -535,12 +603,134 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
 }
 
 /**
- * "Build my plan with AI", above the form, as Review asks the AI from its
- * top row. It opens a new conversation with a request the chat's plan builder
- * hears (`chat/plan_builder.wants`): a card that asks only what the app does
- * not know and drafts a plan the reader saves from there. Once a plan is set
- * the press offers to redo it; the card says it replaces the stored one.
+ * `stocks.portfolio.entry.RULES`, in the order the server keeps them, with the
+ * bounds `entry.clean` holds a level to: a percent may go below zero ("growing
+ * at all", buying back shares), a multiple and a weight may not.
  */
+const ENTRY_RULES: { rule: string; unit: "pct" | "x"; rules: FigureRules }[] = [
+  { rule: "revenue_growth_min", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "op_margin_min", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "fcf_yield_min", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "roic_min", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "pe_fwd_max", unit: "x", rules: { min: 0, max: 500, above: true } },
+  { rule: "net_debt_ebitda_max", unit: "x", rules: { min: 0, max: 500, above: true } },
+  { rule: "dilution_max", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "dividend_yield_min", unit: "pct", rules: { min: -100, max: 999 } },
+  { rule: "weight_max", unit: "pct", rules: { min: 0, max: 100, above: true } },
+];
+
+type EntryLine = { rule: string; level: number };
+/** `GET /plan/entry` — the checklist; `PUT` takes it whole, without `set`. */
+type EntryCriteria = { rules: EntryLine[]; note: string; set: boolean };
+
+function Entry({ onLines }: { onLines: (count: number) => void }) {
+  const query = useApi(() => get<EntryCriteria>("/plan/entry"), []);
+  return (
+    <Loaded query={query} skeleton={<Skeleton rows={4} />}>
+      {(stored) => <EntryForm stored={stored} onLines={onLines} />}
+    </Loaded>
+  );
+}
+
+/**
+ * The checklist, one field per line: blank is no line. Each field and the
+ * note commit when left, the whole checklist each time, as `PUT /plan/entry`
+ * replaces it.
+ */
+export function EntryForm({
+  stored,
+  onLines,
+}: {
+  stored: EntryCriteria;
+  onLines?: (count: number) => void;
+}) {
+  const t = useT();
+  const [entry, setEntry] = useState(stored);
+  const saved = useRef(stored);
+  const [failure, setFailure] = useState<string | null>(null);
+  const count = entry.rules.length;
+  useEffect(() => onLines?.(count), [count, onLines]);
+  const level = (rule: string) =>
+    entry.rules.find((line) => line.rule === rule)?.level ?? null;
+
+  function commit(rules: EntryLine[], note: string) {
+    setEntry({ ...entry, rules, note });
+    setFailure(null);
+    send<EntryCriteria>("PUT", "/plan/entry", { rules, note })
+      .then((back) => {
+        saved.current = back;
+        setEntry(back);
+      })
+      .catch((error: unknown) => {
+        setEntry(saved.current);
+        setFailure(describe(error, t("common.offline")));
+      });
+  }
+
+  const line = (rule: string) => (value: number | null) => {
+    if (value === level(rule)) return;
+    const rules = ENTRY_RULES.flatMap(({ rule: key }) => {
+      const kept = key === rule ? value : level(key);
+      return kept === null ? [] : [{ rule: key, level: kept }];
+    });
+    commit(rules, entry.note);
+  };
+
+  return (
+    <Card id="plan-entry" title={t("profile.entry_title")} sub={t("profile.entry_sub")}>
+      <EntryAsk />
+      {ENTRY_RULES.map(({ rule, unit, rules }) => (
+        <Row
+          key={rule}
+          label={t(`profile.entry_${rule}`)}
+          help={t(`profile.entry_${rule}_help`)}
+        >
+          <FigureField
+            label={t(`profile.entry_${rule}`)}
+            value={level(rule)}
+            placeholder="—"
+            suffix={unit === "pct" ? "%" : "×"}
+            onCommit={line(rule)}
+            {...rules}
+          />
+        </Row>
+      ))}
+      <Row label={t("profile.entry_note")} help={t("profile.entry_note_help")}>
+        <Notes
+          value={entry.note}
+          label={t("profile.entry_note")}
+          placeholder={t("profile.entry_note_placeholder")}
+          onCommit={(note) => note !== entry.note && commit(entry.rules, note)}
+        />
+      </Row>
+      <Failure message={failure} />
+    </Card>
+  );
+}
+
+/**
+ * "Propose with AI", at the top of the checklist: a new conversation with a
+ * request the chat's entry builder hears (`chat/entry_builder.wants`), which
+ * drafts the lines from the profile and the plan's position cap into fields
+ * the reader adjusts and saves there.
+ */
+function EntryAsk() {
+  const t = useT();
+  return (
+    <div className="pl-ask pl-ask-entry">
+      <p className="pl-ask-sub">{t("profile.entry_ask_sub")}</p>
+      <button
+        type="button"
+        className="ag-btn ag-ai pl-ask-btn"
+        onClick={() => askAssistant(t("profile.entry_ask_prompt"), { fresh: true })}
+      >
+        <Icon name="auto_awesome" size={18} />
+        <span>{t("profile.entry_ask")}</span>
+      </button>
+    </div>
+  );
+}
+
 /**
  * Where the contribution leads: the projection's central scenario and its
  * p10–p90 at the profile's horizon, on the plan's own inputs, with the way to
@@ -589,6 +779,13 @@ function Leads({
   );
 }
 
+/**
+ * "Build my plan with AI", above the form, as Review asks the AI from its
+ * top row. It opens a new conversation with a request the chat's plan builder
+ * hears (`chat/plan_builder.wants`): a card that asks only what the app does
+ * not know and drafts a plan the reader saves from there. Once a plan is set
+ * the press offers to redo it; the card says it replaces the stored one.
+ */
 function Ask({ set }: { set: boolean }) {
   const t = useT();
   const label = t(set ? "profile.plan_ask_again" : "profile.plan_ask");
@@ -609,20 +806,83 @@ function Ask({ set }: { set: boolean }) {
   );
 }
 
-function Summary({
+/** The cards the rail indexes, by `Card` id, top to bottom. */
+const SECTIONS = [
+  "plan-mix",
+  "plan-limits",
+  "plan-contribution",
+  "plan-reserve",
+  "plan-cash",
+  "plan-entry",
+] as const;
+
+/**
+ * The section being read: the card under a line a fifth of the way down the
+ * window. A line and not a band, so the tail of the card above never wins
+ * over the one just landed on; in the gap between two cards the mark stays
+ * where it was. `ready` re-observes once a card that loads late (the entry
+ * checklist) is on the page. Nothing without an observer — the index still
+ * jumps, it just marks nothing.
+ */
+function useActive(ids: readonly string[], ready: boolean): string | null {
+  const [active, setActive] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const crossing = new Map<string, boolean>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          crossing.set(entry.target.id, entry.isIntersecting);
+        const under = ids.find((id) => crossing.get(id));
+        if (under) setActive(under);
+      },
+      { rootMargin: "-20% 0px -79% 0px" },
+    );
+    for (const id of ids) {
+      const card = document.getElementById(id);
+      if (card) observer.observe(card);
+    }
+    return () => observer.disconnect();
+  }, [ids, ready]);
+  return active;
+}
+
+/**
+ * One line of the index: the section and where it stands, pressed to land on
+ * its card. The card takes focus so the keyboard carries on from there.
+ */
+function Section({
+  id,
+  active,
   label,
   value,
   warn,
 }: {
+  id: string;
+  active: string | null;
   label: string;
   value: string;
   warn?: boolean;
 }) {
+  function jump() {
+    const card = document.getElementById(id);
+    if (!card) return;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    card.scrollIntoView?.({ behavior: still ? "auto" : "smooth", block: "start" });
+    card.focus({ preventScroll: true });
+  }
   return (
-    <div className="pr-sum-row">
-      <span>{label}</span>
-      <b className={warn ? "pl-warn" : undefined}>{value}</b>
-    </div>
+    <li>
+      <button
+        type="button"
+        className="pl-idx-row"
+        aria-current={active === id ? "location" : undefined}
+        onClick={jump}
+      >
+        <span className="pl-idx-l">{label}</span>
+        <b className={warn ? "pl-idx-v pl-warn" : "pl-idx-v"}>{value}</b>
+      </button>
+    </li>
   );
 }
 

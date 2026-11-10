@@ -93,7 +93,10 @@ export const STATES: JournalState[] = [
   "retired",
 ];
 
-/** The exit rules a criterion entry can carry (`journal.CRITERION_RULES`). */
+/**
+ * The rules a criterion entry can carry (`journal.CRITERION_RULES`): the exit
+ * rules, then the buy zones, whose names all start `buy_`.
+ */
 const RULES = [
   "below",
   "drawdown_cost",
@@ -106,6 +109,12 @@ const RULES = [
   "guidance_cut",
   "dividend_cut",
   "thesis",
+  "buy_below",
+  "buy_drawdown_high",
+  "buy_revenue_growth_above",
+  "buy_gross_margin_above",
+  "buy_operating_margin_above",
+  "buy_pe_fwd_below",
 ];
 export const SOURCES: JournalSource[] = ["daily", "review", "chat"];
 
@@ -128,11 +137,16 @@ function retireRule(id: string): Promise<void> {
   );
 }
 
-/** Whether `entry` is an exit rule still standing (armed or already met). */
+/** Whether `entry` is a rule still standing (armed or already met). */
 export function liveRule(entry: JournalEntry): boolean {
   return (
     entry.type === "criterion" && (entry.state === "open" || entry.state === "hit")
   );
+}
+
+/** Whether a criterion entry is a buy zone rather than an exit rule. */
+export function buyRule(entry: JournalEntry): boolean {
+  return String(entry.snapshot.rule ?? entry.action).startsWith("buy_");
 }
 
 /**
@@ -148,11 +162,12 @@ export function ruleText(
 ): string {
   const rule = String(entry.snapshot.rule ?? entry.action);
   const raw = entry.snapshot.level;
+  const price = rule === "below" || rule === "buy_below";
   const level =
     typeof raw === "number" && Number.isFinite(raw)
       ? formatter(lang, {
-          minimumFractionDigits: rule === "below" ? 2 : 0,
-          maximumFractionDigits: rule === "below" ? 2 : 1,
+          minimumFractionDigits: price ? 2 : 0,
+          maximumFractionDigits: price ? 2 : 1,
         }).format(raw)
       : String(raw ?? "");
   if (!RULES.includes(rule)) return `${rule} ${level}`;
@@ -169,6 +184,7 @@ export function ruleText(
 
 /** Sell red, buy green, the rest a caution: the colour of the move proposed. */
 function actionTone(action: string): Tone {
+  if (action.startsWith("buy_")) return "up";
   switch (action) {
     case "sell":
     case "unwatch":
@@ -660,10 +676,10 @@ export function rulesSubject(ticker: string, name = ""): string {
 }
 
 /**
- * The reader's exit rules on this name, at the panel's head: each one in
- * words with its state and a way to retire it, and a way to write them with
- * the assistant — which drafts them as a card the reader approves, so a rule
- * is never saved that they did not see.
+ * The reader's rules on this name, at the panel's head: the exit rules, then
+ * the buy zones, each one in words with its state and a way to retire it, and
+ * a way to write them with the assistant — which drafts them as a card the
+ * reader approves, so a rule is never saved that they did not see.
  */
 export function RulesBlock({
   ticker,
@@ -699,72 +715,85 @@ export function RulesBlock({
       });
   };
   const standing = rules.filter((rule) => !gone.includes(rule.id));
-  return (
-    <section className="ag-jr-rules" aria-labelledby="ag-jr-rules-h">
-      <h3 id="ag-jr-rules-h" className="ag-jr-h">
-        {t("journal.criteria_title")}
-      </h3>
-      {standing.length ? (
-        <ul className="ag-jr-rule-list">
-          {standing.map((rule) => {
-            const words = ruleText(t, rule, lang);
-            return (
-              <li key={rule.id} className="ag-jr-rule">
-                <span className="ag-jr-rule-text">{words}</span>
-                <StateBadge state={rule.state} />
-                {confirming === rule.id ? (
-                  <>
-                    <button
-                      type="button"
-                      className="ag-jr-retire ag-jr-retire-confirm"
-                      aria-label={`${t("journal.criteria_confirm")}: ${words}`}
-                      onClick={() => retire(rule.id)}
-                    >
-                      {t("journal.criteria_confirm")}
-                    </button>
+  // Each side keys its copy by prefix: `journal.criteria_*` for exits,
+  // `journal.entry_*` for buy zones.
+  const group = (side: "criteria" | "entry") => {
+    const own = rules.filter((rule) => buyRule(rule) === (side === "entry"));
+    const shown = standing.filter((rule) => own.includes(rule));
+    const heading = `ag-jr-${side}-h`;
+    return (
+      <section className="ag-jr-rules" aria-labelledby={heading}>
+        <h3 id={heading} className="ag-jr-h">
+          {t(`journal.${side}_title`)}
+        </h3>
+        {shown.length ? (
+          <ul className="ag-jr-rule-list">
+            {shown.map((rule) => {
+              const words = ruleText(t, rule, lang);
+              return (
+                <li key={rule.id} className="ag-jr-rule">
+                  <span className="ag-jr-rule-text">{words}</span>
+                  <StateBadge state={rule.state} />
+                  {confirming === rule.id ? (
+                    <>
+                      <button
+                        type="button"
+                        className="ag-jr-retire ag-jr-retire-confirm"
+                        aria-label={`${t("journal.criteria_confirm")}: ${words}`}
+                        onClick={() => retire(rule.id)}
+                      >
+                        {t("journal.criteria_confirm")}
+                      </button>
+                      <button
+                        type="button"
+                        className="ag-jr-retire"
+                        onClick={() => setConfirming(null)}
+                      >
+                        {t("journal.criteria_cancel")}
+                      </button>
+                    </>
+                  ) : (
                     <button
                       type="button"
                       className="ag-jr-retire"
-                      onClick={() => setConfirming(null)}
+                      aria-label={`${t("journal.criteria_retire")}: ${words}`}
+                      onClick={() => setConfirming(rule.id)}
                     >
-                      {t("journal.criteria_cancel")}
+                      {t("journal.criteria_retire")}
                     </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="ag-jr-retire"
-                    aria-label={`${t("journal.criteria_retire")}: ${words}`}
-                    onClick={() => setConfirming(rule.id)}
-                  >
-                    {t("journal.criteria_retire")}
-                  </button>
-                )}
-              </li>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="ag-jr-rules-empty">{t(`journal.${side}_empty`)}</p>
+        )}
+        {failed && side === "criteria" ? (
+          <p className="ag-jr-rules-error" role="alert">
+            {t("journal.criteria_failed")}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          className="ag-jr-propose"
+          onClick={() => {
+            askAssistant(
+              t(`journal.${side}_prompt`, { ticker: rulesSubject(ticker, name) }),
             );
-          })}
-        </ul>
-      ) : (
-        <p className="ag-jr-rules-empty">{t("journal.criteria_empty")}</p>
-      )}
-      {failed ? (
-        <p className="ag-jr-rules-error" role="alert">
-          {t("journal.criteria_failed")}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        className="ag-jr-propose"
-        onClick={() => {
-          askAssistant(
-            t("journal.criteria_prompt", { ticker: rulesSubject(ticker, name) }),
-          );
-          onAsk();
-        }}
-      >
-        {rules.length ? t("journal.criteria_edit") : t("journal.criteria_propose")}
-      </button>
-    </section>
+            onAsk();
+          }}
+        >
+          {own.length ? t(`journal.${side}_edit`) : t(`journal.${side}_propose`)}
+        </button>
+      </section>
+    );
+  };
+  return (
+    <>
+      {group("criteria")}
+      {group("entry")}
+    </>
   );
 }
 

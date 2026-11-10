@@ -75,9 +75,12 @@
   "ticker.ai_angle_earnings_hint": "The quarter against consensus",
   "ticker.ai_angle_fit": "Fit in my portfolio",
   "ticker.ai_angle_fit_hint": "Overlap, size and risk to the whole",
+  "ticker.ai_angle_entry": "My entry criteria",
+  "ticker.ai_angle_entry_hint": "A draft from your profile, for you to save",
   "ticker.ai_prompt_bear": "Bear case on {name} ({ticker}): what could go wrong, and when to get out.",
   "ticker.ai_prompt_earnings": "Review the latest results of {name} ({ticker}) against consensus.",
   "ticker.ai_prompt_fit": "Does {name} ({ticker}) fit my portfolio? Overlap, size and risk.",
+  "ticker.ai_prompt_entry": "Propose my entry criteria",
   "ticker.last_buy": "**Last buy**  {qty} sh @ **{price}** · {date} · {pct} to current {last}",
   "ticker.last_buy_units": "**Last buy**  {qty} units @ **{price}** · {date} · {pct} to current {last}",
   "ticker.last_buy_avg": " · avg buy {avg}",
@@ -601,5 +604,8 @@
   "ticker.shorts_no_holders": "{source} publishes the total only, not who holds it.",
   "ticker.share": "Share {ticker}",
   "ticker.share_link": "Link to {ticker}",
-  "ticker.share_text": "{name} ({ticker}) on TopStocks"
+  "ticker.share_text": "{name} ({ticker}) on TopStocks",
+  "ticker.entry_title": "Your entry criteria",
+  "ticker.entry_met": "Meets {met} of {total}",
+  "ticker.entry_link": "Edit"
 }

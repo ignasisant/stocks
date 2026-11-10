@@ -15,6 +15,7 @@ from stocks.chat import (
     allocation,
     charts,
     clock,
+    entry_builder,
     harvest,
     income,
     market,
@@ -392,6 +393,26 @@ def _plan_step(known: plan_builder.Known, lang: str) -> dict:
     return {"tool": "plan_builder", "arg": "",
             "out": _tr("chat.step_plan", lang,
                        count=len(plan_builder.questions(known)))}
+
+
+def _entry_builder(message: str, prefs: dict, lang: str,
+                   told: Callable[[dict], None]) -> object:
+    """The entry checklist drafted for the message that asks for one
+    (`chat/entry_builder.py`), or None."""
+    if not entry_builder.wants(message):
+        return None
+    known = entry_builder.known(prefs)
+    obs.event("chat.entry_builder", profiled=known.risk is not None,
+              capped=known.cap is not None, replaces=known.replaces)
+    told({"id": f"tool_entry_{secrets.token_hex(4)}", "tool": "entry_builder",
+          "arg": "", "args": {}, "out": _entry_step(known, lang)["out"]})
+    return known
+
+
+def _entry_step(known: entry_builder.Known, lang: str) -> dict:
+    return {"tool": "entry_builder", "arg": "",
+            "out": _tr("chat.step_entry", lang,
+                       count=len(entry_builder.draft(known).rules))}
 
 
 def _mix_step(mix: allocation.Mix, lang: str) -> dict:

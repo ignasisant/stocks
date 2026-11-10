@@ -48,7 +48,7 @@ def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
     """The prompt's saved-memories section, "" when off or empty.
 
     Every surface that writes to the user reads this same block — the chat,
-    the digests, the daily card and its analyses, the
+    the briefings, the daily card and its analyses, the
     walkthrough — so what the user told the assistant once steers all of
     them, not only the conversation it was said in. `routines=False` is the
     daily card's reading: it answers the routines from its own data
@@ -129,7 +129,7 @@ def talk_about(prefs: dict, chat_path: Path, names: list[str], *,
 
 
 # How a surface that is not the chat reads `user_memory`. The card, the
-# digests and the walkthrough are the same assistant the user talks to, so
+# briefings and the walkthrough are the same assistant the user talks to, so
 # they pull the same way: what the user said they want, keep or avoid shapes
 # what leads and how it is put. Their audits check figures against their own
 # data only, so a figure lifted from a memory would be rejected — or worse,
@@ -151,7 +151,7 @@ def user_memory(prefs: dict, chat_path: Path | None, names: Iterable[str] = (),
     """What the chat knows about this user, for a surface that is not the
     chat: (`memory_block`, the earlier conversations' turns about `names`).
 
-    The card, its analyses, the digests and the walkthrough all write to the
+    The card, its analyses, the briefings and the walkthrough all write to the
     same person the chat talks to, and read them through here so they pull
     the same way. The turns leave out what earlier daily cards said
     (`talk_about(cards=False)`): every one of these surfaces is written from
@@ -218,7 +218,7 @@ _CRITERIA_LINES = 30  # live rules in the prompt, newest first
 
 
 def criteria_block(chat_path: Path) -> str:
-    """The exit rules the user saved per holding (chat/journal.py), for the
+    """The exit and buy rules the user saved per name (chat/journal.py), for the
     chat's prompt — "" when there are none.
 
     Their own words, kept so an answer about selling or holding one of those
@@ -237,8 +237,10 @@ def criteria_block(chat_path: Path) -> str:
         "tickers, start from the rule: say whether it is met and hold them "
         "to it, or ask what changed. A hit rule is one already met: by the "
         "price, by the latest quarter's figures, or by an event the app read "
-        "in a filing or a headline (quoted on its line). Offer set_criteria "
-        "to change one only when they ask.\n"
+        "in a filing or a headline (quoted on its line). A buy rule is the "
+        "other side, a level they would buy or add at: a met one is their own "
+        "entry reached, said plainly, never a recommendation. Offer "
+        "set_criteria to change one only when they ask.\n"
         f"{lines}\n\n"
     )
 

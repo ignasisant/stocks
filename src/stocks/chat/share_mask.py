@@ -34,8 +34,10 @@ MASK = "•••"
 # Surfaces that hold no figure of the reader's: a price line (the book's own
 # line is an index from 100) and a ring of weights.
 PUBLIC_SURFACES = frozenset({"chart", "allocation"})
-# Surfaces that are tables of the reader's money: shared only unmasked.
-AMOUNT_SURFACES = frozenset({"whatif", "harvest", "rebalance", "plan_builder"})
+# Surfaces that are tables of the reader's money, or the plan and checklist
+# they hold it to: shared only unmasked.
+AMOUNT_SURFACES = frozenset({"whatif", "harvest", "rebalance", "plan_builder",
+                             "entry_builder"})
 
 _NUM = (r"[+\-−]?(?:\d{1,3}(?:[.,   ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
         r"(?:\s?(?:k|K|M|mil|millones|bn|B)\b)?")

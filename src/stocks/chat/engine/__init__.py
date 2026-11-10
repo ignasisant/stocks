@@ -36,6 +36,7 @@ from stocks.chat import (
     allocation,
     charts,
     debate,
+    entry_builder,
     guard,
     harvest,
     income,
@@ -57,6 +58,8 @@ from stocks.chat.engine.actions import (
     _allocation,
     _chart,
     _chart_step,
+    _entry_builder,
+    _entry_step,
     _harvest,
     _harvest_step,
     _income,
@@ -668,6 +671,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     try:
         # A pasted list asks about all of it; the one-trade cards stay off.
         one = not pasted_report(message)
+        # The entry checklist is drafted from prefs alone, so before the
+        # gather; asked for, it is the card, not the plan builder beside it
+        # ("crea criterios de entrada para mi plan" names both).
+        wrote = _entry_builder(message, prefs, lang, told) if one else None
         (skills, evidence, sale, chart, mix, losses, moved, ahead, paid,
          planned, drafted) = in_parallel(
             lambda: (_brief_skills(prefs, asked_for) if asked_for is not None
@@ -692,7 +699,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                    journal=journal.path_for(chat_path),
                                    currency=reporting_currency(prefs)),
             lambda: _income(message, db, prefs_path, lang, told),
-            lambda: _plan_builder(message, prefs, db, lang, told) if one else None,
+            lambda: (_plan_builder(message, prefs, db, lang, told)
+                     if one and wrote is None else None),
             # A company met for the first time this month gets its notes
             # drafted beside the research, on the cheapest model.
             lambda: (ticker_brief.draft_dossier(provider, key, asked_for.facts)
@@ -714,7 +722,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # for the earnings calendar, its search "BKNG ¿Qué empresas…").
         # So is a plan built from the reader's own answers.
         own = (isinstance(ahead, reports.Ahead) or isinstance(paid, income.Income)
-               or isinstance(planned, plan_builder.Known))
+               or isinstance(planned, plan_builder.Known)
+               or isinstance(wrote, entry_builder.Known))
         if nowhere:
             pass
         elif not evidence.ok:
@@ -827,9 +836,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
-    for found in (mix, losses, moved, ahead, paid, planned):
+    for found in (mix, losses, moved, ahead, paid, planned, wrote):
         if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh,
-                              reports.Ahead, income.Income, plan_builder.Known)):
+                              reports.Ahead, income.Income, plan_builder.Known,
+                              entry_builder.Known)):
             msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (llm/tokens.py).
@@ -899,6 +909,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         activities.append(a2ui.activity(
             plan_builder.SURFACE_ID,
             plan_builder.surface(planned, lambda k, **kw: _tr(k, lang, **kw)),
+        ))
+    if isinstance(wrote, entry_builder.Known):
+        steps.append(_entry_step(wrote, lang))
+        activities.append(a2ui.activity(
+            entry_builder.SURFACE_ID,
+            entry_builder.surface(wrote, lambda k, **kw: _tr(k, lang, **kw)),
         ))
     offered = _proposed(evidence) if confirm_actions else None
     return Turn(

@@ -19,7 +19,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import loaders, obs
+from stocks import accounts, loaders, obs
 from stocks.analysis import crypto_market, review
 from stocks.analysis import dcf as dcf_model
 from stocks.analysis import trend as trend_model
@@ -94,6 +94,8 @@ from stocks.schemas import (
     CycleEvent,
     Dcf,
     EarningsEvent,
+    EntryCheck,
+    EntryFit,
     EpsRevisionRow,
     EuShortPositions,
     Financials,
@@ -1667,6 +1669,45 @@ def fund(symbol: Symbol) -> Fund:
         average_traded=_num(profile.average_traded),
         traded_currency=profile.traded_currency,
         wrapper=_wrapper(ticker, profile),
+    )
+
+
+@router.get("/{symbol}/entry", response_model=EntryFit, summary="Your entry criteria")
+def entry_fit(symbol: Symbol, account: Account, base: Base = None) -> EntryFit:
+    """The reader's entry checklist read on one company (`portfolio.entry`):
+    how many lines it meets, and each one. Funds and coins have no
+    fundamentals to read, and an account without a checklist gets `set`
+    false; either way the page draws nothing.
+
+    The weight line reads the position's share of the book when it is held;
+    a book that cannot be priced leaves it as a name not held, which meets it.
+    """
+    from stocks.analysis.portfolio import value_weights
+    from stocks.portfolio import entry
+
+    ticker = symbol.strip().upper()
+    checklist = entry.load(accounts.load_prefs(account.prefs))
+    if checklist is None or not checklist.rules:
+        return EntryFit(ticker=ticker)
+    if is_crypto(ticker) or is_fund(ticker):
+        return EntryFit(ticker=ticker, set=True)
+    metrics: dict = {}
+    with obs.swallow("api.entry_metrics", ticker=ticker):
+        metrics = review._shown(loaders.review_metrics(ticker))
+    weight = None
+    if any(r.rule == "weight_max" for r in checklist.rules):
+        db = str(account.db)
+        with obs.swallow("api.entry_weight", ticker=ticker):
+            table = loaders.positions_table(db, loaders.db_mtime(db),
+                                            reporting_currency(account, base))
+            share = value_weights(table).get(ticker) if not table.empty else None
+            weight = None if share is None or pd.isna(share) else float(share)
+    readings = entry.check(checklist, metrics, weight)
+    return EntryFit(
+        ticker=ticker,
+        set=True,
+        **entry.summary(readings),
+        lines=[EntryCheck(**r.as_dict()) for r in readings],
     )
 
 

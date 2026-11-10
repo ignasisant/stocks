@@ -1,11 +1,12 @@
 /**
- * Saving the chat's plan draft changes what Profile, Review and the plan
- * route serve, so that press drops their cached answers; nothing else does.
+ * Saving the chat's plan draft or entry checklist changes what Profile,
+ * Review, the ticker page and the plan route serve, so those presses drop
+ * their cached answers; nothing else does.
  */
 
 import { describe, expect, it } from "vitest";
 
-import { savesPlan } from "./api";
+import { touched } from "./api";
 
 const press = (surfaceId: string, name: string) => ({
   surfaceId,
@@ -15,10 +16,22 @@ const press = (surfaceId: string, name: string) => ({
   context: {},
 });
 
-describe("a plan builder press", () => {
+describe("a builder press", () => {
   it("forgets the plan's pages only on save", () => {
-    expect(savesPlan(press("plan_builder", "save"))).toBe(true);
-    expect(savesPlan(press("plan_builder", "draft"))).toBe(false);
-    expect(savesPlan(press("rebalance", "save"))).toBe(false);
+    expect(touched(press("plan_builder", "save"))).toEqual([
+      "/plan",
+      "/profile",
+      "/review",
+    ]);
+    expect(touched(press("plan_builder", "draft"))).toEqual([]);
+    expect(touched(press("rebalance", "save"))).toEqual([]);
+  });
+
+  it("forgets what reads the entry checklist when it is saved", () => {
+    expect(touched(press("entry_builder", "save"))).toEqual([
+      "/plan",
+      "/review",
+      "/ticker",
+    ]);
   });
 });

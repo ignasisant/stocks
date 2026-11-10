@@ -75,9 +75,12 @@
   "ticker.ai_angle_earnings_hint": "El trimestre frente al consenso",
   "ticker.ai_angle_fit": "Encaje en mi cartera",
   "ticker.ai_angle_fit_hint": "Solapes, peso y riesgo para el conjunto",
+  "ticker.ai_angle_entry": "Mis criterios de entrada",
+  "ticker.ai_angle_entry_hint": "Un borrador según tu perfil, para guardar",
   "ticker.ai_prompt_bear": "Caso bajista de {name} ({ticker}): qué puede salir mal y cuándo salir.",
   "ticker.ai_prompt_earnings": "Analiza los últimos resultados de {name} ({ticker}) frente al consenso.",
   "ticker.ai_prompt_fit": "¿Encaja {name} ({ticker}) en mi cartera? Solapes, peso y riesgo.",
+  "ticker.ai_prompt_entry": "Propón mis criterios de entrada",
   "ticker.last_buy": "**Última compra**  {qty} acc @ **{price}** · {date} · {pct} hasta actual {last}",
   "ticker.last_buy_units": "**Última compra**  {qty} uds @ **{price}** · {date} · {pct} hasta actual {last}",
   "ticker.last_buy_avg": " · compra media {avg}",
@@ -601,5 +604,8 @@
   "ticker.shorts_no_holders": "{source} publica solo el total, no quién lo tiene.",
   "ticker.share": "Compartir {ticker}",
   "ticker.share_link": "Enlace a {ticker}",
-  "ticker.share_text": "{name} ({ticker}) en TopStocks"
+  "ticker.share_text": "{name} ({ticker}) en TopStocks",
+  "ticker.entry_title": "Tus criterios de entrada",
+  "ticker.entry_met": "Cumple {met} de {total}",
+  "ticker.entry_link": "Editar"
 }

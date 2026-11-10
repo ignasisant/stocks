@@ -11,7 +11,7 @@ from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import SurfaceAction, Writer
 from stocks.api.routes.chat.preferences import _prefs
-from stocks.chat import charts, engine, plan_builder, rebalance, whatif
+from stocks.chat import charts, engine, entry_builder, plan_builder, rebalance, whatif
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -96,10 +96,11 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     re-run through the tax engine for the shares it now names; the rebalance
     slider (`chat/rebalance.py`), sized and taxed again for the weight it now
     names; a price chart's window chips (`chat/charts.py`), fetched again
-    over the window picked; and the plan builder (`chat/plan_builder.py`),
+    over the window picked; the plan builder (`chat/plan_builder.py`),
     whose chips redraft the plan and whose Save stores it as the reader's
-    plan, the one write here. An action this server has no handler for is a
-    404, not a guess.
+    plan; and the entry checklist (`chat/entry_builder.py`), whose Save
+    stores the lines as typed. Those two Saves are the only writes here. An
+    action this server has no handler for is a 404, not a guess.
     """
     press_ = body.action
     lang = (body.lang or _prefs(paths).get("language") or "en").strip().lower()
@@ -114,6 +115,7 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
         (rebalance.SURFACE_ID, rebalance.ACTION): _reweigh,
         (plan_builder.SURFACE_ID, plan_builder.DRAFT): _redraft,
         (plan_builder.SURFACE_ID, plan_builder.SAVE): _keep_plan,
+        (entry_builder.SURFACE_ID, entry_builder.SAVE): _keep_entry,
     }.get((press_.surfaceId, press_.name))
     if handler is None:
         raise HTTPException(
@@ -232,6 +234,7 @@ def _keep_plan(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     profile = load_profile(prefs)
     if not profile["set"]:
         profile.pop("plan", None)
+        profile.pop("entry", None)
         changes["investor_profile"] = {
             **profile,
             plan_builder.RISK: context[plan_builder.RISK],
@@ -242,6 +245,33 @@ def _keep_plan(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     obs.event("chat.plan_saved", replaced=known.replaces,
               profile=not profile["set"], contribution=body.contribution is not None)
     return plan_builder.saved(raw, tr)
+
+
+def _keep_entry(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
+    """Store the checklist the fields hold, replacing the one saved.
+
+    Unlike the plan, the figures are the reader's to type: the draft was only
+    where the fields started. Each is held to the bounds the form's own model
+    holds it to (`EntryWrite`), a field that is not a number is refused rather
+    than dropped, and the store is the form's merge.
+    """
+    from stocks.api.routes.prefs import EntryWrite
+    from stocks.portfolio import entry
+
+    try:
+        typed = entry_builder.typed(context)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{exc}: not a level the checklist takes",
+        ) from exc
+    replaced = entry.load(_prefs(paths)) is not None
+    body = EntryWrite.model_validate(entry.stored(typed) or {})
+    kept = entry.stored(entry.parse(body.model_dump()))
+    accounts.update_prefs(paths.prefs, {entry.PREFS_KEY: kept})
+    obs.event("chat.entry_saved", lines=len(body.rules), note=bool(body.note),
+              replaced=replaced)
+    return entry_builder.saved(typed, tr)
 
 
 def _rechart(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:

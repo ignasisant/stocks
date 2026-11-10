@@ -8,7 +8,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { checkFigure, PlanForm, type InvestorPlan } from "./Plan";
+import { checkFigure, EntryForm, PlanForm, type InvestorPlan } from "./Plan";
 
 const EMPTY: InvestorPlan = {
   mix: null,
@@ -84,10 +84,33 @@ describe("the plan tab", () => {
       actual: { stocks: 68, equity_funds: 0, bonds: 0, cash: 22, crypto: 10 },
     });
     // Bonds are off; cash 22 is inside the reserve though 0 is its target.
-    expect(inside).toContain('<b class="pl-warn">profile.plan_bucket_bonds</b>');
+    expect(inside).toContain(
+      '<b class="pl-idx-v pl-warn">profile.plan_bucket_bonds</b>',
+    );
     expect(inside).toContain("profile.plan_reserve_clash");
     const agreed = draw({ mix: MIX, reserve: { min_pct: 5, max_pct: 15 }, set: true });
     expect(agreed).not.toContain("profile.plan_reserve_clash");
+  });
+
+  it("indexes every card in the rail, each line landing on its card", () => {
+    const html = draw({
+      limits: { max_position_pct: 8, max_sector_pct: 30, max_speculative_pct: null },
+    });
+    const ids = [...html.matchAll(/<section class="pr-card" id="(plan-[a-z]+)"/g)].map(
+      (match) => match[1],
+    );
+    // The entry card loads on its own, so the form draws its skeleton.
+    expect(ids).toEqual([
+      "plan-mix",
+      "plan-limits",
+      "plan-contribution",
+      "plan-reserve",
+      "plan-cash",
+    ]);
+    expect(html.match(/class="pl-idx-row"/g)).toHaveLength(6);
+    expect(html).toContain('aria-label="profile.plan_idx_label"');
+    expect(html).toContain("profile.plan_idx_own");
+    expect(draw()).toContain("profile.plan_idx_app");
   });
 
   it("keeps the schedule fields shut until there is an amount", () => {
@@ -148,5 +171,28 @@ describe("a figure field's text", () => {
       set: true,
     });
     expect(html).toMatch(/aria-label="profile.plan_day"[^>]*\/><\/span>/);
+  });
+});
+
+describe("the entry checklist", () => {
+  it("offers every line, blank until written, and the note", () => {
+    const html = renderToStaticMarkup(
+      <EntryForm
+        stored={{ rules: [{ rule: "pe_fwd_max", level: 25 }], note: "", set: true }}
+      />,
+    );
+    expect(html).toContain("profile.entry_title");
+    for (const rule of ["revenue_growth_min", "pe_fwd_max", "weight_max"])
+      expect(html).toContain(`profile.entry_${rule}`);
+    expect(html).toContain('value="25"');
+    expect(html).toContain("profile.entry_note");
+  });
+
+  it("is a place the plan's index lands on", () => {
+    const html = renderToStaticMarkup(
+      <EntryForm stored={{ rules: [], note: "", set: false }} />,
+    );
+    expect(html).toContain('id="plan-entry"');
+    expect(html).toContain('tabindex="-1"');
   });
 });

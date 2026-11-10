@@ -9,6 +9,30 @@ from pydantic import BaseModel, Field
 # ------------------------------------------------------------------- review
 
 
+class EntryCheck(BaseModel):
+    """One line of the reader's entry checklist read on one name
+    (`portfolio.entry.Reading`)."""
+
+    rule: str = Field(description="One of `stocks.portfolio.entry.RULES`.")
+    level: float = Field(description="As written: a percent or a multiple.")
+    value: float | None = Field(
+        description="The name's figure, same unit; null if unknown."
+    )
+    state: str = Field(description="pass | fail | unknown.")
+
+
+class EntryFit(BaseModel):
+    """The reader's entry checklist read on one company, for its page."""
+
+    ticker: str
+    set: bool = Field(False, description="Whether the reader keeps a checklist.")
+    met: int = 0
+    failed: int = 0
+    unknown: int = 0
+    total: int = 0
+    lines: list[EntryCheck] = Field(default_factory=list)
+
+
 class ReviewRow(BaseModel):
     """One name on the Review page, held or not, and what to do about it."""
 
@@ -102,6 +126,13 @@ class ReviewRow(BaseModel):
     lists: list[str] = Field(
         default_factory=list,
         description="The watchlist groups (tags) the name is filed under.",
+    )
+    entry: list[EntryCheck] = Field(
+        default_factory=list,
+        description=(
+            "An add or a buy only: the reader's entry checklist read on it, "
+            "every line. It warns, never changes the verdict."
+        ),
     )
 
 

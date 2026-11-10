@@ -9,7 +9,7 @@
  * figure.
  */
 
-import type { Verdict } from "../review/types";
+import type { EntryCheck, Verdict } from "../review/types";
 
 export type { WatchlistEntry } from "../../api.gen";
 
@@ -743,6 +743,18 @@ type FundSectorRow = {
   fund: number;
   /** The book's share with the fund taken out; null when it is not held. */
   without: number | null;
+};
+
+/** The reader's entry checklist read on this company (`GET …/entry`). */
+export type EntryFit = {
+  ticker: string;
+  /** Whether the reader keeps a checklist at all. */
+  set: boolean;
+  met: number;
+  failed: number;
+  unknown: number;
+  total: number;
+  lines: EntryCheck[];
 };
 
 /** A fund against the reader's book. Fractions throughout. */

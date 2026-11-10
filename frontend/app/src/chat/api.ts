@@ -214,20 +214,31 @@ export const revealKey = (provider: string) =>
 /**
  * A press on a surface the assistant drew (A2UI's client-to-server action),
  * answered with the messages that update it — a what-if slider let go comes
- * back as its new figures. No model is asked, and nothing is stored but the
- * plan builder's Save, which writes the plan (and a profile never saved).
+ * back as its new figures. No model is asked, and nothing is stored but two
+ * Saves: the plan builder's, which writes the plan (and a profile never
+ * saved), and the entry checklist's, read by Review and the ticker page.
  */
 export const pressSurface = (action: A2uiAction, lang?: string) =>
   send<{ messages: A2uiMessage[] }>(
     "POST",
     "/chat/actions",
     { action, lang },
-    { touches: savesPlan(action) ? ["/plan", "/profile", "/review"] : [] },
+    { touches: touched(action) },
   ).then((body) => body.messages);
 
-/** The one press that writes: `chat/plan_builder.py`'s Save. */
-export const savesPlan = (action: A2uiAction) =>
-  action.surfaceId === "plan_builder" && action.name === "save";
+/**
+ * What a press stores, as the reads it makes stale: the plan builder's and
+ * the entry checklist's Save (`chat/plan_builder.py`, `chat/entry_builder.py`).
+ * Every other press stores nothing.
+ */
+export const touched = (action: A2uiAction): string[] =>
+  action.name !== "save"
+    ? []
+    : action.surfaceId === "plan_builder"
+      ? ["/plan", "/profile", "/review"]
+      : action.surfaceId === "entry_builder"
+        ? ["/plan", "/review", "/ticker"]
+        : [];
 
 /**
  * Take back a ledger edit the chat made. 409 when it is not one, or its rows

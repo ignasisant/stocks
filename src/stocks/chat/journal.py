@@ -28,6 +28,9 @@ closes and positions the daily card reads (`measured`):
 * ``retired`` — the reader took it down, or a new rule on the same ticker and
   measure replaced it (the two linked).
 
+Buy rules are the same entries on the other side (`BUY_RULES`): a buy zone on
+one name, "buy NVDA under 120", measured and met the same way.
+
 Criteria never lapse: a rule is the reader's own, and stays until they say.
 
 Only what was on screen is recorded. A signal computed and never shown is not
@@ -100,16 +103,43 @@ EVENT_RULES = ("ceo_change", "guidance_cut", "dividend_cut")
 # WATCH_DAYS: one bad headline is noise, the same worry again is a pattern.
 # Why the reader holds it in their own words still rides along as `evidence`.
 THESIS_RULES = ("thesis",)
-CRITERION_RULES = PRICE_RULES + FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
+EXIT_RULES = PRICE_RULES + FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
+# The entry side: a buy zone the reader draws on one name, held or not ("buy
+# NVDA under 120"), armed and met the same way. The price twins of the exit
+# rules (`_PRICE_TWIN`) read the same figure:
+#   buy_below          — the last close at or under `level`;
+#   buy_drawdown_high  — the last close `level` % or more under the year's high.
+# The fundamental ones are met when the last `quarters` quarters all read at
+# or over `level`:
+#   buy_revenue_growth_above, buy_gross_margin_above,
+#   buy_operating_margin_above.
+# And the valuation one, off the Review metrics, daily:
+#   buy_pe_fwd_below   — a forward P/E above zero and at or under `level`.
+# What every buy or add is held to, whatever the name, is a checklist beside
+# the plan instead (`portfolio.entry`).
+BUY_PRICE_RULES = ("buy_below", "buy_drawdown_high")
+BUY_FUNDAMENTAL_RULES = ("buy_revenue_growth_above", "buy_gross_margin_above",
+                         "buy_operating_margin_above")
+BUY_VALUE_RULES = ("buy_pe_fwd_below",)
+BUY_RULES = BUY_PRICE_RULES + BUY_FUNDAMENTAL_RULES + BUY_VALUE_RULES
+CRITERION_RULES = EXIT_RULES + BUY_RULES
+_PRICE_TWIN = {"buy_below": "below", "buy_drawdown_high": "drawdown_high"}
+_QUARTER_TWIN = {"buy_revenue_growth_above": "revenue_growth_below",
+                 "buy_gross_margin_above": "gross_margin_below",
+                 "buy_operating_margin_above": "operating_margin_below"}
 # The rules read off a fetch the morning's card does not already make: they
 # are checked on the card's background job (`check_slow`, `check_theses`) and
 # carried between checks on their snapshot.
-SLOW_RULES = FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
+SLOW_RULES = (FUNDAMENTAL_RULES + EVENT_RULES + THESIS_RULES
+              + BUY_FUNDAMENTAL_RULES + BUY_VALUE_RULES)
 MAX_PILLARS = 3
 MAX_PILLAR = 160
 WATCH_DAYS = 30
 WATCH_TO_HIT = 2
-CRITERION_PERCENT = ("drawdown_cost", "drawdown_high", "weight_above")
+CRITERION_PERCENT = ("drawdown_cost", "drawdown_high", "weight_above",
+                     "buy_drawdown_high")
+# A forward P/E line past this is a typo.
+MAX_PE = 500
 MAX_QUARTERS = 4
 # A quarter's figures are filed weeks after it ends: one this old has
 # probably been followed by a newer one, so the statement is read again
@@ -147,6 +177,7 @@ DAILY_ACTIONS = {
     "repurchase_clear": "rebuy",
     "low_52w": "consider",
     "criterion_hit": "exit",
+    "entry_hit": "buy",
     "filing_flag": "review",
 }
 # The Today page's insider rows: a cluster of insiders buying is a name worth
@@ -838,7 +869,8 @@ def from_card(items: Iterable[dict], facts: dict) -> list[Shown]:
         snapshot = {k: v for k, v in data.items() if k not in ("key", "ticker", "id")}
         # A fired exit rule links to the rule itself, so the journal shows
         # which of the reader's criteria the card was answering.
-        links = (str(data["id"]),) if kind == "criterion_hit" and data.get("id") else ()
+        links = (str(data["id"]),) if kind in ("criterion_hit", "entry_hit") \
+            and data.get("id") else ()
         out.append(Shown(source="daily", subject=key, action=action,
                          ticker=ticker, line=str(item.get("line") or ""),
                          reasons=(kind,), snapshot=snapshot, links=links))
@@ -934,6 +966,15 @@ def criterion_subject(ticker: str, rule: str) -> str:
     return f"criterion:{ticker.strip().upper()}:{rule}"
 
 
+def rule_side(rule: str) -> str:
+    """"buy" for an entry rule, "exit" for the rest."""
+    return "buy" if rule in BUY_RULES else "exit"
+
+
+def side_of_entry(e: Entry) -> str:
+    return rule_side(str(e.snapshot.get("rule") or e.action))
+
+
 def _finite(value: object) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (SupportsFloat, str)):
         return None
@@ -979,7 +1020,8 @@ def clean_rules(rules: Iterable[dict]) -> list[dict]:
     """The rules worth keeping, the last one per measure winning: a price
     rule with a level above zero (a percent one under 100), a fundamental
     rule with a percent level in range and its `quarters`, an event rule
-    alone, a thesis rule with its pillars."""
+    alone, a thesis rule with its pillars, a P/E line over zero. Exit and
+    buy rules alike."""
     out: dict[str, dict] = {}
     for item in rules or ():
         if not isinstance(item, dict):
@@ -993,16 +1035,20 @@ def clean_rules(rules: Iterable[dict]) -> list[dict]:
             if pillars:
                 out[rule] = {"rule": rule, "pillars": pillars}
             continue
-        if rule in FUNDAMENTAL_RULES:
+        if rule in FUNDAMENTAL_RULES or rule in BUY_FUNDAMENTAL_RULES:
             level = _signed(item.get("level"))
-            top = 1000 if rule == "revenue_growth_below" else 100
+            top = 1000 if "revenue_growth" in rule else 100
             if level is None or not -100 < level < top:
                 continue
             out[rule] = {"rule": rule, "level": round(level, 4),
                          "quarters": _quarters(item.get("quarters"))}
             continue
         level = _level(item.get("level"))
-        if rule not in PRICE_RULES or level is None:
+        if rule in BUY_VALUE_RULES:
+            if level is not None and level <= MAX_PE:
+                out[rule] = {"rule": rule, "level": round(level, 4)}
+            continue
+        if rule not in PRICE_RULES + BUY_PRICE_RULES or level is None:
             continue
         if rule in CRITERION_PERCENT and level >= 100:
             continue
@@ -1071,20 +1117,23 @@ def retire(path: Path, entry_id: str) -> Entry | None:
     return None
 
 
-def criteria(entries: Iterable[Entry], ticker: str = "") -> list[Entry]:
-    """The live exit rules (armed or hit), oldest first; one ticker's alone
-    when `ticker` is given."""
+def criteria(entries: Iterable[Entry], ticker: str = "",
+             side: str = "") -> list[Entry]:
+    """The live rules (armed or hit), oldest first; one ticker's alone when
+    `ticker` is given, one side's alone ("exit", "buy") when `side` is."""
     want = ticker.strip().upper()
     return [e for e in entries
             if e.type == "criterion" and e.state in LIVE
-            and (not want or e.ticker.upper() == want)]
+            and (not want or e.ticker.upper() == want)
+            and (not side or side_of_entry(e) == side)]
 
 
 def rule_row(e: Entry) -> dict:
     """One live exit rule as a client reads it: the rule, its state and what
     its last check found, with the evidence once it has been met."""
     snap = e.snapshot
-    row = {"id": e.id, "rule": str(snap.get("rule") or e.action),
+    rule = str(snap.get("rule") or e.action)
+    row = {"id": e.id, "rule": rule, "side": rule_side(rule),
            "state": e.state, "since": e.day,
            "level": snap.get("level"), "quarters": snap.get("quarters"),
            "pillars": snap.get("pillars"), "checked": snap.get("checked"),
@@ -1096,12 +1145,26 @@ def rule_row(e: Entry) -> dict:
     return {k: v for k, v in row.items() if v not in (None, "", [])}
 
 
+def entry_status(entries: Iterable[Entry], held: set[str]) -> dict:
+    """Every live buy rule by name, the ones met, and whether each name is
+    already held (a buy zone on a holding is an add)."""
+    by: dict[str, list[dict]] = {}
+    for e in criteria(entries, side="buy"):
+        by.setdefault(e.ticker.upper(), []).append(rule_row(e))
+    return {
+        "names": [{"ticker": t, "held": t in held, "rules": rows}
+                  for t, rows in sorted(by.items())],
+        "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
+                for r in rows if r["state"] == "hit"],
+    }
+
+
 def criteria_status(entries: Iterable[Entry], held: set[str]) -> dict:
     """Every live exit rule by holding, the rules already met, and the
     holdings left without any rule or without a thesis rule. `held` is the
     set of upper-case tickers the book holds now."""
     by: dict[str, list[dict]] = {}
-    for e in criteria(entries):
+    for e in criteria(entries, side="exit"):
         by.setdefault(e.ticker.upper(), []).append(rule_row(e))
     return {
         "holdings": [{"ticker": t, "held": t in held, "rules": rows}
@@ -1132,7 +1195,8 @@ def measure_rule(rule: str, level: float, prices: list,
     `value` is what the rule reads: a price for `below`, a signed percent for
     the rest (a drawdown is negative). `gap` is how far it still is from the
     level, in percent of price for `below` and in points for the rest, and
-    negative once past it."""
+    negative once past it. A buy rule's price twin reads the same."""
+    rule = _PRICE_TWIN.get(rule, rule)
     last = _finite(prices[-1]) if prices else None
     if rule == "below":
         if last is None or not level:
@@ -1168,6 +1232,7 @@ def quarter_figure(rule: str, quarters: list, q) -> float | None:
     statement does not carry it."""
     from stocks.data.earnings import pct_change, year_ago
 
+    rule = _QUARTER_TWIN.get(rule, rule)
     if rule == "revenue_growth_below":
         back = year_ago(quarters, q)
         growth = pct_change(q.revenue, back.revenue if back else None)
@@ -1185,7 +1250,8 @@ def measure_fundamental(rule: str, level: float, n: int,
     `value` is the latest quarter's, `gap` how far it still is above the
     level in points (negative once under it), and `met` whether each of the
     last `n` quarters read under the level — one bad quarter is noise the
-    reader can ask for by writing 1."""
+    reader can ask for by writing 1. A buy rule is the mirror: `gap` how far
+    it is still under the level, met when each quarter read at or over it."""
     ordered = sorted(quarters or (), key=lambda q: q.end, reverse=True)
     if len(ordered) < n:
         return None
@@ -1194,9 +1260,25 @@ def measure_fundamental(rule: str, level: float, n: int,
     if len(figures) < n:
         return None
     value = round(figures[0], 2)
+    if rule in BUY_FUNDAMENTAL_RULES:
+        return {"value": value, "gap": round(level - value, 2),
+                "met": all(f >= level for f in figures),
+                "quarter_end": ordered[0].end.isoformat()}
     return {"value": value, "gap": round(value - level, 2),
             "met": all(f < level for f in figures),
             "quarter_end": ordered[0].end.isoformat()}
+
+
+def measure_value(level: float, metrics: dict | None) -> dict | None:
+    """`buy_pe_fwd_below` on a Review row's metrics: {value, gap, met}, or
+    None without a forward P/E. A forward loss is never under the line; its
+    gap is left out, so it never reads as near."""
+    pe = _finite((metrics or {}).get("pe_fwd"))
+    if pe is None:
+        return None
+    if pe <= 0:
+        return {"value": round(pe, 2), "gap": None, "met": False}
+    return {"value": round(pe, 2), "gap": round(pe - level, 2), "met": pe <= level}
 
 
 def _stored_row(e: Entry, rule: str) -> dict | None:
@@ -1212,7 +1294,7 @@ def _stored_row(e: Entry, rule: str) -> dict | None:
         "state": e.state, "met": e.state == "hit",
         "hit_day": str(snap.get("hit_day") or ""),
         **({"quarters": int(snap.get("quarters") or 1)}
-           if rule in FUNDAMENTAL_RULES else {}),
+           if rule in FUNDAMENTAL_RULES + BUY_FUNDAMENTAL_RULES else {}),
         **{k: str(snap[k]) for k in ("quote", "source", "source_day", "pillar",
                                      "verdict")
            if snap.get(k)},
@@ -1234,7 +1316,7 @@ def measured(entries: Iterable[Entry], closes: dict | None, tbl) -> list[dict]:
                 out.append(row)
             continue
         level = _finite(e.snapshot.get("level"))
-        if rule not in PRICE_RULES or not level:
+        if rule not in PRICE_RULES + BUY_PRICE_RULES or not level:
             continue
         got = measure_rule(rule, level, list((closes or {}).get(e.ticker) or []),
                            _row(tbl, e.ticker))
@@ -1350,15 +1432,18 @@ def _judged(rule: str, ticker: str, fresh: list[dict], judge: Judge) -> dict | N
 
 def check_slow(path: Path, day: date, *, quarters_of: Callable[[str], list],
                passages_of: Callable[[str, date], list[dict]],
-               judge: Judge, budget_s: float = 20.0) -> list[dict]:
+               judge: Judge, budget_s: float = 20.0,
+               metrics_of: Callable[[str], dict | None] | None = None
+               ) -> list[dict]:
     """Check every slow rule that is due, write what was found back on the
     rules, and return the rows (as `measured` would) of those met today.
 
     `quarters_of(ticker)` is the quarterly statement; `passages_of(ticker,
     since)` the filings and headlines since a day, each {"source", "day",
-    "text"}; `judge` the model's reading. A fetch that fails leaves its rule
-    unchecked for the next card; `budget_s` stops the round before the card
-    waits too long on it. Never raises."""
+    "text"}; `judge` the model's reading; `metrics_of(ticker)` the Review
+    metrics a P/E buy rule reads (none given, those wait). A fetch that
+    fails leaves its rule unchecked for the next card; `budget_s` stops the
+    round before the card waits too long on it. Never raises."""
     start = time.monotonic()
     found: dict[str, dict] = {}
     for e in criteria(load(path)):
@@ -1369,7 +1454,8 @@ def check_slow(path: Path, day: date, *, quarters_of: Callable[[str], list],
         if e.state != "open":  # met already: it stays met until retired
             continue
         try:
-            if rule in FUNDAMENTAL_RULES and fundamental_due(e, day):
+            if rule in FUNDAMENTAL_RULES + BUY_FUNDAMENTAL_RULES \
+                    and fundamental_due(e, day):
                 level = _finite(e.snapshot.get("level"))
                 if level is None:
                     continue
@@ -1381,6 +1467,15 @@ def check_slow(path: Path, day: date, *, quarters_of: Callable[[str], list],
                     {"value": got["value"], "gap": got["gap"],
                      "quarter_end": got["quarter_end"],
                      "_met": got["met"]})}
+            elif rule in BUY_VALUE_RULES and metrics_of is not None \
+                    and event_due(e, day):
+                level = _finite(e.snapshot.get("level"))
+                if level is None:
+                    continue
+                got = measure_value(level, metrics_of(e.ticker))
+                found[e.id] = {"checked": day.isoformat(), **(
+                    {} if got is None else
+                    {"value": got["value"], "gap": got["gap"], "_met": got["met"]})}
             elif rule in EVENT_RULES and event_due(e, day):
                 found_event = _check_event(e, rule, day, passages_of, judge)
                 if found_event is not None:
@@ -1733,6 +1828,14 @@ def criterion_text(entry: Entry) -> str:
         "dividend_cut": "the dividend is cut or suspended",
         "thesis": "the thesis breaks: "
         + " / ".join(pillars_of(entry.snapshot.get("pillars"))),
+        "buy_below": f"buy zone: closes at or below {level}",
+        "buy_drawdown_high": f"buy zone: {level}% or more under its 52-week high",
+        "buy_revenue_growth_above":
+            f"buy zone: revenue growth at least {level}% a year{run}",
+        "buy_gross_margin_above": f"buy zone: gross margin at least {level}%{run}",
+        "buy_operating_margin_above":
+            f"buy zone: operating margin at least {level}%{run}",
+        "buy_pe_fwd_below": f"buy zone: forward P/E at or under {level}",
     }.get(rule, f"{rule} {level}")
 
 
@@ -1760,7 +1863,8 @@ def line_for(entry: Entry) -> str:
     """One plain-English line per entry, for the chat tool and the connector:
     what was proposed, when, on which figures, and what became of it."""
     if entry.type == "criterion":
-        head = (f"[{entry.id}] {entry.day} exit rule {entry.ticker}: "
+        kind = "buy rule" if side_of_entry(entry) == "buy" else "exit rule"
+        head = (f"[{entry.id}] {entry.day} {kind} {entry.ticker}: "
                 f"{criterion_text(entry)} · {entry.state}")
         snap = entry.snapshot
         if snap.get("hit_day"):
