@@ -24,6 +24,12 @@ from stocks.formatting import finite
 # are an hour apart from usual).
 CLOSE_ZONE = ZoneInfo("America/New_York")
 BRIEF_AT = wall(20, 15)
+# The turnover of an account that reads its card in the evening, after the
+# regular session (`notify.schedule`, the briefing's `close` slot): a quarter
+# of an hour past the bell, the cron tick after the 16:00 close prints. Its card
+# misses the after-hours prints BRIEF_AT waits for — the price of reading it
+# the same evening instead of the next morning.
+CLOSE_AT = wall(16, 30)
 
 MIN_BULLETS = 1
 MAX_BULLETS = 4  # "To watch" lines; the day's alerts are listed on their own
@@ -49,7 +55,8 @@ ALERTS: Final = "alerts"
 WATCH: Final = "watch"
 # The kinds filed under today's alerts: the reader's own triggers, fired, then
 # a held name's red-flag filing — each on the card whatever the model wrote.
-_FIRED: Final = (signals.CRITERION_HIT, signals.ALERT_HIT, signals.FILING_FLAG)
+_FIRED: Final = (signals.CRITERION_HIT, signals.ALERT_HIT, signals.FILING_FLAG,
+                 signals.ENTRY_HIT)
 # Where a brief stands on a card (`DailyAction.brief`): "" no brief; pending,
 # its data still being fetched; written, its sections on the card; missed, no
 # model wrote it and the default card stands in.
@@ -72,8 +79,8 @@ UNITS_KEY = "daily_units"
 # above that, not at the median.
 TIMEOUT_S = 180.0
 # Past headlines kept with the card, shown to the next day's call so it does
-# not re-emit yesterday's line with new numbers (the trick notify/narrative.py
-# uses for the digest highlight).
+# not re-emit yesterday's line with new numbers (the same trick the
+# alert narration in notify/narrative.py was built on).
 RECENT_KEPT = 5
 # The lines themselves, kept for this many days: what the model is shown as
 # "already said", key by key, so a trigger that is back because its figure
@@ -369,8 +376,10 @@ def _items(raw) -> list[dict]:
     return out
 
 
-def action_day(now: datetime) -> date:
-    """Which day's card is current at `now` (zone-aware, any zone).
+def action_day(now: datetime, at: wall = BRIEF_AT) -> date:
+    """Which day's card is current at `now` (zone-aware, any zone), for an
+    account whose card turns over at `at` New York time (`CLOSE_AT` for one
+    that reads it the evening of the close).
 
     The card for a day is written the evening before, `BRIEF_AT` New York
     time: Monday's evening turns the card over to Tuesday, which a reader in
@@ -380,7 +389,7 @@ def action_day(now: datetime) -> date:
     Friday's figures, so "today" on the card is always the day it is read.
     """
     ny = now.astimezone(CLOSE_ZONE)
-    return ny.date() + timedelta(days=1) if ny.time() >= BRIEF_AT else ny.date()
+    return ny.date() + timedelta(days=1) if ny.time() >= at else ny.date()
 
 
 def card_session(day: date) -> date:

@@ -1,5 +1,5 @@
 /**
- * Web Push on this device: the digest, alerts, reminders and finished answers
+ * Web Push on this device: the daily summary, alerts, reminders and finished answers
  * as notifications when the app is not on screen.
  *
  * The browser does the subscribing — permission, then `pushManager.subscribe`

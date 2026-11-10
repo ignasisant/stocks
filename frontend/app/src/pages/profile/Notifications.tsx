@@ -2,27 +2,30 @@
  * The Notifications tab: what to receive, and the switch that turns it on for
  * this device.
  *
- * Every message but one — the AI briefing, the day's numbers, the weekly
- * review, price alerts, the reminder, a finished answer — is a Web Push
- * notification, so the channel is per device (`PushCard`) while the toggles
- * are the account's. The toggles are drawn whenever the deployment can push at
- * all; with no device subscribed yet they say where the messages will go once
- * one is.
+ * Every message but one — the daily AI summary, price alerts, the reminder, a
+ * finished answer — is a Web Push notification, so the channel is per device
+ * (`PushCard`) while the toggles are the account's. The toggles are drawn
+ * whenever the deployment can push at all; with no device subscribed yet they
+ * say where the messages will go once one is.
  *
  * The one is the Friday email, sent to the sign-in address with no device
  * involved, so its card stands outside the push gate.
  *
- * The three scheduled runs say when they go out; that is changed where their
- * runs are read, the chat's "Scheduled" block (`?chat=scheduled`).
+ * The daily summary is the one scheduled push, so when it goes out is changed
+ * right on its row — at a time, or after the US close — with the same form
+ * the chat's "Scheduled" block opens (`?chat=scheduled`, where its past runs
+ * are kept). Its notification carries a "Change time" button to here.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { type PushState, readPush } from "../../shell/push";
 import { useLang, useT } from "../../shell/i18n";
-import { get } from "../../shell/api";
-import { type Prefs, useSession } from "../../shell/session";
+import { get, send } from "../../shell/api";
+import { type Prefs, type Schedule, useSession } from "../../shell/session";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
+import { browserZone } from "../../shell/zone";
+import { ScheduleEditor } from "../../chat/Scheduled";
 import { weekdayNames, whenLabel } from "../../chat/slots";
 import type { Settings } from "./prefs";
 import { PushCard } from "./pushCard";
@@ -33,22 +36,43 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
   const lang = useLang();
   const session = useSession();
   const email = session.guest ? null : session.me.email;
-  const { setParams } = useRoute();
+  const { params, setParams } = useRoute();
   const [push, setPush] = useState<PushState | null>(null);
   const fail = (field: string) => (failure?.field === field ? failure.message : null);
   const names = weekdayNames(lang);
-  // The switch is the toggle below, saved here; the time and days are the
-  // chat's to change, so this only reads them — fresh, since the session's
-  // copy predates whatever the chat saved.
+  const zone = session.prefs.timezone ?? browserZone();
+  const editorId = useId();
+  // Read fresh, since the session's copy predates whatever the chat saved;
+  // then whatever this tab saved itself.
   const fresh = useApi(() => get<Prefs>("/prefs"), []);
-  const schedules =
-    (fresh.state === "loaded" ? fresh.data.schedules : null) ?? prefs.schedules;
-  const help = (job: "briefing" | "digest" | "weekly", on: boolean) => {
-    const slot = schedules?.[job];
-    const text = t(`profile.notify_${job}_help`);
-    return slot ? `**${whenLabel({ ...slot, on }, names, t)}.** ${text}` : text;
-  };
+  const [saved, setSaved] = useState<Schedule | null>(null);
+  // The notification's "Change time" button lands here with the form open.
+  const [editing, setEditing] = useState(() => params.get("edit") === "briefing");
+  const [timing, setTiming] = useState(false);
+  const [timeFailed, setTimeFailed] = useState(false);
   const briefing = prefs.notify_briefing ?? true;
+  const slot =
+    saved ??
+    (fresh.state === "loaded" ? fresh.data.schedules?.briefing : null) ??
+    prefs.schedules?.briefing;
+  const help = slot
+    ? `**${whenLabel({ ...slot, on: briefing }, names, t, zone)}.** ${t("profile.notify_briefing_help")}`
+    : t("profile.notify_briefing_help");
+  const retime = (next: Schedule) => {
+    setTiming(true);
+    setTimeFailed(false);
+    send<Prefs>("PUT", "/schedules/briefing", { ...next, on: briefing }).then(
+      (out) => {
+        setTiming(false);
+        if (out.schedules?.briefing) setSaved(out.schedules.briefing);
+        setEditing(false);
+      },
+      () => {
+        setTiming(false);
+        setTimeFailed(true);
+      },
+    );
+  };
 
   useEffect(() => {
     let alive = true;
@@ -78,11 +102,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                 <p className="pr-hint">{t("profile.notify_no_devices")}</p>
               </div>
             )}
-            <Row
-              label={t("profile.notify_briefing")}
-              help={help("briefing", briefing)}
-              middle
-            >
+            <Row label={t("profile.notify_briefing")} help={help} middle>
               <Toggle
                 label={t("profile.notify_briefing")}
                 checked={briefing}
@@ -91,42 +111,41 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
               />
               <Failure message={fail("notify_briefing")} />
             </Row>
-            <Row
-              label={t("profile.notify_digest")}
-              help={help("digest", prefs.notify_digest)}
-              middle
-            >
-              <Toggle
-                label={t("profile.notify_digest")}
-                checked={prefs.notify_digest}
-                disabled={saving === "notify_digest"}
-                onToggle={(on) => save("notify_digest", on)}
-              />
-              <Failure message={fail("notify_digest")} />
-            </Row>
-            <Row
-              label={t("profile.notify_weekly")}
-              help={help("weekly", prefs.notify_weekly)}
-              middle
-            >
-              <Toggle
-                label={t("profile.notify_weekly")}
-                checked={prefs.notify_weekly}
-                disabled={saving === "notify_weekly"}
-                onToggle={(on) => save("notify_weekly", on)}
-              />
-              <Failure message={fail("notify_weekly")} />
-            </Row>
-            {/* Beside the three runs it times, not after the alerts it does not. */}
-            <div className="pr-cardbody">
+            {/* Under the switch it times: change it in one tap, or see what
+                it sent before. */}
+            <div className="pr-cardbody pr-btnrow">
               <button
                 type="button"
-                className="pr-btn pr-selfstart"
+                className="pr-btn"
+                aria-expanded={editing}
+                aria-controls={editing ? editorId : undefined}
+                disabled={!slot}
+                onClick={() => setEditing(!editing)}
+              >
+                {t("profile.notify_briefing_time")}
+              </button>
+              <button
+                type="button"
+                className="pr-btn"
                 onClick={() => setParams({ chat: "scheduled" })}
               >
                 {t("profile.notify_schedule_open")}
               </button>
             </div>
+            {editing && slot && (
+              <div className="pr-cardbody">
+                <ScheduleEditor
+                  id={editorId}
+                  slot={slot}
+                  names={names}
+                  zone={zone}
+                  saving={timing}
+                  onSave={retime}
+                  onCancel={() => setEditing(false)}
+                />
+                <Failure message={timeFailed ? t("chat.sched_failed") : null} />
+              </div>
+            )}
             <Row
               label={t("profile.notify_alerts")}
               help={t("profile.notify_alerts_help")}

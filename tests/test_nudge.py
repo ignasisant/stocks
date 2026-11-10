@@ -64,10 +64,10 @@ def test_a_malformed_last_seen_never_raises():
 
 
 def test_every_toggle_off_or_no_device_means_no_messages():
-    off = {"notify_digest": False, "notify_weekly": False, "notify_alerts": False}
+    off = {"notify_briefing": False, "notify_alerts": False}
     assert not nudge.wants_messages(off, devices=1)
-    assert nudge.wants_messages({"notify_digest": False}, devices=1)
-    assert not nudge.wants_messages({"notify_digest": True}, devices=0)
+    assert nudge.wants_messages({"notify_briefing": False}, devices=1)
+    assert not nudge.wants_messages({"notify_briefing": True}, devices=0)
 
 
 # ---------------------------------------------------------------- what

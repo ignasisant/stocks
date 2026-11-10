@@ -95,72 +95,16 @@ def test_save_prunes_stale_fingerprints(tmp_path, monkeypatch):
 
 
 def test_a_writer_saves_only_the_keys_it_owns(tmp_path, monkeypatch):
-    """The digest loads the state, takes a minute, then saves; the alert edges
+    """The nudge loads the state, takes a minute, then saves; the alert edges
     the hourly run moved meanwhile must survive it."""
     monkeypatch.setattr(storage, "persist", lambda p: None)
     path = tmp_path / "alerts_state.json"
-    digest_copy = st_mod.load_state(path)
+    nudge_copy = st_mod.load_state(path)
     hourly = st_mod.load_state(path)
     st_mod.should_send(hourly, "NVDA|above|price=1|w=", fired=True, now=NOW)
     st_mod.save_state(hourly, path, only=("alerts",))
-    st_mod.remember_highlight(digest_copy, "today's line")
-    st_mod.save_state(digest_copy, path, only=("highlights", "tax_reminded"))
+    st_mod.remember_nudge(nudge_copy, NOW)
+    st_mod.save_state(nudge_copy, path, only=("nudges",))
     reloaded = st_mod.load_state(path)
     assert list(reloaded["alerts"]) == ["NVDA|above|price=1|w="]
-    assert st_mod.recent_highlights(reloaded) == ["today's line"]
-
-
-def test_highlight_memory_keeps_the_last_few(tmp_path, monkeypatch):
-    monkeypatch.setattr(storage, "persist", lambda p: None)
-    path = tmp_path / "alerts_state.json"
-    state = st_mod.load_state(path)
-    assert st_mod.recent_highlights(state) == []
-    for i in range(st_mod.HIGHLIGHTS_KEPT + 2):
-        st_mod.remember_highlight(state, f"line {i}")
-    st_mod.save_state(state, path)
-    kept = st_mod.recent_highlights(st_mod.load_state(path))
-    assert kept == [f"line {i}" for i in range(2, st_mod.HIGHLIGHTS_KEPT + 2)]
-
-
-def test_highlight_memory_ignores_blanks_and_junk():
-    state = {"alerts": {}, "highlights": ["real", "", 7]}
-    assert st_mod.recent_highlights(state) == ["real", "7"]
-    st_mod.remember_highlight(state, "   ")
-    assert st_mod.recent_highlights(state) == ["real", "7"]  # nothing appended
-
-
-def test_highlight_memory_survives_fingerprint_pruning(tmp_path, monkeypatch):
-    """save_state prunes stale alert rules; the highlight history is not one."""
-    monkeypatch.setattr(storage, "persist", lambda p: None)
-    path = tmp_path / "alerts_state.json"
-    state = st_mod.load_state(path)
-    st_mod.should_send(state, "GONE|above|price=1|w=", fired=True, now=NOW)
-    st_mod.remember_highlight(state, "kept line")
-    st_mod.save_state(state, path, active_fingerprints=set())
-    reloaded = st_mod.load_state(path)
-    assert reloaded["alerts"] == {}
-    assert st_mod.recent_highlights(reloaded) == ["kept line"]
-
-
-# ------------------------------------------------ weekly concentration mark
-
-
-def test_top_weight_round_trips_and_survives_junk():
-    from datetime import UTC, datetime
-
-    from stocks.notify.state import previous_top_weight, remember_top_weight
-
-    state = {"alerts": {}}
-    assert previous_top_weight(state) is None  # first review has no baseline
-
-    remember_top_weight(state, 0.68, datetime(2026, 9, 13, tzinfo=UTC))
-    assert previous_top_weight(state) == 0.68
-    assert state["weekly"]["at"].startswith("2026-09-13")
-
-    # Only the latest matters: the review needs a delta, not a history.
-    remember_top_weight(state, 0.71, datetime(2026, 9, 20, tzinfo=UTC))
-    assert previous_top_weight(state) == 0.71
-
-    for junk in ({"weekly": {}}, {"weekly": {"top_weight": "soon"}},
-                 {"weekly": {"top_weight": None}}):
-        assert previous_top_weight(junk) is None
+    assert st_mod.nudges_sent(reloaded) == [NOW.isoformat()]

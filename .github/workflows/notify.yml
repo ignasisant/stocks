@@ -1,9 +1,9 @@
 # Push notifications — price alerts and the reminder.
 #
-# The day's numbers and the weekly review are scheduled runs now, each at the
-# account's own time and filed in its chat: the app runs them itself on a
-# Cloud Scheduler tick (notify/schedule.py, infra/cron.tf), because they write
-# chat.json, which the live instance owns.
+# The AI briefing is a scheduled run, at the account's own time and filed in
+# its chat: the app runs it itself on a Cloud Scheduler tick
+# (notify/schedule.py, infra/cron.tf), because it writes chat.json, which the
+# live instance owns.
 #
 # Every job is a headless fan-out over the accounts that turned notifications
 # on from a device (Profile → Notifications): user data is enumerated and

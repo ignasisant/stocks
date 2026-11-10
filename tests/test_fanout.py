@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from stocks.notify import fanout, narrative
-from stocks.notify import state as state_mod
 
 
 @pytest.fixture(autouse=True)
@@ -20,8 +19,6 @@ def no_llm(monkeypatch):
     and spends the shared daily pot. Tests that want a line opt back in.
     """
     monkeypatch.setattr(narrative, "alerts_line", lambda *a, **kw: None)
-    monkeypatch.setattr(narrative, "highlight", lambda *a, **kw: None)
-    monkeypatch.setattr(narrative, "weekly_line", lambda *a, **kw: None)
 
 
 def _device(root, n: int = 1) -> None:
@@ -80,17 +77,14 @@ SUBSCRIBED = {"language": "es"}
 
 def test_iter_filters_on_devices_and_toggle(local):
     _user(local, "jane_ab12cd34", SUBSCRIBED, devices=1)
-    _user(local, "bob_ef56ab78", {"notify_digest": False}, devices=2)
+    _user(local, "bob_ef56ab78", {"notify_alerts": False}, devices=2)
     _user(local, "carol_11223344", {"currency": "EUR"})  # no device
     _user(local, "_guest", SUBSCRIBED, devices=1)  # guests never notified
 
-    digest_users = fanout.iter_notify_users("digest")
-    assert [u.label for u in digest_users] == ["jane_ab12cd34"]
-    assert digest_users[0].push_path == local / "users" / "jane_ab12cd34" / "push.json"
-    assert digest_users[0].lang == "es"
-
-    alert_users = fanout.iter_notify_users("alerts")  # bob only disabled digest
-    assert [u.label for u in alert_users] == ["bob_ef56ab78", "jane_ab12cd34"]
+    alert_users = fanout.iter_notify_users("alerts")  # bob switched them off
+    assert [u.label for u in alert_users] == ["jane_ab12cd34"]
+    assert alert_users[0].push_path == local / "users" / "jane_ab12cd34" / "push.json"
+    assert alert_users[0].lang == "es"
 
 
 def test_iter_all_users_includes_accounts_without_a_device(local):
@@ -138,7 +132,7 @@ def test_owner_chat_path_is_data_chat_json(local):
 def test_owner_root_prefs_is_an_entry(local):
     (local / "prefs.json").write_text(json.dumps({}))
     _device(local)
-    users = fanout.iter_notify_users("digest")
+    users = fanout.iter_notify_users("alerts")
     assert [u.label for u in users] == ["owner"]
     assert users[0].push_path == local / "push.json"
     assert users[0].watchlist == fanout.WATCHLIST_FILE
@@ -175,7 +169,7 @@ def test_bucket_discovery_restores_files(monkeypatch, tmp_path):
     monkeypatch.setattr(fanout, "DATA_DIR", tmp_path / "data")
     monkeypatch.setattr(fanout, "WATCHLIST_FILE", tmp_path / "watchlist.yaml")
 
-    users = fanout.iter_notify_users("digest")
+    users = fanout.iter_notify_users("alerts")
     assert [u.label for u in users] == ["jane_ab12cd34"]
     assert (tmp_path / "data" / "users" / "jane_ab12cd34" / "prefs.json").exists()
     assert users[0].watchlist.read_text() == "watchlist: []\n"
@@ -288,65 +282,6 @@ def test_no_hits_never_calls_the_llm(local, monkeypatch, pushed):
     assert calls == [] and pushed == []
 
 
-# ------------------------------------------------- digest highlight memory
-
-
-def _digest_env(local, monkeypatch, highlight):
-    """One linked account, a fixed digest, and `highlight` as the LLM."""
-    from datetime import date
-
-    from stocks.notify import digest
-
-    _user(local, "jane_ab12cd34", SUBSCRIBED, devices=1)
-    monkeypatch.setattr(
-        digest, "compute_digest_data",
-        lambda watchlist, db, base, import_record=None: digest.DigestData(
-            date=date(2026, 9, 3), total=1000.0, day=(10.0, 0.01)
-        ),
-    )
-    monkeypatch.setattr(narrative, "highlight", highlight)
-    return digest
-
-
-def test_digest_highlight_is_remembered_for_the_next_run(local, monkeypatch, pushed):
-    seen = []
-
-    def highlight(data, prefs, lang, recent=None, **_):
-        seen.append(list(recent or []))
-        return f"Line {len(seen)}."
-
-    digest = _digest_env(local, monkeypatch, highlight)
-
-    assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert [topic for _, _, topic in pushed] == ["digest"] * 3
-    # Each run sees everything delivered before it, oldest first.
-    assert seen == [[], ["Line 1."], ["Line 1.", "Line 2."]]
-
-
-def test_undelivered_highlight_is_not_remembered(local, monkeypatch):
-    """A line the user never saw must not be treated as already said."""
-    seen = []
-
-    def highlight(data, prefs, lang, recent=None, **_):
-        seen.append(list(recent or []))
-        return "Only line."
-
-    digest = _digest_env(local, monkeypatch, highlight)
-    _undelivered(monkeypatch)
-    assert digest.run_digest_fanout() == {"jane_ab12cd34": "not delivered"}
-    assert state_mod.recent_highlights(
-        state_mod.load_state(local / "users" / "jane_ab12cd34" / "alerts_state.json")
-    ) == []
-
-
-def test_digest_without_a_highlight_writes_no_state(local, monkeypatch, pushed):
-    digest = _digest_env(local, monkeypatch, lambda *a, **kw: None)
-    assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert not (local / "users" / "jane_ab12cd34" / "alerts_state.json").exists()
-
-
 # ------------------------------------------------- alert lines with context
 
 WATCHLIST_HELD = """\
@@ -439,79 +374,6 @@ def test_the_held_context_reaches_the_push(local, monkeypatch, pushed):
     assert message["url"] == "/ticker?ticker=NVDA"
 
 
-# ----------------------------------------------------------- weekly review
-
-
-def _weekly_data(monkeypatch, **over):
-    """Point the fan-out at a fixed review, whatever the account's files say."""
-    from datetime import date
-
-    from stocks.notify import weekly
-
-    base = dict(date=date(2026, 9, 13), total=1000.0, week=(10.0, 0.01),
-                top_weight=0.68)
-    base.update(over)
-    monkeypatch.setattr(
-        weekly, "compute_weekly_data",
-        lambda watchlist, db, base_ccy="EUR", **kw: weekly.WeeklyData(**base),
-    )
-    return weekly
-
-
-def _weekly_env(local, monkeypatch, **over):
-    _user(local, "jane_ab12cd34", SUBSCRIBED, devices=1)
-    return _weekly_data(monkeypatch, **over)
-
-
-def test_weekly_subscribers_honour_their_own_toggle(local):
-    _user(local, "jane_ab12cd34", SUBSCRIBED, devices=1)
-    _user(local, "bob_ef56ab78", {"notify_weekly": False}, devices=1)
-    assert [u.label for u in fanout.iter_notify_users("weekly")] == ["jane_ab12cd34"]
-
-
-def test_weekly_drift_is_measured_against_the_last_delivered_review(
-    local, monkeypatch, pushed
-):
-    """The baseline moves only when a review actually went out, so a failed
-    send does not make next Sunday's drift measure from a week nobody saw."""
-    weekly = _weekly_env(local, monkeypatch)
-    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert [topic for _, _, topic in pushed] == ["weekly"]
-
-    state = json.loads(
-        (local / "users" / "jane_ab12cd34" / "alerts_state.json").read_text()
-    )
-    assert state["weekly"]["top_weight"] == pytest.approx(0.68)
-
-    # Next week, more concentrated: the review says by how much.
-    rendered = []
-    real = weekly.weekly_message
-    monkeypatch.setattr(
-        weekly, "weekly_message",
-        lambda data, lang: rendered.append(data.drift) or real(data, lang),
-    )
-    _weekly_data(monkeypatch, top_weight=0.71)
-    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "sent 1"}
-    assert rendered == [pytest.approx(0.03)]
-
-
-def test_weekly_skips_an_account_with_no_book(local, monkeypatch):
-    weekly = _weekly_env(local, monkeypatch, total=None, top_weight=None)
-    monkeypatch.setattr(
-        fanout.webpush, "send_all",
-        lambda *a, **kw: pytest.fail("nothing to review, nothing to send"),
-    )
-    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "skipped: no book"}
-
-
-def test_an_undelivered_weekly_keeps_no_baseline(local, monkeypatch):
-    weekly = _weekly_env(local, monkeypatch)
-    _undelivered(monkeypatch)
-    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "not delivered"}
-    # No concentration baseline from a review nobody received.
-    assert not (local / "users" / "jane_ab12cd34" / "alerts_state.json").exists()
-
-
 def test_every_delivery_the_cron_sends_has_a_default_to_read():
     """A toggle the senders default to on must be on in DEFAULT_PREFS too.
 
@@ -524,6 +386,6 @@ def test_every_delivery_the_cron_sends_has_a_default_to_read():
     """
     from stocks.accounts import DEFAULT_PREFS
 
-    kinds = {"digest", "weekly", "alerts"}
+    kinds = {"briefing", "alerts"}
     missing = {k for k in kinds if f"notify_{k}" not in DEFAULT_PREFS}
     assert not missing, f"delivered but not defaulted: {sorted(missing)}"

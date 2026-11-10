@@ -5,9 +5,10 @@
  * No fetch handler on purpose — no offline cache to go stale under a deploy;
  * the page loads from the network exactly as it does without this file.
  *
- * A push carries {title, body, url, tag} (`notify/webpush.py`). Pressing the
- * notification focuses an open TopStocks window and sends it to `url`, or
- * opens one there.
+ * A push carries {title, body, url, tag, actions?} (`notify/render.py`).
+ * Pressing the notification focuses an open TopStocks window and sends it to
+ * `url`, or opens one there; pressing one of its `actions` buttons does the
+ * same with that action's own url.
  */
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -26,14 +27,20 @@ self.addEventListener("push", (event) => {
       tag: data.tag || undefined,
       icon: "/lp/icon-192.png",
       badge: "/lp/icon-192.png",
-      data: { url: data.url || "/" },
+      actions: (data.actions || []).map((a) => ({ action: a.action, title: a.title })),
+      data: {
+        url: data.url || "/",
+        actions: Object.fromEntries((data.actions || []).map((a) => [a.action, a.url])),
+      },
     }),
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url || "/", self.location.origin);
+  const data = event.notification.data || {};
+  const picked = (event.action && data.actions?.[event.action]) || data.url || "/";
+  const target = new URL(picked, self.location.origin);
   if (target.origin !== self.location.origin) return;
   event.waitUntil(
     (async () => {

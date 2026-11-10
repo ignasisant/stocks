@@ -1,7 +1,7 @@
 """Email through Resend — the weekly review's channel.
 
 Web Push stays the app's channel for everything that is news (alerts, the
-digest, a finished answer). Email carries one thing: the Friday review
+the daily briefing, a finished answer). Email carries one thing: the Friday review
 (`notify/weekly_email.py`), which reaches an account that never installed the
 app on a device.
 

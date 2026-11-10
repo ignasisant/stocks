@@ -1,6 +1,6 @@
 /**
  * The Notifications tab's "This device" card: the channel everything arrives
- * on — digest, weekly review, price alerts, reminders and finished answers.
+ * on — the daily summary, price alerts, reminders and finished answers.
  *
  * Per device: the subscription is this browser's, so the switch reads
  * `pushManager` and the server together (`shell/push.ts`). The tab owns the
