@@ -279,8 +279,10 @@ def test_the_days_blocks_add_up_to_its_positions_and_its_positions_to_the_day(bo
     held = [t for b in out["blocks"] for t in b["tickers"]]
     assert sorted(held) == sorted(str(t) for t in moved.index)
     # The points are shares of the same opening value, so they sum to the
-    # book's day in percent.
-    if out["start"] > 0:
+    # book's day in percent. Taken from the table, not from `out`: its amount
+    # and start are rounded to the cent, which on a 10 EUR book is 0.05 pp.
+    start = float(tbl.loc[moved.index, "value"].sum() - moved.sum())
+    if out["start"] > 0 and start > 0:
         pp = sum(b["pp"] for b in out["blocks"])
-        whole = out["amount"] / out["start"] * 100
+        whole = float(moved.sum()) / start * 100
         assert pp == pytest.approx(whole, abs=0.01 * len(out["blocks"]))
