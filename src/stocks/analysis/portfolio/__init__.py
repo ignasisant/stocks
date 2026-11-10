@@ -141,6 +141,7 @@ __all__ = [
     "positions_frame",
     "priced_totals",
     "project_sleeves",
+    "quoted_value",
     "rebase_report",
     "rebase_returns",
     "returns_frame",
@@ -1124,6 +1125,22 @@ def ticker_day_changes(
     return changes
 
 
+def quoted_value(value: float, quote: dict | None) -> float:
+    """A position's value moved to the price its quote's move runs to.
+
+    The daily bar carries the regular session's price; an after-hours or
+    premarket move is measured to another one. Backing a prior out of a
+    regular-priced value with a post-basis move invents money nobody had: a
+    name that closed +15 % and printed +39 % after hours was booked as if it
+    closed at the after-hours price, the 2026-11-10 card's TTD. Unchanged
+    when the quote is regular-basis or carries no price.
+    """
+    price, regular = (quote or {}).get("price"), (quote or {}).get("regular")
+    if price and regular:
+        return float(value) * float(price) / float(regular)
+    return float(value)
+
+
 def day_change(
     values: pd.DataFrame, quotes: dict[str, dict] | None = None
 ) -> tuple[float, float] | None:
@@ -1132,7 +1149,8 @@ def day_change(
 
     Each name's prior value is backed out of its own move (`v / (1 + pct)`)
     rather than read off the previous row, which is what lets a quoted
-    override and a close-to-close row live in the same sum. Names without a
+    override and a close-to-close row live in the same sum; a quoted name's
+    value is first moved to the quote's price (`quoted_value`). Names without a
     move on both sides are left out of it entirely, so the percentage is
     measured over exactly the value it was earned on.
     """
@@ -1147,8 +1165,9 @@ def day_change(
         pct = moves.get(ticker)
         if pd.isna(value) or pct is None or pd.isna(pct) or pct == -1:
             continue
-        prior = float(value) / (1 + float(pct))
-        gained += float(value) - prior
+        value = quoted_value(value, (quotes or {}).get(ticker))
+        prior = value / (1 + float(pct))
+        gained += value - prior
         opening += prior
     return (gained, gained / opening) if opening else None
 
