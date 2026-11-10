@@ -285,11 +285,25 @@ def test_the_book_s_surface_names_it_and_draws_no_ticker_for_it():
     data = messages[2]["updateDataModel"]["value"]
     assert data["chart"][0]["index"] and data["chart"][0]["label"] == "chat.chart_book"
     # Raced against the book, the index is an index too: no price to print.
-    assert data["chart"][1]["index"] and "label" not in data["chart"][1]
+    assert data["chart"][1]["index"] and data["chart"][1]["label"] == "S&P 500"
     assert data["view"]["m1"]["last"].startswith("chat.chart_fed_hint")
     assert data["view"]["title"].startswith("chat.chart_title_book_vs")
     assert parts["windows"]["action"]["event"]["context"]["symbols"] == [
         charts.BOOK, "^GSPC"]
+
+
+def test_an_index_is_drawn_by_its_name_and_a_share_by_its_ticker():
+    chart = charts.build(["^GSPC", "^IXIC", "AAPL"], "1y",
+                         closes=lambda *_: _closes(), currency=lambda _s: "USD")
+    messages = charts.surface(chart, _say)
+    parts = {c["id"]: c for c in messages[1]["updateComponents"]["components"]}
+    assert [parts[f"f{i}"]["label"] for i in range(3)] == [
+        "S&P 500", "Nasdaq Composite", "AAPL"]
+    lines = messages[2]["updateDataModel"]["value"]["chart"]
+    assert [ln.get("label") for ln in lines] == ["S&P 500", "Nasdaq Composite", None]
+    # The header keeps the symbols: the Ticker cell prints the name beside it.
+    assert [parts[i]["symbol"] for i in parts["head"]["children"][:-1]] == [
+        "^GSPC", "^IXIC", "AAPL"]
 
 
 @pytest.mark.parametrize(("message", "window"), [

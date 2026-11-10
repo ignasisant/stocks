@@ -43,6 +43,7 @@ import pandas as pd
 
 from stocks import obs
 from stocks.chat import a2ui, market
+from stocks.data import indices
 from stocks.formatting import fmt_num, fmt_pct
 
 SURFACE_ID = "chart"
@@ -726,14 +727,20 @@ def _tone(change: float) -> str:
     return "up" if change > 0 else "down" if change < 0 else "flat"
 
 
+def _called(symbol: str) -> str:
+    """"Nasdaq Composite" for an index, the symbol for anything else: a share
+    is known by its ticker, an index by its name."""
+    return indices.name(symbol) or symbol
+
+
 def _name(ln: Line, translate) -> str:
-    return translate("chat.chart_book") if ln.index else ln.symbol
+    return translate("chat.chart_book") if ln.index else _called(ln.symbol)
 
 
 def _title(c: Chart, translate) -> str:
     window = translate(f"chat.chart_window_{c.window}")
     if c.book is not None:
-        others = [ln.symbol for ln in c.lines if not ln.index]
+        others = [_called(ln.symbol) for ln in c.lines if not ln.index]
         if others:
             return translate("chat.chart_title_book_vs", window=window,
                              others=", ".join(others))
@@ -769,7 +776,8 @@ def view(c: Chart, translate, lang: str = "en") -> dict:
 def series(c: Chart, translate=None) -> list[dict]:
     """What the Chart component draws: its `/chart` data. The book's line is
     named and marked as an index, which the drawer reads as change only, and
-    so is every line raced against it: an index from 100 has no price."""
+    so is every line raced against it: an index from 100 has no price. A
+    market index goes by its name ("S&P 500"), a share by its ticker."""
     out = []
     for ln in c.lines:
         row = {"symbol": ln.symbol, "currency": ln.currency,
@@ -779,6 +787,8 @@ def series(c: Chart, translate=None) -> list[dict]:
         if ln.index:
             if translate is not None:
                 row["label"] = _name(ln, translate)
+        elif _called(ln.symbol) != ln.symbol:
+            row["label"] = _called(ln.symbol)
         out.append(row)
     return out
 
