@@ -26,8 +26,8 @@ the page loads, which is the point of putting the assistant on the dashboard.
 Three properties shape everything here:
 
   - It changes once a day. `action_day()` turns the card over after the US
-    close (BRIEF_AT, New York time) to the next day's, written from settled
-    closes and read the next morning; it then stands through that day's
+    after-hours session (BRIEF_AT, New York time) to the next day's, written
+    from settled prices and read the next morning; it then stands through that day's
     sessions, stamped with its own date. One LLM call
     writes every section, and the card spends at most FREE_UNITS of the
     account's free allowance a day (`spend_unit`): that is what makes an

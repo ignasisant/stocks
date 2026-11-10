@@ -14,13 +14,16 @@ from zoneinfo import ZoneInfo
 from stocks.chat import signals
 from stocks.formatting import finite
 
-# Where the day turns over: after the US close, New York time, so the card is
-# written from settled closes and read the next morning. 45 minutes past the
-# bell lets the day's bars land; New York's own zone keeps the hour across
-# daylight-saving changes, which a fixed UTC hour does not (3 weeks a year
-# Europe and the US are an hour apart from usual).
+# Where the day turns over: after the US after-hours session, New York time, so
+# the card is written from settled prices and read the next morning. Not right
+# after the bell: overnight Home reads a name's move to its after-hours print,
+# and a card written mid-session froze a print that was still moving (TTD's
+# +39 % on 2026-11-10, gone by 20:00). 20:15 is the first cron tick after the
+# window shuts. New York's own zone keeps the hour across daylight-saving
+# changes, which a fixed UTC hour does not (3 weeks a year Europe and the US
+# are an hour apart from usual).
 CLOSE_ZONE = ZoneInfo("America/New_York")
-BRIEF_AT = wall(16, 45)
+BRIEF_AT = wall(20, 15)
 
 MIN_BULLETS = 1
 MAX_BULLETS = 4  # "To watch" lines; the day's alerts are listed on their own
@@ -370,7 +373,7 @@ def action_day(now: datetime) -> date:
     """Which day's card is current at `now` (zone-aware, any zone).
 
     The card for a day is written the evening before, `BRIEF_AT` New York
-    time: Monday's close turns the card over to Tuesday, which a reader in
+    time: Monday's evening turns the card over to Tuesday, which a reader in
     Madrid opens at 08:00 with every figure settled. Through Tuesday the card
     stands — the European open and the US session do not rewrite it — until
     Tuesday's close turns it over to Wednesday. Weekends turn over too, with

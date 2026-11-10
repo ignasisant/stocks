@@ -294,3 +294,49 @@ def test_a_model_that_only_thinks_is_no_answer(monkeypatch):
         _thinking("openrouter", clock, 3, then=()), _ok("groq", ["x"])])
 
     assert "".join(llm._free_stream("", "", "sys", [])) == "x"
+
+
+def _watch(monkeypatch):
+    warned = []
+    monkeypatch.setattr(llm.obs, "warn", lambda name, **kw: warned.append((name, kw)))
+    return warned
+
+
+def test_a_model_writing_one_line_over_and_over_is_stopped(monkeypatch):
+    """Prod 2026-11-10: one line of reasoning 850 times, 226k characters."""
+    line = "The user is questioning the daily move shown in the card. Let me check.\n"
+    sent = []
+
+    def stream(api_key, model, system, messages):
+        for _ in range(1000):
+            sent.append(line)
+            yield from (line[:30], line[30:])
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("openrouter", "k", "nemotron", stream)])
+    warned = _watch(monkeypatch)
+    out = list(llm._free_stream("", "auto", "sys", []))
+    assert "".join(out) == line * 2
+    assert isinstance(out[-1], llm.Cut)
+    assert len(sent) == 2  # the host's stream was closed, not drained
+    assert warned == [("llm.free.degenerate", {
+        "backend": "openrouter", "model": "nemotron", "why": "loop",
+        "chars": 2 * len(line), "duration_ms": warned[0][1]["duration_ms"]})]
+
+
+def test_an_answer_past_the_paid_room_is_cut(monkeypatch):
+    words = [f"word {i} " for i in range(30_000)]  # no line ever repeats
+    monkeypatch.setattr(llm, "_free_backends", lambda: [_ok("groq", words)])
+    warned = _watch(monkeypatch)
+    out = list(llm._free_stream("", "auto", "sys", []))
+    assert isinstance(out[-1], llm.Cut)
+    assert llm._MAX_ANSWER_CHARS < len("".join(out)) < llm._MAX_ANSWER_CHARS + 20
+    assert warned[0][1]["why"] == "size"
+
+
+def test_short_repeated_lines_are_prose_not_a_loop(monkeypatch):
+    table = ["| a | b |\n", "|---|---|\n", "|---|---|\n", "- yes\n", "- yes\n", "end"]
+    monkeypatch.setattr(llm, "_free_backends", lambda: [_ok("groq", table)])
+    warned = _watch(monkeypatch)
+    assert "".join(llm._free_stream("", "auto", "sys", [])) == "".join(table)
+    assert not [w for w in warned if w[0] == "llm.free.degenerate"]

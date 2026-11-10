@@ -26,7 +26,7 @@ from __future__ import annotations
 import pandas as pd
 
 from stocks import accounts, loaders
-from stocks.analysis.portfolio import market_live, value_weights
+from stocks.analysis.portfolio import market_live, quoted_value, value_weights
 from stocks.config import Holding, load_watchlist
 from stocks.data.crypto import is_crypto
 
@@ -241,6 +241,8 @@ def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
             tbl.at[ticker, "day_basis"] = quote.get("basis") or "regular"
             value = tbl.at[ticker, "value"]
             tbl.at[ticker, "day"] = (
-                value * pct / (1 + pct) if pd.notna(value) and pct != -1 else float("nan")
+                quoted_value(value, quote) * pct / (1 + pct)
+                if pd.notna(value) and pct != -1
+                else float("nan")
             )
     return tbl.sort_values("weight", ascending=False, na_position="last")

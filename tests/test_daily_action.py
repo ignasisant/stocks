@@ -135,18 +135,19 @@ def facts(actions=ACTIONS) -> dict:
 @pytest.mark.parametrize(
     ("madrid", "expected"),
     [
-        # Wednesday 2 Sep's close (16:00 New York, 22:00 Madrid) turns the card
-        # over to Thursday's at 22:45, and that card stands through Thursday's
-        # European open and US session.
-        ("2026-09-02T22:30", date(2026, 9, 2)),
-        ("2026-09-02T22:45", DAY),
+        # Wednesday 2 Sep's after-hours (20:00 New York, 02:00 Madrid) turns
+        # the card over to Thursday's at 02:15, and that card stands through
+        # Thursday's European open and US session.
+        ("2026-09-02T22:45", date(2026, 9, 2)),
+        ("2026-09-03T02:14", date(2026, 9, 2)),
+        ("2026-09-03T02:15", DAY),
         ("2026-09-03T08:00", DAY),
         ("2026-09-03T18:00", DAY),
-        ("2026-09-03T22:45", date(2026, 9, 4)),
+        ("2026-09-04T02:15", date(2026, 9, 4)),
         # Europe has left summer time and New York has not: the turnover
         # follows New York, an hour earlier in Madrid.
-        ("2026-10-26T21:44", date(2026, 10, 26)),
-        ("2026-10-26T21:45", date(2026, 10, 27)),
+        ("2026-10-27T01:14", date(2026, 10, 26)),
+        ("2026-10-27T01:15", date(2026, 10, 27)),
     ],
 )
 def test_action_day_turns_over_after_the_us_close(madrid, expected):

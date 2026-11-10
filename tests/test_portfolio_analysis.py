@@ -44,3 +44,61 @@ def test_beta_on_misaligned_dates_raises_no_pandas_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert np.isfinite(beta(asset, bench))
+
+# TTD on 2026-11-10's card: closed +15.7 % at 14.955 from 12.93, printed 18.00
+# after hours. The bar's value is at the close; the move runs to the print.
+_TTD_POST = {"pct": 18.0 / 12.93 - 1, "price": 18.0, "regular": 14.955, "basis": "post"}
+
+
+def test_an_after_hours_move_is_counted_on_the_after_hours_price():
+    import pandas as pd
+    import pytest
+
+    from stocks.analysis.portfolio import day_change
+
+    shares = 200.0
+    values = pd.DataFrame(
+        {"TTD": [shares * 12.93, shares * 14.955], "MSFT": [1000.0, 1010.0]},
+        index=pd.to_datetime(["2026-11-06", "2026-11-09"]),
+    )
+    gained, pct = day_change(values, {"TTD": _TTD_POST})
+    assert gained == pytest.approx(shares * (18.0 - 12.93) + 10.0)
+    assert pct == pytest.approx(gained / (shares * 12.93 + 1000.0))
+
+
+def test_a_premarket_move_is_counted_from_the_close():
+    import pandas as pd
+    import pytest
+
+    from stocks.analysis.portfolio import day_change
+
+    values = pd.DataFrame(
+        {"TTD": [2586.0, 2991.0]}, index=pd.to_datetime(["2026-11-09", "2026-11-10"])
+    )
+    pre = {"pct": 15.5 / 14.955 - 1, "price": 15.5, "regular": 14.955, "basis": "pre"}
+    gained, _ = day_change(values, {"TTD": pre})
+    assert gained == pytest.approx(2991.0 * (15.5 / 14.955 - 1))
+
+
+def test_home_rows_count_an_after_hours_move_on_the_after_hours_price(monkeypatch):
+    import pandas as pd
+    import pytest
+
+    from stocks.views import home
+
+    shares = 200.0
+    table = pd.DataFrame({"value": [shares * 14.955]}, index=["TTD"])
+    values = pd.DataFrame(
+        {"TTD": [shares * 12.93, shares * 14.955]},
+        index=pd.to_datetime(["2026-11-06", "2026-11-09"]),
+    )
+    monkeypatch.setattr(home.loaders, "positions_table", lambda *a: table)
+    monkeypatch.setattr(home.loaders, "basket_values", lambda *a: values)
+    monkeypatch.setattr(home.loaders, "quotes", lambda tickers: {"TTD": _TTD_POST})
+    monkeypatch.setattr(home, "market_live", lambda ticker: False)
+    monkeypatch.setattr(
+        home, "value_weights", lambda tbl: pd.Series(1.0, index=tbl.index)
+    )
+    row = home.enriched("db", 0.0, "USD").loc["TTD"]
+    assert row["day"] == pytest.approx(shares * (18.0 - 12.93))
+    assert row["day_basis"] == "post"

@@ -115,12 +115,13 @@ def test_an_unknown_zone_is_the_default_one():
 @pytest.mark.parametrize(
     ("utc", "expected"),
     [
-        ("2026-11-02T21:40", None),  # Monday 16:40 New York: not yet
-        ("2026-11-02T21:45", date(2026, 11, 2)),  # 16:45: Monday's close
-        ("2026-11-03T03:50", None),  # past the catch-up
-        ("2026-10-31T21:45", None),  # Saturday: no session
-        ("2026-11-26T21:45", None),  # Thanksgiving: no session
-        ("2026-07-06T20:45", date(2026, 7, 6)),  # summer time, same 16:45
+        ("2026-11-02T21:47", None),  # Monday 16:47 New York: after hours still on
+        ("2026-11-03T01:10", None),  # 20:10: the window shut, the prints land
+        ("2026-11-03T01:15", date(2026, 11, 2)),  # 20:15: Monday's session
+        ("2026-11-03T07:20", None),  # past the catch-up
+        ("2026-11-01T01:15", None),  # Saturday: no session
+        ("2026-11-27T01:15", None),  # Thanksgiving: no session
+        ("2026-07-07T00:15", date(2026, 7, 6)),  # summer time, same 20:15
     ],
 )
 def test_the_card_is_built_after_each_us_close(utc, expected):
@@ -198,8 +199,9 @@ def test_the_plan_takes_only_whats_due(account, monkeypatch):
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
     # Monday 08:45 Madrid: the briefing already went out, nothing else is due.
     assert schedule.plan(at("2026-11-02T07:45")) == []
-    # 22:45: the next day's card, after the US close, and the day's numbers.
-    (due,) = schedule.plan(at("2026-11-02T21:45"))
+    # 02:15: the next day's card, after the US after-hours, and the day's
+    # numbers still inside their catch-up.
+    (due,) = schedule.plan(at("2026-11-03T01:15"))
     assert due.runs == [("card", date(2026, 11, 2)), ("digest", date(2026, 11, 2))]
 
 

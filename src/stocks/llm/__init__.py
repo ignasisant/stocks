@@ -1079,6 +1079,38 @@ _free_slow: dict[tuple[str, str], float] = {}  # (backend, model) -> lifts at
 _SLOW_REST_S = 600.0
 
 
+# A free host is sent no max_tokens (some refuse any value above their own
+# cap), so nothing but this stops a model that loops: on 2026-11-10 nemotron
+# wrote one line of its own reasoning 850 times, 226k characters over 18
+# minutes. An answer ends at the room a paid one has (~4 characters a token),
+# or at a long line written twice running, which prose never does.
+_MAX_ANSWER_CHARS = 4 * MAX_TOKENS
+_LOOP_LINE_CHARS = 40
+
+
+class _Runaway:
+    """Watches one answer's text for a model that will not stop."""
+
+    def __init__(self):
+        self.size = 0
+        self.tail = ""  # the line still being written
+        self.last: str | None = None  # the last finished line with text
+
+    def feed(self, text: str) -> str | None:
+        """Why the answer should stop after `text` ("size" or "loop"), or None."""
+        self.size += len(text)
+        if self.size > _MAX_ANSWER_CHARS:
+            return "size"
+        *done, self.tail = (self.tail + text).split("\n")
+        for line in (line.strip() for line in done):
+            if not line:
+                continue
+            if len(line) >= _LOOP_LINE_CHARS and line == self.last:
+                return "loop"
+            self.last = line
+        return None
+
+
 class _Slow(TimeoutError):
     """A free model that wrote nothing before its first-text deadline."""
 
@@ -1271,6 +1303,7 @@ def _free_stream(api_key, model, system, messages):
                      else _LAST_FIRST_TEXT_S)
             late = t0 + limit
             first_ms = chunks = None
+            runaway = _Runaway()
             try:
                 got = False
                 chunks = b.stream(b.api_key, model, system, thread)
@@ -1285,6 +1318,14 @@ def _free_stream(api_key, model, system, messages):
                         first_ms = round((_clock() - t0) * 1000)
                     started = got = True
                     yield chunk
+                    if why := runaway.feed(chunk):
+                        obs.warn("llm.free.degenerate", backend=b.id, model=model,
+                                 why=why, chars=runaway.size,
+                                 duration_ms=round((_clock() - t0) * 1000))
+                        if close := getattr(chunks, "close", None):
+                            close()
+                        yield Cut()  # the chat closes the markdown and says so
+                        return
                 if not got:
                     # OpenRouter's upstream failure can arrive as a 200 with no
                     # choices, which streams to nothing: not an answer.
