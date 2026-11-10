@@ -1,8 +1,8 @@
 """The Friday email — the week of one imported book, by mail (Resend).
 
-The Sunday push (`notify/weekly.py`) is a headline for whoever installed a
-device; this is the same week, whole, for every account that imported a
-portfolio, device or not. It reads the same `compute_weekly_data` — one
+The week of a book is sent nowhere else: the push carries one summary a day
+(`notify/schedule.py`), and this is the week, whole, for every account that
+imported a portfolio, device or not. It reads the same `compute_weekly_data` — one
 `book_history`, so every figure is the same valuation and they add up — and
 adds what a notification has no room for: the returns table against the index
 bought with the same money (from the book's first day first), the week's own
@@ -30,9 +30,15 @@ from stocks import obs
 from stocks.config import currency_symbol
 from stocks.formatting import DECIMAL_COMMA, fmt_num, fmt_pct
 from stocks.notify import links, mail
-from stocks.notify.digest import BENCHMARK_LABEL
 from stocks.notify.render import date_line
-from stocks.notify.weekly import MONTH, TOP_N, WEEK, WeeklyData, compute_weekly_data
+from stocks.notify.weekly import (
+    BENCHMARK_LABEL,
+    MONTH,
+    TOP_N,
+    WEEK,
+    WeeklyData,
+    compute_weekly_data,
+)
 from stocks.web import ds
 
 PREF = "notify_weekly_email"

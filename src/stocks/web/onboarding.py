@@ -337,7 +337,6 @@ RELEASES: tuple[Release, ...] = (
             News(slug="demo", icon="science", step="import"),
             News(slug="pulse", icon="speed", step="pulse"),
             News(slug="profile", icon="tune", step="prefs"),
-            News(slug="weekly", icon="calendar_view_week", step="notify"),
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
     ),
@@ -570,9 +569,9 @@ RELEASES: tuple[Release, ...] = (
         version="2026.10.12",
         date="2026-10",
         items=(
-            # A capability there was none of: choosing when the briefing, the
-            # day's numbers and the weekly review run, each run kept as a
-            # conversation under "Scheduled" in the chat. Rides on the notify
+            # A capability there was none of: choosing when the daily summary
+            # goes out (a time of one's own or the US close), each one kept as
+            # a conversation under "Scheduled" in the chat. Rides on the notify
             # step, whose tab links to where the times are set.
             News(slug="scheduled", icon="schedule", step="notify"),
         ),

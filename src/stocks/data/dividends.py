@@ -86,7 +86,7 @@ def fetch_ex_dividend(ticker: str) -> tuple[date | None, float | None, str | Non
     """(ex-date, last per-share amount, currency) for one ticker, via yfinance.
 
     All-None on any failure: a dead symbol inside a pool.map must not abort the
-    whole calendar, and a digest without the dividend section is still a digest.
+    whole calendar, and a calendar without one ticker is still a calendar.
     Non-payers simply have no `exDividendDate`.
     """
     from yfinance.exceptions import YFRateLimitError

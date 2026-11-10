@@ -3627,6 +3627,11 @@ a.ag-chat-btn {
   border-bottom: 1px solid var(--ag-border);
 }
 
+/* "At a time" / "After the US close": sentences, not weekday names. */
+.ag-sched-mode {
+  text-transform: none;
+}
+
 /* The whole row is the symbol's link; a long company name is cut, not wrapped. */
 .ag-chat-shared-list .ag-tick {
   display: block;

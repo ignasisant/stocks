@@ -179,7 +179,7 @@ def fetch_earnings(ticker: str) -> tuple[list[date], list[EarningsResult]]:
     from stocks.data.funds import is_fund
 
     # Coins and funds never report. Screened here, the one choke point every
-    # caller goes through (the calendar, the digest, the price chart's event
+    # caller goes through (the calendar, the briefing, the price chart's event
     # markers), so a watchlist holding an ETF stops spending a round trip per
     # refresh on Yahoo answering "no earnings dates found". Classification is
     # cache-only: a fund the cache hasn't met yet costs one empty lookup, not

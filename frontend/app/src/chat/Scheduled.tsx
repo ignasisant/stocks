@@ -1,12 +1,12 @@
 /**
  * The scheduled runs, at the top of the thread list.
  *
- * Three fixed jobs — the AI briefing, the day's numbers, the weekly review —
- * each going out at the reader's own time and days (`notify/schedule.py`), and
- * each run filed as a thread of its own. So the block is the jobs first (when,
- * and a switch), then the runs they filed: a push notification lands on one of
- * those threads, and the reader looking for it later finds it here rather
- * than buried among the conversations they started.
+ * One job — the AI briefing, the one summary a day — going out at the
+ * reader's own time and days, or after the US close (`notify/schedule.py`),
+ * and each run filed as a thread of its own. So the block is the job first
+ * (when, and a switch), then the runs it filed: a push notification lands on
+ * one of those threads, and the reader looking for it later finds it here
+ * rather than buried among the conversations they started.
  *
  * Folded state is the browser's (a screen's layout, not the account's): read
  * once, and a storage that throws only means it opens folded.
@@ -18,12 +18,12 @@ import { useLang, useT } from "../shell/i18n";
 import { type Prefs, type Schedule, useSession } from "../shell/session";
 import { browserZone } from "../shell/zone";
 import { Glyph } from "./icons";
-import { weekdayNames, whenLabel } from "./slots";
+import { closeTime, weekdayNames, whenLabel } from "./slots";
 import type { Conversation } from "./types";
 
-const JOBS = ["briefing", "digest", "weekly"] as const;
+const JOBS = ["briefing"] as const;
 const FOLD_KEY = "chatScheduledOpen";
-/** Runs shown before "show more": a week of briefings and numbers. */
+/** Runs shown before "show more": a week of briefings. */
 const FIRST_RUNS = 5;
 
 function storedOpen(): boolean {
@@ -42,10 +42,15 @@ function storeOpen(open: boolean) {
   }
 }
 
-function Editor({
+/**
+ * When a run goes out: at a time of the reader's, or after the US close, and
+ * on which days. The profile's Notifications tab draws the same form.
+ */
+export function ScheduleEditor({
   id,
   slot,
   names,
+  zone,
   saving,
   onSave,
   onCancel,
@@ -53,6 +58,7 @@ function Editor({
   id: string;
   slot: Schedule;
   names: string[];
+  zone: string | null;
   saving: boolean;
   onSave: (next: Schedule) => void;
   onCancel: () => void;
@@ -60,6 +66,7 @@ function Editor({
   const t = useT();
   const [time, setTime] = useState(slot.time);
   const [days, setDays] = useState(slot.days);
+  const [close, setClose] = useState(!!slot.close);
   const flip = (d: number) =>
     setDays(
       days.includes(d)
@@ -72,7 +79,7 @@ function Editor({
       className="ag-sched-edit"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ on: slot.on, time, days });
+        onSave({ on: slot.on, time, days, close });
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -81,17 +88,40 @@ function Editor({
         }
       }}
     >
-      <label className="ag-sched-field">
-        <span>{t("chat.sched_time")}</span>
-        <input
-          className="ag-chat-input"
-          type="time"
-          required
-          autoFocus
-          value={time}
-          onChange={(event) => setTime(event.target.value)}
-        />
-      </label>
+      <div className="ag-sched-days" role="group" aria-label={t("chat.sched_mode")}>
+        <button
+          type="button"
+          className="ag-chat-chip ag-sched-day ag-sched-mode"
+          aria-pressed={!close}
+          autoFocus={!close}
+          onClick={() => setClose(false)}
+        >
+          {t("chat.sched_mode_time")}
+        </button>
+        <button
+          type="button"
+          className="ag-chat-chip ag-sched-day ag-sched-mode"
+          aria-pressed={close}
+          autoFocus={close}
+          onClick={() => setClose(true)}
+        >
+          {t("chat.sched_mode_close", { time: closeTime(zone) })}
+        </button>
+      </div>
+      {/* The time stays stored while it is unused: switching back finds it. */}
+      {!close && (
+        <label className="ag-sched-field">
+          <span>{t("chat.sched_time")}</span>
+          <input
+            className="ag-chat-input"
+            type="time"
+            required
+            value={time}
+            onChange={(event) => setTime(event.target.value)}
+          />
+        </label>
+      )}
+      {close && <p className="ag-sched-hint">{t("chat.sched_close_hint")}</p>}
       <div className="ag-sched-days" role="group" aria-label={t("chat.sched_days")}>
         {names.map((name, d) => (
           <button
@@ -130,11 +160,13 @@ function Job({
   job,
   slot,
   names,
+  zone,
   onSave,
 }: {
   job: string;
   slot: Schedule;
   names: string[];
+  zone: string | null;
   onSave: (next: Schedule) => Promise<void>;
 }) {
   const t = useT();
@@ -170,7 +202,7 @@ function Job({
     );
   };
   const name = t(`chat.sched_${job}`);
-  const when = whenLabel(slot, names, t);
+  const when = whenLabel(slot, names, t, zone);
   return (
     <div className="ag-sched-job" data-off={slot.on ? undefined : ""}>
       <div className="ag-chat-card">
@@ -212,10 +244,11 @@ function Job({
         </p>
       )}
       {editing && (
-        <Editor
+        <ScheduleEditor
           id={editorId}
           slot={slot}
           names={names}
+          zone={zone}
           saving={saving}
           onSave={save}
           onCancel={close}
@@ -303,7 +336,14 @@ export function Scheduled({
         <div className="ag-sched-body">
           {!searching &&
             jobs.map(({ job, slot }) => (
-              <Job key={job} job={job} slot={slot} names={names} onSave={save(job)} />
+              <Job
+                key={job}
+                job={job}
+                slot={slot}
+                names={names}
+                zone={zone}
+                onSave={save(job)}
+              />
             ))}
           {!searching && jobs.length > 0 && zone && (
             <p className="ag-chat-note">{t("chat.sched_zone", { zone })}</p>

@@ -27,8 +27,8 @@ from datetime import date, timedelta
 
 from stocks.portfolio import tax
 
-# How far ahead a deadline starts being announced — on the calendar's banner
-# and once in the push digest.
+# How far ahead a deadline starts being announced on the calendar's
+# banner.
 REMIND_DAYS = 30
 
 # The window the calendar is sent: enough behind to page back a couple of

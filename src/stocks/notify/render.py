@@ -1,6 +1,6 @@
 """Formatting primitives shared by the notification messages.
 
-Pure text, no network, no clock: the daily digest, the weekly review and the
+Pure text, no network, no clock: the briefing, the price alerts and the
 reminder print the same money and the same dates, and a reader who gets all
 three should not be able to tell they were written by three modules.
 
@@ -72,18 +72,21 @@ def body(lines: list[str | None]) -> str:
     return "\n".join(kept[:BODY_LINES])
 
 
-def message(title: str, lines: list[str | None], url: str, tag: str) -> dict:
+def message(
+    title: str, lines: list[str | None], url: str, tag: str,
+    actions: list[dict] | None = None,
+) -> dict:
     """The service worker's JSON (`assets/sw.js`): what it shows, where it goes.
 
     `tag` makes a newer notification of the same kind replace the one still
-    on screen — yesterday's digest is not worth a second row.
+    on screen — yesterday's briefing is not worth a second row. `actions` are
+    buttons under it, each {"action", "title", "url"}, where the browser
+    draws them (not iOS: there the tap is the only way in).
     """
-    return {"title": clip(title, 80), "body": body(lines), "url": url, "tag": tag}
-
-
-def markdown(title: str, lines: list[str | None]) -> str:
-    """The same message as a chat turn (`notify/schedule.py` files it): the
-    title in bold, then every line, uncut — the thread is where the reader
-    goes for what the notification folded away."""
-    kept = [" ".join(line.split()) for line in lines if line and line.strip()]
-    return "\n".join([f"**{title.strip()}**", "", *(f"- {line}" for line in kept)])
+    out = {"title": clip(title, 80), "body": body(lines), "url": url, "tag": tag}
+    if actions:
+        out["actions"] = [
+            {"action": a["action"], "title": clip(a["title"], 30), "url": a["url"]}
+            for a in actions
+        ]
+    return out

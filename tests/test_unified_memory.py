@@ -1,8 +1,8 @@
 """One memory everywhere (engine.user_memory).
 
 What the user told the chat steers every other surface that writes to them —
-the daily card, the analysis behind one of its lines, the push digest,
-weekly and alerts lines, and the walkthrough — under the same switches as the
+the daily card, the analysis behind one of its lines, the
+alerts line, and the walkthrough — under the same switches as the
 chat. Pinned here:
 
 * each surface's prompt carries the saved memories and the clause on how to
@@ -27,7 +27,6 @@ from stocks.accounts import paths_in
 from stocks.chat import daily, daily_analysis, engine, guide_ai, learnings, memory
 from stocks.notify import narrative
 from stocks.notify.alerts import AlertHit
-from stocks.notify.digest import DigestData
 from stocks.notify.fanout import NotifyUser
 from tests.patching import patch_engine
 
@@ -205,15 +204,14 @@ def test_a_line_without_a_ticker_looks_up_no_conversation(provider, chat, monkey
 # --------------------------------------------------------- Notifications
 
 
-def digest_data() -> DigestData:
-    return DigestData(date=DAY, total=1000.0, day=(10.0, 0.01), movers=[("NVDA", 0.03)])
+def fired() -> list[AlertHit]:
+    return [AlertHit("NVDA", "above", "closed above 190", value=192.0)]
 
 
-def test_every_notification_line_reads_the_memory(provider, chat):
+def test_the_notification_line_reads_the_memory(provider, chat):
     block = engine.memory_block({}, chat)
-    narrative.highlight(digest_data(), {}, "en", memories=block)
-    narrative.alerts_line([AlertHit("NVDA", "above", "closed above 190", value=192.0)],
-                          {}, "en", memories=block)
+    narrative.alerts_line(fired(), {}, "en", memories=block)
+    assert provider.systems
     for system in provider.systems:
         assert SAID in system and system.endswith(engine.MEMORY_USE)
 
@@ -221,7 +219,7 @@ def test_every_notification_line_reads_the_memory(provider, chat):
 def test_notification_lines_speak_to_the_profiled_investor(provider):
     prefs = {"investor_profile": {"set": True, "risk": "conservative",
                                   "horizon": "5y_plus"}}
-    narrative.highlight(digest_data(), prefs, "en")
+    narrative.alerts_line(fired(), prefs, "en")
     assert engine.persona({"set": True, "risk": "conservative",
                            "horizon": "5y_plus"}) in provider.systems[0]
     assert engine.MEMORY_USE not in provider.systems[0]

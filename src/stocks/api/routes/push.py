@@ -4,8 +4,8 @@ The browser does the subscribing (`Notification.requestPermission` +
 `pushManager.subscribe`) with the key `GET /push` hands it; these routes keep
 the result (`notify/webpush.py`). A finished answer pushes to every device
 kept here — unless `POST /push/presence` says the app is on screen somewhere —
-and so do the digest, the weekly review, the price alerts and the reminder
-(the crons in `notify/`).
+and so do the daily briefing, the price alerts and the reminder (the
+crons in `notify/`).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class Push(BaseModel):
     devices: int = Field(
         default=0,
         description="Devices this account has subscribed, this one included: "
-        "where the digest, the alerts and the reminders arrive.",
+        "where the briefing, the alerts and the reminders arrive.",
     )
 
 

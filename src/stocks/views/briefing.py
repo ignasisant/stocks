@@ -1306,8 +1306,8 @@ def start(
 def now_day(paths=None) -> tuple[datetime, date]:
     """The reader's now, in the account's zone (`timezone`, sent by the
     browser; Madrid with no account or one whose settings do not read), and
-    the action day it falls in (`daily.action_day`: turned over at the US
-    close, the same moment for every reader).
+    the action day it falls in (`daily.action_day`: turned over after the US
+    close, at the account's `schedule.turnover`).
     """
     from stocks.notify import schedule
 
@@ -1318,7 +1318,7 @@ def now_day(paths=None) -> tuple[datetime, date]:
         except Exception:  # noqa: BLE001 — read as the defaults
             prefs = {}
     now = datetime.now(schedule.zone(prefs))
-    return now, daily.action_day(now)
+    return now, daily.action_day(now, schedule.turnover(prefs))
 
 
 # ------------------------------------------------------------------ analysis

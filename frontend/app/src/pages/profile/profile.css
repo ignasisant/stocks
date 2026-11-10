@@ -440,6 +440,12 @@
 .pr-selfstart {
   align-self: flex-start;
 }
+/* Buttons side by side in a card body, wrapping on a phone. */
+.pr-btnrow {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 /* The same for a lone button as a row's control: a Delete bar the width of
    the card reads as a banner, not a button. */
 .pr-row-ctl > .pr-btn {

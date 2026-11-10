@@ -946,8 +946,7 @@ async def push_history(
     limit: Annotated[int, Field(ge=1, le=50)] = 20,
 ) -> CallToolResult:
     """The notifications this account's devices were sent, newest first:
-    alerts, the evening digest, the weekly review, exit rules met, answers
-    ready, tests."""
+    alerts, the daily AI summary, exit rules met, answers ready, tests."""
     def work(paths: UserPaths) -> dict:
         from stocks.notify import webpush
 
@@ -1710,8 +1709,8 @@ async def set_preferences(
     tax_niit: bool | None = None,
     tax_church_rate: Annotated[float | None, Field(ge=0, le=1)] = None,
     tax_subnational_rate: Annotated[float | None, Field(ge=0, le=1)] = None,
-    notify_digest: bool | None = None,
-    notify_weekly: bool | None = None,
+    notify_briefing: Annotated[bool | None, Field(
+        description="The AI daily summary, the one scheduled push a day.")] = None,
     notify_alerts: bool | None = None,
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
@@ -1723,8 +1722,7 @@ async def set_preferences(
             "tax_other_income": tax_other_income, "tax_niit": tax_niit,
             "tax_church_rate": tax_church_rate,
             "tax_subnational_rate": tax_subnational_rate,
-            "notify_digest": notify_digest, "notify_weekly": notify_weekly,
-            "notify_alerts": notify_alerts,
+            "notify_briefing": notify_briefing, "notify_alerts": notify_alerts,
         }
         patch = prefs.PrefsPatch.model_validate(
             {k: v for k, v in given.items() if v is not None}

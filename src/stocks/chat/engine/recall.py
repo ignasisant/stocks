@@ -48,7 +48,7 @@ def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
     """The prompt's saved-memories section, "" when off or empty.
 
     Every surface that writes to the user reads this same block — the chat,
-    the digests, the daily card and its analyses, the
+    the briefings, the daily card and its analyses, the
     walkthrough — so what the user told the assistant once steers all of
     them, not only the conversation it was said in. `routines=False` is the
     daily card's reading: it answers the routines from its own data
@@ -129,7 +129,7 @@ def talk_about(prefs: dict, chat_path: Path, names: list[str], *,
 
 
 # How a surface that is not the chat reads `user_memory`. The card, the
-# digests and the walkthrough are the same assistant the user talks to, so
+# briefings and the walkthrough are the same assistant the user talks to, so
 # they pull the same way: what the user said they want, keep or avoid shapes
 # what leads and how it is put. Their audits check figures against their own
 # data only, so a figure lifted from a memory would be rejected — or worse,
@@ -151,7 +151,7 @@ def user_memory(prefs: dict, chat_path: Path | None, names: Iterable[str] = (),
     """What the chat knows about this user, for a surface that is not the
     chat: (`memory_block`, the earlier conversations' turns about `names`).
 
-    The card, its analyses, the digests and the walkthrough all write to the
+    The card, its analyses, the briefings and the walkthrough all write to the
     same person the chat talks to, and read them through here so they pull
     the same way. The turns leave out what earlier daily cards said
     (`talk_about(cards=False)`): every one of these surfaces is written from

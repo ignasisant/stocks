@@ -2204,8 +2204,6 @@ export type Prefs = {
   "tax_niit": boolean;
   "tax_church_rate": number;
   "tax_subnational_rate": number;
-  "notify_digest": boolean;
-  "notify_weekly": boolean;
   "notify_weekly_email": boolean;
   "notify_alerts": boolean;
   "setup_card_dismissed": boolean;
@@ -2230,8 +2228,6 @@ export type PrefsPatch = {
   "tax_niit"?: boolean | null;
   "tax_church_rate"?: number | null;
   "tax_subnational_rate"?: number | null;
-  "notify_digest"?: boolean | null;
-  "notify_weekly"?: boolean | null;
   "notify_weekly_email"?: boolean | null;
   "notify_alerts"?: boolean | null;
   "notify_briefing"?: boolean | null;
@@ -2854,6 +2850,7 @@ export type ScheduleSlot = {
   "on": boolean;
   "time": string;
   "days": number[];
+  "close": boolean;
 };
 
 export type ScorePoint = {

@@ -214,36 +214,25 @@ def test_the_written_settings_are_what_the_tax_engine_then_reads(
     assert (code, how) == ("UK", "chosen")
 
 
-# ------------------------------------------------------------ the weekly review
+# ------------------------------------------------------------ the daily summary
 
 
-def test_the_weekly_review_toggle_is_readable(client, account):
-    """It was writable on the Profile page and missing from this API, so a
-    client could see two of the three deliveries and never the third."""
+def test_an_untouched_summary_reads_on_because_it_is_on(client, account):
+    """The scheduler (`notify.schedule.slot`) sends it unless switched off; a
+    client drawing the switch off beside it would ship a lie."""
     payload = client.get("/v1/prefs", params=WHO, headers=AUTH).json()
-    assert payload["notify_weekly"] is True
+    assert payload["notify_briefing"] is True
+    assert payload["schedules"]["briefing"]["close"] is False
 
 
-def test_an_untouched_weekly_toggle_reads_on_because_it_is_on(client, account):
-    """The one that would ship a lie quietly. Unlike its two neighbours this key
-    is absent from `accounts.DEFAULT_PREFS`, so a plain `.get()` returns None —
-    and a client would draw the switch off beside a review the cron
-    (`notify.fanout.iter_notify_users`, which defaults it True) is delivering
-    every Sunday."""
-    stored = json.loads(account.prefs.read_text())
-    assert "notify_weekly" not in stored  # nothing has ever written it
-    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
-        "notify_weekly"
-    ] is True
-
-
-def test_the_weekly_review_can_be_turned_off(client, account, signed_in):
-    """And the write has to land in the file the cron reads, not just in the
-    response — the two are different machines."""
-    assert signed_in.patch("/v1/prefs", json={"notify_weekly": False}).json()[
-        "notify_weekly"
-    ] is False
-    assert json.loads(account.prefs.read_text())["notify_weekly"] is False
+def test_the_retired_runs_are_not_settings_any_more(client, account, signed_in):
+    """The evening numbers and the weekly review were retired (2026-11-10):
+    one summary a day. Their switches are neither drawn nor written."""
+    payload = client.get("/v1/prefs", params=WHO, headers=AUTH).json()
+    assert "notify_digest" not in payload and "notify_weekly" not in payload
+    assert set(payload["schedules"]) == {"briefing"}
+    for key in ("notify_digest", "notify_weekly"):
+        assert signed_in.patch("/v1/prefs", json={key: False}).status_code == 422, key
 
 
 def test_the_friday_email_reads_on_until_switched_off(client, account, signed_in):
@@ -261,8 +250,7 @@ def test_every_delivery_the_profile_page_writes_is_writable_here(
     """The sweep, pinned. The Profile page writes exactly these keys from its
     notification and email cards; one added there and not here would save on
     one surface and 422 on the other."""
-    for key in ("notify_briefing", "notify_digest", "notify_weekly", "notify_alerts",
-                "notify_weekly_email"):
+    for key in ("notify_briefing", "notify_alerts", "notify_weekly_email"):
         response = signed_in.patch("/v1/prefs", json={key: False})
         assert response.status_code == 200, key
         assert response.json()[key] is False, key

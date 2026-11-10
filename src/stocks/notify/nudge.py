@@ -93,7 +93,7 @@ def wants_messages(prefs: dict, devices: int) -> bool:
     if devices <= 0:
         return False
     return any(
-        prefs.get(f"notify_{kind}", True) for kind in ("digest", "weekly", "alerts")
+        prefs.get(f"notify_{kind}", True) for kind in ("briefing", "alerts")
     )
 
 

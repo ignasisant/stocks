@@ -27,6 +27,7 @@ PORTFOLIO = "portfolio"
 IMPORT = "import_transactions"
 EARNINGS = "earnings"
 TICKER = "ticker"
+PROFILE = "profile"
 
 
 def app_base() -> str | None:

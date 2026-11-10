@@ -3,8 +3,8 @@
 Two kinds of sender share it. A reader asks something, puts the phone away,
 and the answer is written on a detached run (`api/runs.py`) that finishes
 whether or not anyone is reading: `answer_ready` sends "Your answer is ready"
-and the tap opens the thread. And the crons in this package — the evening
-digest, the Sunday review, the price alerts, the dormant reminder — compute
+and the tap opens the thread. And the crons in this package — the price
+alerts, the dormant reminder, the AI briefing (`schedule.py`) — compute
 one short message per account and `send_all` it to every device the account
 switched on; the tap opens the page that tells the rest.
 

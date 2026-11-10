@@ -121,48 +121,6 @@ def cmd_shorts(args: argparse.Namespace) -> None:
         print(f"{part}: {result}")
 
 
-def cmd_digest(args: argparse.Namespace) -> None:
-    if args.all_users:
-        from stocks.notify.digest import run_digest_fanout
-
-        status = run_digest_fanout(dry_run=args.dry_run)
-        if not status:
-            print("no digest subscribers")
-            return
-        for label, result in status.items():
-            print(f"{label}: {result}")
-        return
-
-    # Single-user smoke path: the owner's root files, printed, never sent.
-    from stocks.config import DATA_DIR, WATCHLIST_FILE
-    from stocks.notify.digest import compute_digest_data, digest_message
-
-    data = compute_digest_data(WATCHLIST_FILE, DATA_DIR / "portfolio.db")
-    message = digest_message(data, "en")
-    print(f"{message['title']}\n{message['body']}\n-> {message['url']}")
-
-
-def cmd_weekly(args: argparse.Namespace) -> None:
-    if args.all_users:
-        from stocks.notify.weekly import run_weekly_fanout
-
-        status = run_weekly_fanout(dry_run=args.dry_run)
-        if not status:
-            print("no weekly subscribers")
-            return
-        for label, result in status.items():
-            print(f"{label}: {result}")
-        return
-
-    # Single-user smoke path: the owner's root files, printed, never sent.
-    from stocks.config import DATA_DIR, WATCHLIST_FILE
-    from stocks.notify.weekly import compute_weekly_data, weekly_message
-
-    data = compute_weekly_data(WATCHLIST_FILE, DATA_DIR / "portfolio.db")
-    message = weekly_message(data, "en")
-    print(f"{message['title']}\n{message['body']}\n-> {message['url']}")
-
-
 def cmd_nudge(args: argparse.Namespace) -> None:
     """Remind the accounts with push on that went quiet (notify/nudge.py)."""
     from stocks.notify.nudge import run_nudge_fanout
@@ -217,7 +175,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
 
       no flags        the env-configured channels — exactly what
                       `alerts --deliver` uses (SMTP_*).
-      --all-users     the per-account fan-out the digest/alerts crons use:
+      --all-users     the per-account fan-out the scheduled runs use:
       / --user LABEL  a Web Push to every device each account subscribed on
                       the Profile page, in its own language.
 
@@ -256,7 +214,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
             }
             muted = [
                 kind
-                for kind in ("digest", "weekly", "alerts")
+                for kind in ("briefing", "alerts")
                 if not user.prefs.get(f"notify_{kind}", True)
             ]
             note = f" (notify_{'/'.join(muted)} off)" if muted else ""
@@ -1334,33 +1292,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_alerts.set_defaults(func=cmd_alerts)
 
-    p_digest = sub.add_parser(
-        "digest", help="daily portfolio digest (value, moves, earnings) as a push"
-    )
-    p_digest.add_argument(
-        "--all-users", action="store_true",
-        help="cron mode: push every account with notifications on its own digest",
-    )
-    p_digest.add_argument(
-        "--dry-run", action="store_true",
-        help="print the rendered digest(s) instead of sending",
-    )
-    p_digest.set_defaults(func=cmd_digest)
-
-    p_weekly = sub.add_parser(
-        "weekly",
-        help="weekly portfolio review (week/month/YTD, best and worst, week ahead)",
-    )
-    p_weekly.add_argument(
-        "--all-users", action="store_true",
-        help="cron mode: push every account with notifications on its own review",
-    )
-    p_weekly.add_argument(
-        "--dry-run", action="store_true",
-        help="print the rendered review(s) instead of sending",
-    )
-    p_weekly.set_defaults(func=cmd_weekly)
-
     p_sector = sub.add_parser(
         "sector-scan",
         help="build each sector's comparable cohort and rank it (nightly cron)",
@@ -1818,8 +1749,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    # Structured logs for the scheduled runs too (alerts/digest fire from GitHub
-    # Actions); locally this is the compact human formatter.
+    # Structured logs for the scheduled runs too (alerts and the summary fire
+    # from the crons); locally this is the compact human formatter.
     obs.setup()
     args = build_parser().parse_args()
     args.func(args)

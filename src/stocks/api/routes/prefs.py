@@ -80,8 +80,6 @@ class PrefsPatch(BaseModel):
     tax_niit: bool | None = None
     tax_church_rate: float | None = None
     tax_subnational_rate: float | None = None
-    notify_digest: bool | None = None
-    notify_weekly: bool | None = None
     notify_weekly_email: bool | None = None
     notify_alerts: bool | None = None
     notify_briefing: bool | None = None
@@ -190,14 +188,6 @@ def _view(stored: dict) -> Prefs:
         tax_niit=bool(stored.get("tax_niit")),
         tax_church_rate=float(stored.get("tax_church_rate") or 0.0),
         tax_subnational_rate=float(stored.get("tax_subnational_rate") or 0.0),
-        notify_digest=bool(stored.get("notify_digest")),
-        # Defaulted here rather than read off the merged file, because unlike
-        # its two neighbours this one is missing from `accounts.DEFAULT_PREFS`.
-        # The cron sends on the assumption it is on
-        # (`notify.fanout.iter_notify_users`), so reporting False for an
-        # account that never touched it would draw the switch off beside a
-        # review that is being delivered every Sunday.
-        notify_weekly=bool(stored.get("notify_weekly", True)),
         notify_weekly_email=bool(stored.get("notify_weekly_email", True)),
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
@@ -274,18 +264,18 @@ def update(
     "/schedules/{job}", response_model=Prefs, summary="Time one scheduled run"
 )
 def save_schedule(account: Writer, job: str, body: ScheduleSlot) -> Prefs:
-    """Switch one run on or off and set its time and days, whole.
+    """Switch one run on or off and set its time, days and mode, whole.
 
     `on` is the job's `notify_<job>` key, the switch the Notifications screen
-    already drew; the time and days merge into `schedules` beside the other
-    jobs'. Neither the run's last day nor its zone moves: a run already sent
-    today is not sent again because its time changed.
+    already drew; the time, days and `close` merge into `schedules` beside the
+    other jobs'. Neither the run's last day nor its zone moves: a run already
+    sent today is not sent again because its time changed.
     """
     if job not in JOBS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"no scheduled run {job!r}")
     stored = accounts.load_prefs(account.prefs).get(PREFS_KEY)
     merged = dict(stored) if isinstance(stored, dict) else {}
-    merged[job] = {"time": body.time, "days": body.days}
+    merged[job] = {"time": body.time, "days": body.days, "close": body.close}
     return _view(accounts.update_prefs(
         account.prefs, {f"notify_{job}": body.on, PREFS_KEY: merged},
     ))
