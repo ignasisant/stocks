@@ -110,6 +110,22 @@ def settled() -> dict:
     }
 
 
+def as_guest(context: BrowserContext, base_url: str) -> None:
+    """Mark `context` as a browser whose visitor pressed the landing's
+    "look around first": without it, or an account, every app page is the
+    landing (`web.server.LandingGate`)."""
+    from stocks import session
+
+    context.add_cookies([{"name": session.GUEST_COOKIE, "value": "1", "url": base_url}])
+
+
+@pytest.fixture(autouse=True)
+def guest(context: BrowserContext, base_url: str) -> None:
+    """Every test's browser starts as a guest; `sign_in` adds an account on
+    top, and a test about the landing clears the cookies first."""
+    as_guest(context, base_url)
+
+
 @pytest.fixture
 def sign_in(
     context: BrowserContext, base_url: str, server_root: Path, monkeypatch

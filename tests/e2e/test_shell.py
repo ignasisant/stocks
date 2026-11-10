@@ -11,11 +11,12 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from stocks import navigation
+from tests.e2e.conftest import as_guest
 
 pytestmark = pytest.mark.e2e
 
-# `/` is the landing for a browser that has never been to the app, which is
-# every fresh test context — the shell's own name for its home is `/home`.
+# Every test context is a guest (`conftest.guest`), for whom `/` would be the
+# app too — but the shell's own name for its home is `/home`.
 PAGES = sorted(navigation.SHELL_PATHS)
 
 
@@ -104,6 +105,7 @@ def test_a_phone_gets_a_bottom_tab_bar_and_no_sideways_scroll(
         locale="en-US",
     )
     try:
+        as_guest(context, base_url)
         page = context.new_page()
         page.goto(f"/{path}")
         nav = page.get_by_role("navigation", name="Sections")
@@ -135,6 +137,7 @@ def test_a_phone_reaches_the_other_pages_through_more(browser, base_url: str):
         locale="en-US",
     )
     try:
+        as_guest(context, base_url)
         page = context.new_page()
         page.goto("/home")
         nav = page.get_by_role("navigation", name="Sections")
@@ -172,6 +175,7 @@ def test_the_public_documents_break_none_of_their_own_policy(page: Page, path: s
     """The landing, the legal pages and the 404 run under a policy that
     refuses inline styles and scripts: the browser, not a parser, says whether
     what they carry is allowed."""
+    page.context.clear_cookies()  # a first visit: `/` is the landing
     _offline(page)
     page.add_init_script(_WATCH_CSP)
     page.goto(f"/{path}")
