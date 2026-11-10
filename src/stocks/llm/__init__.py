@@ -544,7 +544,9 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
     """
 
     def run(api_key, model, system, messages, tools, execute, rounds,
-            cap: int = 0, stop=None):
+            cap: int = 0, stop=None, swap=None):
+        """`swap(model, exc, round, tries)` names the model a failed round goes
+        on with, the conversation so far intact, or None to raise (`_tools_swap`)."""
         import json
 
         from openai import OpenAI
@@ -558,14 +560,24 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
         calls: list[ToolCall] = []
         sent: list[list[dict]] = []  # each round's results (`_clear_old_results`)
         text = ""
-        for _ in range(max(1, rounds)):
+        for n_round in range(max(1, rounds)):
             _clear_old_results(sent)
             if cap:
                 _squeeze_tool_results(convo, cap - schema_tokens)
-            resp = client.chat.completions.create(
-                model=model, max_tokens=MAX_TOKENS, messages=convo,
-                tools=cast(Any, schema),
-            )
+            tries = 0
+            while True:
+                try:
+                    resp = client.chat.completions.create(
+                        model=model, max_tokens=MAX_TOKENS, messages=convo,
+                        tools=cast(Any, schema),
+                    )
+                    break
+                except Exception as exc:
+                    tries += 1
+                    nxt = swap(model, exc, n_round, tries) if swap else None
+                    if nxt is None:
+                        raise
+                    model = nxt
             metering.note_openai(model, getattr(resp, "usage", None), free=free)
             if not resp.choices:
                 # OpenRouter answers an upstream failure with HTTP 200 and an
@@ -889,6 +901,11 @@ def _learn_skew(b: _FreeBackend, exc: Exception, sent: int) -> bool:
 # next backend's turn. `timeout` is httpx's, per read — a stream that keeps
 # producing is never cut.
 _FREE_CLIENT: dict[str, Any] = {"max_retries": 1, "timeout": 60.0}
+# The tool loop retries on its own (`_tools_swap`): each round carries most of
+# groq's 8k a minute, so the next round's 429 names 10-36 s, and the SDK sat
+# every one of them out — 132 s of a 205 s deep turn (prod 2026-11-10) — while
+# groq's other models, counted apart, were awake.
+_FREE_TOOLS_CLIENT: dict[str, Any] = {"max_retries": 0, "timeout": 60.0}
 
 
 class FreeTierExhausted(Exception):
@@ -1403,6 +1420,66 @@ def _malformed(exc: Exception) -> bool:
     return any(m in text for m in _MALFORMED)
 
 
+def _transient(exc: Exception) -> bool:
+    """A failure the SDK's own retry used to ride out: the connection dropped
+    or the host hiccuped. A read that timed out is not one — the same model is
+    as slow the second time."""
+    import openai
+
+    if isinstance(exc, openai.APITimeoutError):
+        return False
+    if isinstance(exc, openai.APIConnectionError):
+        return True
+    status = getattr(exc, "status_code", None) or 0
+    return status in (408, 409) or status >= 500
+
+
+def _tools_swap(plan: list, live: list[_FreeBackend]):
+    """What the tool loop does when a round fails, without dropping its rounds.
+
+    A short 429 is sat out on the same model, as the chain does
+    (`_short_wait`). A longer one rests the model and hands the conversation to
+    the backend's next model that is awake — groq counts tokens a minute per
+    model. With none awake the round sits out the wait once, capped at
+    `_MAX_REST_S`, which is what the SDK's retry did. A transient failure is
+    asked again once. Anything else, or a round past those, is the chain's to
+    handle: None. `live` ends on the model in use, for the caller's bookkeeping.
+    """
+    slept: set[int] = set()
+
+    def swap(model: str, exc: Exception, n_round: int, tries: int) -> str | None:
+        b = live[-1]
+        if tries > 1 + sum(n.id == b.id for n, _ in plan):
+            return None
+        if _transient(exc):
+            if tries > 1:
+                return None
+            _sleep(1.0)
+            return model
+        secs = _retry_after(exc)
+        if secs is None:
+            return None
+        if (wait := _short_wait(exc)) is not None and n_round not in slept:
+            slept.add(n_round)
+            _sleep(wait)
+            return model
+        _note_rest(b, exc)
+        for n, _ in plan:
+            if (n.id == b.id and n.model != b.model and n.id not in _free_dead
+                    and (n.id, n.model) not in _free_gone and not _resting(n)):
+                obs.event("llm.free.tools_swapped", backend=b.id, model=b.model,
+                          to=n.model, round=n_round, wait_s=round(secs, 1))
+                live.append(n)
+                return n.model
+        if n_round in slept:
+            return None
+        slept.add(n_round)
+        _sleep(min(secs, _MAX_REST_S) + 0.25)
+        return model
+
+    return swap
+
+
 def _free_tools(api_key, model, system, messages, tools, execute, rounds,
                 stop=None):
     """The chain again, for the tool loop: first backend that gets through wins.
@@ -1433,12 +1510,14 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds,
             continue
         cap = _tpm_cap(b)
         for retry in range(2):
+            live = [b]
             try:
                 return _openai_compat_tools(b.base_url or None, free=True,
-                                            **_FREE_CLIENT)(
+                                            **_FREE_TOOLS_CLIENT)(
                     b.api_key, b.model, system, thread, tools, execute, rounds,
-                    cap, stop=stop)
+                    cap, stop=stop, swap=_tools_swap(plan, live))
             except Exception as exc:
+                b = live[-1]  # the model the loop was on when it gave up
                 obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
                          attempt=attempt, error_type=type(exc).__name__,
                          error=str(exc)[:300],

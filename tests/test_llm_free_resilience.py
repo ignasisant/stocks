@@ -4,7 +4,7 @@ OpenRouter's model list, tool results kept under a TPM cap. No network."""
 import pytest
 
 import stocks.llm as llm
-from stocks.llm import FreeTierExhausted, _FreeBackend
+from stocks.llm import FreeTierExhausted, ToolSpec, _FreeBackend
 
 
 class _HttpError(Exception):
@@ -340,3 +340,82 @@ def test_short_repeated_lines_are_prose_not_a_loop(monkeypatch):
     warned = _watch(monkeypatch)
     assert "".join(llm._free_stream("", "auto", "sys", [])) == "".join(table)
     assert not [w for w in warned if w[0] == "llm.free.degenerate"]
+
+
+# ------------------------------------------------- tool loop across models
+
+
+class _Scripted:
+    """An OpenAI client whose replies, or raised errors, come from a script."""
+
+    def __init__(self, *script):
+        from types import SimpleNamespace
+
+        self.script, self.sent = list(script), []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kw):
+        from types import SimpleNamespace
+
+        self.sent.append(kw)
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        call = None
+        if step == "tool":
+            call = [SimpleNamespace(id="c1", type="function", function=SimpleNamespace(
+                name="get_quotes", arguments="{}"))]
+        msg = SimpleNamespace(
+            content=None if call else step, tool_calls=call,
+            model_dump=lambda **_: {"role": "assistant", "content": None})
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+
+
+def _tool_loop(monkeypatch, client, *models):
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: client)
+    monkeypatch.setattr(llm, "_free_gone", set())
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", m, None, "u", primary=i == 0)
+        for i, m in enumerate(models)])
+    tools = [ToolSpec("get_quotes", "quotes", {"type": "object", "properties": {}})]
+    return llm._free_tools("", "", "sys", [{"role": "user", "content": "q"}],
+                           tools, lambda n, a: "quoted", 3)
+
+
+def test_a_round_groq_rate_limits_goes_on_with_its_next_model(monkeypatch, slept):
+    """A deep turn sat out six 10-36 s waits on gpt-oss-120b while qwen, counted
+    apart, was idle (prod 2026-11-10, 205 s). The rounds already run stay."""
+    client = _Scripted("tool", _HttpError(429, _GROQ_429.format("36s")), "DONE")
+    run = _tool_loop(monkeypatch, client, "gpt-oss-120b", "qwen3.8-27b")
+    assert run.text == "DONE" and slept == []
+    assert [kw["model"] for kw in client.sent] == [
+        "gpt-oss-120b", "gpt-oss-120b", "qwen3.8-27b"]
+    assert client.sent[2]["messages"][-1] == {
+        "role": "tool", "tool_call_id": "c1", "content": "quoted"}
+    assert ("groq", "gpt-oss-120b") in llm._free_resting
+
+
+def test_with_no_model_awake_a_round_sits_out_the_wait_once(monkeypatch, slept):
+    client = _Scripted("tool", _HttpError(429, _GROQ_429.format("20s")), "DONE")
+    run = _tool_loop(monkeypatch, client, "gpt-oss-120b")
+    assert run.text == "DONE" and slept == [pytest.approx(20.25)]
+    assert len(client.sent) == 3
+
+
+def test_a_short_rate_limit_in_a_round_waits_on_the_same_model(monkeypatch, slept):
+    client = _Scripted("tool", _HttpError(429, _GROQ_429.format("2s")), "DONE")
+    run = _tool_loop(monkeypatch, client, "gpt-oss-120b", "qwen3.8-27b")
+    assert run.text == "DONE" and slept == [pytest.approx(2.25)]
+    assert [kw["model"] for kw in client.sent][-1] == "gpt-oss-120b"
+
+
+def test_a_host_hiccup_in_a_round_is_asked_again_once(monkeypatch, slept):
+    client = _Scripted("tool", _HttpError(503, "overloaded"),
+                       _HttpError(503, "overloaded"), "DONE")
+    run = _tool_loop(monkeypatch, client, "gpt-oss-120b", "qwen3.8-27b")
+    # Twice down on the one model: the chain's turn, which moves to qwen.
+    assert run.text == "DONE"
+    assert [kw["model"] for kw in client.sent] == [
+        "gpt-oss-120b", "gpt-oss-120b", "gpt-oss-120b", "qwen3.8-27b"]

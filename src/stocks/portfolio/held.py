@@ -27,6 +27,7 @@ from stocks import storage
 from stocks.portfolio import validate
 from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction, all_transactions, connect
+from stocks.portfolio.positions import replay_order
 
 OVERSELL = "validate.oversell"
 
@@ -269,7 +270,7 @@ def reuploads(rows: list[Transaction], path: Path) -> list[Reupload]:
 def _open(trades: list[Transaction], splits: list[Transaction], ticker: str) -> float:
     events = sorted(
         [*trades, *(s for s in splits if s.ticker == ticker)],
-        key=lambda t: (t.date, t.id or 0),
+        key=replay_order,
     )
     q = 0.0
     for t in events:

@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from stocks.portfolio.positions import POOLED_MODES, RealizedSale
+from stocks.portfolio.positions import POOLED_MODES, RealizedSale, replay_order
 from stocks.portfolio.tax import ae, au, ca, ch, de, es, fr, ie, it, pt, uk, us
 from stocks.portfolio.tax.base import (
     Acquisition,
@@ -414,7 +414,7 @@ def buy_dates(transactions) -> dict[str, list[Acquisition | Split]]:
 
     out: dict[str, list[Acquisition | Split]] = defaultdict(list)
     rows = transfers.normalize(list(transactions))
-    for tx in sorted(rows, key=lambda t: (t.date, t.id or 0)):
+    for tx in sorted(rows, key=replay_order):
         if tx.action == "buy":
             out[tx.ticker].append(Acquisition(tx.date, tx.quantity))
         elif tx.action == "split":
