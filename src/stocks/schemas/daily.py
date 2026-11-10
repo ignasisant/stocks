@@ -299,9 +299,10 @@ class DailyCard(BaseModel):
     )
     action_day: str = Field(
         description=(
-            "Which day's card is current right now. It turns over at 16:45 "
-            "New York time, after the US close, to the next day's: the card "
-            "is written from settled closes and read the next morning."
+            "Which day's card is current right now. It turns over at 20:15 "
+            "New York time, after the US after-hours session, to the next "
+            "day's: the card is written from settled prices and read the next "
+            "morning."
         )
     )
     fresh: bool = Field(
