@@ -129,8 +129,16 @@ class Position:
 def replay_order(tx: Transaction) -> tuple:
     """Date order, ledger order within a day, and a return of capital first on
     its day: it was paid on the shares held going into it, so a buy or a sell
-    on the pay date must not move what it lowers."""
-    return (tx.date, tx.action != RETURN_OF_CAPITAL, tx.id or 0)
+    on the pay date must not move what it lowers.
+
+    A split comes next, before the day's trades: it lands at the open, so a
+    trade on its day is already in post-split shares. Ledger order put it
+    after them whenever it was written later — always, for one the sweep or
+    the Ticker page adds — and a buy of 20 post-split shares on the split
+    day came out as 400 (tests/test_split_scenarios.py).
+    """
+    rank = 0 if tx.action == RETURN_OF_CAPITAL else 1 if tx.action == "split" else 2
+    return (tx.date, rank, tx.id or 0)
 
 
 def build(
