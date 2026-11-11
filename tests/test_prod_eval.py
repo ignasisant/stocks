@@ -288,3 +288,12 @@ def test_a_saved_answer_reads_back():
     )
     back = prod_eval.Answer.from_dict(ans.as_dict())
     assert back.as_dict() == ans.as_dict()
+
+
+def test_a_recall_question_has_an_earlier_talk_to_be_about(catalog):
+    recalls = [q for q in catalog if q.kind == "recall"]
+    assert recalls
+    for q in recalls:
+        assert q.before or not q.recall, q.id
+    off = [q for q in recalls if not q.recall]
+    assert off, "the switched-off answer is asked too"

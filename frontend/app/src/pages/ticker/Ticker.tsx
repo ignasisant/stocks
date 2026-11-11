@@ -86,7 +86,6 @@ import { Card, Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 import { Badge } from "../../ui/Badge";
-import { Help } from "../../ui/Kpi";
 import { ASSETS, assetKind } from "../../shell/assets";
 import { layout, resolveKind } from "./layout";
 
@@ -481,18 +480,11 @@ export default function Page() {
             </div>
             {/* What this is, before whether the reader owns it: the search box
                 finds shares, funds, coins and indices alike, and each is read
-                by different figures. What the kind means sits behind its "?" —
-                a reader who searched "xeon" can learn it is cash, without the
-                line pushing the price down on every visit. Then the reader's
-                own: held, where, and the groups they filed it under. */}
+                by different figures. Then the reader's own: held, where, and
+                the groups they filed it under. */}
             {named || held?.held || held?.custody?.length || entry?.tags.length ? (
               <div className="tk-meta">
-                {named ? (
-                  <span className="tk-kind">
-                    <Badge>{t(named.label)}</Badge>
-                    {named.help ? <Help text={t(named.help)} /> : null}
-                  </span>
-                ) : null}
+                {named ? <Badge>{t(named.label)}</Badge> : null}
                 {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
                 <Custody marks={held?.custody ?? []} />
                 {entry?.tags.map((tag) => (

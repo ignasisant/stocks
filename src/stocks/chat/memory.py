@@ -28,10 +28,10 @@ import re
 import sqlite3
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from stocks import accounts, obs
+from stocks.chat import clock
 from stocks.chat.hybrid import DIM, EMBEDDER, available, embed, fts_query, load_vec
 from stocks.chat.hybrid import fuse as _fuse
 
@@ -64,10 +64,14 @@ class Memory:
     when: str  # ISO date
     text: str
     rank: int
+    # The conversation's title, when the caller looked it up: a quote that
+    # spans threads reads as one talk without it.
+    title: str = ""
 
     def line(self) -> str:
         who = "You" if self.role == "user" else "The assistant"
-        return f"[{self.when}] {who}: {self.text}"
+        where = f" · {self.title}" if self.title else ""
+        return f"[{self.when}{where}] {who}: {self.text}"
 
 
 # ------------------------------------------------------------------- store
@@ -200,7 +204,9 @@ def remember(path: Path, history: list[dict], thread: str) -> int:
             vectors = embed([t[2] for t in fresh])
             if vectors is None:
                 return 0
-            when = datetime.now(UTC).date().isoformat()
+            # The reader's day, not the server's: "yesterday" is asked in
+            # Madrid (`between`).
+            when = clock.today().isoformat()
             for (fp, role, text), vector in zip(fresh, vectors, strict=True):
                 cur = db.execute(
                     "INSERT INTO notes (thread, role, when_iso, text, fingerprint)"
@@ -271,13 +277,15 @@ def said_since(path: Path, since: str, limit: int = 40) -> list[str]:
 
 
 def recall(path: Path, query: str, limit: int = RECALL_LIMIT,
-           exclude_thread: str = "") -> list[Memory]:
+           exclude_thread: str = "", since: str = "",
+           until: str = "") -> list[Memory]:
     """The stored turns most like `query`, best first — meaning and words both.
 
     `exclude_thread` drops the conversation the user is already in: those
     messages are in the prompt already, and spending the search on them is how
-    a memory tool returns nothing useful. Both halves therefore over-fetch,
-    since the filtering happens after the ranking.
+    a memory tool returns nothing useful. `since` / `until` (ISO dates, both
+    ends kept) keep the turns said between them. Both halves therefore
+    over-fetch, since the filtering happens after the ranking.
     """
     if not available() or not query.strip() or not path.exists():
         return []
@@ -289,7 +297,7 @@ def recall(path: Path, query: str, limit: int = RECALL_LIMIT,
         return []
     try:
         _backfill(db)
-        depth = max(limit * 4, 8)
+        depth = max(limit * 4, 8) * (3 if since or until else 1)
         order = _fuse(_semantic(db, query, depth), _lexical(db, query, depth))
         if not order:
             return []
@@ -308,6 +316,8 @@ def recall(path: Path, query: str, limit: int = RECALL_LIMIT,
     for rank, note_id in enumerate(order):
         row = by_id.get(note_id)
         if row is None or row[1] == exclude_thread:
+            continue
+        if (since and row[3] < since) or (until and row[3] > until):
             continue
         out.append(Memory(thread=row[1], role=row[2], when=row[3], text=row[4],
                           rank=rank + 1))
@@ -421,13 +431,58 @@ def about(path: Path, names: list[str], limit: int = ABOUT_LIMIT,
             for rank, s in enumerate(scored[:limit])]
 
 
-def augment(message: str, hits: list[Memory]) -> str:
+SPAN_ROWS = 400  # turns read for "what did we talk about yesterday"
+
+
+def between(path: Path, since: str = "", until: str = "",
+            exclude_thread: str = "", limit: int = SPAN_ROWS) -> list[Memory]:
+    """The stored turns said from `since` to `until` (ISO dates, both ends
+    kept; either may be "" for open), newest first.
+
+    No ranking at all: "what did we talk about yesterday?" is asked of a day,
+    not of a meaning, and a search would hand back whatever sits nearest the
+    words "talk" and "yesterday". The days are the reader's (`remember`
+    stamps them in Madrid); turns indexed before that were stamped in UTC, a
+    night out at most. Needs neither the model nor the vectors. Never raises.
+    """
+    if not path.exists():
+        return []
+    try:
+        db = _connect(path)
+    except Exception as exc:
+        obs.warn("chat.memory.between_connect_failed",
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return []
+    try:
+        rows = db.execute(
+            "SELECT thread, role, when_iso, text FROM notes"
+            " WHERE when_iso >= ? AND when_iso <= ? AND thread != ?"
+            " ORDER BY id DESC LIMIT ?",
+            (since or "0000", until or "9999", exclude_thread, limit),
+        ).fetchall()
+    except Exception as exc:
+        obs.warn("chat.memory.between_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        return []
+    finally:
+        db.close()
+    return [Memory(thread=thread, role=role, when=when, text=text, rank=rank + 1)
+            for rank, (thread, role, when, text) in enumerate(
+                r for r in rows if not _junk(r[3]))]
+
+
+def augment(message: str, hits: list[Memory], lead: str = "") -> str:
     """The user message with recalled turns appended, framed as quotation
-    (QUOTE_HEADER, and `toolbox._recall` on why). Unchanged when none."""
-    if not hits:
+    (QUOTE_HEADER, and `toolbox._recall` on why). `lead` goes before them:
+    what the app made of a message that asks about an earlier conversation
+    (`engine.recall.asked_back`), said even when nothing was found. Unchanged
+    when there is neither."""
+    if not hits and not lead:
         return message
-    return (message + "\n\n---\n" + QUOTE_HEADER
-            + "\n".join(h.line() for h in hits))
+    out = message + "\n\n---\n" + (lead + "\n" if lead else "")
+    if hits:
+        out += QUOTE_HEADER + "\n".join(h.line() for h in hits)
+    return out.rstrip("\n")
 
 
 def _drop_thread(db: sqlite3.Connection, thread: str) -> int:

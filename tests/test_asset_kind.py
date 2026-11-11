@@ -391,8 +391,7 @@ def test_cached_reads_a_closed_end_verdict_already_on_disk(tmp_path):
 
 
 @pytest.mark.parametrize("lang", ["es", "en"])
-def test_every_kind_has_a_label_and_a_line(lang):
+def test_every_kind_has_a_label(lang):
     copy = json.loads((LOCALES / lang / "ticker.json").read_text())
     for kind in KINDS:
         assert copy.get(f"ticker.asset_{kind}"), (lang, kind)
-        assert copy.get(f"ticker.asset_{kind}_line"), (lang, kind)

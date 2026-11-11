@@ -798,7 +798,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     except guard.Blocked as refused:
         return settled(_refused(refused.refusal, history, chat_path, thread,
                                 turn_id, lang, provider.id))
-    recalled_notes, recalled = earlier(prefs, chat_path, message, known)
+    recalled_notes, recalled, recall_lead = earlier(prefs, chat_path, message,
+                                                   known)
     note_used(prefs, chat_path, message, known)
     system = system_prompt(
         userprefs.load_profile(prefs),
@@ -820,7 +821,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # system prompt — the stored history keeps the user's own text.
     if evidence:
         msgs[-1]["content"] = evidence.augment(msgs[-1]["content"])
-    msgs[-1]["content"] = memory.augment(msgs[-1]["content"], recalled_notes)
+    msgs[-1]["content"] = memory.augment(msgs[-1]["content"], recalled_notes,
+                                         recall_lead)
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:

@@ -10,12 +10,14 @@ import json
 import re
 import threading
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stocks import obs
 from stocks.chat import (
+    clock,
     journal,
     learnings,
     market,
@@ -256,40 +258,335 @@ def _snippet(text: str) -> str:
 
 
 def earlier(prefs: dict, chat_path: Path, message: str,
-            known: dict[str, str] | None = None,
-            ) -> tuple[list[memory.Memory], list[dict]]:
-    """The earlier conversations about what `message` names: (the turns to
-    staple onto it, the conversations they came from as `Reply.recalled`).
+            known: dict[str, str] | None = None, today: date | None = None,
+            ) -> tuple[list[memory.Memory], list[dict], str]:
+    """The earlier conversations `message` is about: (the turns to staple onto
+    it, the conversations they came from as `Reply.recalled`, the line that
+    says what the app made of a question about an earlier talk — "" for any
+    other message).
 
-    Run on every turn, unasked, and not behind `web_enabled` — it reads one
-    local file and reaches nothing. What it finds and why it is strict about
-    it is `memory.about`'s business. A turn from a thread that is no longer
-    in the book is dropped even if the index still has it: deleting a
-    conversation is the reader's way of saying it must not come back.
+    Two ways in. A message that asks back ("¿te acuerdas de lo que hablamos
+    ayer?", `asked_back`) gets the conversations of that day, or the latest
+    ones, whatever they named (`back`). Any other gets the turns about what it
+    names (`about`). Both run on every turn, unasked, and not behind
+    `web_enabled` — they read one local file and reach nothing. A turn from a
+    thread that is no longer in the book is dropped even if the index still
+    has it: deleting a conversation is the reader's way of saying it must not
+    come back.
     `known` is the watchlist's names (`market.watchlist_names`): with it, a
     holding is found under every name it goes by (`market.aliases`), so
     "Nvidia" also brings back the turn that said "NVDA"."""
     from stocks.chat import conversations
 
+    span = asked_back(message, today or clock.today())
+    if span is not None:
+        if not recall_on(prefs):
+            return [], [], _BACK_OFF
+        if not chat_path.exists():
+            return [], [], _BACK_NONE
+        current = conversations.active_conversation(chat_path)["id"]
+        return back(chat_path, span, exclude_thread=current)
     names = market.named(message) if recall_on(prefs) else []
     if recall_on(prefs) and known:
         names = market.aliases(names, message, known)
     if not names or not chat_path.exists():
-        return [], []
+        return [], [], ""
     current = conversations.active_conversation(chat_path)["id"]
     hits = talk_about(prefs, chat_path, names, exclude_thread=current)
     if not hits:
-        return [], []
+        return [], [], ""
     book = {c["id"]: c for c in conversations.list_conversations(chat_path)}
     hits = [h for h in hits if h.thread in book]
+    threads = _recalled(hits, book)
+    if hits:
+        obs.event("chat.memory_recalled", notes=len(hits), threads=len(threads))
+    return hits, threads, ""
+
+
+def _recalled(hits: list[memory.Memory], book: dict[str, dict]) -> list[dict]:
+    """The conversations `hits` came from, once each, as `Reply.recalled`."""
     threads: dict[str, dict] = {}
     for h in hits:
         threads.setdefault(h.thread, {
             "thread": h.thread, "title": book[h.thread]["title"],
             "when": h.when, "snippet": _snippet(h.text)})
-    if hits:
-        obs.event("chat.memory_recalled", notes=len(hits), threads=len(threads))
-    return hits, list(threads.values())
+    return list(threads.values())
+
+
+# ------------------------------------------------------------ asked back
+# "¿Te acuerdas de lo que hablamos ayer?" names nothing, so `about` finds
+# nothing, and the model's `recall` search has no topic to rank by: in prod
+# (2026-11-11) the turn went out with no tool called and the answer was "No
+# conservo el historial de conversaciones de días anteriores" — while the
+# index held the day before word for word. A question about an earlier talk
+# is a question about a day, or about the latest talk, and both are a lookup
+# by date: no model, no ranking.
+#
+# Strict on purpose, since a hit staples whole conversations onto the
+# message. Words about talking ("hablamos", "me dijiste", "we discussed") are
+# always needed — "¿te acuerdas de cuando cayó el S&P en 2020?" and "la
+# última vez que compré" are about the market and the book — and with them a
+# day ("ayer", "el lunes", "last week") or a cue that the talk is not this one
+# ("te acuerdas", "la última vez", "lo que hablamos"). "You said" with neither
+# may be this very conversation, which is already in the prompt. Naming
+# another conversation outright ("en otra conversación") is enough alone.
+
+
+@dataclass(frozen=True)
+class Span:
+    """The days a question about an earlier talk points at, ISO, both ends
+    kept. No days: the latest conversations, whenever they were."""
+
+    since: str = ""
+    until: str = ""
+
+    @property
+    def dated(self) -> bool:
+        return bool(self.since)
+
+    def said(self) -> str:
+        if self.since == self.until:
+            return f"on {self.since}"
+        return f"from {self.since} to {self.until}"
+
+
+_TALK_RE = re.compile(
+    r"\b(?:"
+    # es
+    r"habl(?:amos|abamos|e|aste|ado)|coment(?:amos|e|aste|ado)|dijiste|"
+    r"te dije|te (?:pregunte|conte|consulte)|me has dicho|"
+    r"te he (?:dicho|preguntado|contado|comentado)|decidimos|quedamos|"
+    r"conversacion(?:es)?|charlamos|"
+    # en
+    r"we (?:talk|talked|speak|spoke|discuss|discussed|chat|chatted|decide|"
+    r"decided|agree|agreed|look at|looked at)|"
+    r"you (?:said|told me|mentioned|suggested|recommended)|"
+    r"i (?:told|asked) you|discussed|conversations?|"
+    # it
+    r"(?:ne )?abbiamo (?:parlato|discusso|deciso|visto)|mi hai detto|"
+    r"ti ho (?:detto|chiesto)|conversazion[ei]|parlato"
+    r")\b")
+# Beside talk with no day: the talk is an earlier one.
+_CUE_RE = re.compile(
+    r"\b(?:"
+    # es — "recuerdas", never "recuerda", which is a memory command
+    r"te acuerdas|te acordas|recuerdas|la ultima vez|lo que|de que|"
+    # en
+    r"do you remember|remember (?:what|when|our)|last time|what (?:did )?we|"
+    # it
+    r"ti ricordi|ricordi|l ?ultima volta|di cosa|quello che"
+    r")\b")
+# Another conversation, named outright: enough alone.
+_ELSEWHERE_RE = re.compile(
+    r"\b(?:"
+    r"(?:otra|la anterior|la ultima) conversacion|conversacion anterior|"
+    r"(?:el otro|el anterior|el ultimo) chat|chat anterior|"
+    r"(?:previous|earlier|last|other|another|our) (?:conversation|chat)|"
+    r"(?:altra|ultima) (?:conversazione|chat)|"
+    r"(?:conversazione|chat) (?:precedente|scorsa)"
+    r")\b")
+
+_NUMBERS = {
+    "un": 1, "uno": 1, "una": 1, "one": 1, "a": 1,
+    "dos": 2, "two": 2, "due": 2,
+    "tres": 3, "three": 3, "tre": 3,
+    "cuatro": 4, "four": 4, "quattro": 4,
+    "cinco": 5, "five": 5, "cinque": 5,
+    "seis": 6, "six": 6, "sei": 6,
+    "siete": 7, "seven": 7, "sette": 7,
+}
+_NUMBER = r"(\d{1,2}|" + "|".join(_NUMBERS) + r")"
+_WEEKDAYS = {
+    0: ("lunes", "monday", "lunedi"),
+    1: ("martes", "tuesday", "martedi"),
+    2: ("miercoles", "wednesday", "mercoledi"),
+    3: ("jueves", "thursday", "giovedi"),
+    4: ("viernes", "friday", "venerdi"),
+    5: ("sabado", "saturday", "sabato"),
+    6: ("domingo", "sunday", "domenica"),
+}
+
+
+def _days(message: str, today: date) -> tuple[date, date] | None:
+    """The days `message` names, as (first, last) — None when it names none.
+    Folded text; the more specific phrase first ("anteayer" holds "ayer")."""
+    def back_by(n: int) -> tuple[date, date]:
+        day = today - timedelta(days=n)
+        return day, day
+
+    if re.search(r"\b(?:anteayer|antier|antes de ayer|day before yesterday|"
+                 r"altroieri|l ?altro ieri|avantieri)\b", message):
+        return back_by(2)
+    if re.search(r"\b(?:ayer|yesterday|ieri)\b", message):
+        return back_by(1)
+    if m := re.search(rf"\bhace {_NUMBER} dias?\b|\b{_NUMBER} days? ago\b|"
+                      rf"\b{_NUMBER} giorni fa\b", message):
+        word = next(g for g in m.groups() if g)
+        n = int(word) if word.isdigit() else _NUMBERS[word]
+        return back_by(n) if 0 < n <= 31 else None
+    if re.search(r"\b(?:el otro dia|hace unos dias|the other day|a few days ago|"
+                 r"l ?altro giorno|qualche giorno fa)\b", message):
+        return today - timedelta(days=7), today - timedelta(days=1)
+    monday = today - timedelta(days=today.weekday())
+    if re.search(r"\b(?:la semana pasada|last week|la settimana scorsa)\b",
+                 message):
+        return monday - timedelta(days=7), monday - timedelta(days=1)
+    if re.search(r"\b(?:esta semana|this week|questa settimana)\b", message):
+        return monday, today
+    first = today.replace(day=1)
+    if re.search(r"\b(?:el mes pasado|last month|il mese scorso)\b", message):
+        return (first - timedelta(days=1)).replace(day=1), first - timedelta(days=1)
+    if re.search(r"\b(?:este mes|this month|questo mese)\b", message):
+        return first, today
+    for weekday, names in _WEEKDAYS.items():
+        if re.search(r"\b(?:" + "|".join(names) + r")\b", message):
+            # The last one before today: on a Monday, "el lunes" is a week ago.
+            return back_by((today.weekday() - weekday - 1) % 7 + 1)
+    if re.search(r"\b(?:hoy|esta manana|today|this morning|earlier today|"
+                 r"oggi|stamattina|stamani)\b", message):
+        return today, today
+    return None
+
+
+def asked_back(message: str, today: date) -> Span | None:
+    """The days `message` asks about an earlier conversation from — a `Span`
+    with none when it asks about the latest one — or None when it does not
+    ask about an earlier conversation at all."""
+    folded = " ".join(re.sub(r"[^\w]+", " ", memory._fold(message or "")).split())
+    if not folded:
+        return None
+    talk = _TALK_RE.search(folded) is not None
+    elsewhere = _ELSEWHERE_RE.search(folded) is not None
+    if not (talk or elsewhere):
+        return None
+    days = _days(folded, today)
+    if days is not None:
+        return Span(days[0].isoformat(), days[1].isoformat())
+    if elsewhere or _CUE_RE.search(folded):
+        return Span()
+    return None
+
+
+BACK_THREADS = 3  # conversations quoted for a question about an earlier talk
+_BACK_ASKED = 3  # of each, the user's turns quoted
+_BACK_ASKED_CHARS = 300
+
+_BACK_OFF = (
+    "The user is asking about an earlier conversation, but they switched off "
+    "\"Use earlier conversations to answer\" in the chat's settings, so none "
+    "is quoted here. Say so in one line and that switching it on brings them "
+    "back. Never say you cannot keep a history of conversations."
+)
+_BACK_NONE = (
+    "The user is asking about an earlier conversation, and there is none: "
+    "conversations are kept for 30 days after their last message. Say so in "
+    "one line. Never say you cannot keep a history of conversations."
+)
+_BACK_FOUND = (
+    "The user is asking about an earlier conversation{when}. The ones below "
+    "are from then, newest first. Say what the most recent one was about and "
+    "where it was left, from these lines only; name the others by their title "
+    "in one line, in case they meant one of those."
+)
+_BACK_MISSED = (
+    "The user is asking about an earlier conversation {when}, and nothing was "
+    "said in another conversation then. Say so in one line, then say what the "
+    "most recent conversation below was about and where it was left, and name "
+    "the others by their title."
+)
+
+
+def back(chat_path: Path, span: Span, *, exclude_thread: str = "",
+         ) -> tuple[list[memory.Memory], list[dict], str]:
+    """The conversations a question about an earlier talk points at, in
+    `earlier`'s shape: up to BACK_THREADS of them, newest first, each as the
+    user's opening turns and where the assistant left it.
+
+    The days of `span`, or the latest conversations when it names none — and
+    also when the days hold none, with the line saying so, since "nothing
+    yesterday" is half an answer and the latest talk is usually the rest.
+    The index only says which conversations were had on which day: it keeps
+    no turn under `memory.MIN_CHARS`, and "¿Qué es el PEG?" is the kind of
+    opening that says what a talk was about, so the turns are read from the
+    thread itself. A conversation counts only where the user wrote in it: a
+    daily card nobody answered is the app talking, not a conversation they
+    had. Never raises — a lookup that fails is the line saying none was
+    found."""
+    from stocks.chat import conversations
+
+    try:
+        book = {c["id"]: c for c in conversations.load_book(chat_path)
+                ["conversations"] if c["id"] != exclude_thread}
+        days: dict[str, str] = {}
+        if span.dated:
+            index = conversations.memory_path(chat_path)
+            for row in memory.between(index, span.since, span.until,
+                                      exclude_thread=exclude_thread):
+                days.setdefault(row.thread, row.when)
+        picked = _talks(list(days), book)
+        missed = span.dated and not picked
+        if not span.dated or missed:
+            days = {c["id"]: _day(c["updated"]) for c in sorted(
+                book.values(), key=lambda c: c["updated"], reverse=True)}
+            picked = _talks(list(days), book)
+    except Exception as exc:  # noqa: BLE001 — recall never costs a turn
+        obs.warn("chat.memory.back_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        return [], [], _BACK_NONE
+    obs.event("chat.memory_asked_back", dated=span.dated, missed=missed,
+              threads=len(picked))
+    if not picked:
+        return [], [], _BACK_NONE
+    hits: list[memory.Memory] = []
+    for thread, turns in picked:
+        title, when = book[thread]["title"], days[thread]
+        asked = [t for t in turns if t["role"] == "user"][:_BACK_ASKED]
+        answers = [t for t in turns if t["role"] == "assistant"]
+        quoted = [(t, _BACK_ASKED_CHARS) for t in asked]
+        if answers:
+            quoted.append((answers[-1], memory._QUOTE_CHARS))
+        hits += [memory.Memory(
+            thread=thread, role=t["role"], when=when, title=title, rank=0,
+            text=_cut(" ".join(str(t["content"]).split()), limit))
+            for t, limit in quoted]
+    if missed:
+        lead = _BACK_MISSED.format(when=span.said())
+    else:
+        lead = _BACK_FOUND.format(when=f" {span.said()}" if span.dated else "")
+    return hits, _recalled(hits, book), lead
+
+
+def _talks(order: list[str], book: dict[str, dict],
+           ) -> list[tuple[str, list[dict]]]:
+    """The conversations of `order` (newest first) the user wrote in, as
+    (thread, its turns), BACK_THREADS at most — only those still in the book:
+    deleting a conversation is the reader's way of saying it must not come
+    back, even while the index still has it."""
+    talks = []
+    for thread in order:
+        if thread not in book:
+            continue
+        turns = [m for m in book[thread]["messages"]
+                 if m.get("role") in ("user", "assistant")
+                 and not m.get("guide") and str(m.get("content") or "").strip()]
+        if any(t["role"] == "user" for t in turns):
+            talks.append((thread, turns))
+        if len(talks) == BACK_THREADS:
+            break
+    return talks
+
+
+def _day(stamp: str) -> str:
+    """A thread's UTC stamp as the reader's day."""
+    try:
+        return datetime.fromisoformat(stamp).astimezone(clock.ZONE).date() \
+            .isoformat()
+    except ValueError:
+        return stamp[:10]
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
 def _thread_id(chat_path: Path) -> str:

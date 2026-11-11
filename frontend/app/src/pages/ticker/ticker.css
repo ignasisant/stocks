@@ -86,12 +86,6 @@
   gap: 6px;
 }
 
-.tk-kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .tk-acts {
   display: flex;
   align-items: center;
