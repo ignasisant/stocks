@@ -103,14 +103,14 @@ export function landing(step: {
 
 /**
  * `landing`, plus where the reader came from for the one page that reports
- * it: the Claude tab counts how readers reach it (`stocks logs connector`).
+ * it: the MCP tab counts how readers reach it (`stocks logs connector`).
  */
 function arrive(
   step: { params: Record<string, string>; session?: Record<string, string> },
   mode: "tour" | "news",
 ): Record<string, string> {
   const query = landing(step);
-  if (query.tab === "claude") query.from = mode;
+  if (query.tab === "mcp") query.from = mode;
   return query;
 }
 

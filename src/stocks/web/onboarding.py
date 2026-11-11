@@ -196,15 +196,17 @@ STEPS: tuple[Step, ...] = (
         gated=True,
         done=_has_push,
     ),
-    # Its own Profile tab: asking about the book from inside Claude is
-    # somewhere the app could not be reached from at all, and a card at the
-    # foot of Preferences was a place nobody went. Only where the deploy
-    # serves the connector (`visible_steps`).
+    # Its own Profile tab: asking about the book from inside Claude, ChatGPT
+    # or any other MCP app is somewhere the app could not be reached from at
+    # all, and a card at the foot of Preferences was a place nobody went. The
+    # id stays "claude", the app it first explained: the October card and
+    # stored progress name it. Only where the deploy serves the connector
+    # (`visible_steps`).
     Step(
         id="claude",
         icon="hub",
         page="profile",
-        session={"profile_tab": "claude"},
+        session={"profile_tab": "mcp"},
         gated=True,
     ),
     Step(
@@ -822,7 +824,7 @@ def account_gaps(
 
         if store.ledger().grants_for(email):
             return None
-        return Gap("claude", "profile", {"tab": "claude"})
+        return Gap("claude", "profile", {"tab": "mcp"})
 
     for fn in (fixes, prices, stale, plan, rules, push, tax, investor, connector):
         if len(gaps) >= GAPS_SHOWN:

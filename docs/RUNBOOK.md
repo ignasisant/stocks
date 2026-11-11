@@ -74,6 +74,20 @@ Known shapes:
   `FREE_LLM_GLOBAL_DAILY_CAP` (env overlay wins over secrets) or wait for the
   UTC midnight reset.
 
+## Alert: import stuck
+
+Someone uploaded a statement and it never reached their book
+(`import.stuck`, `notify/import_alert.py`). `kind=failed` stopped at `stage`;
+`kind=abandoned` previewed rows and did not commit within 30 minutes (found
+by the warm's sweep, so it can arrive hours later on a quiet day).
+
+1. `uv run stocks logs tail --since 24h --user <slug> --grep import` — the
+   upload, preview, refusal and crash lines of that attempt, in order.
+2. `uv run stocks imports show <diagnostic_id>` / `replay <id>` — the file's
+   shape (headers, delimiter, skip reasons), never its values.
+3. A broker nobody parses yet is a parser to write; a model miss on a known
+   one is a `prefer`/autodetect bug; `browser_read` is the phone's picker.
+
 ## Bad deploy / rollback
 
 A deploy that fails to boot never reaches users: `scripts/deploy.sh` puts the

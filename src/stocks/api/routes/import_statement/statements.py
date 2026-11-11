@@ -20,6 +20,8 @@ from stocks.api.routes.import_statement.upload import (
     _prefer,
     _read,
     _unreadable,
+    brief,
+    watch_preview,
 )
 from stocks.api.routes.import_statement.validation import (
     QUOTES_BUDGET_S,
@@ -32,6 +34,7 @@ from stocks.api.routes.import_statement.validation import (
     _validated,
 )
 from stocks.api.security import Authed
+from stocks.notify import import_alert
 from stocks.portfolio import (
     autodetect,
     demo,
@@ -94,28 +97,40 @@ def preview(
     """
     prefer = _prefer(body.platform)
     raw = _decode(body)
-    found = _read(
-        account,
-        body.filename,
-        raw,
-        held=_held(x_chat_provider, x_chat_key),
-        prefer=prefer,
-    )
-    why = _unreadable(found)
-    if why:
-        diagnostics.report(
-            found.platform, body.filename, raw, found.result, surface=body.surface
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        found = _read(
+            account,
+            body.filename,
+            raw,
+            held=_held(x_chat_provider, x_chat_key),
+            prefer=prefer,
         )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
-        )
-    checked, disowned = _validated(account, found.result, wipe=body.wipe)
+        why = _unreadable(found)
+        if why:
+            fp = diagnostics.report(
+                found.platform, body.filename, raw, found.result, surface=body.surface
+            )
+            obs.warn("import.refused", stage="preview", surface=body.surface,
+                     why="unreadable", platform=found.platform)
+            import_alert.failed(fp, stage="preview_unreadable", detail=why,
+                                digest=digest)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
+            )
+        checked, disowned = _validated(account, found.result, wipe=body.wipe)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _crashed(body, raw, "preview", exc, digest)
+        raise
     # The anonymised record the page files for every outcome, which is what
     # turns "some brokers fail" into a queryable fact.
-    diagnostics.report(
+    fp = diagnostics.report(
         found.platform, body.filename, raw, found.result, checked,
         surface=body.surface,
     )
+    watch_preview(fp, found, checked, len(checked.fresh), digest)
     importable = checked.importable
     detected = platforms.detected_broker(importable)
     rows = [c for c in checked.checked if not c.errors]
@@ -136,7 +151,7 @@ def preview(
         kind=found.kind,
         unavailable=found.unavailable,
         filename=body.filename,
-        digest=hashlib.sha256(raw).hexdigest(),
+        digest=digest,
         importable=[_row(c, gain) for c, gain in zip(rows, gains, strict=True)],
         rejected=[_row(c) for c in checked.rejected],
         duplicates=len(checked.duplicates),
@@ -146,6 +161,16 @@ def preview(
         holdings=[ImportHolding(**held) for held in found.holdings],
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
     )
+
+
+def _crashed(body: Upload, raw: bytes, stage: str, exc: Exception,
+             digest: str) -> None:
+    """A read or a validation that raised: filed, logged and alerted before
+    the 500 goes out, since the reader is left with nothing."""
+    fp = diagnostics.report("", body.filename, raw, surface=body.surface, error=exc)
+    obs.error("import.crashed", exc, stage=stage, surface=body.surface)
+    import_alert.failed(fp, stage=f"{stage}_crash", detail=str(exc)[:300],
+                        digest=digest)
 
 
 class ClientFailure(BaseModel):
@@ -182,9 +207,12 @@ def client_failure(account: Writer, body: Annotated[ClientFailure, ...]) -> None
     session like every other write, which also caps who can fill
     `data/imports/` to the people who could import in the first place.
     """
-    diagnostics.client_failure(
+    fp = diagnostics.client_failure(
         body.platform, body.filename, body.bytes, body.error, body.message
     )
+    obs.warn("import.refused", stage="browser_read", surface="import",
+             why=body.error, bytes=body.bytes)
+    import_alert.failed(fp, stage="browser_read", detail=body.error)
 
 
 @router.post("/commit", response_model=ImportResult, summary="Write the rows")
@@ -212,29 +240,44 @@ def commit(
     """
     prefer = _prefer(body.platform)
     if body.wipe and body.wipe_confirm.strip().lower() != (caller.email or "").lower():
+        # The reader's to fix, so logged only: if they give up instead, the
+        # preview's watch reports it as abandoned.
+        obs.warn("import.refused", stage="commit", surface=body.surface,
+                 why="wipe_confirm")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="wipe_confirm must be the signed-in address, exactly",
         )
-    raw, report = b"", False
+    raw, report, digest = b"", False, body.expect
     if body.rows is not None:
         parsed = ParseResult(transactions=[_statement_row(r) for r in body.rows])
         read_by = prefer or autodetect.LLM_KEY
+        obs.event("import.upload", stage="commit", surface=body.surface,
+                  rows=len(body.rows), named=body.platform or "", wipe=body.wipe,
+                  digest=digest[:16])
     else:
-        raw = _decode(body)
+        raw = _decode(body, "commit")
         digest = hashlib.sha256(raw).hexdigest()
         if body.expect and body.expect != digest:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="this is not the file that was previewed",
+            detail = "this is not the file that was previewed"
+            obs.warn("import.refused", stage="commit", surface=body.surface,
+                     why="digest_mismatch")
+            import_alert.failed(
+                brief(body.filename, body.surface, body.platform, bytes=len(raw)),
+                stage="commit_digest_mismatch", detail=detail, digest=digest,
             )
-        found = _read(
-            account,
-            body.filename,
-            raw,
-            held=_held(x_chat_provider, x_chat_key),
-            prefer=prefer,
-        )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        try:
+            found = _read(
+                account,
+                body.filename,
+                raw,
+                held=_held(x_chat_provider, x_chat_key),
+                prefer=prefer,
+            )
+        except Exception as exc:
+            _crashed(body, raw, "commit", exc, digest)
+            raise
         # Reported only when no preview was claimed: a commit carrying
         # `expect` is of bytes its preview already filed a diagnostic for (the
         # digest matched just above), and a second record would count one
@@ -243,11 +286,19 @@ def commit(
         report = not body.expect
         why = _unreadable(found)
         if why:
-            if report:
+            fp = (
                 diagnostics.report(
                     found.platform, body.filename, raw, found.result,
                     surface=body.surface,
                 )
+                if report
+                else brief(body.filename, body.surface, found.platform,
+                           found.result, bytes=len(raw))
+            )
+            obs.warn("import.refused", stage="commit", surface=body.surface,
+                     why="unreadable", platform=found.platform)
+            import_alert.failed(fp, stage="commit_unreadable", detail=why,
+                                digest=digest)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
             )
@@ -260,19 +311,36 @@ def commit(
     importable = checked.importable if body.keep_duplicates else checked.fresh
     left_out = 0 if body.keep_duplicates else len(checked.duplicates)
     if not importable:
+        detail = (
+            "every row in this statement is already in the book"
+            if left_out
+            else "nothing in this statement is importable"
+        )
+        obs.warn("import.refused", stage="commit", surface=body.surface,
+                 why="all_duplicates" if left_out else "nothing_importable",
+                 platform=read_by, rejected=len(checked.rejected))
+        if left_out:
+            # Not a failure: the book already holds the statement.
+            import_alert.committed()
+        else:
+            import_alert.failed(
+                brief(body.filename, body.surface, read_by, parsed, checked),
+                stage="commit_nothing_importable", detail=detail, digest=digest,
+            )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=(
-                "every row in this statement is already in the book"
-                if left_out
-                else "nothing in this statement is importable"
-            ),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
         )
     origin = platforms.detected_broker(importable) or body.broker.strip()
     if not origin:
+        detail = "this statement names no broker — send one as `broker`"
+        obs.warn("import.refused", stage="commit", surface=body.surface,
+                 why="no_broker", platform=read_by)
+        import_alert.failed(
+            brief(body.filename, body.surface, read_by, parsed, checked),
+            stage="commit_no_broker", detail=detail, digest=digest,
+        )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="this statement names no broker — send one as `broker`",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
         )
 
     # Activation, read before anything is written: the account's first real
@@ -316,6 +384,7 @@ def commit(
         first=first,
         via="api",
     )
+    import_alert.committed()
     return ImportResult(
         platform=read_by,
         filename=body.filename,

@@ -61,6 +61,8 @@ const PATHS: Record<string, string> = {
     "M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm11-2h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z",
   install_mobile:
     "M7 1h10a2 2 0 0 1 2 2v18a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2zm0 3v16h10V4H7zm4 3h2v5h2.5L12 16l-3.5-4H11V7z",
+  power:
+    "M16.01 7 16 3h-2v4h-4V3H8v4h-.01C7 6.99 6 7.99 6 8.99v5.49L9.5 18v3h5v-3l3.5-3.51v-5.5c0-1-1-2-1.99-1.99z",
 };
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {

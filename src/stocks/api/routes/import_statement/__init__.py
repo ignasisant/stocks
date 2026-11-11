@@ -94,6 +94,8 @@ from stocks.api.routes.import_statement.upload import (
     _held,
     _provider,
     _read,
+    brief,
+    watch_preview,
 )
 from stocks.api.routes.import_statement.validation import (
     QUOTES_BUDGET_S,
@@ -123,6 +125,8 @@ __all__ = [
     "splits_apply",
     "splits_scan",
     "undo",
+    "brief",
+    "watch_preview",
 ]
 
 # Each leaf carries the "/import" prefix itself: an included router is not

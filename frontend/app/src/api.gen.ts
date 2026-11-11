@@ -695,6 +695,7 @@ export type Conversations = {
 
 export type Copied = {
   "what": "url" | "command";
+  "app"?: "claude" | "claude_code" | "chatgpt" | "codex" | "gemini" | "cursor" | "vscode" | "windsurf" | "lechat" | "other" | null;
 };
 
 export type CryptoCycle = {

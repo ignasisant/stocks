@@ -42,7 +42,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     "sector": (),
     "earnings": (),
     "learn": ("paths", "glossary"),
-    "profile": ("prefs", "iv", "plan", "watch", "notify", "claude"),
+    "profile": ("prefs", "iv", "plan", "watch", "notify", "mcp"),
 }
 
 # Each tab's catalog key, by page slug and `?tab=` value: the label the shell
@@ -90,7 +90,7 @@ TAB_LABELS: dict[str, dict[str, str]] = {
         "plan": "profile.plan_section",
         "watch": "profile.watchlist",
         "notify": "profile.notifications",
-        "claude": "profile.connector_tab",
+        "mcp": "profile.connector_tab",
     },
 }
 
@@ -136,8 +136,8 @@ _WHAT = {
              "(lessons), glossary (term definitions)",
     "profile": "account settings. Tabs: prefs (preferences), iv (investor "
                "profile), plan (target mix, risk caps, contribution and cash "
-               "reserve), watch (watchlist), notify (alerts and notifications), claude "
-               "(connect Claude to the account)",
+               "reserve), watch (watchlist), notify (alerts and notifications), mcp "
+               "(connect Claude, ChatGPT, Codex or another MCP app to the account)",
 }
 
 TOOL_NAME = "navigate"

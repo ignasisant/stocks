@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 from typing import Literal
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
 
+from stocks import obs
+from stocks.notify import import_alert
 from stocks.portfolio import (
     autodetect,
+    diagnostics,
     llm_map,
     platforms,
     upload_guard,
@@ -144,30 +148,95 @@ class Commit(Upload):
     )
 
 
-def _decode(body: Upload) -> bytes:
+def _decode(body: Upload, stage: str = "preview") -> bytes:
+    """The upload's bytes, or the 4xx that says why there are none. Logged as
+    `import.upload` either way, and a refusal is an alert: the file never
+    reached a parser, so nothing else would record it."""
+    def refuse(code: int, detail: str, why: str, size: int) -> HTTPException:
+        obs.warn("import.refused", stage=stage, surface=body.surface, why=why,
+                 bytes=size)
+        import_alert.failed(
+            brief(body.filename, body.surface, body.platform, bytes=size),
+            stage=f"{stage}_upload_{why}", detail=detail,
+        )
+        return HTTPException(status_code=code, detail=detail)
+
     try:
         raw = base64.b64decode(body.content, validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="content must be base64",
-        ) from exc
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                     "content must be base64", "not_base64",
+                     len(body.content) * 3 // 4) from exc
     if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="empty file"
-        )
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, "empty file", "empty", 0)
     if len(raw) > MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=f"statements are capped at {MAX_BYTES // (1024 * 1024)} MB",
-        )
+        raise refuse(status.HTTP_413_CONTENT_TOO_LARGE,
+                     f"statements are capped at {MAX_BYTES // (1024 * 1024)} MB",
+                     "too_large", len(raw))
     try:
         upload_guard.check(raw)
     except upload_guard.TooCostly as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)
-        ) from exc
+        raise refuse(status.HTTP_413_CONTENT_TOO_LARGE, str(exc), "too_costly",
+                     len(raw)) from exc
+    obs.event("import.upload", stage=stage, surface=body.surface, bytes=len(raw),
+              ext=_ext(body.filename), named=body.platform or "", wipe=body.wipe,
+              digest=hashlib.sha256(raw).hexdigest()[:16])
     return raw
+
+
+def _ext(filename: str) -> str:
+    return filename.rsplit(".", 1)[-1].lower()[:8] if "." in filename else ""
+
+
+def brief(filename: str, surface: str, platform: str, parsed=None, checked=None,
+          **extra) -> dict:
+    """A diagnostics-shaped record for an alert with no file to fingerprint —
+    rows sent back from a preview, or bytes that never decoded."""
+    return {
+        "user": obs.current().get("user", "-"),
+        "surface": surface,
+        "platform": platform or "",
+        "file": diagnostics.mask_digits(filename),
+        "ext": _ext(filename),
+        "imported": len(parsed.transactions) if parsed is not None else 0,
+        "rejected": len(checked.rejected) if checked is not None else 0,
+        **extra,
+    }
+
+
+def watch_preview(fp: dict, found, checked, rows: int, digest: str) -> None:
+    """Log a finished preview and hand it to the owner's alert: watched until
+    a commit when it has something to write, reported now when it has nothing
+    (and not because every row is already in the book)."""
+    holdings = len(found.holdings)
+    obs.event(
+        "import.preview",
+        platform=found.platform,
+        kind=found.kind,
+        surface=fp.get("surface", ""),
+        rows=rows,
+        holdings=holdings,
+        rejected=len(checked.rejected),
+        flagged=len(checked.flagged),
+        duplicates=len(checked.duplicates),
+        skipped=len(found.result.skipped),
+        unavailable=found.unavailable,
+        digest=digest[:16],
+    )
+    if rows or holdings:
+        import_alert.previewed(fp, digest=digest, importable=rows or holdings,
+                               platform=found.platform)
+    elif checked.duplicates:
+        # Every row is already in the book: nothing left to finish.
+        import_alert.committed()
+    else:
+        import_alert.failed(
+            fp,
+            stage="model_unavailable" if found.unavailable else "nothing_importable",
+            detail=f"{len(checked.rejected)} rejected, "
+                   f"{len(found.result.skipped)} skipped",
+            digest=digest,
+        )
 
 
 def _platform(key: str):

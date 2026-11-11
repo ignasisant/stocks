@@ -135,7 +135,12 @@ def test_a_wipe_is_mirrored(client, account, persisted):
     assert str(account.db) in persisted
 
 
-def test_a_preview_mirrors_nothing(client, account, persisted):
-    """It changes nothing, so it should not be waking the bucket either."""
+def test_a_preview_mirrors_only_the_import_watch(client, account, persisted):
+    """It changes nothing of the account's, so nothing of the account's wakes
+    the bucket. The one write is the owner's watch list (`import_alert`): a
+    preview nobody commits is reported by a sweep that, with Cloud Run scaled
+    to zero, runs on another instance."""
+    from stocks.notify import import_alert
+
     assert client.post("/v1/import/preview", json=upload()).status_code == 200
-    assert persisted == []
+    assert persisted == [str(import_alert.STATE)]

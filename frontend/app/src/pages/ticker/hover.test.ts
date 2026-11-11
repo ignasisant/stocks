@@ -22,6 +22,8 @@ import {
   markup,
   placeFills,
   priceRows,
+  volumeAverage,
+  volumeRow,
 } from "./hover";
 import type { Bars, Trade } from "./types";
 import { DASH, compact } from "../../shell/format";
@@ -29,6 +31,8 @@ import { DASH, compact } from "../../shell/format";
 const CATALOG: Record<string, string> = {
   "ticker.price": "Price",
   "ticker.hover_ohlc": "open {open} · high {high} · low {low}",
+  "ticker.hover_volume": "volume {volume}",
+  "ticker.hover_volume_avg": "volume {volume} · {ratio}× {sessions}-session avg",
   "ticker.hover_buy":
     "<b>Buy</b>  {qty} sh @ <b>{price}</b> · {date}<br><span style='color:{color}'><b>{pct}%</b></span> to current {last}",
   "ticker.hover_sell": "<b>Sell</b>  {qty} sh @ <b>{price}</b> · {date}",
@@ -122,6 +126,25 @@ describe("the hover box", () => {
     );
     expect(rows[1]?.text).toBe("open 101.00 · high 112.00 · low 99.00");
     expect(rows[1]?.parts[0]?.tone).toBe("dim");
+  });
+
+  it("weighs a day's volume against the sessions before it", () => {
+    const quiet = Array<number>(20).fill(65e6);
+    const volumes = [...quiet, 339.7e6];
+    const average = volumeAverage(volumes, 20);
+    expect(average).toBe(65e6);
+    const row = volumeRow(339.7e6, average, t);
+    expect(row?.text).toBe("volume 339.7M · 5.2× 20-session avg");
+    expect(row?.parts[0]?.tone).toBe("dim");
+  });
+
+  it("prints the bare count without enough history, and nothing without volume", () => {
+    expect(volumeAverage([1e6, 2e6, 3e6], 3)).toBeNull();
+    // An index reports zero volume: those sessions are not quiet days.
+    expect(volumeAverage([...Array<number>(19).fill(0), 1e6], 20)).toBeNull();
+    expect(volumeRow(1.5e6, null, t)?.text).toBe("volume 1.5M");
+    expect(volumeRow(0, null, t)).toBeNull();
+    expect(volumeRow(null, 1e6, t)).toBeNull();
   });
 
   it("gives each moving average a row, and none while it warms up", () => {

@@ -32,6 +32,7 @@ import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
+import { ToggleChip } from "../ui/Toggle";
 import { addMemory, dropMemory, editMemory, rateTurn, replaceMemory } from "./api";
 import {
   capMessage,
@@ -656,15 +657,9 @@ function Why({ rate }: { rate: Rate }) {
       {!up && (
         <div className="ag-chat-why-chips">
           {REASONS.map((r) => (
-            <button
-              key={r}
-              type="button"
-              className={`ag-chat-chip${reason === r ? " ag-chat-chip-on" : ""}`}
-              aria-pressed={reason === r}
-              onClick={() => setReason(r)}
-            >
+            <ToggleChip key={r} on={reason === r} onClick={() => setReason(r)}>
               {t(`chat.rate_${r}`)}
-            </button>
+            </ToggleChip>
           ))}
         </div>
       )}

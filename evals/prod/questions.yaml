@@ -543,12 +543,12 @@
   opens: profile/notify
 
 - id: profile-claude
-  area: profile/claude
+  area: profile/mcp
   kind: howto
   message: "¿Puedo usar mi cartera desde Claude?"
   goals:
     - Says yes, connect Claude to the account from Profile (MCP connector)
-  opens: profile/claude
+  opens: profile/mcp
 
 - id: profile-investor
   area: profile/iv

@@ -1,0 +1,30 @@
+{
+  "displayName": "stocks: import stuck",
+  "documentation": {
+    "subject": "TopStocks · importación ${log.extracted_label.kind} · ${log.extracted_label.platform} · ${log.extracted_label.user}",
+    "content": "Someone uploaded a statement and did not get it into their book (`import.stuck`, from `notify/import_alert.py`). **kind** `failed`: the upload stopped at **stage** `${log.extracted_label.stage}` (unreadable, nothing importable, a refused commit, a crash, a file the browser could not open). **kind** `abandoned`: the preview had rows and nobody committed it within 30 minutes.\n\nAccount `${log.extracted_label.user}`, platform `${log.extracted_label.platform}`, file `${log.extracted_label.file}`, top skip reason `${log.extracted_label.top_reason}`, diagnostic `${log.extracted_label.diagnostic_id}`. The full line (counts, detail, error) is the log entry linked below. One per account and file a day, at most 12 an hour, no e2e accounts.\n\nTriage: `uv run stocks logs tail --since 24h --user ${log.extracted_label.user} --grep import`, then `uv run stocks imports show <diagnostic>` and `uv run stocks imports replay <diagnostic>` for the file's shape.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "import.stuck in the app log",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"import.stuck\"",
+        "labelExtractors": {
+          "kind": "EXTRACT(jsonPayload.kind)",
+          "stage": "EXTRACT(jsonPayload.stage)",
+          "user": "EXTRACT(jsonPayload.user)",
+          "platform": "EXTRACT(jsonPayload.platform)",
+          "file": "EXTRACT(jsonPayload.file)",
+          "top_reason": "EXTRACT(jsonPayload.top_reason)",
+          "diagnostic_id": "EXTRACT(jsonPayload.diagnostic_id)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "300s" },
+    "autoClose": "1800s"
+  }
+}

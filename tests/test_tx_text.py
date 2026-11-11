@@ -49,6 +49,11 @@ _SKIP_TYPES = {
         "Currency conversion", "Result adjustment", "Something new",
     ],
     "revolut_crypto": ["Reward", "Staking", "Exchange", "Send", "Something new"],
+    "trade_republic": [
+        "CASH CARD_TRANSACTION", "CASH FEE", "CASH INTEREST_PAYMENT",
+        "CASH EARNINGS", "CORPORATE_ACTION SPLIT", "CORPORATE_ACTION REDEMPTION",
+        "CASH SOMETHING_NEW", "OTHER THING",
+    ],
 }
 
 

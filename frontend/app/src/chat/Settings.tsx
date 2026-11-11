@@ -387,11 +387,15 @@ export function Model({
 }
 
 /**
- * Picking Claude says the reader uses it, and the connector lets them ask
- * about the book from Claude itself, with no key here at all. Its own
+ * Picking Claude or ChatGPT says the reader uses it, and the connector lets
+ * them ask about the book from that app itself, with no key here at all.
+ * Not Gemini: its app takes no MCP server, only Gemini CLI does. Its own
  * component because the router reads `window`, which a settings screen that
  * never shows this has no reason to touch.
  */
+/** Chat providers whose own app takes the connector, and that app's id on the card. */
+const CONNECTS: Record<string, string> = { anthropic: "claude", openai: "chatgpt" };
+
 function ToConnector({
   provider,
   onLeave,
@@ -406,12 +410,12 @@ function ToConnector({
       type="button"
       className="ag-chat-nudge"
       onClick={() => {
-        go("profile", { tab: "claude", from: "chat" });
+        go("profile", { tab: "mcp", from: "chat", app: CONNECTS[provider.id] ?? "" });
         if (phone()) onLeave?.();
       }}
     >
       <ProviderMark provider={provider} />
-      <span>{t("chat.claude_connector_nudge")}</span>
+      <span>{t("chat.claude_connector_nudge", { provider: provider.label })}</span>
       <Icon name="arrow_forward" size={16} />
     </button>
   );
@@ -534,7 +538,7 @@ export function Settings({
           )}
 
           {/* With or without a key: neither answers what the connector does. */}
-          {picked.id === "anthropic" && state.connector && (
+          {picked.id in CONNECTS && state.connector && (
             <ToConnector provider={picked} onLeave={onLeave} />
           )}
 

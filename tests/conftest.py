@@ -470,6 +470,23 @@ def _own_import_diagnostics(_scratch):
 
 
 @pytest.fixture(autouse=True)
+def _own_import_watch(_scratch):
+    """Keep the owner's import alert state out of the checkout.
+
+    `notify.import_alert.STATE` is the real `data/import_watch.json`, and every
+    API test that previews a statement puts its account on the watch list
+    there. Its own temporary directory for the reason `_own_guest_dir` gives,
+    restored by hand likewise.
+    """
+    from stocks.notify import import_alert
+
+    before = import_alert.STATE
+    import_alert.STATE = _own(_scratch, "import_watch") / "import_watch.json"
+    yield
+    import_alert.STATE = before
+
+
+@pytest.fixture(autouse=True)
 def _own_feedback_dir(_scratch):
     """Keep test submissions out of the real feedback inbox.
 

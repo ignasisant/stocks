@@ -343,10 +343,12 @@ function Importer({
     if (file.current) file.current.value = "";
   };
 
+  // The staged statement stays: the platform is only the parser tried first,
+  // and the preview, keyed on it, reads the same file again under the new one.
   const choose = (key: string) => {
     if (key === platform.key) return;
     setParams({ platform: key });
-    clear();
+    setResult(null);
   };
 
   // Everything that stopped the statement being read, as the zone's own

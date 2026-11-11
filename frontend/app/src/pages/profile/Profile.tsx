@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { Icon } from "../../shell/Icon";
 import { Tabs } from "../../ui/Tabs";
 import { signOut } from "../../shell/keep";
 import { useRoute } from "../../shell/router";
@@ -42,7 +43,7 @@ type Identity = {
   name?: string | null;
   picture?: string | null;
   owner?: boolean;
-  /** The deployment serves the Claude connector: the Claude tab is drawn. */
+  /** The deployment serves the MCP connector: the MCP tab is drawn. */
   connector?: boolean;
 };
 
@@ -53,7 +54,7 @@ const TABS = [
   { id: "watch", label: "profile.watchlist" },
   { id: "notify", label: "profile.notifications" },
   { id: "journal", label: "journal.tab" },
-  { id: "claude", label: "profile.connector_tab" },
+  { id: "mcp", label: "profile.connector_tab" },
 ] as const;
 
 /**
@@ -96,14 +97,17 @@ function Settings() {
   const [brokenPicture, setBrokenPicture] = useState(false);
   const name = who?.name?.trim() || "";
 
-  // The Claude tab only where the connector is served. While `/me` is out a
+  // The MCP tab only where the connector is served. While `/me` is out a
   // link to it is trusted, so it does not land on Preferences and jump back.
   const connector = identity.state === "loaded" ? Boolean(who?.connector) : null;
-  const tabs = TABS.filter((entry) => entry.id !== "claude" || connector === true);
-  const wanted = params.get("tab") ?? "";
+  const tabs = TABS.filter((entry) => entry.id !== "mcp" || connector === true);
+  // The tab was "claude" while Claude was the one app it explained; links
+  // already sent (pushes, shared answers, the tour of old) still land on it.
+  const asked = params.get("tab") ?? "";
+  const wanted = asked === "claude" ? "mcp" : asked;
   const tab =
     tabs.some((entry) => entry.id === wanted) ||
-    (wanted === "claude" && connector === null)
+    (wanted === "mcp" && connector === null)
       ? wanted
       : "prefs";
   const email = me.email ?? "";
@@ -168,7 +172,15 @@ function Settings() {
         label={t("nav.profile")}
         items={tabs.map((entry) => ({
           id: entry.id,
-          label: t(entry.label),
+          label:
+            entry.id === "mcp" ? (
+              <>
+                <Icon name="power" size={16} />
+                {t(entry.label)}
+              </>
+            ) : (
+              t(entry.label)
+            ),
           count: entry.id === "watch" ? count : null,
         }))}
         active={tab}
@@ -187,7 +199,9 @@ function Settings() {
       {tab === "watch" && <Watchlist query={listing} />}
       {tab === "notify" && <Notifications {...settings} />}
       {tab === "journal" && <Journal />}
-      {tab === "claude" && <ConnectorCard from={params.get("from")} />}
+      {tab === "mcp" && (
+        <ConnectorCard from={params.get("from")} app={params.get("app")} />
+      )}
     </>
   );
 }

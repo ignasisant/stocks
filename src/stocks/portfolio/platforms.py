@@ -22,6 +22,7 @@ from stocks.portfolio import (
     revolut_crypto,
     revolut_pdf,
     statement,
+    trade_republic,
     trading212,
 )
 from stocks.portfolio.fees import broker_of
@@ -109,6 +110,23 @@ PLATFORMS: tuple[Platform, ...] = (
         domain="trading212.com",
     ),
     Platform(
+        key="trade_republic",
+        label="Trade Republic",
+        file_types=("csv",),
+        hint=(
+            "Export from Trade Republic → Profile → Account statements → "
+            "Transaction export (CSV). Only imported if it has the exact Trade "
+            "Republic columns; shares import under their ISIN, coins as Yahoo "
+            "pairs (BTC → BTC-EUR), dividends carry the withheld tax as the "
+            "fee, and card payments, transfers and tax bookings are listed as "
+            "skipped."
+        ),
+        parse=lambda filename, data: trade_republic.parse_csv(
+            statement.decode(data)
+        ),
+        domain="traderepublic.com",
+    ),
+    Platform(
         key="degiro",
         label="DEGIRO",
         file_types=("csv",),
@@ -189,6 +207,7 @@ def by_key(key: str) -> Platform:
 BROKER_NAMES = {
     "revolut": "Revolut",
     "trading212": "Trading 212",
+    "trade_republic": "Trade Republic",
     "degiro": "DEGIRO",
     "ibkr": "IBKR",
     "clicktrade": "ClickTrade",

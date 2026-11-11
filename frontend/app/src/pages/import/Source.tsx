@@ -2,8 +2,8 @@
  * Steps one and two in one card: which broker, and its statement.
  *
  * They share a card because they are one decision — a statement means nothing
- * until the parser that reads it is chosen, and changing the platform discards
- * a staged file for exactly that reason. What rides along sits on the card's
+ * until the parser that reads it is chosen, and changing the platform reads a
+ * staged file again under the new one. What rides along sits on the card's
  * last line: the paste box for a browser that will not hand over a file, and
  * the wipe, which has to be decided before the preview is read, not after.
  *

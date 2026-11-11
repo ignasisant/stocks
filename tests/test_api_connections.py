@@ -134,5 +134,14 @@ def test_copying_the_address_is_noted(client, sign_in, events):
     sign_in(client, EMAIL)
     response = client.post("/v1/connections/copied", json={"what": "command"})
     assert response.status_code == 204
-    assert ("connector.copy", {"what": "command"}) in events
+    assert ("connector.copy", {"what": "command", "app": "-"}) in events
     assert client.post("/v1/connections/copied", json={"what": "x"}).status_code == 422
+
+
+def test_the_copy_names_the_app_the_card_explained(client, sign_in, events):
+    sign_in(client, EMAIL)
+    body = {"what": "command", "app": "codex"}
+    assert client.post("/v1/connections/copied", json=body).status_code == 204
+    assert ("connector.copy", {"what": "command", "app": "codex"}) in events
+    body = {"what": "url", "app": "elsewhere"}
+    assert client.post("/v1/connections/copied", json=body).status_code == 422

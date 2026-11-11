@@ -51,6 +51,8 @@
   "ticker.span_hint_mouse": "Arrastra para medir entre dos fechas · ← → recorren los días",
   "ticker.price_summary": "Precio {start} → {end} ({pct}), mínimo {lo}, máximo {hi}",
   "ticker.hover_ohlc": "apertura {open} · máximo {high} · mínimo {low}",
+  "ticker.hover_volume": "volumen {volume}",
+  "ticker.hover_volume_avg": "volumen {volume} · {ratio}× media {sessions} sesiones",
   "ticker.period_change": "{pct} en {period}",
   "ticker.period_change_max": "{pct} desde el inicio",
   "ticker.zoom_reset": "Restablecer",

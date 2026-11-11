@@ -817,6 +817,10 @@
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
 }
+/* A config file's JSON keeps its lines; a command still wraps where it must. */
+.pr-code-block {
+  white-space: pre-wrap;
+}
 .pr-copyline > .pr-btn {
   flex: 0 0 auto;
 }
@@ -859,8 +863,10 @@
   color: var(--ag-text-muted);
   overflow-wrap: anywhere;
 }
+/* In the rows' gutter, so it starts where their labels do. */
 .pr-conn-ok {
   margin: 0;
+  padding: 0 24px;
   font-size: var(--ag-fs-sm);
   color: var(--ag-up);
 }
@@ -1154,6 +1160,9 @@
   }
   .pl-ask-entry {
     padding: 0 16px 14px;
+  }
+  .pr-conn-ok {
+    padding: 0 16px;
   }
   .pr-row-l {
     flex: 1 1 auto;

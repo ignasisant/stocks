@@ -1,5 +1,5 @@
 /**
- * The Claude card: what it offers, what it lists, and when it stays away.
+ * The MCP card: what it offers, what it lists, and when it stays away.
  *
  * Rendered to static markup with no catalog loaded, so every string is its
  * key — which is what these assert against: the question is which parts the
@@ -9,7 +9,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { Connector, command, day, source, type Connection } from "./ConnectorCard";
+import {
+  APPS,
+  Connector,
+  day,
+  knownApp,
+  setup,
+  source,
+  type App,
+  type Connection,
+} from "./ConnectorCard";
 
 const URL = "https://topstocks.example/mcp";
 
@@ -24,22 +33,40 @@ const connection = (over: Partial<Connection> = {}): Connection => ({
   ...over,
 });
 
-const draw = (url: string | null, connections: Connection[]) =>
+const draw = (url: string | null, connections: Connection[], app?: App) =>
   renderToStaticMarkup(
-    <Connector url={url} connections={connections} onGone={() => {}} />,
+    <Connector url={url} connections={connections} onGone={() => {}} app={app} />,
   );
 
-describe("the Claude card", () => {
-  it("offers the address and the Claude Code line while the connector is on", () => {
+describe("the MCP card", () => {
+  it("offers the address and every app while the connector is on", () => {
     const html = draw(URL, []);
     expect(html).toContain(URL);
-    expect(html).toContain(command(URL));
+    for (const name of ["Claude", "Claude Code", "ChatGPT", "Codex", "Gemini CLI"]) {
+      expect(html).toContain(`>${name}<`);
+    }
+    expect(html).toContain("profile.connector_app_other");
     expect(html).toContain("profile.connector_none");
   });
 
-  it("says it is connected once an app is, and names the plans before", () => {
+  it("opens on Claude, whose setup is its own settings screen", () => {
+    const html = draw(URL, []);
+    expect(html).toContain("profile.connector_how_claude");
+    expect(html).toContain("profile.connector_plans");
+    expect(html).not.toContain("profile.connector_copy_command");
+  });
+
+  it("draws the picked app's setup line, ready to copy", () => {
+    const html = draw(URL, [], "codex");
+    expect(html).toContain("profile.connector_how_codex");
+    expect(html).toContain(`codex mcp add topstocks --url ${URL}`);
+    expect(html).toContain("profile.connector_copy_command");
+    expect(html).toContain("profile.connector_after_codex");
+    expect(html).not.toContain("profile.connector_plans");
+  });
+
+  it("says it is connected once an app is", () => {
     expect(draw(URL, [])).not.toContain("profile.connector_ok");
-    expect(draw(URL, [])).toContain("profile.connector_plans");
     expect(draw(URL, [connection()])).toContain("profile.connector_ok");
   });
 
@@ -82,8 +109,39 @@ describe("the Claude card", () => {
 });
 
 describe("the card's helpers", () => {
-  it("builds the one Claude Code command", () => {
-    expect(command(URL)).toBe(`claude mcp add --transport http topstocks ${URL}`);
+  it("builds each app's setup line around the address", () => {
+    expect(setup("claude_code", URL)).toBe(
+      `claude mcp add --transport http topstocks ${URL}`,
+    );
+    expect(setup("gemini", URL)).toBe(
+      `gemini mcp add --transport http topstocks ${URL}`,
+    );
+    expect(setup("other", URL)).toBe(`npx -y mcp-remote ${URL}`);
+    for (const app of ["claude", "chatgpt", "lechat"] as const) {
+      expect(setup(app, URL)).toBeNull();
+    }
+  });
+
+  it("writes config files the editors parse, under each one's own keys", () => {
+    expect(JSON.parse(setup("cursor", URL) ?? "")).toEqual({
+      mcpServers: { topstocks: { url: URL } },
+    });
+    expect(JSON.parse(setup("windsurf", URL) ?? "")).toEqual({
+      mcpServers: { topstocks: { serverUrl: URL } },
+    });
+    const vscode = setup("vscode", URL) ?? "";
+    expect(JSON.parse(vscode.slice(vscode.indexOf("'") + 1, -1))).toEqual({
+      name: "topstocks",
+      type: "http",
+      url: URL,
+    });
+  });
+
+  it("opens only on an app it knows", () => {
+    expect(knownApp("chatgpt")).toBe("chatgpt");
+    expect(knownApp("elsewhere")).toBeUndefined();
+    expect(knownApp(null)).toBeUndefined();
+    expect(APPS).toContain("other");
   });
 
   it("dates in the reader's language, and nothing for nothing", () => {
