@@ -95,10 +95,9 @@ describe("layout", () => {
     expect(trending).toEqual(["stock", "equity_fund", "crypto", "index"]);
   });
 
-  it("every kind has a label and a line", () => {
+  it("every kind has a label", () => {
     for (const kind of ASSET_KINDS) {
       expect(ASSETS[kind].label).toBe(`ticker.asset_${kind}`);
-      expect(ASSETS[kind].help).toBe(`ticker.asset_${kind}_line`);
       expect(layout(kind).kind).toBe(kind);
     }
   });

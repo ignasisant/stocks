@@ -31,23 +31,14 @@ export const ASSET_KINDS: readonly AssetKind[] = [
 ];
 
 /** Literal keys, so the catalog scan (`test_frontend_i18n_keys.py`) sees every one. */
-export const ASSETS: Record<AssetKind | "fund", { label: string; help?: string }> = {
-  stock: { label: "ticker.asset_stock", help: "ticker.asset_stock_line" },
-  equity_fund: {
-    label: "ticker.asset_equity_fund",
-    help: "ticker.asset_equity_fund_line",
-  },
-  bond_fund: { label: "ticker.asset_bond_fund", help: "ticker.asset_bond_fund_line" },
-  money_market: {
-    label: "ticker.asset_money_market",
-    help: "ticker.asset_money_market_line",
-  },
-  closed_end: {
-    label: "ticker.asset_closed_end",
-    help: "ticker.asset_closed_end_line",
-  },
-  crypto: { label: "ticker.asset_crypto", help: "ticker.asset_crypto_line" },
-  index: { label: "ticker.asset_index", help: "ticker.asset_index_line" },
+export const ASSETS: Record<AssetKind | "fund", { label: string }> = {
+  stock: { label: "ticker.asset_stock" },
+  equity_fund: { label: "ticker.asset_equity_fund" },
+  bond_fund: { label: "ticker.asset_bond_fund" },
+  money_market: { label: "ticker.asset_money_market" },
+  closed_end: { label: "ticker.asset_closed_end" },
+  crypto: { label: "ticker.asset_crypto" },
+  index: { label: "ticker.asset_index" },
   fund: { label: "watchlist.kind_fund" },
 };
 
