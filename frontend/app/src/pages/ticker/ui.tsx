@@ -11,7 +11,6 @@
  */
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 import { Fold } from "../../ui/Fold";
 import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
 import { Segmented as Seg } from "../../ui/Segmented";
@@ -184,54 +183,5 @@ export function Segmented<T extends string>({
       value={value}
       onPick={onChange}
     />
-  );
-}
-
-/**
- * A button with a panel under it, closed by a click anywhere else — the same
- * interaction the search box uses.
- */
-export function Popover({
-  label,
-  title,
-  children,
-  onOpen,
-}: {
-  label: string;
-  title?: string;
-  children: ReactNode;
-  /** Fired the first time it opens: these panels each cost a request. */
-  onOpen?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [box, setBox] = useState<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open || !box) return;
-    // Pointerdown, not click, so a row's own handler still runs: it fires on
-    // the element before this sees it.
-    const away = (event: PointerEvent) => {
-      if (!box.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [open, box]);
-
-  return (
-    <div className="tk-pop" ref={setBox}>
-      <button
-        type="button"
-        className={open ? "tk-pop-btn tk-pop-open" : "tk-pop-btn"}
-        aria-expanded={open}
-        title={title}
-        onClick={() => {
-          if (!open) onOpen?.();
-          setOpen((was) => !was);
-        }}
-      >
-        {label}
-      </button>
-      {open ? <div className="tk-pop-panel">{children}</div> : null}
-    </div>
   );
 }

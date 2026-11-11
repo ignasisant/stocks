@@ -35,8 +35,8 @@ describe("layout", () => {
     expect(Object.values(shape.sections).some(Boolean)).toBe(false);
   });
 
-  it("opens a fund or an index on five years, a share on the reader's last range", () => {
-    const opens = ASSET_KINDS.filter((kind) => layout(kind).opens === "5y");
+  it("opens a fund or an index on its whole history, a share on the reader's last range", () => {
+    const opens = ASSET_KINDS.filter((kind) => layout(kind).opens === "max");
     expect(opens.sort()).toEqual(
       ["bond_fund", "closed_end", "equity_fund", "index", "money_market"].sort(),
     );

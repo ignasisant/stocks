@@ -14,6 +14,10 @@
  *
  * Only a share has angles: a fund, a coin or a money-market fund gets the
  * one press, still briefed by the server.
+ *
+ * Press and chevron are one pill split by a hairline, the header's only
+ * prominent control, so it reads as one thing with a second door. The menu is
+ * the pill's sibling, not its child: `.ag-ai` is its own stacking context.
  */
 
 import {
@@ -23,6 +27,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { Glyph } from "../../chat/icons";
 import { askAssistant, type Brief } from "../../shell/assistant";
 import { useT } from "../../shell/i18n";
 
@@ -38,7 +43,6 @@ export function AiAsk({
   name,
   prompt,
   angles,
-  compact,
 }: {
   ticker: string;
   name: string;
@@ -46,8 +50,6 @@ export function AiAsk({
   prompt: string;
   /** Whether the chevron's menu is drawn (shares only). */
   angles: boolean;
-  /** Phone width: the main press is the sparkle alone. */
-  compact: boolean;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -120,21 +122,21 @@ export function AiAsk({
 
   return (
     <div className="tk-ai-group" ref={box}>
-      <button
-        type="button"
-        className="ag-ai tk-ai"
-        title={t("ticker.ai_analyze_help", { ticker })}
-        aria-label={compact ? t("ticker.ai_analyze") : undefined}
-        onClick={() => ask("full")}
-      >
-        {compact ? "✨" : t("ticker.ai_analyze")}
-      </button>
-      {angles ? (
-        <>
+      <div className={angles ? "ag-ai tk-ai-pill tk-ai-split" : "ag-ai tk-ai-pill"}>
+        <button
+          type="button"
+          className="tk-ai"
+          title={t("ticker.ai_analyze_help", { ticker })}
+          onClick={() => ask("full")}
+        >
+          <Glyph name="spark" size={16} />
+          <span>{t("ticker.ai_analyze")}</span>
+        </button>
+        {angles ? (
           <button
             ref={toggle}
             type="button"
-            className={open ? "tk-ai-more tk-pop-open" : "tk-ai-more"}
+            className="tk-ai-more"
             aria-haspopup="menu"
             aria-expanded={open}
             aria-label={t("ticker.ai_more")}
@@ -143,36 +145,34 @@ export function AiAsk({
           >
             <span className="tk-ai-chevron" aria-hidden="true" />
           </button>
-          {open ? (
-            <div
-              ref={menu}
-              className="tk-pop-panel tk-ai-menu"
-              role="menu"
-              aria-label={t("ticker.ai_more")}
-              onKeyDown={walk}
+        ) : null}
+      </div>
+      {angles && open ? (
+        <div
+          ref={menu}
+          className="tk-ai-menu"
+          role="menu"
+          aria-label={t("ticker.ai_more")}
+          onKeyDown={walk}
+        >
+          {MORE.map((angle, n) => (
+            <button
+              key={angle}
+              ref={(el) => {
+                items.current[n] = el;
+              }}
+              type="button"
+              role="menuitem"
+              className="tk-ai-item"
+              onClick={() => ask(angle)}
             >
-              {MORE.map((angle, n) => (
-                <button
-                  key={angle}
-                  ref={(el) => {
-                    items.current[n] = el;
-                  }}
-                  type="button"
-                  role="menuitem"
-                  className="tk-ai-item"
-                  onClick={() => ask(angle)}
-                >
-                  <span className="tk-ai-item-label">
-                    {t(`ticker.ai_angle_${angle}`)}
-                  </span>
-                  <span className="tk-ai-item-hint">
-                    {t(`ticker.ai_angle_${angle}_hint`)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </>
+              <span className="tk-ai-item-label">{t(`ticker.ai_angle_${angle}`)}</span>
+              <span className="tk-ai-item-hint">
+                {t(`ticker.ai_angle_${angle}_hint`)}
+              </span>
+            </button>
+          ))}
+        </div>
       ) : null}
     </div>
   );

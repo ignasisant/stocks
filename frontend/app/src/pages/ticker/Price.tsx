@@ -1,5 +1,6 @@
 /**
- * The price block: range control, chart, and the figures beside it.
+ * The price block: the figures, the chart, and under it the range and chart
+ * type that drive it — beside what they change, and within a thumb's reach.
  *
  * The range is state and the zoom window is a slice of the bars.
  *
@@ -20,7 +21,10 @@ import { useState, type ReactNode } from "react";
 import { calendarDay } from "../../shell/dates";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
+import { Glyph } from "../../chat/icons";
 import { Count } from "../../ui/Count";
+import { Fold } from "../../ui/Fold";
+import { Segmented as Seg } from "../../ui/Segmented";
 import type { Query } from "../../shell/useApi";
 import {
   barsDayPct,
@@ -30,9 +34,16 @@ import {
   orElse,
   type Translate,
 } from "./format";
+import type { Mine } from "./Actions";
 import { layout, type MetricId, type Shape } from "./layout";
-import { PriceChart, PriceChartWait, type ChartWindow } from "./PriceChart";
+import {
+  PriceChart,
+  PriceChartWait,
+  type ChartRead,
+  type ChartWindow,
+} from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
+import { EntryFit, Yours } from "./Yours";
 import {
   Chip,
   type ChipSpec,
@@ -57,19 +68,16 @@ import type {
 import { num } from "../../shell/numbers";
 import { DASH, decimal, isNum, money, percent, shares } from "../../shell/format";
 
-/** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
-const RANGES = ["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "max"] as const;
+/**
+ * The ranges the chart offers, in order: a pick of `analysis.history.PERIODS`
+ * few enough to fit one row on a 360px phone.
+ */
+const RANGES = ["1d", "1w", "6m", "1y", "max"] as const;
 export type Range = (typeof RANGES)[number];
 
 export function isRange(value: string): value is Range {
   return (RANGES as readonly string[]).includes(value);
 }
-
-/**
- * Nine pills overflow a 360px viewport, so the app drops the two in-between
- * ranges there rather than letting them wrap or scroll.
- */
-const PHONE_RANGES = RANGES.filter((one) => one !== "6m" && one !== "2y");
 
 /** How many days after a report its line still explains the price. */
 const RESULTS_FRESH_DAYS = 7;
@@ -90,6 +98,8 @@ export function PriceSection({
   cycle = [],
   valuation = null,
   trend = null,
+  ticker = "",
+  mine = null,
 }: {
   /**
    * The bars as a query rather than as data, because the controls do not wait
@@ -105,8 +115,8 @@ export function PriceSection({
   range: Range;
   /**
    * The ranges this listing's history fills, or null until the first bars
-   * say. A stock listed last spring gets no "5Y": it would draw exactly what
-   * "max" does, under a label that promises three more years.
+   * say. A stock listed last spring gets no "1Y": it would draw exactly what
+   * "max" does, under a label that promises a whole year.
    */
   offered: readonly Range[] | null;
   onRange: (range: Range) => void;
@@ -124,6 +134,10 @@ export function PriceSection({
   valuation?: Valuation | null;
   /** `/trend`'s answer: the trend cell. */
   trend?: Trend | null;
+  /** The symbol, for the reader's own marks under the price. */
+  ticker?: string;
+  /** The reader's alerts and rules on it; null for a guest or until they load. */
+  mine?: Mine | null;
 }) {
   const t = useT();
   const mobile = useMobile();
@@ -131,6 +145,8 @@ export function PriceSection({
   // The stretch a drag zoomed the chart into, so the period figure reads what
   // the chart shows; null on the whole range.
   const [zoomed, setZoomed] = useState<ChartWindow | null>(null);
+  // What a finger on a phone's chart points at, printed in the hero.
+  const [read, setRead] = useState<ChartRead | null>(null);
   // No figures over bars that have nothing to show: the metric row clears
   // whenever the chart under it cannot draw.
   const drawable = Boolean(bars && bars.dates.length > 0);
@@ -212,33 +228,46 @@ export function PriceSection({
   // Why the price moved, when a report landed this week.
   const recent = recentResults(events, today);
 
+  // The range and chart type sit under the chart they drive, and stay there
+  // while it loads, fails or has nothing to draw.
+  const controls = (
+    <div className="tk-controls">
+      <Segmented
+        label={t("ticker.period")}
+        options={RANGES.filter((one) => !offered || offered.includes(one))}
+        value={range}
+        onChange={onRange}
+        format={(one) => t(`ticker.period_${one}`)}
+      />
+      {/* A price that barely moves draws a candle as a hairline: the kinds
+              read off a line get no toggle, not one that draws nothing. Two
+              glyphs rather than two words, so it shares the ranges' row on a
+              phone. */}
+      {shape.candles ? (
+        <Seg
+          className="tk-seg-icons"
+          label={t("ticker.chart_type")}
+          items={[
+            {
+              id: "line",
+              label: <Glyph name="line_chart" size={18} />,
+              name: t("ticker.chart_line"),
+            },
+            {
+              id: "candles",
+              label: <Glyph name="candles" size={18} />,
+              name: t("ticker.chart_candles"),
+            },
+          ]}
+          value={candles ? "candles" : "line"}
+          onPick={(one) => onCandles(one === "candles")}
+        />
+      ) : null}
+    </div>
+  );
+
   return (
     <Card>
-      <div className="tk-controls">
-        <Segmented
-          label={t("ticker.period")}
-          options={(mobile ? PHONE_RANGES : RANGES).filter(
-            (one) => !offered || offered.includes(one),
-          )}
-          value={range}
-          onChange={onRange}
-          format={(one) => t(`ticker.period_${one}`)}
-        />
-        {/* A price that barely moves draws a candle as a hairline: the kinds
-            read off a line get no toggle, not one that draws nothing. */}
-        {shape.candles ? (
-          <Segmented
-            label={t("ticker.chart_type")}
-            options={["line", "candles"] as const}
-            value={candles ? "candles" : "line"}
-            onChange={(one) => onCandles(one === "candles")}
-            format={(one) =>
-              t(one === "candles" ? "ticker.chart_candles" : "ticker.chart_line")
-            }
-          />
-        ) : null}
-      </div>
-
       {!drawable ? null : mobile ? (
         <Hero
           price={live}
@@ -251,8 +280,7 @@ export function PriceSection({
           cells={cells}
           currency={unit}
           approxLine={approxLine}
-          recent={recent}
-          t={t}
+          read={read}
         />
       ) : (
         // The price, the kind's cells, then the holding's three: the holding
@@ -293,15 +321,24 @@ export function PriceSection({
           {recent ? <ResultsLine event={recent} t={t} /> : null}
         </>
       )}
+      {drawable && mine && ticker ? (
+        <Yours ticker={ticker} mine={mine} price={live} held={!!held} entry={!mobile} />
+      ) : null}
 
       {query.state !== "loaded" ? (
         // Loading, failed or signed out: the chart's slot says so, and the
-        // controls above stay where they are.
-        <Loaded query={query} skeleton={<PriceChartWait mobile={mobile} />}>
-          {() => null}
-        </Loaded>
+        // controls under it stay where they are.
+        <>
+          <Loaded query={query} skeleton={<PriceChartWait mobile={mobile} />}>
+            {() => null}
+          </Loaded>
+          {controls}
+        </>
       ) : bars && bars.dates.length === 0 ? (
-        <Empty>{t("ticker.history_empty")}</Empty>
+        <>
+          <Empty>{t("ticker.history_empty")}</Empty>
+          {controls}
+        </>
       ) : bars ? (
         <PriceChart
           bars={bars}
@@ -316,11 +353,24 @@ export function PriceSection({
           markers={shape.markers}
           mobile={mobile}
           onWindow={setZoomed}
+          onRead={mobile ? setRead : undefined}
+          controls={controls}
+          t={t}
+        />
+      ) : (
+        controls
+      )}
+
+      <LastBuy position={held} last={live} units={shape.units} t={t} />
+      {drawable && mobile ? (
+        <Figures
+          cells={cells}
+          held={tiles.length > 0}
+          recent={recent}
+          entry={ticker && mine ? <EntryFit ticker={ticker} /> : null}
           t={t}
         />
       ) : null}
-
-      <LastBuy position={held} last={live} units={shape.units} t={t} />
     </Card>
   );
 }
@@ -387,8 +437,15 @@ function LastBuy({
 /**
  * The phone summary: a price hero, then the holding as 2×2 tiles.
  *
+ * The kind's other figures, the reports and the entry checklist wait in a
+ * fold at the foot of the card (`Figures`): under the price on a phone they
+ * pushed the chart a screen down for lines few read on every visit.
+ *
  * Not a restyle of the desktop metric row — it is the layout the design
- * specifies for a 390px screen.
+ * specifies for a 390px screen. The price and its day move on one line, what
+ * frames them on a second; while a finger is on the chart, those two lines
+ * read the bar it points at instead, so the reading sits where the eye
+ * already is rather than in a strip the hand covers.
  */
 function Hero({
   price,
@@ -401,8 +458,7 @@ function Hero({
   cells,
   currency,
   approxLine,
-  recent,
-  t,
+  read,
 }: {
   price: number | null;
   dayPct: number | null;
@@ -412,7 +468,7 @@ function Hero({
   periodUp: boolean;
   /** The holding's tiles; empty for a reader who does not hold the name. */
   tiles: Tile[];
-  /** The kind's figures — the desktop row's cells, read as one line here. */
+  /** The kind's figures — the desktop row's cells, read as lines here. */
   cells: Cell[];
   /**
    * The listing's own quote currency — null for a coin pair or a bare guess —
@@ -421,76 +477,141 @@ function Hero({
   currency: string | null;
   /** The price restated in the reader's own money; blank with nothing to show. */
   approxLine: string;
-  /** This week's report, when there was one. */
-  recent: EarningsEvent | null;
-  t: Translate;
+  /** The bar or stretch a finger is on, or null for the live figures. */
+  read: ChartRead | null;
 }) {
-  const shown = cells.filter((one) => one.value !== DASH);
-  // Not held: no tiles to fold the first figure into, so what the desktop row
-  // carries stands on its own line under the price — "52w range 243 – 348 ·
-  // −8,2 % off the high · P/E now 31,4 · +12 % vs 5y avg" for a share. Without
-  // it a phone reader of a name they do not own gets a price and nothing to
-  // read it against.
-  const trendLine = shown.map(inline).join(" · ");
-  // Held: the first figure folds into the tiles as the fourth of the 2×2 —
-  // the year's range with its meter — and the rest keep a line of their own
-  // under them, so a coin's distance from its peak is not dropped because
-  // the range took the only slot.
-  const lead = shown[0] ?? null;
-  const restLine = shown.slice(1).map(inline).join(" · ");
+  const { range, lead } = heroCells(cells, tiles.length > 0);
+  const shownPrice = read ? read.price : price;
+  const shownPct = read ? read.pct : dayPct;
 
   return (
     <div className="tk-hero">
-      <div className="tk-hero-price">
-        <span className="tk-hero-level">
-          {price === null ? (
-            DASH
-          ) : (
-            <Count text={money(price, { digits: 2 }) ?? DASH} tint />
-          )}
-        </span>
-        {currency ? <span className="tk-hero-session">{currency}</span> : null}
-        {dayPct !== null ? (
-          <Chip
-            chip={chipFor(
-              dayPct,
-              `${decimal(dayPct * 100, { digits: 2, signed: "always" }) ?? DASH}%`,
-              dim,
+      <div>
+        <div className="tk-hero-price">
+          <span className="tk-hero-level">
+            {shownPrice === null ? (
+              DASH
+            ) : read ? (
+              (money(shownPrice, { digits: 2 }) ?? DASH)
+            ) : (
+              <Count text={money(shownPrice, { digits: 2 }) ?? DASH} tint />
             )}
-          />
-        ) : null}
-        {sessionNote ? <span className="tk-hero-session">{sessionNote}</span> : null}
-        {periodLine ? (
-          <span className={`tk-hero-period tk-is-${periodUp ? "green" : "red"}`}>
-            {periodLine}
           </span>
+          {currency ? <span className="tk-hero-session">{currency}</span> : null}
+          {shownPct !== null ? (
+            <Chip
+              chip={chipFor(
+                shownPct,
+                `${decimal(shownPct * 100, { digits: 2, signed: "always" }) ?? DASH}%`,
+                !read && dim,
+              )}
+            />
+          ) : null}
+          {!read && sessionNote ? (
+            <span className="tk-hero-session">{sessionNote}</span>
+          ) : null}
+        </div>
+        {/* What frames the figure: the reader's own money (only when `/quote`
+            converted the native close — a bare number would read as theirs)
+            and the range's move. Under a finger, the day or the stretch. */}
+        {read ? (
+          <p className="tk-hero-meta">
+            {[read.title, read.detail].filter(Boolean).join(" · ")}
+          </p>
+        ) : approxLine || periodLine ? (
+          <p className="tk-hero-meta">
+            {approxLine}
+            {approxLine && periodLine ? " · " : null}
+            {periodLine ? (
+              <span className={`tk-is-${periodUp ? "green" : "red"}`}>
+                {periodLine}
+              </span>
+            ) : null}
+          </p>
         ) : null}
       </div>
-      {/* Only when `/quote` converted the native close: a bare number here
-          would read as the reader's own money, and often is not. */}
-      {approxLine ? <p className="tk-hero-trend">{approxLine}</p> : null}
+      {range?.ends ? <RangeRow one={range} /> : null}
       {tiles.length > 0 ? (
-        <>
-          <KpiGrid>
-            {tiles.map((one) => (
-              <Kpi
-                key={one.key}
-                label={one.label}
-                help={one.help}
-                value={one.value}
-                chip={one.chip}
-                note={one.note}
-                noteTone={one.noteTone}
-              />
-            ))}
-            {lead ? <CellTile one={lead} /> : null}
-          </KpiGrid>
-          {restLine ? <p className="tk-hero-trend">{restLine}</p> : null}
-        </>
-      ) : trendLine ? (
-        <p className="tk-hero-trend">{trendLine}</p>
+        <KpiGrid>
+          {tiles.map((one) => (
+            <Kpi
+              key={one.key}
+              label={one.label}
+              help={one.help}
+              value={one.value}
+              chip={one.chip}
+              note={one.note}
+              noteTone={one.noteTone}
+            />
+          ))}
+          {lead ? <CellTile one={lead} /> : null}
+        </KpiGrid>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * How the phone hero spends the kind's cells: the year's range as its own row
+ * with the meter; held, the first of the rest as the fourth of the 2×2, so a
+ * holder's grid stays square. The next report and the others are left for
+ * the fold, each a short line rather than one sentence nobody scans.
+ */
+function heroCells(cells: Cell[], held: boolean) {
+  const shown = cells.filter((one) => one.value !== DASH);
+  const range = shown.find((one) => one.id === "range_52w" && one.ends) ?? null;
+  const results = shown.find((one) => one.id === "next_results") ?? null;
+  const rest = shown.filter((one) => one !== range && one !== results);
+  const lead = held ? (rest[0] ?? null) : null;
+  return { range, lead, results, rest: rest.slice(lead ? 1 : 0) };
+}
+
+/** The phone card's foot: what the hero left out, folded until asked for. */
+function Figures({
+  cells,
+  held,
+  recent,
+  entry,
+  t,
+}: {
+  cells: Cell[];
+  held: boolean;
+  /** This week's report, when there was one. */
+  recent: EarningsEvent | null;
+  /** The entry checklist's line, or null for a reader without one. */
+  entry: ReactNode;
+  t: Translate;
+}) {
+  const { results, rest } = heroCells(cells, held);
+  const line = rest.map(inline).join(" · ");
+  if (!line && !results && !recent && !entry) return null;
+  return (
+    <Fold
+      id="ticker-figures"
+      head={<span className="tk-fold-head">{t("ticker.more_figures")}</span>}
+    >
+      {line ? <p className="tk-hero-trend">{line}</p> : null}
+      {results ? <p className="tk-hero-trend">{inline(results)}</p> : null}
       {recent ? <ResultsLine event={recent} t={t} /> : null}
+      {entry}
+    </Fold>
+  );
+}
+
+/**
+ * "52w  105 ━━●━━━ 226  −34 % off the high": the year's range as one row, the
+ * meter between its two ends, so where the price sits is seen rather than
+ * worked out from two numbers.
+ */
+function RangeRow({ one }: { one: Cell }) {
+  if (!one.ends) return null;
+  return (
+    <div className="tk-hero-range">
+      <span className="tk-hero-range-label">{one.short ?? one.label}</span>
+      <span className="tk-hero-range-end">{one.ends.low}</span>
+      <RangeMeter at={one.ends.at} />
+      <span className="tk-hero-range-end">{one.ends.high}</span>
+      {one.note ? <span className="tk-hero-range-note">{one.note}</span> : null}
     </div>
   );
 }
@@ -591,6 +712,8 @@ type Cell = {
   tone: string | null;
   /** Anything drawn under the figure: the range meter. */
   extra?: ReactNode;
+  /** The range's two ends and where the price sits between them, 0–1. */
+  ends?: { low: string; high: string; at: number };
 };
 
 /** A cell as the app-wide tile. */
@@ -723,10 +846,13 @@ function cell(
       const span = year.high - year.low;
       const at = span > 0 ? Math.min(1, Math.max(0, (live - year.low) / span)) : 1;
       const offHigh = live / year.high - 1;
+      const low = money(year.low, { digits: digits }) ?? DASH;
+      const high = money(year.high, { digits: digits }) ?? DASH;
       return {
         id,
         label,
-        value: `${money(year.low, { digits: digits }) ?? DASH} – ${money(year.high, { digits: digits }) ?? DASH}`,
+        value: `${low} – ${high}`,
+        ends: { low, high, at },
         help,
         // Within half a tenth of the high is at it: a pre-market print a cent
         // over last year's intraday peak is not "+0,0 % off the high".

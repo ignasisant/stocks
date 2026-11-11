@@ -17,7 +17,12 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 
 import "./ui.css";
 
-export type SegItem<T extends string> = { id: T; label: ReactNode };
+export type SegItem<T extends string> = {
+  id: T;
+  label: ReactNode;
+  /** The option's words when `label` is an icon: its accessible name and tip. */
+  name?: string;
+};
 
 /**
  * Lay the thumb under the pressed option, as `--seg-*` on the track. The
@@ -92,6 +97,8 @@ export function Segmented<T extends string>({
           type="button"
           className="ag-seg-opt"
           aria-pressed={item.id === value}
+          aria-label={item.name}
+          title={item.name}
           onClick={() => onPick(item.id)}
         >
           {item.label}

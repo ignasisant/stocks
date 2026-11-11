@@ -16,10 +16,14 @@
 
 /* ------------------------------------------------------------------ header */
 
+/* Who the page is about on the left, what can be done on the right: one
+   prominent press ("Analyse with AI"), then the star and "More" as plain
+   icons. When both do not fit on one line the actions drop to their own,
+   still against the right edge. */
 .tk-header {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 12px 16px;
   flex-wrap: wrap;
 }
 
@@ -29,7 +33,16 @@
   letter-spacing: var(--ag-track-2xl);
 }
 
+.tk-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
 .tk-logo {
+  flex: none;
   width: 36px;
   height: 36px;
   border-radius: var(--ag-radius-sm);
@@ -39,10 +52,16 @@
   border: 1px solid var(--ag-border);
   padding: 5px;
   object-fit: contain;
-  align-self: center;
 }
 
 .tk-names {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tk-title {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -50,6 +69,7 @@
 }
 
 .tk-name {
+  min-width: 0;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-sm);
   overflow: hidden;
@@ -57,15 +77,76 @@
   white-space: nowrap;
 }
 
-/* The kind's one line under the header: what this is and what to read it by.
-   A sentence, so it is capped to a readable measure; pulled up under the
-   header it belongs to rather than floating a full page gap below it. */
-.tk-kind-line {
-  margin: -8px 0 0;
-  max-width: 72ch;
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm);
-  line-height: 1.45;
+/* The kind, whether it is held, where, and the reader's groups: facts about
+   the name, read under it rather than lined up with the buttons. */
+.tk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tk-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tk-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+/* A narrow column: the icons climb to the title's row, as a phone's
+   navigation bar holds them, and the one press takes the full width under
+   it, worded. */
+@container ag-main (max-width: 40rem) {
+  .tk-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px 4px;
+  }
+
+  .tk-acts {
+    display: contents;
+  }
+
+  .tk-id {
+    grid-area: 1 / 1;
+  }
+
+  .tk-tools {
+    grid-area: 1 / 2;
+  }
+
+  .tk-ai-group,
+  .tk-ai-pill {
+    width: 100%;
+  }
+
+  .tk-ai-group {
+    grid-area: 2 / 1 / 3 / 3;
+  }
+
+  .tk-ai {
+    flex: 1;
+  }
+
+  /* Symbol over name, so a long name cannot push the icons off the row. */
+  .tk-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .tk-logo {
+    width: 30px;
+    height: 30px;
+    padding: 4px;
+  }
 }
 
 .tk-custody {
@@ -213,12 +294,41 @@
 
 /* ---------------------------------------------------------------- controls */
 
+/* The ranges and the chart type on one row at every width: the ranges give
+   way (and scroll), the two glyphs never do. */
 .tk-controls {
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+}
+
+.tk-controls .tk-seg {
+  min-width: 0;
+}
+
+.tk-seg-icons {
+  flex: none;
+}
+
+.tk-seg-icons .ag-seg-opt {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  padding-inline: 8px;
+}
+
+/* Under a finger the track draws at a native segmented control's 32pt, not
+   the 44px a lone button needs: options touch edge to edge, so a near miss
+   still lands on one, and HIG's floor is 28. */
+@media (pointer: coarse) {
+  .tk-controls .ag-seg-opt {
+    min-height: 32px;
+  }
+
+  .tk-seg-icons .ag-seg-opt {
+    min-width: 44px;
+  }
 }
 
 /* Never wraps a label or cuts a pill: when the row is narrower than the
@@ -443,6 +553,13 @@
    touch strip below, for every pointer. */
 .tk-plot-strip {
   padding-top: var(--tk-readout, 44px);
+}
+
+/* A phone's price figure reads the chart out (`onRead`): no room kept over
+   the plot, and the strip that still opens for a fill or an event lies over
+   its top instead. Two classes, to outrank the touch rule below. */
+.tk-plot.tk-plot-hero {
+  padding-top: 0;
 }
 
 .tk-plot-strip .tk-tip,
@@ -671,32 +788,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* `.ag-btn`'s face, at the size of the line it sits in. */
 .tk-zoom-reset {
   padding: 4px 10px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: none;
-  color: var(--ag-text-primary);
-  font: inherit;
-  cursor: pointer;
+  font-size: var(--ag-fs-sm);
 }
 
 /* The offer to zoom into a measured stretch: the one action in the row. */
 .tk-zoom-in {
-  border-color: var(--ag-brand-accent);
-  color: var(--ag-brand-accent);
-}
-
-@media (pointer: coarse) {
-  .tk-zoom-reset {
-    min-height: 44px;
-    padding: 0 14px;
-  }
+  font-weight: 600;
 }
 
 @media (hover: hover) {
   .tk-zoom-reset:hover {
-    background: var(--ag-surface-sunken);
+    background: var(--ag-surface-hover);
   }
 }
 
@@ -733,8 +838,86 @@
   color: var(--ag-text-muted);
 }
 
-/* A phone reader who does not hold the name: the range, the P/E and the next
-   results date on one muted line where the holding tiles would be. */
+/* Under the price: the reader's own money and the range's move, or, under a
+   finger, the bar's day. One line, cut rather than wrapped, so the chart
+   under it does not jump as the finger slides. */
+.tk-hero-meta {
+  margin: 2px 0 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The year's range as a row: label, low, meter, high, distance from the high. */
+.tk-hero-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tk-hero-range .tk-range {
+  flex: 1;
+  min-width: 48px;
+  margin: 0 5px;
+}
+
+.tk-hero-range-end {
+  color: var(--ag-text-primary);
+}
+
+/* The reader's own marks under the price: quiet pills that open their
+   editor. 32px drawn, 44px under a finger by the hit area around each. */
+.tk-yours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 6px;
+}
+
+.tk-yours-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tk-yours-gap {
+  color: var(--ag-text-muted);
+}
+
+@media (pointer: coarse) {
+  .tk-yours-item::before {
+    content: "";
+    position: absolute;
+    inset: -6px -3px;
+  }
+}
+
+@media (hover: hover) {
+  .tk-yours-item:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* The figures that are neither the range nor the next report, on one muted
+   line; the next report on a line of its own under them. */
 .tk-hero-trend {
   margin: 0;
   color: var(--ag-text-muted);
@@ -1173,70 +1356,79 @@
 
 /* ------------------------------------------------------- actions and peers */
 
-.tk-tools,
-.tk-actions {
+.tk-tools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
 }
 
-.tk-star,
-.tk-share,
-.tk-pop-btn {
-  height: 32px;
-  padding: 0 10px;
-  background: var(--ag-surface-card);
-  color: var(--ag-text-secondary);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.tk-star,
-.tk-share {
+/* An icon press without a box: the header keeps one filled control, and
+   these stay monochrome beside it. 32px under a pointer, 44px under a
+   finger. */
+.tk-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
   width: 32px;
+  height: 32px;
   padding: 0;
-  line-height: 1;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--ag-dur-hover) var(--ag-ease-out),
+    color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
 }
 
-.tk-share {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.tk-icon:active {
+  scale: 0.92;
+}
+
+.tk-icon-on {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .tk-icon:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
+
+  .tk-star-on:hover {
+    color: var(--ag-brand-accent);
+  }
+}
+
+@media (pointer: coarse) {
+  .tk-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .tk-more-item {
+    min-height: 44px;
+  }
 }
 
 .tk-star:disabled {
   cursor: progress;
 }
 
-/* Filled, not outlined: the favourited state takes the primary fill. */
+/* Favourited: the glyph fills and takes the accent; the button stays bare. */
 .tk-star-on {
-  background: var(--ag-brand-cta);
-  border-color: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
+  color: var(--ag-brand-accent);
 }
 
-.tk-pop {
+/* "More" (`Actions.tsx`): a popover grown from its trigger on a wide page. */
+.tk-more {
   position: relative;
 }
 
-.tk-pop-open {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
-}
-
-@media (hover: hover) {
-  .tk-share:hover,
-  .tk-pop-btn:hover {
-    background: var(--ag-surface-hover);
-    color: var(--ag-text-primary);
-  }
-}
-
-.tk-pop-panel {
+.tk-more-panel {
   position: absolute;
   z-index: 20;
   top: calc(100% + 6px);
@@ -1246,11 +1438,177 @@
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);
-  box-shadow: var(--ag-shadow-card);
+  box-shadow: var(--ag-shadow-overlay);
   text-align: left;
-  /* Hung from its button's right edge, so it grows from there. */
   transform-origin: top right;
   animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
+  /* Out the way it came in (`usePresence`). */
+  transition:
+    opacity var(--ag-dur-press) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.tk-more-panel[data-view="menu"] {
+  width: 220px;
+  padding: 4px;
+}
+
+.tk-more-panel[data-leaving] {
+  opacity: 0;
+  scale: 0.96;
+  pointer-events: none;
+}
+
+.tk-more-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tk-more-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tk-more-item:focus-visible {
+  outline: none;
+  background: var(--ag-surface-hover);
+}
+
+@media (hover: hover) {
+  .tk-more-item:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* How many it holds, quiet on the right, the way a Mac menu keeps its
+   shortcuts: read at a glance, never mistaken for the label. */
+.tk-more-count {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-more-sep {
+  height: 1px;
+  margin: 4px 10px;
+  background: var(--ag-border);
+}
+
+.tk-more-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: -6px -6px 2px;
+}
+
+.tk-more-title {
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+/* A narrow page: the same panel as a sheet from the foot of the screen,
+   portalled to the body. A grabber says it can be pulled down; the menu drags
+   whole, an editor by its head, so its list still scrolls. */
+.tk-more-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  align-items: flex-end;
+  background: var(--ag-surface-page-veil);
+  animation: tk-veil-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.tk-more-veil[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tk-more-sheet {
+  width: 100%;
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  animation: tk-sheet-up var(--ag-dur-move) var(--ag-ease-out);
+  transition:
+    transform var(--ag-dur-move) var(--ag-ease-out),
+    opacity var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.tk-more-sheet[data-view="menu"],
+.tk-more-drag {
+  touch-action: none;
+}
+
+.tk-more-sheet[data-leaving] {
+  transform: translate3d(0, 100%, 0);
+}
+
+.tk-more-sheet .tk-more-item {
+  font-size: var(--ag-fs-md);
+}
+
+.tk-more-sheet .tk-more-head {
+  margin: 0 -8px 4px;
+}
+
+.tk-grabber {
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 0 auto 8px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-border);
+}
+
+@keyframes tk-sheet-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes tk-veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-icon {
+    transition: none;
+  }
+
+  .tk-icon:active {
+    scale: none;
+  }
+
+  .tk-more-sheet,
+  .tk-more-sheet[data-leaving] {
+    animation: none;
+    transform: none;
+  }
+
+  .tk-more-sheet {
+    transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+  }
 }
 
 .tk-editor-label {
@@ -1334,16 +1692,11 @@
   font-size: var(--ag-fs-sm);
 }
 
-.tk-chips,
-.tk-groups {
+.tk-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
-}
-
-.tk-groups {
-  align-self: center;
 }
 
 .tk-chip-logo {
@@ -1433,45 +1786,9 @@
     height: 44px; /* DS touch target */
   }
 
-  .tk-logo {
-    width: 30px;
-    height: 30px;
-    padding: 4px;
-  }
-
-  /* The design's compact app bar: symbol over name, so a long name cannot push
-     the badge off the row. */
-  .tk-names {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-  }
-
-  .tk-controls {
-    justify-content: flex-start;
-  }
-
   /* Seven range pills, "Todo" the widest, fit a 360px phone only at 10px. */
   .tk-seg .ag-seg-opt {
     padding-inline: 10px;
-  }
-
-  .tk-star,
-  .tk-share,
-  .tk-pop-btn {
-    height: 44px;
-  }
-
-  .tk-star,
-  .tk-share {
-    width: 44px;
-  }
-
-  /* Anchored to the viewport rather than to a button that may sit at either
-     edge of a wrapped row. */
-  .tk-pop-panel {
-    right: auto;
-    left: 0;
   }
 
   .tk-tip {
@@ -1479,52 +1796,91 @@
   }
 }
 
-/* The header's Analyse-with-AI action. Primary, because it is the one thing on
-   this page that does something rather than shows something — and icon-only on
-   a phone, where the header already carries logo, name, badge and marks. */
-/* The chromatic rim, fill and hover are `.ag-ai`'s (styles.css). */
-.tk-ai {
-  padding: 6px 12px;
-  border-radius: var(--ag-radius-pill);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-/* The press and the chevron beside it, which opens the other angles
-   (`AiAsk.tsx`). The menu hangs from the group's right edge, like the
-   header's other popovers. */
+/* The header's Analyse-with-AI action: its one prominent control, because it
+   is the one thing on this page that does something rather than shows
+   something. Worded at every width — a sparkle alone says nothing to someone
+   who has not met it. */
+/* The chromatic rim, fill and hover are `.ag-ai`'s (styles.css), on the pill
+   that holds the press and, on a share, the chevron: one object, split by a
+   hairline. */
 .tk-ai-group {
   position: relative;
   display: inline-flex;
+}
+
+.tk-ai-pill {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-ai,
+.tk-ai-more {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--ag-dur-hover) var(--ag-ease-out);
+}
+
+.tk-ai {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 14px 0 12px;
+  border-radius: inherit;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tk-ai-split .tk-ai {
+  padding-inline-end: 10px;
+  border-radius: var(--ag-radius-pill) 0 0 var(--ag-radius-pill);
 }
 
 .tk-ai-more {
+  position: relative;
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-secondary);
-  cursor: pointer;
-  transition:
-    background var(--ag-dur-hover) var(--ag-ease-out),
-    color var(--ag-dur-hover) var(--ag-ease-out),
-    scale var(--ag-dur-press) var(--ag-ease-out);
+  width: 32px;
+  padding: 0 2px 0 0;
+  border-radius: 0 var(--ag-radius-pill) var(--ag-radius-pill) 0;
+}
+
+.tk-ai-more::before {
+  content: "";
+  position: absolute;
+  inset: 25% auto 25% 0;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.tk-ai:focus-visible,
+.tk-ai-more:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 @media (hover: hover) {
+  .tk-ai-split .tk-ai:hover,
   .tk-ai-more:hover {
-    background: var(--ag-surface-hover);
-    color: var(--ag-text-primary);
+    background: color-mix(in srgb, currentColor 10%, transparent);
   }
+}
+
+/* Focus inside the pill is `.ag-ai`'s own focus: the rim thickens. */
+.tk-ai-pill:has(:focus-visible) {
+  --ai-rim: 2px;
+  animation-play-state: running;
+}
+
+.tk-ai-pill:has(:focus-visible)::before {
+  opacity: 0.6;
 }
 
 /* A chevron drawn in CSS, pointing down; up while the menu is open. */
@@ -1542,10 +1898,22 @@
 }
 
 .tk-ai-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
   display: flex;
   flex-direction: column;
   width: min(280px, calc(100vw - 32px));
   padding: 4px;
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  box-shadow: var(--ag-shadow-overlay);
+  text-align: left;
+  /* Hung from the pill's right edge, so it grows from there. */
+  transform-origin: top right;
+  animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .tk-ai-item {
@@ -1586,9 +1954,12 @@
 }
 
 @media (pointer: coarse) {
+  .tk-ai {
+    min-height: 44px;
+  }
+
   .tk-ai-more {
     width: 44px;
-    height: 44px;
   }
 
   .tk-ai-item {
@@ -1893,4 +2264,10 @@
   .tk-dcf-reset {
     min-height: 44px;
   }
+}
+
+/* The phone card's fold head: a quiet label, not a section heading. */
+.tk-fold-head {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
 }

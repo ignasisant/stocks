@@ -55,6 +55,11 @@ vi.mock("../../shell/i18n", async (original) => ({
   },
 }));
 
+// A phone's column, switched on per test: the hero rather than the metric row.
+const column = vi.hoisted(() => ({ phone: false }));
+// The shell's hook, so the card's fold (ui/Fold) folds with it.
+vi.mock("../../shell/useMobile", () => ({ useMobile: () => column.phone }));
+
 // The chart's palette reads CSS tokens off the document; with none, each is "".
 const dom = () => {
   vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "" }));
@@ -435,5 +440,42 @@ describe("the trend cell", () => {
     const html = withTrend(UPTREND, "money_market");
     expect(html).not.toContain("Uptrend");
     expect(html).not.toContain(">Trend<");
+  });
+});
+
+describe("the phone hero", () => {
+  afterEach(() => {
+    column.phone = false;
+  });
+
+  it("prints the price and its frame in two lines, the year as a meter row", () => {
+    dom();
+    column.phone = true;
+    const html = render(null);
+    // The reader's money and the range's move share the line under the price.
+    expect(html).toMatch(/class="tk-hero-meta">≈ €602\.52 · <span class="tk-is-/);
+    // The year's two ends either side of its meter, then the distance.
+    expect(html).toMatch(
+      /tk-hero-range-end">550<\/span><span class="tk-range"[^>]*>.*?<\/span><span class="tk-hero-range-end">760</,
+    );
+    expect(html).toContain("off the high");
+  });
+
+  it("folds the next report and the other figures at the card's foot", () => {
+    dom();
+    column.phone = true;
+    const html = render(null);
+    expect(html).toMatch(/<details class="ag-fold">/);
+    expect(html).toContain("ticker.more_figures");
+    // Closed: the lines wait for the reader to open it.
+    expect(html).not.toContain("tk-hero-trend");
+  });
+
+  it("keeps the meter row above a holder's tiles", () => {
+    dom();
+    column.phone = true;
+    const html = render(position);
+    expect(html.indexOf("tk-hero-range")).toBeLessThan(html.indexOf("ag-kpis"));
+    expect(html).not.toContain("≈ €");
   });
 });

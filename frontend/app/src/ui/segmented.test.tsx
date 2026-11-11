@@ -40,4 +40,22 @@ describe("the segmented control", () => {
     expect(out).toMatch(/class="ag-seg-thumb" aria-hidden="true"/);
     expect(out).toContain('class="ag-seg x-place"');
   });
+
+  it("names an icon option in words, for a screen reader and a tooltip", () => {
+    const icons = renderToStaticMarkup(
+      <Segmented
+        items={[
+          { id: "line", label: <svg />, name: "Line" },
+          { id: "candles", label: <svg />, name: "Candles" },
+        ]}
+        value="line"
+        onPick={() => {}}
+        label="Chart"
+      />,
+    );
+    expect(icons).toMatch(/aria-pressed="true" aria-label="Line" title="Line"/);
+    expect(icons).toContain('aria-label="Candles"');
+    // A worded option needs neither: its text is its name.
+    expect(out).not.toContain("title=");
+  });
 });

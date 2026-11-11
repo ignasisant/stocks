@@ -219,7 +219,8 @@
   }
 }
 
-/* Under the mark, clamped to the viewport by the component's translateX. */
+/* Under the mark, kept inside the visible column by the component's
+   translateX and max-width. */
 .ag-kpi-help-pop {
   position: absolute;
   z-index: 60;

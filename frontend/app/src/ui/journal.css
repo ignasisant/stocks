@@ -274,21 +274,6 @@
   text-decoration: none;
 }
 
-/* --------------------------------------------------------- the header chip */
-
-.ag-jr-chip {
-  padding: 0.25rem 0.7rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-secondary);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 /* ------------------------------------------------------------ side panel */
 
 /* Portalled to the body: `.ag-main` is a size container, the containing
@@ -476,7 +461,6 @@
 
 /* ------------------------------------------------------------ interaction */
 
-.ag-jr-chip:focus-visible,
 .ag-jr-fold:focus-visible,
 .ag-jr-close:focus-visible,
 .ag-jr-link:focus-visible,
@@ -488,7 +472,6 @@
 }
 
 @media (hover: hover) {
-  .ag-jr-chip:hover,
   .ag-jr-close:hover,
   .ag-jr-retire:not(:disabled, .ag-jr-retire-confirm):hover,
   .ag-jr-fold:hover {
@@ -511,7 +494,6 @@
 }
 
 @media (pointer: coarse) {
-  .ag-jr-chip,
   .ag-jr-close,
   .ag-jr-link,
   .ag-jr-retire,

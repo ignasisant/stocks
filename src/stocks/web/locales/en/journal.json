@@ -2,8 +2,6 @@
   "journal.tab": "Journal",
   "journal.title": "Decision journal",
   "journal.intro": "Every move the app proposed to you and showed you — on the daily card, on **Sell or add**, or in the chat — with the figures it was made on and what became of it. The app writes it. Yours are only the rules you set per name: when to sell, when to buy.",
-  "journal.chip": "Journal · {n}",
-  "journal.chip_help": "What the app has proposed about {ticker}, and what became of it",
   "journal.panel_title": "Journal · {ticker}",
   "journal.all": "Whole journal",
   "journal.close": "Close",
