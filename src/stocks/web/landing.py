@@ -607,7 +607,7 @@ def _hero() -> str:
     <h1>{_grad(tr("landing.hero_title"))}</h1>
     <p class="ag-l-lede">{esc(tr("landing.hero_sub"))}</p>
     <div class="ag-l-ctarow">
-      {_signin_link("ag-l-cta", tr("common.sign_in_google"))}
+      {_signin_link("ag-l-cta", tr("landing.cta_google"))}
       {_guest_link(tr("landing.cta_guest"))}
     </div>
     <div class="ag-l-trust">{esc(tr("landing.trust_strip"))}</div>
@@ -842,7 +842,7 @@ def _how() -> str:
       <span class="ag-l-stepnum" aria-hidden="true">1</span>
       <h3>{esc(tr("landing.step1_title"))}</h3>
       <div class="ag-l-gbtn"><span>{_G_MARK}
-        {esc(tr("common.sign_in_google"))}</span></div>
+        {esc(tr("landing.cta_google"))}</span></div>
       <p>{esc(tr("landing.step1_body"))}</p>
     </div>
     <div class="ag-l-step" data-reveal>
@@ -1239,7 +1239,7 @@ def _final() -> str:
   <h2>{_grad(tr("landing.final_title"))}</h2>
   <p>{esc(tr("landing.final_sub"))}</p>
   <div class="ag-l-ctarow">
-    {_signin_link("ag-l-cta", tr("common.sign_in_google"))}
+    {_signin_link("ag-l-cta", tr("landing.cta_google"))}
     {_guest_link(tr("landing.cta_guest_short"))}
   </div>
 </div></section>"""
@@ -1277,7 +1277,7 @@ def _mobile_bar() -> str:
     screen up, and a second line would cost another 30px of a 640px-tall
     viewport for the whole scroll.
     """
-    label = tr("common.sign_in_google")
+    label = tr("landing.cta_google")
     return (
         '<div class="ag-l-mbar">'
         + _signin_link("ag-l-cta", label)
