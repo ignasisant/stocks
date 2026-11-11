@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from stocks.i18n import translate as _t
-from stocks.portfolio import degiro
+from stocks.portfolio import degiro, trade_republic
 
 
 def action_label(action: str, lang: str | None = None) -> str:
@@ -76,6 +76,9 @@ SKIP_REASONS: dict[str, tuple[str, bool]] = {
     "double-tax credit": ("import.skip_withholding", True),
     degiro.WRONG_PORTFOLIO: ("import.skip_degiro_portfolio", True),
     degiro.WRONG_ACCOUNT: ("import.skip_degiro_account", True),
+    trade_republic.TAX: ("import.skip_tax", False),
+    trade_republic.REDEMPTION: ("import.skip_redemption", False),
+    trade_republic.REVERSED: ("import.skip_div_reversed", False),
     # Any crypto exchange's export (crypto_map).
     **dict.fromkeys((
         "cash deposit, nothing to book", "cash withdrawal, nothing to book",

@@ -592,7 +592,7 @@ def test_the_connector_funnel_counts_accounts_not_events():
         _con("connector.card", "a", src="profile"),
         _con("connector.card", "b", src="news"),
         _con("connector.copy", "a", what="url"),
-        _con("connector.copy", "a", what="command"),
+        _con("connector.copy", "a", what="command", app="codex"),
         _con("mcp.consent", "a", step="allow"),
         _con("mcp.consent", "b", step="deny"),
         _con("mcp.grant", grant="g_1"),
@@ -607,8 +607,9 @@ def test_the_connector_funnel_counts_accounts_not_events():
     assert {r["src"]: r["accounts"] for r in got["sources"]} == {
         "chat": 1, "profile": 1, "news": 1,
     }
+    assert {r["app"]: r["accounts"] for r in got["apps"]} == {"-": 1, "codex": 1}
     out = lq.render_connector(got)
-    assert "saw the Claude tab" in out and "50.0%" in out
+    assert "saw the MCP tab" in out and "50.0%" in out and "codex" in out
 
 
 def test_no_connector_events_says_so():

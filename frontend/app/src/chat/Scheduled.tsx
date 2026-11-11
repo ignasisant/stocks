@@ -17,6 +17,7 @@ import { get, send } from "../shell/api";
 import { useLang, useT } from "../shell/i18n";
 import { type Prefs, type Schedule, useSession } from "../shell/session";
 import { browserZone } from "../shell/zone";
+import { ToggleChip } from "../ui/Toggle";
 import { Glyph } from "./icons";
 import { closeTime, weekdayNames, whenLabel } from "./slots";
 import type { Conversation } from "./types";
@@ -91,7 +92,9 @@ export function ScheduleEditor({
       <div className="ag-sched-days" role="group" aria-label={t("chat.sched_mode")}>
         <button
           type="button"
-          className="ag-chat-chip ag-sched-day ag-sched-mode"
+          className={
+            !close ? "ag-toggle ag-toggle-on ag-sched-mode" : "ag-toggle ag-sched-mode"
+          }
           aria-pressed={!close}
           autoFocus={!close}
           onClick={() => setClose(false)}
@@ -100,7 +103,9 @@ export function ScheduleEditor({
         </button>
         <button
           type="button"
-          className="ag-chat-chip ag-sched-day ag-sched-mode"
+          className={
+            close ? "ag-toggle ag-toggle-on ag-sched-mode" : "ag-toggle ag-sched-mode"
+          }
           aria-pressed={close}
           autoFocus={close}
           onClick={() => setClose(true)}
@@ -124,15 +129,9 @@ export function ScheduleEditor({
       {close && <p className="ag-sched-hint">{t("chat.sched_close_hint")}</p>}
       <div className="ag-sched-days" role="group" aria-label={t("chat.sched_days")}>
         {names.map((name, d) => (
-          <button
-            key={d}
-            type="button"
-            className="ag-chat-chip ag-sched-day"
-            aria-pressed={days.includes(d)}
-            onClick={() => flip(d)}
-          >
+          <ToggleChip key={d} on={days.includes(d)} onClick={() => flip(d)}>
             {name}
-          </button>
+          </ToggleChip>
         ))}
       </div>
       {/* Said, not just a dead Save: the reader sees why it will not go. */}

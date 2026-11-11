@@ -76,6 +76,7 @@ import { acceptOf } from "../pages/import/api";
 import { Box, Mic } from "../ui/Mic";
 import { Segmented } from "../ui/Segmented";
 import { Status } from "../ui/Status";
+import { ToggleChip } from "../ui/Toggle";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
 import { useAssistantFills } from "../shell/assistant";
@@ -194,12 +195,10 @@ function Skills({
               const on = picked.includes(skill.id);
               const blocked = full && !on;
               return (
-                <button
-                  type="button"
+                <ToggleChip
                   key={skill.id}
-                  className={`ag-chat-chip${on ? " ag-chat-chip-on" : ""}`}
+                  on={on}
                   disabled={blocked}
-                  aria-pressed={on}
                   onClick={() =>
                     onSave({
                       skills: on
@@ -209,7 +208,7 @@ function Skills({
                   }
                 >
                   {skillName(t, skill.id, skill.name)}
-                </button>
+                </ToggleChip>
               );
             })}
           </div>

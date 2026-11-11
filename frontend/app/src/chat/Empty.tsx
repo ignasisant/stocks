@@ -33,8 +33,9 @@ import { Inline } from "./markdown";
  * With a ledger behind it the assistant's best trick is the reader's own book,
  * so those are the questions the opening screen offers next — one per thing
  * the app works out rather than the model: the book against an index, the
- * split with funds looked through, the losses the tax engine would offset, and
- * a position sized to a weight. Each is worded to open its own surface under
+ * losses the tax engine would offset, and a position sized to a weight — plus
+ * how to reach that book from another AI app over MCP, answered from the same
+ * documents as the first. Each is worded to open its own surface under
  * the answer (`tests/test_chat_starters_gates.py`). A fresh account has no
  * ledger and would be offered four questions it cannot answer, so it gets the
  * watchlist set instead — live quotes and the earnings calendar work with no
@@ -45,13 +46,13 @@ import { Inline } from "./markdown";
 const BOOK = [
   "chat.starter_howto",
   "chat.starter_benchmark",
-  "chat.starter_exposure",
+  "chat.starter_mcp",
   "chat.starter_harvest",
   "chat.starter_rebalance",
 ];
 const FRESH = ["chat.starter_howto", "chat.starter_movers", "chat.starter_earnings"];
 
-/** Analyse what you hold · research with the web · import a statement · alert. */
+/** Analyse · research · import · alert. */
 const CAPS = [
   ["chat.cap_analyze", CAP_PATHS[0]],
   ["chat.cap_web", CAP_PATHS[1]],

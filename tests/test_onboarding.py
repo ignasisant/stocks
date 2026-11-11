@@ -448,8 +448,8 @@ def test_the_email_card_waits_for_a_deploy_that_can_send(
     ("origin", "shown"), [(None, False), ("https://x.example", True)]
 )
 def test_the_claude_card_needs_the_public_url(monkeypatch, origin, shown):
-    """The connector names itself to Claude by the site's public URL; without
-    one it is off, Profile has no Claude tab, and neither the step nor the
+    """The connector names itself to apps by the site's public URL; without
+    one it is off, Profile has no MCP tab, and neither the step nor the
     card that hands over to it is dealt."""
     from stocks.web import server
 

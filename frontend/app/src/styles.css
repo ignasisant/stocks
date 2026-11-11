@@ -858,7 +858,6 @@ body {
       .earn-chip,
       .tk-ai-more,
       .tk-ai-item,
-      .ag-sched-day,
       .ag-sched-more,
       .ag-rate-star
     ):active:not(:disabled) {

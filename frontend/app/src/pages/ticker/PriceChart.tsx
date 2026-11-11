@@ -34,6 +34,8 @@ import {
   hoverTitle,
   placeFills,
   priceRows,
+  volumeAverage,
+  volumeRow,
   type Fill,
 } from "./hover";
 import { Skeleton } from "../../shell/Layout";
@@ -389,6 +391,7 @@ export function PriceChart({
   const open = bars.series.Open ?? [];
   const high = bars.series.High ?? [];
   const low = bars.series.Low ?? [];
+  const volume = bars.series.Volume ?? [];
   const days = useMemo(
     () => bars.dates.map((stamp) => stamp.slice(0, 10)),
     [bars.dates],
@@ -836,6 +839,14 @@ export function PriceChart({
       },
       t,
     );
+    // Against the sessions before it only on daily bars: twenty half-hours
+    // mix the open's rush with lunch, so an intraday bar gets its count alone.
+    const traded = volumeRow(
+      volume[index] ?? null,
+      daily ? volumeAverage(volume, index) : null,
+      t,
+    );
+    if (traded) lines.push(traded);
     const averages: TipLine[] = [];
     for (const [key, color, name] of overlays) {
       const value = averageRow(name, bars.series[key]?.[index] ?? null, color);

@@ -317,15 +317,29 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
             break
         repair_splits(str(user.db))
         swept += 1
+    # Previews nobody committed: the warm is the one thing that runs on a
+    # clock while Cloud Run sleeps between requests.
+    abandoned = _sweep_imports()
     obs.event(
         "api.warm_run",
         warmed=warmed,
         more=more,
         swept=swept,
+        abandoned=abandoned,
         accounts=len(recent),
         seconds=round(time.monotonic() - started, 1),
     )
     return warmed
+
+
+def _sweep_imports() -> int:
+    from stocks.notify import import_alert
+
+    try:
+        return import_alert.sweep()
+    except Exception as exc:  # noqa: BLE001 — never worth the warm
+        obs.warn("import.watch_failed", stage="warm", error_type=type(exc).__name__)
+        return 0
 
 
 router = APIRouter(include_in_schema=False)

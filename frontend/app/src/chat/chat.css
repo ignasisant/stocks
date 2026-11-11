@@ -740,10 +740,6 @@
     min-height: 44px;
   }
 
-  .ag-chat-why-chips .ag-chat-chip {
-    min-height: 44px;
-  }
-
   .ag-chat-why-note {
     font-size: 16px;
   }
@@ -2029,17 +2025,9 @@ button.ag-chat-op-mark::before {
   margin: 6px 0 0;
 }
 
-/* The lens chips are pressed with a thumb as often as with a mouse. */
-@media (pointer: coarse) {
-  .ag-chat-picker .ag-chat-chip {
-    min-height: 44px;
-  }
-}
-
 /* Inline-flex, because a glyph left inline sits on the text's baseline and
    reads as a few pixels high beside the label. */
-.ag-chat-btn,
-.ag-chat-chip {
+.ag-chat-btn {
   display: inline-flex;
   gap: 5px;
   align-items: center;
@@ -2073,8 +2061,7 @@ a.ag-chat-btn {
   text-decoration: none;
 }
 
-.ag-chat-btn-on,
-.ag-chat-chip-on {
+.ag-chat-btn-on {
   border-color: var(--ag-brand-accent);
   background: var(--ag-cta-tint);
   color: var(--ag-text-primary);
@@ -2813,7 +2800,6 @@ a.ag-chat-btn {
 .ag-chat-meta-btn:focus-visible,
 .ag-chat-why-note:focus-visible,
 .ag-chat-btn:focus-visible,
-.ag-chat-chip:focus-visible,
 .ag-chat-send:focus-visible,
 .ag-chat-retry:focus-visible,
 .ag-chat-starter:focus-visible,
@@ -3621,30 +3607,23 @@ a.ag-chat-btn {
   gap: 4px;
 }
 
-.ag-sched-day {
+.ag-sched-days .ag-toggle {
   justify-content: center;
   min-width: 40px;
   text-transform: capitalize;
 }
 
 /* "At a time" / "After the US close": sentences, not weekday names. */
-.ag-sched-mode {
+.ag-sched-days .ag-sched-mode {
   text-transform: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ag-sched-day,
   .ag-sched-more {
     transition:
       scale var(--ag-dur-press) var(--ag-ease-out),
       background-color var(--ag-dur-hover) var(--ag-ease-out);
   }
-}
-
-.ag-sched-day[aria-pressed="true"] {
-  border-color: var(--ag-brand-accent);
-  background: var(--ag-cta-tint);
-  color: var(--ag-text-primary);
 }
 
 .ag-sched-more {
@@ -3655,7 +3634,6 @@ a.ag-chat-btn {
 @media (pointer: coarse) {
   .ag-sched-head,
   .ag-sched-switch,
-  .ag-sched-day,
   .ag-sched-more {
     min-height: 44px;
   }
@@ -3672,12 +3650,6 @@ a.ag-chat-btn {
   /* iOS zooms into a field under 16px on focus. */
   .ag-sched-field .ag-chat-input {
     font-size: 16px;
-  }
-}
-
-@media (forced-colors: active) {
-  .ag-sched-day[aria-pressed="true"] {
-    border-color: Highlight;
   }
 }
 

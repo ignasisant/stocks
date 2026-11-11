@@ -7,7 +7,7 @@ entries as one compact line each — plus `stats` (counts and latency
 percentiles per event), `usage` (accounts, visitors and page views per day,
 out of the app's events and the access log together), `funnel` (landing
 view to signup, by day and by campaign source), `connector` (Profile's
-Claude tab to the connector's first tool call, in accounts) and `export` (a JSONL
+MCP tab to the connector's first tool call, in accounts) and `export` (a JSONL
 snapshot on disk, for keeping a bad day past the retention window or
 grinding through it offline).
 
@@ -726,21 +726,24 @@ _CONNECTOR_STEPS = ("card", "copy", "allow", "used")
 
 
 def connector(entries: Iterable[dict]) -> dict:
-    """Profile's Claude tab -> address copied -> approved -> first tool call.
+    """Profile's MCP tab -> address copied -> approved -> first tool call.
 
     Counted in accounts, not events: a reader who opens the tab five times
     and copies twice is one reader who copied. `card` is split by `src`
     (what sent them there: the chat's nudge, the "what's new" card, the
     tour, or the tab picked by hand), which is the question the nudges were
-    built to answer. `allow` is the consent screen's yes, which names the
-    account; `mcp.grant` does not (it happens on the token exchange, in no
-    one's session), so grants are a count beside the funnel, not a step.
+    built to answer; `copy` is split by `app`, the app the card was
+    explaining when the line was copied. `allow` is the consent screen's
+    yes, which names the account; `mcp.grant` does not (it happens on the
+    token exchange, in no one's session), so grants are a count beside the
+    funnel, not a step.
     `used` is an account with any `mcp.tool` call in range — whether or not
     it saw the card in range, since a connection made last month still
     counts as a reader the connector kept.
     """
     reached: dict[str, set[str]] = {step: set() for step in _CONNECTOR_STEPS}
     by_src: dict[str, set[str]] = {}
+    by_app: dict[str, set[str]] = {}
     grants = denied = 0
     for entry in entries:
         body = payload(entry)
@@ -756,6 +759,7 @@ def connector(entries: Iterable[dict]) -> dict:
             by_src.setdefault(str(body.get("src") or "-"), set()).add(user)
         elif name == "connector.copy":
             reached["copy"].add(user)
+            by_app.setdefault(str(body.get("app") or "-"), set()).add(user)
         elif name == "mcp.consent" and body.get("step") == "allow":
             reached["allow"].add(user)
         elif name == "mcp.consent" and body.get("step") == "deny":
@@ -769,6 +773,11 @@ def connector(entries: Iterable[dict]) -> dict:
             key=lambda r: (r["accounts"], r["src"]),
             reverse=True,
         ),
+        "apps": sorted(
+            ({"app": a, "accounts": len(u)} for a, u in by_app.items()),
+            key=lambda r: (r["accounts"], r["app"]),
+            reverse=True,
+        ),
         "grants": grants,
         "denied": denied,
     }
@@ -779,7 +788,7 @@ def render_connector(summary: dict) -> str:
     if not any(steps.values()) and not summary["grants"]:
         return "(no connector events in range)"
     labels = {
-        "card": "saw the Claude tab",
+        "card": "saw the MCP tab",
         "copy": "copied the address",
         "allow": "approved in TopStocks",
         "used": "called a tool",
@@ -796,6 +805,10 @@ def render_connector(summary: dict) -> str:
         lines += ["\nsent to the tab by:", f"{'source':<24} {'accounts':>8}", "-" * 33]
         for r in summary["sources"]:
             lines.append(f"{r['src'][:24]:<24} {r['accounts']:>8}")
+    if summary.get("apps"):
+        lines += ["\ncopied for:", f"{'app':<24} {'accounts':>8}", "-" * 33]
+        for r in summary["apps"]:
+            lines.append(f"{r['app'][:24]:<24} {r['accounts']:>8}")
     return "\n".join(lines)
 
 

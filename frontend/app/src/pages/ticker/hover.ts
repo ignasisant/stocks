@@ -24,7 +24,7 @@ import { type Translate } from "./format";
 import type { Trade } from "./types";
 import { num } from "../../shell/numbers";
 import { calendarDay } from "../../shell/dates";
-import { DASH, decimal, money } from "../../shell/format";
+import { DASH, compact, decimal, money } from "../../shell/format";
 
 /** A run of text inside a row, and how it is set. */
 export type TipPart = { text: string; bold?: boolean; tone?: "up" | "down" | "dim" };
@@ -183,6 +183,46 @@ export function priceRows(
     out.push(row([{ text: detail, tone: "dim" }]));
   }
   return out;
+}
+
+/** Sessions a bar's volume is weighed against. */
+const VOLUME_SESSIONS = 20;
+
+/**
+ * The mean volume of the sessions before `index`, or null with fewer than a
+ * quarter of them traded. Zero is a feed with no volume (an index), not a
+ * quiet day, so it is left out rather than dragging the mean down.
+ */
+export function volumeAverage(
+  volumes: (number | null)[],
+  index: number,
+): number | null {
+  const traded = volumes
+    .slice(Math.max(0, index - VOLUME_SESSIONS), index)
+    .filter((value): value is number => typeof value === "number" && value > 0);
+  if (traded.length < VOLUME_SESSIONS / 4) return null;
+  return traded.reduce((sum, value) => sum + value, 0) / traded.length;
+}
+
+/**
+ * "volume 339.7M · 5.2× 20-session avg", muted: the ratio is what says a day
+ * was news, the bare count means little. Nothing when the feed has no volume.
+ */
+export function volumeRow(
+  volume: number | null,
+  average: number | null,
+  t: Translate,
+): HoverRow | null {
+  if (volume === null || volume === undefined || volume <= 0) return null;
+  const count = compact(volume, { digits: 1 }) ?? DASH;
+  const text = average
+    ? t("ticker.hover_volume_avg", {
+        volume: count,
+        ratio: decimal(volume / average, { digits: 1 }),
+        sessions: VOLUME_SESSIONS,
+      })
+    : t("ticker.hover_volume", { volume: count });
+  return row([{ text, tone: "dim" }]);
 }
 
 /** "SMA50  201.33" — muted name, bold value; nothing where it is still warming up. */

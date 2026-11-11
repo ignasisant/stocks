@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import time
 from datetime import UTC, datetime
@@ -52,6 +53,7 @@ from stocks.api.deps import ChatTurn, Writer
 from stocks.api.routes import import_statement as page
 from stocks.chat import a2ui
 from stocks.jsonsafe import num as _num
+from stocks.notify import import_alert
 from stocks.portfolio import (
     demo,
     diagnostics,
@@ -399,23 +401,40 @@ def attach(
     batch budget, and without them the same statement warned here and read
     clean on the page.
     """
-    raw = _decode(body.content)
+    try:
+        raw = _decode(body.content)
+    except HTTPException as exc:
+        obs.warn("import.refused", stage="preview", surface="chat",
+                 why=str(exc.detail)[:60], status=exc.status_code)
+        import_alert.failed(page.brief(body.filename, "chat", ""),
+                            stage="chat_upload", detail=str(exc.detail))
+        raise
     _file_at(paths, body.conversation)
     lang = _lang(paths, body.lang)
 
-    found = page._read(
-        paths,
-        body.filename,
-        raw,
-        held=page._held(x_chat_provider, x_chat_key),
-        mapping=body.mapping,
-    )
-    checked, _disowned = page._validated(paths, found.result)
+    digest = hashlib.sha256(raw).hexdigest()
+    obs.event("import.upload", stage="preview", surface="chat", bytes=len(raw),
+              digest=digest[:16])
+    try:
+        found = page._read(
+            paths,
+            body.filename,
+            raw,
+            held=page._held(x_chat_provider, x_chat_key),
+            mapping=body.mapping,
+        )
+        checked, _disowned = page._validated(paths, found.result)
+    except Exception as exc:
+        fp = diagnostics.report("", body.filename, raw, surface="chat", error=exc)
+        import_alert.failed(fp, stage="crash", detail=type(exc).__name__,
+                            digest=digest)
+        raise
     # The same anonymised record the Import page files, tagged with the surface
     # it came through, so the two are told apart.
-    diagnostics.report(
+    fp = diagnostics.report(
         found.platform, body.filename, raw, found.result, checked, surface="chat"
     )
+    page.watch_preview(fp, found, checked, len(checked.fresh), digest)
 
     detected = platforms.detected_broker(checked.importable)
     summary = {
@@ -498,6 +517,7 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
     """
     origin = body.broker.strip()
     if not origin:
+        obs.warn("import.refused", stage="commit", surface="chat", why="no_broker")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="rows need a broker to be filed under — send one as `broker`",
@@ -505,9 +525,15 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
     sent = ParseResult(transactions=[_transaction(r) for r in body.rows])
     checked, _disowned = page._validated(paths, sent)
     if not checked.importable:
+        detail = "none of these rows validates against the ledger any more"
+        obs.warn("import.refused", stage="commit", surface="chat",
+                 why="nothing_importable", rows=len(body.rows))
+        import_alert.failed(
+            page.brief(body.filename, "chat", body.platform, sent, checked),
+            stage="commit_nothing_importable", detail=detail,
+        )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="none of these rows validates against the ledger any more",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail
         )
     txs = platforms.stamp_broker(checked.importable, origin)
 
@@ -540,6 +566,7 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
         first=first,
         via="chat-api",
     )
+    import_alert.committed()
     note = i18n.translate("chat.import_done", lang, n=len(ids), total=total)
     if checked.rejected:
         # Said in the turn itself: the card that showed them clean is gone.

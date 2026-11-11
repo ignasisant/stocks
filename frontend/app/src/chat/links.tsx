@@ -55,7 +55,7 @@ const TAB_LABELS: Record<string, Record<string, string>> = {
     plan: "profile.plan_section",
     watch: "profile.watchlist",
     notify: "profile.notifications",
-    claude: "profile.connector_tab",
+    mcp: "profile.connector_tab",
   },
 };
 

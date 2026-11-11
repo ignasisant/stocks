@@ -90,7 +90,6 @@ _TOUCH_TARGETS = [
     ("pages/profile/profile.css", ".pr-signout", r"min-height\s*:\s*44px"),
     ("pages/profile/profile.css", ".pr-more > summary", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-thumb", r"min-height\s*:\s*44px"),
-    ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
     ("pages/ticker/ticker.css", ".tk-icon", r"min-height\s*:\s*44px"),
     ("pages/ticker/ticker.css", ".tk-more-item", r"min-height\s*:\s*44px"),
     ("pages/ticker/ticker.css", ".tk-ai", r"min-height\s*:\s*44px"),

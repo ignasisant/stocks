@@ -51,6 +51,8 @@
   "ticker.span_hint_mouse": "Drag to measure between two dates · ← → step through days",
   "ticker.price_summary": "Price {start} → {end} ({pct}), low {lo}, high {hi}",
   "ticker.hover_ohlc": "open {open} · high {high} · low {low}",
+  "ticker.hover_volume": "volume {volume}",
+  "ticker.hover_volume_avg": "volume {volume} · {ratio}× {sessions}-session avg",
   "ticker.period_change": "{pct} in {period}",
   "ticker.period_change_max": "{pct} since inception",
   "ticker.zoom_reset": "Reset",

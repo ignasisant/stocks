@@ -2,11 +2,10 @@
 
 A suggestion is a prefilled question, and the ones on the drawer's empty
 thread (`frontend/app/src/chat/Empty.tsx`) are there to show what the app
-works out rather than the model: the book against an index, the split with
-funds looked through, the losses the tax engine would offset, a position
-sized to a weight. Each of those is gated on the wording of the message, so
-a reworded suggestion can quietly stop opening its surface, or open a second
-one beside it. This reads the copy in
+works out rather than the model: the book against an index, the losses the
+tax engine would offset, a position sized to a weight. Each of those is gated
+on the wording of the message, so a reworded suggestion can quietly stop
+opening its surface, or open a second one beside it. This reads the copy in
 every language, fills its slots the way the drawer does and runs it through
 every gate.
 """
@@ -33,7 +32,7 @@ GATES = {
 OPENS = {
     "howto": None,
     "benchmark": "chart",
-    "exposure": "mix",
+    "mcp": None,
     "harvest": "harvest",
     "rebalance": "rebalance",
     "movers": None,
@@ -63,11 +62,6 @@ def test_the_book_question_is_the_book_against_the_index_this_year(lang):
     assert charts.targets(asked, {}, "", "EUR", lookup=lambda _n: "") == [
         charts.BOOK, "^GSPC"]
     assert charts.window_asked(asked) == "ytd"
-
-
-@pytest.mark.parametrize("lang", ["en", "es"])
-def test_the_split_is_by_country_where_funds_are_looked_through(lang):
-    assert allocation.dimension_asked(_asked(lang, "exposure")) == "country"
 
 
 @pytest.mark.parametrize("lang", ["en", "es"])

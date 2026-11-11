@@ -126,13 +126,19 @@ def revoke(
                             detail="no such connection")
 
 
+#: The apps the card explains — `ConnectorCard.APPS`.
+App = Literal["claude", "claude_code", "chatgpt", "codex", "gemini", "cursor",
+              "vscode", "windsurf", "lechat", "other"]
+
+
 class Copied(BaseModel):
     what: Literal["url", "command"]
+    app: App | None = Field(None, description="The app the card was explaining.")
 
 
 @router.post("/connections/copied", status_code=status.HTTP_204_NO_CONTENT,
              summary="Note that the connector address was copied")
 def copied(caller: Authed, _account: Writer, body: Copied) -> None:
-    """The step between seeing the card and Claude registering: nothing else
-    tells a reader who never got as far as Claude from one who never tried."""
-    obs.event("connector.copy", what=body.what)
+    """The step between seeing the card and the app registering: nothing else
+    tells a reader who never got as far as the app from one who never tried."""
+    obs.event("connector.copy", what=body.what, app=body.app or "-")
