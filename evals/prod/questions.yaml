@@ -19,6 +19,7 @@
 #             concept  a definition or general finance knowledge
 #             abstain  unknowable or out of scope: must not invent
 #             action   asks the app to do something (a proposal, never run)
+#             recall   about an earlier conversation (`before` + `recall`)
 #   message   the question, as a reader types it
 #   goals     what a useful answer shows (judged); each kind adds its own
 #             defaults (`prod_eval.KIND_GOALS`)
@@ -35,6 +36,10 @@
 #   view/tab/focus  where the reader is (the drawer's run `state`)
 #   depth     "" | deep
 #   lang      the drawer's language, es (default) or en
+#   before    messages asked first, on a thread of their own, so the question
+#             has an earlier conversation to be about (each one more turn)
+#   recall    true: "use earlier conversations" switched on for this question
+#             (the eval account keeps it off)
 
 # ------------------------------------------------------------------- import
 
@@ -649,6 +654,53 @@
   message: "¿Te acuerdas de lo que te digo entre conversaciones?"
   goals:
     - Explains saved memories ("recuerda que...") and that they can be turned off or deleted
+
+# Prod 2026-11-11: "te acuerdas de lo que hablamos ayer?" got "No conservo el
+# historial de conversaciones de días anteriores" with the day before in the
+# index word for word. The `before` talk is today's, so "ayer" finds nothing:
+# the answer says so and goes on to the latest talk.
+- id: assistant-recall-yesterday
+  area: assistant
+  kind: recall
+  recall: true
+  before: ["¿Qué es el ratio PEG y para qué sirve?"]
+  message: "te acuerdas de lo que hablamos ayer?"
+  goals:
+    - Says nothing was talked about yesterday, then that the latest conversation was about the PEG ratio
+  mentions: [PEG]
+  forbids: ["no conservo", "no guardo", "no tengo memoria", "no puedo recordar", "no tengo acceso"]
+
+- id: assistant-recall-latest
+  area: assistant
+  kind: recall
+  recall: true
+  before: ["¿Qué es el free cash flow de una empresa?"]
+  message: "¿te acuerdas de lo que hablamos?"
+  goals:
+    - Says the latest conversation was about free cash flow and what was said there
+  mentions: [free cash flow, flujo de caja]
+  forbids: ["no conservo", "no guardo", "no tengo memoria", "no puedo recordar", "no tengo acceso"]
+
+- id: assistant-recall-latest-en
+  area: assistant
+  kind: recall
+  lang: en
+  recall: true
+  before: ["What is a share buyback and why do companies do it?"]
+  message: "do you remember what we talked about last time?"
+  goals:
+    - Says the latest conversation was about share buybacks and what was said there
+  mentions: [buyback, repurchase]
+  forbids: ["don't have memory", "do not retain", "don't retain", "no memory of", "cannot remember", "can't remember"]
+
+- id: assistant-recall-off
+  area: assistant
+  kind: recall
+  message: "¿te acuerdas de lo que hablamos ayer?"
+  goals:
+    - Says earlier conversations are switched off in the chat's settings and that switching them on brings them back
+  mentions: [ajustes, activa, desactivad]
+  forbids: ["no conservo", "no guardo", "no tengo memoria", "no puedo recordar"]
 
 - id: assistant-alert-action
   area: assistant

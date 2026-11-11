@@ -155,18 +155,24 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
-  "description": "Search everything the user has discussed with you before, across all past conversations. Use when the question refers to earlier reasoning — what they decided, why they bought something, what you concluded last time — or when knowing their history would change the answer. The current conversation is already in front of you and is not searched.",
+  "description": "Search everything the user has discussed with you before, across all past conversations. Use when the question refers to earlier reasoning — what they decided, why they bought something, what you concluded last time — or when knowing their history would change the answer. For a day ('what did we discuss yesterday', 'last week'), pass the dates, with or without a query. Conversations are kept for 30 days after their last message. The current conversation is already in front of you and is not searched.",
   "name": "recall",
   "schema": {
    "properties": {
     "query": {
-     "description": "What to look for, in the user's own words.",
+     "description": "What to look for, in the user's own words; omit to get everything said on the dates.",
+     "type": "string"
+    },
+    "since": {
+     "description": "ISO date, first day searched.",
+     "type": "string"
+    },
+    "until": {
+     "description": "ISO date, last day searched.",
      "type": "string"
     }
    },
-   "required": [
-    "query"
-   ],
+   "required": [],
    "type": "object"
   }
  },

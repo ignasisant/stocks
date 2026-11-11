@@ -41,7 +41,7 @@ from stocks.chat import navigate
 
 CATALOG = Path(__file__).resolve().parents[3] / "evals" / "prod" / "questions.yaml"
 
-KINDS = ("howto", "data", "book", "concept", "abstain", "action")
+KINDS = ("howto", "data", "book", "concept", "abstain", "action", "recall")
 # Areas beyond the pages: the chat itself, vocabulary, and what it must refuse.
 EXTRA_AREAS = ("assistant", "concept", "abstain")
 
@@ -61,6 +61,11 @@ KIND_GOALS: dict[str, tuple[str, ...]] = {
     "concept": (),
     "abstain": ("States no invented figure, ticker data or feature",),
     "action": ("Does not claim the action is done before the reader approves it",),
+    "recall": (
+        "Answers from the earlier conversation it was given, or says none "
+        "matches; never says it keeps no history or cannot remember past "
+        "conversations",
+    ),
 }
 
 # What the run declares so the server offers page buttons, as the drawer does.
@@ -124,6 +129,12 @@ class Question:
     depth: str = ""
     lang: str = "es"
     refs: tuple[str, ...] = ()
+    # Asked first, on a thread of their own, so the question has an earlier
+    # conversation to be about; `recall` switches "use earlier conversations"
+    # on for it — the eval account keeps it off so no question leaks into the
+    # next.
+    before: tuple[str, ...] = ()
+    recall: bool = False
 
     @property
     def page(self) -> str:
@@ -180,6 +191,8 @@ def load(path: Path = CATALOG) -> list[Question]:
                 depth=row.get("depth") or "",
                 lang=row.get("lang") or "es",
                 refs=tuple(str(r) for r in row.get("refs") or ()),
+                before=tuple(str(m) for m in row.get("before") or ()),
+                recall=bool(row.get("recall")),
             )
         )
     return out

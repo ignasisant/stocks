@@ -14,7 +14,9 @@ with a session minted here: prod accepts it because both sides share
 `[auth] cookie_secret`. It never touches a real reader's book. `--seed` gives
 it the demo book (`POST /portfolio/demo`) when it is empty, which the `book`
 questions need. Memory and recall are switched off on it, so no question
-leaks into the next.
+leaks into the next; a `recall` question switches recall on for itself, and
+its `before` turns are asked first on a thread of their own (each one more
+model turn, counted in the free allowance like the question).
 
 `--model` is `free` (the keyless chain every reader gets: what to measure
 first) or `provider:model`, the key read from <PROVIDER>_API_KEY and sent
@@ -51,6 +53,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -171,43 +174,56 @@ class Prod:
     def ask(self, q: prod_eval.Question, headers: dict, keep: bool) -> prod_eval.Answer:
         # A network blip fails this question, not the run (2026-10-29: a read
         # timeout opening a thread killed 79 answers before anything was saved).
+        threads: list[str] = []
         try:
-            thread = self.json(
-                "POST", "/chat/conversations", json={"title": f"eval {q.id}"}
-            )["id"]
-        except httpx.HTTPError as exc:
-            return prod_eval.Answer(error=f"{type(exc).__name__}: {exc}")
-        try:
-            for attempt in range(2):
-                t0 = time.monotonic()
-                with self.http.stream(
-                    "POST",
-                    "/chat/runs",
-                    headers=headers,
-                    json=prod_eval.run_body(q, thread),
-                ) as r:
-                    if r.status_code == 429 and attempt == 0:
-                        wait = int(r.headers.get("Retry-After") or 60)
-                        print(f"    429, waiting {wait}s", flush=True)
-                        time.sleep(wait)
-                        continue
-                    if r.status_code >= 400:
-                        r.read()
-                        return prod_eval.Answer(
-                            error=f"http {r.status_code}: {r.text[:200]}"
-                        )
-                    return prod_eval.read_run(
-                        prod_eval.frames(r.iter_lines()), started=t0
-                    )
-            return prod_eval.Answer(error="rate limited")
+            if q.before:
+                # The earlier conversation the question is about: its own
+                # thread, answered in full, before the question's is opened.
+                threads.append(self.thread(f"eval {q.id} before"))
+                for message in q.before:
+                    ans = self.run(replace(q, message=message), threads[-1], headers)
+                    if ans.error:
+                        return prod_eval.Answer(error=f"before: {ans.error}")
+            if q.recall:
+                self.json("PATCH", "/chat/settings", json={"recall": True})
+            threads.append(self.thread(f"eval {q.id}"))
+            return self.run(q, threads[-1], headers)
         except httpx.HTTPError as exc:
             return prod_eval.Answer(error=f"{type(exc).__name__}: {exc}")
         finally:
-            if not keep:
+            if q.recall:
+                try:
+                    self.json("PATCH", "/chat/settings", json={"recall": False})
+                except httpx.HTTPError:
+                    print("    could not switch recall back off", flush=True)
+            for thread in [] if keep else threads:
                 try:
                     self.http.delete(f"/chat/conversations/{thread}")
                 except httpx.HTTPError:
                     pass
+
+    def thread(self, title: str) -> str:
+        return self.json("POST", "/chat/conversations", json={"title": title})["id"]
+
+    def run(self, q: prod_eval.Question, thread: str, headers: dict) -> prod_eval.Answer:
+        for attempt in range(2):
+            t0 = time.monotonic()
+            with self.http.stream(
+                "POST",
+                "/chat/runs",
+                headers=headers,
+                json=prod_eval.run_body(q, thread),
+            ) as r:
+                if r.status_code == 429 and attempt == 0:
+                    wait = int(r.headers.get("Retry-After") or 60)
+                    print(f"    429, waiting {wait}s", flush=True)
+                    time.sleep(wait)
+                    continue
+                if r.status_code >= 400:
+                    r.read()
+                    return prod_eval.Answer(error=f"http {r.status_code}: {r.text[:200]}")
+                return prod_eval.read_run(prod_eval.frames(r.iter_lines()), started=t0)
+        return prod_eval.Answer(error="rate limited")
 
 
 def _judge(spec: prod_eval.Model | None, q, ans, truth, refs) -> dict | None:
@@ -360,6 +376,8 @@ def main() -> int:
         for q in qs:
             extra = [f"truth:{len(q.truth)}"] if q.truth else []
             extra += [f"opens:{q.opens}"] if q.opens else []
+            extra += [f"before:{len(q.before)}"] if q.before else []
+            extra += ["recall"] if q.recall else []
             print(f"  {q.area:22} {q.kind:8} {q.id:28} {' '.join(extra)}")
         return 0
 

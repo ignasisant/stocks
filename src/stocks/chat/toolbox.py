@@ -383,11 +383,21 @@ def _recall(args: dict, ctx: Context) -> str:
     from stocks.chat import memory
 
     query = str(args.get("query") or "").strip()
-    if not query:
-        return "No query given."
+    since = _iso_day(args.get("since"))
+    until = _iso_day(args.get("until"))
+    if not (query or since or until):
+        return "No query or dates given."
     if ctx.memory_db is None:
         return "No memory available for this account."
-    hits = memory.recall(ctx.memory_db, query, exclude_thread=ctx.thread)
+    if query:
+        hits = memory.recall(ctx.memory_db, query, exclude_thread=ctx.thread,
+                             since=since, until=until)
+    else:
+        # "What did we talk about yesterday" has no topic to rank by: the
+        # day's turns, newest first, are the answer.
+        hits = memory.between(ctx.memory_db, since, until,
+                              exclude_thread=ctx.thread,
+                              limit=memory.RECALL_LIMIT * 2)
     if not hits:
         return "Nothing in the earlier conversations matches that."
     # Framed as quotation, not as voice. An answer grounded on a web page can
@@ -397,6 +407,12 @@ def _recall(args: dict, ctx: Context) -> str:
     # Reading it as a record of what was said, rather than as something said
     # now, is what keeps "the assistant always recommends X" a quote.
     return memory.QUOTE_HEADER + _cap("\n".join(h.line() for h in hits))
+
+
+def _iso_day(value: object) -> str:
+    """`value` as an ISO day, or "" when it is not one."""
+    text = str(value or "").strip()[:10]
+    return text if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) else ""
 
 
 def _decisions(args: dict, ctx: Context) -> str:
@@ -915,13 +931,22 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "all past conversations. Use when the question refers to earlier "
             "reasoning — what they decided, why they bought something, what "
             "you concluded last time — or when knowing their history would "
-            "change the answer. The current conversation is already in front "
-            "of you and is not searched.",
+            "change the answer. For a day ('what did we discuss yesterday', "
+            "'last week'), pass the dates, with or without a query. "
+            "Conversations are kept for 30 days after their last message. The "
+            "current conversation is already in front of you and is not "
+            "searched.",
             {"type": "object",
-             "properties": {"query": {
-                 "type": "string",
-                 "description": "What to look for, in the user's own words."}},
-             "required": ["query"]},
+             "properties": {
+                 "query": {"type": "string",
+                           "description": "What to look for, in the user's "
+                                          "own words; omit to get everything "
+                                          "said on the dates."},
+                 "since": {"type": "string",
+                           "description": "ISO date, first day searched."},
+                 "until": {"type": "string",
+                           "description": "ISO date, last day searched."}},
+             "required": []},
         ), _recall),
         (ToolSpec(
             "decisions",
