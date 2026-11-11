@@ -34,7 +34,7 @@ import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useCurrency, useGuest } from "../../shell/session";
 import { useRoute } from "../../shell/router";
-import { Actions } from "./Actions";
+import { Actions, type Mine } from "./Actions";
 import { SignIn, SignedInOnly } from "../../shell/guest";
 import { AnalystsSection } from "./Analysts";
 import { FinancialsChart, ValuationChart } from "./Charts";
@@ -86,7 +86,7 @@ import { Card, Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 import { Badge } from "../../ui/Badge";
-import { JournalChip } from "../../ui/Journal";
+import { Help } from "../../ui/Kpi";
 import { ASSETS, assetKind } from "../../shell/assets";
 import { layout, resolveKind } from "./layout";
 
@@ -145,6 +145,9 @@ export default function Page() {
   // fundamentals pull, so nothing is compared until a reader asks for one.
   const [peers, setPeers] = useState<string[]>([]);
   useEffect(() => setPeers([]), [asked]);
+  // The reader's alerts and rules here, as the header's actions read them,
+  // for the line of their own marks under the price.
+  const [mine, setMine] = useState<Mine | null>(null);
 
   const watchlist = useApi(() => getWatchlist(), []);
   // A write comes back with the whole row, so the star, the chips and the peer
@@ -269,10 +272,10 @@ export default function Page() {
   // the range a share's page last showed. A pick on the page holds while the
   // reader stays on it, and only a share's or a coin's pick is remembered for
   // the next company: a week chosen on a stock must not open every ETF on a
-  // week, nor five years chosen on an ETF every stock on five years. An index
+  // week, nor its whole history chosen on an ETF every stock on its whole history. An index
   // is named by its caret before the profile answers.
   const [picked, setPicked] = useState<{ ticker: string; range: Range } | null>(null);
-  const opens = shape.opens ?? (ticker?.startsWith("^") ? "5y" : null);
+  const opens = shape.opens ?? (ticker?.startsWith("^") ? "max" : null);
   const own = picked && picked.ticker === ticker ? picked.range : null;
   const chartRange: Range = own ?? opens ?? range;
   const onRange = useCallback(
@@ -462,69 +465,93 @@ export default function Page() {
   return (
     <div className="tk-page">
       <header className="tk-header">
-        {drawn?.logo ? <img className="tk-logo" src={drawn.logo} alt="" /> : null}
-        <div className="tk-names">
-          {/* The RESOLVED symbol. A ledger keeps whatever the broker wrote,
-              because that string is the audit trail — and "US81762P1021" tells
-              nobody it is ServiceNow. The URL and every link keep the original. */}
-          <h1>{drawn?.symbol || ticker || "—"}</h1>
-          {drawn?.name &&
-          drawn.name.toUpperCase() !== (drawn.symbol || "").toUpperCase() ? (
-            <span className="tk-name">{drawn.name}</span>
-          ) : null}
+        <div className="tk-id">
+          {drawn?.logo ? <img className="tk-logo" src={drawn.logo} alt="" /> : null}
+          <div className="tk-names">
+            <div className="tk-title">
+              {/* The RESOLVED symbol. A ledger keeps whatever the broker wrote,
+                  because that string is the audit trail — and "US81762P1021"
+                  tells nobody it is ServiceNow. The URL and every link keep the
+                  original. */}
+              <h1>{drawn?.symbol || ticker || "—"}</h1>
+              {drawn?.name &&
+              drawn.name.toUpperCase() !== (drawn.symbol || "").toUpperCase() ? (
+                <span className="tk-name">{drawn.name}</span>
+              ) : null}
+            </div>
+            {/* What this is, before whether the reader owns it: the search box
+                finds shares, funds, coins and indices alike, and each is read
+                by different figures. What the kind means sits behind its "?" —
+                a reader who searched "xeon" can learn it is cash, without the
+                line pushing the price down on every visit. Then the reader's
+                own: held, where, and the groups they filed it under. */}
+            {named || held?.held || held?.custody?.length || entry?.tags.length ? (
+              <div className="tk-meta">
+                {named ? (
+                  <span className="tk-kind">
+                    <Badge>{t(named.label)}</Badge>
+                    {named.help ? <Help text={t(named.help)} /> : null}
+                  </span>
+                ) : null}
+                {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
+                <Custody marks={held?.custody ?? []} />
+                {entry?.tags.map((tag) => (
+                  <span className="tk-group" key={tag}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
-        {/* What this is, before whether the reader owns it: the search box
-            finds shares, funds, coins and indices alike, and each is read by
-            different figures. */}
-        {named ? (
-          <Badge title={named.help ? t(named.help) : undefined}>{t(named.label)}</Badge>
-        ) : null}
-        {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
-        <Custody marks={held?.custody ?? []} />
-        {/* What the app has proposed on this name, behind a chip: the record
-            reads in a side panel, so the page's own figures keep the column. */}
+        {/* One primary action, and the rest as icons beside it: the star is a
+            state one press flips, so it stays in sight; alerts, tags, the
+            journal and sharing are "More". */}
         {ticker && !absent ? (
-          <SignedInOnly>
-            <JournalChip ticker={ticker} name={drawn?.name} held={!!held?.held} />
-          </SignedInOnly>
-        ) : null}
-        {/* Drawn for a guest too: it opens the locked assistant
-            (`chat/Locked.tsx`), which shows the question and keeps it for
-            after the sign-in — the button is the reason to make an account. */}
-        {/* The question is the kind's: a coin has no fundamentals, a fund no
-            business of its own, and an index nothing to buy — so no button. A
-            symbol still loading reads as a share: the prompt is a question,
-            not a claim. */}
-        {ticker && shape.ai && !absent ? (
-          <AiAsk
-            ticker={ticker}
-            name={drawn?.name || ticker}
-            prompt={shape.ai}
-            angles={shape.kind === "stock"}
-            compact={mobile}
-          />
-        ) : null}
-        {/* One swap covers three controls: the star, the tag menu and the
-            price alert are all somebody's own edits to their own list, and all
-            three live inside `<Actions>`. A guest is offered the thing that
-            would make them theirs instead. */}
-        {/* Share sits in the same row at the actions' tighter gap: on a
-            390px phone the row then holds all of them. */}
-        {ticker && !absent ? (
-          <div className="tk-tools">
-            <SignedInOnly fallback={<SignIn className="ag-btn tk-signin" />}>
-              <Actions ticker={ticker} entry={entry} onEntry={onEntry} />
-            </SignedInOnly>
-            <TickerShare ticker={ticker} name={drawn?.name} />
+          <div className="tk-acts">
+            {/* Drawn for a guest too: it opens the locked assistant
+                (`chat/Locked.tsx`), which shows the question and keeps it for
+                after the sign-in — the button is the reason to make an
+                account. The question is the kind's: a coin has no
+                fundamentals, a fund no business of its own, and an index
+                nothing to buy — so no button. A symbol still loading reads as
+                a share: the prompt is a question, not a claim. */}
+            {shape.ai ? (
+              <AiAsk
+                ticker={ticker}
+                name={drawn?.name || ticker}
+                prompt={shape.ai}
+                angles={shape.kind === "stock"}
+              />
+            ) : null}
+            {/* Every action but sharing is somebody's own edit to their own
+                list; a guest is offered the sign-in that would make them
+                theirs, and the share alone — a menu of one row is no menu. */}
+            <div className="tk-tools">
+              <SignedInOnly
+                fallback={
+                  <>
+                    <TickerShare ticker={ticker} name={drawn?.name} />
+                    <SignIn className="ag-btn tk-signin" />
+                  </>
+                }
+              >
+                <Actions
+                  ticker={ticker}
+                  name={drawn?.name ?? ""}
+                  held={!!held?.held}
+                  entry={entry}
+                  onEntry={onEntry}
+                  onMine={setMine}
+                />
+              </SignedInOnly>
+            </div>
           </div>
         ) : null}
         {/* No search box here: the shell's top-bar search is the one way to
             change company — two boxes that both navigate is one too many, and
             only the shell's keeps the recents. */}
       </header>
-      {/* The one line on what the kind is and what to read it by — a reader
-          who searched "xeon" learns here it is cash, not a share. */}
-      {named?.help ? <p className="tk-kind-line">{t(named.help)}</p> : null}
 
       {/* Nothing picked yet — an invitation rather than a column of empty
           cards. */}
@@ -566,6 +593,8 @@ export default function Page() {
             cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
             valuation={valuation.state === "loaded" ? valuation.data : null}
             trend={trend.state === "loaded" ? trend.data : null}
+            ticker={ticker}
+            mine={mine}
           />
 
           {/* Compare sits one card from the foot of the page, whatever the

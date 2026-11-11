@@ -406,6 +406,33 @@ fixed meaning — they are not a series palette.
   storing it), tabs by tier plus a summary side panel; Back or Esc returns to
   the drawer at its old width. A wide markdown table (more than three
   columns) offers "see wide" under the answer.
+- **Page header actions:** one prominent action (the brand-tinted pill; a
+  split button keeps its chevron inside the pill behind a hairline), then at
+  most two monochrome ghost icons (32px pointer, 44px finger, no border): a
+  one-tap toggle whose state shows (★) and a More (⋯) menu holding the rest —
+  editors, journal, share — each row with its count right-aligned in muted
+  type, a separator before Share. Picking an editor swaps the panel's content
+  for it under a "← Title" head; on a narrow column menu and editors are a
+  bottom sheet (grabber, swipe down, veil), elsewhere a popover growing from
+  ⋯. Information (kind badge, in-portfolio, custody, groups) sits in a meta
+  line under the name, never among the actions. Narrow: icons share the
+  title's row, the primary takes its own full-width row with its label
+  (never a lone glyph). A guest with one action gets the icon itself, not a
+  menu of one (`pages/ticker/Actions.tsx`).
+- **A definition is a "?", not a paragraph.** What a badge means goes in its
+  `Help` popover; a sentence under the header that repeats on every visit
+  pushes the content down for the one reader who needed it once.
+- **Chart controls sit under the chart**, between the axis and the legend:
+  next to what they change and within a thumb's reach. Text for ranges,
+  glyphs for the chart type, each glyph option named (`SegItem.name` gives
+  `aria-label` + `title`). Under a finger the track is 32px like a native
+  segmented control (HIG floor 28; options touch, so a near miss still
+  lands); a lone button keeps 44.
+- **Popovers stay in the column you can see.** Clamp to the viewport
+  narrowed by every ancestor that clips overflow, and cap the width to it —
+  the app column is narrower than the window beside the chat drawer or in a
+  framed preview (`Help` → `visibleRoom`). Measure width from layout
+  (`offsetWidth`), not the rect `ag-pop-in` is still scaling.
 
 ## Focus, forms & states
 
@@ -647,6 +674,23 @@ a laptop page the same way.
   down the page reads calmer than the width a bare grid would win. A tile's
   "?" rides the label's last word (`.ag-kpi-label-tail`), never the tile's far
   edge or a line alone.
+- **A price card's hero is two lines and a meter.** Price, currency, day
+  chip and session on one line; the reader's money and the range's move on
+  the next; then the year's range as one row (low, meter, high, distance from
+  the high). Held, the 2×2 tiles follow. Every other figure (trend, ratios,
+  next report, last report, entry checklist) folds under "More figures" at the
+  card's foot (`ui/Fold`): the chart sits right under the hero, not a screen
+  down. Desktop keeps them in the metric row.
+- **A finger on the chart reads in the hero.** While a finger scrubs or
+  measures, the price line shows that bar (close, change, date · OHLC) or the
+  stretch (end, change, "a → z" · span), and returns to the live figures on
+  release — the reading sits where the eye already is, not in a strip the
+  hand covers (`PriceChart` `onRead`).
+- **The reader's own marks on a name are one row of pills** under the hero:
+  nearest price alert, buy zone, nearest exit while held, each with the
+  price's distance to it, each opening its editor (`pages/ticker/Yours.tsx`).
+  32px pills, a 44px reach under `pointer: coarse`. Nothing drawn for a reader
+  who set nothing.
 - **The answer first.** A page leads with what it concludes (Review: the plan,
   then the book-wide notes), in DOM order, not by CSS `order` — a screen
   reader and a phone read the same sequence.

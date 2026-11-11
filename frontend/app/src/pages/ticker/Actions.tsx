@@ -1,5 +1,6 @@
 /**
- * The header's per-ticker actions: favourite, tag groups, alert rules.
+ * The header's per-ticker actions: favourite, then "More" with alert rules,
+ * tag groups, the decision journal and sharing.
  *
  * Every one of these writes to this account's watchlist, and every one of them
  * is an upsert: favouriting or tagging a symbol that is only held — or only
@@ -12,11 +13,25 @@
  * editor being edited.
  */
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { Glyph } from "../../chat/icons";
 import { useT } from "../../shell/i18n";
+import { useMobile } from "../../shell/useMobile";
+import { usePresence, useSwipeDismiss } from "../../shell/useSheet";
+import { useTickerJournal, type JournalEntry } from "../../ui/Journal";
 import { complete, draft, duplicateAt, payload, summary } from "./alerts";
 import { follow, getAlertTypes, getAlerts, getTags, setAlerts } from "./data";
-import { Popover } from "./ui";
+import { useTickerShare } from "./Share";
 import type { AlertForm, AlertRule, WatchlistEntry } from "./types";
 
 function TagEditor({
@@ -243,30 +258,254 @@ function AlertEditor({
   );
 }
 
+type View = "menu" | "alerts" | "tags";
+
+/** One row of the "More" menu: what it opens, and how many it holds. */
+type Row = { id: string; label: string; count?: number; pick: () => void };
+
+/**
+ * "More": the header's overflow, one level under the page. A popover hanging
+ * from its trigger on a wide page, a sheet from the foot of a narrow one —
+ * portalled to the body there, since `.ag-main` is a size container and the
+ * containing block of anything fixed inside it.
+ *
+ * Alerts and tags are edited in place: the row swaps the menu for its editor
+ * under a back button, so the panel is one thing that changes, not a second
+ * one stacked on the first.
+ */
+function MoreMenu({
+  rows,
+  view,
+  onView,
+  editor,
+}: {
+  rows: Row[];
+  view: View | null;
+  onView: (next: View | null) => void;
+  editor: (view: Exclude<View, "menu">) => ReactNode;
+}) {
+  const t = useT();
+  const sheet = useMobile();
+  const open = view !== null;
+  const presence = usePresence(open);
+  // The view it was closed on stays drawn while it leaves.
+  const drawn = useRef<View>("menu");
+  if (view) drawn.current = view;
+  const showing = drawn.current;
+
+  const box = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const items = useRef<(HTMLButtonElement | null)[]>([]);
+  // The row an editor was opened from, focused again on the way back.
+  const from = useRef(0);
+
+  const close = useCallback(
+    (refocus = false) => {
+      onView(null);
+      if (refocus) toggle.current?.focus();
+    },
+    [onView],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    // Pointerdown, not click, so a row's own handler still runs first.
+    const away = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (box.current?.contains(target) || panel.current?.contains(target)) return;
+      onView(null);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open, onView]);
+
+  useEffect(() => {
+    if (view === "menu") items.current[from.current]?.focus();
+    else if (view) back.current?.focus();
+  }, [view]);
+
+  // An editor may scroll, so there only its head drags; the menu drags whole.
+  useSwipeDismiss(panel, "y", () => onView(null), {
+    enabled: sheet && open,
+    handle: showing === "menu" ? undefined : ".tk-more-drag",
+  });
+
+  const walk = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+      return;
+    }
+    if (showing !== "menu") return;
+    if (event.key === "Tab") {
+      onView(null);
+      return;
+    }
+    const list = items.current.filter(Boolean) as HTMLButtonElement[];
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (at + 1) % list.length
+        : event.key === "ArrowUp"
+          ? (at - 1 + list.length) % list.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? list.length - 1
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    list[next]?.focus();
+  };
+
+  const body =
+    showing === "menu" ? (
+      <div role="menu" aria-label={t("ticker.more")} className="tk-more-list">
+        {rows.map((row, n) => (
+          <Fragment key={row.id}>
+            {/* Passing the page on is not an edit to the reader's own list. */}
+            {row.id === "share" ? (
+              <div role="separator" className="tk-more-sep" />
+            ) : null}
+            <button
+              ref={(el) => {
+                items.current[n] = el;
+              }}
+              type="button"
+              role="menuitem"
+              className="tk-more-item"
+              onClick={() => {
+                from.current = n;
+                row.pick();
+              }}
+            >
+              <span>{row.label}</span>
+              {row.count ? <span className="tk-more-count">{row.count}</span> : null}
+            </button>
+          </Fragment>
+        ))}
+      </div>
+    ) : (
+      <div role="group" aria-label={t(`widgets.${showing}`)}>
+        <div className="tk-more-head tk-more-drag">
+          <button
+            ref={back}
+            type="button"
+            className="tk-icon"
+            aria-label={t("nav.back")}
+            title={t("nav.back")}
+            onClick={() => onView("menu")}
+          >
+            <Glyph name="back" size={18} />
+          </button>
+          <span className="tk-more-title">{t(`widgets.${showing}`)}</span>
+        </div>
+        {editor(showing)}
+      </div>
+    );
+
+  const drawer = presence.mounted ? (
+    <div
+      ref={panel}
+      className={sheet ? "tk-more-sheet" : "tk-more-panel"}
+      data-leaving={presence.leaving ? "" : undefined}
+      data-view={showing}
+      onKeyDown={walk}
+    >
+      {sheet ? <span className="tk-grabber tk-more-drag" aria-hidden="true" /> : null}
+      {body}
+    </div>
+  ) : null;
+
+  return (
+    <div className="tk-more" ref={box}>
+      <button
+        ref={toggle}
+        type="button"
+        className={open ? "tk-icon tk-icon-on" : "tk-icon"}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("ticker.more")}
+        title={t("ticker.more")}
+        onClick={() => {
+          from.current = 0;
+          onView(open ? null : "menu");
+        }}
+      >
+        <Glyph name="more" size={20} />
+      </button>
+      {sheet && drawer
+        ? createPortal(
+            <div
+              className="tk-more-veil"
+              data-leaving={presence.leaving ? "" : undefined}
+            >
+              {drawer}
+            </div>,
+            document.body,
+          )
+        : drawer}
+    </div>
+  );
+}
+
+/**
+ * What the reader set on this name, for the price card's line of their own
+ * marks (`Yours.tsx`): the alert rules and the journal's entries, with the
+ * way into each one's editor here in the header.
+ */
+export type Mine = {
+  rules: AlertRule[];
+  entries: JournalEntry[];
+  openAlerts: () => void;
+  openJournal: () => void;
+};
+
+/**
+ * The header's actions after "Analyse with AI": the star, which is a state one
+ * press flips and so stays in sight, and "More" for the rest — alerts, tags,
+ * the decision journal, sharing.
+ */
 export function Actions({
   ticker,
+  name,
+  held,
   entry,
   onEntry,
+  onMine,
 }: {
   ticker: string;
+  name: string;
+  /** Whether the book holds it: the journal is offered to a holder even empty. */
+  held: boolean;
   /** This ticker's watchlist row, or null when it is not listed yet. */
   entry: WatchlistEntry | null;
   onEntry: (entry: WatchlistEntry) => void;
+  /** Told what the reader set here, and again whenever it changes. */
+  onMine?: (mine: Mine | null) => void;
 }) {
   const t = useT();
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [forms, setForms] = useState<AlertForm[]>([]);
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<View | null>(null);
+  const journal = useTickerJournal(ticker, name, held);
+  const sharing = useTickerShare(ticker, name);
 
   const favorite = entry?.favorite ?? false;
   const tags = entry?.tags ?? [];
 
-  // Rules belong to the company on screen and the count rides the button, so
-  // they are fetched on arrival rather than when the panel opens. Only for a
+  // Rules belong to the company on screen and the count rides the menu row, so
+  // they are fetched on arrival rather than when the editor opens. Only for a
   // listed ticker: rules live on the watchlist row, and the route 404s for
   // one nobody listed — a red line in the console on every other company.
   const listed = entry !== null;
-  useEffect(() => setRules([]), [ticker]);
+  useEffect(() => {
+    setRules([]);
+    setView(null);
+  }, [ticker]);
   useEffect(() => {
     if (!listed) return;
     let live = true;
@@ -289,8 +528,8 @@ export function Actions({
     [ticker, onEntry],
   );
 
-  // The field table is the same for every ticker and only the open panel needs
-  // it, so it is fetched once, on the first open.
+  // The field table is the same for every ticker and only the editor needs
+  // it, so it is fetched once, the first time the editor opens.
   const loadForms = useCallback(() => {
     if (forms.length) return;
     getAlertTypes()
@@ -319,43 +558,92 @@ export function Actions({
     [ticker, rules, entry, onEntry],
   );
 
+  const openJournal = journal.open;
+  useEffect(() => {
+    onMine?.({
+      rules,
+      entries: journal.entries,
+      openAlerts: () => {
+        loadForms();
+        setView("alerts");
+      },
+      openJournal: () => {
+        setView(null);
+        openJournal();
+      },
+    });
+  }, [onMine, rules, journal.entries, loadForms, openJournal]);
+  useEffect(() => () => onMine?.(null), [onMine]);
+
+  const rows: Row[] = [
+    {
+      id: "alerts",
+      label: t("widgets.alerts"),
+      count: rules.length,
+      pick: () => {
+        loadForms();
+        setView("alerts");
+      },
+    },
+    {
+      id: "tags",
+      label: t("widgets.tags"),
+      count: tags.length,
+      pick: () => setView("tags"),
+    },
+  ];
+  if (journal.label)
+    rows.push({
+      id: "journal",
+      label: journal.label,
+      count: journal.count,
+      pick: () => {
+        setView(null);
+        journal.open();
+      },
+    });
+  rows.push({
+    id: "share",
+    label: t("ticker.share_menu"),
+    pick: () => {
+      setView(null);
+      sharing.share();
+    },
+  });
+
+  const starLabel = t(favorite ? "widgets.remove_favorite" : "widgets.add_favorite");
   return (
-    <div className="tk-actions">
+    <>
       <button
         type="button"
-        className={favorite ? "tk-star tk-star-on" : "tk-star"}
+        className={favorite ? "tk-icon tk-star tk-star-on" : "tk-icon tk-star"}
         aria-pressed={favorite}
         disabled={busy}
-        title={t(favorite ? "widgets.remove_favorite" : "widgets.add_favorite")}
-        aria-label={t(favorite ? "widgets.remove_favorite" : "widgets.add_favorite")}
+        title={starLabel}
+        aria-label={starLabel}
         onClick={() => write({ favorite: !favorite })}
       >
-        ★
+        <Glyph name={favorite ? "star_on" : "star"} size={20} />
       </button>
-      <Popover label={`${t("widgets.tags")}${tags.length ? ` (${tags.length})` : ""}`}>
-        <TagEditor tags={tags} onTags={(next) => write({ tags: next })} />
-      </Popover>
-      <Popover
-        label={`${t("widgets.alerts")}${rules.length ? ` (${rules.length})` : ""}`}
-        onOpen={loadForms}
-      >
-        <AlertEditor
-          ticker={ticker}
-          rules={rules}
-          forms={forms}
-          onRules={writeAlerts}
-        />
-      </Popover>
-      {/* The groups this ticker is in, readable without opening anything. */}
-      {tags.length > 0 ? (
-        <span className="tk-groups">
-          {tags.map((tag) => (
-            <span className="tk-group" key={tag}>
-              {tag}
-            </span>
-          ))}
-        </span>
-      ) : null}
-    </div>
+      <MoreMenu
+        rows={rows}
+        view={view}
+        onView={setView}
+        editor={(which) =>
+          which === "alerts" ? (
+            <AlertEditor
+              ticker={ticker}
+              rules={rules}
+              forms={forms}
+              onRules={writeAlerts}
+            />
+          ) : (
+            <TagEditor tags={tags} onTags={(next) => write({ tags: next })} />
+          )
+        }
+      />
+      {journal.panel}
+      {sharing.dialog}
+    </>
   );
 }

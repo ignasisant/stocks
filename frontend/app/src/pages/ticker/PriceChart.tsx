@@ -14,7 +14,7 @@
  * scales them, since the ledger stores what was actually paid.
  */
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { chart as palette, token } from "../../shell/theme";
 import { useLang } from "../../shell/i18n";
 import { useWidth } from "../../shell/useWidth";
@@ -244,6 +244,20 @@ export function zoomable(span: { a: number; b: number } | null): boolean {
 /** A zoomed window's move, its ends already dated for the reader. */
 export type ChartWindow = { pct: number; start: string; end: string };
 
+/**
+ * What a finger on a phone's chart points at, for the price figure over it to
+ * print in place of the live one: the bar's close and its move on the close
+ * before, or a measured stretch's last close and its move over the stretch.
+ * `pct` is a fraction, as the day change is; `detail` is the candle's
+ * open/high/low, or the stretch's length.
+ */
+export type ChartRead = {
+  title: string;
+  price: number | null;
+  pct: number | null;
+  detail: string;
+};
+
 export function PriceChart({
   bars,
   events,
@@ -255,6 +269,8 @@ export function PriceChart({
   markers = ALL_MARKERS,
   mobile,
   onWindow,
+  controls,
+  onRead,
   t,
 }: {
   bars: Bars;
@@ -280,6 +296,15 @@ export function PriceChart({
    * range the pills say it came from.
    */
   onWindow?: (window: ChartWindow | null) => void;
+  /** The range and chart type, right under the axis and above the legend. */
+  controls?: ReactNode;
+  /**
+   * On a phone, where the price figure sits just over the chart: the reading
+   * goes up there instead of into a strip over the plot, and the plot keeps
+   * no room for one. A fill or an event under the finger still opens over
+   * the plot, since the figure has no room for them.
+   */
+  onRead?: (read: ChartRead | null) => void;
   t: Translate;
 }) {
   const lang = useLang();
@@ -584,6 +609,52 @@ export function PriceChart({
     colors.surfaceCard,
   ]);
 
+  // A span of one bar is a mouse anchor just dropped: until the pointer moves
+  // off it there is nothing to compare, and the bar reads as usual.
+  // A drag reads like a measure while it is happening: the change over the
+  // stretch it covers, live, so the window is chosen by what it shows rather
+  // than released blind and read afterwards.
+  const dragged = stretch(drag);
+  const marked = dragged ?? (span && span.b > span.a ? span : null);
+  const measure = marked ? moveBetween(close, marked.a, marked.b) : null;
+
+  // A phone with somewhere to print it reads in the price figure over the
+  // chart, and the strip opens only for what that figure cannot carry: a fill
+  // or an event on the bar.
+  const heading = mobile && !!onRead;
+  let read: ChartRead | null = null;
+  if (heading && measure) {
+    read = {
+      title: `${hoverTitle(bars.dates[measure.a] ?? "", intraday)} → ${hoverTitle(bars.dates[measure.z] ?? "", intraday)}`,
+      price: measure.end,
+      pct: measure.pct / 100,
+      detail: spanLength(bars.dates, bars.interval, measure.a, measure.z, t),
+    };
+  } else if (heading && hover !== null) {
+    const value = close[hover] ?? null;
+    const prev = hover > 0 ? (close[hover - 1] ?? null) : null;
+    read = {
+      title: hoverTitle(bars.dates[hover] ?? "", intraday),
+      price: value,
+      pct: value !== null && prev ? value / prev - 1 : null,
+      detail: candles
+        ? t("ticker.hover_ohlc", {
+            open: money(open[hover] ?? null, { digits: 2 }) ?? DASH,
+            high: money(high[hover] ?? null, { digits: 2 }) ?? DASH,
+            low: money(low[hover] ?? null, { digits: 2 }) ?? DASH,
+          })
+        : "",
+    };
+  }
+  const readKey = read ? [read.title, read.price, read.pct, read.detail].join("|") : "";
+  useEffect(() => {
+    onRead?.(read);
+    // Keyed by what it says: `read` is a new object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readKey, onRead]);
+  // Gone with the chart: the figure goes back to the live price.
+  useEffect(() => () => onRead?.(null), [onRead]);
+
   if (!range || n === 0 || !drawing) return null;
 
   const { y, traces, area, averages: averageRuns, candleMarks } = drawing;
@@ -710,14 +781,6 @@ export function PriceChart({
       : []),
   ];
 
-  // A span of one bar is a mouse anchor just dropped: until the pointer moves
-  // off it there is nothing to compare, and the bar reads as usual.
-  // A drag reads like a measure while it is happening: the change over the
-  // stretch it covers, live, so the window is chosen by what it shows rather
-  // than released blind and read afterwards.
-  const dragged = stretch(drag);
-  const marked = dragged ?? (span && span.b > span.a ? span : null);
-  const measure = marked ? moveBetween(close, marked.a, marked.b) : null;
   const picked =
     mobile && zoomable(pick) && pick ? moveBetween(close, pick.a, pick.b) : null;
   // The readout is a strip over the plot, never a box beside the crosshair: a
@@ -727,6 +790,7 @@ export function PriceChart({
   const lastAt = whole?.z ?? null;
   const pointed = measure ? spanTip(measure) : hover === null ? null : tooltip(hover);
   const tip = pointed ?? (mobile || lastAt === null ? null : tooltip(lastAt));
+  const strip = heading ? (tip?.more ? tip : null) : tip;
   const tipX = measure
     ? (xOf(measure.a) + xOf(measure.z)) / 2
     : xOf(hover ?? lastAt ?? 0);
@@ -877,7 +941,9 @@ export function PriceChart({
 
   return (
     <div
-      className="tk-plot tk-plot-strip"
+      className={
+        heading ? "tk-plot tk-plot-strip tk-plot-hero" : "tk-plot tk-plot-strip"
+      }
       ref={wrap}
       // Escape backs out one step: a drag in progress, else the zoom. A click
       // focuses the plot, so the key reaches here after any mouse gesture.
@@ -1166,16 +1232,17 @@ export function PriceChart({
         />
       </Chart>
 
-      {tip ? (
+      {strip ? (
         <Tooltip
           frame={box}
           x={tipX}
-          title={tip.title}
-          lines={tip.lines}
-          more={tip.more}
+          title={strip.title}
+          lines={strip.lines}
+          more={strip.more}
         />
       ) : null}
 
+      {controls}
       <div className="tk-chart-foot">
         <Legend
           items={legend}
@@ -1208,14 +1275,14 @@ export function PriceChart({
               {picked && pick ? (
                 <button
                   type="button"
-                  className="tk-zoom-reset tk-zoom-in"
+                  className="ag-btn tk-zoom-reset tk-zoom-in"
                   onClick={() => zoomTo(pick)}
                 >
                   {t("ticker.zoom_in")}
                 </button>
               ) : null}
               {zoom ? (
-                <button type="button" className="tk-zoom-reset" onClick={reset}>
+                <button type="button" className="ag-btn tk-zoom-reset" onClick={reset}>
                   {t("ticker.zoom_reset")}
                 </button>
               ) : null}

@@ -2,8 +2,6 @@
   "journal.tab": "Diario",
   "journal.title": "Diario delle decisioni",
   "journal.intro": "Ogni mossa che l'app ti ha proposto e mostrato — nella scheda giornaliera, in **Vendere o rafforzare** o nella chat — con le cifre su cui è nata e come è andata a finire. Lo scrive l'app. Tue sono solo le regole che fissi per ogni titolo: quando vendere e quando comprare.",
-  "journal.chip": "Diario · {n}",
-  "journal.chip_help": "Cosa ti ha proposto l'app su {ticker} e come è andata a finire",
   "journal.panel_title": "Diario · {ticker}",
   "journal.all": "Diario completo",
   "journal.close": "Chiudi",

@@ -102,6 +102,24 @@ export function helpShift(left: number, right: number, viewport: number): number
   return 0;
 }
 
+/**
+ * The strip a popover can be seen in: the viewport, narrowed by every
+ * ancestor that clips its overflow. The app column is narrower than the
+ * window when the chat drawer is open or the shell sits in a framed preview,
+ * and a panel slid inside the window alone is still cut at the column's edge.
+ */
+function visibleRoom(el: HTMLElement): { left: number; right: number } {
+  let left = 0;
+  let right = document.documentElement.clientWidth;
+  for (let at = el.parentElement; at; at = at.parentElement) {
+    if (getComputedStyle(at).overflowX === "visible") continue;
+    const rect = at.getBoundingClientRect();
+    left = Math.max(left, rect.left);
+    right = Math.min(right, rect.right);
+  }
+  return { left, right };
+}
+
 /** How long a mouse rests on a mark before its popover opens (ms). */
 const HOVER_WAIT = 400;
 /** How long after one popover closes the next opens at once (ms). */
@@ -120,7 +138,8 @@ let warmUntil = 0;
  * `HOVER_WAIT` first, so a pointer crossing a row of tiles does not pop every
  * definition on its way; once one has been read the next opens at once. The
  * panel is
- * measured once it is up and slid back inside the viewport, since a tile's
+ * measured once it is up and slid back inside the strip it can be seen in
+ * (`visibleRoom`), narrowed to fit when that strip is thinner, since a tile's
  * mark can sit at either edge of a 390px screen. The 14px mark keeps its
  * footprint; the finger-sized hit area is a pseudo-element in `ui.css`.
  */
@@ -128,6 +147,7 @@ export function Help({ text }: { text: string | null | undefined }) {
   const [pinned, setPinned] = useState(false);
   const [hover, setHoverNow] = useState(false);
   const [shift, setShift] = useState(0);
+  const [cap, setCap] = useState<number | undefined>(undefined);
   const wait = useRef<number | undefined>(undefined);
   const wrap = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLSpanElement>(null);
@@ -152,10 +172,15 @@ export function Help({ text }: { text: string | null | undefined }) {
   const { mounted, leaving } = usePresence(shown);
   useLayoutEffect(() => {
     if (!shown || !panel.current) return;
-    // Measure from the unshifted position, so a re-open never compounds.
-    const rect = panel.current.getBoundingClientRect();
-    const unshifted = { left: rect.left - shift, right: rect.right - shift };
-    setShift(helpShift(unshifted.left, unshifted.right, window.innerWidth));
+    // Measure from the unshifted position, so a re-open never compounds, and
+    // take the width from layout: `ag-pop-in` is still scaling the box.
+    const el = panel.current;
+    const room = visibleRoom(el);
+    const fits = room.right - room.left - 2 * HELP_MARGIN;
+    const width = Math.min(el.offsetWidth, fits);
+    const left = el.getBoundingClientRect().left - shift - room.left;
+    setCap(width < el.offsetWidth ? fits : undefined);
+    setShift(helpShift(left, left + width, room.right - room.left));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown, text]);
 
@@ -194,7 +219,7 @@ export function Help({ text }: { text: string | null | undefined }) {
           aria-hidden="true"
           data-leaving={leaving ? "" : undefined}
           ref={panel}
-          style={{ transform: `translateX(${shift}px)` }}
+          style={{ transform: `translateX(${shift}px)`, maxWidth: cap }}
         >
           {text}
         </span>

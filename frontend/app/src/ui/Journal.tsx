@@ -16,7 +16,14 @@
  * to the entry it names when that entry is in the list.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { get, send } from "../shell/api";
 import { askAssistant, useAssistantChanges } from "../shell/assistant";
@@ -606,49 +613,55 @@ export function JournalList({
 const noReload = () => {};
 
 /**
- * "Diario · 3" in a ticker's header, and the side panel it opens. Nothing at
- * all while the journal is loading or failed. With nothing on this name the
- * chip shows only for a holding, as "Exit rules": the panel is where the
+ * A ticker's journal, as a row of the header's "More" menu and the side
+ * panel the row opens. `label` is null while the journal is loading or
+ * failed, and when there is nothing to show: with nothing on this name the
+ * row is offered only for a holding, as "Exit rules" — the panel is where the
  * reader writes theirs, and a name they do not own has nothing to exit.
+ * `panel` stays drawn wherever the hook is used, so it outlives the menu that
+ * opened it.
  */
-export function JournalChip({
-  ticker,
+const NO_ENTRIES: JournalEntry[] = [];
+
+export function useTickerJournal(
+  ticker: string,
   name = "",
   held = false,
-}: {
-  ticker: string;
-  name?: string;
-  held?: boolean;
-}) {
+): {
+  label: string | null;
+  count: number;
+  /** The journal's entries on this name; empty until it answers. */
+  entries: JournalEntry[];
+  open: () => void;
+  panel: ReactNode;
+} {
   const t = useT();
   // Rules approved in the chat beside it: read again, past the memo.
   const saved = useAssistantChanges("set_criteria");
   const query = useApi(() => getJournal({ ticker }), [ticker, saved]);
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const presence = usePresence(open);
+  const [shown, setShown] = useState(false);
+  const close = useCallback(() => setShown(false), []);
+  const open = useCallback(() => setShown(true), []);
+  const presence = usePresence(shown);
   // A re-read (a rule retired here, one saved from the chat) goes back to
-  // "loading": the last journal stays drawn meanwhile, so neither the chip
+  // "loading": the last journal stays drawn meanwhile, so neither the row
   // nor an open panel blinks out under the reader.
   const last = useRef<{ ticker: string; journal: Journal } | null>(null);
   if (query.state === "loaded") last.current = { ticker, journal: query.data };
   const journal = last.current?.ticker === ticker ? last.current.journal : null;
   const reload = query.state === "loaded" ? query.reload : noReload;
-  if (!journal || (journal.total === 0 && !held)) return null;
-  return (
-    <>
-      <button
-        type="button"
-        className="ag-jr-chip"
-        aria-haspopup="dialog"
-        title={t("journal.chip_help", { ticker })}
-        onClick={() => setOpen(true)}
-      >
-        {journal.total
-          ? t("journal.chip", { n: journal.total })
-          : t("journal.chip_none")}
-      </button>
-      {presence.mounted ? (
+  const offered = !!journal && (journal.total > 0 || held);
+  return {
+    label: !offered
+      ? null
+      : journal.total
+        ? t("journal.title")
+        : t("journal.chip_none"),
+    count: journal?.total ?? 0,
+    entries: journal?.entries ?? NO_ENTRIES,
+    open,
+    panel:
+      offered && presence.mounted ? (
         <JournalPanel
           ticker={ticker}
           name={name}
@@ -657,9 +670,8 @@ export function JournalChip({
           onChange={reload}
           leaving={presence.leaving}
         />
-      ) : null}
-    </>
-  );
+      ) : null,
+  };
 }
 
 /**
