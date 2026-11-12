@@ -8,7 +8,7 @@
  * once you print them both as 0.
  */
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { InsiderFlow, FundExposure } from "./Charts";
@@ -42,7 +42,7 @@ import { num } from "../../shell/numbers";
 import { Link } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { getEntryFit } from "./data";
-import { entryText, score, verdictTone } from "../review/format";
+import { entryFigure, entryText, score, verdictTone } from "../review/format";
 import { useHelp } from "../review/lines";
 import { calendarDay } from "../../shell/dates";
 import { DASH, compact, decimal, money, percent } from "../../shell/format";
@@ -167,13 +167,17 @@ function Judged({
 
 /**
  * The reader's own entry criteria on this name: how many it meets, and the
- * ones it breaks. Nothing without a checklist, or before it answers — a count
- * is not worth a skeleton. A line the feed could not read is neither met nor
- * broken, so "3 of 5" can leave one unsaid.
+ * ones it breaks. "See" unfolds every line with the figure it was held to,
+ * since a count alone does not say which ones passed. Nothing without a
+ * checklist, or before it answers — a count is not worth a skeleton. A line
+ * the feed could not read is neither met nor broken, so "3 of 5" can leave
+ * one unsaid.
  */
 function EntryFitLine({ ticker }: { ticker: string }) {
   const t = useT();
   const lang = useLang();
+  const lines = useId();
+  const [open, setOpen] = useState(false);
   const query = useApi(() => getEntryFit(ticker), [ticker]);
   if (query.state !== "loaded" || !query.data.set || !query.data.total) return null;
   const fit = query.data;
@@ -181,7 +185,13 @@ function EntryFitLine({ ticker }: { ticker: string }) {
   const tone = fit.failed ? "warn" : fit.met === fit.total ? "up" : "flat";
   return (
     <div className="tk-entry" role="group" aria-label={t("ticker.entry_title")}>
-      <div className="tk-judged-head">
+      <button
+        type="button"
+        className="tk-entry-head"
+        aria-expanded={open}
+        aria-controls={lines}
+        onClick={() => setOpen((was) => !was)}
+      >
         <span className="tk-watch-title">{t("ticker.entry_title")}</span>
         <Chip
           chip={{
@@ -189,11 +199,42 @@ function EntryFitLine({ ticker }: { ticker: string }) {
             tone,
           }}
         />
-        <Link className="tk-judged-link" page="profile" params={{ tab: "plan" }}>
-          {t("ticker.entry_link")}
-        </Link>
-      </div>
-      {broken.length > 0 ? (
+        <span className="tk-entry-hint">
+          {open ? t("ticker.entry_hide") : t("ticker.entry_show")}
+        </span>
+      </button>
+      {open ? (
+        <div id={lines}>
+          <ul className="tk-entry-lines">
+            {fit.lines.map((line) => (
+              <li className={`tk-entry-line tk-entry-${line.state}`} key={line.rule}>
+                <span className="tk-entry-mark" aria-hidden="true">
+                  {line.state === "pass" ? "✓" : line.state === "fail" ? "✗" : "–"}
+                </span>
+                <span className="tk-entry-rule">
+                  <span className="ag-sr">
+                    {t(`ticker.entry_state_${line.state}`)}{" "}
+                  </span>
+                  {entryText(line, t, lang)}
+                  {line.basis === "ex_goodwill" ? (
+                    <span className="tk-entry-note">
+                      {t("ticker.entry_ex_goodwill")}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="tk-entry-value">
+                  {line.value === null
+                    ? t("ticker.entry_no_value")
+                    : entryFigure(line.rule, line.value, lang)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <Link className="tk-entry-edit" page="profile" params={{ tab: "plan" }}>
+            {t("ticker.entry_link")}
+          </Link>
+        </div>
+      ) : broken.length > 0 ? (
         <p className="tk-judged-why">
           {t("review.entry_breaks", {
             lines: broken.map((line) => entryText(line, t, lang)).join(" · "),
@@ -251,7 +292,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
           // English one the API also carries is the fallback, never the first
           // choice, or a Spanish reader gets "Net debt/EBITDA".
           const label = orElse(t, tile.label_key, kpi.label);
-          const help = tile.help_key ? orElse(t, tile.help_key, kpi.desc) : kpi.desc;
+          const help = orElse(t, tile.help_key ?? `kpi.${tile.key}.desc`, kpi.desc);
           return (
             <Kpi
               key={tile.key}

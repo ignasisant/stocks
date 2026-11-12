@@ -224,9 +224,15 @@ export function entryText(
   t: (key: string, values?: Record<string, string | number>) => string,
   lang: string,
 ): string {
-  const digits = Number.isInteger(line.level) ? 0 : 1;
-  const level = ENTRY_PCT.has(line.rule)
-    ? percent(line.level, { lang, digits, points: true })
-    : `${decimal(line.level, { lang, digits })}×`;
-  return t(`review.entry_rule_${line.rule}`, { level });
+  return t(`review.entry_rule_${line.rule}`, {
+    level: entryFigure(line.rule, line.level, lang),
+  });
+}
+
+/** A figure in a checklist line's own unit: "2.5%" for a yield, "30×" for a P/E. */
+export function entryFigure(rule: string, value: number, lang: string): string {
+  const digits = Number.isInteger(value) ? 0 : 1;
+  return ENTRY_PCT.has(rule)
+    ? percent(value, { lang, digits, points: true })
+    : `${decimal(value, { lang, digits })}×`;
 }

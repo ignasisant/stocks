@@ -19,6 +19,11 @@ class EntryCheck(BaseModel):
         description="The name's figure, same unit; null if unknown."
     )
     state: str = Field(description="pass | fail | unknown.")
+    basis: str | None = Field(
+        None,
+        description='"ex_goodwill" when ROIC was read without goodwill, '
+        "which can sit far above the reported ROIC.",
+    )
 
 
 class EntryFit(BaseModel):

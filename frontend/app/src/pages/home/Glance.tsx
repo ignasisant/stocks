@@ -19,12 +19,11 @@ import { useApi, type Query } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import { Link } from "../../shell/router";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardQuery, CardTitle, Note } from "./ui";
 import { plain, priceDigits } from "./format";
-import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
+import { AverageTile, SPARK_WINDOW, SparkMore } from "./Spark";
 import { Segmented } from "../../ui/Segmented";
 import type {
   History,
@@ -48,19 +47,6 @@ const WINDOWS = [
 ] as const;
 
 type WindowKey = (typeof WINDOWS)[number]["key"];
-
-/**
- * What to print under the day figure when it is not a live one.
- *
- * `/market/status` decides the state and hands back a stem; the sentence stays
- * the page's own. Spelled out rather than built with a template literal so the
- * catalog keys are greppable.
- */
-const MARKET_NOTES: Record<string, string> = {
-  market_closed: "home.market_closed_note",
-  premarket: "home.premarket_note",
-  postmarket: "home.postmarket_note",
-};
 
 export type Book = {
   summary: Summary;
@@ -155,7 +141,6 @@ export function Glance({
               <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
               {book.summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
               <Note>{t("home.no_open_positions")}</Note>
-              <PortfolioLink />
             </section>
           ) : null;
         }
@@ -163,7 +148,6 @@ export function Glance({
           <section className="hm-section">
             <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
             <GlanceCard book={book} />
-            <PortfolioLink />
           </section>
         );
       }}
@@ -210,15 +194,6 @@ export function MoversSlot({
   );
 }
 
-function PortfolioLink() {
-  const t = useT();
-  return (
-    <Link page="portfolio" className="hm-link">
-      {t("home.link_full_portfolio")}
-    </Link>
-  );
-}
-
 function GlanceCard({ book }: { book: Book }) {
   const t = useT();
   const lang = useLang();
@@ -259,6 +234,46 @@ function GlanceCard({ book }: { book: Book }) {
   const unpriced = Math.max(summary.unpriced, book.movers.day.unpriced ?? 0);
   return (
     <>
+      <Card>
+        {/* The worse of the two counts: the price pass can miss a name, and the
+            basket can additionally lose one whose currency has no FX path. A
+            book reported as whole while a third of it was left out is the same
+            lie as a wrong total. */}
+        {unpriced > 0 ? (
+          <Note>
+            {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
+          </Note>
+        ) : null}
+        {kept > 0 ? (
+          <Note>{t("home.stale_note", { n: kept, total: summary.positions })}</Note>
+        ) : null}
+        <KpiGrid>
+          {WINDOWS.map(({ key, tile }) => {
+            // `basket: null` means the price history does not reach back over the
+            // window. That is "we cannot say", not "the book was flat".
+            const { basket, amount, base } = book.movers[key];
+            const figure = percent(basket, { lang, digits: 2, signed: "always" });
+            // Money leads and the percentage chips it. Printing the fraction in
+            // both slots states one fact twice and leaves out the one a reader
+            // came for: how much moved.
+            const cash = money(amount, {
+              currency: base || currency,
+              lang,
+              signed: "always",
+            });
+            return (
+              <Kpi
+                key={key}
+                label={t(tile)}
+                value={cash ?? figure ?? na}
+                chip={chipFor(basket, figure, key === "day" && stale)}
+              />
+            );
+          })}
+          <AverageTile history={book.history} />
+        </KpiGrid>
+        <SparkMore history={book.history} />
+      </Card>
       <Card>
         {/* Two rows that add up. The first is the money: what went in, what
             it is worth, and the gain between them — value less injected to the
@@ -365,49 +380,6 @@ function GlanceCard({ book }: { book: Book }) {
             are not dressed differently — they are the real component, showing a
             book that is not. */}
         {summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
-      </Card>
-      <Card>
-        <Spark history={book.history} />
-        {/* The worse of the two counts: the price pass can miss a name, and the
-            basket can additionally lose one whose currency has no FX path. A
-            book reported as whole while a third of it was left out is the same
-            lie as a wrong total. */}
-        {unpriced > 0 ? (
-          <Note>
-            {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
-          </Note>
-        ) : null}
-        {kept > 0 ? (
-          <Note>{t("home.stale_note", { n: kept, total: summary.positions })}</Note>
-        ) : null}
-        <KpiGrid>
-          {WINDOWS.map(({ key, tile }) => {
-            // `basket: null` means the price history does not reach back over the
-            // window. That is "we cannot say", not "the book was flat".
-            const { basket, amount, base } = book.movers[key];
-            const figure = percent(basket, { lang, digits: 2, signed: "always" });
-            // Money leads and the percentage chips it. Printing the fraction in
-            // both slots states one fact twice and leaves out the one a reader
-            // came for: how much moved.
-            const cash = money(amount, {
-              currency: base || currency,
-              lang,
-              signed: "always",
-            });
-            return (
-              <Kpi
-                key={key}
-                label={t(tile)}
-                value={cash ?? figure ?? na}
-                chip={chipFor(basket, figure, key === "day" && stale)}
-              />
-            );
-          })}
-          <AverageTile history={book.history} />
-        </KpiGrid>
-        {/* Which session the day figure belongs to, when it is not this one.
-            The server picks the state and the stem; the sentence stays ours. */}
-        {note && MARKET_NOTES[note] ? <Note>{t(MARKET_NOTES[note])}</Note> : null}
       </Card>
     </>
   );

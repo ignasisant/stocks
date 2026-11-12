@@ -209,8 +209,13 @@ function Annual({ data }: { data: Financials }) {
         text: `${series.label} ${compact(value)} ${growthLabel(growth[slot]?.[hover] ?? null)}`.trim(),
       });
     });
+    // The basis rides on the figure: filed EPS is statutory, the consensus is
+    // usually adjusted, and the step between them can be accounting alone.
     const point = eps[hover];
-    if (isNum(point)) lines.push({ text: `EPS ${num(point, 2)}` });
+    const basis = t(
+      hover < years.length ? "ticker.eps_basis_reported" : "ticker.eps_basis_consensus",
+    );
+    if (isNum(point)) lines.push({ text: `EPS ${num(point, 2)} · ${basis}` });
   }
 
   // Whether the year was filed, polled or extrapolated rides on its title, so

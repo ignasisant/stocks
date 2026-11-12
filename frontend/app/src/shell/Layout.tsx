@@ -29,6 +29,7 @@ import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
 import { openAssistant, useAssistantUnread, useAssistantWorking } from "./assistant";
 import { Search } from "./Search";
+import { FeedbackReply } from "./FeedbackReply";
 import { InstallNudge } from "./InstallNudge";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { RatePrompt } from "./RatePrompt";
@@ -461,6 +462,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
       {!guest || GUEST_CHROME.installNudge ? <InstallNudge /> : null}
       {!guest || GUEST_CHROME.ratePrompt ? <RatePrompt /> : null}
+      {!guest || GUEST_CHROME.feedbackReply ? <FeedbackReply /> : null}
       <ActivityBanner />
       <PullRefresh />
       <Toaster />

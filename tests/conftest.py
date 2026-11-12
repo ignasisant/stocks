@@ -647,6 +647,24 @@ def _codes_as_printed():
     venue.pick = before
 
 
+@pytest.fixture(autouse=True)
+def _no_ticker_doubts():
+    """Keep a statement the model read from pricing every name it gave.
+
+    The preview of a model's read asks what each ticker closed at on the days
+    it traded (`import_statement.doubts`): closes, a rate and splits per name,
+    live. A test about the doubt puts the real `find` back itself (imported at
+    module level, before this runs).
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.api.routes.import_statement import doubts
+
+    before = doubts.find
+    doubts.find = lambda rows: {}
+    yield
+    doubts.find = before
+
+
 # --------------------------------------------------------------- the session
 
 #: Long enough that itsdangerous is not the thing under test.

@@ -409,6 +409,36 @@
   display: none;
 }
 
+/* The same line inside the commit's card, at every width: splits the scan
+   after a commit found missing. */
+.im-banner,
+.im-done-fix {
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-warn);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.im-done-fix {
+  display: flex;
+}
+
+.im-banner span,
+.im-done-fix span {
+  flex: 1 1 auto;
+  color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
+}
+
 /* ---------------------------------------- steps one and two: the source */
 
 .im-source {
@@ -1114,6 +1144,22 @@
 .im-venue-differs .im-venue-name,
 .im-venue-differs .im-venue-close {
   color: var(--ag-text-muted);
+}
+
+/* A ticker the reader is asked about: its name runs as long as it likes and
+   the answers keep to the right. */
+.im-ask-head > .ag-tick {
+  min-width: 0;
+  margin-inline-end: auto;
+}
+
+/* A ticker the reader changed, with its way back. */
+.im-fixed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--ag-text-primary);
 }
 
 /* A holdings report's lines, each dated by the reader: the price paid, the
@@ -2047,25 +2093,6 @@
 
   .im-banner {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 44px;
-    padding: 10px 12px;
-    border: 1px solid var(--ag-warn-edge);
-    border-radius: var(--ag-radius-md);
-    background: var(--ag-warn-fill-soft);
-    color: var(--ag-warn);
-    font: inherit;
-    font-size: var(--ag-fs-sm);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .im-banner span {
-    flex: 1 1 auto;
-    color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
   }
 
   .im-fold {

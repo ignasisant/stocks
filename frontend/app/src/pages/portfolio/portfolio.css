@@ -1092,12 +1092,6 @@
   opacity: 0.55;
 }
 
-@media (max-width: 640px) {
-  .pf-card {
-    padding: 0.85rem 0.8rem 0.9rem;
-  }
-}
-
 /*
  * The example book's own row: the offer over an empty ledger, and the warning
  * over a ledger holding invented rows. One shape for both, because they are

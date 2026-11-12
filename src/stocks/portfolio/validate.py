@@ -126,6 +126,12 @@ ISSUE_TEXT = {
         "added a {ratio}:1 split on {date} from Yahoo — your statement "
         "doesn't show it, and the later sells don't add up without it"
     ),
+    # Not validate()'s own: the import preview adds it to the rows of a name
+    # the model gave and the prices do not back (import_statement.doubts).
+    "validate.ticker_doubt": (
+        "the price on {date} is far from where {ticker} closed that day — "
+        "check it is the company you traded"
+    ),
 }
 
 

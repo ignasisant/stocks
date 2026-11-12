@@ -58,7 +58,8 @@ def test_linked_pages_are_pages_that_exist():
     page renamed in the navigation table must rename the link too."""
     from stocks import navigation
 
-    for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS, links.TICKER):
+    for path in (links.PORTFOLIO, links.REVIEW, links.IMPORT, links.EARNINGS,
+                 links.TICKER):
         assert path in navigation.SHELL_PATHS, path
         assert navigation.by_path(path) is not None, path
     assert links.TICKER == "ticker"

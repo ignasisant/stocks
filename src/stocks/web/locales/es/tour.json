@@ -12,7 +12,7 @@
   "tour.pending": "Sin configurar",
   "tour.locked": "Inicia sesión para abrir esto — lee tus propios datos.",
   "tour.launch": "Tutorial guiado",
-  "tour.launch_caption": "Descubre cada función y dónde está, y qué ha cambiado en la última versión.",
+  "tour.launch_caption": "Lo esencial en pocos pasos. El tutorial completo empieza en el último.",
   "tour.launch_start": "Empezar el tutorial",
   "tour.finished": "Tutorial terminado — puedes volver a abrirlo desde Perfil.",
   "tour.strip_progress": "Tutorial · paso {n} de {total} · **{title}**",

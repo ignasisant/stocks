@@ -62,5 +62,9 @@
   "kpi.roc_63.label": "Rentabilidad 3 meses",
   "kpi.roc_63.desc": "Precio actual frente a hace unas 3 meses (63 sesiones bursátiles).",
   "kpi.pct_from_high.label": "Distancia al máximo 52s",
-  "kpi.pct_from_high.desc": "Precio actual frente al cierre más alto del último año; 0% es estar en el máximo."
+  "kpi.pct_from_high.desc": "Precio actual frente al cierre más alto del último año; 0% es estar en el máximo.",
+  "kpi.ptbv.desc": "Precio / valor contable tangible: fondos propios sin fondo de comercio ni intangibles. Así se valora un banco; 1x son sus activos netos a coste.",
+  "kpi.rotce.desc": "Rentabilidad sobre el capital tangible: lo que gana un banco sobre el capital que podría perder. Más de un 15% es un prestamista sólido.",
+  "kpi.dividend_yield.desc": "Dividendos del último año sobre el precio. Es lo que se busca sobre todo en una inmobiliaria o una eléctrica.",
+  "kpi.payout_ratio.desc": "Parte del beneficio del año que se reparte. Una SOCIMI/REIT reparte casi todo por ley; cualquier otra por encima del 100% paga de otra parte."
 }

@@ -91,15 +91,34 @@ def test_a_suffix_the_model_declines_stays_unresolved():
     assert out == {"MC.PA": None}
 
 
-def test_names_isins_and_codes_are_resolved_by_the_model():
+def test_names_and_codes_are_resolved_by_the_model():
     answers = {
         "META PLATFORMS INC.": "META",
         "LVMH MOET HENNESSY LOUIS VUITTON": "MC.PA",
-        "US0231351067": "AMZN",
         "PDD HOLDINGS INC - ADR": "PDD",
     }
     out = instruments.resolve(list(answers), None, ask=replying(answers))
     assert out == answers
+
+
+def test_an_isin_is_never_the_models_to_name():
+    """Micron's ISIN came back from the model as AMT: ticker-shaped, listed
+    and priced, so nothing after it could tell. The registry places an ISIN
+    (the import's validation), so it is not asked about and stays as written."""
+    calls = []
+    out = instruments.resolve(
+        ["US5951121038", "Tesla Inc."], None,
+        ask=replying({"US5951121038": "AMT", "Tesla Inc.": "TSLA"}, calls))
+    assert out == {"US5951121038": None, "Tesla Inc.": "TSLA"}
+    assert calls == [["Tesla Inc."]]
+
+
+def test_a_statement_of_isins_asks_nothing():
+    calls = []
+    out = instruments.resolve(
+        ["US5951121038", "us0231351067"], None, ask=replying({}, calls))
+    assert out == {"US5951121038": None, "us0231351067": None}
+    assert calls == []
 
 
 def test_an_unnameable_label_stays_unresolved():

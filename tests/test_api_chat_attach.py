@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _provider as _real_provider
+from stocks.api.routes.import_statement import doubts
 from stocks.data import fetch, fx, symbols
 from stocks.portfolio import demo, ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
@@ -37,6 +38,9 @@ from stocks.portfolio.ledger import Transaction, all_transactions
 # The real one, held before the suite's conftest swaps `venue.pick` out.
 from stocks.portfolio.venue import pick as _real_pick
 from tests.patching import patch_import
+
+# The real one, held before the suite's conftest silences the doubts.
+_real_doubts = doubts.find
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -445,6 +449,39 @@ def test_a_mapped_export_shows_how_its_columns_were_read(
     assert {"label": "Units · 10", "value": "3"} in options
     again = next(c for c in pickers if c["id"] == "again")
     assert again["action"]["event"]["name"] == "remap"
+
+
+def test_a_name_the_model_gave_is_held_to_its_prices_here_too(
+    client, account, signed_in, mapper, monkeypatch
+):
+    """The Import page doubts a ticker the model gave when its fills sit far
+    from its closes; the same statement must not read clean in the chat."""
+    closes = {("AAPL", "2024-01-02"): 185.0}
+    monkeypatch.setattr(doubts, "find", _real_doubts)
+    monkeypatch.setattr(fetch, "close_on", lambda symbol, day: closes.get((symbol, day)))
+    monkeypatch.setattr(fetch, "splits", lambda ticker: [])
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: 0)
+    monkeypatch.setattr(fx, "rate_on", lambda day, base, quote: 0.9)
+    payload = signed_in.post(
+        "/v1/chat/attachments", json=attach(FOREIGN, filename="foreign.csv")
+    ).json()
+    assert payload["platform"] == "llm"
+    (warned,) = payload["flagged"]
+    assert warned["ticker"] == "AAPL"
+    assert "is far from where AAPL closed" in warned["why"]
+    # A question, not a verdict: the row is still one the card would write.
+    assert [r["ticker"] for r in payload["fresh"]] == ["AAPL", "MSFT"]
+
+
+def test_a_parsers_symbol_is_not_doubted_here_either(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(doubts, "find", _real_doubts)
+    monkeypatch.setattr(fetch, "close_on", lambda symbol, day: 900.0)
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: 0)
+    payload = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    assert payload["platform"] == "generic"
+    assert payload["flagged"] == []
 
 
 def test_a_corrected_mapping_is_read_again_with_no_model_call(

@@ -870,6 +870,9 @@
   font-size: var(--ag-fs-sm);
   color: var(--ag-up);
 }
+.pr-conn-wait {
+  color: var(--ag-text-secondary);
+}
 .pr-conn > .pr-btn {
   flex: 0 0 auto;
 }
@@ -1149,35 +1152,35 @@
   .pr-row {
     flex-direction: column;
     gap: 10px;
-    padding: 14px 16px;
+    padding: 14px 12px;
   }
   .pr-row-mid {
     align-items: stretch;
   }
   .pr-row::before {
-    left: 16px;
-    right: 16px;
+    left: 12px;
+    right: 12px;
   }
   .pl-ask-entry {
-    padding: 0 16px 14px;
+    padding: 0 12px 14px;
   }
   .pr-conn-ok {
-    padding: 0 16px;
+    padding: 0 12px;
   }
   .pr-row-l {
     flex: 1 1 auto;
   }
   .pr-cardhead {
-    padding: 14px 16px 12px;
+    padding: 14px 12px 12px;
   }
   .pr-cardbody {
-    padding: 0 16px 16px;
+    padding: 0 12px 16px;
   }
   .pl-sum {
-    padding: 12px 16px 14px;
+    padding: 12px 12px 14px;
   }
   .pr-ident {
-    padding: 14px 16px;
+    padding: 14px 12px;
   }
   .pr-ident-r {
     margin-left: 0;

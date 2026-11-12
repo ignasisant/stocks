@@ -89,6 +89,10 @@ Rules that matter:
   step does. Do not ship a step that leads to a page that isn't in the nav.
 - If the capability is one of the four the Home setup card shows, wire it
   through `setup_state()` rather than computing it twice.
+- Leave `core` off. The tour started plainly walks only the `core=True` stops
+  (import, review, assistant, notify) and offers the full walk from the last
+  one; `CORE_STEPS_MAX` and a test cap that list. A new step is reached from
+  its "what's new" card, `?tour=<id>` and the full walk.
 
 ## Step 3 — announce it in the release registry
 

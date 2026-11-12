@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from stocks import loaders, obs
 from stocks.api.deps import Account, Writer
+from stocks.api.routes.import_statement import doubts
 from stocks.api.routes.import_statement.lookups import _within
 from stocks.api.routes.import_statement.upload import (
     Commit,
@@ -119,6 +120,10 @@ def preview(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
             )
         checked, disowned = _validated(account, found.result, wipe=body.wipe)
+        rows = [c for c in checked.checked if not c.errors]
+        # A parser's symbol is its broker's own; the model's is a name it
+        # gave, held here to the prices the rows traded at.
+        doubted = doubts.flag(rows) if found.platform == autodetect.LLM_KEY else []
     except HTTPException:
         raise
     except Exception as exc:
@@ -133,7 +138,6 @@ def preview(
     watch_preview(fp, found, checked, len(checked.fresh), digest)
     importable = checked.importable
     detected = platforms.detected_broker(importable)
-    rows = [c for c in checked.checked if not c.errors]
     # How each row has done: the book it lands in for a sale's cost, and one
     # bounded quote request for the buys — a throttled Yahoo costs the column,
     # never the preview.
@@ -160,6 +164,7 @@ def preview(
         needs_broker=bool(importable or found.holdings) and not detected,
         holdings=[ImportHolding(**held) for held in found.holdings],
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
+        doubted=doubted,
     )
 
 

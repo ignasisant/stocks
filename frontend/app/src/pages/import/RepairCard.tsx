@@ -9,7 +9,7 @@
  * doctor's fixes and the repairs the app made by itself.
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useT } from "../../shell/i18n";
 import type { Move } from "./api";
 import { Eyebrow } from "./Card";
@@ -21,18 +21,31 @@ import { useVocabulary } from "./text";
 export function Repairs({
   moves,
   nonce,
+  commits,
   onApplied,
+  onGaps,
   onStale,
 }: {
   moves: Move[];
   /** Bumped by every write on the page. */
   nonce: number;
+  /** Commits made on this page: the splits scan runs once after each. */
+  commits: number;
   onApplied: () => void;
+  /** The missing splits on screen, for the commit's own card. */
+  onGaps: (n: number) => void;
   onStale: () => void;
 }) {
   const t = useT();
   const vocab = useVocabulary();
   const [gaps, setGaps] = useState(0);
+  const found = useCallback(
+    (n: number) => {
+      setGaps(n);
+      onGaps(n);
+    },
+    [onGaps],
+  );
   const [checks, setChecks] = useState(0);
   const waiting = moves.length + gaps + checks;
 
@@ -52,7 +65,7 @@ export function Repairs({
       </div>
       <MoveList moves={moves} onApplied={onApplied} onStale={onStale} />
       {moves.length > 0 && <hr className="im-rule" />}
-      <Splits onApplied={onApplied} onFound={setGaps} />
+      <Splits auto={commits} onApplied={onApplied} onFound={found} />
       <Checkup nonce={nonce} onApplied={onApplied} onFound={setChecks} />
     </section>
   );

@@ -28,6 +28,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from stocks import accounts, obs
+from stocks.accounts import UserPaths
+from stocks.api.deps import Writer
 from stocks.api.security import Who
 from stocks.config import PROJECT_ROOT
 from stocks.web import feedback as store
@@ -106,8 +108,11 @@ def sender(request: Request, who: Who) -> str:
             )
         return "guest"
     assert who.email is not None  # a session always carries one
-    root = accounts.paths_for(who.email, accounts.configured_owner()).root
-    return "owner" if root == PROJECT_ROOT else root.name
+    return _slug(accounts.paths_for(who.email, accounts.configured_owner()))
+
+
+def _slug(paths: UserPaths) -> str:
+    return "owner" if paths.root == PROJECT_ROOT else paths.root.name
 
 
 #: The pseudonymous slug the logs already use, or "guest" — see above.
@@ -192,4 +197,62 @@ def rate_app(body: AppRating, from_: Sender) -> Sent:
     store.rate_app(
         body.stars, body.text, page=body.page, sender=from_, lang=body.lang or ""
     )
+    return Sent()
+
+
+# ------------------------------------------------------------------ replies
+
+# The answers this account has been shown (`feedback_replies_seen`, a pref);
+# the newest are kept, enough for every answer one reader will ever be given.
+SEEN_KEY = "feedback_replies_seen"
+SEEN_MAX = 50
+
+
+class FeedbackReply(BaseModel):
+    id: str
+    about: str = Field(description="When the answered submission was sent (UTC stamp).")
+    kind: str
+    text: str
+
+
+class RepliesSeen(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    ids: list[str] = Field(min_length=1, max_length=SEEN_MAX)
+
+
+@router.get(
+    "/feedback/replies",
+    response_model=list[FeedbackReply],
+    summary="Answers to what this account reported, not yet shown",
+)
+def replies(paths: Writer) -> list[FeedbackReply]:
+    """What the operator answered (`stocks feedback-reply`), minus what the
+    reader has already been shown. Signed-in only: a guest's submission has no
+    account to be answered in, and a token names nobody to show it to."""
+    seen = set(accounts.stored_prefs(paths.prefs).get(SEEN_KEY) or [])
+    return [
+        FeedbackReply(
+            id=r["id"], about=str(r.get("about", "")), kind=str(r.get("kind", "")),
+            text=str(r.get("text", "")),
+        )
+        for r in store.replies_for(_slug(paths))
+        if r.get("id") and r["id"] not in seen
+    ]
+
+
+@router.post(
+    "/feedback/replies/seen",
+    response_model=Sent,
+    summary="Mark answers as shown",
+)
+def replies_seen(body: RepliesSeen, paths: Writer) -> Sent:
+    """Stamped when shown, not when dismissed — like the rating prompt: an
+    answer the reader closed, scrolled past or reloaded over has been given."""
+    with accounts.prefs_lock(paths.prefs):
+        held = [str(i) for i in accounts.stored_prefs(paths.prefs).get(SEEN_KEY) or []]
+        fresh = [i for i in body.ids if i not in held]
+        if fresh:
+            accounts.update_prefs(paths.prefs, {SEEN_KEY: (held + fresh)[-SEEN_MAX:]})
+    obs.event("feedback.reply_seen", count=len(body.ids))
     return Sent()

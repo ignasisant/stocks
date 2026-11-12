@@ -51,10 +51,12 @@ from stocks import accounts, i18n, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import ChatTurn, Writer
 from stocks.api.routes import import_statement as page
+from stocks.api.routes.import_statement import doubts
 from stocks.chat import a2ui
 from stocks.jsonsafe import num as _num
 from stocks.notify import import_alert
 from stocks.portfolio import (
+    autodetect,
     demo,
     diagnostics,
     last_import,
@@ -424,6 +426,11 @@ def attach(
             mapping=body.mapping,
         )
         checked, _disowned = page._validated(paths, found.result)
+        # The page's doubt on a name the model gave, so the statement does
+        # not warn there and read clean here. The question itself is the
+        # page's (`/import/ticker`); here the row says why and can be left out.
+        if found.platform == autodetect.LLM_KEY:
+            doubts.flag([c for c in checked.checked if not c.errors])
     except Exception as exc:
         fp = diagnostics.report("", body.filename, raw, surface="chat", error=exc)
         import_alert.failed(fp, stage="crash", detail=type(exc).__name__,

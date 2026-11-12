@@ -24,6 +24,7 @@ from stocks.secrets_env import secret
 HOME = ""
 TODAY = "today"
 PORTFOLIO = "portfolio"
+REVIEW = "review"
 IMPORT = "import_transactions"
 EARNINGS = "earnings"
 TICKER = "ticker"

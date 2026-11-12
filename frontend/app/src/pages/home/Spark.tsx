@@ -1,13 +1,12 @@
 /**
- * The glance card's sparkline: what went in against what it is worth.
+ * The glance card's chart: what the book is worth, as a phone broker draws it.
  *
- * The same pair of lines the Portfolio page charts in full, at a size that
- * answers one question — is the gap opening or closing — without asking anyone
- * to read an axis. The band between them carries the sign, which is the whole
- * reading at this size: green means the book is worth more than what was put
- * into it. A third, dashed in the index's hue, is the same money in the
- * S&P 500 since the book's first day (`benchLine`): above the value line, the
- * index would have done better with it.
+ * One line with a wash under it, the figure over it following the finger, the
+ * window's high and low on the line itself and the range under it. Two
+ * references stay, because they are what make the figure mean something: what
+ * went in, and the same money in the S&P 500 since the book's first day
+ * (`benchLine`) — above the value line, the index would have done better.
+ * The scale starts at zero, so a dip is drawn at its size.
  *
  * A held finger slid along, two fingers, a mouse drag (as the ticker chart
  * brushes), or a secondary click (`useSpan`) compare two days: how much the
@@ -19,7 +18,7 @@
  * where a picture goes is worse than one that is simply a little shorter.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { seriesColors, token } from "../../shell/theme";
@@ -41,14 +40,16 @@ const SMA_WINDOW = 20;
 
 /**
  * The windows the selector offers, in the order they widen, and how many
- * calendar days back from the series' last day each one reaches.
+ * calendar days back from the series' last day each one reaches. `all` is the
+ * whole history, from the book's first day.
  *
- * The labels are the keys, except the week and the month, which read as words
- * ("Semana", "Mes") like the market card's selector does. It opens on `1y`: a year is the view the home card is for, and `all` is the
- * wrong one for a book that took a transfer, because one step dwarfs every
- * month of market movement around it. The spans are `_HISTORY_SPANS` in
- * `api/routes/portfolio/returns.py`, counted from the same end, so a slice here is the
- * window the server would have cut.
+ * It opens on `all`: the S&P line is the same money bought on the book's own
+ * days, and a window that opens later forgives whatever the picks lost before
+ * it (CLAUDE.md, "Index comparisons start where the book starts"). A window as
+ * long as the book itself is hidden — it would draw `all` again under another
+ * name. The spans are `_HISTORY_SPANS` in `api/routes/portfolio/returns.py`,
+ * counted from the same end, so a slice here is the window the server would
+ * have cut.
  */
 const RANGES = {
   "1w": 7,
@@ -56,19 +57,28 @@ const RANGES = {
   "6m": 182,
   "1y": 365,
   "2y": 730,
-  "5y": 1825,
+  all: Infinity,
 } as const;
 
 type Range = keyof typeof RANGES;
 
-/** The windows labelled by a word, and the word. */
-const WORDS = {
-  "1w": "home.market_window_week",
-  "1m": "home.market_window_month",
-} as const;
+/** The window the glance fetches: the whole book, which every range slices. */
+export const SPARK_WINDOW = "all";
 
-/** The window the glance fetches: the widest the selector offers. */
-export const SPARK_WINDOW: Range = "5y";
+/** The ranges worth offering for a book whose history runs `span` days. */
+export function offered(span: number): Range[] {
+  return (Object.keys(RANGES) as Range[]).filter(
+    (key) => key === "all" || RANGES[key] < span,
+  );
+}
+
+/** Calendar days from the history's first point to its last. */
+function spanOf(history: History): number {
+  const first = history.points[0];
+  const last = history.points[history.points.length - 1];
+  if (!first || !last) return 0;
+  return (Date.parse(last.date) - Date.parse(first.date)) / 86_400_000;
+}
 
 /**
  * The points of `history` inside `range`, counted back from its last day.
@@ -84,6 +94,7 @@ export const SPARK_WINDOW: Range = "5y";
 export function slice(history: History, range: Range): History["points"] {
   const last = history.points[history.points.length - 1];
   if (!last) return [];
+  if (range === "all") return history.points;
   const from = new Date(`${last.date}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - RANGES[range]);
   const cutoff = from.toISOString().slice(0, 10);
@@ -109,16 +120,18 @@ export function benchLine(days: { inIndex: number | null }[]): number[] | null {
   return out;
 }
 
-export function Spark({ history }: { history: History | null }) {
+function Spark({ history }: { history: History | null }) {
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
-  const [range, setRange] = useState<Range>("1y");
+  const [range, setRange] = useState<Range>("all");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   // Two days being compared, in day order. The span's units are day indices:
   // the wrap's handlers read the day before handing it on.
   const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  // An id fit for `url(#…)`: React's carries characters a fragment trips on.
+  const wash = `hm-wash-${useId().replace(/[^\w-]/g, "")}`;
   // Where a mouse drag started, as the ticker chart brushes: the stretch reads
   // live while the button is down and goes away when it lifts.
   const dragFrom = useRef<number | null>(null);
@@ -175,9 +188,9 @@ export function Spark({ history }: { history: History | null }) {
     <Segmented
       className="hm-segmented"
       label={t("home.chart_value")}
-      items={(Object.keys(RANGES) as Range[]).map((key) => ({
+      items={offered(spanOf(history)).map((key) => ({
         id: key,
-        label: key in WORDS ? t(WORDS[key as keyof typeof WORDS]) : key,
+        label: t(`home.chart_range_${key}`),
       }))}
       value={range}
       onPick={(key) => {
@@ -191,8 +204,8 @@ export function Spark({ history }: { history: History | null }) {
   if (days.length < 2) {
     return (
       <>
-        <div className="hm-spark-head">{selector}</div>
         {placeholder}
+        <div className="hm-spark-foot">{selector}</div>
       </>
     );
   }
@@ -202,74 +215,25 @@ export function Spark({ history }: { history: History | null }) {
     ...(bench ?? []),
   ];
   const benchColor = seriesColors(["SPY"]).SPY!;
-  const floor = Math.min(...levels);
-  const span = Math.max(...levels) - floor || Math.abs(floor) || 1;
+  // The scale starts at zero: fitted to the window's own extremes, a 5 % dip
+  // filled the plot's height and read like the book halving. The headroom
+  // over the top is the peak's label, which sits above its point.
+  const floor = Math.min(0, ...levels);
+  const ceiling = Math.max(...levels) * 1.15;
+  const span = ceiling - floor || 1;
   const x = (index: number) => (index / (days.length - 1)) * WIDTH;
   const y = (value: number) => (1 - (value - floor) / span) * (HEIGHT - 2) + 1;
 
   const line = (pick: (day: (typeof days)[number]) => number) =>
     days.map((day, index) => `${x(index)},${y(pick(day))}`).join(" ");
 
-  // One polygon per run of the same sign, so the colour changes exactly where
-  // the two lines cross rather than across the whole shape.
-  const bands: { gain: boolean; path: string }[] = [];
-  let start = 0;
-  for (let index = 1; index <= days.length; index += 1) {
-    const ending = index === days.length;
-    const gain = days[start]!.value >= days[start]!.injected;
-    if (!ending && days[index]!.value >= days[index]!.injected === gain) continue;
-    const run = days.slice(start, Math.min(index + 1, days.length));
-    const top = run.map((day, i) => `${x(start + i)},${y(day.value)}`);
-    const bottom = run.map((day, i) => `${x(start + i)},${y(day.injected)}`).reverse();
-    bands.push({ gain, path: `M${top.join("L")}L${bottom.join("L")}Z` });
-    if (!ending) start = index;
-  }
-
-  const high = money(Math.max(...levels), { currency: base, lang });
-  const low = money(floor, { currency: base, lang });
-
-  // The peak of the value line itself, not of whichever of the two series
-  // happens to be higher — "period max" is a claim about what the book was
-  // worth, not about what went into it.
-  const maxValue = Math.max(...days.map((day) => day.value));
-  const maxIndex = days.findIndex((day) => day.value === maxValue);
-
-  /**
-   * What the hover label says about one day, in this order: worth (colored by
-   * gain or loss), what went in, and the gap between them as an amount and a
-   * percent.
-   */
-  const tipRows = (day: (typeof days)[number], at: number) => {
-    const gain = day.value >= day.injected;
-    const pnl = day.value - day.injected;
-    const pct = day.injected
-      ? percent(pnl / day.injected, { lang, digits: 2, signed: "always" })
-      : null;
-    return [
-      {
-        label: t("home.chart_value"),
-        value: money(day.value, { currency: base, lang }),
-        color: gain ? token("up") : token("down"),
-      },
-      {
-        label: t("home.chart_injected"),
-        value: money(day.injected, { currency: base, lang }),
-      },
-      {
-        label: "",
-        value: `${money(pnl, { currency: base, lang, signed: "always" })}${pct ? ` (${pct})` : ""}`,
-      },
-      ...(bench
-        ? [
-            {
-              label: t("home.chart_index"),
-              value: money(bench[at]!, { currency: base, lang }),
-              color: benchColor,
-            },
-          ]
-        : []),
-    ];
-  };
+  // The extremes of the value line itself, not of whichever series happens to
+  // be higher: "period max" is a claim about what the book was worth.
+  const values = days.map((day) => day.value);
+  const maxValue = Math.max(...values);
+  const maxIndex = values.indexOf(maxValue);
+  const minValue = Math.min(...values);
+  const minIndex = values.indexOf(minValue);
 
   /** Which day a pointer sits over, from its position over the plot. */
   const dayAt = (clientX: number) => {
@@ -286,15 +250,8 @@ export function Spark({ history }: { history: History | null }) {
   const compared =
     measure && measure.to < days.length && measure.to > measure.from ? measure : null;
   const hovered = hoverIndex === null || measure ? null : days[hoverIndex];
-  const tipAt = compared ? (compared.from + compared.to) / 2 : hoverIndex;
-  const tipLeft = tipAt === null ? 0 : (x(tipAt) / WIDTH) * 100;
-  const tipTitle = compared
-    ? [compared.from, compared.to]
-        .map((index) => monthDay(days[index]!.date, t) ?? days[index]!.date)
-        .join(" → ")
-    : hovered
-      ? (monthDay(hovered.date, t) ?? hovered.date)
-      : null;
+  const signed = (value: number) =>
+    money(value, { currency: base, lang, signed: "always" });
 
   /** What the label says between the two days being compared. */
   const spanRows = (fromAt: number, toAt: number) => {
@@ -302,8 +259,6 @@ export function Spark({ history }: { history: History | null }) {
     const to = days[toAt]!;
     const moved = to.value - from.value;
     const put = to.injected - from.injected;
-    const signed = (value: number) =>
-      money(value, { currency: base, lang, signed: "always" });
     return [
       {
         label: t("home.chart_value"),
@@ -325,11 +280,6 @@ export function Spark({ history }: { history: History | null }) {
         : []),
     ];
   };
-  const rows = compared
-    ? spanRows(compared.from, compared.to)
-    : hovered && hoverIndex !== null
-      ? tipRows(hovered, hoverIndex)
-      : null;
   const indexAt = (event: { clientX: number }) => dayAt(event.clientX) ?? 0;
 
   /** A gap as "+€1,200 (+8.4%)": the amount, and its share of what went in. */
@@ -341,14 +291,17 @@ export function Spark({ history }: { history: History | null }) {
           signed: "always",
         })
       : null;
-    return `${money(day.value - day.injected, { currency: base, lang, signed: "always" })}${pct ? ` (${pct})` : ""}`;
+    return `${signed(day.value - day.injected)}${pct ? ` (${pct})` : ""}`;
   };
   const end = days[days.length - 1]!;
+  const rangeLabel = t(
+    range === "all" ? "home.chart_since_start" : `home.chart_range_${range}`,
+  );
   const summary = t("home.chart_summary", {
     value: money(end.value, { currency: base, lang }) ?? "",
     gap: gap(end),
     injected: money(end.injected, { currency: base, lang }) ?? "",
-    range: range in WORDS ? t(WORDS[range as keyof typeof WORDS]) : range,
+    range: rangeLabel,
   });
   const sentence = hovered
     ? t("home.chart_spoken", {
@@ -358,6 +311,18 @@ export function Spark({ history }: { history: History | null }) {
         gap: gap(hovered),
       })
     : null;
+
+  // The head reads the day under the finger, or the last one: the figure
+  // follows the scrub, as a phone's broker app does, instead of a box over
+  // the line. The change is what the market did since the window opened —
+  // the value's move less the money put in — so a deposit is not a gain —
+  // and the money put in is the window's too, not every euro since the start.
+  const focusAt = hovered && hoverIndex !== null ? hoverIndex : days.length - 1;
+  const focus = days[focusAt]!;
+  const first = days[0]!;
+  const put = focus.injected - first.injected;
+  const change = focus.value - first.value - put;
+  const when = hovered ? (monthDay(hovered.date, t) ?? hovered.date) : rangeLabel;
 
   /**
    * A point drawn as a zero-length line with round caps. A `<circle>` in this
@@ -377,39 +342,43 @@ export function Spark({ history }: { history: History | null }) {
       pointerEvents="none"
     />
   );
-  const hasGain = bands.some((band) => band.gain);
-  const hasLoss = bands.some((band) => !band.gain);
+
+  /** An extreme's figure by its point, kept inside the plot at either end. */
+  const mark = (index: number, level: number, side: "over" | "under") => {
+    const left = (x(index) / WIDTH) * 100;
+    const edge = left < 15 ? "start" : left > 85 ? "end" : "mid";
+    return (
+      <span
+        className={`hm-spark-mark hm-spark-mark-${side} hm-spark-mark-${edge}`}
+        style={{ left: `${left}%`, top: `${(y(level) / HEIGHT) * 100}%` }}
+      >
+        {money(level, { currency: base, lang })}
+      </span>
+    );
+  };
 
   return (
     <>
-      {/* One toolbar: the key on the left, the window on the right. Stacked,
-          the selector floated over an empty row and the key sat alone under
-          it — two rows of chrome for one line of controls. Two lines with no
-          key are a picture of nothing in particular: the dashed one is what
-          went in, the solid one what it is worth, and the band between them
-          is the answer the card exists to give. */}
+      {/* The figure, what the market did over the window, and the two
+          references with their levels on the same day. The keys stay: the
+          grey line is what went in, the dashed one the same money in the
+          index, and neither may be told apart by colour alone. */}
       <div className="hm-spark-head">
+        <p className="hm-spark-figure">
+          {money(focus.value, { currency: base, lang })}
+        </p>
+        <p className="hm-spark-change">
+          <span style={{ color: change >= 0 ? token("up") : token("down") }}>
+            {signed(change)}
+          </span>
+          <span className="hm-spark-when"> · {when}</span>
+        </p>
         <ul className="hm-spark-legend">
           <li>
             <span className="hm-spark-key hm-spark-injected" />
             {t("home.chart_injected")}
+            <strong className="hm-spark-legend-figure">{signed(put)}</strong>
           </li>
-          <li>
-            <span className="hm-spark-key hm-spark-value" />
-            {t("home.chart_value")}
-          </li>
-          {hasGain ? (
-            <li>
-              <span className="hm-spark-key hm-spark-band hm-spark-band-gain" />
-              {t("home.chart_band_gain")}
-            </li>
-          ) : null}
-          {hasLoss ? (
-            <li>
-              <span className="hm-spark-key hm-spark-band hm-spark-band-loss" />
-              {t("home.chart_band_loss")}
-            </li>
-          ) : null}
           {bench ? (
             <li title={t("home.chart_index_note")}>
               <span
@@ -417,21 +386,13 @@ export function Spark({ history }: { history: History | null }) {
                 style={{ borderColor: benchColor }}
               />
               {t("home.chart_index")}
+              <strong className="hm-spark-legend-figure">
+                {money(bench[focusAt]!, { currency: base, lang })}
+              </strong>
             </li>
           ) : null}
-          <li>
-            <span className="hm-spark-key hm-spark-max" />
-            {t("home.chart_period_max")}
-            <strong className="hm-spark-legend-figure">
-              {money(maxValue, { currency: base, lang })}
-            </strong>
-          </li>
         </ul>
-        {selector}
       </div>
-      {/* The plot and its scale side by side: the two extremes at the top and
-          bottom of the plot's right edge, where a y axis puts its ticks —
-          underneath it, next to each other, they read as the x axis. */}
       <div className="hm-spark-plot">
         {/* The wrap, not the svg, tracks the pointer: its rendered box is what
           a clientX has to be read against, and it is what the floating tip
@@ -502,20 +463,24 @@ export function Spark({ history }: { history: History | null }) {
             role="img"
             aria-label={summary}
           >
+            <defs>
+              {/* The value's wash: the line's own colour, fading to nothing
+                  at the floor, so the area reads as volume and not as a band. */}
+              <linearGradient id={wash} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={token("brand-accent")} stopOpacity="0.32" />
+                <stop offset="1" stopColor={token("brand-accent")} stopOpacity="0" />
+              </linearGradient>
+            </defs>
             <g className="ag-redraw" key={range}>
-              {bands.map((band, index) => (
-                <path
-                  key={index}
-                  d={band.path}
-                  fill={band.gain ? token("profit-band") : token("loss-band")}
-                />
-              ))}
+              <path
+                d={`M${x(0)},${y(floor)}L${days.map((day, index) => `${x(index)},${y(day.value)}`).join("L")}L${x(days.length - 1)},${y(floor)}Z`}
+                fill={`url(#${wash})`}
+              />
               <polyline
                 points={line((day) => day.injected)}
                 fill="none"
                 stroke={token("text-muted")}
                 strokeWidth={LINE.rule}
-                strokeDasharray={BASELINE_DASH}
                 vectorEffect="non-scaling-stroke"
               />
               {bench ? (
@@ -535,19 +500,12 @@ export function Spark({ history }: { history: History | null }) {
                 fill="none"
                 stroke={token("brand-accent")}
                 strokeWidth={LINE.compact}
+                strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
               />
-              <line
-                x1={0}
-                x2={WIDTH}
-                y1={y(maxValue)}
-                y2={y(maxValue)}
-                stroke={token("text-muted")}
-                strokeDasharray="2 2"
-                strokeWidth="1"
-                vectorEffect="non-scaling-stroke"
-              />
-              {dot(maxIndex, maxValue, token("text-muted"), 5)}
+              {hovered
+                ? null
+                : dot(days.length - 1, end.value, token("brand-accent"), 7)}
             </g>
             {measure && measure.to < days.length ? (
               <g className="hm-spark-span" pointerEvents="none">
@@ -584,31 +542,84 @@ export function Spark({ history }: { history: History | null }) {
                 />
                 {dot(hoverIndex, hovered.injected, token("text-muted"), 5)}
                 {bench ? dot(hoverIndex, bench[hoverIndex]!, benchColor, 5) : null}
-                {dot(hoverIndex, hovered.value, token("brand-accent"), 6)}
+                {dot(hoverIndex, hovered.value, token("brand-accent"), 7)}
               </>
             ) : null}
           </svg>
-          {/* The hover label, as a positioned box rather than the browser's
-            native `<title>` — which only answered on the day under the
-            cursor's own thin column, after its own OS delay. */}
-          {rows && tipTitle ? (
+          {/* The window's high and low, on the line rather than on an axis:
+            the size of the swing without a scale to read it off. */}
+          <div className="hm-spark-marks" aria-hidden="true">
+            {mark(maxIndex, maxValue, "over")}
+            {minIndex !== maxIndex ? mark(minIndex, minValue, "under") : null}
+          </div>
+          {/* Two days compared get the box: three amounts do not fit the
+            head's one figure. */}
+          {compared ? (
             <Tip
-              at={tipLeft}
-              title={tipTitle}
-              items={rows.map((row) => ({ ...row, value: row.value ?? "—" }))}
+              at={(x((compared.from + compared.to) / 2) / WIDTH) * 100}
+              title={[compared.from, compared.to]
+                .map((index) => monthDay(days[index]!.date, t) ?? days[index]!.date)
+                .join(" → ")}
+              items={spanRows(compared.from, compared.to).map((row) => ({
+                ...row,
+                value: row.value ?? "—",
+              }))}
               className="hm-spark-tip"
             />
           ) : null}
           <Spoken text={walk.keyed ? sentence : null} />
         </div>
-        {/* The two ends of the scale, pinned to the window's own extremes:
-          without them the line has a shape and no size, and a reader cannot
-          tell a €200 swing from a €20k one. */}
-        <div className="hm-spark-scale">
-          <span>{high}</span>
-          <span>{low}</span>
-        </div>
       </div>
+      <div className="hm-spark-foot">{selector}</div>
+    </>
+  );
+}
+
+const MORE_KEY = "ag.more.home-chart";
+
+/**
+ * The sparkline behind a "show more", below the tiles.
+ *
+ * The tiles answer the visit; the chart is for the reader who wants the
+ * shape behind them. Closed by default; opened, it stays open on the next
+ * visit (this browser only — a convenience, not state). Closed, it is not
+ * drawn.
+ */
+export function SparkMore({ history }: { history: History | null }) {
+  const t = useT();
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(MORE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      if (next) localStorage.setItem(MORE_KEY, "1");
+      else localStorage.removeItem(MORE_KEY);
+    } catch {
+      /* private window, blocked storage — the chart just forgets */
+    }
+  };
+  return (
+    <>
+      {open ? (
+        <div id="hm-spark-more">
+          <Spark history={history} />
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="hm-more"
+        aria-expanded={open}
+        aria-controls="hm-spark-more"
+        onClick={toggle}
+      >
+        {open ? t("home.chart_less") : t("home.chart_more")}
+      </button>
     </>
   );
 }

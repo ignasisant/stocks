@@ -12,7 +12,7 @@
   "tour.pending": "Non ancora configurato",
   "tour.locked": "Accedi per aprire questa sezione — legge i tuoi dati.",
   "tour.launch": "Tour guidato",
-  "tour.launch_caption": "Scopri ogni funzione e dove si trova, più le novità dell'ultima versione.",
+  "tour.launch_caption": "L'essenziale in pochi passi. Il tour completo parte dall'ultimo.",
   "tour.launch_start": "Inizia il tour",
   "tour.finished": "Tour terminato — riaprilo quando vuoi da Profilo.",
   "tour.strip_progress": "Tour · passo {n} di {total} · **{title}**",

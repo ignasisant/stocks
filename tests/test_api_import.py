@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _charted as _real_charted
+from stocks.api.routes.import_statement import doubts
 from stocks.data import fetch, fx, symbols
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
@@ -39,6 +40,9 @@ from stocks.portfolio.ledger import Transaction, all_transactions
 # every test: the relabel tests below put it back.
 from stocks.portfolio.venue import pick as _real_pick
 from tests.patching import patch_import, patch_loaders
+
+# Likewise the pricing of a model's names, which conftest keeps off.
+_real_doubts = doubts.find
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -875,6 +879,91 @@ def test_a_token_cannot_pick_a_line(client, account, picker):
         assert response.status_code == 403, url
 
 
+# ------------------------------------------- which ticker a row really is
+
+
+@pytest.fixture
+def answers(monkeypatch):
+    """The `import.ticker_answer` lines an answer writes."""
+    from stocks import obs
+
+    said: list[dict] = []
+    real = obs.event
+
+    def event(name, **fields):
+        if name == "import.ticker_answer":
+            said.append(fields)
+        else:
+            real(name, **fields)
+
+    patch_import(monkeypatch, "obs", type("Obs", (), {**vars(obs), "event": event}))
+    return said
+
+
+def test_a_ticker_the_reader_confirms_is_kept_and_counted(
+    account, signed_in, picker, answers
+):
+    response = signed_in.post("/v1/import/ticker", json=merlin(code="meqa.f"))
+    assert response.status_code == 200
+    assert response.json() == {"code": "MEQA.F", "symbol": "MEQA.F", "answer": "kept"}
+    assert answers == [
+        {"code": "MEQA.F", "symbol": "MEQA.F", "answer": "kept", "why": "doubt"}
+    ]
+
+
+def test_a_ticker_the_reader_corrects_is_checked_against_the_fills(
+    account, signed_in, picker, answers
+):
+    """The search and the fills stay out of the log: two tickers and a verdict."""
+    from stocks.data import symbols
+
+    response = signed_in.post(
+        "/v1/import/ticker",
+        json=merlin(code="MEQA.F", symbol="mrl.mc", why="reader", query="Merlin"),
+    )
+    assert response.status_code == 200
+    assert response.json() == {"code": "MEQA.F", "symbol": "MRL.MC", "answer": "fixed"}
+    assert answers == [
+        {"code": "MEQA.F", "symbol": "MRL.MC", "answer": "fixed", "why": "reader"}
+    ]
+    # The rows carry the answer back with the commit; the shared map is untouched.
+    assert symbols.code_symbol("MEQA.F") is None
+    assert all_transactions(account.db) == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param({"symbol": "MEQA.F"}, id="closed-elsewhere"),
+        pytest.param({"symbol": "MEQA"}, id="the-ticker-it-has"),
+        pytest.param({"symbol": "MRL"}, id="not-a-euro-line"),
+        pytest.param({"symbol": "MRL.MC", "currency": "USD"}, id="not-a-dollar-line"),
+    ],
+)
+def test_a_correction_the_fills_do_not_prove_is_refused(
+    account, signed_in, picker, answers, answer
+):
+    response = signed_in.post("/v1/import/ticker", json=merlin(**answer))
+    assert response.status_code == 409
+    assert answers == []
+
+
+def test_a_correction_yahoo_cannot_price_is_a_retry(
+    account, signed_in, picker, answers, monkeypatch
+):
+    monkeypatch.setattr(fetch, "close_on", lambda symbol, day: None)
+    response = signed_in.post("/v1/import/ticker", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 503
+    assert answers == []
+
+
+def test_a_token_cannot_answer_for_a_ticker(client, account, picker):
+    response = client.post(
+        "/v1/import/ticker", params=WHO, headers=AUTH, json=merlin(symbol="MRL.MC")
+    )
+    assert response.status_code == 403
+
+
 # A euro "ALV" is Allianz; the bare ALV Yahoo quotes is Autoliv, in dollars.
 ALLIANZ = (
     "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -1300,6 +1389,57 @@ def test_a_commit_of_the_previewed_file_does_not_ask_the_model_twice(
     assert payload["imported"] == 1
     assert len(model) == 1, "the preview's read is remembered for the commit"
 
+
+@pytest.fixture
+def priced(monkeypatch):
+    """A Yahoo where NVDA closed at 880 dollars the day the model's row bought
+    it at 500 euros, and a dollar was 0.9 euros."""
+    closes = {("NVDA", "2024-03-01"): 880.0, ("AAPL", "2024-01-02"): 500.0}
+    monkeypatch.setattr(doubts, "find", _real_doubts)
+    monkeypatch.setattr(fetch, "close_on", lambda symbol, day: closes.get((symbol, day)))
+    monkeypatch.setattr(fetch, "splits", lambda ticker: [])
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: 0)
+    monkeypatch.setattr(fx, "rate_on", lambda day, base, quote: 0.9)
+
+
+FOREIGN = "When,What,Units,Each\n01/03/2024,NVDA,4,500\n"
+
+
+def test_a_name_the_model_gave_is_held_to_its_prices(
+    client, account, signed_in, model, priced
+):
+    payload = signed_in.post(
+        "/v1/import/preview", json=body(FOREIGN, filename="extracto.csv")
+    ).json()
+    assert payload["platform"] == "llm"
+    assert payload["doubted"] == ["NVDA"]
+    (bought,) = payload["importable"]
+    (issue,) = [i for i in bought["issues"] if i["key"] == "validate.ticker_doubt"]
+    assert issue["severity"] == "warning"
+    assert issue["params"] == {"ticker": "NVDA", "date": "2024-03-01"}
+    assert all_transactions(account.db) == []
+
+
+def test_a_doubted_row_still_imports(client, account, signed_in, model, priced):
+    """The doubt is a question, not a verdict: unanswered, the row is written
+    as it was read."""
+    preview = signed_in.post(
+        "/v1/import/preview", json=body(FOREIGN, filename="extracto.csv")
+    ).json()
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json=body(FOREIGN, filename="extracto.csv", expect=preview["digest"]),
+    ).json()
+    assert payload["imported"] == 1
+
+
+def test_a_parsers_symbol_is_not_doubted(client, account, signed_in, priced):
+    """AAPL at 100 against a close of 500 would be a doubt; a parser copied the
+    symbol its broker printed, and nothing is asked."""
+    payload = signed_in.post("/v1/import/preview", json=body()).json()
+    assert payload["platform"] == "generic"
+    assert payload["doubted"] == []
+
 def test_the_demo_book_does_not_survive_a_real_import(client, account, signed_in):
     """An invented cost basis must never end up mixed into a real one."""
     from stocks.portfolio import demo
@@ -1529,7 +1669,56 @@ def test_with_user_logging_off_the_reader_is_anonymous(
     assert filed["user"] == "anon"
 
 
-# ------------------------------------------------------- a file never sent
+# ------------------------------------------------------- where it was read
+# The same middleware says which screen the request came from, so an event can
+# be read back as "on Importar" without a field in every call.
+
+
+def _bound(monkeypatch) -> list[dict]:
+    """What was bound to the log context each time an import was previewed."""
+    from stocks import obs
+    from stocks.api.routes.import_statement import statements
+
+    seen: list[dict] = []
+    real = statements._prefer
+
+    def spy(platform):
+        seen.append(obs.current())
+        return real(platform)
+
+    monkeypatch.setattr(statements, "_prefer", spy)
+    return seen
+
+
+def test_an_event_carries_the_screen_it_happened_on(
+    client, account, signed_in, monkeypatch
+):
+    seen = _bound(monkeypatch)
+    signed_in.post("/v1/import/preview", json=body(),
+                   headers={"referer": "http://testserver/import?tab=x"})
+    signed_in.post("/v1/import/preview", json=body())
+    assert seen[0]["page"] == "/import"
+    assert seen[0]["user"] == accounts.slug(EMAIL)
+    assert "page" not in seen[1]
+
+
+def test_log_page_is_the_path_of_this_apps_referer():
+    from starlette.requests import Request
+
+    page = sys.modules["stocks.api.app"]._log_page
+
+    def asked(referer: str) -> Request:
+        headers = [(b"host", b"topstocks.test")]
+        if referer:
+            headers.append((b"referer", referer.encode()))
+        return Request({"type": "http", "headers": headers})
+
+    assert page(asked("https://topstocks.test/import")) == "/import"
+    # The query names a ticker or a share: the screen is enough.
+    assert page(asked("https://topstocks.test/ticker?ticker=ASML")) == "/ticker"
+    assert page(asked("https://elsewhere.test/import")) is None
+    assert page(asked("https://topstocks.test/Some%20Thing/../x")) is None
+    assert page(asked("")) is None
 # The page reads the file before anything goes out, so a phone that hands over
 # a file it cannot open used to fail with no request and no record at all.
 

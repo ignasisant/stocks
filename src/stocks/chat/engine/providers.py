@@ -242,6 +242,20 @@ def in_free_trial(prefs: dict) -> bool:
     return age is not None and age < _min_account_hours()
 
 
+# How long an account's questions get the quick research unless "in depth" is
+# pressed. A first deep answer on the free chain ran past three minutes (prod
+# 2026-11-10) and its reader never came back: the first answers have to land
+# while they are still looking, and whoever wants the long read can ask.
+FIRST_WEEK_HOURS = 7 * 24.0
+
+
+def in_first_week(prefs: dict) -> bool:
+    """Whether this account demonstrably signed in for the first time within
+    `FIRST_WEEK_HOURS`. An unknown age is an old account, as everywhere here."""
+    age = account_age_hours(prefs)
+    return age is not None and age < FIRST_WEEK_HOURS
+
+
 def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
              ) -> list[tuple[Provider, str, str]]:
     """(provider, api_key, model) candidates in resolution order.

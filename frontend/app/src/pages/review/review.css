@@ -98,7 +98,6 @@
 
 @container ag-main (max-width: 40rem) {
   .ag-rev-card {
-    padding: 0.85rem 0.8rem 0.9rem;
     margin: 0.75rem 0;
   }
 }

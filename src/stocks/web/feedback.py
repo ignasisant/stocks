@@ -14,11 +14,20 @@ Two sinks, deliberately redundant:
 Who sent it: the account's data-dir name (the same pseudonymous slug the logs
 use), "guest" for anonymous visitors. The text itself is user input — treat it
 as untrusted when reading it back anywhere.
+
+The way back: `stocks feedback-reply <id> "…"` files the operator's answer to a
+submission under data/feedback/replies/<slug>.json, and the writer's app shows
+it once (`shell/FeedbackReply`). Kept here, beside the submissions, and not in
+the account's own directory: the running server treats its copy of an account
+as the current one after the first touch (`storage.restore_once`), so a reply
+written into it from outside would not be seen until the next boot.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -204,15 +213,17 @@ def stored(prefix: str = "data/feedback/") -> list[dict]:
                 continue
     for key in storage.list_keys(prefix):
         name = key.removeprefix(prefix)
-        if name in items or not name.endswith(".json"):
-            continue  # the .jpg siblings are fetched on demand by shot_path
+        if name in items or not name.endswith(".json") or "/" in name:
+            # The .jpg siblings are fetched on demand by shot_path; replies/
+            # holds the answers, not submissions.
+            continue
         raw = storage.read_key(key)
         if raw:
             try:
                 items[name] = json.loads(raw)
             except ValueError:
                 continue
-    return [items[k] for k in sorted(items)]
+    return [{**items[k], "id": k.removesuffix(".json")} for k in sorted(items)]
 
 
 def latest_ratings(items: list[dict]) -> list[dict]:
@@ -252,3 +263,99 @@ def shot_path(name: str) -> Path | None:
     if path.exists() or storage.restore(path):
         return path
     return None
+
+
+# ------------------------------------------------------------------ replies
+
+REPLIES_DIR = FEEDBACK_DIR / "replies"
+REPLY_CHARS = 600
+# How long a server keeps an account's replies before asking the bucket again:
+# every signed-in load asks, and almost every answer is "none".
+REPLIES_TTL_S = 300.0
+
+# A submission's id is its file stem: <stamp>-<6 hex>.
+_ID = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-[0-9a-f]{6}")
+_memo: dict[str, tuple[float, list[dict]]] = {}
+_memo_lock = threading.Lock()
+
+
+class NoSuchFeedback(LookupError):
+    """The id names no stored submission, or one nobody can be answered at."""
+
+
+def _replies_path(slug: str) -> Path:
+    return REPLIES_DIR / f"{slug}.json"
+
+
+def _read_replies(slug: str) -> list[dict]:
+    path = _replies_path(slug)
+    raw = storage.read(path) if storage.enabled() else None
+    if raw is None and path.exists():
+        raw = path.read_bytes()
+    try:
+        rows = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
+def submission(feedback_id: str) -> dict:
+    """The stored submission `feedback_id` names (`stored()`'s file stem)."""
+    if not _ID.fullmatch(feedback_id):
+        raise NoSuchFeedback(feedback_id)
+    path = FEEDBACK_DIR / f"{feedback_id}.json"
+    raw = path.read_bytes() if path.exists() else storage.read(path)
+    if not raw:
+        raise NoSuchFeedback(feedback_id)
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise NoSuchFeedback(feedback_id) from exc
+
+
+def reply(feedback_id: str, text: str) -> dict:
+    """File the operator's answer to one submission; returns that submission.
+
+    A second answer to the same submission replaces the first: the reader is
+    shown one, and it should be the last thing the operator meant. A guest has
+    no account to be shown anything in, so a guest's submission is refused.
+    """
+    item = submission(feedback_id)
+    slug = str(item.get("user") or "")
+    if not slug or slug == "guest":
+        raise NoSuchFeedback(feedback_id)
+    text = " ".join(text.split())[:REPLY_CHARS]
+    if not text:
+        raise ValueError("an empty reply")
+    stamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
+    rows = [r for r in _read_replies(slug) if r.get("id") != feedback_id]
+    rows.append({"id": feedback_id, "ts": stamp, "about": str(item.get("ts", "")),
+                 "kind": str(item.get("kind", "")), "text": text})
+    path = _replies_path(slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic.write_json(path, rows, ensure_ascii=False, indent=2)
+    storage.persist(path)
+    with _memo_lock:
+        _memo.pop(slug, None)
+    obs.event("feedback.replied", user=slug, kind=item.get("kind", ""), chars=len(text))
+    return item
+
+
+def replies_for(slug: str, *, now: float | None = None) -> list[dict]:
+    """Every answer filed for this account, oldest first; [] for a guest.
+
+    Read from the bucket, not from a restored copy, and held for
+    `REPLIES_TTL_S`: an answer reaches the reader within minutes of being
+    filed, and an account with none costs one read per few minutes.
+    """
+    if not slug or slug == "guest":
+        return []
+    now = time.monotonic() if now is None else now
+    with _memo_lock:
+        held = _memo.get(slug)
+        if held and now - held[0] < REPLIES_TTL_S:
+            return held[1]
+    rows = _read_replies(slug)
+    with _memo_lock:
+        _memo[slug] = (now, rows)
+    return rows

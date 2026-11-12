@@ -341,6 +341,33 @@ body {
   container: ag-main / inline-size;
 }
 
+/* Every page's section card pads by the same amount on a phone. The page
+   gutter, the card and the tiles inside it each pad the same edge, so the card
+   gives up a quarter of its desktop share; and one measure for all of them is
+   what keeps the page from shifting its inner edge as the reader moves from
+   Home to a ticker to Today. Scoped under `.ag-main` so it outranks the
+   page's own one-class rule, which loads after this sheet. `--card-pad`
+   is that measure, for a chart that bleeds to the card's edge. */
+@container ag-main (max-width: 38rem) {
+  .ag-main
+    :is(
+      .hm-card,
+      .tk-card,
+      .td-sec,
+      .pf-card,
+      .pf-proj-panel,
+      .ag-rev-card,
+      .ag-sec-card,
+      .sn-card,
+      .bk-card,
+      .im-card,
+      .lr-path
+    ) {
+    --card-pad: 12px;
+    padding: var(--card-pad);
+  }
+}
+
 .ag-nav {
   display: flex;
   flex-direction: column;

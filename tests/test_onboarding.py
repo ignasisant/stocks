@@ -68,6 +68,16 @@ def test_home_is_the_root_path_and_a_pageless_step_says_so():
     assert onboarding.by_id("assistant").page is None
 
 
+def test_the_tour_walks_a_handful_of_stops_when_simply_started():
+    """Twenty-odd stops was a walk nobody finished. The short one starts with
+    the import everything derives from, and every stop of it ships on every
+    deploy — a core stop a deploy filters out would shorten it to nothing."""
+    core = [s.id for s in onboarding.STEPS if s.core]
+    assert 3 <= len(core) <= onboarding.CORE_STEPS_MAX
+    assert core[0] == "import"
+    assert "claude" not in core
+
+
 def test_releases_reference_real_steps():
     unknown = [
         (r.version, item.slug)

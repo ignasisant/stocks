@@ -13,9 +13,11 @@ purpose — a probe has no token, and the answer tells nobody anything.
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from urllib.error import URLError
+from urllib.parse import urlsplit
 
 import anyio.to_thread
 import requests
@@ -221,9 +223,32 @@ def _log_user(request: Request) -> str:
         return "?"
 
 
+# A screen's slug as the app's router writes it; anything else in a Referer is
+# somebody else's URL.
+_PAGE_RE = re.compile(r"/[a-z0-9_/-]{0,63}")
+
+
+def _log_page(request: Request) -> str | None:
+    """The app screen the request was made from: the path of a Referer on this
+    host. Never its query (a ticker, a share id) and never another site's URL —
+    so an event says where in the app it happened, and nothing about where the
+    reader came from."""
+    try:
+        referer = urlsplit(request.headers.get("referer", ""))
+        if not referer.path or referer.netloc != request.headers.get("host", ""):
+            return None
+        return referer.path if _PAGE_RE.fullmatch(referer.path) else None
+    except Exception:  # noqa: BLE001 — a log field never fails a request
+        return None
+
+
 @app.middleware("http")
 async def _bind_user(request: Request, call_next):
-    with obs.context(user=_log_user(request)):
+    fields = {"user": _log_user(request)}
+    page = _log_page(request)
+    if page:
+        fields["page"] = page
+    with obs.context(**fields):
         return await call_next(request)
 
 

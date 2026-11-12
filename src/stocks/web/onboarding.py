@@ -5,7 +5,9 @@ and `api/routes/guide.py` serve it, and the React shell renders it as the tour,
 the "what's new" modal and the assistant-led walkthrough.
 
 * **Steps** walk a new account through the app one feature at a time, in the
-  order the work flows. For the connectable ones (ledger import, AI key,
+  order the work flows. Started plainly, the tour walks only the `core` ones
+  (`CORE_STEPS_MAX` at most); the rest are reached from its last stop, from a
+  "what's new" card or by `?tour=<id>`. For the connectable ones (ledger import, AI key,
   notifications, tax residence) a `done` predicate says whether this account has it
   switched on.
 * **Releases** carry the changelog as data. Each item names the tour step it
@@ -63,6 +65,12 @@ class Step:
     # "has this account imported anything" is two answers to one question, and
     # the one on screen would be whichever surface the reader happened to open.
     done: Callable[[dict, object], bool] | None = None
+    # One of the few stops the tour walks when it is simply started. The whole
+    # registry was a twenty-stop walk nobody finished; these are the ones an
+    # account needs to get going and to come back. The rest stay stops — a
+    # "what's new" card lands on one, `?tour=<id>` opens one, and the last core
+    # stop offers the full walk.
+    core: bool = False
 
 
 def _has_ledger(_prefs: dict, paths) -> bool:
@@ -117,6 +125,7 @@ STEPS: tuple[Step, ...] = (
         page="import_transactions",
         gated=True,
         done=_has_ledger,
+        core=True,
     ),
     Step(
         id="positions",
@@ -149,7 +158,7 @@ STEPS: tuple[Step, ...] = (
         page="portfolio",
         query={"tab": "dividends"},
     ),
-    Step(id="review", icon="swap_vert", page="review"),
+    Step(id="review", icon="swap_vert", page="review", core=True),
     Step(
         id="daily",
         icon="tips_and_updates",
@@ -180,6 +189,7 @@ STEPS: tuple[Step, ...] = (
         session={"chat_panel_open": True},
         gated=True,
         done=_has_ai_key,
+        core=True,
     ),
     Step(
         id="journal",
@@ -195,6 +205,7 @@ STEPS: tuple[Step, ...] = (
         session={"profile_tab": "notify"},
         gated=True,
         done=_has_push,
+        core=True,
     ),
     # Its own Profile tab: asking about the book from inside Claude, ChatGPT
     # or any other MCP app is somewhere the app could not be reached from at
@@ -618,6 +629,9 @@ RELEASES: tuple[Release, ...] = (
 )
 
 CURRENT_VERSION = RELEASES[-1].version
+
+#: The short walk stays short: a fifth core stop is the long tour coming back.
+CORE_STEPS_MAX = 4
 
 
 # --------------------------------------------------------------- shared state

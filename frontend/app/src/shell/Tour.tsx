@@ -3,7 +3,8 @@
  *
  * Both are one registry (`/onboarding`) and one modal in two modes — a step
  * explains a feature and offers to take you to it; a card announces one thing
- * that shipped and hands you to the step that explains it. Keeping them
+ * that shipped and hands you to the step that explains it. The walkthrough is
+ * the registry's few `core` stops; its last one offers the whole list (`walk`). Keeping them
  * together is not tidiness: a card whose step this deploy does not carry is
  * dropped server-side, and a client that fetched the two separately could draw
  * an announcement pointing nowhere.
@@ -43,6 +44,7 @@ import {
   readPark,
   writePark,
   type Action,
+  type Mode,
   type Place,
 } from "./tourPark";
 import { useDialog } from "./useDialog";
@@ -57,6 +59,8 @@ type Step = {
   session: Record<string, string>;
   gated: boolean;
   done: boolean | null;
+  /** One of the few stops the tour walks when it is simply started. */
+  core?: boolean;
   title_key: string;
   body_key: string;
   cta_key: string | null;
@@ -130,6 +134,32 @@ function Rich({ text }: { text: string }) {
 type Guide = { surface: string; finished: boolean };
 
 /**
+ * The stops a walkthrough pages through: the core few for "tour", every one
+ * for "all". A registry with no core stop marked walks everything, so the
+ * short tour can never be an empty one.
+ */
+export function walk<S extends { core?: boolean }>(steps: S[], mode: Mode): S[] {
+  if (mode === "all") return steps;
+  const core = steps.filter((s) => s.core);
+  return core.length ? core : steps;
+}
+
+/**
+ * Where `?tour=` opens: `1` is the short walk from the top, `all` the whole
+ * list, and a step's id that step — in the short walk when it is one of its
+ * stops, in the whole list otherwise, so a deep link to any stop still lands
+ * on it. An id nobody knows opens the short walk.
+ */
+export function asking(steps: { id: string; core?: boolean }[], asked: string): Place {
+  if (asked === "all") return { mode: "all", at: 0, open: true };
+  const short = walk(steps, "tour").findIndex((s) => s.id === asked);
+  if (short >= 0) return { mode: "tour", at: short, open: true };
+  const full = steps.findIndex((s) => s.id === asked);
+  if (full >= 0) return { mode: "all", at: full, open: true };
+  return { mode: "tour", at: 0, open: true };
+}
+
+/**
  * The first-load decision, once per document: a parked strip, the tour, the
  * news, or nothing — and whether that took the one interruption a first load
  * gets. Pure, and exported for the test.
@@ -138,7 +168,7 @@ export function firstLoad(
   state: Pick<State, "steps" | "news" | "tour_done">,
   guide: Guide,
   guest: boolean,
-  parked: { mode: "tour" | "news"; at: number } | null,
+  parked: { mode: Mode; at: number } | null,
 ): {
   place: Place | null;
   interrupted: boolean;
@@ -151,7 +181,10 @@ export function firstLoad(
   // went to look at. A strip is not an interruption.
   let forget = false;
   if (parked) {
-    const length = parked.mode === "tour" ? state.steps.length : state.news.length;
+    const length =
+      parked.mode === "news"
+        ? state.news.length
+        : walk(state.steps, parked.mode).length;
     if (length) {
       return {
         place: { mode: parked.mode, at: clamp(parked.at, length), open: false },
@@ -236,10 +269,9 @@ export function Tour() {
           // the app lands on the step it names. A guest may ask too: the steps
           // that read somebody's own data are shown locked, not hidden.
           if (asked) {
-            const index = next.steps.findIndex((s) => s.id === asked);
             booted.current = true;
             firstLoadInterrupted(true);
-            setPlace({ mode: "tour", at: index < 0 ? 0 : index, open: true });
+            setPlace(asking(next.steps, asked));
             return;
           }
           if (booted.current) return;
@@ -296,7 +328,8 @@ export function Tour() {
 
   if (state && welcome) return <Welcome steps={state.steps} onClose={closeWelcome} />;
   if (!state || !place) return null;
-  const list = place.mode === "tour" ? state.steps : state.news;
+  const steps = place.mode === "news" ? state.steps : walk(state.steps, place.mode);
+  const list = place.mode === "news" ? state.news : steps;
   if (!list.length) return null;
   const at = clamp(place.at, list.length);
   const move = (to: number, open = true) => setPlace({ ...place, at: to, open });
@@ -305,10 +338,10 @@ export function Tour() {
     return (
       <Strip
         place={{ ...place, at }}
-        state={state}
+        list={list}
         onResume={() => move(at)}
         onNext={() => move(at + 1)}
-        onExit={() => act(place.mode === "tour" ? "finish" : "news_done", place)}
+        onExit={() => act(place.mode === "news" ? "news_done" : "finish", place)}
       />
     );
   }
@@ -342,7 +375,11 @@ export function Tour() {
         className="ag-tour-btn ag-tour-lead"
         onClick={() => {
           act("goto", place);
-          if (s.path !== null) go(canonical(s.path ?? ""), arrive(s, place.mode));
+          if (s.path !== null)
+            go(
+              canonical(s.path ?? ""),
+              arrive(s, place.mode === "news" ? "news" : "tour"),
+            );
           else openAssistant();
         }}
       >
@@ -400,12 +437,15 @@ export function Tour() {
     );
   }
 
-  const last = at === state.steps.length - 1;
+  const last = at === steps.length - 1;
+  // The short walk ends on a way into the long one, for the reader who wants
+  // every stop; the long one has nowhere further to go.
+  const more = last && place.mode === "tour" && steps.length < state.steps.length;
   return (
     <Modal
       title={t("tour.launch")}
       at={at}
-      pages={state.steps.map((s) => ({
+      pages={steps.map((s) => ({
         icon: s.icon,
         heading: t(s.title_key),
         body: t(s.body_key),
@@ -423,8 +463,8 @@ export function Tour() {
         note: s.gated && guest ? t("tour.locked") : null,
         lead: leadLabel(s),
       }))}
-      lead={lead(state.steps[at])}
-      progress={t("tour.progress", { n: at + 1, total: state.steps.length })}
+      lead={lead(steps[at])}
+      progress={t("tour.progress", { n: at + 1, total: steps.length })}
       // Parks rather than ends: the tour is what the reader came for, and the
       // strip above the page is how they get back into it.
       onClose={() => act("dismiss", place)}
@@ -436,6 +476,15 @@ export function Tour() {
       actions={
         <>
           {back}
+          {more ? (
+            <button
+              type="button"
+              className="ag-tour-quiet"
+              onClick={() => setPlace({ mode: "all", at: 0, open: true })}
+            >
+              {t("tour.full_tour")}
+            </button>
+          ) : null}
           {/* Moving on is the tour's own action, so it is the filled one and
               sits last. */}
           <button
@@ -461,21 +510,22 @@ export function Tour() {
  */
 function Strip({
   place,
-  state,
+  list,
   onResume,
   onNext,
   onExit,
 }: {
   place: Place;
-  state: State;
+  /** The list the place is in: the walked steps, or the cards. */
+  list: (Step | Card)[];
   onResume: () => void;
   onNext: () => void;
   onExit: () => void;
 }) {
   const t = useT();
-  const tour = place.mode === "tour";
-  const total = tour ? state.steps.length : state.news.length;
-  const item = tour ? state.steps[place.at]! : state.news[place.at]!;
+  const tour = place.mode !== "news";
+  const total = list.length;
+  const item = list[place.at]!;
   return (
     <div
       className="ag-tour-strip"

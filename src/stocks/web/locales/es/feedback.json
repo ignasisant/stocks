@@ -21,6 +21,7 @@
   "feedback.dictate_stop": "Parar y transcribir",
   "feedback.dictating": "Transcribiendo…",
   "feedback.sent": "¡Gracias — recibido!",
+  "feedback.reply_title": "Sobre lo que enviaste el {date}",
   "feedback.empty": "Escribe algo primero.",
   "feedback.rate_limited": "Suficiente por ahora — inténtalo más tarde.",
   "feedback.failed": "No se pudo guardar tu comentario. Inténtalo más tarde.",

@@ -67,8 +67,12 @@ const ALL_MARKERS: readonly Marker[] = ["results", "dividends"];
 
 /** What `render` has no layout to measure: the width a test or the server sees. */
 const FALLBACK_WIDTH = 760;
-/** The tallest the plot is drawn on a phone; `fitHeight` squares it up from its width. */
-const PHONE_HEIGHT = 300;
+/**
+ * The plot's height on a phone, whatever its width: the chart is what a phone
+ * opens a ticker for, so it gets the room a broker app gives it rather than a
+ * strip squared off the card's width.
+ */
+const PHONE_HEIGHT = 340;
 /** Room an axis label needs along the x axis, date and gap together. */
 const LABEL_SLOT = 120;
 
@@ -155,7 +159,7 @@ export function PriceChartWait({ mobile }: { mobile: boolean }) {
     <div
       className="tk-plot tk-plot-wait"
       ref={wrap}
-      style={{ minHeight: fitHeight(width, mobile ? PHONE_HEIGHT : 340) }}
+      style={{ minHeight: mobile ? PHONE_HEIGHT : fitHeight(width, 340) }}
     >
       <Skeleton rows={8} />
     </div>
@@ -408,13 +412,15 @@ export function PriceChart({
   const intraday = intradayBars;
 
   // Drawn at the width the card really has, so a unit is a pixel and the
-  // labels print at the size they say. On a phone the y labels move inside the
-  // plot: a 48px gutter is a seventh of the screen.
+  // labels print at the size they say. On a phone the plot runs to the card's
+  // edges (`.tk-plot-hero`) and the y labels move inside it: a 48px gutter is a
+  // seventh of the screen. Its insets are the card's padding, so the first
+  // date and the labels line up with the text over them.
   const box = frame({
     width,
-    height: fitHeight(width, mobile ? PHONE_HEIGHT : 340),
-    left: mobile ? 8 : 48,
-    right: 14,
+    height: mobile ? PHONE_HEIGHT : fitHeight(width, 340),
+    left: mobile ? 12 : 48,
+    right: mobile ? 12 : 14,
     // Room over the plot for the events' letter tags.
     top: 20,
     bottom: 26,

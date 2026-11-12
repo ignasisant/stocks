@@ -19,6 +19,7 @@
  */
 
 import type { Outcome, Preview, Staged } from "./api";
+import type { Fix } from "./fixes";
 import type { WipeChoice } from "./Wipe";
 
 /**
@@ -34,6 +35,8 @@ type Kept = {
   platform: string;
   answer?: { platform: string; wipe: boolean; outcome: Promise<Outcome<Preview>> };
   anchor?: Anchor;
+  /** The reader's word on the tickers of one reading (`fixes.ts`). */
+  fixes?: { reading: string; list: Fix[] };
 };
 
 let kept: Kept | null = null;
@@ -82,6 +85,18 @@ export function preview(
     });
   }
   return outcome;
+}
+
+/**
+ * The tickers the reader corrected on `reading`, for the way back. They
+ * outlive `forget`: a preview asked again reads the same bytes to the same
+ * names, and the reader should not have to correct them twice.
+ */
+export const fixesOf = (reading: string): Fix[] =>
+  kept?.fixes?.reading === reading ? kept.fixes.list : [];
+
+export function keepFixes(reading: string, list: Fix[]): void {
+  if (kept) kept.fixes = { reading, list };
 }
 
 const plainClick = (event: MouseEvent) =>

@@ -101,7 +101,6 @@
 
 @container ag-main (max-width: 40rem) {
   .ag-sec-card {
-    padding: 0.85rem 0.8rem 0.9rem;
     margin-bottom: 0.75rem;
   }
 }

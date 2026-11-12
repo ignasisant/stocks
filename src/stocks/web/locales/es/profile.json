@@ -231,6 +231,7 @@
   "profile.connector_title": "Tu cartera en tu app de IA",
   "profile.connector_sub": "Pregunta a Claude, ChatGPT, Codex o cualquier app MCP por tu cartera, con tus cifras reales y lo que el asistente recuerda de ti. Solo lee, salvo que al conectar permitas también editar.",
   "profile.connector_ok": "Conectado ✓ — prueba en tu app: «¿cómo va mi cartera este año?»",
+  "profile.connector_wait": "Aún sin conectar. Añade la dirección en tu app y esto pasará a Conectado solo.",
   "profile.connector_url": "Dirección del conector",
   "profile.connector_url_help": "Pégala en tu app. Te pedirá entrar aquí y aprobarlo.",
   "profile.connector_copy": "Copiar",

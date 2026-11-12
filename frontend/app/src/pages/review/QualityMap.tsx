@@ -402,10 +402,14 @@ export function QualityMap({
   // Nothing to pick from before the window's scores land.
   const driftable = counts.dear + counts.cheap > 0;
   const gainable = counts.better + counts.worse > 0;
+  // A pick outlives a change of window; one the new window has no names
+  // for reads as "all" there and comes back with a window that has some.
+  const driftOn = drift !== "all" && counts[drift] > 0 ? drift : "all";
+  const gainOn = gain !== "all" && counts[gain] > 0 ? gain : "all";
   const kept = (row: ReviewRow) =>
-    (!driftable || drift === "all" || drifted(row) === drift) &&
-    (!gainable || gain === "all" || gained(row) === gain);
-  const filtered = (driftable && drift !== "all") || (gainable && gain !== "all");
+    (driftOn === "all" || drifted(row) === driftOn) &&
+    (gainOn === "all" || gained(row) === gainOn);
+  const filtered = driftOn !== "all" || gainOn !== "all";
   const matches = (
     !query
       ? placed
@@ -566,8 +570,6 @@ export function QualityMap({
               value={since ?? "now"}
               onPick={(next) => {
                 setSince(next === "now" || next === since ? null : next);
-                setDrift("all");
-                setGain("all");
                 close();
               }}
               className="ag-rev-window"
@@ -602,7 +604,7 @@ export function QualityMap({
                   ),
                 },
               ]}
-              value={drift}
+              value={driftOn}
               onPick={(next) => {
                 setDrift(next);
                 close();
@@ -638,7 +640,7 @@ export function QualityMap({
                   ),
                 },
               ]}
-              value={gain}
+              value={gainOn}
               onPick={(next) => {
                 setGain(next);
                 close();

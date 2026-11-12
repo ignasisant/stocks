@@ -7,12 +7,21 @@ those in one file. The ledger wants one thing — the Yahoo Finance ticker the
 rest of the app prices with — and extraction copies whatever the page said,
 so something has to bridge the two.
 
-That something is the model, not a table. Knowing that US0231351067 is Amazon,
-that LVMH trades as MC.PA and that PDD's ADR is PDD is exactly what a language
-model already holds and what a lookup file can only ever hold a slice of; the
-slice is what made this fail on a French listing and on every ISIN. So the
-labels a document actually used are collected and sent in one small call, and
-the reply is a label -> ticker map.
+For a name or a broker's code that something is the model, not a table.
+Knowing that LVMH trades as MC.PA and that PDD's ADR is PDD is exactly what a
+language model already holds and what a lookup file can only ever hold a slice
+of; the slice is what made this fail on a French listing. So the labels a
+document actually used are collected and sent in one small call, and the reply
+is a label -> ticker map.
+
+An ISIN is the exception, and is never asked about. It is twelve characters
+with no meaning to recall them by, and a model answers one it half remembers
+with a real ticker all the same: Micron's US5951121038 came back as AMT, which
+is ticker-shaped, listed and priced, so nothing downstream could fault it. An
+ISIN has a registry instead. It stays the row's ticker, the way DEGIRO's and
+Trade Republic's parsers book it, and the import's validation places it
+(OpenFIGI, then Yahoo's search); one nobody places is shown to the reader to
+name.
 
 The reply is not trusted blindly — a value that isn't ticker-shaped is
 discarded, and anything the model declines to name is left exactly as the
@@ -57,8 +66,8 @@ _SYSTEM = """You map instrument labels from a broker statement to their ticker
 symbols, as Yahoo Finance spells them.
 
 You are given a JSON array of labels. Each is whatever a broker printed to
-identify a holding: a company name, an ISIN, a symbol with an exchange code,
-or a local broker code.
+identify a holding: a company name, a symbol with an exchange code, or a
+local broker code.
 
 Answer with every input label, copied verbatim as the key, mapped to its
 ticker as a string, or to null.
@@ -67,7 +76,6 @@ Rules:
 - Use the listing the instrument actually trades as. A US listing is bare
   ("AMZN"); anywhere else takes the Yahoo suffix ("MC.PA", "SAP.DE",
   "AZN.L", "NESN.SW"). An ADR maps to the ADR's own US symbol ("PDD").
-- An ISIN maps to the ticker of the security it identifies.
 - A label that is not an instrument at all — a currency code, a cash or fee
   line, an account or transaction id — maps to null.
 - null is the right answer whenever you are not sure. A wrong ticker books
@@ -137,6 +145,9 @@ def resolve(labels: list[str], provider: Provider, api_key: str = "",
     `ask(system, content) -> str` is the model call, injected so this module
     stays free of provider plumbing (llm_map passes its own `_send`). The
     system prompt it is handed is complete, reply schema included.
+
+    An ISIN maps to None without being asked about: the registry names it,
+    not the model (see the module docstring).
     """
     wanted = [label for label in dict.fromkeys(labels) if label.strip()]
     out: dict[str, str | None] = {}
@@ -144,6 +155,8 @@ def resolve(labels: list[str], provider: Provider, api_key: str = "",
     for label in wanted:
         if (hit := obvious(label)) is not None:
             out[label] = hit
+        elif _ISIN_RE.match(label.strip().upper()):
+            out[label] = None
         elif label.upper() in _memo:
             out[label] = _memo[label.upper()]
         else:

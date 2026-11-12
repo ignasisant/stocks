@@ -2,6 +2,7 @@
   "notify.shares": "{n} acciones",
   "notify.alerts_subject": "⚠️ Alertas de precio",
   "notify.nudge_title": "TopStocks — seguimos aquí",
+  "notify.feedback_reply_title": "TopStocks — sobre lo que nos contaste",
   "notify.nudge_away": "{days} días desde tu última visita.",
   "notify.nudge_book": "Cartera {value} · semana {change}.",
   "notify.nudge_mover": "Mayor movimiento: {ticker} {pct}.",

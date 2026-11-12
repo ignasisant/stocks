@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { firstLoad } from "./Tour";
+import { asking, firstLoad, walk } from "./Tour";
 import { after, clamp, readPark, writePark, type Place } from "./tourPark";
 import { browserLang, pinnedLang } from "./i18n";
 import { bannerDismissed, dismissBanner } from "./guest";
@@ -58,6 +58,64 @@ describe("after", () => {
 
   it("retires the tour only when it is finished or ended", () => {
     expect(after(tour, "finish")).toEqual({ place: null, stamp: { done: true } });
+  });
+});
+
+describe("the two lengths of the walkthrough", () => {
+  const steps = [
+    { id: "welcome" },
+    { id: "import", core: true },
+    { id: "risk" },
+    { id: "review", core: true },
+  ];
+  const full: Place = { mode: "all", at: 2, open: true };
+
+  it("walks the core stops when simply started, every stop when asked for all", () => {
+    expect(walk(steps, "tour").map((s) => s.id)).toEqual(["import", "review"]);
+    expect(walk(steps, "all")).toBe(steps);
+  });
+
+  it("walks everything when the registry marks no core stop", () => {
+    const plain: { id: string; core?: boolean }[] = [{ id: "a" }, { id: "b" }];
+    expect(walk(plain, "tour")).toBe(plain);
+  });
+
+  it("opens the short walk from the top, or on the core stop a link names", () => {
+    expect(asking(steps, "1")).toEqual({ mode: "tour", at: 0, open: true });
+    expect(asking(steps, "review")).toEqual({ mode: "tour", at: 1, open: true });
+    expect(asking(steps, "nope")).toEqual({ mode: "tour", at: 0, open: true });
+  });
+
+  it("lands a link to any other stop on it, in the whole list", () => {
+    expect(asking(steps, "risk")).toEqual({ mode: "all", at: 2, open: true });
+    expect(asking(steps, "all")).toEqual({ mode: "all", at: 0, open: true });
+  });
+
+  it("parks and retires the whole list the way the short walk does", () => {
+    expect(after(full, "dismiss")).toEqual({
+      place: { ...full, open: false },
+      stamp: null,
+    });
+    expect(after(full, "finish")).toEqual({ place: null, stamp: { done: true } });
+    const store = memory();
+    writePark({ mode: "all", at: 2 }, store);
+    expect(readPark(store)).toEqual({ mode: "all", at: 2 });
+  });
+
+  it("brings a parked strip back into the list it was parked in", () => {
+    const state = { steps: steps as never[], news: [], tour_done: true };
+    const modal = { surface: "modal", finished: true };
+    // Index 3 exists in the whole list, not among the two core stops.
+    expect(firstLoad(state, modal, false, { mode: "all", at: 3 }).place).toEqual({
+      mode: "all",
+      at: 3,
+      open: false,
+    });
+    expect(firstLoad(state, modal, false, { mode: "tour", at: 3 }).place).toEqual({
+      mode: "tour",
+      at: 1,
+      open: false,
+    });
   });
 });
 

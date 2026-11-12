@@ -748,6 +748,10 @@ WRITES = {
     # the reason the preview is.
     ("/v1/import/venues", "post"),
     ("/v1/import/venue", "post"),
+    # Which ticker a row really is. It writes nothing (the corrected rows
+    # travel with the commit) but prices a symbol against fills, the way the
+    # offer above does, and its answer is logged as the account's.
+    ("/v1/import/ticker", "post"),
     # The demo book: fabricated rows, in an app that also files tax reports.
     # Writable because an empty account can otherwise see none of the ledger
     # half of it, and safe only while every row stays marked `demo` and the
@@ -822,6 +826,8 @@ WRITES = {
     ("/v1/feedback", "post"),
     # The one-time score of the app. Session-only: a guest is never asked.
     ("/v1/feedback/rating", "post"),
+    # Marking the operator's answers to this account's reports as shown.
+    ("/v1/feedback/replies/seen", "post"),
     # A browser error, logged. A guest may report one too, and a token has no
     # browser to report from.
     ("/v1/client-error", "post"),

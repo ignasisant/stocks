@@ -231,6 +231,7 @@
   "profile.connector_title": "Il tuo portafoglio nella tua app di IA",
   "profile.connector_sub": "Chiedi a Claude, ChatGPT, Codex o a qualsiasi app MCP del tuo portafoglio, con i tuoi numeri reali e la memoria che l'assistente ha di te. Legge soltanto, a meno che tu non consenta anche le modifiche al collegamento.",
   "profile.connector_ok": "Collegato ✓ — prova nella tua app: “come sta andando il mio portafoglio quest'anno?”",
+  "profile.connector_wait": "Non ancora connesso. Aggiungi l'indirizzo nella tua app e qui passerà a Connesso da solo.",
   "profile.connector_url": "Indirizzo del connettore",
   "profile.connector_url_help": "Incollalo nella tua app. Ti chiede di accedere qui e di approvarlo.",
   "profile.connector_copy": "Copia",

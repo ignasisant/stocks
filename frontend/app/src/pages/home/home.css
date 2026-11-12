@@ -36,15 +36,6 @@
   box-shadow: var(--ag-shadow-card);
 }
 
-/* On a phone the page gutter, the card and the tiles inside it each pad the
-   same edge: at 16px apiece a quarter of the width went to padding before a
-   label. The page gutter stays; the card gives up a third of its share. */
-@container ag-main (max-width: 38rem) {
-  .hm-card {
-    padding: 12px;
-  }
-}
-
 .hm-card-title {
   margin: 0;
   font-size: var(--ag-fs-base, 0.875rem);
@@ -804,14 +795,15 @@
   font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
-/* The glance sparkline. Sits between the tile rows at a fixed height so the
-   card does not jump when the series lands after the figures. The row holds
-   the plot and its scale; the plot takes every pixel the scale leaves. */
+/* The glance chart. A fixed height so the card does not jump when the
+   series lands. */
 .hm-spark-plot {
   display: flex;
   align-items: stretch;
   gap: 6px;
-  margin: 12px 0 4px;
+  /* Room under the plot for the low's label: on a book that started small the
+     low sits on the floor, and its figure hangs below it. */
+  margin: 12px 0 22px;
 }
 
 .hm-spark-wrap {
@@ -830,14 +822,14 @@
 .hm-spark {
   display: block;
   width: 100%;
-  height: 56px;
+  height: 160px;
   /* The scrub dots sit on the plot's edge on the first and last day. */
   overflow: visible;
 }
 
 /* The reserved box of a plot with nothing to draw yet. */
 .hm-spark-empty {
-  height: 56px;
+  height: 160px;
 }
 
 /* Focus by keyboard shows the ring; a click's focus shows nothing. */
@@ -854,9 +846,9 @@
   stroke-width: 1;
 }
 
-/* The hover box is the shared `Tip` (ui/chart/chart.css); this is only where
-   it sits on a 56px plot: tighter than the full-size box, and never taking
-   the pointer, so it never fights the wrap's own pointermove. */
+/* The comparison box is the shared `Tip` (ui/chart/chart.css); this is only
+   where it sits on the small plot: tighter than the full-size box, and never
+   taking the pointer, so it never fights the wrap's own pointermove. */
 .hm-spark-tip {
   top: 4px;
   max-width: min(240px, 90%);
@@ -865,8 +857,8 @@
   line-height: 1.4;
 }
 
-/* Where nothing hovers the 56px plot is entirely under the fingertip, and so
-   was a box inside it: lifted out above the plot, over the key. */
+/* Where nothing hovers the plot is under the fingertip, and so was a box
+   inside it: lifted out above the plot, over the head. */
 @media (hover: none) {
   .hm-spark-tip {
     top: auto;
@@ -1171,58 +1163,96 @@ a.hm-step {
   font-size: var(--ag-fs-md, 0.8125rem);
 }
 
-/* The chart's toolbar: key on the left, range selector on the right, one
-   row. Wraps on a narrow card (or beside a wide chat drawer) with the selector
-   keeping the right edge; `margin-left: auto` also holds it there when a short
-   window leaves it without a key. */
+/* The chart's head: the figure the finger points at, what the market did
+   over the window, and the two references with their level. */
 .hm-spark-head {
+  margin-top: 16px;
+}
+
+.hm-spark-figure {
+  margin: 0;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-2xl);
+  font-weight: 700;
+  letter-spacing: var(--ag-track-2xl);
+  line-height: 1.1;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-spark-change {
+  margin: 2px 0 8px;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-spark-when {
+  color: var(--ag-text-muted);
+  font-weight: 400;
+}
+
+/* The range selector, under the plot. On a phone it spans the row with even
+   segments, one line always: six windows at their own width overflowed one
+   and `5y` dropped onto a second row of its own. */
+.hm-spark-foot {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
-.hm-spark-head > .hm-segmented {
-  margin-left: auto;
-}
-
-/* On a phone the key fills its row, so the selector gets one of its own:
-   full width with even segments, a bigger target under a thumb. One line,
-   always: at the coarse pointer's padding six windows overflowed a phone and
-   `5y` dropped onto a second row of its own. */
 @container ag-main (max-width: 38rem) {
-  .hm-spark-head > .hm-segmented {
+  .hm-spark-foot > .hm-segmented {
     flex: 1 1 100%;
     flex-wrap: nowrap;
   }
 
-  .hm-spark-head .ag-seg-opt {
+  .hm-spark-foot .ag-seg-opt {
     flex: 1 1 0;
     min-width: 0;
     padding-inline: 0.25rem;
   }
 }
 
-/* The window's own extremes, one at each end of the plot's height: the line
-   has a shape without them and no size. A column as tall as the plot, top
-   label flush with its top edge and bottom label with its bottom one. */
-.hm-spark-scale {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
-  color: var(--ag-text-muted);
+/* The window's high and low, each by its point: the high over it, the low
+   under it, and pulled inward at either end of the plot. Not a target: the
+   plot under them scrubs. */
+.hm-spark-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: var(--ag-text-secondary);
   font-size: var(--ag-fs-2xs);
   line-height: 1;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-/* The sparkline's key. Small and inline: it names two lines, it is not a
-   chart legend in its own right. */
+.hm-spark-mark {
+  position: absolute;
+  /* A halo of the card behind the figure: a dashed reference running under
+     it must not strike it through. */
+  text-shadow:
+    0 0 3px var(--ag-surface-card),
+    0 0 3px var(--ag-surface-card),
+    0 0 2px var(--ag-surface-card);
+  --mark-x: -50%;
+  --mark-y: calc(-100% - 6px);
+  transform: translate(var(--mark-x), var(--mark-y));
+}
+
+.hm-spark-mark-under {
+  --mark-y: 6px;
+}
+
+.hm-spark-mark-start {
+  --mark-x: 0%;
+}
+
+.hm-spark-mark-end {
+  --mark-x: -100%;
+}
+
+/* The references' key, with each one's level on the day in the head. */
 .hm-spark-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1242,8 +1272,8 @@ a.hm-step {
   white-space: nowrap;
 }
 
-/* The period's peak is a figure, not a label: set apart from its name by
-   weight, on fixed-width digits so a range switch does not jog the key. */
+/* A level is a figure, not a label: set apart from its name by weight, on
+   fixed-width digits so a scrub does not jog the key. */
 .hm-spark-legend-figure {
   color: var(--ag-text-secondary);
   font-weight: 600;
@@ -1258,37 +1288,12 @@ a.hm-step {
 }
 
 .hm-spark-injected {
-  border-top: 2px dashed var(--ag-text-muted);
-}
-
-.hm-spark-value {
-  border-top: 2px solid var(--ag-brand-accent);
-}
-
-.hm-spark-max {
-  border-top: 2px dashed var(--ag-text-muted);
+  border-top: 2px solid var(--ag-text-muted);
 }
 
 /* Colour set inline: the SPY slot `seriesColors` gives every chart. */
 .hm-spark-index {
   border-top: 2px dashed;
-}
-
-/* The band's two signs: a swatch of the fill, so colour is not the only
-   word for gain and loss. */
-.hm-spark-band {
-  height: 8px;
-  border-top: 0;
-}
-
-.hm-spark-band-gain {
-  background: var(--ag-profit-band);
-  border-bottom: 2px solid var(--ag-up);
-}
-
-.hm-spark-band-loss {
-  background: var(--ag-loss-band);
-  border-bottom: 2px solid var(--ag-down);
 }
 
 /* ------------------------------------------------------------- the market */

@@ -23,7 +23,8 @@
  * is used (`stocks logs connector`): the first read names where the reader
  * came from (`?from=`), and each copy says which line was copied, for which
  * app. Coming back from the app refetches, so a connection made there turns
- * into "connected" here without a reload.
+ * into "connected" here without a reload — and until then the card leads with
+ * "not connected yet", so neither state has to be guessed.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -201,6 +202,12 @@ function Copy({
   );
 }
 
+/**
+ * Where a desktop or terminal app takes its code: the reader's own machine.
+ * It names no one they could check, so the line says nothing.
+ */
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
 function Line({ connection, onGone }: { connection: Connection; onGone: () => void }) {
   const t = useT();
   const lang = useLang();
@@ -255,9 +262,11 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
             </Badge>
           )}
         </span>
-        <span className="pr-conn-meta">
-          {t("profile.connector_returns_to", { host: connection.redirect_host })}
-        </span>
+        {!LOOPBACK.has(connection.redirect_host) && (
+          <span className="pr-conn-meta">
+            {t("profile.connector_returns_to", { host: connection.redirect_host })}
+          </span>
+        )}
         <span className="pr-conn-meta">
           {t("profile.connector_since", { date: day(connection.created, lang) ?? "" })}
           {" · "}
@@ -333,11 +342,18 @@ export function Connector({
 
   return (
     <Card title={t("profile.connector_title")} sub={t("profile.connector_sub")}>
-      {connections.length > 0 && (
+      {/* The state leads, either way: with the door open and nobody in, the
+          card says so — and that it will change by itself — instead of
+          leaving "connected" to be read off a line that is not there. */}
+      {connections.length > 0 ? (
         <p className="pr-conn-ok" role="status">
           {t("profile.connector_ok")}
         </p>
-      )}
+      ) : url ? (
+        <p className="pr-conn-ok pr-conn-wait" role="status">
+          {t("profile.connector_wait")}
+        </p>
+      ) : null}
       {url && (
         <>
           <Row

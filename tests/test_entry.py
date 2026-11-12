@@ -80,6 +80,11 @@ def test_growth_falls_back_to_the_long_run_and_roic_reads_the_higher():
     assert growth.value == 10.0 and growth.state == entry.FAIL
     (roic,) = entry.check(_checklist(roic_min=30), METRICS)
     assert roic.value == 41.0 and roic.state == entry.PASS
+    assert roic.basis == "ex_goodwill"
+    (reported,) = entry.check(
+        _checklist(roic_min=30), {"roic": 0.5, "roic_ex_goodwill": 0.4}
+    )
+    assert reported.value == 50.0 and reported.basis is None
 
 
 def test_a_missing_figure_is_unknown_never_a_verdict():

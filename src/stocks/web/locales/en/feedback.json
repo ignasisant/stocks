@@ -21,6 +21,7 @@
   "feedback.dictate_stop": "Stop and transcribe",
   "feedback.dictating": "Transcribing…",
   "feedback.sent": "Thanks — received!",
+  "feedback.reply_title": "About what you sent on {date}",
   "feedback.empty": "Write something first.",
   "feedback.rate_limited": "That's plenty for now — try again in a while.",
   "feedback.failed": "Could not save your feedback. Please try again later.",

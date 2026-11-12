@@ -10,6 +10,20 @@ import { Toaster as Sonner } from "sonner";
 import "sonner/dist/styles.css";
 import "./toast.css";
 
+// Where it sits: bottom right, lifted over the phone's tab bar (`--dock`,
+// which already carries the home indicator's inset) and moved out of the open
+// chat drawer's way (`--toast-right`, set in chat.css). Props, not CSS: sonner
+// writes its offsets inline on the toaster, over any stylesheet.
+const OFFSET = {
+  right: "var(--toast-right, max(20px, env(safe-area-inset-right)))",
+  bottom: "calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)))",
+};
+const MOBILE_OFFSET = {
+  right: "max(16px, env(safe-area-inset-right))",
+  left: "max(16px, env(safe-area-inset-left))",
+  bottom: "calc(var(--dock, 0px) + max(16px, env(safe-area-inset-bottom)))",
+};
+
 export function Toaster() {
   return (
     <Sonner
@@ -17,6 +31,8 @@ export function Toaster() {
       theme="dark"
       visibleToasts={3}
       gap={8}
+      offset={OFFSET}
+      mobileOffset={MOBILE_OFFSET}
       // Sonner draws its own chrome unless told not to; ours is `toast.css`.
       toastOptions={{
         unstyled: true,

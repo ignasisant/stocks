@@ -11,5 +11,6 @@
   "validate.duplicate": "esta misma operación ya está en tu cartera o antes en el archivo — importarla otra vez la cuenta dos veces",
   "validate.near_duplicate": "tu cartera o este archivo ya tiene una {action} de {quantity} {ticker} el {date} a otro precio — seguramente la misma operación leída dos veces",
   "validate.oversell": "vende {quantity} pero el {date} solo había {held} — ¿falta una compra anterior o un split?",
-  "validate.split_added": "añadido un split {ratio}:1 del {date} según Yahoo — tu extracto no lo muestra y sin él las ventas posteriores no cuadran"
+  "validate.split_added": "añadido un split {ratio}:1 del {date} según Yahoo — tu extracto no lo muestra y sin él las ventas posteriores no cuadran",
+  "validate.ticker_doubt": "el precio del {date} queda lejos del cierre de {ticker} ese día — comprueba que es la empresa que operaste"
 }

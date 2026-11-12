@@ -1134,6 +1134,7 @@ export type EntryCheck = {
   "level": number;
   "value": number | null;
   "state": string;
+  "basis": string | null;
 };
 
 export type EntryCriteria = {
@@ -1210,6 +1211,13 @@ export type Feedback = {
   "page"?: string;
   "shot"?: string | null;
   "lang"?: string | null;
+};
+
+export type FeedbackReply = {
+  "id": string;
+  "about": string;
+  "kind": string;
+  "text": string;
 };
 
 export type Fees = {
@@ -1526,6 +1534,7 @@ export type ImportPreview = {
   "needs_broker"?: boolean;
   "holdings"?: ImportHolding[];
   "unlisted"?: string[];
+  "doubted"?: string[];
 };
 
 export type ImportResult = {
@@ -2654,6 +2663,10 @@ export type Replace = {
   "old": string;
 };
 
+export type RepliesSeen = {
+  "ids": string[];
+};
+
 export type RepurchaseWindow = {
   "ticker": string;
   "sell_date": string;
@@ -3409,6 +3422,21 @@ export type Thread = {
   "running": Running | null;
 };
 
+export type TickerAnswer = {
+  "code": string;
+  "currency": string;
+  "fills": VenueFill[];
+  "query"?: string;
+  "symbol"?: string;
+  "why"?: "doubt" | "reader";
+};
+
+export type TickerAnswered = {
+  "code": string;
+  "symbol": string;
+  "answer": "kept" | "fixed";
+};
+
 export type TickerJudged = {
   "verdict": string;
   "reasons": string[];
@@ -3571,6 +3599,7 @@ export type TourStep = {
   };
   "gated": boolean;
   "done": boolean | null;
+  "core": boolean;
   "title_key": string;
   "body_key": string;
   "cta_key": string | null;
@@ -3861,6 +3890,7 @@ export interface Responses {
   "/earnings": EarningsCalendar;
   "/earnings/{symbol}/result": EarningsResultDetail;
   "/extremes": Extremes;
+  "/feedback/replies": FeedbackReply[];
   "/guide": GuideState;
   "/health": Health;
   "/home/closes": Closes;

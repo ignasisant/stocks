@@ -393,6 +393,23 @@ def test_the_briefing_notification_carries_the_way_to_its_clock(account, monkeyp
 
 def test_the_notification_opens_the_thread():
     assert schedule.thread_url("a b/c") == "/?thread=a%20b%2Fc"
+    assert schedule.thread_url("c_1", "review") == "/review?thread=c_1"
+
+
+def test_the_briefing_lands_on_the_review_once_there_is_a_book(account, monkeypatch):
+    from stocks.portfolio import ledger
+
+    held: list[bool] = [False]
+    monkeypatch.setattr(ledger, "has_transactions", lambda path: held[0])
+    assert schedule._landing(account) == ""
+    held[0] = True
+    assert schedule._landing(account) == "review"
+
+    def broken(path):
+        raise OSError("no ledger")
+
+    monkeypatch.setattr(ledger, "has_transactions", broken)
+    assert schedule._landing(account) == ""
 
 
 # ------------------------------------------------------------------ the route

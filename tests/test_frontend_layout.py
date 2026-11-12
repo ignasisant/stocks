@@ -84,7 +84,8 @@ _TOUCH_TARGETS = [
     ("pages/home/home.css", ".hm-link::before", r"inset\s*:\s*-14px"),
     ("pages/home/home.css", ".hm-customize::before", r"inset\s*:\s*-8px"),
     ("ui/ui.css", ".ag-tab", r"min-height\s*:\s*44px"),
-    ("ui/ui.css", ".ag-seg-opt", r"min-height\s*:\s*44px"),
+    # A segmented track's options touch edge to edge: a native 32pt row.
+    ("ui/ui.css", ".ag-seg-opt", r"min-height\s*:\s*32px"),
     ("ui/ui.css", ".ag-kpi-help::before", r"inset\s*:\s*-15px"),
     ("pages/sector/sector.css", ".ag-sec-controls > summary", r"min-height\s*:\s*44px"),
     ("pages/profile/profile.css", ".pr-signout", r"min-height\s*:\s*44px"),
@@ -366,8 +367,13 @@ def test_toasts_clear_the_tab_bar_and_hold_still_under_reduced_motion():
     """One toaster, lifted over the phone's tab bar, out of the chat drawer's
     way, 44px to press on touch, fading (never sliding) under reduced motion."""
     css = (APP / "ui/toast.css").read_text()
-    assert "var(--dock, 0px)" in css
-    assert "--toast-right" in css
+    # Offsets go through the `offset` props: sonner writes them inline on the
+    # toaster, so set in the stylesheet they were silently overridden.
+    toaster = (APP / "ui/Toaster.tsx").read_text()
+    assert "offset={OFFSET}" in toaster and "mobileOffset={MOBILE_OFFSET}" in toaster
+    assert toaster.count("var(--dock, 0px)") == 2
+    assert "--toast-right" in toaster
+    assert "--offset-" not in css
     assert "--toast-right" in (APP / "chat/chat.css").read_text()
     assert re.search(r"pointer: coarse\)[\s\S]*min-height: 44px", css)
     assert ":focus-visible" in css

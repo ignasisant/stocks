@@ -22,19 +22,27 @@
  * needs acting on — rejected and warned, each in its own tint — and only then
  * the full list. A button or a rejection at the foot of hundreds of rows is
  * one nobody scrolls to.
+ *
+ * What is shown, and handed to the commit, is the preview as the reader
+ * corrected it (`fixes.ts`): a ticker the model named wrongly is put right
+ * here, on the rows, and the tiers follow.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { written } from "./api";
 import type { Platform, Preview } from "./api";
 import { Eyebrow, jump } from "./Card";
+import { answered, changes, corrected } from "./fixes";
+import type { Fix } from "./fixes";
 import { Glyph } from "./Glyph";
 import type { GlyphName } from "./Glyph";
+import { fixesOf, keepFixes } from "./kept";
 import { SkippedGroups } from "./Skipped";
 import { RowTable } from "./Tables";
 import { useVocabulary } from "./text";
+import { Doubted, Wrong } from "./Tickers";
 import { Unlisted } from "./Venues";
 
 type Tone = "bad" | "warn" | "ok" | "skip";
@@ -47,7 +55,7 @@ const GLYPH: Record<Tone, GlyphName> = {
 };
 
 export function Tiers({
-  preview,
+  preview: read,
   picked,
   onVenue,
   children,
@@ -57,12 +65,21 @@ export function Tiers({
   picked?: Platform;
   /** A code was placed on a line: the preview is stale. */
   onVenue: () => void;
-  /** The commit, told whether the duplicates were opted in. */
-  children?: (keep: boolean) => ReactNode;
+  /** The commit, told whether the duplicates were opted in and handed the
+   *  preview as the reader corrected it, which is what it writes. */
+  children?: (keep: boolean, shown: Preview) => ReactNode;
 }) {
   const t = useT();
   const vocab = useVocabulary();
   const [keep, setKeep] = useState(false);
+  // The reader's word on the tickers, kept for a reader who follows a link
+  // and comes back, and for the preview a venue pick asks again.
+  const reading = `${read.digest}:${read.platform}`;
+  const [fixes, setFixes] = useState<Fix[]>(() => fixesOf(reading));
+  useEffect(() => keepFixes(reading, fixes), [reading, fixes]);
+  const answer = (fix: Fix) => setFixes((prior) => answered(prior, fix));
+  const preview = corrected(read, fixes);
+  const changed = changes(fixes);
   const dupes = preview.importable.filter((row) => row.duplicate);
   const going = written(preview, keep);
   // Skipped rows a reader has to finish by hand (a return of capital, a split
@@ -77,6 +94,7 @@ export function Tiers({
   const rejected = preview.rejected.length;
   const skipped = preview.skipped.length;
   const unlisted = preview.unlisted ?? [];
+  const doubted = preview.doubted ?? [];
   // Who read the file, said only when it is not who the reader asked: the
   // model reads first, and a reader who picked Revolut and got the model's
   // reading — or Trading 212's — has to know whose rows these are.
@@ -150,6 +168,19 @@ export function Tiers({
             {note}
           </p>
         ))}
+        {changed.map((fix) => (
+          <p className="im-fine im-fixed" key={`${fix.code}:${fix.currency}`}>
+            {t("import.ticker_changed", { code: fix.code, symbol: fix.symbol })}
+            <button
+              className="im-btn im-btn-text"
+              // Naming the code again is taking the change back.
+              onClick={() => answer({ ...fix, code: fix.symbol, symbol: fix.code })}
+              type="button"
+            >
+              {t("import.ticker_undo")}
+            </button>
+          </p>
+        ))}
         {tiers.length > 1 && (
           <nav aria-label={t("import.tiers_label")} className="im-jumps">
             {tiers.map((tier) => (
@@ -168,7 +199,7 @@ export function Tiers({
         )}
       </header>
 
-      {children?.(keep)}
+      {children?.(keep, preview)}
 
       <div className="im-tiers">
         {rejected > 0 && (
@@ -198,6 +229,9 @@ export function Tiers({
             tone="warn"
           >
             <RowTable brief issues="warnings" rows={warned} tone="warn" />
+            {doubted.length > 0 && (
+              <Doubted codes={doubted} onAnswer={answer} rows={preview.importable} />
+            )}
             {/* The one warning with a consequence after the import: these
                 rows hold at cost, unpriced, until the code is placed. */}
             {unlisted.length > 0 && (
@@ -214,6 +248,11 @@ export function Tiers({
             tone="ok"
           >
             <RowTable rows={going} tall />
+            {/* The model named these companies, and only the reader can tell
+                a wrong name whose price happened to fit. */}
+            {preview.platform === "llm" && (
+              <Wrong asked={[...doubted, ...unlisted]} onAnswer={answer} rows={going} />
+            )}
           </Tier>
         ) : (
           <p className="im-line-warn">

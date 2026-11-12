@@ -112,6 +112,12 @@ export type Preview = {
    * cost with no price until mapped. Optional for an older server.
    */
   unlisted?: string[];
+  /**
+   * Tickers the model named whose fills sit far from their closes: maybe
+   * another company. Their rows carry `validate.ticker_doubt`, and the reader
+   * is asked (`Tickers.tsx`). Optional for an older server.
+   */
+  doubted?: string[];
   /** With `kind` "positions", what the report says is held, undated. Each is
    *  a buy once the reader dates it. Optional for an older server. */
   holdings?: Holding[];
@@ -629,6 +635,29 @@ export const pickVenue = (
     fills,
     symbol,
   });
+
+/** `doubt` when the preview asked, `reader` when the reader spoke unasked. */
+export type TickerWhy = "doubt" | "reader";
+
+/**
+ * The reader's word on the ticker their rows were read under: right as it is
+ * (`symbol` empty), or really `symbol`. Writes nothing: the server checks the
+ * line against the fills like a venue pick (409 when it did not close near
+ * them, 503 when Yahoo could not be asked) and records the answer; the rows
+ * change on this page (`fixes.ts`) and travel with the commit.
+ */
+export const answerTicker = (
+  code: string,
+  currency: string,
+  fills: VenueFill[],
+  symbol: string,
+  why: TickerWhy,
+) =>
+  send<{ code: string; symbol: string; answer: "kept" | "fixed" }>(
+    "POST",
+    "/import/ticker",
+    { code, currency, fills, symbol, why },
+  );
 
 /** Departures and arrivals in this book that are one move of shares. */
 export const scanMoves = () => get<Moves>("/import/moves/scan");

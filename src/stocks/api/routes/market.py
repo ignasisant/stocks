@@ -173,7 +173,7 @@ class MarketStatus(BaseModel):
         description=(
             "Which caveat to print under a day-change figure, as a catalog key "
             'stem: "premarket", "postmarket" or "market_closed". The page '
-            "prefixes its own page — `home.premarket_note`, "
+            "prefixes its own page — `portfolio.premarket_note`, "
             "`portfolio.market_closed_note` — so the wording stays the page's "
             "and only the decision is shared. Null while the session is open, "
             "when a day change needs no caveat at all."
