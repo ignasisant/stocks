@@ -163,6 +163,16 @@ def test_a_chart_of_returns_with_nothing_named_is_the_book_s(message):
     assert charts.targets(message, {}, "", lookup=_no_lookup) == [charts.BOOK]
 
 
+def test_the_ticker_page_prompt_races_the_book_against_that_listing():
+    # Prod 2026-11-12, thumbs-down "wrong": asked on TPG0.DE, the chart was the
+    # book against Sea Ltd, read off the "SE" of the company's name.
+    message = ("Analyze The Platform Group SE & Co. KGaA (TPG0.DE): business, "
+               "fundamentals, valuation against its history, and how it fits "
+               "my portfolio.")
+    assert charts.targets(message, {}, "TPG0.DE",
+                          lookup=_no_lookup) == [charts.BOOK, "TPG0.DE"]
+
+
 def test_a_chart_of_returns_names_a_ticker_or_the_page_before_the_book():
     assert charts.targets("chart of AAPL returns", {}, "",
                           lookup=_no_lookup) == ["AAPL"]
