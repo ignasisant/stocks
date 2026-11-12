@@ -335,6 +335,8 @@
   strays: [SE]
   truth:
     - {get: /ticker/SAP.DE/quote, pick: price, label: "SAP.DE price (EUR)", tol: 0.03}
+    - {get: /ticker/SAP.DE/metrics, label: "SAP.DE metrics"}
+    - {get: /portfolio/summary, label: "Book summary"}
 
 - id: ticker-analyze-legal-form-en
   area: ticker
@@ -349,6 +351,8 @@
   strays: [AG]
   truth:
     - {get: /ticker/SIE.DE/quote, pick: price, label: "SIE.DE price (EUR)", tol: 0.03}
+    - {get: /ticker/SIE.DE/metrics, label: "SIE.DE metrics"}
+    - {get: /portfolio/summary, label: "Book summary"}
 
 - id: ticker-analyze-digit-symbol
   area: ticker
@@ -361,6 +365,8 @@
     - Reads 1810.HK as the symbol asked about and gives its figures, in HKD or converted and said so
   truth:
     - {get: /ticker/1810.HK/quote, pick: price, label: "1810.HK price (HKD)", tol: 0.03}
+    - {get: /ticker/1810.HK/metrics, label: "1810.HK metrics"}
+    - {get: /portfolio/summary, label: "Book summary"}
 
 - id: ticker-dcf
   area: ticker
