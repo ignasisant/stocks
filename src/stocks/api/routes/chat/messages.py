@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from stocks.chat import a2ui, navigate, tools
+from stocks.chat import a2ui, document, navigate, screenshot, tools
 
 # The tool call a proposal arrives as, and the reason its interrupt names.
 CONFIRM_TOOL = "confirm_action"
@@ -106,6 +106,15 @@ class ShareLink(BaseModel):
     masked: bool
 
 
+class AttachedDocument(BaseModel):
+    """A document a question was asked with (`chat/document.py`): the text
+    that was sent, a PDF's or a long paste's. `name` is "" for a paste."""
+
+    name: str = ""
+    text: str
+    cut: bool = False
+
+
 class Message(BaseModel):
     """One stored turn. `skills`, `web` and `steps` are what the answer was
     built from — the lens, the pages, and the tool trace."""
@@ -146,6 +155,12 @@ class Message(BaseModel):
     # that came in by a link (`from_share`), that share's id.
     shares: list[ShareLink] = []
     shared_from: str = ""
+    # On a question: what the screenshots pasted with it showed, as text
+    # (`chat/screenshot.py`). The pictures themselves were never kept.
+    screenshots: list[str] = []
+    # On a question: the documents attached to it, as the text that was sent
+    # (`chat/document.py`). The files themselves were never kept.
+    documents: list[AttachedDocument] = []
 
 
 def _turn(raw: dict, lang: str = "en") -> Message:
@@ -197,6 +212,9 @@ def _turn(raw: dict, lang: str = "en") -> Message:
             for r in (raw.get("recalled") or [])
             if isinstance(r, dict) and r.get("thread")
         ],
+        screenshots=screenshot.kept(raw.get("screenshots")),
+        documents=[AttachedDocument(**doc)
+                   for doc in document.kept(raw.get("documents"))],
         id=str(raw.get("id") or ""),
         rating=raw.get("rating") if raw.get("rating") in ("up", "down") else None,
         at=str(raw.get("at") or ""),

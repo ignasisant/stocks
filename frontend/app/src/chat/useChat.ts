@@ -57,6 +57,7 @@ import type {
   Arguing,
   ChatState,
   Conversation,
+  Doc,
   Done,
   Edits,
   ImportRow,
@@ -575,6 +576,10 @@ export function useChat(live: boolean) {
       again = false,
       deep = false,
       brief?: Brief,
+      shots?: string[],
+      // The question takes the place of the last exchange (`edit`).
+      replace = false,
+      docs?: Doc[],
     ) => {
       const message = text.trim();
       // A second send while one is in flight is refused, not queued: one
@@ -593,7 +598,16 @@ export function useChat(live: boolean) {
         ...(again ? list.slice(0, -1) : list),
         ...(again
           ? []
-          : [{ ...blank("user", message), ts: started, spoken, brief } as Turn]),
+          : [
+              {
+                ...blank("user", message),
+                ts: started,
+                spoken,
+                brief,
+                ...(shots?.length ? { screenshots: shots } : {}),
+                ...(docs?.length ? { documents: docs } : {}),
+              } as Turn,
+            ]),
         { ...blank("assistant", ""), pending: true },
       ]);
       // Read when the question goes out, not when it is answered: a reader who
@@ -607,6 +621,11 @@ export function useChat(live: boolean) {
         staged_import: preview?.filename,
         ...(deep ? { depth: "deep" as const } : {}),
         ...(brief ? { brief } : {}),
+        // An edited question's pictures and documents are the server's to
+        // carry over: it kept them when the first wording was filed.
+        ...(shots?.length && !replace ? { screenshots: shots } : {}),
+        ...(docs?.length && !replace ? { documents: docs } : {}),
+        ...(replace ? { edit: true } : {}),
       });
       await track(
         input.runId,
@@ -884,7 +903,16 @@ export function useChat(live: boolean) {
     const question = turns[turns.length - 2];
     if (busy || !unfiled(answer) || question?.role !== "user") return;
     setTurns((list) => list.slice(0, -2));
-    void send(question.content, false, false, false, question.brief);
+    void send(
+      question.content,
+      false,
+      false,
+      false,
+      question.brief,
+      question.screenshots,
+      false,
+      question.documents,
+    );
   }, [busy, send, turns]);
 
   /**
@@ -928,6 +956,38 @@ export function useChat(live: boolean) {
     if (answer.error || answer.stopped) return; // `retry` owns those
     void send("", false, true);
   }, [busy, send, turns]);
+
+  /**
+   * Ask the last question in other words, in place of the exchange it made.
+   *
+   * An answered question is on the thread, so the server takes the pair off
+   * before the new wording is asked (`forwardedProps.edit`). A refused or
+   * stopped one never was, and is asked like any other. Its pictures and
+   * documents stay with it either way; the ticker brief does not, since the
+   * words that
+   * stood for it are the ones being changed.
+   */
+  const edit = useCallback(
+    (text: string) => {
+      const answer = turns[turns.length - 1];
+      const question = turns[turns.length - 2];
+      if (busy || !text.trim()) return;
+      if (question?.role !== "user" || answer?.role !== "assistant") return;
+      if (answer.action === "import") return; // a file's note, not an answer
+      setTurns((list) => list.slice(0, -2));
+      void send(
+        text,
+        false,
+        false,
+        false,
+        undefined,
+        question.screenshots,
+        !unfiled(answer),
+        question.documents,
+      );
+    },
+    [busy, send, turns],
+  );
 
   /**
    * Take the unanswered question off the thread, refusal and all — the
@@ -1235,6 +1295,7 @@ export function useChat(live: boolean) {
     retry,
     retryWith,
     regenerate,
+    edit,
     decide,
     undo,
     press,

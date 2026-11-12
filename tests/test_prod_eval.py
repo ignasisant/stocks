@@ -282,9 +282,73 @@ def test_the_catalog_asks_about_isins(catalog):
     assert len(isin_cases) >= 4
 
 
+# --------------------------------------------------------------- screenshots
+
+_TABLE = (
+    "Mi cartera",
+    "Valor | Títulos | Precio | G/P",
+    "Inditex | 85 | 47,92 € | -312,40 €",
+)
+
+
+def test_a_shot_question_draws_a_picture_the_app_would_take():
+    from stocks.chat import screenshot
+
+    drawn = prod_eval.picture(_TABLE)
+    assert screenshot.sniff(drawn) == "image/jpeg"
+    assert len(drawn) < screenshot.MAX_BYTES
+
+
+def test_the_catalog_pastes_pictures_and_one_of_them_gives_orders(catalog):
+    shots = [q for q in catalog if q.kind == "shot"]
+    assert shots and all(q.shot for q in shots)
+    # Only a shot question carries a picture: the reading is scored as one.
+    assert not [q.id for q in catalog if q.shot and q.kind != "shot"]
+    assert any("INSTRUCCIÓN" in " ".join(q.shot) for q in shots)
+
+
+def test_a_shot_question_without_a_picture_is_refused(tmp_path):
+    path = tmp_path / "q.yaml"
+    path.write_text("- {id: a, area: assistant, kind: shot, message: hi}\n")
+    with pytest.raises(ValueError, match="picture"):
+        prod_eval.load(path)
+
+
+def test_the_reading_rides_beside_the_question():
+    q = _q(kind="shot", shot=_TABLE)
+    assert "screenshots" not in prod_eval.run_body(q, "t1")["forwardedProps"]
+    body = prod_eval.run_body(q, "t1", ["Inditex | 85"])
+    assert body["forwardedProps"]["screenshots"] == ["Inditex | 85"]
+
+
+def test_a_reading_is_held_to_every_figure_drawn():
+    whole = "Inditex: 85 títulos a 47,92 €, pérdida de (312,40 €)"
+    assert prod_eval.lost(_TABLE, whole) == []
+    # English digits for the same figures are the same figures.
+    assert prod_eval.lost(_TABLE, "Inditex 85 @ 47.92, P/L −312.40") == []
+    assert prod_eval.lost(_TABLE, "Inditex | 85 | 47,92 €") == [312.4]
+
+
+def test_checks_fail_a_reading_that_lost_a_figure_or_never_came():
+    q = _q(kind="shot", shot=_TABLE)
+    read = prod_eval.Answer(text="Inditex pierde 312,40 €", reading="\n".join(_TABLE))
+    assert prod_eval.checks(q, read, {})["failed"] == []
+    short = prod_eval.Answer(text="Inditex", reading="Inditex | 85 | 47,92 €")
+    assert prod_eval.checks(q, short, {})["failed"] == ["reading lost [312.4]"]
+    blank = prod_eval.Answer(text="No veo nada")
+    assert prod_eval.checks(q, blank, {})["failed"] == ["screenshot not read"]
+    # A paste the app refused is one failure, not two.
+    refused = prod_eval.Answer(error="screenshot: http 503: chat.shot_unavailable")
+    assert len(prod_eval.checks(q, refused, {})["failed"]) == 1
+
+
 def test_a_saved_answer_reads_back():
     ans = prod_eval.Answer(
-        text="hola", model="m", calls=[prod_eval.Call("t", {"a": 1}, "r")], seconds=3.0
+        text="hola",
+        model="m",
+        calls=[prod_eval.Call("t", {"a": 1}, "r")],
+        seconds=3.0,
+        reading="AAPL | 3",
     )
     back = prod_eval.Answer.from_dict(ans.as_dict())
     assert back.as_dict() == ans.as_dict()

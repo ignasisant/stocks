@@ -23,7 +23,7 @@ import secrets
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -395,6 +395,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             on_plan: Callable[[list[dict]], None] | None = None,
             checkpoint: Checkpoint | None = None,
             brief: str = "",
+            screenshots: Sequence[str] = (),
+            documents: Sequence[dict] = (),
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -448,12 +450,20 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     position, the report dates, the answer's structure — onto the outgoing
     turn, and a full analysis or a bear case runs deep and argued. "" is a
     typed question.
+
+    `screenshots` are what the pictures pasted with the question show, already
+    read into text (`chat/screenshot.py`). They are filed on the turn beside
+    `message`, never in it, and `recent` puts them on the copy the model gets
+    — this turn's and every later one's. `documents` ride the same way: a
+    PDF's text or a long paste, as `{name, text, cut}` (`chat/document.py`).
     """
     from stocks import llm, userprefs
     from stocks.chat import conversations, tools
 
     history = conversations.load_chat(chat_path, thread)
-    history.append({"role": "user", "content": message})
+    history.append({"role": "user", "content": message,
+                    **({"screenshots": list(screenshots)} if screenshots else {}),
+                    **({"documents": list(documents)} if documents else {})})
 
     # A proposal waiting on the turn above, answered in words: "sí" is the
     # button pressed, not a question for a model that would cheerfully reply
@@ -1396,6 +1406,8 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   depth: str = "",
                   checkpoint: Checkpoint | None = None,
                   brief: str = "",
+                  screenshots: Sequence[str] = (),
+                  documents: Sequence[dict] = (),
                   ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
@@ -1419,9 +1431,10 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     answer mid-paragraph reads as corruption. What arrived is kept and stored,
     so the thread does not lose it.
 
-    `thread`, `depth` and `brief` are `prepare`'s: the conversation the
-    answer is stored in, how far its research goes, and the ticker page's
-    requested angle.
+    `thread`, `depth`, `brief`, `screenshots` and `documents` are
+    `prepare`'s: the conversation the answer is stored in, how far its
+    research goes, the ticker page's requested angle, what the pasted
+    pictures showed and the documents attached as text.
     """
     meter = metering.Meter()
     built: dict = {}
@@ -1439,6 +1452,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             polish=polish, confirm_actions=confirm_actions, debating=debating,
             draws=draws, thread=thread, depth=depth, built=built,
             turn_id=turn_id, halt=halt, checkpoint=checkpoint, brief=brief,
+            screenshots=screenshots, documents=documents,
         ), meter=meter, fields={"turn": turn_id})
     finally:
         halt.set()
@@ -1457,6 +1471,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                    turn_id: str, halt: threading.Event,
                    checkpoint: Checkpoint | None = None,
                    brief: str = "",
+                   screenshots: Sequence[str] = (),
+                   documents: Sequence[dict] = (),
                    ) -> Iterator[tuple[str, object]]:
     """`answer_stream`'s body; the turn it builds goes in `built`."""
     # In the stream's own context, which the prepare worker below copies.
@@ -1485,7 +1501,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 view=view, focus=focus, fence=fence, session_keys=session_keys,
                 confirm_actions=confirm_actions, draws=draws, thread=thread,
                 depth=depth, turn_id=turn_id, checkpoint=checkpoint,
-                brief=brief,
+                brief=brief, screenshots=screenshots, documents=documents,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc

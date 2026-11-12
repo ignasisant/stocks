@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterator, Sequence
 
 from ag_ui.core import (
     ActivitySnapshotEvent,
@@ -95,6 +95,7 @@ def _events(
     guided: bool = False, linked: bool = False,
     held: dict[str, str] | None = None, depth: str = "",
     checkpoint: Checkpoint | None = None, angle: str = "",
+    screenshots: Sequence[str] = (), documents: Sequence[dict] = (),
 ) -> Generator[str]:
     """The turn, as AG-UI events. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
@@ -269,6 +270,8 @@ def _events(
             depth=depth,
             checkpoint=checkpoint,
             brief=angle,
+            screenshots=screenshots,
+            documents=documents,
         ):
             if kind == "phase":
                 yield from close_step()

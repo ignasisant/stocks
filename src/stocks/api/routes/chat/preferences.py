@@ -10,7 +10,7 @@ from stocks import accounts, llm, loaders, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
 from stocks.api.routes import chat_attach
-from stocks.chat import engine
+from stocks.chat import engine, screenshot
 from stocks.chat import skills as chat_skills
 from stocks.portfolio import autodetect
 from stocks.web import stt
@@ -135,6 +135,10 @@ class State(BaseModel):
     # Whether this deployment can turn a recording into text at all. A
     # microphone that apologises on press is worse than no microphone.
     voice: bool
+    # Whether a screenshot pasted into the composer could be read for this
+    # account (`chat/screenshot.py`): one of its candidates can see. False
+    # leaves a pasted picture to the browser, which does nothing with it.
+    screenshots: bool
     # Whether a key can be kept on the account at all (`[chat] enc_key`).
     # False leaves "this session only" as the one way to use a key of your
     # own, and the settings screen offers exactly that instead of a form that
@@ -329,6 +333,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
         upload_types=list(autodetect.supported_types()),
         upload_max_mb=chat_attach.MAX_UPLOAD_MB,
         voice=stt.available(),
+        screenshots=screenshot.available(engine.answerable(prefs, chain)),
         key_storage=engine.can_store_keys(),
         memory=engine.memory_on(prefs),
         recall=engine.recall_on(prefs),

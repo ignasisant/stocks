@@ -179,6 +179,12 @@ export type AssistantMessage = {
   [key: string]: unknown;
 };
 
+export type AttachedDocument = {
+  "name": string;
+  "text": string;
+  "cut": boolean;
+};
+
 export type Attachment = {
   "filename": string;
   "content": string;
@@ -1000,6 +1006,14 @@ export type DocumentPart = {
   "source": DataSource | UrlSource | FileSource;
   "metadata"?: unknown | null;
   [key: string]: unknown;
+};
+
+export type DocumentRead = {
+  "name": string;
+  "text": string;
+  "pages": number;
+  "read": number;
+  "cut": boolean;
 };
 
 export type EarningsCalendar = {
@@ -2127,6 +2141,12 @@ export type PathOut = {
   "lessons": LessonRef[];
 };
 
+export type PdfUpload = {
+  "filename"?: string;
+  "content": string;
+  "via"?: "paste" | "pick" | "drop";
+};
+
 export type Peer = {
   "ticker": string;
   "name": string;
@@ -2165,6 +2185,12 @@ export type Performance = {
   "irr": number | null;
   "irr_annualised": boolean;
   "missing": string[];
+};
+
+export type Picture = {
+  "image": string;
+  "lang"?: string | null;
+  "via"?: "paste" | "pick" | "drop";
 };
 
 export type PlanCash = {
@@ -2588,6 +2614,10 @@ export type RatingChange = {
   "target": number | null;
   "prior_target": number | null;
   "target_move": "raised" | "lowered" | "set" | null;
+};
+
+export type Reading = {
+  "text": string;
 };
 
 export type ReasoningMessage = {
@@ -3036,6 +3066,13 @@ export type Shorts = {
   "eu": EuShortPositions | null;
 };
 
+export type ShotEvent = {
+  "what": "refused" | "ignored" | "removed" | "opened";
+  "why"?: string | null;
+  "sent"?: boolean | null;
+  "read"?: boolean | null;
+};
+
 export type SkillInfo = {
   "id": string;
   "name": string;
@@ -3127,6 +3164,7 @@ export type State = {
   "upload_types": string[];
   "upload_max_mb": number;
   "voice": boolean;
+  "screenshots": boolean;
   "key_storage": boolean;
   "memory": boolean;
   "recall": boolean;
@@ -3170,6 +3208,8 @@ export type Stocks__api__routes__chat__messages__Message = {
   "at": string;
   "shares": ShareLink[];
   "shared_from": string;
+  "screenshots": string[];
+  "documents": AttachedDocument[];
 };
 
 export type Stocks__api__routes__chat_attach__Message = {

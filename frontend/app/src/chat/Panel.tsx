@@ -27,6 +27,8 @@ import "../pages/import/import.css";
 import { Attachment } from "./Attachment";
 import { usePhone } from "./phone";
 import { Composer } from "./Composer";
+import { isPdf } from "./docs";
+import { sorted } from "./pasted";
 import { Empty } from "./Empty";
 import { Glyph, ProviderMark } from "./icons";
 import { MemoryView } from "./Memory";
@@ -316,6 +318,9 @@ export default function Panel({
     if (chat.preview) setDropWide(false);
   }, [chat.preview]);
   const dragging = useRef(0);
+  // The composer's way in for what is dropped up here: a picture waits above
+  // its field, so it is the composer that sorts a drop.
+  const drops = useRef<((files: File[]) => void) | null>(null);
 
   // The width lives on the document, which a reload clears; the choice lives
   // in the browser, which one does not. Put the second back on the first as
@@ -380,6 +385,18 @@ export default function Panel({
     last?.role === "assistant" &&
     !last.error &&
     !last.stopped;
+  // The question above the newest answer, refused ones included: it can be
+  // asked in other words while nothing is being written under it. Not above
+  // an attachment's note, which answers a file and has no question of its own.
+  const asked = chat.turns[chat.turns.length - 2];
+  const reword =
+    !chat.busy &&
+    !chat.reading &&
+    last?.role === "assistant" &&
+    !last.pending &&
+    last.action !== "import" &&
+    asked?.role === "user" &&
+    !!asked.content;
   // Scrolled up from the end: the way back down, and the fade under it.
   const below = !isAtBottom && chat.turns.length > 0;
   const named = (open?.title || "").trim();
@@ -605,18 +622,26 @@ export default function Panel({
               event.preventDefault();
               dragging.current = 0;
               setOverDrop(false);
-              const dropped = event.dataTransfer.files?.[0];
-              // One file: an attachment is a preview somebody confirms, and a
-              // second would queue a second card behind the first.
-              if (dropped && !chat.busy && !chat.reading) {
-                setDropWide(true);
-                void chat.attach(dropped);
-              }
+              const dropped = Array.from(event.dataTransfer.files ?? []);
+              if (!dropped.length) return;
+              // Pictures join the question; of the rest, one file: an
+              // attachment is a preview somebody confirms, and a second
+              // would queue a second card behind the first.
+              const { statement } = sorted(dropped, state?.screenshots ?? false);
+              // A PDF may be one to ask about, which opens no card: the
+              // composer asks which, and nothing goes wide on a guess.
+              const reads =
+                statement && !isPdf(statement) && !chat.busy && !chat.reading;
+              if (reads) setDropWide(true);
+              if (drops.current) drops.current(dropped);
+              else if (reads) void chat.attach(statement);
             }}
           >
             {overDrop && state && (
               <p className="ag-chat-drop">
-                {t("chat.drop_zone", { mb: state.upload_max_mb })}
+                {t(state.screenshots ? "chat.drop_zone_any" : "chat.drop_zone", {
+                  mb: state.upload_max_mb,
+                })}
               </p>
             )}
             <div
@@ -677,6 +702,7 @@ export default function Panel({
                       onRegenerate={
                         regen && i === all.length - 1 ? chat.regenerate : undefined
                       }
+                      onEdit={reword && i === all.length - 2 ? chat.edit : undefined}
                       onShare={turn.id ? () => setSharing(turn.id ?? null) : undefined}
                     />
                   ))
@@ -760,11 +786,14 @@ export default function Panel({
               state={state}
               busy={chat.busy}
               reading={chat.reading}
-              onSend={(text, spoken, deep) => void chat.send(text, spoken, false, deep)}
+              onSend={(text, spoken, deep, shots, docs) =>
+                void chat.send(text, spoken, false, deep, undefined, shots, false, docs)
+              }
               onStop={chat.stop}
               onSave={(patch) => void chat.settings(patch)}
               onAttach={(file) => void chat.attach(file)}
               onSettings={() => setView("settings")}
+              drops={drops}
             />
           ) : (
             // The field needs the state (lenses, voice, upload types); the
