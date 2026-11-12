@@ -9,13 +9,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { benchLine, slice } from "./Spark";
+import { benchLine, offered, slice } from "./Spark";
 import type { History } from "./types";
 
 function history(dates: string[]): History {
   return {
     base: "EUR",
-    window: "5y",
+    window: "all",
     points: dates.map((date) => ({
       date,
       injected: 100,
@@ -67,5 +67,19 @@ describe("benchLine", () => {
   it("draws nothing when a day is missing it", () => {
     expect(benchLine([{ inIndex: 120 }, { inIndex: null }])).toBeNull();
     expect(benchLine([{ inIndex: 120 }])).toBeNull();
+  });
+});
+
+describe("offered", () => {
+  it("keeps only the windows shorter than the book, and always the whole of it", () => {
+    expect(offered(400)).toEqual(["1w", "1m", "6m", "1y", "all"]);
+    expect(offered(365)).toEqual(["1w", "1m", "6m", "all"]);
+    expect(offered(3)).toEqual(["all"]);
+    expect(offered(4000)).toEqual(["1w", "1m", "6m", "1y", "2y", "all"]);
+  });
+
+  it("slices nothing off for the whole book", () => {
+    const dates = ["2020-01-02", "2024-06-03", "2026-11-11"];
+    expect(slice(history(dates), "all").map((point) => point.date)).toEqual(dates);
   });
 });

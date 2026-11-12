@@ -12,7 +12,7 @@
   "tour.pending": "Not set up yet",
   "tour.locked": "Sign in to open this one — it reads your own data.",
   "tour.launch": "Guided tour",
-  "tour.launch_caption": "See every feature and where it lives, plus what changed in the latest release.",
+  "tour.launch_caption": "The essentials in a few steps. The full tour starts from the last one.",
   "tour.launch_start": "Start the tour",
   "tour.finished": "Tour finished — reopen it any time from Profile.",
   "tour.strip_progress": "Tour · step {n} of {total} · **{title}**",

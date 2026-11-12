@@ -55,6 +55,12 @@ class TourStep(BaseModel):
             "beside one would be a claim about nothing."
         )
     )
+    core: bool = Field(
+        description=(
+            "One of the few stops the tour walks when it is simply started; "
+            "the others are reached from its last stop, a card or a deep link."
+        )
+    )
     title_key: str
     body_key: str
     cta_key: str | None = Field(
@@ -122,6 +128,7 @@ def _step(step: onboarding.Step, prefs: dict, paths) -> TourStep:
         session={k: str(v) for k, v in (step.session or {}).items()},
         gated=step.gated,
         done=None if step.done is None else bool(step.done(prefs, paths)),
+        core=step.core,
         title_key=f"tour.{step.id}_title",
         body_key=f"tour.{step.id}_body",
         cta_key=(

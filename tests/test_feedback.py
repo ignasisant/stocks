@@ -21,6 +21,8 @@ from stocks.web import feedback
 def sandbox(monkeypatch, tmp_path):
     monkeypatch.setattr(feedback, "FEEDBACK_DIR", tmp_path / "feedback")
     monkeypatch.setattr(storage, "_cached", {"config": None})  # bucket off
+    monkeypatch.setattr(feedback, "REPLIES_DIR", tmp_path / "feedback" / "replies")
+    monkeypatch.setattr(feedback, "_memo", {})
     return tmp_path / "feedback"
 
 
@@ -155,7 +157,7 @@ def test_the_feedback_command_says_which_bucket_it_read(sandbox, capsys):
 
     from stocks import cli
 
-    cli.cmd_feedback(Namespace())
+    cli.cmd_feedback(Namespace(kind=[], user=""))
     assert "local data/feedback only" in capsys.readouterr().out
 
 
@@ -183,7 +185,102 @@ def test_the_feedback_command_averages_the_app_ratings(sandbox, capsys):
 
     feedback.rate_app(5)
     feedback.rate_app(2, "missing my broker")
-    cli.cmd_feedback(Namespace())
+    cli.cmd_feedback(Namespace(kind=[], user=""))
     out = capsys.readouterr().out
     assert "★★" in out and "missing my broker" in out
     assert "app rating: 3.5★ from 2" in out
+
+
+def test_the_command_reads_one_kind_at_a_time(sandbox, capsys):
+    # A week of thumbs on answers used to bury the one bug report.
+    from argparse import Namespace
+
+    from stocks import cli
+
+    feedback.submit("the chart is upside down", "bug", "Cartera", sender="a_b_com_1")
+    feedback.submit("a dark mode", "idea", sender="c_d_com_2")
+    cli.cmd_feedback(Namespace(kind=["bug"], user=""))
+    out = capsys.readouterr().out
+    assert "upside down" in out and "dark mode" not in out
+    assert "1 submissions" in out
+
+    cli.cmd_feedback(Namespace(kind=[], user="c_d"))
+    out = capsys.readouterr().out
+    assert "dark mode" in out and "upside down" not in out
+
+    cli.cmd_feedback(Namespace(kind=["other"], user=""))
+    assert "(nothing of that kind)" in capsys.readouterr().out
+
+
+# ------------------------------------------- the operator's answer, shown once
+
+
+def _filed(sandbox, sender="a_b_com_1", kind="bug") -> str:
+    return feedback.submit("the import read AMT", kind, sender=sender, lang="es").stem
+
+
+def test_a_reply_is_filed_for_the_writer_and_the_last_one_counts(sandbox):
+    first = _filed(sandbox)
+    feedback.reply(first, "  Fixed:   upload it again. ")
+    feedback.reply(first, "Fixed: upload the statement again.")
+    rows = feedback.replies_for("a_b_com_1", now=0.0)
+    assert [(r["id"], r["text"], r["kind"]) for r in rows] == [
+        (first, "Fixed: upload the statement again.", "bug")
+    ]
+    assert rows[0]["about"] == json.loads((sandbox / f"{first}.json").read_text())["ts"]
+    assert feedback.replies_for("c_d_com_2", now=0.0) == []
+
+
+def test_nobody_is_answered_who_cannot_be_shown_it(sandbox):
+    guest = _filed(sandbox, sender="guest")
+    for bad in (guest, "2026-01-01T00-00-00Z-ffffff", "../../prefs", ""):
+        with pytest.raises(feedback.NoSuchFeedback):
+            feedback.reply(bad, "hello")
+    with pytest.raises(ValueError):
+        feedback.reply(_filed(sandbox), "   ")
+
+
+def test_replies_are_not_read_back_as_submissions(sandbox, monkeypatch):
+    feedback.reply(_filed(sandbox), "Fixed.")
+    bucket = {"data/feedback/replies/a_b_com_1.json": b"[]"}
+    monkeypatch.setattr(
+        storage, "list_keys",
+        lambda prefix="": sorted(k for k in bucket if k.startswith(prefix)),
+    )
+    monkeypatch.setattr(storage, "read_key", bucket.get)
+    items = feedback.stored()
+    assert [it["text"] for it in items] == ["the import read AMT"]
+    assert items[0]["id"] == next(sandbox.glob("*.json")).stem
+
+
+def test_an_account_asks_for_its_replies_once_per_while(sandbox):
+    first = _filed(sandbox)
+    assert feedback.replies_for("a_b_com_1", now=1000.0) == []
+    (sandbox / "replies").mkdir()
+    (sandbox / "replies" / "a_b_com_1.json").write_text(
+        json.dumps([{"id": first, "text": "Fixed."}])
+    )
+    assert feedback.replies_for("a_b_com_1", now=1001.0) == []  # still held
+    later = 1000.0 + feedback.REPLIES_TTL_S
+    assert [r["text"] for r in feedback.replies_for("a_b_com_1", now=later)] == ["Fixed."]
+
+
+def test_the_reply_command_files_it_and_says_the_push_did_not_go(
+    sandbox, capsys, monkeypatch
+):
+    from argparse import Namespace
+
+    from stocks import cli
+    from stocks.notify import webpush
+
+    monkeypatch.setattr(webpush, "configured", lambda: False)
+    first = _filed(sandbox)
+    cli.cmd_feedback_reply(Namespace(id=first, text="Fixed.", page=""))
+    out = capsys.readouterr().out
+    assert "filed for a_b_com_1" in out and "push: not sent" in out
+    with pytest.raises(SystemExit):
+        cli.cmd_feedback_reply(Namespace(id="nope", text="x", page=""))
+
+    cli.cmd_feedback(Namespace(kind=[], user=""))
+    assert f"id {first}" in capsys.readouterr().out
+

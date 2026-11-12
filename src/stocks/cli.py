@@ -1152,9 +1152,16 @@ def cmd_feedback(args: argparse.Namespace) -> None:
         print("(no feedback yet)")
         return
     items = feedback.latest_ratings(items)
+    if args.kind:
+        items = [it for it in items if it.get("kind") in args.kind]
+    if args.user:
+        items = [it for it in items if args.user in str(it.get("user", ""))]
+    if not items:
+        print("(nothing of that kind)")
+        return
     for it in items:
         head = f"{it.get('ts', '?')}  [{it.get('kind', '?'):<5}]"
-        head += f"  {it.get('user', '?')}  ({it.get('page', '-')})"
+        head += f"  {it.get('user', '?')}  ({it.get('page', '-')})  {it.get('lang', '')}"
         if it.get("kind") == "rating":
             # A thumbs on an answer: what it was pressed on is the report.
             head += f"  {it.get('vote', '?')}"
@@ -1182,12 +1189,47 @@ def cmd_feedback(args: argparse.Namespace) -> None:
         shot = feedback.shot_path(str(it.get("shot", "")))
         if shot:
             print(f"    [screenshot] {shot}")
+        if it.get("id"):
+            print(f"    id {it['id']}")
         print()
     print(f"{len(items)} submissions")
     scores = [int(it["stars"]) for it in items
               if it.get("kind") == feedback.APP_RATING and it.get("stars")]
     if scores:
         print(f"app rating: {sum(scores) / len(scores):.1f}★ from {len(scores)}")
+
+
+def cmd_feedback_reply(args: argparse.Namespace) -> None:
+    """Answer one submission: shown once in the writer's app, and pushed to
+    their devices when this machine holds the push key."""
+    from stocks import accounts, storage
+    from stocks.config import DATA_DIR
+    from stocks.i18n import translate
+    from stocks.notify import links, render, webpush
+    from stocks.web import feedback
+
+    try:
+        item = feedback.reply(args.id, args.text)
+    except feedback.NoSuchFeedback:
+        raise SystemExit(
+            f"no answerable feedback with id {args.id} (guest, or unknown)"
+        ) from None
+    slug = str(item["user"])
+    print(f"filed for {slug}: shown on their next visit")
+    if not webpush.configured():
+        print("push: not sent (no WEBPUSH_PRIVATE_KEY here)")
+        return
+    paths = (accounts.owner_paths() if slug == "owner"
+             else accounts.paths_in(DATA_DIR / "users" / slug))
+    storage.restore(paths.push)
+    lang = str(item.get("lang") or "en")
+    title = translate("notify.feedback_reply_title", lang)
+    message = render.message(
+        title, [" ".join(args.text.split())], links.path(args.page), "feedback"
+    )
+    took = webpush.send_all(paths.push, message, topic="feedback")
+    print(f"push: {took} device(s)" if took
+          else "push: not delivered (no device took it)")
 
 
 def cmd_users(args: argparse.Namespace) -> None:
@@ -1747,7 +1789,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ---- feedback: read what users sent through the in-app widget ----------
     p_fb = sub.add_parser("feedback", help="print user feedback (in-app widget)")
+    p_fb.add_argument("--kind", action="append", default=[],
+                      choices=("bug", "idea", "other", "rating", "app_rating"),
+                      help="only this kind (repeatable): a week of thumbs on "
+                           "answers buries the one bug report")
+    p_fb.add_argument("--user", default="",
+                      help="only submissions whose account slug contains this")
     p_fb.set_defaults(func=cmd_feedback)
+
+    p_fr = sub.add_parser(
+        "feedback-reply",
+        help="answer one submission: shown once in the writer's app, and pushed",
+    )
+    p_fr.add_argument("id", help="the submission's id, as `stocks feedback` prints it")
+    p_fr.add_argument("text", help="the answer, in the writer's language")
+    p_fr.add_argument("--page", default="",
+                      help="where the push opens (e.g. import_transactions); home")
+    p_fr.set_defaults(func=cmd_feedback_reply)
 
     p_users = sub.add_parser(
         "users", help="account roster: signup + last-seen dates per account")

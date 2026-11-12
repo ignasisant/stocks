@@ -33,6 +33,7 @@ import { canRecord, dictate, join, VoiceFailed, type Dictation } from "../chat/v
 import { ApiError, get, scoped, send } from "./api";
 import { GUEST_CHROME } from "./guest";
 import { useLang, useT } from "./i18n";
+import { onReport } from "./report";
 import { useRoute } from "./router";
 import { useDialog } from "./useDialog";
 import { capture, fromFile, ShotFailed, type Shot } from "./screenshot";
@@ -72,6 +73,16 @@ export function Feedback() {
   const [kind, setKind] = useState<Kind>("bug");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+
+  // A page that is failing somebody opens this on their behalf (`report.ts`).
+  useEffect(
+    () =>
+      onReport((asked) => {
+        setKind(asked);
+        setOpen(true);
+      }),
+    [],
+  );
 
   const [shot, setShot] = useState<Shot | null>(null);
   const [shooting, setShooting] = useState(false);

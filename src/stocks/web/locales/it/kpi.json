@@ -62,5 +62,9 @@
   "kpi.roc_63.label": "Rendimento a 3 mesi",
   "kpi.roc_63.desc": "Prezzo di oggi rispetto a circa 3 mesi fa (63 sedute di borsa).",
   "kpi.pct_from_high.label": "Dal massimo a 52 settimane",
-  "kpi.pct_from_high.desc": "Prezzo di oggi rispetto alla chiusura più alta dell'ultimo anno; 0% è al massimo."
+  "kpi.pct_from_high.desc": "Prezzo di oggi rispetto alla chiusura più alta dell'ultimo anno; 0% è al massimo.",
+  "kpi.ptbv.desc": "Prezzo / patrimonio tangibile: valore contabile senza avviamento né intangibili. Così si valuta una banca; 1x è il suo attivo netto al costo.",
+  "kpi.rotce.desc": "Rendimento del capitale tangibile: quanto guadagna una banca sul capitale che potrebbe perdere. Oltre il 15% è un prestatore solido.",
+  "kpi.dividend_yield.desc": "Dividendi dell'ultimo anno sul prezzo. È ciò per cui si compra soprattutto un immobiliare o una utility.",
+  "kpi.payout_ratio.desc": "Quota dell'utile dell'anno distribuita. Un REIT ne distribuisce quasi tutto per legge; chiunque altro sopra il 100% paga da altre fonti."
 }

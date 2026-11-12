@@ -62,5 +62,9 @@
   "kpi.roc_63.label": "3-month return",
   "kpi.roc_63.desc": "Price now vs. roughly 3 months (63 trading sessions) ago.",
   "kpi.pct_from_high.label": "Off 52-week high",
-  "kpi.pct_from_high.desc": "Price now vs. the highest close in the trailing year; 0% sits at the high."
+  "kpi.pct_from_high.desc": "Price now vs. the highest close in the trailing year; 0% sits at the high.",
+  "kpi.ptbv.desc": "Price / tangible book: book value without goodwill and intangibles. How a bank is priced; 1x is its net assets at cost.",
+  "kpi.rotce.desc": "Return on tangible common equity: what a bank earns on the capital it could lose. Over 15% is a strong lender.",
+  "kpi.dividend_yield.desc": "Dividends of the last year over the price. What a landlord or a utility is mostly bought for.",
+  "kpi.payout_ratio.desc": "Share of the year's earnings paid out. A REIT pays most of them by law; anyone else over 100% pays from somewhere else."
 }

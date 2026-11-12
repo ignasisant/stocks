@@ -312,14 +312,7 @@
   padding-inline: 8px;
 }
 
-/* Under a finger the track draws at a native segmented control's 32pt, not
-   the 44px a lone button needs: options touch edge to edge, so a near miss
-   still lands on one, and HIG's floor is 28. */
 @media (pointer: coarse) {
-  .tk-controls .ag-seg-opt {
-    min-height: 32px;
-  }
-
   .tk-seg-icons .ag-seg-opt {
     min-width: 44px;
   }
@@ -554,6 +547,32 @@
    its top instead. Two classes, to outrank the touch rule below. */
 .tk-plot.tk-plot-hero {
   padding-top: 0;
+  /* And the plot runs to the card's edges, as a broker app draws it: the
+     chart is what a phone opens a ticker for. What sits under it (the ranges,
+     the legend, the hint) takes the card's padding back. */
+  margin-inline: calc(-1 * var(--card-pad, 16px));
+}
+
+.tk-plot-hero > :not(.tk-svg, .tk-tip, .ag-tip-flip) {
+  margin-inline: var(--card-pad, 16px);
+}
+
+/* Rules that place the price without competing with it: the line and the
+   event verticals carry the chart, the grid only lets a level be read off. */
+.tk-plot-hero .tk-grid line {
+  stroke-dasharray: 2 4;
+}
+
+/* The ranges take the row, one equal pill each, with the line/candle toggle
+   kept at its own width beside them. */
+.tk-plot-hero .tk-controls .tk-seg {
+  flex: 1 1 auto;
+}
+
+/* Grown into the room, never shrunk under their label: seven ranges still
+   scroll (`.tk-seg`). */
+.tk-plot-hero .tk-controls .tk-seg .ag-seg-opt {
+  flex: 1 0 auto;
 }
 
 .tk-plot-strip .tk-tip,
@@ -2132,6 +2151,118 @@
   margin-bottom: 12px;
 }
 
+/* The whole head unfolds the lines, wearing the app's fold chevron
+   (`.ag-fold-head`): one target, no stray link wrapping onto its own row. */
+.tk-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.tk-entry-head::after {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.25rem;
+  border-right: 2px solid var(--ag-text-muted);
+  border-bottom: 2px solid var(--ag-text-muted);
+  transform: translateY(-25%) rotate(45deg);
+  transition: transform 100ms ease-out;
+}
+
+.tk-entry-head[aria-expanded="true"]::after {
+  transform: translateY(25%) rotate(-135deg);
+}
+
+.tk-entry-head:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.tk-entry-hint {
+  margin-left: auto;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+@media (hover: hover) {
+  .tk-entry-head:hover .tk-entry-hint {
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tk-entry-head::after {
+    transition: none;
+  }
+}
+
+/* Mark, the line as written, and the figure it was held to — right-aligned
+   so the column reads down like the plan's own table. */
+.tk-entry-lines {
+  display: grid;
+  grid-template-columns: 1em minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-entry-line {
+  display: contents;
+}
+
+.tk-entry-mark {
+  font-weight: 600;
+  text-align: center;
+}
+
+.tk-entry-pass .tk-entry-mark {
+  color: var(--ag-up);
+}
+
+.tk-entry-fail .tk-entry-mark,
+.tk-entry-fail .tk-entry-value {
+  color: var(--ag-warn);
+}
+
+.tk-entry-unknown .tk-entry-mark,
+.tk-entry-unknown .tk-entry-rule,
+.tk-entry-value {
+  color: var(--ag-text-secondary);
+}
+
+.tk-entry-value {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Why a line's figure is not the tile's: said under the line, not beside
+   the figure, so the value column stays a column. */
+.tk-entry-note {
+  display: block;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-entry-edit {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: var(--ag-fs-sm);
+}
+
 .tk-judged-why {
   margin: 6px 0 0;
   color: var(--ag-text-secondary);
@@ -2139,9 +2270,13 @@
 }
 
 @media (pointer: coarse) {
-  .tk-judged-link {
+  .tk-judged-link,
+  .tk-entry-edit {
     display: inline-flex;
     align-items: center;
+    min-height: 44px;
+  }
+  .tk-entry-head {
     min-height: 44px;
   }
 }

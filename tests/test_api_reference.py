@@ -229,15 +229,14 @@ def test_an_extended_window_gets_its_own_wording(client, monkeypatch, window, no
 
 def test_the_note_stems_are_ones_both_catalogs_word(client):
     """The stem is a catalog key with the page's own prefix in front of it, so
-    `home.premarket_note` and `portfolio.market_closed_note` both have to
+    `portfolio.premarket_note` and `portfolio.market_closed_note` both have to
     exist — otherwise the client prints the key."""
     from stocks.i18n import catalog
 
     for lang in ("en", "es"):
         strings = catalog(lang)
         for stem in ("premarket", "postmarket", "market_closed"):
-            for page in ("home", "portfolio"):
-                assert f"{page}.{stem}_note" in strings, f"{lang} {page}.{stem}_note"
+            assert f"portfolio.{stem}_note" in strings, f"{lang} {stem}"
 
 
 def test_a_ticker_is_reported_on_its_own_exchange(client, monkeypatch):

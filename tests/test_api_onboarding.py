@@ -73,6 +73,15 @@ def test_the_steps_are_the_ones_the_modal_shows(client, account, signed_in):
     ]
 
 
+def test_the_short_walk_is_marked_on_the_steps(client, account, signed_in):
+    """The client draws the short tour from the same list as the full one, so
+    which stops are in it has to come with them."""
+    body = signed_in.get("/v1/onboarding").json()
+    assert [s["id"] for s in body["steps"] if s["core"]] == [
+        s.id for s in onboarding.visible_steps() if s.core
+    ]
+
+
 def test_copy_is_named_and_never_sent(client, account, signed_in):
     """Keys, not strings. The client has the catalog; a second copy on the wire
     would be stale in whichever language the reader actually picked."""

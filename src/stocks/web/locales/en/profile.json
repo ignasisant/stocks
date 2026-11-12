@@ -231,6 +231,7 @@
   "profile.connector_title": "Your portfolio in your AI app",
   "profile.connector_sub": "Ask Claude, ChatGPT, Codex or any MCP app about your portfolio, with your real figures and the assistant's memory of you. It reads only, unless you also allow editing when you connect.",
   "profile.connector_ok": "Connected ✓ — try in your app: “how is my portfolio doing this year?”",
+  "profile.connector_wait": "Not connected yet. Add the address in your app; this turns to Connected on its own.",
   "profile.connector_url": "Connector address",
   "profile.connector_url_help": "Paste it into your app. It asks you to sign in here and approve it.",
   "profile.connector_copy": "Copy",

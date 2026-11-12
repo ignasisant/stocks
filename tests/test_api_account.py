@@ -324,3 +324,30 @@ def test_a_token_cannot_file_feedback_for_somebody_else(client, account):
         json={"text": "hello"},
     )
     assert response.status_code == 403
+
+
+def test_an_answer_to_what_this_account_sent_is_shown_once(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(
+        "stocks.web.feedback.replies_for",
+        lambda slug: [{"id": "f1", "about": "2026-11-10T09-00-00Z", "kind": "bug",
+                       "text": "Fixed."}] if slug == account.root.name else [],
+    )
+    shown = signed_in.get("/v1/feedback/replies")
+    assert shown.status_code == 200
+    assert [(r["id"], r["text"]) for r in shown.json()] == [("f1", "Fixed.")]
+    assert signed_in.post(
+        "/v1/feedback/replies/seen", json={"ids": ["f1"]}
+    ).status_code == 200
+    assert signed_in.get("/v1/feedback/replies").json() == []
+    assert prefs_of(account)["feedback_replies_seen"] == ["f1"]
+    assert prefs_of(account)["currency"] == "EUR"  # the rest of the file kept
+
+
+def test_a_token_is_shown_nobodys_answers(client, account):
+    response = client.get(
+        "/v1/feedback/replies", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 403
+

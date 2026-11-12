@@ -11,7 +11,9 @@
  * Two things here that are not presentation:
  *
  * * the scan runs on request, never on load — it is a Yahoo round-trip per
- *   holding, seconds rather than milliseconds;
+ *   holding, seconds rather than milliseconds. The one exception is a commit
+ *   (`auto`): the rows it just wrote are where a missing split shows, and a
+ *   first import that opened on a 95 % loss was read as a broken app;
  * * every proposal is shown with the evidence that found it before anything is
  *   written, and each one can be left out. `POST /import/splits/apply` takes
  *   named splits precisely so a reader who believes one row and not another can
@@ -35,9 +37,12 @@ import { useVocabulary } from "./text";
 const NONE = "—";
 
 export function Splits({
+  auto = 0,
   onApplied,
   onFound,
 }: {
+  /** Commits made on this page: each one is scanned once without being asked. */
+  auto?: number;
   onApplied: () => void;
   /** How many the scan on screen proposes — the rail's "to review" badge. */
   onFound: (n: number) => void;
@@ -52,6 +57,9 @@ export function Splits({
     forgetUnder(["/import/splits"]);
     setAsked((n) => n + 1);
   };
+  useEffect(() => {
+    if (auto > 0) rescan();
+  }, [auto]);
   const scan = useApi(async () => (asked === 0 ? null : await scanSplits()), [asked]);
   const scanning = asked > 0 && scan.state === "loading";
   const gaps =

@@ -71,6 +71,8 @@ export type EntryCheck = {
   level: number;
   value: number | null;
   state: "pass" | "fail" | "unknown";
+  /** "ex_goodwill" when ROIC was read without goodwill, above the reported one. */
+  basis?: string | null;
 };
 
 export type Review = {

@@ -14,8 +14,8 @@
  * when the page is too narrow for both it drops under the task and folds.
  *
  * The two repairs sit in that rail because a statement cannot carry what they
- * fix: splits the book never heard about (`Splits`, on request — it prices
- * every holding against Yahoo) and shares that only changed broker but read as
+ * fix: splits the book never heard about (`Splits`, on request and once after
+ * a commit — it prices every holding against Yahoo) and shares that only changed broker but read as
  * a sale (`Moves`, on every visit — it reads the ledger alone). Both propose;
  * neither writes until the reader names what they believe.
  *
@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
+import { reportProblem } from "../../shell/report";
 import { Link, useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Status } from "../../ui/Status";
@@ -55,6 +56,7 @@ import { Repairs } from "./RepairCard";
 import { Rich } from "./Rich";
 import { Sample } from "./Sample";
 import { Source } from "./Source";
+import { STUCK_AFTER, missed } from "./stuck";
 import { RowTable } from "./Tables";
 import { Tiers } from "./Tiers";
 import { NO_WIPE, Wipe } from "./Wipe";
@@ -205,6 +207,12 @@ function Importer({
   };
   // A move proposal the server no longer makes (409): ask again.
   const [again, setAgain] = useState(0);
+  // Commits made here, and the splits the scan after each one found missing.
+  const [commits, setCommits] = useState(0);
+  const [gaps, setGaps] = useState(0);
+  // Tries since the last commit that left nothing to commit (`stuck.ts`).
+  const [misses, setMisses] = useState(0);
+  const miss = () => setMisses((n) => n + 1);
 
   const file = useRef<HTMLInputElement>(null);
   const pasted = useRef("");
@@ -234,6 +242,21 @@ function Importer({
   useEffect(() => {
     if (preview.state === "loaded") land(root.current);
   }, [preview.state]);
+  // One reading, one count: a rail write validates the same statement again
+  // and is not another try, the same file under another platform is.
+  const tried = useRef<{ platform: string; staged: Staged | null; data: unknown }>({
+    platform: "",
+    staged: null,
+    data: null,
+  });
+  const outcome = preview.state === "loaded" ? preview.data : null;
+  useEffect(() => {
+    const seen = tried.current;
+    if (!staged || outcome === null || outcome === seen.data) return;
+    const same = seen.platform === platform.key && seen.staged === staged;
+    tried.current = { platform: platform.key, staged, data: outcome };
+    if (!same && missed(outcome)) miss();
+  }, [outcome]);
 
   const held = ledger.state === "loaded" ? ledger.data : null;
   // What the repairs work on and what the example statement must not be offered
@@ -265,6 +288,7 @@ function Importer({
       setUnreadable(false);
       setOversize(blob.size);
       setStaged(null);
+      miss();
       return;
     }
     setOversize(null);
@@ -282,6 +306,7 @@ function Importer({
       // So picking the same file again, once it is saved locally, still fires.
       if (file.current) file.current.value = "";
       reportUnreadable(platform.key, name, blob, error);
+      miss();
       return;
     }
     setStaged({ filename: name, content, bytes: blob.size, surface });
@@ -309,6 +334,7 @@ function Importer({
     if (!kinds.includes(kind)) {
       setWrongType(kind || "?");
       setStaged(null);
+      miss();
       return;
     }
     setWrongType(null);
@@ -326,6 +352,7 @@ function Importer({
       // as an unreadable file.
       setWrongType(asFile.wrong);
       setStaged(null);
+      miss();
       return;
     }
     setWrongType(null);
@@ -372,6 +399,7 @@ function Importer({
         hint: platformHint(t, platform),
       }),
     );
+  const stuck = misses >= STUCK_AFTER && !result;
 
   return (
     <div
@@ -422,6 +450,32 @@ function Importer({
           }
         />
 
+        {/* Three tries and nothing booked: the fourth is not going to differ,
+            so the page says so and offers the two ways that do not need the
+            file to be read. Nothing is sent unless the reader writes it. */}
+        {stuck && (
+          <section
+            aria-labelledby="im-stuck-title"
+            aria-live="polite"
+            className="im-card im-empty"
+          >
+            <h2 className="im-h3" id="im-stuck-title">
+              {t("import.stuck_title")}
+            </h2>
+            <p className="im-fine">{t("import.stuck_caption")}</p>
+            <div className="im-done-actions">
+              <TypeInstead className="im-btn im-btn-primary" />
+              <button
+                className="im-btn im-btn-outline"
+                onClick={() => reportProblem("bug")}
+                type="button"
+              >
+                {t("import.stuck_report")}
+              </button>
+            </div>
+          </section>
+        )}
+
         {staged && (
           <Loaded
             query={preview}
@@ -444,6 +498,8 @@ function Importer({
                     setWipe(NO_WIPE);
                     pasted.current = "";
                     if (file.current) file.current.value = "";
+                    setMisses(0);
+                    if (committed.imported > 0) setCommits((n) => n + 1);
                     wrote();
                   }}
                   platforms={platforms}
@@ -460,20 +516,23 @@ function Importer({
                 </Holdings>
               ) : (
                 <Tiers
-                  // A new reading starts with its duplicates left out again.
-                  key={read.digest}
+                  // A new reading starts with its duplicates left out again,
+                  // and with no ticker corrected.
+                  key={`${read.digest}:${read.platform}`}
                   onVenue={wrote}
                   picked={platform}
                   preview={read}
                 >
-                  {(keep) => panel(read, keep)}
+                  {(keep, shown) => panel(shown, keep)}
                 </Tiers>
               );
             }}
           </Loaded>
         )}
 
-        {result && <Committed ledger={ledger} onAgain={clear} result={result} />}
+        {result && (
+          <Committed gaps={gaps} ledger={ledger} onAgain={clear} result={result} />
+        )}
 
         {/* Only on the empty path, and only with nothing real to lose: the
             example commits somebody else's trades, which is a tour in an
@@ -487,7 +546,7 @@ function Importer({
 
         {/* No importer for this broker: tell the chat the trades instead. Shown
             while the book holds nothing real (empty or demo), never mid-review. */}
-        {!staged && !result && nothingReal && (
+        {!staged && !result && nothingReal && !stuck && (
           <section aria-label={t("import.type_title")} className="im-card im-empty">
             <p className="im-fine">{t("import.type_caption")}</p>
             <TypeInstead className="im-btn im-btn-outline" />
@@ -509,9 +568,11 @@ function Importer({
         />
         {real > 0 && (
           <Repairs
+            commits={commits}
             moves={moves}
             nonce={writes}
             onApplied={wrote}
+            onGaps={setGaps}
             onStale={() => setAgain((count) => count + 1)}
           />
         )}
@@ -544,10 +605,13 @@ function Importer({
  * than dropped quietly, and their count is said even when it is zero.
  */
 function Committed({
+  gaps,
   ledger,
   result,
   onAgain,
 }: {
+  /** Splits the scan after this commit found missing from the book. */
+  gaps: number;
   ledger: Query<Book>;
   result: Result;
   onAgain: () => void;
@@ -597,6 +661,19 @@ function Committed({
           </button>
         </div>
       </div>
+      {/* Said in the commit's own card: shares bought before a split read as
+          a vast loss, and that must not be the first thing the book shows. */}
+      {gaps > 0 && (
+        <button
+          className="im-done-fix"
+          onClick={() => jump("im-repairs")}
+          type="button"
+        >
+          <Glyph name="info" />
+          <span>{vocab.tn("import.splits_banner", gaps)}</span>
+          <Glyph name="right" />
+        </button>
+      )}
       {result.rejected.length > 0 && (
         <RowTable
           brief

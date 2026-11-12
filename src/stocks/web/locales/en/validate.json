@@ -11,5 +11,6 @@
   "validate.duplicate": "this exact trade is already in your portfolio or earlier in the file — importing it again counts it twice",
   "validate.near_duplicate": "your portfolio or this file already has a {action} of {quantity} {ticker} on {date} at another price — probably the same trade read twice",
   "validate.oversell": "sells {quantity} but only {held} were held on {date} — is an earlier buy or a split missing?",
-  "validate.split_added": "added a {ratio}:1 split on {date} from Yahoo — your statement doesn't show it, and the later sells don't add up without it"
+  "validate.split_added": "added a {ratio}:1 split on {date} from Yahoo — your statement doesn't show it, and the later sells don't add up without it",
+  "validate.ticker_doubt": "the price on {date} is far from where {ticker} closed that day — check it is the company you traded"
 }

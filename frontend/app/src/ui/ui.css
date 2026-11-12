@@ -882,10 +882,14 @@
   outline-offset: -2px;
 }
 
+/* Under a finger the track draws at a native segmented control's 32pt, not
+   the 44px a lone button needs: options touch edge to edge, so a near miss
+   still lands on one, and HIG's floor is 28. Every range selector the same
+   size, the ticker's included. */
 @media (pointer: coarse) {
   .ag-seg-opt {
-    min-height: 44px;
-    padding-inline: 0.85rem;
+    min-height: 32px;
+    padding-inline: 10px;
   }
 }
 

@@ -140,6 +140,7 @@ from stocks.chat.engine.providers import (
     free_allowlist,
     free_eligible,
     free_policy,
+    in_first_week,
     in_free_trial,
     note_free_fallback,
     prune_byok,
@@ -306,6 +307,7 @@ __all__ = [
     "free_trial_cap",
     "gather_evidence",
     "ground_web",
+    "in_first_week",
     "in_free_trial",
     "in_parallel",
     "language_rule",
@@ -657,13 +659,20 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     profile = agent.profile_for(
         message, depth or ("deep" if asked_for is not None and asked_for.deep
                            else ""))
-    if (profile is agent.DEEP and provider.id == "free"
-            and free_account_left(prefs) < DEEP_UNITS):
+    if profile is agent.DEEP and provider.id == "free":
         # The research runs before the answer is charged, so what it may
         # cost is settled here: a reader with one unit left gets the quick
         # gather and is charged one, not a deep one the wall then refuses.
-        profile = agent.FAST
-        obs.event("chat.deep_downgraded", left=free_account_left(prefs))
+        # And a new account's research is deep only when "in depth" was
+        # pressed: a question that merely reads as research, or a card's
+        # brief, would otherwise open the chat with a wait of minutes.
+        left = free_account_left(prefs)
+        why = ("units" if left < DEEP_UNITS
+               else "new_account" if depth != "deep" and in_first_week(prefs)
+               else "")
+        if why:
+            profile = agent.FAST
+            obs.event("chat.deep_downgraded", left=left, why=why)
     researched = max(timeout_s, profile.timeout)
     known = market.watchlist_names(watchlist)
     # Read once, and before the gather only when a typed symbol needs it.

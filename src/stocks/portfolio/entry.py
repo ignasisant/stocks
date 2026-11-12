@@ -91,10 +91,14 @@ class Reading:
     level: float
     value: float | None
     state: str  # PASS | FAIL | UNKNOWN
+    # Which figure was read when a line can read two: "ex_goodwill" when ROIC
+    # came from capital without goodwill, so a page beside the reported ROIC
+    # can say why the two differ.
+    basis: str | None = None
 
     def as_dict(self) -> dict:
         return {"rule": self.rule, "level": self.level, "value": self.value,
-                "state": self.state}
+                "state": self.state, "basis": self.basis}
 
 
 def _finite(value: object) -> float | None:
@@ -183,17 +187,30 @@ def _figure(rule: str, metrics: Mapping, weight: float | None) -> float | None:
     return value
 
 
+def _basis(rule: str, metrics: Mapping) -> str | None:
+    """`ex_goodwill` when `_figure` took ROIC without goodwill over the reported one."""
+    if rule != "roic_min":
+        return None
+    m = metrics or {}
+    reported = _finite(m.get("roic"))
+    ex = _finite(m.get("roic_ex_goodwill"))
+    if ex is not None and (reported is None or ex > reported):
+        return "ex_goodwill"
+    return None
+
+
 def read(rule: Rule, metrics: Mapping, weight: float | None = None) -> Reading:
     side, unit = RULES[rule.rule]
     raw = _figure(rule.rule, metrics, weight)
     if raw is None:
         return Reading(rule.rule, rule.level, None, UNKNOWN)
     value = raw * 100 if unit == "pct" else raw
+    basis = _basis(rule.rule, metrics)
     if rule.rule == "pe_fwd_max" and value <= 0:
         # A forward loss has no P/E to be under a line: it fails it.
         return Reading(rule.rule, rule.level, round(value, 2), FAIL)
     ok = value >= rule.level if side == "min" else value <= rule.level
-    return Reading(rule.rule, rule.level, round(value, 2), PASS if ok else FAIL)
+    return Reading(rule.rule, rule.level, round(value, 2), PASS if ok else FAIL, basis)
 
 
 def check(checklist: Checklist | None, metrics: Mapping | None,

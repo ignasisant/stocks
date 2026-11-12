@@ -311,5 +311,7 @@ export const GUEST_CHROME = {
   profilePrompt: false,
   installNudge: false,
   ratePrompt: false,
+  /** The operator's answer to a report: a guest's report has no account to answer in. */
+  feedbackReply: false,
   dictation: false,
 } as const;

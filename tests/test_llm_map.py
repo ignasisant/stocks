@@ -512,7 +512,8 @@ def test_the_resolution_call_is_retried_once(monkeypatch):
 
 
 def test_labels_become_tickers_in_one_extra_call(monkeypatch):
-    """Names and ISINs are resolved by the model, once, after the read."""
+    """Names are resolved by the model, once, after the read. The ISIN is
+    not its to name: the row keeps it for the registry to place."""
     _batches(monkeypatch, [TRADES_PAGE])
     replies = iter([
         _extraction("trades", [
@@ -523,7 +524,7 @@ def test_labels_become_tickers_in_one_extra_call(monkeypatch):
             {"date": "2024-12-05", "ticker": "LVMH Moet Hennessy Louis Vuitton",
              "action": "sell", "quantity": 5, "price": 629.9, "currency": "EUR"},
         ]),
-        '{"LVMH MOET HENNESSY LOUIS VUITTON": "MC.PA", "IL0011595993": "INMD"}',
+        '{"LVMH MOET HENNESSY LOUIS VUITTON": "MC.PA", "IL0011595993": "AMT"}',
     ])
 
     class _Sequence(_StubProvider):
@@ -535,8 +536,9 @@ def test_labels_become_tickers_in_one_extra_call(monkeypatch):
     found = llm_map.extract("statement.pdf", b"%PDF", provider, "k")
 
     assert [tx.ticker for tx in found.result.transactions] == [
-        "MC.PA", "INMD", "MC.PA"]
+        "MC.PA", "IL0011595993", "MC.PA"]
     assert len(provider.calls) == 2  # one read, one resolution for three rows
+    assert "IL0011595993" not in provider.calls[1][0]["content"]
 
 
 def test_an_unresolved_label_keeps_its_name_for_the_preview(monkeypatch):

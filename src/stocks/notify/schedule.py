@@ -374,9 +374,23 @@ def run(account: Account, job: str, day: date) -> str:
 SETTINGS_URL = links.path(links.PROFILE, tab="notify", edit="briefing")
 
 
-def thread_url(cid: str) -> str:
-    """Where a run's notification lands: its thread, opened in the drawer."""
-    return f"/?thread={quote(cid, safe='')}"
+def thread_url(cid: str, page: str = links.HOME) -> str:
+    """Where a run's notification lands: its thread, opened in the drawer over
+    `page` (the shell reads `?thread=` on any of them)."""
+    return f"/{page}?thread={quote(cid, safe='')}"
+
+
+def _landing(account: Account) -> str:
+    """The page under the briefing's thread. With a book it is "Sell or add":
+    the briefing says what moved, that page says what to do about it, and it
+    is the one the accounts that keep coming back open (prod 2026-11-11).
+    Without one there is nothing to review, so Home and its start card."""
+    from stocks.portfolio import ledger
+
+    with obs.swallow("briefing.landing"):
+        if ledger.has_transactions(account.paths.db):
+            return links.REVIEW
+    return links.HOME
 
 
 def _push(account: Account, message: dict, job: str) -> int:
@@ -436,7 +450,8 @@ def _briefing(account: Account, day: date) -> str:
               "title": translate("notify.briefing_change", card.lang)}
     message = render.message(
         daily.thread_title(card.day, card.lang),
-        [card.headline, *lines], thread_url(cid), "briefing", [change],
+        [card.headline, *lines], thread_url(cid, _landing(account)), "briefing",
+        [change],
     )
     return _status(cid, _push(account, message, "briefing"))
 

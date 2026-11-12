@@ -305,6 +305,80 @@ def test_a_pence_fill_asks_for_the_pound():
     assert usd_rate.asked == ["GBP"]
 
 
+# ---------------------------------------------------------------- a bare coin
+
+
+def test_a_bare_coin_is_its_pair_when_the_price_says_so():
+    # Revolut books Bitcoin as "BTC"; Yahoo's bare BTC is a forty-dollar trust.
+    rows = [buy("BTC", 61_500.0)]
+    got = pick(
+        ("BTC", "EUR"), rows, [],
+        quoted=yes,
+        candidates=offer(),
+        close=closes({("BTC-EUR", "2025-03-03"): 60_000.0,
+                      ("BTC", "2025-03-03"): 41.0}),
+        usd_rate=rate(0.92),
+    )
+    assert got == "BTC-EUR"
+
+
+def test_a_coin_yahoo_does_not_quote_bare_still_finds_its_pair():
+    got = pick(
+        ("DOGE", "USD"), [buy("DOGE", 0.21, "USD")], [],
+        quoted=lambda code: False,
+        candidates=offer(),
+        close=closes({("DOGE-USD", "2025-03-03"): 0.2}),
+        usd_rate=no_rate,
+    )
+    assert got == "DOGE-USD"
+
+
+def test_a_share_with_a_coins_letters_keeps_its_line():
+    # Atomera and Cosmos both answer to ATOM, and both near five dollars: the
+    # bare line explains the fill, so nothing moves.
+    got = pick(
+        ("ATOM", "USD"), [buy("ATOM", 5.1, "USD")], [],
+        quoted=yes,
+        candidates=offer(),
+        close=closes({("ATOM-USD", "2025-03-03"): 4.9,
+                      ("ATOM", "2025-03-03"): 5.0}),
+        usd_rate=no_rate,
+    )
+    assert got is None
+
+
+def test_a_coin_far_from_its_pair_stays_as_printed():
+    got = pick(
+        ("UNI", "USD"), [buy("UNI", 172.0, "USD")], [],
+        quoted=yes,
+        candidates=offer(),
+        close=closes({("UNI-USD", "2025-03-03"): 8.0,
+                      ("UNI", "2025-03-03"): 171.0}),
+        usd_rate=no_rate,
+    )
+    assert got is None
+
+
+def test_the_books_bare_coin_moves_onto_the_pair_it_already_uses():
+    prior = [buy("BTC", 61_500.0), buy("BTC-EUR", 58_000.0, day="2025-02-03")]
+    assert venue.keys([buy("ETH-EUR", 2_000.0)], prior) == [("BTC", "EUR")]
+    got = pick(
+        ("BTC", "EUR"), [buy("ETH-EUR", 2_000.0)], prior,
+        quoted=yes,
+        candidates=offer(),
+        close=closes({("BTC-EUR", "2025-03-03"): 60_000.0}),
+        usd_rate=no_rate,
+    )
+    assert got == "BTC-EUR"
+
+
+def test_a_coin_in_a_currency_without_a_pair_is_not_asked_about():
+    assert venue.coin_pair("BTC", "PLN") is None
+    assert venue.coin_pair("AAPL", "USD") is None
+    assert venue.keys([buy("AAPL", 190.0, "USD"), buy("BTC", 60_000.0, "USD")],
+                      []) == [("BTC", "USD")]
+
+
 # ------------------------------------------------------- what is worth asking
 
 

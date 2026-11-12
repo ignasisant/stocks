@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -101,6 +101,32 @@ class VenuePick(VenueAsk):
 class VenuePicked(BaseModel):
     code: str
     symbol: str
+
+
+class TickerAnswer(VenueAsk):
+    """The reader's word on a ticker the preview gave their rows."""
+
+    symbol: str = Field(
+        default="",
+        max_length=32,
+        description=(
+            "The line the rows really traded as; empty when the ticker is "
+            "right as it was read."
+        ),
+    )
+    why: Literal["doubt", "reader"] = Field(
+        default="doubt",
+        description=(
+            "`doubt` when the preview asked (`ImportPreview.doubted`), `reader` "
+            "when the reader said a ticker was wrong unasked."
+        ),
+    )
+
+
+class TickerAnswered(BaseModel):
+    code: str
+    symbol: str = Field(description="The ticker the rows carry from here on.")
+    answer: Literal["kept", "fixed"]
 
 
 def _venue_key(code: str) -> str:
@@ -211,3 +237,47 @@ def venue_pick(account: Writer, body: Annotated[VenuePick, ...]) -> VenuePicked:
     fetch.relisted(code)
     obs.event("import.venue_picked", code=code, symbol=symbol)
     return VenuePicked(code=code, symbol=symbol)
+
+
+@router.post("/ticker", response_model=TickerAnswered, summary="Which ticker it is")
+def ticker_answer(account: Writer, body: Annotated[TickerAnswer, ...]) -> TickerAnswered:
+    """The reader says which security a row is: the ticker it was read under,
+    or another line.
+
+    Writes nothing. The corrected rows travel back with the commit, which
+    validates them again; this checks the line the reader names and records
+    the answer (`import.ticker_answer`: the two tickers and which way it went,
+    never the reader's search or their trades), so the names the model gets
+    wrong, and the doubts that were wrong themselves, can be counted.
+
+    A correction is held to what a venue pick is: a line of the rows'
+    currency's venues that closed near their fills (`venue.agrees`). Anything
+    else is a 409; a Yahoo that could not be asked is a 503, to try again.
+    """
+    del account  # a session, like every other non-GET here
+    code = _venue_key(body.code)
+    symbol = body.symbol.strip().upper()
+    currency = body.currency.strip().upper()
+    if not symbol:
+        obs.event(
+            "import.ticker_answer", code=code, symbol=code, answer="kept", why=body.why
+        )
+        return TickerAnswered(code=code, symbol=code, answer="kept")
+
+    def refuse(detail: str, kind: int = status.HTTP_409_CONFLICT):
+        return HTTPException(status_code=kind, detail=detail)
+
+    if symbol == code:
+        raise refuse(f"{code} is the ticker the rows already carry")
+    if not symbols.on_venues(symbol, currency):
+        raise refuse(f"{symbol} is not a {currency} line")
+    sampled = venue.latest((fill.date, fill.price) for fill in body.fills)
+    agreed = venue.agrees(symbol, sampled, currency, _close)
+    if agreed is None:
+        raise refuse("Yahoo could not be asked", status.HTTP_503_SERVICE_UNAVAILABLE)
+    if not agreed:
+        raise refuse(f"{symbol} did not close near {code}'s fills")
+    obs.event(
+        "import.ticker_answer", code=code, symbol=symbol, answer="fixed", why=body.why
+    )
+    return TickerAnswered(code=code, symbol=symbol, answer="fixed")

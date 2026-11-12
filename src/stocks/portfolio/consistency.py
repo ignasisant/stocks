@@ -89,6 +89,11 @@ Kind = Literal[
     # A day move of exactly zero on a close equal to the session before: the
     # feed repeated yesterday's bar instead of printing today's (card).
     "stale_bar",
+    # A statement the model read, and a name it gave a row whose fills sit
+    # nowhere near that name's closes on the days they were made, with no
+    # split or unit to explain it: probably another company. The reader is
+    # asked which it is (import), and answers in `import.ticker_answer`.
+    "ticker_doubt",
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 

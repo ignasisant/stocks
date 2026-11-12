@@ -10,11 +10,14 @@
  * "skip the rest", the list's own X — because those are the reader saying they
  * are done, and a parked list abandoned half-read is still owed.
  *
+ * The walkthrough comes in two lengths: "tour" is the few core stops, "all"
+ * is every stop. Both park and both retire the same way; only "news" differs.
+ *
  * The parked position lives in `sessionStorage`: one tab, gone when the tab
  * is, and it survives a reload.
  */
 
-export type Mode = "tour" | "news";
+export type Mode = "tour" | "all" | "news";
 
 /** A tour that is running: which list, which item, and whether the modal is up. */
 export type Place = { mode: Mode; at: number; open: boolean };
@@ -46,9 +49,9 @@ export function after(
       // The tour parks; what's new does not. That asymmetry is deliberate:
       // the tour is what the reader came for, the news list is an
       // interruption, and closing an interruption means "enough".
-      return place.mode === "tour"
-        ? { place: { ...place, open: false }, stamp: null }
-        : { place: null, stamp: {} };
+      return place.mode === "news"
+        ? { place: null, stamp: {} }
+        : { place: { ...place, open: false }, stamp: null };
     case "goto":
       // Parked on the same item, so the strip can bring the reader back to
       // exactly where they left — and the rest of the list with them.
@@ -71,7 +74,9 @@ export function readPark(storage?: Storage | null): { mode: Mode; at: number } |
     const raw = (storage ?? window.sessionStorage).getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { mode?: unknown; at?: unknown };
-    if (parsed.mode !== "tour" && parsed.mode !== "news") return null;
+    if (parsed.mode !== "tour" && parsed.mode !== "all" && parsed.mode !== "news") {
+      return null;
+    }
     const at = Number(parsed.at);
     return {
       mode: parsed.mode,

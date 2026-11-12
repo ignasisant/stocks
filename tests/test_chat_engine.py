@@ -1558,6 +1558,34 @@ def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
     assert prefs[_today()] == 5
 
 
+def _first_seen(hours: float) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
+
+
+def test_a_new_account_gets_the_quick_research_until_it_asks_for_depth(
+        monkeypatch, paths):
+    """A question that only reads as research opened a new reader's chat with
+    a wait of minutes. In its first week the deep read is theirs to ask for."""
+    from stocks import llm
+
+    monkeypatch.setenv("FREE_LLM_DAILY_CAP", "9")
+    patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    seen = _costs(monkeypatch)
+    prefs = {**BASE_PREFS, "first_seen": _first_seen(2)}
+    engine.answer(prefs=prefs, message="analiza ASML a fondo", **paths)
+    assert seen[-1]["profile"] == "fast"
+    assert prefs[_today()] == 1
+    list(engine.answer_stream(prefs=prefs, message="analiza ASML a fondo",
+                              depth="deep", **paths))
+    assert seen[-1]["profile"] == "deep"
+    old = {**BASE_PREFS, "first_seen": _first_seen(8 * 24)}
+    engine.answer(prefs=old, message="analiza ASML a fondo", **paths)
+    assert seen[-1]["profile"] == "deep"
+
+
 def test_a_refund_gives_back_every_unit_a_turn_took(monkeypatch):
     monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
     patch_engine(monkeypatch, "_global_free", {"day": "", "used": 0})

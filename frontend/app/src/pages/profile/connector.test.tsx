@@ -70,6 +70,23 @@ describe("the MCP card", () => {
     expect(draw(URL, [connection()])).toContain("profile.connector_ok");
   });
 
+  it("says it is not connected yet while the door is open and nobody is in", () => {
+    expect(draw(URL, [])).toContain("profile.connector_wait");
+    expect(draw(URL, [connection()])).not.toContain("profile.connector_wait");
+    // The connector off, a grant from before: still connected, never waiting.
+    expect(draw(null, [connection()])).toContain("profile.connector_ok");
+    expect(draw(null, [connection()])).not.toContain("profile.connector_wait");
+  });
+
+  it("names where an app returns to, unless that is the reader's own machine", () => {
+    expect(draw(URL, [connection()])).toContain("profile.connector_returns_to");
+    for (const host of ["localhost", "127.0.0.1", "::1"]) {
+      expect(draw(URL, [connection({ redirect_host: host })])).not.toContain(
+        "profile.connector_returns_to",
+      );
+    }
+  });
+
   it("reports only the sources the server accepts", () => {
     expect(source("chat")).toBe("chat");
     expect(source("news")).toBe("news");

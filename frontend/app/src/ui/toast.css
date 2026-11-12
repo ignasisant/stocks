@@ -5,19 +5,16 @@
  * stylesheet sonner injects at runtime.
  */
 
-/* Where it sits: bottom right, lifted over the phone's
-   tab bar (`--dock`, which already carries the home indicator's inset) and
-   moved out of the open chat drawer's way (`--toast-right`, set in
-   chat.css). */
+/* Where it sits is `Toaster.tsx`'s `offset`: sonner writes those inline. The
+   `--normal-*` are what its dark theme paints the close button with, black
+   on black otherwise; set here they become this skin's. */
 :root:root [data-sonner-toaster] {
-  --offset-right: var(--toast-right, max(20px, env(safe-area-inset-right)));
-  --offset-bottom: calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)));
-  --mobile-offset-right: max(16px, env(safe-area-inset-right));
-  --mobile-offset-left: max(16px, env(safe-area-inset-left));
-  --mobile-offset-bottom: calc(
-    var(--dock, 0px) + max(16px, env(safe-area-inset-bottom))
-  );
   --width: min(380px, calc(100vw - 40px));
+  --normal-bg: transparent;
+  --normal-bg-hover: var(--ag-surface-hover);
+  --normal-border: var(--ag-border);
+  --normal-border-hover: var(--ag-border);
+  --normal-text: var(--ag-text-primary);
 
   z-index: 95;
   font-family: inherit;
@@ -37,6 +34,14 @@
   color: var(--ag-text-primary);
   font-size: var(--ag-fs-sm);
   line-height: 1.4;
+}
+
+/* Sonner's phone toaster is the full width from its left offset; the card
+   gives back both gutters, as sonner's own styled toast does. */
+@media (max-width: 600px) {
+  :root:root .ag-toast {
+    width: calc(100% - var(--mobile-offset-left) * 2);
+  }
 }
 
 /* Kind is the border's colour and the glyph's, never the whole card: a red

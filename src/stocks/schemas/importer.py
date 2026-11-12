@@ -195,6 +195,16 @@ class ImportPreview(BaseModel):
             "could not be asked (throttled, out of time) puts nothing here."
         ),
     )
+    doubted: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tickers the model gave importable rows whose prices sit far from "
+            "that name's closes on the days they traded: possibly another "
+            "company. Their rows carry `validate.ticker_doubt`; the reader "
+            "confirms or corrects each through `/import/ticker`. Only on a "
+            "statement the model read, and only where the closes could be asked."
+        ),
+    )
 
 
 class ImportResult(BaseModel):

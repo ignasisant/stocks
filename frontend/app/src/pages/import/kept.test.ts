@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Outcome, Preview, Staged } from "./api";
-import { forget, keep, preview, restored } from "./kept";
+import { fixesOf, forget, keep, keepFixes, preview, restored } from "./kept";
 import { NO_WIPE } from "./Wipe";
 
 const statement = (filename: string): Staged => ({ filename, content: "", bytes: 1 });
@@ -62,6 +62,22 @@ describe("the kept statement", () => {
     const { ask, asked } = counted();
     await preview("revolut", staged, false, ask);
     expect(asked()).toBe(1);
+  });
+
+  it("keeps the reader's ticker fixes for the reading they were made on", () => {
+    const staged = statement("a.pdf");
+    const fix = { code: "AMT", currency: "USD", symbol: "MU" };
+    keepFixes("d:llm", [fix]);
+    expect(fixesOf("d:llm")).toEqual([]);
+    keep(staged, NO_WIPE, "auto");
+    keepFixes("d:llm", [fix]);
+    // A write asks the preview again; the same bytes read to the same names.
+    forget();
+    keep(staged, { ...NO_WIPE }, "auto");
+    expect(fixesOf("d:llm")).toEqual([fix]);
+    expect(fixesOf("d:revolut")).toEqual([]);
+    keep(statement("b.pdf"), NO_WIPE, "auto");
+    expect(fixesOf("d:llm")).toEqual([]);
   });
 
   it("shares an answer still on its way", async () => {

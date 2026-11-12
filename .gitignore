@@ -64,6 +64,8 @@ wheels/
 # The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.
 /data/memo/
 /data/last_import.json
+# Previews awaiting commit (stocks.notify.import_alert) — runtime, per account.
+/data/import_watch.json
 # Revoked session ids (stocks.web auth), written at runtime.
 /data/sessions/
 # Daily counter for the keyless assistant's global allowance (runtime state).

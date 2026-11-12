@@ -22,6 +22,12 @@ relabel is a verdict, and "Yahoo was throttled" is not one.
 
 The answer is per (code, currency), never per code: the dollar "ALV" rows in
 the same book are still Autoliv.
+
+A coin printed bare is the same collision in any currency, dollars included:
+a Revolut statement books Bitcoin as "BTC", and Yahoo's bare "BTC" is a
+forty-dollar trust, so the position imported unpriced, held at cost (prod
+2026-11-11). Its line is the pair in the trade currency (`coin_pair`: BTC-EUR),
+proven by price like a venue, on a wider band (`COIN_TOLERANCE`).
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ import dataclasses
 from collections.abc import Callable, Iterable, Sequence
 
 from stocks.data import symbols
-from stocks.data.crypto import is_crypto
+from stocks.data.crypto import CRYPTO_NAMES, is_crypto, to_pair
 from stocks.portfolio.ledger import Transaction
 
 Key = tuple[str, str]  # (bare code as the ledger holds it, trade currency)
@@ -39,6 +45,11 @@ Key = tuple[str, str]  # (bare code as the ledger holds it, trade currency)
 # enough for an intraday swing, far narrower than the gap between two
 # companies that share a code (Santander ~5 EUR, Sanofi ~90).
 TOLERANCE = 0.08
+
+# A coin trades round the clock and its daily close is midnight UTC, so a fill
+# sits further from it than a share's does. Still far inside the gap to a US
+# share with the coin's letters, which is orders of magnitude.
+COIN_TOLERANCE = 0.25
 
 # Lines Yahoo quotes in the minor unit (London pence, JSE cents, TASE agorot)
 # while brokers book either unit under one code.
@@ -52,17 +63,30 @@ _MAJOR = {"GBX": "GBP", "ZAC": "ZAR", "ILA": "ILS"}
 _SAMPLES = 2
 
 
+def coin_pair(code: str, currency: str) -> str | None:
+    """The pair a bare coin code is priced as in its trade currency (BTC, EUR
+    -> BTC-EUR); None for a code that is no coin, and for a currency Yahoo has
+    no pair in — a dollar pair would be compared with a fill in another money."""
+    if not currency or code.upper() not in CRYPTO_NAMES:
+        return None
+    pair = to_pair(code, currency)
+    return pair if pair.endswith(f"-{currency.upper()}") else None
+
+
 def _bare(tx: Transaction) -> bool:
     cur = tx.currency
     code = tx.ticker
-    return (
-        bool(code)
-        and cur not in ("", "USD")
-        and "." not in code
-        and not is_crypto(code)
-        and not symbols.is_isin(code)
-        and bool(symbols.venue_symbols(code, cur))
-    )
+    if not code or "." in code or is_crypto(code) or symbols.is_isin(code):
+        return False
+    if coin_pair(code, cur):
+        return True
+    return cur not in ("", "USD") and bool(symbols.venue_symbols(code, cur))
+
+
+def _labels(code: str, currency: str) -> list[str]:
+    """Every label a bare (code, currency) could be booked under."""
+    pair = coin_pair(code, currency)
+    return [*symbols.venue_symbols(code, currency), *([pair] if pair else [])]
 
 
 def keys(rows: Sequence[Transaction], prior: Sequence[Transaction]) -> list[Key]:
@@ -70,10 +94,14 @@ def keys(rows: Sequence[Transaction], prior: Sequence[Transaction]) -> list[Key]
 
     Every bare code the statement brings, and every bare code already in the
     book that a suffixed label in the same currency claims (Revolut's "ALV"
-    next to ClickTrade's "ALV.DE"): otherwise the two imports are two
-    positions in one company.
+    next to ClickTrade's "ALV.DE", a bare "BTC" next to "BTC-EUR"): otherwise
+    the two imports are two positions in one company.
     """
-    labels = {(t.ticker, t.currency) for t in (*rows, *prior) if "." in t.ticker}
+    labels = {
+        (t.ticker, t.currency)
+        for t in (*rows, *prior)
+        if "." in t.ticker or is_crypto(t.ticker)
+    }
     out: list[Key] = []
     for t in rows:
         if _bare(t) and (k := (t.ticker, t.currency)) not in out:
@@ -82,7 +110,7 @@ def keys(rows: Sequence[Transaction], prior: Sequence[Transaction]) -> list[Key]
         k = (t.ticker, t.currency)
         if k in out or not _bare(t):
             continue
-        if any((s, t.currency) in labels for s in symbols.venue_symbols(*k)):
+        if any((s, t.currency) in labels for s in _labels(*k)):
             out.append(k)
     return out
 
@@ -116,6 +144,7 @@ def agrees(
     samples: Sequence[tuple[str, float]],
     currency: str,
     close: Callable[[str, str], float | None],
+    tolerance: float = TOLERANCE,
 ) -> bool | None:
     """Whether `symbol` closed near every sampled fill; None when no sampled
     day has a close at all (unlisted there, or Yahoo could not be asked)."""
@@ -126,9 +155,27 @@ def agrees(
         if not last or last <= 0:
             continue
         seen = True
-        if not any(abs(price - last * u) <= TOLERANCE * last * u for u in units):
+        if not any(abs(price - last * u) <= tolerance * last * u for u in units):
             return False
     return True if seen else None
+
+
+def in_currency(
+    close: Callable[[str, str], float | None],
+    usd_rate: Callable[[str, str], float | None],
+    currency: str,
+) -> Callable[[str, str], float | None]:
+    """`close` of a bare line, which is a dollar one, read in `currency` at the
+    day's rate (`usd_rate(currency, day)`); None when either is missing."""
+
+    def converted(symbol: str, day: str) -> float | None:
+        last = close(symbol, day)
+        if not last or currency == "USD":
+            return last
+        rate = usd_rate(_MAJOR.get(currency, currency), day)
+        return last * rate if rate else None
+
+    return converted
 
 
 def pick(
@@ -156,8 +203,17 @@ def pick(
     A fill the book already holds under a label, to the share and the cent,
     proves that label without a price: it is the same statement imported
     again, and it has to find its duplicates while Yahoo is throttled too.
+
+    A coin's pair is asked whether or not Yahoo quotes the bare code — most
+    coins it does not — and gives way to the bare line on the same terms as a
+    searched venue: "ATOM" at five dollars is Atomera as readily as Cosmos.
     """
     code, currency = key
+    pair = coin_pair(code, currency)
+
+    def near(symbol: str) -> float:
+        return COIN_TOLERANCE if symbol == pair else TOLERANCE
+
     sampled = samples(key, (*rows, *prior))
     if not sampled:
         return None
@@ -165,22 +221,22 @@ def pick(
     booked = {_fill(t) for t in prior if t.currency == currency}
     mine = [_fill(t)[1:] for t in rows if (t.ticker, t.currency) == key]
     tried: list[str] = []
-    for symbol in symbols.venue_symbols(code, currency):
+    for symbol in _labels(code, currency):
         if symbol in used:
             tried.append(symbol)
             if any((symbol, *m) in booked for m in mine):
                 return symbol
-            if agrees(symbol, sampled, currency, close):
+            if agrees(symbol, sampled, currency, close, near(symbol)):
                 return symbol
     if not any((t.ticker, t.currency) == key for t in rows):
         return None  # only the book's own rows, claimed by a label: done above
-    if not quoted(code):
-        return None
 
-    def bare_close(symbol: str, day: str) -> float | None:
-        last = close(symbol, day)
-        rate = usd_rate(_MAJOR.get(currency, currency), day) if last else None
-        return last * rate if last and rate else None
+    bare_close = in_currency(close, usd_rate, currency)
+
+    if pair and pair not in tried and agrees(pair, sampled, currency, close, near(pair)):
+        return None if agrees(code, sampled, currency, bare_close) else pair
+    if currency == "USD" or not quoted(code):
+        return None
 
     for symbol in candidates(code, currency):
         if symbol in tried or not agrees(symbol, sampled, currency, close):
