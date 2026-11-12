@@ -40,10 +40,19 @@ LOOKUP_TIMEOUT = 8.0  # seconds for the whole quote batch
 _MAX_LOOKUPS = 1  # company-name searches against Yahoo per message
 
 # Ticker-shaped tokens as the app knows them: plain symbols (NVDA), venue
-# suffixes (MIPS.ST), class shares (BRK.B), crypto pairs (BTC-EUR).
+# suffixes (MIPS.ST), class shares (BRK.B), crypto pairs (BTC-EUR), and
+# listings with a digit, only with their venue (TPG0.DE, 1810.HK).
 # A token touching "&" is a letter of an initialism ("S&P", "M&A", "R&D"), not
 # a symbol: "¿bato al S&P 500?" once quoted Sirius XM ("S").
-_TICKER_RE = re.compile(r"(?<![&\w])[A-Z]{1,5}(?:[.\-][A-Z]{1,4})?(?![&\w])")
+_TICKER_RE = re.compile(
+    r"(?<![&\w])(?:[A-Z]{1,5}(?:[.\-][A-Z]{1,4})?"
+    r"|(?=[A-Z]{0,5}\d)[A-Z0-9]{1,6}\.[A-Z]{1,3})(?![&\w])")
+# A name with its symbol after it in brackets, as the ticker page asks
+# ("Analyze The Platform Group SE & Co. KGaA (TPG0.DE): …"): the capitalized
+# run before the bracket is the company's name, and its caps are not symbols.
+# The "SE" of that name was charted as Sea Ltd (2026-11-12 triage).
+_NAMED_AS_RE = re.compile(
+    r"(?:[A-Z][\w.'-]*(?:\s*&\s*|\s+))+(?=\(\s*\^?[A-Z0-9][A-Z0-9.\-=]{0,14}\s*\))")
 # The "&" names that do stand for something to quote, as typed in caps.
 _AMPERSAND = (
     (re.compile(r"\bS ?& ?P(?: ?500)?(?![&\w])|\bSP ?500\b", re.IGNORECASE), "^GSPC"),
@@ -264,7 +273,9 @@ def _lookup(name: str) -> str:
 
 def _ampersands(message: str, add: Callable[[str], None]) -> str:
     """`add` the symbol of each "&" name and return `message` without them,
-    so a spaced "S & P" leaves no "S" behind for the token scan."""
+    so a spaced "S & P" leaves no "S" behind for the token scan. A name
+    followed by its bracketed symbol goes too (`_NAMED_AS_RE`)."""
+    message = _NAMED_AS_RE.sub(lambda m: " " * len(m.group(0)), message)
     for pattern, symbol in _AMPERSAND:
         if pattern.search(message):
             add(symbol)

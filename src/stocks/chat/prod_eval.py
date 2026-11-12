@@ -139,6 +139,9 @@ class Question:
     opens: str = ""
     mentions: tuple[str, ...] = ()
     forbids: tuple[str, ...] = ()
+    # Symbols no tool call may be about: the app read a word of the question
+    # as a ticker it was not asked about (a chart of the book against "SE").
+    strays: tuple[str, ...] = ()
     truth: tuple[Truth, ...] = ()
     view: str = ""
     tab: str = ""
@@ -206,6 +209,7 @@ def load(path: Path = CATALOG) -> list[Question]:
                 opens=row.get("opens") or "",
                 mentions=tuple(str(m) for m in row.get("mentions") or ()),
                 forbids=tuple(str(m) for m in row.get("forbids") or ()),
+                strays=tuple(str(m).upper() for m in row.get("strays") or ()),
                 truth=tuple(Truth(**t) for t in row.get("truth") or ()),
                 view=row.get("view") or "",
                 tab=row.get("tab") or "",
@@ -611,8 +615,9 @@ def checks(
     lists figures no reference in `pool` states (only when there is one);
     `isins` is the answer's `isin_registry`, and one MADE_UP the reader did
     not type fails; `opens` is whether a navigate button pointed at the page
-    (and tab, when named); `mentions` / `forbids` are word checks; `failed`
-    lists what broke."""
+    (and tab, when named); `mentions` / `forbids` are word checks; `strays`
+    the tool calls on a symbol the question forbids; `failed` lists what
+    broke."""
     text = _fold(ans.text)
     out: dict[str, Any] = {"failed": []}
     if ans.error or not ans.text.strip():
@@ -663,8 +668,24 @@ def checks(
     if hits:
         out["forbids"] = hits
         out["failed"].append(f"says {hits}")
+    strayed = sorted({
+        f"{c.name} {sym}" for c in ans.calls for sym in _symbols(c.args)
+        if sym in q.strays})
+    if strayed:
+        out["strays"] = strayed
+        out["failed"].append(f"called {strayed}")
     if q.kind == "action" and not ans.proposal:
         out["failed"].append("no proposal")
+    return out
+
+
+def _symbols(args: dict) -> set[str]:
+    """The ticker-shaped values of a call's arguments, a list's items too."""
+    out: set[str] = set()
+    for value in args.values():
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item.strip():
+                out.add(item.strip().upper())
     return out
 
 

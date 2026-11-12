@@ -149,6 +149,18 @@ def test_checks_name_what_broke():
     assert len(got["failed"]) == 3
 
 
+def test_a_tool_called_on_a_stray_symbol_fails():
+    # Prod 2026-11-12: "Analyze The Platform Group SE …" charted the book
+    # against Sea Ltd; only the chart's call says so, not the answer's words.
+    q = _q(strays=("SE",))
+    chart = prod_eval.Call("price_chart", {"symbols": ["@BOOK", "SE"], "window": "1y"})
+    got = prod_eval.checks(q, prod_eval.Answer(text="ok", calls=[chart]), {})
+    assert got["strays"] == ["price_chart SE"]
+    fine = prod_eval.Call("price_chart", {"symbols": ["@BOOK", "TPG0.DE"]})
+    assert prod_eval.checks(q, prod_eval.Answer(text="ok", calls=[fine]), {})[
+        "failed"] == []
+
+
 def test_verdict_puts_a_figure_off_above_a_missed_goal():
     row = {"checks": {"failed": ["x"], "figures": {"a": "off"}}, "judged": None}
     assert prod_eval.verdict(row) == "halluc"

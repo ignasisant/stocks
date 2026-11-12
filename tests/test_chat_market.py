@@ -115,6 +115,26 @@ def test_a_central_bank_is_not_a_ticker_unless_the_reader_lists_it():
     assert mentioned("Que es BCE", {"BCE": "BCE"}, lookup=_no_lookup) == ["BCE"]
 
 
+@pytest.mark.parametrize("message, symbols", [
+    # Prod 2026-11-12: the ticker page's own prompt on a German SE quoted and
+    # charted Sea Ltd, and never TPG0.DE (a digit was not ticker-shaped).
+    ("Analyze The Platform Group SE & Co. KGaA (TPG0.DE): business, "
+     "fundamentals, and how it fits my portfolio.", ["TPG0.DE"]),
+    ("Analiza SAP SE (SAP.DE): negocio y cómo encaja en mi cartera.", ["SAP.DE"]),
+    ("Analiza IREN Ltd (IREN): negocio", ["IREN"]),
+    ("Analyze Xiaomi Corporation (1810.HK): business", ["1810.HK"]),
+    ("Procter & Gamble (PG)", ["PG"]),
+    # Only the name right before the bracket: another symbol stays.
+    ("¿Compro más NVDA o vendo Inditex (ITX.MC)?", ["NVDA", "ITX.MC"]),
+])
+def test_a_name_before_its_bracketed_symbol_is_not_a_ticker(message, symbols):
+    assert mentioned(message, lookup=_no_lookup) == symbols
+
+
+def test_a_number_with_a_decimal_is_not_a_listing():
+    assert mentioned("sube 2.5X, a 10.5 EUR", lookup=lambda n: "") == []
+
+
 def test_each_quote_says_whether_the_reader_holds_it():
     # Told "BCE Inc, last 20.39 USD", the answer said "sí, tienes BCE en
     # cartera" with another position's shares and loss.

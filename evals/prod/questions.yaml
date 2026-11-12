@@ -27,6 +27,7 @@
 #   opens     page or page/tab the answer should offer a button to (navigate)
 #   mentions  at least one of these words must appear (accents/case ignored)
 #   forbids   none of these may appear
+#   strays    symbols no tool call may be about (a chart, a quote)
 #   truth     [{get: /api path, pick: field path, label, tol}] read from prod
 #             before the question; numbers are checked against the answer
 #             within `tol` (relative), and the judge sees them as reference
@@ -317,6 +318,49 @@
     - Gives ASML's operating margin from the app's data
   truth:
     - {get: /ticker/ASML/metrics, label: "ASML metrics"}
+
+# Thumbs-down 2026-11-12 (wrong): the ticker page's "Ask AI" on a German "SE"
+# charted the book against Sea Ltd (SE) and never the listing asked about,
+# whose symbol carries a digit. The page's own prompt, on public names.
+- id: ticker-analyze-legal-form
+  area: ticker
+  kind: book
+  view: ticker
+  focus: SAP.DE
+  message: "Analiza SAP SE (SAP.DE): negocio, fundamentales, valoración frente a su historia y cómo encaja en mi cartera."
+  goals:
+    - Every figure, line and chart is SAP.DE's, never another company's whose ticker is a word of the name (SE)
+    - Says how SAP.DE fits the reader's book from the book's own figures
+  forbids: ["Sea Ltd", "Sea Limited"]
+  strays: [SE]
+  truth:
+    - {get: /ticker/SAP.DE/quote, pick: price, label: "SAP.DE price (EUR)", tol: 0.03}
+
+- id: ticker-analyze-legal-form-en
+  area: ticker
+  kind: book
+  lang: en
+  view: ticker
+  focus: SIE.DE
+  message: "Analyze Siemens AG (SIE.DE): business, fundamentals, valuation against its history, and how it fits my portfolio."
+  goals:
+    - Every figure, line and chart is SIE.DE's, never First Majestic Silver's (AG)
+  forbids: ["First Majestic"]
+  strays: [AG]
+  truth:
+    - {get: /ticker/SIE.DE/quote, pick: price, label: "SIE.DE price (EUR)", tol: 0.03}
+
+- id: ticker-analyze-digit-symbol
+  area: ticker
+  kind: book
+  lang: en
+  view: ticker
+  focus: 1810.HK
+  message: "Analyze Xiaomi Corporation (1810.HK): business, fundamentals, valuation against its history, and how it fits my portfolio."
+  goals:
+    - Reads 1810.HK as the symbol asked about and gives its figures, in HKD or converted and said so
+  truth:
+    - {get: /ticker/1810.HK/quote, pick: price, label: "1810.HK price (HKD)", tol: 0.03}
 
 - id: ticker-dcf
   area: ticker
