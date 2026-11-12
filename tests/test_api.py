@@ -680,6 +680,16 @@ WRITES = {
     # spends the operator's transcription key, which is exactly what a bearer
     # token must never do on somebody else's account.
     ("/v1/chat/voice", "post"),
+    # A pasted screenshot, read into words. The voice note's twin: nothing is
+    # written — not the picture, not a turn — but a model call is spent on the
+    # account's key or the operator's.
+    ("/v1/chat/screenshots", "post"),
+    # What the browser did with a paste (refused it, took it back, opened
+    # it): a line in the log and nothing else, from a browser session only.
+    ("/v1/chat/screenshots/events", "post"),
+    # A PDF read into text to ask about. Nothing is written and no model is
+    # called, but it spends the account's burst budget and this worker's CPU.
+    ("/v1/chat/documents", "post"),
     # The sector screen's written read. It spends a unit of the account's
     # allowance and stores the answer beside its prefs, so a token may not.
     ("/v1/sectors/{sector}/verdict", "post"),

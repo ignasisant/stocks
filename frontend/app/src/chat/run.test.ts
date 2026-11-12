@@ -71,6 +71,45 @@ describe("the run the drawer sends", () => {
       regenerate: true,
     });
   });
+
+  it("sends what was read in a pasted screenshot beside the question", () => {
+    const read = ["AAPL | 3 | 190.50"];
+    const input = runInput({ message: "is this right?" }, { screenshots: read });
+    expect(input.forwardedProps).toEqual({ screenshots: read });
+    // The question is the words the reader typed and nothing else.
+    expect(input.messages).toEqual([
+      { id: expect.any(String), role: "user", content: "is this right?" },
+    ]);
+    // A regenerate asks the stored turn again: the server kept its readings.
+    expect(
+      runInput({ regenerate: true }, { screenshots: read }).forwardedProps,
+    ).toEqual({
+      regenerate: true,
+    });
+    expect(runInput({ message: "hi" }, { screenshots: [] }).forwardedProps).toEqual({});
+  });
+
+  it("sends a document's text beside the question", () => {
+    const docs = [{ name: "results.pdf", text: "Revenue 4,210", cut: true }];
+    const input = runInput({ message: "how was the quarter?" }, { documents: docs });
+    expect(input.forwardedProps).toEqual({ documents: docs });
+    expect(input.messages[0]?.content).toBe("how was the quarter?");
+    // A regenerate asks the stored turn again: the server kept its documents.
+    expect(runInput({ regenerate: true }, { documents: docs }).forwardedProps).toEqual({
+      regenerate: true,
+    });
+    expect(runInput({ message: "hi" }, { documents: [] }).forwardedProps).toEqual({});
+  });
+
+  it("says when the question replaces the last exchange", () => {
+    const input = runInput({ message: "and its margins?" }, { edit: true });
+    expect(input.forwardedProps).toEqual({ edit: true });
+    expect(input.messages[0]?.content).toBe("and its margins?");
+    // Only a question can: a regenerate already asks the stored one again.
+    expect(runInput({ regenerate: true }, { edit: true }).forwardedProps).toEqual({
+      regenerate: true,
+    });
+  });
 });
 
 describe("the events it reads", () => {

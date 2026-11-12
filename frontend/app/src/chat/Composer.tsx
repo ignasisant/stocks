@@ -33,6 +33,30 @@
  * a copied file, rows out of a spreadsheet or a base64 PDF go to the preview,
  * not into the question.
  *
+ * A pasted picture is the other thing a paste can be, and it is part of the
+ * question rather than in place of it: a screenshot of a broker's screen, a
+ * chart, a table somebody posted. It is read into words on the way in
+ * (`shots.ts`) — the chat is text from end to end — and waits above the field
+ * as a thumbnail with a way to take it back, up to three. Send holds until
+ * the reading is in, because a question sent ahead of its picture is a
+ * question about nothing. The sent question shows the picture over it and
+ * what was read under it (`Turn`), since a figure misread there is misread in
+ * the answer. With the field left empty the picture is the question, and a
+ * stock one is asked for it. Offered only where something can see
+ * (`state.screenshots`). There the clip takes pictures too, and so does a
+ * drop on the conversation (`take`): a phone has no Ctrl+V worth the name,
+ * and its file picker is where the camera and the photo library are.
+ *
+ * A document is the third thing that can ride with a question (`docs.ts`): a
+ * PDF's text, or words pasted in one piece too long to be a question. It
+ * waits above the field as a chip with its name, and Send holds until it is
+ * read, as for a picture. A PDF is also what a statement comes as, and
+ * nothing in the file says which it is — so one that arrives is asked about
+ * first: "Ask about it" or "Import its trades". Asking is taken mid-answer,
+ * as a picture is; the import waits its turn. Only the start of a long one
+ * goes with the question, and the line under the chip says so before it is
+ * sent rather than after the answer misses page forty.
+ *
  * The microphone is the fourth, inside the field beside the lens — the same
  * control, in the same corner, as the feedback dialog's (`ui/Mic`). It is
  * drawn only where it can work: this browser has to have `MediaRecorder` and
@@ -77,11 +101,21 @@ import { Box, Mic } from "../ui/Mic";
 import { Segmented } from "../ui/Segmented";
 import { Status } from "../ui/Status";
 import { ToggleChip } from "../ui/Toggle";
-import type { ChatState, SettingsPatch, SkillsMode } from "./types";
+import type { ChatState, Doc, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
 import { useAssistantFills } from "../shell/assistant";
 import { takeDraft } from "./draft";
-import { pastedStatement } from "./pasted";
+import { noteShot } from "./api";
+import {
+  isPdf,
+  MAX_DOCS,
+  PASTE_FROM,
+  pastedDoc,
+  refused as refusedDoc,
+  textOf,
+} from "./docs";
+import { pastedShot, pastedStatement, sorted } from "./pasted";
+import { encoded, keepPicture, MAX_SHOTS, refused, wordsOf, type Way } from "./shots";
 import { Model } from "./Settings";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
@@ -235,17 +269,29 @@ export function Composer({
   onSave,
   onAttach,
   onSettings,
+  drops,
 }: {
   state: ChatState;
   busy: boolean;
   /** A statement is being read, or written. The clip and Send both wait. */
   reading: boolean;
-  onSend: (text: string, spoken?: boolean, deep?: boolean) => void;
+  onSend: (
+    text: string,
+    spoken?: boolean,
+    deep?: boolean,
+    shots?: string[],
+    docs?: Doc[],
+  ) => void;
   /** Cut the answer being written. Offered in Send's place while it streams. */
   onStop?: () => void;
   onSave: (patch: SettingsPatch) => void;
   onAttach: (file: File) => void;
   onSettings: () => void;
+  /**
+   * Where the panel finds `take`: files dropped on the conversation above
+   * are this composer's to sort, since the pictures wait here.
+   */
+  drops?: { current: ((files: File[]) => void) | null };
 }) {
   const t = useT();
   const lang = useLang();
@@ -269,6 +315,37 @@ export function Composer({
     key: string;
     slots: Record<string, number>;
   } | null>(null);
+  // Pasted pictures, oldest first. No `url` yet is one still being decoded;
+  // no `text` yet is one still being read.
+  const [shots, setShots] = useState<{ id: number; url?: string; text?: string }[]>([]);
+  const [shotError, setShotError] = useState<{
+    key: string;
+    slots: Record<string, number>;
+  } | null>(null);
+  // The pictures still wanted: one taken back mid-reading must neither come
+  // back when its reading lands nor apologise when it fails.
+  const wanted = useRef(new Set<number>());
+  const shotId = useRef(0);
+  // The documents for the next question, oldest first. No `text` yet is a
+  // PDF still being read.
+  const [docs, setDocs] = useState<
+    {
+      id: number;
+      name: string;
+      text?: string;
+      cut?: boolean;
+      pages?: number;
+      read?: number;
+    }[]
+  >([]);
+  const [docError, setDocError] = useState<{
+    key: string;
+    slots: Record<string, number>;
+  } | null>(null);
+  const docsWanted = useRef(new Set<number>());
+  const docId = useRef(0);
+  // A PDF that has arrived and has not been told what it is for.
+  const [pdf, setPdf] = useState<{ file: File; via: Way } | null>(null);
   // Focus lands at the end of the transcript once it is in the field, so the
   // reader can fix a word or press Enter without reaching for the mouse.
   const [caret, setCaret] = useState(false);
@@ -403,11 +480,164 @@ export function Composer({
   // The words in the field are still being said, or about to be replaced.
   const live = taping || saying;
 
+  const paste = async (picture: File, via: Way = "paste") => {
+    // Counted off the ref, not the state: two pastes in one tick both see it.
+    if (wanted.current.size >= MAX_SHOTS) {
+      setShotError({ key: "chat.shot_too_many", slots: { n: MAX_SHOTS } });
+      noteShot("refused", { why: "chat.shot_too_many", sent: false });
+      return;
+    }
+    setShotError(null);
+    const id = ++shotId.current;
+    wanted.current.add(id);
+    const fill = (more: { url?: string; text?: string }) =>
+      setShots((list) =>
+        list.map((shot) => (shot.id === id ? { ...shot, ...more } : shot)),
+      );
+    // Up before the picture is even decoded: the paste was seen.
+    setShots((list) => [...list, { id }]);
+    let sent = false;
+    try {
+      const shot = await encoded(picture);
+      fill({ url: shot.url });
+      sent = true;
+      fill({ text: await wordsOf(shot, lang, via) });
+    } catch (failure) {
+      if (!wanted.current.delete(id)) return;
+      setShots((list) => list.filter((shot) => shot.id !== id));
+      const { key, slots } = refused(failure);
+      setShotError({ key, slots });
+      noteShot("refused", { why: key, sent });
+    }
+  };
+
+  /** Room for one more document, or the line that says there is none. */
+  const room = (): boolean => {
+    // Counted off the ref, as the pictures are.
+    if (docsWanted.current.size < MAX_DOCS) {
+      setDocError(null);
+      return true;
+    }
+    setDocError({ key: "chat.doc_too_many", slots: { n: MAX_DOCS } });
+    return false;
+  };
+
+  /** Read a PDF into the text the next question takes with it. */
+  const study = async (file: File, via: Way) => {
+    if (!room()) return;
+    const id = ++docId.current;
+    docsWanted.current.add(id);
+    // Up before it is read, under the name it has on this device.
+    setDocs((list) => [...list, { id, name: file.name }]);
+    try {
+      const found = await textOf(file, via);
+      if (!docsWanted.current.has(id)) return;
+      setDocs((list) => list.map((doc) => (doc.id === id ? { id, ...found } : doc)));
+    } catch (failure) {
+      if (!docsWanted.current.delete(id)) return;
+      setDocs((list) => list.filter((doc) => doc.id !== id));
+      const { key, slots } = refusedDoc(failure);
+      setDocError({ key, slots });
+    }
+  };
+
+  /**
+   * A PDF has arrived. Where a statement can come as one, the reader says
+   * which this is; where none can, it is a document to ask about.
+   */
+  const offer = (file: File, via: Way) => {
+    setDocError(null);
+    if (state.upload_types.includes("pdf")) setPdf({ file, via });
+    else void study(file, via);
+  };
+
+  /**
+   * Files from the clip or a drop: the pictures join the question, as a
+   * paste would have; the first of the rest is a statement to import, or a
+   * PDF to ask about.
+   */
+  const take = (files: ArrayLike<File>, via: Way) => {
+    const { shots: pictures, statement } = sorted(files, state.screenshots);
+    for (const picture of pictures) void paste(picture, via);
+    if (!statement) return;
+    // A picture or a document is for the next question and is taken
+    // mid-answer, as typing is. A statement is an import of its own, and
+    // waits its turn.
+    if (isPdf(statement)) offer(statement, via);
+    else if (!busy && !reading) onAttach(statement);
+  };
+  // Every render: `take` reads the state of the one it was made in.
+  useEffect(() => {
+    if (!drops) return;
+    drops.current = (files) => take(files, "drop");
+    return () => {
+      drops.current = null;
+    };
+  });
+
+  const drop = (id: number) => {
+    wanted.current.delete(id);
+    noteShot("removed", {
+      read: shots.some((shot) => shot.id === id && shot.text !== undefined),
+    });
+    setShots((list) => list.filter((shot) => shot.id !== id));
+    setShotError(null);
+  };
+
+  const dropDoc = (id: number) => {
+    docsWanted.current.delete(id);
+    setDocs((list) => list.filter((doc) => doc.id !== id));
+    setDocError(null);
+  };
+
+  const read = shots.flatMap((shot) => (shot.text === undefined ? [] : [shot.text]));
+  const studied = docs.flatMap((doc) =>
+    doc.text === undefined ? [] : [{ name: doc.name, text: doc.text, cut: !!doc.cut }],
+  );
+  const unstudied = docs.length > studied.length;
+  const unread = shots.length > read.length;
+  // What Send waits for: everything that rides with the question is in.
+  const waiting = unread || unstudied;
+  // Said once each: two long pastes are one sentence, not the same one twice.
+  const cuts = [
+    ...new Set(
+      docs.flatMap((doc) =>
+        !doc.cut
+          ? []
+          : doc.pages && doc.read && doc.read < doc.pages
+            ? [t("chat.doc_cut_pages", { read: doc.read, pages: doc.pages })]
+            : [t("chat.doc_cut")],
+      ),
+    ),
+  ];
+
   const submit = () => {
-    const question = text.trim();
-    if (!question || busy || live) return;
+    // A picture or a document with nothing typed is the question: asked in a
+    // stock sentence, because a turn is filed, titled and notified by its
+    // words.
+    const question =
+      text.trim() ||
+      (read.length ? t("chat.shot_ask") : studied.length ? t("chat.doc_ask") : "");
+    if (!question || busy || live || waiting) return;
+    // The thread keeps the words; the picture over the sent question is this
+    // device's copy.
+    for (const shot of shots) {
+      if (shot.text !== undefined && shot.url) keepPicture(shot.text, shot.url);
+    }
     setText("");
-    onSend(question, spoken.current || undefined, deep || undefined);
+    setShots([]);
+    setShotError(null);
+    wanted.current.clear();
+    setDocs([]);
+    setDocError(null);
+    docsWanted.current.clear();
+    onSend(
+      question,
+      spoken.current || undefined,
+      deep || undefined,
+      read.length ? read : undefined,
+      studied.length ? studied : undefined,
+    );
     spoken.current = false;
     if (!byok) setDeep(false);
   };
@@ -417,8 +647,24 @@ export function Composer({
     if (byok) keepDeep(next);
   };
 
+  const attachLabel = t(state.screenshots ? "chat.attach_any" : "chat.attach", {
+    mb: state.upload_max_mb,
+  });
+
   return (
-    <div className="ag-chat-composer">
+    // A file let go over the field instead of the conversation is the same
+    // drop — and left to the browser it would open in place of the app.
+    <div
+      className="ag-chat-composer"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.files?.length) return;
+        event.preventDefault();
+        take(event.dataTransfer.files, "drop");
+      }}
+    >
       {voiceError && (
         <p className="ag-chat-note">{t(voiceError.key, voiceError.slots)}</p>
       )}
@@ -446,6 +692,104 @@ export function Composer({
         onDeep={pickDepth}
         free={!byok && state.free_cap !== null}
       />
+      {shotError && (
+        <p className="ag-chat-note" role="alert">
+          {t(shotError.key, shotError.slots)}
+        </p>
+      )}
+      {shots.length > 0 && (
+        <ul className="ag-chat-shots">
+          {shots.map((shot) => (
+            <li
+              key={shot.id}
+              className={`ag-chat-shot${shot.text === undefined ? " ag-chat-shot-unread" : ""}`}
+            >
+              {shot.url && <img src={shot.url} alt={t("chat.shot_alt")} />}
+              <button
+                type="button"
+                className="ag-chat-shot-x"
+                aria-label={t("chat.shot_remove")}
+                onClick={() => drop(shot.id)}
+              >
+                <Glyph name="close" size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* A reading is a few seconds of a model looking; a dimmed thumbnail
+          alone does not say what Send is waiting for. */}
+      {unread && <Status label={t("chat.work_reading_shot")} />}
+      {docError && (
+        <p className="ag-chat-note" role="alert">
+          {t(docError.key, docError.slots)}
+        </p>
+      )}
+      {pdf && (
+        <div className="ag-chat-pdf" role="group" aria-label={pdf.file.name}>
+          <span className="ag-chat-doc-name">{pdf.file.name}</span>
+          <span className="ag-chat-pdf-acts">
+            <button
+              type="button"
+              className="ag-chat-btn"
+              onClick={() => {
+                setPdf(null);
+                void study(pdf.file, pdf.via);
+              }}
+            >
+              {t("chat.pdf_ask")}
+            </button>
+            <button
+              type="button"
+              className="ag-chat-btn"
+              disabled={busy || reading}
+              onClick={() => {
+                setPdf(null);
+                onAttach(pdf.file);
+              }}
+            >
+              {t("chat.pdf_import")}
+            </button>
+            <button
+              type="button"
+              className="ag-chat-doc-x"
+              aria-label={t("chat.doc_remove")}
+              onClick={() => setPdf(null)}
+            >
+              <Glyph name="close" size={12} />
+            </button>
+          </span>
+        </div>
+      )}
+      {docs.length > 0 && (
+        <ul className="ag-chat-docs">
+          {docs.map((doc) => (
+            <li
+              key={doc.id}
+              className={`ag-chat-doc${doc.text === undefined ? " ag-chat-doc-unread" : ""}`}
+            >
+              <Glyph name="attach" size={13} />
+              <span className="ag-chat-doc-name">
+                {doc.name || t("chat.doc_pasted")}
+              </span>
+              <button
+                type="button"
+                className="ag-chat-doc-x"
+                aria-label={t("chat.doc_remove")}
+                onClick={() => dropDoc(doc.id)}
+              >
+                <Glyph name="close" size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {cuts.map((cut) => (
+        <p className="ag-chat-hint ag-chat-doc-cut" key={cut}>
+          {cut}
+        </p>
+      ))}
+      {unstudied && <Status label={t("chat.work_reading_doc")} />}
       <form
         className="ag-chat-form"
         onSubmit={(event) => {
@@ -456,27 +800,36 @@ export function Composer({
         {/* The input is the button: a visible file field in a chat composer
             reads as a form, and `accept` is the server's own list of every
             extension a parser (or the column mapper) can read — with the MIME
-            types each goes by, since Android's picker filters on those. */}
+            types each goes by, since Android's picker filters on those.
+            Pictures join it where something can see: `image/*` is what makes
+            a phone offer its camera and photo library beside its files, and
+            several can be picked because a question takes several. */}
         <input
           ref={file}
           type="file"
           className="ag-sr"
           tabIndex={-1}
-          accept={acceptOf(state.upload_types)}
+          accept={
+            state.screenshots
+              ? `${acceptOf(state.upload_types)},image/*`
+              : acceptOf(state.upload_types)
+          }
+          multiple={state.screenshots}
           onChange={(event) => {
-            const picked = event.target.files?.[0];
+            // Copied first: the list is the input's own, and empties with it.
+            const picked = Array.from(event.target.files ?? []);
             // Cleared on the way out, so attaching the same file twice in a
             // row still fires a change event the second time.
             event.target.value = "";
-            if (picked) onAttach(picked);
+            take(picked, "pick");
           }}
         />
         <button
           type="button"
           className="ag-chat-clip"
           disabled={busy || reading}
-          title={t("chat.attach", { mb: state.upload_max_mb })}
-          aria-label={t("chat.attach", { mb: state.upload_max_mb })}
+          title={attachLabel}
+          aria-label={attachLabel}
           onClick={() => file.current?.click()}
         >
           <Glyph name="attach" size={18} />
@@ -523,11 +876,44 @@ export function Composer({
               if (!event.target.value.trim()) spoken.current = false;
             }}
             onPaste={(event) => {
-              if (busy || reading || live) return;
+              if (live) return;
               const pasted = pastedStatement(event.clipboardData, state.upload_types);
-              if (!pasted) return;
+              if (pasted && isPdf(pasted)) {
+                event.preventDefault();
+                offer(pasted, "paste");
+                return;
+              }
+              if (pasted) {
+                // Mid-answer a statement is left to land as whatever the
+                // browser makes of it: an import waits its turn.
+                if (busy || reading) return;
+                event.preventDefault();
+                onAttach(pasted);
+                return;
+              }
+              // Taken while an answer is still being written, as typing is:
+              // the picture is for the next question.
+              const picture = pastedShot(event.clipboardData);
+              if (picture) {
+                if (!state.screenshots) {
+                  // Left alone, as before, but no longer unseen: a reader who
+                  // pastes where nothing can read is one the feature missed.
+                  noteShot("ignored");
+                  return;
+                }
+                event.preventDefault();
+                void paste(picture);
+                return;
+              }
+              // An article or a filing copied whole is not a question: it
+              // rides beside one, and the field stays free to ask it in.
+              const words = event.clipboardData.getData("text/plain");
+              if (words.trim().length < PASTE_FROM) return;
               event.preventDefault();
-              onAttach(pasted);
+              if (!room()) return;
+              const id = ++docId.current;
+              docsWanted.current.add(id);
+              setDocs((list) => [...list, { id, ...pastedDoc(words) }]);
             }}
             onKeyDown={(event) => {
               // Enter sends, shift-enter writes a second line — the shape every
@@ -562,7 +948,12 @@ export function Composer({
           <button
             type="submit"
             className="ag-chat-send"
-            disabled={busy || live || !text.trim()}
+            disabled={
+              busy ||
+              live ||
+              waiting ||
+              (!text.trim() && !read.length && !studied.length)
+            }
             aria-label={t("chat.send")}
           >
             <Glyph name="send" size={18} />

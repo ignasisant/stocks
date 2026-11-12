@@ -655,6 +655,48 @@
   }
 }
 
+/* The last question, open in its own bubble: the bubble takes the width a
+   sentence needs to be rewritten in, not the width of the old one. */
+.ag-chat-mine .ag-chat-bubble:has(.ag-chat-reword) {
+  width: 85%;
+}
+
+.ag-chat-reword {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ag-chat-reword-field {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  resize: vertical;
+}
+
+.ag-chat-reword-acts {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+@media (pointer: coarse) {
+  /* Under 16px iOS zooms the page to the field on focus. */
+  .ag-chat-reword-field {
+    font-size: 16px;
+  }
+
+  .ag-chat-reword-acts .ag-chat-btn {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+}
+
 .ag-chat-foot {
   display: flex;
   flex-wrap: wrap;
@@ -1378,6 +1420,421 @@
   outline: none;
   border-color: var(--ag-brand-accent);
   box-shadow: 0 0 0 1px var(--ag-brand-accent);
+}
+
+/* Pasted screenshots, waiting above the field for their question. Square
+   thumbnails: enough to tell one from another, not a preview — the picture is
+   the reader's own, pasted a second ago. */
+.ag-chat-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 6px 6px 0 0;
+  list-style: none;
+}
+
+.ag-chat-shot {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-chat-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* Still being read: the status line under the row says so in words. */
+.ag-chat-shot-unread img {
+  opacity: 0.45;
+}
+
+/* On the corner, half outside the picture, so it covers none of it. */
+.ag-chat-shot-x {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  place-items: center;
+  touch-action: manipulation;
+}
+
+/* The disc stays 20px; what a finger or a hurried mouse hits is larger. */
+.ag-chat-shot-x::after {
+  position: absolute;
+  inset: -6px;
+  content: "";
+}
+
+@media (hover: hover) {
+  .ag-chat-shot-x:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
+}
+
+.ag-chat-shot-x:active {
+  transform: scale(0.92);
+}
+
+.ag-chat-shot-x:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-shots {
+    gap: 16px;
+    padding-top: 10px;
+  }
+
+  .ag-chat-shot-x::after {
+    inset: -12px;
+  }
+}
+
+/* Documents waiting above the field for their question: a name each — a
+   PDF has no thumbnail worth drawing, and a paste has none at all. */
+.ag-chat-docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-chat-doc {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-doc > svg {
+  flex: none;
+}
+
+/* A file name is as long as its author liked: one line, cut at the chip. */
+.ag-chat-doc-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Still being read: the status line under the row says so in words. */
+.ag-chat-doc-unread > .ag-chat-doc-name {
+  opacity: 0.55;
+}
+
+.ag-chat-doc-x {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: none;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  place-items: center;
+  touch-action: manipulation;
+}
+
+/* As on a thumbnail's: the disc stays small, what is hit is larger. */
+.ag-chat-doc-x::after {
+  position: absolute;
+  inset: -6px;
+  content: "";
+}
+
+@media (hover: hover) {
+  .ag-chat-doc-x:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
+}
+
+.ag-chat-doc-x:active {
+  transform: scale(0.92);
+}
+
+.ag-chat-doc-x:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+/* How much of a long document goes with the question, under its chip. */
+.ag-chat-doc-cut {
+  margin: 0 0 8px;
+}
+
+/* A PDF that has just arrived, and the question only its reader can answer:
+   something to ask about, or a statement to import. */
+.ag-chat-pdf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-pdf > .ag-chat-doc-name {
+  flex: 1 1 8ch;
+}
+
+.ag-chat-pdf-acts {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-docs {
+    gap: 12px;
+  }
+
+  .ag-chat-doc {
+    padding-block: 8px;
+  }
+
+  .ag-chat-doc-x::after {
+    inset: -12px;
+  }
+
+  .ag-chat-pdf-acts {
+    gap: 12px;
+  }
+
+  .ag-chat-pdf-acts .ag-chat-btn {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+}
+
+/* A sent question's documents, over it and on its side of the thread. */
+.ag-chat-docs-sent {
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.ag-chat-docs-sent > .ag-chat-doc {
+  max-width: 85%;
+  padding-right: 8px;
+}
+
+/* A sent question's screenshots, over it and on its side of the thread. Each
+   keeps its own shape up to a fixed height: enough to know which picture it
+   was. Reading it is the viewer's job. */
+.ag-chat-pics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-chat-pics > li {
+  max-width: 85%;
+}
+
+.ag-chat-pic {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-sunken);
+  cursor: zoom-in;
+  touch-action: manipulation;
+}
+
+.ag-chat-pic img {
+  display: block;
+  max-width: 100%;
+  height: 132px;
+  object-fit: cover;
+  object-position: left top;
+}
+
+@media (hover: hover) {
+  .ag-chat-pic:hover {
+    border-color: var(--ag-text-muted);
+  }
+}
+
+.ag-chat-pic:active {
+  transform: scale(0.98);
+}
+
+.ag-chat-pic:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+/* The picture itself, over the page: whole, inside the window. Pressed, it is
+   drawn pixel for pixel and scrolls (`ShotView`). */
+.ag-chat-shotview-scrim {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  inset: 0;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--ag-surface-page-veil);
+  animation: ag-fade-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+  place-items: center;
+}
+
+.ag-chat-shotview-scrim[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ag-chat-shotview {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+.ag-chat-shotview:focus {
+  outline: none;
+}
+
+.ag-chat-shotview-pic {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ag-chat-shotview-pic img {
+  display: block;
+  width: auto;
+  height: auto;
+  /* The window, less the scrim's padding and the card's border, and no wider
+     than the picture was on the screen it was taken from (`--shot-fit`).
+     In viewport units, not percentages: the card is sized by this picture,
+     and a percentage of it would leave the card as wide as the file. */
+  max-width: min(
+    calc(
+      100vw - max(16px, env(safe-area-inset-left)) -
+        max(16px, env(safe-area-inset-right)) - 2px
+    ),
+    var(--shot-fit, 100vw)
+  );
+  max-height: calc(
+    100dvh - max(16px, env(safe-area-inset-top)) -
+      max(16px, env(safe-area-inset-bottom)) - 2px
+  );
+}
+
+.ag-chat-shotview-pic[data-zoomed] img {
+  max-width: none;
+  max-height: none;
+}
+
+.ag-chat-shotview-zoom {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.ag-chat-shotview-pic[data-zoomed] .ag-chat-shotview-zoom {
+  cursor: zoom-out;
+}
+
+.ag-chat-shotview-zoom:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: -2px;
+}
+
+/* On the card's corner, not the picture's: it stays put while a tall
+   screenshot scrolls under it. */
+.ag-chat-shotview-x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-chat-shotview-scrim {
+    animation: none;
+  }
+}
+
+/* What was read in a sent question's screenshots, under it. */
+.ag-chat-shotread {
+  width: 100%;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-shotread > p {
+  margin: 0 0 6px;
+}
+
+.ag-chat-shotread > .ag-chat-doc-head {
+  margin-bottom: 4px;
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ag-chat-shotread > .ag-chat-pre {
+  max-height: 240px;
+  margin: 0 0 6px;
+  overflow: auto;
+  font-size: var(--ag-fs-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Words still being said, or about to be replaced by the transcript. Not
@@ -2799,6 +3256,7 @@ a.ag-chat-btn {
 .ag-chat-back:focus-visible,
 .ag-chat-meta-btn:focus-visible,
 .ag-chat-why-note:focus-visible,
+.ag-chat-reword-field:focus-visible,
 .ag-chat-btn:focus-visible,
 .ag-chat-send:focus-visible,
 .ag-chat-retry:focus-visible,

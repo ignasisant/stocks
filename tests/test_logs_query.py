@@ -657,6 +657,73 @@ def test_no_launches_says_so():
     )
 
 
+# ----------------------------------------------------------------- screenshots
+
+
+def _shot(event: str, user: str = "ana", ts: str = "2026-11-12T10:00:00Z",
+          **fields) -> dict:
+    return {"timestamp": ts,
+            "jsonPayload": {"event": f"shot.{event}", "user": user, **fields}}
+
+
+def test_shots_follow_a_paste_to_the_question_it_was_asked_with():
+    lite = {"backend": "gemini", "model": "flash-lite", "free": False}
+    entries = [
+        _shot("ok", took_ms=2000, **lite),
+        _shot("ok", took_ms=4000, via="pick", **lite),
+        # Passed over on the way to the free reader that did read it.
+        _shot("failed", user="bo", backend="groq", model="scout", free=True),
+        _shot("ok", user="bo", ts="2026-11-12T11:00:00Z", took_ms=9000,
+              backend="openrouter", model="qwen:free", free=True, via="paste"),
+        _shot("refused", user="bo", reason="failed", status=503),
+        _shot("refused", reason="too_big", status=413),
+        _shot("used", n=2, chars=900),
+        _shot("used", user="bo", n=1, chars=300),
+        # The browser's half. A refusal the server answered is not counted twice.
+        _shot("client", what="refused", why="failed", sent=True, user="bo"),
+        _shot("client", what="refused", why="too_many", sent=False),
+        _shot("client", what="ignored", user="guest"),
+        _shot("client", what="removed", read=True),
+        _shot("client", what="removed", read=False),
+        _shot("client", what="opened", ts="2026-11-12T12:00:00Z"),
+        {"timestamp": "2026-11-12T10:00:00Z",
+         "jsonPayload": {"event": "chat.cost", "user": "cy"}},
+    ]
+    got = lq.shots(entries)
+    assert (got["pastes"], got["read"], got["refused"], got["ours"]) == (5, 3, 2, 1)
+    assert (got["questions"], got["used"]) == (2, 3)
+    assert got["refusals"] == [{"why": "failed", "n": 1}, {"why": "too_big", "n": 1}]
+    assert got["unsent"] == [{"why": "too_many", "n": 1}]
+    assert (got["ignored"], got["removed"], got["removed_read"], got["opened"]) == (
+        1, 2, 1, 1)
+    assert got["took_p50"] == 4000
+    # A line from before the clip took pictures was a paste.
+    assert got["ways"] == [{"why": "paste", "n": 2}, {"why": "pick", "n": 1}]
+
+    readers = {r["model"]: r for r in got["readers"]}
+    assert (readers["flash-lite"]["read"], readers["flash-lite"]["p50"]) == (2, 2000)
+    assert readers["qwen:free"]["free"] is True
+    # Never read one, and still on the list: that is the reader to look at.
+    assert (readers["scout"]["read"], readers["scout"]["passed"]) == (0, 1)
+
+    rows = {r["user"]: r for r in got["rows"]}
+    assert set(rows) == {"ana", "bo", "(guests)"}
+    assert rows["ana"] == {"user": "ana", "read": 2, "refused": 2, "used": 2,
+                           "opened": 1, "last": "2026-11-12T12:00:00Z"}
+    assert rows["bo"]["read"] == 1 and rows["bo"]["refused"] == 1
+    assert got["rows"][0]["user"] == "ana"
+
+    out = lq.render_shots(got)
+    assert "pastes sent         5   read 3 (60%)" in out
+    assert "too_many 1" in out and "gemini/flash-lite" in out
+    assert "came in by      paste 2  pick 1" in out
+    assert "openrouter/qwen:free (free)" in out
+
+
+def test_no_pasted_screenshots_says_so():
+    assert lq.render_shots(lq.shots([])) == "(no pasted screenshots in range)"
+
+
 # ---------------------------------------------------------------------- shares
 
 

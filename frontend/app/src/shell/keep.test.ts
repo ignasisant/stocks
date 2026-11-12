@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fromKept, get, invalidate, withMemo } from "./api";
-import { forgetKept, setShelf, type Kept, type Shelf } from "./keep";
+import { forgetKept, setShelf, stow, stowed, type Kept, type Shelf } from "./keep";
 
 function ok(body: unknown): Response {
   return {
@@ -28,11 +28,20 @@ function mapShelf() {
       answers.set(kept.url, kept);
     },
     meta: async () => meta,
-    reset: async (next) => {
-      answers.clear();
+    reset: async (next, spare) => {
+      for (const key of [...answers.keys()]) {
+        if (!spare || !key.startsWith(spare)) answers.delete(key);
+      }
       meta = next;
     },
-    trim: async () => undefined,
+    trim: async (max, prefix = "") => {
+      const under = [...answers.values()]
+        .filter((kept) => kept.url.startsWith(prefix))
+        .sort((a, b) => a.at - b.at);
+      for (const kept of under.slice(0, Math.max(0, under.length - max))) {
+        answers.delete(kept.url);
+      }
+    },
   };
   return { shelf, answers };
 }
@@ -214,5 +223,105 @@ describe("kept answers", () => {
     const first = fromKept(() => get("/book"));
     release("/api/v1/book");
     expect(await first.answer).toEqual({ n: 2 });
+  });
+});
+
+describe("the reader's own things", () => {
+  let store: ReturnType<typeof mapShelf>;
+  const me = { kind: "session", email: "a@x" };
+
+  beforeEach(() => {
+    store = mapShelf();
+    setShelf(store.shelf);
+    me.email = "a@x";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ok(url.endsWith("/me") ? me : { n: 1 })),
+    );
+  });
+
+  afterEach(() => {
+    invalidate();
+    setShelf(null);
+    vi.unstubAllGlobals();
+  });
+
+  it("are held on the device and handed back", async () => {
+    await signIn();
+    stow("shot:1", "data:image/jpeg;base64,AAAA");
+    await flush();
+    expect(await stowed("shot:1")).toBe("data:image/jpeg;base64,AAAA");
+    expect(await stowed("shot:2")).toBeUndefined();
+  });
+
+  it("are not held before /me has said whose they are", async () => {
+    stow("shot:1", "data:image/jpeg;base64,AAAA");
+    await flush();
+    expect(store.answers.size).toBe(0);
+    expect(await stowed("shot:1")).toBeUndefined();
+  });
+
+  it("go with the account that stowed them", async () => {
+    await signIn();
+    stow("shot:1", "data:image/jpeg;base64,AAAA");
+    await flush();
+
+    invalidate();
+    me.email = "b@x";
+    await signIn();
+    expect(await stowed("shot:1")).toBeUndefined();
+    expect(store.answers.size).toBe(0);
+  });
+
+  it("outlive a release that empties the answers", async () => {
+    await signIn();
+    await withMemo(() => get("/book"));
+    stow("shot:1", "data:image/jpeg;base64,AAAA");
+    await flush();
+    expect(store.answers.has("/api/v1/book")).toBe(true);
+    // The shelf as an older build left it.
+    const stamped = await store.shelf.meta();
+    await store.shelf.reset({ owner: stamped!.owner, build: "an older build" }, "");
+    store.answers.set("/api/v1/book", { url: "/api/v1/book", at: Date.now(), body: 1 });
+    store.answers.set("own:shot:1", {
+      url: "own:shot:1",
+      at: Date.now(),
+      body: "data:image/jpeg;base64,AAAA",
+    });
+
+    invalidate();
+    await signIn();
+    expect(store.answers.has("/api/v1/book")).toBe(false);
+    expect(await stowed("shot:1")).toBe("data:image/jpeg;base64,AAAA");
+  });
+
+  it("are forgotten after a week", async () => {
+    await signIn();
+    store.answers.set("own:shot:1", {
+      url: "own:shot:1",
+      at: Date.now() - 8 * 86_400_000,
+      body: "data:image/jpeg;base64,AAAA",
+    });
+    expect(await stowed("shot:1")).toBeUndefined();
+  });
+
+  it("are two dozen at most, the oldest dropped at the next visit", async () => {
+    await signIn();
+    for (let i = 0; i < 30; i++) {
+      store.answers.set(`own:shot:${i}`, {
+        url: `own:shot:${i}`,
+        at: Date.now() - (30 - i) * 1000,
+        body: "data:image/jpeg;base64,AAAA",
+      });
+    }
+    store.answers.set("/api/v1/book", { url: "/api/v1/book", at: 1, body: 1 });
+
+    invalidate();
+    await signIn();
+    expect(await stowed("shot:5")).toBeUndefined();
+    expect(await stowed("shot:6")).toBe("data:image/jpeg;base64,AAAA");
+    expect(await stowed("shot:29")).toBe("data:image/jpeg;base64,AAAA");
+    // The answers are counted on their own.
+    expect(store.answers.has("/api/v1/book")).toBe(true);
   });
 });

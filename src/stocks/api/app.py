@@ -40,7 +40,9 @@ from stocks.api.routes import (
     brief,
     chat,
     chat_attach,
+    chat_document,
     chat_memory,
+    chat_screenshot,
     chat_voice,
     client_error,
     comparables,
@@ -429,6 +431,8 @@ _private.include_router(chat.router)
 _private.include_router(chat.shared)
 _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
+_private.include_router(chat_screenshot.router)
+_private.include_router(chat_document.router)
 _private.include_router(chat_memory.router)
 _private.include_router(journal.router)
 _private.include_router(learn.router)

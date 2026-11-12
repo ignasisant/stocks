@@ -27,6 +27,12 @@
  * Every step is best-effort: a private window, a refused quota or a missing
  * IndexedDB (the MCP views, the tests) only means the screen waits as it
  * always did.
+ *
+ * **The reader's own things ride here too** (`stow` / `stowed`): what this
+ * device holds that no server does, a picture pasted into the chat. Same
+ * owner, same week, emptied by the same sign-out. But a release does not
+ * empty them: a picture has no shape for a deploy to change, and nothing
+ * could fetch it again.
  */
 
 const NAME = "topstocks-kept";
@@ -36,6 +42,10 @@ const META = "meta";
 const WHO = "/api/v1/me";
 const MAX_ENTRIES = 150;
 const MAX_AGE_MS = 7 * 86_400_000;
+/** What the device stowed for itself, under keys no URL can collide with. */
+const OWN = "own:";
+/** A pasted picture is up to 2 MB: two dozen is the most this holds of them. */
+const MAX_OWN = 24;
 /**
  * The URL of the entry chunk, whose content hash changes with every release
  * that touches the frontend (a page chunk renamed renames its importer too).
@@ -50,10 +60,13 @@ export type Shelf = {
   read(url: string): Promise<Kept | undefined>;
   write(kept: Kept): Promise<void>;
   meta(): Promise<Meta | undefined>;
-  /** Drop every answer and stamp the shelf for its new owner and build. */
-  reset(meta: Meta): Promise<void>;
-  /** Drop the oldest answers past `max`. */
-  trim(max: number): Promise<void>;
+  /**
+   * Drop every answer and stamp the shelf for its new owner and build. Keys
+   * that start with `spare` stay.
+   */
+  reset(meta: Meta, spare?: string): Promise<void>;
+  /** Drop the oldest answers past `max`, counting only keys under `prefix`. */
+  trim(max: number, prefix?: string): Promise<void>;
 };
 
 let shelf: Shelf | null = open();
@@ -107,20 +120,53 @@ export function landed(url: string, body: unknown): void {
     .catch(() => undefined);
 }
 
-/** The kept answer for `url`, if it may stand in; never throws. */
-export async function recall(url: string): Promise<Kept | undefined> {
+/**
+ * What is on the shelf under `key` and still young enough; never throws.
+ * `painted` says a screen is about to paint from it (`usedKept`).
+ */
+async function taken(key: string, painted: boolean): Promise<Kept | undefined> {
   const s = shelf;
   const gate = ready;
-  if (!s || !gate || !keepable(url)) return undefined;
+  if (!s || !gate) return undefined;
   try {
     if (!(await gate)) return undefined;
-    const kept = await s.read(url);
+    const kept = await s.read(key);
     if (!kept || Date.now() - kept.at >= MAX_AGE_MS) return undefined;
-    recalled = true;
+    if (painted) recalled = true;
     return kept;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The kept answer for `url`, if it may stand in; never throws.
+ *
+ * Not `async`: it races the live request for a screen's first paint, and a
+ * second promise around the read is a turn of the loop it would lose by.
+ */
+export function recall(url: string): Promise<Kept | undefined> {
+  return keepable(url) ? taken(url, true) : Promise.resolve(undefined);
+}
+
+/**
+ * Hold something of the reader's own on this device, under `key`.
+ *
+ * Not an answer: no screen paints from it (`usedKept` never hears of it) and
+ * no request replaces it. Whoever stows it is its only source.
+ */
+export function stow(key: string, body: unknown): void {
+  const s = shelf;
+  const gate = ready;
+  if (!s || !gate) return;
+  gate
+    .then((ok) => (ok ? s.write({ url: OWN + key, at: Date.now(), body }) : undefined))
+    .catch(() => undefined);
+}
+
+/** What was stowed under `key`, while this account and the week last. */
+export async function stowed(key: string): Promise<unknown> {
+  return (await taken(OWN + key, false))?.body;
 }
 
 /**
@@ -189,10 +235,12 @@ function claim(owner: string): void {
   if (!s) return;
   ready = (async () => {
     const meta = await s.meta();
-    if (!meta || meta.owner !== owner || meta.build !== BUILD) {
+    if (!meta || meta.owner !== owner) {
       await s.reset({ owner, build: BUILD });
     } else {
-      await s.trim(MAX_ENTRIES);
+      if (meta.build !== BUILD) await s.reset({ owner, build: BUILD }, OWN);
+      else await s.trim(MAX_ENTRIES);
+      await s.trim(MAX_OWN, OWN);
     }
     return true;
   })().catch(() => false);
@@ -228,25 +276,37 @@ function idbShelf(factory: IDBFactory): Shelf {
     },
     meta: async () =>
       request<Meta | undefined>((await store(META, "readonly")).get("meta")),
-    reset: async (meta) => {
+    reset: async (meta, spare) => {
       const tx = (await db).transaction([ANSWERS, META], "readwrite");
-      tx.objectStore(ANSWERS).clear();
+      const answers = tx.objectStore(ANSWERS);
+      if (spare) {
+        // Either side of the spared keys, which sort together.
+        answers.delete(IDBKeyRange.upperBound(spare, true));
+        answers.delete(IDBKeyRange.lowerBound(`${spare}\uffff`, true));
+      } else {
+        answers.clear();
+      }
       tx.objectStore(META).put(meta, "meta");
       await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();
         tx.onerror = tx.onabort = () => reject(tx.error);
       });
     },
-    trim: async (max) => {
+    trim: async (max, prefix = "") => {
       const answers = await store(ANSWERS, "readwrite");
-      let extra = (await request(answers.count())) - max;
+      const under = prefix ? IDBKeyRange.bound(prefix, `${prefix}\uffff`) : undefined;
+      let extra = (await request(answers.count(under))) - max;
       if (extra <= 0) return;
       await new Promise<void>((resolve, reject) => {
-        const cursor = answers.index("at").openCursor();
+        // Keys only, oldest first: a stowed picture is not read to be dropped.
+        const cursor = answers.index("at").openKeyCursor();
         cursor.onsuccess = () => {
           const at = cursor.result;
-          if (!at || extra-- <= 0) return resolve();
-          at.delete();
+          if (!at || extra <= 0) return resolve();
+          if (String(at.primaryKey).startsWith(prefix)) {
+            answers.delete(at.primaryKey);
+            extra--;
+          }
           at.continue();
         };
         cursor.onerror = () => reject(cursor.error);

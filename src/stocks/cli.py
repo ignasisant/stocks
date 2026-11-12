@@ -993,6 +993,8 @@ def cmd_logs(args: argparse.Namespace) -> None:
             entries = fetch(args.limit, http=False, extra=lq.SHARES_EXTRA)
         elif args.logs_command == "installs" and not files:
             entries = fetch(args.limit, http=False, extra=lq.INSTALLS_EXTRA)
+        elif args.logs_command == "shots" and not files:
+            entries = fetch(args.limit, http=False, extra=lq.SHOTS_EXTRA)
         elif args.logs_command == "stats" and getattr(args, "http", False) and not files:
             # Per-route latency: the access log minus the probe and the assets,
             # which are not routes anyone sits waiting on.
@@ -1026,6 +1028,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
         return
     if args.logs_command == "installs":
         print(lq.render_installs(lq.installs(entries)))
+        return
+    if args.logs_command == "shots":
+        print(lq.render_shots(lq.shots(entries)))
         return
     if args.logs_command == "skills":
         from stocks.web import feedback
@@ -1677,6 +1682,12 @@ def build_parser() -> argparse.ArgumentParser:
              "first and last launch")
     _common(p_ins, with_output=False)
     p_ins.set_defaults(since="30d", limit=20000)
+    p_sht = logs_sub.add_parser(
+        "shots",
+        help="screenshots pasted in the chat: read, refused and why, which "
+             "model read them and how fast, asked with, per account")
+    _common(p_sht, with_output=False)
+    p_sht.set_defaults(since="30d", limit=20000)
     p_skl = logs_sub.add_parser(
         "skills",
         help="per chat skill: answers, total and mean cost, thumbs up/down "

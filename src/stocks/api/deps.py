@@ -303,6 +303,14 @@ ChatTurn = Annotated[UserPaths, Depends(_burst("chat"))]
 # rather than a turn, and counting it against `chat` would halve the allowance
 # of everyone who speaks their questions: the note *and* the message it becomes.
 VoiceNote = Annotated[UserPaths, Depends(_burst("voice"))]
+# A pasted screenshot, read into words before its question is sent: its own
+# budget for the voice note's reason. Three pictures and the question they
+# came with would otherwise be four turns.
+Screenshot = Annotated[UserPaths, Depends(_burst("screenshot"))]
+# A PDF read into text to ask about (`chat/document.py`): no model call, but
+# laying out its pages is this worker's CPU, and a client looping on it would
+# take that from everyone else's requests.
+ChatDocument = Annotated[UserPaths, Depends(_burst("document"))]
 # A press on a surface the assistant drew — a what-if slider let go. Its own
 # budget: it spends no model call, and a reader exploring a slider would
 # otherwise wall their own next question.

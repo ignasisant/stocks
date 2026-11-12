@@ -999,6 +999,170 @@ def render_installs(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# ----------------------------------------------------------------- screenshots
+
+#: Everything a pasted screenshot logs (`api/routes/chat_screenshot.py`).
+SHOTS_EXTRA = (
+    'jsonPayload.event=("shot.ok" OR "shot.failed" OR "shot.refused"'
+    ' OR "shot.client" OR "shot.used")'
+)
+
+
+def shots(entries: Iterable[dict]) -> dict:
+    """Pasted screenshots, from the paste to the question it was asked with.
+
+    A paste that reached the server ends in `shot.ok` or `shot.refused`, so
+    the two add up to the pastes. `shot.failed` is a reader passed over on
+    the way to one of those, not a paste of its own. What never reached the
+    server (one too many, a picture the browser could not shrink, a paste
+    where nothing can see) is only in `shot.client`, where a refusal with
+    `sent` true repeats one the server already counted and is left out.
+    `used` is readings that went out beside a question: read but not used
+    is a picture pasted and then taken back, or a question never sent.
+    """
+    readers: dict[tuple[str, str, bool], dict] = {}
+    passed: dict[tuple[str, str], int] = {}
+    refused: dict[str, int] = {}
+    unsent: dict[str, int] = {}
+    rows: dict[str, dict] = {}
+    ways: dict[str, int] = {}
+    took: list[float] = []
+    totals = dict.fromkeys(
+        ("read", "refused", "ours", "ignored", "removed", "removed_read",
+         "opened", "questions", "used"), 0)
+
+    def row(body: dict, stamp: str) -> dict:
+        user = str(body.get("user") or "")
+        who = "(guests)" if user in _NO_ACCOUNT else user
+        r = rows.setdefault(who, {
+            "user": who, "read": 0, "refused": 0, "used": 0, "opened": 0,
+            "last": "",
+        })
+        r["last"] = max(r["last"], stamp)
+        return r
+
+    for entry in entries:
+        body = payload(entry)
+        event = body.get("event")
+        stamp = str(entry.get("timestamp") or "")
+        if event == "shot.ok":
+            totals["read"] += 1
+            row(body, stamp)["read"] += 1
+            # Lines from before the clip and the drop took pictures say no way.
+            way = str(body.get("via") or "paste")
+            ways[way] = ways.get(way, 0) + 1
+            key = (str(body.get("backend") or "?"), str(body.get("model") or "?"),
+                   bool(body.get("free")))
+            reader = readers.setdefault(key, {
+                "backend": key[0], "model": key[1], "free": key[2],
+                "read": 0, "took": [],
+            })
+            reader["read"] += 1
+            if isinstance(body.get("took_ms"), int | float):
+                reader["took"].append(float(body["took_ms"]))
+                took.append(float(body["took_ms"]))
+        elif event == "shot.failed":
+            key2 = (str(body.get("backend") or "?"), str(body.get("model") or "?"))
+            passed[key2] = passed.get(key2, 0) + 1
+        elif event == "shot.refused":
+            reason = str(body.get("reason") or "?")
+            totals["refused"] += 1
+            totals["ours"] += reason in ("unavailable", "failed")
+            refused[reason] = refused.get(reason, 0) + 1
+            row(body, stamp)["refused"] += 1
+        elif event == "shot.used":
+            asked = body.get("n")
+            n = asked if isinstance(asked, int) else 1
+            totals["questions"] += 1
+            totals["used"] += n
+            row(body, stamp)["used"] += n
+        elif event == "shot.client":
+            what = body.get("what")
+            if what == "refused" and body.get("sent") is False:
+                why = str(body.get("why") or "?")
+                unsent[why] = unsent.get(why, 0) + 1
+                row(body, stamp)["refused"] += 1
+            elif what == "ignored":
+                totals["ignored"] += 1
+                row(body, stamp)
+            elif what == "removed":
+                totals["removed"] += 1
+                totals["removed_read"] += body.get("read") is True
+            elif what == "opened":
+                totals["opened"] += 1
+                row(body, stamp)["opened"] += 1
+
+    def ranked(counts: dict[str, int]) -> list[dict]:
+        return [{"why": why, "n": n}
+                for why, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+    return {
+        **totals,
+        "pastes": totals["read"] + totals["refused"],
+        "took_p50": _pct(took, 0.5), "took_p95": _pct(took, 0.95),
+        "readers": sorted(
+            ({"backend": r["backend"], "model": r["model"], "free": r["free"],
+              "read": r["read"], "p50": _pct(r["took"], 0.5),
+              "passed": passed.get((r["backend"], r["model"]), 0)}
+             for r in readers.values()),
+            key=lambda r: -r["read"],
+        ) + [
+            # A reader that never read one: passed over every time it was asked.
+            {"backend": backend, "model": model, "free": None, "read": 0,
+             "p50": 0.0, "passed": n}
+            for (backend, model), n in sorted(passed.items())
+            if not any((backend, model) == key[:2] for key in readers)
+        ],
+        "refusals": ranked(refused),
+        "unsent": ranked(unsent),
+        "ways": ranked(ways),
+        "rows": sorted(rows.values(), key=lambda r: r["last"], reverse=True),
+    }
+
+
+def render_shots(summary: dict) -> str:
+    s = summary
+    if not (s["pastes"] or s["unsent"] or s["rows"] or s["removed"]
+            or s["readers"]):
+        return "(no pasted screenshots in range)"
+
+    def share(part: int, whole: int) -> str:
+        return f" ({part / whole:.0%})" if whole else ""
+
+    def listed(items: list[dict]) -> str:
+        return "  ".join(f"{i['why']} {i['n']}" for i in items) or "-"
+
+    lines = [
+        f"pastes sent     {s['pastes']:>5}   read {s['read']}"
+        f"{share(s['read'], s['pastes'])}   refused {s['refused']}"
+        f"   of them the app's own: {s['ours']}",
+        f"came in by      {listed(s['ways'])}",
+        f"time to read    p50 {s['took_p50'] / 1000:.1f} s   "
+        f"p95 {s['took_p95'] / 1000:.1f} s",
+        f"asked with      {s['used']:>5}   readings in {s['questions']} questions"
+        f"{share(s['used'], s['read'])} of those read",
+        f"refused         {listed(s['refusals'])}",
+        f"never sent      {listed(s['unsent'])}",
+        f"in the browser  ignored {s['ignored']}   removed {s['removed']} "
+        f"({s['removed_read']} already read)   opened {s['opened']}",
+    ]
+    if s["readers"]:
+        lines += ["", f"{'reader':<44} {'read':>5} {'p50 s':>6} {'passed':>7}",
+                  "-" * 65]
+        for r in s["readers"]:
+            name = f"{r['backend']}/{r['model']}" + (" (free)" if r["free"] else "")
+            lines.append(f"{name[:44]:<44} {r['read']:>5} "
+                         f"{r['p50'] / 1000:>6.1f} {r['passed']:>7}")
+    if s["rows"]:
+        lines += ["", f"{'account':<32} {'read':>5} {'refused':>8} {'used':>5} "
+                      f"{'opened':>7}  last", "-" * 76]
+        for r in s["rows"]:
+            last = _local_time(r["last"])[:11] if r["last"] else "-"
+            lines.append(f"{r['user'][:32]:<32} {r['read']:>5} {r['refused']:>8} "
+                         f"{r['used']:>5} {r['opened']:>7}  {last}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------- skills
 
 #: Row labels for turns that loaded no skill, and for turns logged before

@@ -22,6 +22,7 @@ vi.mock("../shell/api", async (original) => ({
 
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
+import { forgetPictures, keepPicture } from "./shots";
 import { rates, Turn, undoMemory, wideTable } from "./Turn";
 import type { ChatState, Preview, Turn as Stored } from "./types";
 
@@ -133,6 +134,105 @@ describe("the reader's own question", () => {
     expect(out).toContain("Revisa esta lectura");
     expect(out).not.toContain("chat.show_more");
   });
+
+  const asked = (screenshots?: string[]) =>
+    drawTurn(
+      refused({ role: "user", error: undefined, content: "¿Está bien?", screenshots }),
+    );
+
+  it("says a screenshot came with it, and keeps what was read one press away", () => {
+    const out = asked(["AAPL | 3 | 190.50"]);
+    expect(out).toMatch(/aria-expanded="false"[^>]*>chat.shot_badge</);
+    expect(out).toMatch(/class="ag-chat-shotread"[^>]* hidden=""/);
+    expect(out).toContain("AAPL | 3 | 190.50");
+    expect(out).toContain("chat.shot_read_hint");
+  });
+
+  it("counts them when there are several", () => {
+    expect(asked(["one", "two"])).toContain("chat.shot_badge_n");
+  });
+
+  it("draws nothing for a question that came alone", () => {
+    expect(asked()).not.toContain("chat.shot_badge");
+    expect(asked([])).not.toContain("chat.shot_badge");
+  });
+
+  it("shows the picture it was sent with, over the question", () => {
+    keepPicture("AAPL | 3 | 190.50", "data:image/jpeg;base64,/9j/4AAQ");
+    const out = asked(["AAPL | 3 | 190.50"]);
+    forgetPictures();
+    expect(out).toMatch(
+      /class="ag-chat-pic"[^>]*aria-label="chat.shot_open"[^>]*><img src="data:image\/jpeg;base64,\/9j\/4AAQ" alt="chat.shot_alt"/,
+    );
+    // Over the bubble, and the reading still one press away under it.
+    expect(out.indexOf("ag-chat-pics")).toBeLessThan(out.indexOf("ag-chat-bubble"));
+    expect(out).toContain("chat.shot_badge");
+  });
+
+  it("shows the reading alone when this device has no picture of it", () => {
+    const out = asked(["AAPL | 3 | 190.50"]);
+    expect(out).not.toContain("ag-chat-pic");
+    expect(out).toContain("chat.shot_badge");
+  });
+
+  const withDocs = (documents: Stored["documents"]) =>
+    drawTurn(
+      refused({ role: "user", error: undefined, content: "¿Qué tal?", documents }),
+    );
+
+  it("names the document it was sent with, and keeps its text one press away", () => {
+    const out = withDocs([{ name: "results.pdf", text: "Revenue 4,210", cut: true }]);
+    // Over the bubble, as a picture is.
+    expect(out.indexOf("ag-chat-docs-sent")).toBeLessThan(
+      out.indexOf("ag-chat-bubble"),
+    );
+    expect(out).toMatch(/class="ag-chat-doc-name">results\.pdf</);
+    expect(out).toMatch(/aria-expanded="false"[^>]*>chat.doc_badge</);
+    expect(out).toMatch(/class="ag-chat-shotread"[^>]* hidden=""/);
+    expect(out).toContain("Revenue 4,210");
+    // Only its beginning went: said where the text is read.
+    expect(out).toContain("chat.doc_cut");
+  });
+
+  it("calls a paste what it is, and counts several", () => {
+    const out = withDocs([
+      { name: "", text: "An article, whole", cut: false },
+      { name: "note.pdf", text: "Target 120", cut: false },
+    ]);
+    expect(out).toContain("chat.doc_pasted");
+    expect(out).toContain("chat.doc_badge_n");
+    expect(out).not.toContain("chat.doc_cut");
+  });
+
+  it("draws no document for a question that came alone", () => {
+    expect(withDocs(undefined)).not.toContain("ag-chat-doc");
+    expect(withDocs([])).not.toContain("chat.doc_badge");
+  });
+
+  const editable = (over: Partial<Stored>, onEdit?: (text: string) => void) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={refused({ error: undefined, content: "¿Está bien?", ...over })}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onEdit={onEdit}
+      />,
+    );
+
+  it("can be asked in other words while it is the last one", () => {
+    const out = editable({ role: "user" }, () => {});
+    expect(out).toMatch(/<button[^>]*aria-label="chat.edit"/);
+    // Still the question as it was sent, until the pencil is pressed.
+    expect(out).toContain("ag-chat-fold");
+    expect(out).not.toContain("ag-chat-reword");
+  });
+
+  it("offers no edit further up the thread, nor on an answer", () => {
+    expect(editable({ role: "user" })).not.toContain("chat.edit");
+    expect(editable({ role: "assistant" }, () => {})).not.toContain("chat.edit");
+  });
 });
 
 const state: ChatState = {
@@ -150,6 +250,7 @@ const state: ChatState = {
   upload_types: ["csv"],
   upload_max_mb: 10,
   voice: false,
+  screenshots: false,
 };
 
 const drawComposer = (busy: boolean, over: Partial<ChatState> = {}) =>
@@ -178,6 +279,15 @@ describe("the composer's button", () => {
     expect(out).toContain('aria-label="chat.stop"');
     expect(out).not.toContain('aria-label="chat.send"');
     expect(out).not.toContain('type="submit"');
+  });
+});
+
+describe("the composer before anything is pasted", () => {
+  it("draws no strip, no notice and no wait", () => {
+    const out = drawComposer(false, { screenshots: true });
+    expect(out).not.toContain("ag-chat-shots");
+    expect(out).not.toContain("chat.work_reading_shot");
+    expect(out).not.toContain('role="alert"');
   });
 });
 
@@ -275,6 +385,21 @@ describe("the composer's paperclip", () => {
     // Chrome on Android turns `.csv` into `text/comma-separated-values` for the
     // picker, which then greys out a download saved as `text/csv`.
     expect(drawComposer(false)).toMatch(/accept="\.csv,[^"]*text\/csv/);
+  });
+
+  it("takes pictures too where something can see, several at once", () => {
+    // `image/*` is what makes a phone offer its camera and photo library.
+    const out = drawComposer(false, { screenshots: true });
+    expect(out).toMatch(/accept="\.csv,[^"]*,image\/\*"/);
+    expect(out).toMatch(/<input[^>]*multiple=""/);
+    expect(out).toContain('aria-label="chat.attach_any"');
+  });
+
+  it("stays a statement's alone where nothing can", () => {
+    const out = drawComposer(false);
+    expect(out).not.toContain("image/*");
+    expect(out).not.toMatch(/<input[^>]*multiple/);
+    expect(out).toContain('aria-label="chat.attach"');
   });
 });
 

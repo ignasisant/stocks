@@ -25,7 +25,7 @@
  * closing either question loses nothing.
  */
 
-import { useCallback, useEffect, useId, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { NumbersIn, useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
@@ -33,7 +33,14 @@ import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
 import { ToggleChip } from "../ui/Toggle";
-import { addMemory, dropMemory, editMemory, rateTurn, replaceMemory } from "./api";
+import {
+  addMemory,
+  dropMemory,
+  editMemory,
+  noteShot,
+  rateTurn,
+  replaceMemory,
+} from "./api";
 import {
   capMessage,
   clock,
@@ -48,11 +55,14 @@ import { ActionCard } from "./ActionCard";
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
 import { PageLink } from "./links";
+import { pictureNow, pictureOf } from "./shots";
+import { ShotView } from "./ShotView";
 import { Sources } from "./Sources";
 import { Surfaces } from "./Surfaces";
 import { Debate } from "./Debate";
 import type { A2uiAction } from "./a2ui";
 import type {
+  Doc,
   Edits,
   Learned,
   LiveStep,
@@ -156,6 +166,156 @@ function Trace({ steps, spent }: { steps: Step[]; spent: string }) {
           </li>
         ))}
       </ul>
+    </>
+  );
+}
+
+/**
+ * The screenshots pasted with a question, over it.
+ *
+ * This device's copies (`shots.keepPicture`): the thread stores what was read,
+ * never the picture. One sent in this visit is drawn at once; an older one is
+ * looked up on the kept shelf and drawn when found. A reading whose picture
+ * is not here — another device, a week gone — draws nothing: the badge under
+ * the question still says a screenshot came with it. A press opens the
+ * picture large enough to check a figure in (`ShotView`).
+ */
+function Pictures({ readings }: { readings: string[] }) {
+  const t = useT();
+  const [urls, setUrls] = useState(() => readings.map(pictureNow));
+  const [open, setOpen] = useState<string | null>(null);
+  const shut = useCallback(() => setOpen(null), []);
+  const asked = readings.join("\u0000");
+  useEffect(() => {
+    let live = true;
+    void Promise.all(asked.split("\u0000").map(pictureOf)).then((found) => {
+      if (live && found.some(Boolean)) setUrls(found);
+    });
+    return () => {
+      live = false;
+    };
+  }, [asked]);
+  const shown = urls.flatMap((url) => (url ? [url] : []));
+  if (!shown.length) return null;
+  return (
+    <>
+      <ul className="ag-chat-pics">
+        {shown.map((url, i) => (
+          <li key={i}>
+            <button
+              type="button"
+              className="ag-chat-pic"
+              aria-label={t("chat.shot_open")}
+              onClick={() => {
+                setOpen(url);
+                noteShot("opened");
+              }}
+            >
+              <img src={url} alt={t("chat.shot_alt")} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open && <ShotView url={open} onClose={shut} />}
+    </>
+  );
+}
+
+/**
+ * What a model read in the screenshots pasted with a question.
+ *
+ * Every answer after the question is written from this text alone, not from
+ * the picture. So the text is what there is to check: a price read one digit
+ * off here is an answer one digit off. Folded, like the trace, for the same
+ * reason: worth reading when an answer looks wrong, not on every scroll past
+ * it.
+ */
+function Shots({ readings }: { readings: string[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <>
+      <button
+        type="button"
+        className="ag-chat-meta-btn"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((was) => !was)}
+      >
+        {t(readings.length === 1 ? "chat.shot_badge" : "chat.shot_badge_n", {
+          n: readings.length,
+        })}
+      </button>
+      <div className="ag-chat-shotread" id={id} hidden={!open}>
+        <p>{t("chat.shot_read_hint")}</p>
+        {readings.map((text, i) => (
+          <pre className="ag-chat-pre" key={i}>
+            {text}
+          </pre>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The documents sent with a question, over it: a name each, so the thread
+ * shows a file went with the words. What was sent of it is under the
+ * question (`Docs`).
+ */
+function DocNames({ docs }: { docs: Doc[] }) {
+  const t = useT();
+  return (
+    <ul className="ag-chat-docs ag-chat-docs-sent">
+      {docs.map((doc, i) => (
+        <li className="ag-chat-doc" key={i}>
+          <Glyph name="attach" size={13} />
+          <span className="ag-chat-doc-name">{doc.name || t("chat.doc_pasted")}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The text of the documents sent with a question.
+ *
+ * What the answer was written from — a PDF's words as a program lifted them
+ * off the page, tables flattened to lines — and how much of it: a long one
+ * went as its beginning, and an answer that says "not in the document" may
+ * mean "not in the part that was sent". Folded, as the screenshots' reading
+ * is.
+ */
+function Docs({ docs }: { docs: Doc[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <>
+      <button
+        type="button"
+        className="ag-chat-meta-btn"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((was) => !was)}
+      >
+        {t(docs.length === 1 ? "chat.doc_badge" : "chat.doc_badge_n", {
+          n: docs.length,
+        })}
+      </button>
+      <div className="ag-chat-shotread" id={id} hidden={!open}>
+        <p>{t("chat.doc_read_hint")}</p>
+        {docs.map((doc, i) => (
+          <Fragment key={i}>
+            <p className="ag-chat-doc-head">
+              {doc.name || t("chat.doc_pasted")}
+              {doc.cut && ` · ${t("chat.doc_cut")}`}
+            </p>
+            <pre className="ag-chat-pre">{doc.text}</pre>
+          </Fragment>
+        ))}
+      </div>
     </>
   );
 }
@@ -690,6 +850,74 @@ function Why({ rate }: { rate: Rate }) {
 }
 
 /**
+ * The reader's last question, open to be asked in other words.
+ *
+ * In the bubble it was sent from, not back in the composer: the composer may
+ * already hold the next question, and the one being changed is the one in
+ * front of the reader. Enter sends and shift-enter breaks the line, as in the
+ * composer; Escape, or the same words again, leaves the exchange as it was.
+ */
+function Reword({
+  text,
+  onSend,
+  onCancel,
+}: {
+  text: string;
+  onSend: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const [draft, setDraft] = useState(text);
+  const next = draft.trim();
+  const field = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const submit = () => (next && next !== text.trim() ? onSend(next) : onCancel());
+  return (
+    <form
+      className="ag-chat-reword"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <textarea
+        ref={field}
+        className="ag-chat-reword-field"
+        rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+        maxLength={4000}
+        aria-label={t("chat.edit")}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          } else if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <div className="ag-chat-reword-acts">
+        <button type="button" className="ag-chat-btn" onClick={onCancel}>
+          {t("chat.cancel")}
+        </button>
+        <button type="submit" className="ag-chat-btn ag-chat-btn-on" disabled={!next}>
+          {t("chat.send")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
  * The button an answer on the walkthrough's thread earned by ending in a valid
  * `[[goto:<step>]]` — `guide.render_jump`, and a `navigate` call with `{step}`
  * on the wire.
@@ -915,6 +1143,7 @@ export function Turn({
   askRating,
   onRated,
   onRegenerate,
+  onEdit,
   onShare,
   walk,
   fresh,
@@ -960,6 +1189,8 @@ export function Turn({
   onRated?: (vote: Rating | null) => void;
   /** Ask again: only the newest finished answer gets one. */
   onRegenerate?: () => void;
+  /** Ask this question in other words: only the newest one gets it. */
+  onEdit?: (text: string) => void;
   /** Open the share sheet for this answer. Absent: a guest, or nothing to name. */
   onShare?: () => void;
   /** Part of the exchange being asked now: it comes in rather than appears. */
@@ -975,6 +1206,11 @@ export function Turn({
   const t = useT();
   const lang = useLang();
   const mine = turn.role === "user";
+  const shots = mine ? (turn.screenshots ?? []) : [];
+  const docs = mine ? (turn.documents ?? []) : [];
+  const [rewording, setRewording] = useState(false);
+  // Offered while the question is the thread's last; gone, the field goes too.
+  const editing = rewording && mine && !!onEdit;
   const lens = turn.skills.length
     ? t("chat.lens", {
         skills: turn.skills
@@ -1045,9 +1281,20 @@ export function Turn({
       {!mine && (turn.arguing?.length || turn.debate?.length) ? (
         <Debate sides={turn.pending ? (turn.arguing ?? []) : (turn.debate ?? [])} />
       ) : null}
+      {shots.length > 0 && <Pictures readings={shots} />}
+      {docs.length > 0 && <DocNames docs={docs} />}
       <div className="ag-chat-bubble">
         {mine ? (
-          turn.content ? (
+          editing ? (
+            <Reword
+              text={turn.content}
+              onSend={(text) => {
+                setRewording(false);
+                onEdit?.(text);
+              }}
+              onCancel={() => setRewording(false)}
+            />
+          ) : turn.content ? (
             <Folded text={turn.content} />
           ) : null
         ) : (
@@ -1127,10 +1374,13 @@ export function Turn({
       {(turn.web.length > 0 ||
         when ||
         spent ||
+        shots.length > 0 ||
+        docs.length > 0 ||
         (turn.steps?.length ?? 0) > 0 ||
         rateable ||
         copyable ||
-        onRegenerate) && (
+        onRegenerate ||
+        (mine && onEdit)) && (
         <div className="ag-chat-foot">
           {turn.web.length > 0 && (
             <Sources web={turn.web} onLeave={onLeave ?? (() => {})} />
@@ -1139,10 +1389,25 @@ export function Turn({
               beside it only says when. */}
           {!mine && !turn.pending && <Trace steps={turn.steps ?? []} spent={spent} />}
           {when && <span className="ag-chat-clock">{when}</span>}
+          {shots.length > 0 && <Shots readings={shots} />}
+          {docs.length > 0 && <Docs docs={docs} />}
           {onWiden && copyable && wideTable(turn.content) && (
             <button type="button" className="ag-chat-link" onClick={onWiden}>
               {t("chat.see_wide")}
             </button>
+          )}
+          {mine && onEdit && !editing && (
+            <span className="ag-chat-thumbs">
+              <button
+                type="button"
+                className="ag-chat-meta-btn ag-chat-thumb"
+                aria-label={t("chat.edit")}
+                title={t("chat.edit")}
+                onClick={() => setRewording(true)}
+              >
+                <Glyph name="edit" size={14} />
+              </button>
+            </span>
           )}
           {(copyable || rateable || onRegenerate) && (
             <span className="ag-chat-thumbs">

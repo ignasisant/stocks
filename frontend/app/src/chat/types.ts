@@ -126,6 +126,13 @@ export type Rating = "up" | "down";
 /** Why a thumbs-down, as the panel offers it (`/chat/turns/{id}/rating`). */
 export type RatingReason = "made_up" | "wrong" | "missed" | "other";
 
+/**
+ * A document set beside a question, as the text the answer is written from:
+ * a PDF read on the server (`POST /chat/documents`) or words pasted in one
+ * piece (`name` ""). `cut` says the file held more than `text`.
+ */
+export type Doc = { name: string; text: string; cut: boolean };
+
 /** One stored turn, as the API returns it. */
 type Message = {
   role: string;
@@ -292,6 +299,18 @@ export type Turn = Message & {
    * Retry asks the same analysis again rather than its one-line label.
    */
   brief?: Brief;
+  /**
+   * What the screenshots pasted with this question showed, as a model read
+   * them. Stored on the thread, unlike `spoken`: every later answer is still
+   * reading it, so a reloaded turn can still show what was read.
+   */
+  screenshots?: string[];
+  /**
+   * The documents sent with this question: a PDF's text, a long paste. Stored
+   * on the thread for the reason the screenshots are — every later answer
+   * still has them to read.
+   */
+  documents?: Doc[];
 };
 
 export type Conversation = {
@@ -388,6 +407,8 @@ export type ChatState = {
   upload_max_mb: number;
   /** Whether this deployment can transcribe at all. No key, no microphone. */
   voice: boolean;
+  /** Whether a pasted screenshot can be read for this account: a model that sees. */
+  screenshots: boolean;
   /**
    * Whether a key can be kept on the account at all. False leaves "this tab
    * only" as the one way to use a key of your own, and the form says so

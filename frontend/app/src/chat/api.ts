@@ -9,7 +9,7 @@
  */
 
 import type { ResumeEntry, RunAgentInput, Tool } from "@ag-ui/core";
-import { ApiError, NotSignedIn, get, retryAfter, send } from "../shell/api";
+import { ApiError, BASE, NotSignedIn, get, retryAfter, send } from "../shell/api";
 import type { Brief } from "../shell/assistant";
 import type { A2uiAction, A2uiMessage } from "./a2ui";
 import { keyHeaders } from "./sessionKey";
@@ -19,6 +19,7 @@ import type {
   ChatState,
   Committed,
   Conversation,
+  Doc,
   Done,
   ImportRow,
   Learned,
@@ -140,6 +141,57 @@ export const readAttachment = (body: {
   /** A corrected column mapping (the preview surface's): read with no model. */
   mapping?: Record<string, unknown>;
 }) => keyed<Preview>("POST", "/chat/attachments", body);
+
+/**
+ * A picture for the question, read into words. The server stores nothing —
+ * not the picture, not a turn: the reading goes back up beside the question
+ * (`runInput`). `via` is the door it came in by, for the log alone.
+ */
+export const readScreenshot = (
+  image: string,
+  lang: string,
+  via: "paste" | "pick" | "drop" = "paste",
+) => keyed<{ text: string }>("POST", "/chat/screenshots", { image, lang, via });
+
+/**
+ * A PDF to ask about, read into the text it holds. No model, and nothing
+ * stored: the text goes back up beside the question (`runInput`), as a
+ * screenshot's reading does. `via` is for the log alone.
+ */
+export const readDocument = (
+  filename: string,
+  content: string,
+  via: "paste" | "pick" | "drop" = "pick",
+) =>
+  keyed<Doc & { pages: number; read: number }>("POST", "/chat/documents", {
+    filename,
+    content,
+    via,
+  });
+
+/**
+ * What the composer did with a paste that no other request shows: the refusal
+ * the reader was shown, a picture pasted where nothing can see, a thumbnail
+ * taken back, a sent picture opened. The kind and a locale key, never the
+ * picture or its words. Best effort, like `shell/install`'s launch: a line
+ * that does not arrive is one fewer in the log.
+ */
+export function noteShot(
+  what: "refused" | "ignored" | "removed" | "opened",
+  more: { why?: string; sent?: boolean; read?: boolean } = {},
+): void {
+  if (typeof fetch !== "function") return;
+  try {
+    void fetch(`${BASE}/chat/screenshots/events`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ what, ...more }),
+    }).catch(() => undefined);
+  } catch {
+    // A fetch that throws rather than rejects is still not the reader's problem.
+  }
+}
 
 /**
  * Write the rows the preview showed.
@@ -480,8 +532,9 @@ const fresh = () =>
  *
  * Only the new message travels: the thread on disk is the history, and the
  * server reads nothing else of `messages`. Where the reader is rides in
- * `state`; what AG-UI has no field for (the language, regenerate, the staged
- * statement, "in depth") in `forwardedProps`.
+ * `state`; what AG-UI has no field for (the language, regenerate, an edit,
+ * the staged statement, "in depth", what a pasted screenshot showed, a
+ * document's text) in `forwardedProps`.
  */
 export function runInput(
   ask: Ask,
@@ -500,6 +553,12 @@ export function runInput(
     depth?: "deep";
     /** The Ticker page's angle on `focus`, which the server writes out. A question's only. */
     brief?: Brief;
+    /** What the screenshots pasted with the question showed. A question's only. */
+    screenshots?: string[];
+    /** The documents set beside the question, as text. A question's only. */
+    documents?: Doc[];
+    /** The question replaces the last exchange instead of following it. */
+    edit?: boolean;
   },
 ): RunAgentInput {
   const props: Record<string, unknown> = {};
@@ -509,6 +568,11 @@ export function runInput(
     props.staged_import = where.staged_import;
   if (where.depth && ask.message !== undefined) props.depth = where.depth;
   if (where.brief && ask.message !== undefined) props.brief = where.brief;
+  if (where.screenshots?.length && ask.message !== undefined)
+    props.screenshots = where.screenshots;
+  if (where.documents?.length && ask.message !== undefined)
+    props.documents = where.documents;
+  if (where.edit && ask.message !== undefined) props.edit = true;
   return {
     threadId: where.conversation ?? "",
     runId: fresh(),

@@ -16,7 +16,12 @@ it the demo book (`POST /portfolio/demo`) when it is empty, which the `book`
 questions need. Memory and recall are switched off on it, so no question
 leaks into the next; a `recall` question switches recall on for itself, and
 its `before` turns are asked first on a thread of their own (each one more
-model turn, counted in the free allowance like the question).
+model turn, counted in the free allowance like the question). A `shot`
+question pastes a picture first: its lines are drawn here and read by the
+app's own `POST /chat/screenshots` on the same model (one vision call, one
+of the account's 60 readings a day), and the reading is sent beside the
+question as the drawer sends it. The picture is made up; nothing of a real
+book is in it.
 
 `--model` is `free` (the keyless chain every reader gets: what to measure
 first) or `provider:model`, the key read from <PROVIDER>_API_KEY and sent
@@ -49,6 +54,7 @@ then every failure with its question and answer.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import sys
@@ -169,6 +175,9 @@ class Prod:
                     cache[path] = {"_error": str(exc)}
         truth = {t.label: prod_eval.pick(cache[t.get], t.pick) for t in q.truth}
         refs = {p: cache[p] for p in prod_eval.reference_paths(q)}
+        if q.shot:
+            # What was drawn is the source its answer is held to, figures and all.
+            refs[prod_eval.SHOT_REF] = "\n".join(q.shot)
         return truth, refs
 
     def ask(self, q: prod_eval.Question, headers: dict, keep: bool) -> prod_eval.Answer:
@@ -186,8 +195,15 @@ class Prod:
                         return prod_eval.Answer(error=f"before: {ans.error}")
             if q.recall:
                 self.json("PATCH", "/chat/settings", json={"recall": True})
+            reading = ""
+            if q.shot:
+                reading, error = self.read(q, headers)
+                if error:
+                    return prod_eval.Answer(error=f"screenshot: {error}")
             threads.append(self.thread(f"eval {q.id}"))
-            return self.run(q, threads[-1], headers)
+            ans = self.run(q, threads[-1], headers, [reading] if reading else [])
+            ans.reading = reading
+            return ans
         except httpx.HTTPError as exc:
             return prod_eval.Answer(error=f"{type(exc).__name__}: {exc}")
         finally:
@@ -205,14 +221,36 @@ class Prod:
     def thread(self, title: str) -> str:
         return self.json("POST", "/chat/conversations", json={"title": title})["id"]
 
-    def run(self, q: prod_eval.Question, thread: str, headers: dict) -> prod_eval.Answer:
+    def read(self, q: prod_eval.Question, headers: dict) -> tuple[str, str]:
+        """The question's picture, read by the app: (reading, error). The
+        refusal is the app's own key (`chat.shot_failed`…); a 404 is a deploy
+        that has no screenshots yet."""
+        image = base64.b64encode(prod_eval.picture(q.shot)).decode()
+        r = self.http.post(
+            "/chat/screenshots", headers=headers, json={"image": image, "lang": q.lang}
+        )
+        if r.status_code >= 400:
+            try:
+                detail = r.json().get("detail")
+            except ValueError:
+                detail = r.text[:120]
+            return "", f"http {r.status_code}: {detail}"
+        return str(r.json().get("text") or ""), ""
+
+    def run(
+        self,
+        q: prod_eval.Question,
+        thread: str,
+        headers: dict,
+        screenshots: list[str] | None = None,
+    ) -> prod_eval.Answer:
         for attempt in range(2):
             t0 = time.monotonic()
             with self.http.stream(
                 "POST",
                 "/chat/runs",
                 headers=headers,
-                json=prod_eval.run_body(q, thread),
+                json=prod_eval.run_body(q, thread, screenshots or ()),
             ) as r:
                 if r.status_code == 429 and attempt == 0:
                     wait = int(r.headers.get("Retry-After") or 60)
@@ -301,6 +339,11 @@ def _report(rows: list[dict], meta: dict) -> str:
             f"- answered by: {a['model'] or a['provider']} "
             f"in {a['seconds']}s, tools {[c['name'] for c in a['calls']]}",
             f"- rules: {r['checks']['failed'] or 'ok'}",
+            *(
+                [f"- read in the screenshot: {a['reading'][:400]!r}"]
+                if a.get("reading")
+                else []
+            ),
             f"- unsourced figures: {r['checks'].get('unsourced') or '-'}",
             f"- goals missed: {missed or '-'}",
             f"- scores: {j.get('scores') or '-'}",
@@ -377,6 +420,7 @@ def main() -> int:
             extra = [f"truth:{len(q.truth)}"] if q.truth else []
             extra += [f"opens:{q.opens}"] if q.opens else []
             extra += [f"before:{len(q.before)}"] if q.before else []
+            extra += [f"shot:{len(q.shot)} lines"] if q.shot else []
             extra += ["recall"] if q.recall else []
             print(f"  {q.area:22} {q.kind:8} {q.id:28} {' '.join(extra)}")
         return 0

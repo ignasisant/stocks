@@ -10,6 +10,8 @@ from stocks import llm
 from stocks.chat import brief as ticker_brief
 from stocks.chat import (
     clock,
+    document,
+    screenshot,
 )
 from stocks.chat import skills as chat_skills
 from stocks.chat.engine.investor import (
@@ -252,11 +254,19 @@ def recent(history: list[dict], limit: int = MAX_CONTEXT_MSGS) -> list[dict]:
     (`auth.save_card_thread`) or a retired scheduled run's (`SCHEDULED_OPENERS`),
     which is what the thread is about and gets its opener in front instead.
     Rebuilt as bare role/content dicts — stored turns carry extra keys (e.g.
-    "skills") the provider APIs reject."""
+    "skills") the provider APIs reject. Two of them are the model's to read:
+    what a question's pasted screenshots showed (`screenshot.block`) and the
+    documents attached to it (`document.block`) follow it here, on every turn
+    it is resent, so a later "and the second row?" still has the table."""
     msgs = history[-limit:]
     while msgs and msgs[0]["role"] != "user" and not _opener(msgs[0]):
         msgs = msgs[1:]
     out = [{"role": m["role"], "content": m["content"]} for m in msgs]
+    for sent, m in zip(out, msgs, strict=True):
+        if m["role"] == "user" and m.get("screenshots"):
+            sent["content"] += screenshot.block(m["screenshots"])
+        if m["role"] == "user" and m.get("documents"):
+            sent["content"] += document.block(m["documents"])
     if msgs and msgs[0]["role"] != "user":
         out.insert(0, {"role": "user", "content": _opener(msgs[0])})
     return out

@@ -58,6 +58,7 @@ const state = (over: Partial<ChatState>): ChatState => ({
   upload_types: ["csv"],
   upload_max_mb: 10,
   voice: false,
+  screenshots: false,
   ...over,
 });
 

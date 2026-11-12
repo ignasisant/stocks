@@ -18,7 +18,7 @@ from stocks.api import runs
 from stocks.api.deps import Account, ChatTurn, Writer
 from stocks.api.routes.chat.events import _events, _frame, _settled
 from stocks.api.routes.chat.preferences import _prefs, session_keys
-from stocks.chat import brief, engine, guide_ai, navigate
+from stocks.chat import brief, document, engine, guide_ai, navigate, screenshot
 from stocks.chat import checkpoint as checkpoints
 from stocks.chat.checkpoint import Checkpoint
 from stocks.notify import webpush
@@ -106,6 +106,26 @@ class Where(BaseModel):
     tab: str = Field(default="", max_length=40)
 
 
+class Attached(BaseModel):
+    """One document set beside a question (`chat/document.py`): a PDF as
+    `POST /chat/documents` read it, or a long paste the composer took out of
+    the field. Text either way — the file itself is never sent here."""
+
+    model_config = {"extra": "forbid"}
+
+    # "" for a paste, which has no file to be named after.
+    name: str = Field(default="", max_length=document.MAX_NAME)
+    text: str = Field(min_length=1, max_length=document.MAX_CHARS)
+    # Whether the document held more than `text`: the model is told, so it
+    # says "that part was not sent" rather than "it is not in there".
+    cut: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def _named(cls, value: str) -> str:
+        return document.name_of(value)
+
+
 class Forwarded(BaseModel):
     """The run's `forwardedProps`: what this app passes that AG-UI does not name."""
 
@@ -117,6 +137,12 @@ class Forwarded(BaseModel):
     # question is asked again — so a regenerated turn leaves one pair behind
     # rather than the same question twice with two answers under it.
     regenerate: bool = False
+    # Ask the last question in other words: the message replaces the last
+    # question, and the answer under it goes with it. The same rewind as
+    # `regenerate`, with a new question to ask instead of the old one. What
+    # the old question's screenshots showed stays with the new one, and so do
+    # the documents attached to it.
+    edit: bool = False
     # The statement a preview card is waiting on, when there is one. "Import
     # these" is then answered with "press the button below", not with "attach
     # the file" — the drawer knows the card is up, the engine cannot.
@@ -130,6 +156,33 @@ class Forwarded(BaseModel):
     # sentence stands for. "" is a typed question.
     # `brief.ANGLES`, spelled out: the field shadows the module here.
     brief: Literal["", "full", "bear", "earnings", "fit"] = ""
+    # What the screenshots pasted with the question show, as `POST
+    # /chat/screenshots` read them (`chat/screenshot.py`). Text, like
+    # everything else on a turn: the picture itself is never sent here. Filed
+    # beside the question rather than inside it, so the thread's title and the
+    # notification stay on what the reader typed.
+    screenshots: list[str] = Field(default_factory=list,
+                                   max_length=screenshot.MAX_SHOTS)
+
+    @field_validator("screenshots")
+    @classmethod
+    def _read(cls, value: list[str]) -> list[str]:
+        if any(len(text) > screenshot.MAX_CHARS for text in value):
+            raise ValueError(
+                f"a screenshot's reading is at most {screenshot.MAX_CHARS} "
+                "characters"
+            )
+        return [text.strip() for text in value if text.strip()]
+
+    # The documents attached to the question, as text: filed beside it for the
+    # screenshots' reason, and sent with every later turn of the thread too.
+    documents: list[Attached] = Field(default_factory=list,
+                                      max_length=document.MAX_DOCS)
+
+    @field_validator("documents")
+    @classmethod
+    def _held(cls, value: list[Attached]) -> list[Attached]:
+        return [doc for doc in value if doc.text.strip()]
 
 
 class Run(RunAgentInput):
@@ -205,11 +258,13 @@ def _view(view: str, focus: str, lang: str, tab: str = "") -> tuple[str, str]:
     return engine.view_context(page, sym, tab_name, brief.about(sym)), sym
 
 
-def _rewind(paths: UserPaths) -> tuple[str, dict]:
+def _rewind(paths: UserPaths) -> tuple[str, dict, list[str], list[dict]]:
     """Take the last answer and its question off the thread; return the
-    question, and the ticker brief it was asked with ({} for a typed one —
+    question, the ticker brief it was asked with ({} for a typed one —
     `engine.prepare` files it on the turn, so regenerating "Analyse with AI"
-    asks the same analysis again, not its one-line label).
+    asks the same analysis again, not its one-line label), what its pasted
+    screenshots showed and the documents attached to it, which a second
+    answer needs as much as the first did.
 
     Both, not just the answer: the engine appends the question it is given, so
     leaving the old one in place would file it twice with two answers under it.
@@ -234,7 +289,10 @@ def _rewind(paths: UserPaths) -> tuple[str, dict]:
     # The same prompt again, to get another answer: not the one kept for it.
     engine.forget_answers(paths.chat)
     briefed = asked.get("brief")
-    return str(asked["content"]).strip(), briefed if isinstance(briefed, dict) else {}
+    return (str(asked["content"]).strip(),
+            briefed if isinstance(briefed, dict) else {},
+            screenshot.kept(asked.get("screenshots")),
+            document.kept(asked.get("documents")))
 
 
 def _answer(entry: ResumeEntry) -> Verdict:
@@ -276,6 +334,8 @@ def ask(
 
     * a question — the last of `messages`, the reader's;
     * a regenerate — `forwardedProps.regenerate`, with no message;
+      a question with `forwardedProps.edit` replaces the last exchange
+      instead of following it;
     * the answer to a proposal — `resume`, one entry naming the interrupt the
       previous run finished on. Approved, the action runs (as edited, when the
       payload carries edits) and the asking turn becomes its confirmation.
@@ -318,6 +378,11 @@ def ask(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="a run carries one of: a user message, regenerate, or resume",
         )
+    if props.edit and not message:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="an edit carries the question that replaces the last one",
+        )
     thread = body.thread_id or conversations.active_conversation(paths.chat)["id"]
 
     if body.resume:
@@ -354,16 +419,35 @@ def ask(
     # lands on the walkthrough's thread exactly when it is the active one.
     guided = guide_ai.owns(conversations.active_conversation(paths.chat)["id"], prefs)
     answering = runs.on_thread(str(paths.chat), thread)
-    if props.regenerate and answering is not None and answering.live:
+    if (props.regenerate or props.edit) and answering is not None and answering.live:
         # Checked before the rewind, which would otherwise take the pair off
         # the thread for a run that is then refused.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="this thread is still being answered")
     angle = props.brief
+    shots = props.screenshots
+    if shots and not props.regenerate and not props.edit:
+        # The paste was logged when it was read (`shot.ok`); this is the half
+        # that says the reading was asked about, and how much text it added.
+        obs.event("shot.used", n=len(shots), chars=sum(map(len, shots)),
+                  depth=props.depth)
+    docs = [doc.model_dump() for doc in props.documents]
+    if docs and not props.regenerate and not props.edit:
+        # `doc.ok` said a file was read; this says one was asked about. A
+        # paste never met the server before now, so this is its only line.
+        obs.event("doc.used", n=len(docs),
+                  chars=sum(len(doc["text"]) for doc in docs),
+                  pasted=sum(1 for doc in docs if not doc["name"]),
+                  cut=sum(1 for doc in docs if doc["cut"]), depth=props.depth)
     if props.regenerate:
-        message, briefed = _rewind(paths)
+        message, briefed, shots, docs = _rewind(paths)
         if briefed.get("ticker") == focus:
             angle = str(briefed.get("angle") or "")
+    elif props.edit:
+        # The words are new, so the brief the old ones stood for is not asked
+        # again; the pictures and the documents are the same ones, as the
+        # server kept them.
+        _, _, shots, docs = _rewind(paths)
     held = session_keys(x_chat_provider, x_chat_key)
     asked_how = {
         "lang": lang, "staged_import": props.staged_import.strip(), "view": view,
@@ -371,6 +455,8 @@ def ask(
         "linked": not guided and body.declares(navigate.TOOL_NAME),
         "depth": props.depth,
         "brief": angle,
+        "screenshots": shots,
+        "documents": docs,
     }
     try:
         run = _launch(paths, request, rid=body.run_id, thread=thread,
@@ -423,6 +509,8 @@ def _launch(paths: UserPaths, request: Request, *, rid: str, thread: str,
                 depth=str(how.get("depth") or ""),
                 checkpoint=point,
                 angle=str(how.get("brief") or ""),
+                screenshots=screenshot.kept(how.get("screenshots")),
+                documents=document.kept(how.get("documents")),
             ),
             stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
             failed=lambda frame: '"type":"RUN_ERROR"' in frame,
