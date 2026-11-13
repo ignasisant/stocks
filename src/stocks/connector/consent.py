@@ -212,11 +212,13 @@ async def _show(request: Request) -> Response:
     lang = _language(request, email)
     req = oauth.open_request(raw)
     if req is None:
+        obs.warn("mcp.consent_refused", reason="expired")
         return _problem(lang, "consent_expired", 400)
     if not email:
         return _login(raw)
     client = await clients.get(req["client_id"])
     if client is None:
+        obs.warn("mcp.consent_refused", reason="client")
         return _problem(lang, "consent_unknown_client", 400)
     claims = session.claims(request.cookies) or {}
     form = session.seal(FORM_PURPOSE, {
@@ -259,6 +261,7 @@ async def _decide(request: Request, origin: str) -> Response:
     raw, token = str(form.get("req") or ""), str(form.get("csrf") or "")
     req = oauth.open_request(raw)
     if req is None:
+        obs.warn("mcp.consent_refused", reason="expired")
         return _problem(lang, "consent_expired", 400)
     claims = session.claims(request.cookies) or {}
     check = session.unseal(FORM_PURPOSE, token, FORM_MAX_AGE)
@@ -273,6 +276,7 @@ async def _decide(request: Request, origin: str) -> Response:
         return _problem(lang, "consent_stale_form", 403)
     client = await clients.get(req["client_id"])
     if client is None:
+        obs.warn("mcp.consent_refused", reason="client")
         return _problem(lang, "consent_unknown_client", 400)
     redirect = req["redirect_uri"]
     kind = clients.describe(client)["client_kind"]

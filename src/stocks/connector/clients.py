@@ -263,6 +263,19 @@ async def _fetch_document(url: str) -> bytes:
             await resp.aclose()
 
 
+def _can_be_public(doc: dict) -> bool:
+    """Whether the client can authenticate with "none" at our token endpoint.
+
+    Its preferred method is not the only one it may use: ChatGPT's document
+    prefers private_key_jwt but lists "none" among the methods it supports,
+    and since our server metadata offers no JWT method it falls back to none.
+    """
+    if doc.get("token_endpoint_auth_method", "none") == "none":
+        return True
+    supported = doc.get("token_endpoint_auth_methods_supported")
+    return isinstance(supported, list) and "none" in supported
+
+
 def _from_document(url: str, raw: bytes) -> Client:
     try:
         doc = json.loads(raw)
@@ -272,7 +285,7 @@ def _from_document(url: str, raw: bytes) -> Client:
         raise DocumentRefused("client_id does not match its URL")
     if "client_secret" in doc or "client_secret_expires_at" in doc:
         raise DocumentRefused("a metadata document cannot carry a secret")
-    if doc.get("token_endpoint_auth_method", "none") != "none":
+    if not _can_be_public(doc):
         raise DocumentRefused("only public clients are supported")
     uris = doc.get("redirect_uris")
     if not isinstance(uris, list) or not uris or len(uris) > 10:
