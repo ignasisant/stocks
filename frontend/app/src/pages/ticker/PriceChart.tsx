@@ -65,6 +65,14 @@ import { DASH, decimal, money, percent } from "../../shell/format";
 const ALL_OVERLAYS: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const ALL_MARKERS: readonly Marker[] = ["results", "dividends"];
 
+/**
+ * A window wider than this (in days) drops the results marks and every
+ * event's vertical: five years is twenty reports and twenty payouts, a
+ * curtain of dotted lines over the price. Measured on what is on screen, so
+ * a zoom back under it brings them back.
+ */
+const LONG_SPAN_DAYS = 3 * 365;
+
 /** What `render` has no layout to measure: the width a test or the server sees. */
 const FALLBACK_WIDTH = 760;
 /**
@@ -440,6 +448,10 @@ export function PriceChart({
   // the first candle.
   const fills = useMemo<Fill[]>(() => placeFills(trades, days), [trades, days]);
 
+  const long =
+    (Date.parse(days[to] ?? "") - Date.parse(days[from] ?? "")) / 86_400_000 >
+    LONG_SPAN_DAYS;
+
   const marks = useMemo(() => {
     const lines = new Map<number, EventLine[]>();
     const kinds = new Map<number, "dividend" | "results" | "cycle">();
@@ -461,7 +473,7 @@ export function PriceChart({
     );
     const first = days[0] ?? "";
     const last = days[days.length - 1] ?? "";
-    for (const event of markers.includes("results") ? events : []) {
+    for (const event of markers.includes("results") && !long ? events : []) {
       if (event.date < first || event.date > last) continue;
       const index = snap(days, event.date);
       lines.set(index, [
@@ -480,7 +492,7 @@ export function PriceChart({
       tags.set(index, cycleTag(event.kind));
     }
     return { lines, kinds, tags };
-  }, [bars.dividends, days, close, events, cycle, markers, daily, intraday, t]);
+  }, [bars.dividends, days, close, events, cycle, markers, daily, intraday, long, t]);
 
   /** A bar's marker kind, unless the reader switched that kind off. */
   const kindAt = (index: number) => {
@@ -1022,7 +1034,7 @@ export function PriceChart({
             the bar's high whose row in the tooltip says what it was. On weekly
             or monthly bars only the diamond: forty years of quarterly dividends
             is a vertical every third candle, a curtain over the chart rather
-            than a marker. */}
+            than a marker — and so are five years of dailies (`long`). */}
           {visibleMarks
             .filter(([index]) => index >= from && index <= to)
             .map(([index, kind]) => {
@@ -1041,7 +1053,7 @@ export function PriceChart({
                   {/* A coin has a handful of cycle events in its whole life, so
                     they keep their vertical on weekly bars too — the long
                     ranges are where a halving is worth seeing. */}
-                  {daily || intraday || kind === "cycle" ? (
+                  {((daily || intraday) && !long) || kind === "cycle" ? (
                     <>
                       <line
                         className="tk-event"

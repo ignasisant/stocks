@@ -31,6 +31,8 @@
   "ticker.period_1y": "1A",
   "ticker.period_2y": "2A",
   "ticker.period_5y": "5A",
+  "ticker.period_10y": "10A",
+  "ticker.period_20y": "20A",
   "ticker.period_max": "Todo",
   "ticker.chart_type": "Tipo de gráfico",
   "ticker.chart_candles": "Velas",

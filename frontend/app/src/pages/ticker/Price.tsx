@@ -69,11 +69,30 @@ import { num } from "../../shell/numbers";
 import { DASH, decimal, isNum, money, percent, shares } from "../../shell/format";
 
 /**
- * The ranges the chart offers, in order: a pick of `analysis.history.PERIODS`
- * few enough to fit one row on a 360px phone.
+ * The ranges the chart offers, in order: `analysis.history.PERIODS`. A listing
+ * with decades behind it needs the decades — "Max" on a stock from 1962 is
+ * sixty years squashed flat, the last ten a hook in the corner.
  */
-const RANGES = ["1d", "1w", "6m", "1y", "max"] as const;
+const RANGES = [
+  "1d",
+  "1w",
+  "1m",
+  "3m",
+  "6m",
+  "1y",
+  "2y",
+  "5y",
+  "10y",
+  "20y",
+  "max",
+] as const;
 export type Range = (typeof RANGES)[number];
+
+/**
+ * A phone's pick, few enough to fit one row at 360px beside the chart toggle.
+ * A range picked on a wider screen joins them, so the pressed pill is there.
+ */
+const PHONE_RANGES: readonly Range[] = ["1d", "6m", "1y", "5y", "max"];
 
 export function isRange(value: string): value is Range {
   return (RANGES as readonly string[]).includes(value);
@@ -234,7 +253,11 @@ export function PriceSection({
     <div className="tk-controls">
       <Segmented
         label={t("ticker.period")}
-        options={RANGES.filter((one) => !offered || offered.includes(one))}
+        options={RANGES.filter(
+          (one) =>
+            (!offered || offered.includes(one)) &&
+            (!mobile || PHONE_RANGES.includes(one) || one === range),
+        )}
         value={range}
         onChange={onRange}
         format={(one) => t(`ticker.period_${one}`)}
