@@ -34,7 +34,7 @@ MIPS = [
     ),
     quote("SE0009216278.SG", "MIPS AB O.N.", exch="Stuttgart"),
     quote("0RNQ.IL", "MIPS AB MIPS ORD SHS", long="Mips AB (publ)", exch="London"),
-    quote("MIPSX", "MassMutual Premier Inflation-Pr", exch="NASDAQ", qtype="MUTUALFUND"),
+    quote("MIPS=F", "Mips futures", exch="CME", qtype="FUTURE"),
 ]
 
 
@@ -61,7 +61,7 @@ def test_collapses_every_venue_of_one_issuer(monkeypatch):
 
 
 def test_skips_non_tradable_quote_types(monkeypatch):
-    serve(monkeypatch, [MIPS[-1]])  # the mutual fund alone
+    serve(monkeypatch, [MIPS[-1]])  # the future alone
     assert search_symbols("mips") == []
 
 
@@ -209,7 +209,7 @@ def test_search_keeps_each_rows_quote_type(monkeypatch):
     search_symbols("mips")
     assert funds.quote_type("MIPS.ST", fetch=False) == "EQUITY"
     # A row the search drops is not one it vouches for.
-    assert funds.quote_type("MIPSX", fetch=False) is None
+    assert funds.quote_type("MIPS=F", fetch=False) is None
 
 
 # ------------------------------------------------------ bare broker codes

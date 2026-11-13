@@ -75,8 +75,14 @@ def sec_matches(query: str) -> list[tuple[str, str]]:
 WORLD_MEMO = SharedMemo(DATA_DIR / "symbol_search.json", ttl=30 * 86400.0, cap=5000)
 
 
+# Bumped when the rows a search keeps change, so a month-old answer kept under
+# the old rules is not served: v2 keeps a fund's NAV lines (MUTUALFUND).
+_WORLD_KEY_VERSION = "v2"
+
+
 def _world_key(query: str) -> str:
-    return hashlib.sha256(query.encode("utf-8")).hexdigest()[:24]
+    salted = f"{_WORLD_KEY_VERSION}:{query}"
+    return hashlib.sha256(salted.encode("utf-8")).hexdigest()[:24]
 
 
 @ttl_cache(_WORLD_TTL, max_entries=128, stale_s=0.0)
