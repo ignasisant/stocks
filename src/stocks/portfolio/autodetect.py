@@ -121,6 +121,26 @@ def _extension(filename: str) -> str:
     return ext
 
 
+# A file's first bytes and the extensions that already agree with them. A
+# phone's share sheet or a "Save as" can hand over an Excel workbook or a PDF
+# named .csv (a Revolut statement did, 2026-11-11), and every reader here
+# picks its format by the extension — the CSV reader then chokes on the zip
+# with "new-line character seen in unquoted field".
+_MAGIC = (
+    (b"PK\x03\x04", ("xlsx", "xlsm"), "xlsx"),
+    (b"%PDF", ("pdf",), "pdf"),
+)
+
+
+def _true_name(filename: str, data: bytes) -> str:
+    """The filename with the extension its contents call for."""
+    for magic, agree, ext in _MAGIC:
+        if data.startswith(magic) and _extension(filename) not in agree:
+            stem = filename.rpartition(".")[0] if "." in filename else filename
+            return f"{stem}.{ext}"
+    return filename
+
+
 def _headers(filename: str, data: bytes) -> set[str]:
     """The CSV's header names, lowercased — empty for anything else."""
     if not filename.lower().endswith(".csv"):
@@ -230,6 +250,7 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
     `mapping` is a reader's correction of how the fallback read this same file:
     the parsers already declined it, so it goes straight to being applied.
     """
+    filename = _true_name(filename, data)
     if mapping is not None:
         return _mapped(llm_map.extract(filename, data, provider, api_key,
                                        mapping=mapping))
@@ -373,6 +394,7 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
     Without a provider this is the parsers alone, plus the crypto exports
     whose header is a known one.
     """
+    filename = _true_name(filename, data)
     if mapping is not None:
         return _mapped(llm_map.extract(filename, data, provider, api_key,
                                        mapping=mapping))
