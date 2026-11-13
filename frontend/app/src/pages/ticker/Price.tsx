@@ -630,7 +630,7 @@ function signedMoney(value: number, currency: string | null | undefined): string
 }
 
 /** The local calendar day, as the API writes dates. */
-function isoToday(): string {
+export function isoToday(): string {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
@@ -701,7 +701,7 @@ function ResultsLine({ event, t }: { event: EarningsEvent; t: Translate }) {
 }
 
 /** One figure beside the price, whichever kind of asset asked for it. */
-type Cell = {
+export type Cell = {
   id: MetricId;
   label: string;
   /** How the phone's one-line summary names it, when shorter than `label`. */
@@ -805,7 +805,7 @@ function bankLabel(t: Translate, bank: string | null): string {
  * in its cell rather than moving the row about: the layout is the kind's,
  * the data fills it in.
  */
-function cell(
+export function cell(
   id: MetricId,
   {
     bars,

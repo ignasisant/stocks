@@ -785,6 +785,103 @@ def test_forward_pe_is_the_next_twelve_months_not_next_fiscal_year():
     assert forward_pe({"forwardPE": 11.03}, 175.68) == 11.03
 
 
+def test_an_adrs_this_year_eps_is_taken_into_the_quote_currency():
+    """Prod 2026-11-12: Alibaba's `epsCurrentYear` came as 44.25 (CNY) beside
+    a `forwardEps` of 9.23 (USD), and the blend read a 4.2x forward P/E."""
+    from datetime import UTC, date, datetime
+
+    from stocks.analysis.fundamentals import forward_pe
+
+    end = datetime(2027, 3, 31, tzinfo=UTC).timestamp()
+    info = {"forwardPE": 13.0, "epsCurrentYear": 44.25, "epsForward": 9.23,
+            "nextFiscalYearEnd": end, "currency": "USD",
+            "financialCurrency": "CNY"}
+    day = date(2026, 11, 12)
+    pe = forward_pe(info, 120.0, today=day, rate=0.14)
+    ahead = (date(2027, 3, 31) - day).days / 365
+    assert pe == pytest.approx(120.0 / (ahead * 44.25 * 0.14 + (1 - ahead) * 9.23))
+    assert pe > 10
+    # Same currency on both: nothing is converted, however far apart.
+    same = {**info, "financialCurrency": "USD"}
+    assert forward_pe(same, 120.0, today=day, rate=0.14) == pytest.approx(
+        120.0 / (ahead * 44.25 + (1 - ahead) * 9.23)
+    )
+
+
+def test_a_pence_line_reads_its_forward_pe_in_pounds():
+    """Prod 2026-11-12: Rolls-Royce at 1369.6 pence over 0.51 pounds of
+    estimated EPS read a 2750x forward P/E; Yahoo's own figure is 27x."""
+    from datetime import UTC, date, datetime
+
+    from stocks.analysis.fundamentals import forward_pe
+
+    end = datetime(2026, 12, 31, tzinfo=UTC).timestamp()
+    info = {"forwardPE": 27.0, "epsCurrentYear": 0.44, "epsForward": 0.507,
+            "nextFiscalYearEnd": end, "currency": "GBp", "financialCurrency": "GBP"}
+    day = date(2026, 11, 12)
+    ahead = (date(2026, 12, 31) - day).days / 365
+    expected = 13.696 / (ahead * 0.44 + (1 - ahead) * 0.507)
+    assert forward_pe(info, 1369.6, today=day) == pytest.approx(expected)
+
+
+def test_a_london_line_of_a_dollar_filer_converts_this_years_eps():
+    """HSBC's London line gave this year's EPS in dollars (1.71) and next
+    year's in pounds (1.40): the closer reading, converted, is blended."""
+    from datetime import UTC, date, datetime
+
+    from stocks.analysis.fundamentals import forward_pe
+
+    end = datetime(2026, 12, 31, tzinfo=UTC).timestamp()
+    info = {"forwardPE": 9.7, "epsCurrentYear": 1.709, "epsForward": 1.40,
+            "nextFiscalYearEnd": end, "currency": "GBp", "financialCurrency": "USD"}
+    day = date(2026, 11, 12)
+    ahead = (date(2026, 12, 31) - day).days / 365
+    pe = forward_pe(info, 1354.0, today=day, rate=0.7544)
+    assert pe == pytest.approx(13.54 / (ahead * 1.709 * 0.7544 + (1 - ahead) * 1.40))
+
+
+def test_the_statement_rate_is_in_the_quotes_major_unit(monkeypatch):
+    """Naspers (ZAc, USD filings): Yahoo's USDZAc=X pair answers in cents,
+    which made every yield on its cap a hundredfold."""
+    from stocks.analysis import fundamentals as fnd
+
+    asked = []
+
+    def spot(base, quote):
+        asked.append((base, quote))
+        return 16.7, "spot"
+
+    monkeypatch.setattr(fnd.fx, "spot", spot)
+    rate = fnd._statement_fx({"currency": "ZAc", "financialCurrency": "USD"})
+    assert rate == 16.7 and asked == [("USD", "ZAR")]
+    assert fnd._statement_fx({"currency": "GBp", "financialCurrency": "GBP"}) == 1.0
+
+
+def test_the_lens_figures_are_shares_of_the_assets():
+    raw = sample_raw()
+    cols = len(raw.balance.columns)
+    raw.balance.loc["Total Assets"] = [500e9] * cols
+    raw.balance.loc["Investment Properties"] = [150e9] * cols
+    raw.balance.loc["Stockholders Equity"] = [100e9] * cols
+    m = compute_metrics(raw)
+    assert m["property_share"] == pytest.approx(0.30)
+    assert m["equity_share"] == pytest.approx(0.20)
+    raw.balance.loc["Stockholders Equity"] = [-5e9] * cols
+    assert compute_metrics(raw)["equity_share"] is None, "a deficit is no share"
+
+
+def test_cash_on_capital_adds_growth_capex_back_and_skips_the_cash():
+    raw = sample_raw()
+    raw.cashflow.loc["Operating Cash Flow"] = [120e9] * 5
+    raw.cashflow.loc["Capital Expenditure"] = [-40e9] * 5
+    raw.cashflow.loc["Depreciation And Amortization"] = [25e9] * 5
+    raw.cashflow.loc["Stock Based Compensation"] = [5e9] * 5
+    raw.balance.loc["Cash And Cash Equivalents"] = [40e9] * 5
+    m = compute_metrics(raw)
+    # Only the 25B of upkeep is kept: (120 - 5 - 25) / (200 - 40).
+    assert m["cash_roc"] == pytest.approx(90e9 / 160e9)
+
+
 def test_quarter_labels_are_the_companys_fiscal_quarters():
     """Prod 2026-11-09: NVDA's quarter to July 2026 read "2026Q3"; it is the
     second quarter of fiscal 2027."""

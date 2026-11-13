@@ -13,17 +13,18 @@
  * ranking opens on the most expensive company in the sector.
  */
 
-import { useState } from "react";
-import { get } from "../../shell/api";
+import { type CSSProperties, useState } from "react";
 import { useT } from "../../shell/i18n";
-import { useApi } from "../../shell/useApi";
+import { Link } from "../../shell/router";
 import { useDebounced } from "../../shell/useDebounced";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
-import { useLabels } from "./labels";
-import { formatMetric, ordered, passes, type Screen } from "./metrics";
-import type { CohortRow, SectorCohort } from "./types";
-import { DenseRows, Responsive } from "../../ui/Rows";
+import { DenseRow, type DenseSpec, Responsive } from "../../ui/Rows";
 import { ToggleChip, ToggleRow } from "../../ui/Toggle";
+import { MAX_ADDED, SYMBOL } from "../review/format";
+import { useLabels } from "./labels";
+import { formatMetric, ordered, passes, type Screen, tinted } from "./metrics";
+import { percentiles, tint } from "./rank";
+import type { CohortRow, SectorCohort } from "./types";
 
 /**
  * The width the table goes dense at, 40rem, and the one `Responsive` swaps the
@@ -84,18 +85,18 @@ function Marked({ text }: { text: string }) {
   );
 }
 
-export function Cohort({ data }: { data: SectorCohort }) {
+export function Cohort({
+  data,
+  held,
+}: {
+  data: SectorCohort;
+  /** What the reader already owns, upper-cased: the cohort is the same for
+   * every reader, and this is joined on top of it (see routes/sector.py). */
+  held: ReadonlySet<string>;
+}) {
   const t = useT();
   const labels = useLabels();
   const na = t("sector.na");
-  // The cohort is the same for every reader; what the reader already owns is
-  // joined here (see routes/sector.py), from the one positions request.
-  const book = useApi(() => get("/portfolio/positions"), []);
-  const held = new Set(
-    book.state === "loaded"
-      ? book.data.positions.map((p) => p.ticker.toUpperCase())
-      : [],
-  );
 
   const [narrow] = useState(narrowAtOpen);
   const [sort, setSort] = useState(data.sort);
@@ -103,11 +104,14 @@ export function Cohort({ data }: { data: SectorCohort }) {
   const [columns, setColumns] = useState<string[]>(() =>
     narrow ? data.default_columns.slice(0, NARROW_COLUMNS) : data.default_columns,
   );
-  // Open on a wide screen, folded away on a phone — where the sidebar this
-  // panel replaces starts collapsed anyway. Controlled, with the toggle fed
-  // back: every control inside it re-renders this component, and an `open`
-  // prop nothing writes to would slam the panel shut on the next keystroke.
-  const [open, setOpen] = useState(!narrow);
+  // Folded on every width: the screens are one tap away as chips above the
+  // table, and the rest (order, columns, thresholds) is a settings menu, not
+  // the first thing under the heading. Controlled, with the toggle fed back:
+  // every control inside it re-renders this component, and an `open` prop
+  // nothing writes to would slam the menu shut on the next keystroke.
+  const [open, setOpen] = useState(false);
+  // Rows picked to carry to Sell or add, in the order they were picked.
+  const [picked, setPicked] = useState<string[]>([]);
   const [on, setOn] = useState<Record<string, boolean>>({});
   // The column last toggled: its definition reads under the chips, because a
   // chip's `title` is a hover hint and a phone has no hover.
@@ -134,7 +138,9 @@ export function Cohort({ data }: { data: SectorCohort }) {
   const sortBy = (metric: string) =>
     metric === sort ? setAscending((current) => !current) : rankBy(metric);
 
-  const screens: Screen[] = SCREENS.filter((screen) => on[screen.metric])
+  const offered = SCREENS.filter((screen) => data.metric_keys.includes(screen.metric));
+  const screens: Screen[] = offered
+    .filter((screen) => on[screen.metric])
     .map((screen) => ({
       metric: screen.metric,
       kind: screen.kind,
@@ -156,12 +162,61 @@ export function Cohort({ data }: { data: SectorCohort }) {
   // figure reads as a list sorted by nothing. The rest go in the dim line.
   const sub = columns.filter((column) => column !== sort);
 
+  // Each figure's standing in the whole cohort, not in the rows a screen
+  // left: switching a screen on must not recolour the figures that stay.
+  // The ranked-by metric too, column or not: a phone row's headline is it.
+  const standing = new Map(
+    [...new Set([...columns, sort])]
+      .filter(tinted)
+      .map((column) => [
+        column,
+        percentiles(data.rows, column, data.lower_is_better.includes(column)),
+      ]),
+  );
+  const shade = (column: string, ticker: string) =>
+    tint(standing.get(column)?.get(ticker));
+
+  const choosable = (ticker: string) => SYMBOL.test(ticker.toUpperCase());
+  const full = picked.length >= MAX_ADDED;
+  const toggle = (ticker: string) =>
+    setPicked((current) =>
+      current.includes(ticker)
+        ? current.filter((one) => one !== ticker)
+        : current.length >= MAX_ADDED
+          ? current
+          : [...current, ticker],
+    );
+  const pick: Picking = { picked, full, choosable, toggle };
+
   return (
     <section className="ag-sec-card ag-sec-cohort">
       <h2 className="ag-sec-h2">{t("sector.table_title")}</h2>
       <p className="ag-sec-caption">
         {t("sector.cohort_caption", { n: data.rows.length, etf: data.etf })}
       </p>
+
+      {/* The ready screens, one tap each; the threshold is in the chip, so
+          what it applies is read before it is applied. */}
+      <ToggleRow label={t("sector.screen")} className="ag-sec-chips ag-sec-screens">
+        {offered.map((screen) => {
+          const value = threshold(thresholds[screen.metric] ?? "");
+          return (
+            <ToggleChip
+              key={screen.metric}
+              title={labels.describe(screen.metric)}
+              on={Boolean(on[screen.metric])}
+              onClick={() =>
+                setOn((current) => ({
+                  ...current,
+                  [screen.metric]: !current[screen.metric],
+                }))
+              }
+            >
+              {`${labels.metric(screen.metric)} ${screen.kind === "max" ? "≤" : "≥"} ${formatMetric(screen.metric, Number.isFinite(value) ? value : null, "…")}`}
+            </ToggleChip>
+          );
+        })}
+      </ToggleRow>
 
       <details
         className="ag-sec-controls"
@@ -197,16 +252,16 @@ export function Cohort({ data }: { data: SectorCohort }) {
         <p className="ag-sec-label">{t("sector.columns")}</p>
         <ToggleRow label={t("sector.columns")} className="ag-sec-chips">
           {data.metric_keys.map((key) => {
-            const picked = columns.includes(key);
+            const shown = columns.includes(key);
             return (
               <ToggleChip
                 key={key}
                 title={labels.describe(key)}
-                on={picked}
+                on={shown}
                 onClick={() => {
                   setLastMetric(key);
                   setColumns((current) =>
-                    picked
+                    shown
                       ? current.filter((column) => column !== key)
                       : [...current, key],
                   );
@@ -224,46 +279,31 @@ export function Cohort({ data }: { data: SectorCohort }) {
         ) : null}
 
         <p className="ag-sec-label">{t("sector.filters_caption")}</p>
-        {/* The threshold stays on screen while its filter is off, so the reader
-            sees what ticking it would apply; typing a new one switches it on. */}
+        {/* Typing a threshold switches its screen on. */}
         <div className="ag-sec-line">
-          {SCREENS.filter((screen) => data.metric_keys.includes(screen.metric)).map(
-            (screen) => (
-              <div
-                className={
-                  on[screen.metric] ? "ag-sec-filter ag-sec-filter-on" : "ag-sec-filter"
-                }
-                key={screen.metric}
-              >
-                <label className="ag-sec-check" title={labels.describe(screen.metric)}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(on[screen.metric])}
-                    onChange={(event) =>
-                      setOn((current) => ({
-                        ...current,
-                        [screen.metric]: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>
-                    {labels.metric(screen.metric)} {screen.kind === "max" ? "≤" : "≥"}
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  aria-label={labels.metric(screen.metric)}
-                  value={thresholds[screen.metric] ?? screen.value}
-                  onChange={(event) => {
-                    const text = event.target.value;
-                    setThresholds((current) => ({ ...current, [screen.metric]: text }));
-                    setOn((current) => ({ ...current, [screen.metric]: true }));
-                  }}
-                />
-              </div>
-            ),
-          )}
+          {offered.map((screen) => (
+            <label
+              className={
+                on[screen.metric] ? "ag-sec-filter ag-sec-filter-on" : "ag-sec-filter"
+              }
+              key={screen.metric}
+              title={labels.describe(screen.metric)}
+            >
+              <span>
+                {labels.metric(screen.metric)} {screen.kind === "max" ? "≤" : "≥"}
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={thresholds[screen.metric] ?? screen.value}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setThresholds((current) => ({ ...current, [screen.metric]: text }));
+                  setOn((current) => ({ ...current, [screen.metric]: true }));
+                }}
+              />
+            </label>
+          ))}
         </div>
       </details>
 
@@ -283,12 +323,14 @@ export function Cohort({ data }: { data: SectorCohort }) {
             onSort={sortBy}
             na={na}
             held={held}
+            shade={shade}
+            pick={pick}
           />
         }
         narrow={
-          <DenseRows
+          <PickRows
             rows={view}
-            rowKey={(row) => row.ticker}
+            pick={pick}
             spec={{
               ticker: (row) => row.ticker,
               names: true,
@@ -302,7 +344,18 @@ export function Cohort({ data }: { data: SectorCohort }) {
                   (column) =>
                     `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na, row.currency)}`,
                 ),
-              value: (row) => formatMetric(sort, row.metrics[sort], na, row.currency),
+              // Shaded by its standing as the wide table shades its cell.
+              value: (row) => {
+                const color = shade(sort, row.ticker);
+                const text = formatMetric(sort, row.metrics[sort], na, row.currency);
+                return color ? (
+                  <span className="ag-sec-heat" style={tintStyle(color)}>
+                    {text}
+                  </span>
+                ) : (
+                  text
+                );
+              },
               // What the headline figure is, under it: a bare "72.6%" on the
               // right of seventeen rows says nothing about which metric it is.
               delta: () => labels.metric(sort),
@@ -310,6 +363,38 @@ export function Cohort({ data }: { data: SectorCohort }) {
           />
         }
       />
+
+      {/* The rows ticked, carried to Sell or add in one tap. Under the table
+          so it can stick to the foot of the screen while the rows scroll
+          (a bar above them would leave through the top); always mounted, so
+          the count is announced as it changes. */}
+      <div className="ag-sec-picked" aria-live="polite">
+        {picked.length ? (
+          <>
+            <span>
+              {full
+                ? t("sector.picked_full", { n: picked.length, max: MAX_ADDED })
+                : t("sector.picked", { n: picked.length })}
+            </span>
+            <Link
+              page="review"
+              params={{ add: picked.map((one) => one.toUpperCase()).join(",") }}
+              className="ag-btn ag-sec-picked-go"
+            >
+              {t("sector.picked_to_review")}
+            </Link>
+            <button
+              type="button"
+              className="ag-sec-picked-clear"
+              onClick={() => setPicked([])}
+            >
+              {t("sector.picked_clear")}
+            </button>
+          </>
+        ) : (
+          <span className="ag-sec-caption">{t("sector.picked_hint")}</span>
+        )}
+      </div>
 
       <details className="ag-sec-help">
         <summary>{t("sector.metrics_help")}</summary>
@@ -346,6 +431,8 @@ function Table({
   onSort,
   na,
   held,
+  shade,
+  pick,
 }: {
   rows: CohortRow[];
   columns: string[];
@@ -353,7 +440,10 @@ function Table({
   ascending: boolean;
   onSort: (metric: string) => void;
   na: string;
-  held: Set<string>;
+  held: ReadonlySet<string>;
+  /** A figure's background for its standing in the cohort, if it has one. */
+  shade: (column: string, ticker: string) => string | undefined;
+  pick: Picking;
 }) {
   const t = useT();
   const labels = useLabels();
@@ -397,6 +487,7 @@ function Table({
             <tr key={row.ticker}>
               <th scope="row" className="ag-sec-who-col">
                 <span className="ag-sec-who">
+                  <PickBox ticker={row.ticker} pick={pick} />
                   <TickerCell ticker={row.ticker}>
                     <b>{row.ticker}</b>
                   </TickerCell>
@@ -410,6 +501,7 @@ function Table({
                 <td
                   key={column}
                   className={column === sort ? "ag-sec-ranked" : undefined}
+                  style={tintStyle(shade(column, row.ticker))}
                 >
                   {formatMetric(column, row.metrics[column], na, row.currency)}
                 </td>
@@ -422,6 +514,59 @@ function Table({
   );
 }
 
+/** The rows ticked to carry to Sell or add, and how to tick one. */
+type Picking = {
+  picked: string[];
+  /** At `MAX_ADDED`: the boxes not ticked are disabled rather than ignored. */
+  full: boolean;
+  choosable: (ticker: string) => boolean;
+  toggle: (ticker: string) => void;
+};
+
+/** One row's tick box, its label the 44px target on a touch screen. */
+function PickBox({ ticker, pick }: { ticker: string; pick: Picking }) {
+  const t = useT();
+  if (!pick.choosable(ticker)) return null;
+  const on = pick.picked.includes(ticker);
+  return (
+    <label className="ag-sec-tick">
+      <input
+        type="checkbox"
+        checked={on}
+        disabled={!on && pick.full}
+        onChange={() => pick.toggle(ticker)}
+        aria-label={t("sector.pick_row", { ticker })}
+      />
+    </label>
+  );
+}
+
+/**
+ * The phone rendering: the shell's dense rows, each with its tick box beside
+ * it rather than inside it — a dense row is a link, and a box inside a link
+ * is a tap that both ticks and navigates.
+ */
+function PickRows({
+  rows,
+  pick,
+  spec,
+}: {
+  rows: CohortRow[];
+  pick: Picking;
+  spec: DenseSpec<CohortRow>;
+}) {
+  return (
+    <div className="ag-dense ag-sec-dense">
+      {rows.map((row) => (
+        <div key={row.ticker} className="ag-sec-dense-row">
+          <PickBox ticker={row.ticker} pick={pick} />
+          <DenseRow row={row} spec={spec} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * A threshold as typed: "0,15" from a Spanish keyboard as well as "0.15". A
  * number input would swallow the comma into an empty value, and an empty
@@ -430,4 +575,9 @@ function Table({
 function threshold(text: string): number {
   const raw = text.trim().replace(",", ".");
   return raw === "" ? Number.NaN : Number(raw);
+}
+
+/** The cell's tint as a custom property the stylesheet paints as a layer. */
+function tintStyle(color: string | undefined): CSSProperties | undefined {
+  return color ? ({ "--sec-tint": color } as CSSProperties) : undefined;
 }

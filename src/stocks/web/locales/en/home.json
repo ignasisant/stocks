@@ -79,6 +79,8 @@
   "home.losers": "Losers",
   "home.movers_all": "Show all ({n})",
   "home.movers_less": "Show less",
+  "home.movers_up": "{n} up",
+  "home.movers_down": "{n} down",
   "home.movers_premarket": "pre: yesterday's session plus today's pre-market.",
   "home.movers_pre_tag": "pre",
   "home.no_open_positions": "No open positions — realised history and tax detail live on the Portfolio page.",

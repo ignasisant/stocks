@@ -55,7 +55,7 @@
   "tour.market_body": "Cualquier acción, fondo o cripto: precio, rango 52s, tendencia, PER, resultados y tu posición; debajo, finanzas, analistas, insiders, noticias y un **DCF**, con su fuente. **Analizar con IA** se la pasa al asistente.",
   "tour.market_cta": "Abrir un ticker",
   "tour.sector_title": "Cribado por sectores y calendario de resultados",
-  "tour.sector_body": "Elige un sector y mira sus tres mejores empresas, por calidad y por momentum. El calendario muestra tus resultados, dividendos, plazos fiscales, compras, ventas y festivos de bolsa.",
+  "tour.sector_body": "Elige un sector y mira sus tres mejores, por calidad o por momentum, y dónde quedan los tuyos. El calendario muestra tus resultados, dividendos, plazos fiscales, compras, ventas y festivos de bolsa.",
   "tour.sector_cta": "Abrir el cribado por sectores",
   "tour.learn_title": "Aprender",
   "tour.learn_body": "Lecciones cortas de inversión y fiscalidad española, agrupadas en **rutas**, y un glosario con cada término. Marca una lección como leída y su ruta muestra tu avance.",
@@ -178,5 +178,11 @@
   "tour.news_2026_11_1_email_title": "Tu semana por email",
   "tour.news_2026_11_1_email_body": "Cada viernes tras el cierre de EE. UU., tu semana en cifras en tu correo; apágalo en **Notificaciones**.",
   "tour.news_2026_11_2_entry_title": "Criterios de entrada",
-  "tour.news_2026_11_2_entry_body": "Escribe lo que una compra o un refuerzo debe cumplir; **Vender o reforzar** avisa si un movimiento rompe alguno."
+  "tour.news_2026_11_2_entry_body": "Escribe lo que una compra o un refuerzo debe cumplir; **Vender o reforzar** avisa si un movimiento rompe alguno.",
+  "tour.news_2026_11_3_ticker_title": "Un ticker, de un vistazo",
+  "tour.news_2026_11_3_ticker_body": "La ficha de una empresa abre con **la lectura**: seis señales, cada una salta a su sección.",
+  "tour.news_2026_11_3_review_title": "Vender o reforzar, por orden",
+  "tour.news_2026_11_3_review_body": "**Vender o reforzar** abre con el plan: primero los movimientos, lo que se mantiene plegado y lo que roza un cambio.",
+  "tour.news_2026_11_3_sector_title": "Sectores, con tus valores dentro",
+  "tour.news_2026_11_3_sector_body": "**Sectores** muestra en qué puesto quedan tus valores y lleva los que marques a Vender o reforzar."
 }

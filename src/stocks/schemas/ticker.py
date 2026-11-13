@@ -157,9 +157,21 @@ class Comparison(BaseModel):
     """Several listings rebased to one day and one currency."""
 
     ticker: str
-    range: str = Field(description="One of 1m, 6m, 1y, 2y.")
+    range: str = Field(
+        description=(
+            "One of inception, 1m, 6m, 1y, 2y: the window drawn, which is 1y "
+            "when inception was asked by a reader with no trades."
+        )
+    )
     base: str = Field(description="The currency every line is measured in.")
     dates: list[str] = Field(description="The subject's sessions, YYYY-MM-DD.")
+    since: str | None = Field(
+        default=None,
+        description=(
+            "Inception only: the book's first buy, YYYY-MM-DD. When `dates` "
+            "opens later the subject was not listed yet that day."
+        ),
+    )
     lines: list[CompareLine] = Field(
         default_factory=list,
         description="The subject first, then the asked names in the order asked.",

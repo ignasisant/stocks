@@ -31,7 +31,12 @@ import type { CompareLine, CompareOffer, Comparison, SearchMatch } from "./types
 import "../portfolio/portfolio.css";
 import { DASH, percent } from "../../shell/format";
 
-const COMPARE_RANGES = ["1m", "6m", "1y", "2y"] as const;
+/**
+ * From the book's first buy first, and opened on it: a window that starts
+ * later forgives whatever the name lost before it. The shorter ones sit
+ * beside it, never instead of it.
+ */
+const COMPARE_RANGES = ["inception", "2y", "1y", "6m", "1m"] as const;
 export type CompareRange = (typeof COMPARE_RANGES)[number];
 
 /** Lines beside the subject — `analysis.compare.MAX_OTHERS`. */
@@ -51,7 +56,7 @@ export function lineColors(
 export function CompareSection({ ticker, base }: { ticker: string; base: string }) {
   const t = useT();
   const lang = useLang();
-  const [range, setRange] = useState<CompareRange>("1y");
+  const [range, setRange] = useState<CompareRange>("inception");
   // Null until a chip is pressed: the server's opening lines.
   const [picked, setPicked] = useState<string[] | null>(null);
   const query = useApi(
@@ -66,10 +71,20 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const offered = useRef<CompareOffer[]>([]);
   // …and so does what the chips are drawn from.
   const last = useRef<Comparison | null>(null);
+  // A reader with no trades has no first day: the server answers the year,
+  // and the pill that promised more goes for the rest of the visit.
+  const bookless = useRef(false);
   if (query.state === "loaded") {
     offered.current = query.data.offered;
     last.current = query.data;
+    if (range === "inception" && query.data.range !== "inception")
+      bookless.current = true;
   }
+  const ranges = bookless.current
+    ? COMPARE_RANGES.filter((one) => one !== "inception")
+    : COMPARE_RANGES;
+  const shownRange: CompareRange =
+    range === "inception" && bookless.current ? "1y" : range;
   const selected =
     picked ??
     (last.current?.lines ?? [])
@@ -94,7 +109,7 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const date = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" });
   const yearly = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
   const formatDate = (iso: string) =>
-    (range === "1m" || range === "6m" ? date : yearly).format(
+    (shownRange === "1m" || shownRange === "6m" ? date : yearly).format(
       new Date(`${iso}T00:00:00`),
     );
 
@@ -123,8 +138,8 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
       <div className="tk-compare-controls">
         <Segmented
           label={t("ticker.period")}
-          options={COMPARE_RANGES}
-          value={range}
+          options={ranges}
+          value={shownRange}
           onChange={setRange}
           format={(one) => t(`ticker.period_${one}`)}
         />
@@ -212,6 +227,7 @@ export function CompareChart({
   const t = useT();
   const palette = chart();
   if (data.dates.length < 2) return <Note>{t("ticker.history_empty")}</Note>;
+  const first = data.dates[0];
   const series: ReturnSeries[] = data.lines.map((line) =>
     line.role === "subject"
       ? {
@@ -241,6 +257,9 @@ export function CompareChart({
         formatDate={formatDate}
         legendValues
       />
+      {data.since && first && first > data.since ? (
+        <Note>{t("ticker.compare_listed_later", { date: formatDate(first) })}</Note>
+      ) : null}
       {data.missing.length > 0 ? (
         <Note>{t("ticker.compare_missing", { names: data.missing.join(", ") })}</Note>
       ) : null}

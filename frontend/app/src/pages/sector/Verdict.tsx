@@ -12,7 +12,7 @@
  * claim for the one block on this page a model wrote.
  */
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { get, send } from "../../shell/api";
 import { useLang, useT } from "../../shell/i18n";
 import { useGuest } from "../../shell/session";
@@ -27,7 +27,14 @@ type Read = {
   written: boolean;
 };
 
-export function Verdict({ sector }: { sector: string }) {
+export function Verdict({
+  sector,
+  children,
+}: {
+  sector: string;
+  /** The podium side by side (`TopThree`): drawn whether or not a read is. */
+  children?: ReactNode;
+}) {
   const t = useT();
   const lang = useLang();
   const guest = useGuest();
@@ -71,11 +78,11 @@ export function Verdict({ sector }: { sector: string }) {
     };
   }, [sector, lang, guest]);
 
-  if (!read && !writing) return null;
+  if (!read && !writing && !children) return null;
   return (
     <section className="ag-sec-card ag-sec-verdict">
       <h2 className="ag-sec-h2">{t("sector.verdict_title")}</h2>
-      {!read ? (
+      {!read && !writing ? null : !read ? (
         <>
           <Skeleton rows={3} />
           <p className="ag-sec-caption">{t("sector.verdict_waiting")}</p>
@@ -100,6 +107,7 @@ export function Verdict({ sector }: { sector: string }) {
           )}
         </>
       )}
+      {children}
     </section>
   );
 }

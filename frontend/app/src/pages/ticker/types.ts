@@ -917,6 +917,8 @@ export type Comparison = {
   range: string;
   base: string;
   dates: string[];
+  /** Inception only: the book's first buy. `dates` opening later = listed later. */
+  since?: string | null;
   lines: CompareLine[];
   offered: CompareOffer[];
   /** Asked for but not drawn: no history, or no rate into `base`. */

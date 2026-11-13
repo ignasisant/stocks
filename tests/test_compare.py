@@ -19,6 +19,7 @@ from stocks.analysis import compare
 from stocks.analysis import portfolio as portfolio_mod
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import ticker as ticker_route
+from stocks.portfolio.ledger import Transaction
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"
@@ -239,6 +240,43 @@ def test_at_most_six_names_beside_the_subject(client):
 
 def test_an_intraday_range_is_refused(client):
     assert ask(client, range="1d").status_code == 422
+
+
+def _first_buy(monkeypatch, day):
+    """The book's first buy, as `ledger_state` would replay it."""
+    buy = Transaction(date=day, ticker="ESTC", action="buy", quantity=1, price=10)
+    state = type("State", (), {"txs": [buy]})
+    patch_loaders(monkeypatch, "ledger_state", lambda db, mtime, *a, **k: state)
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 0.0)
+
+
+def test_inception_opens_on_the_books_first_buy(client, monkeypatch):
+    """The comparison that cannot forgive what the picks lost before a later
+    window opened: from the first session on or after the first buy."""
+    _first_buy(monkeypatch, DAYS[1])
+    asked = []
+    patch_loaders(
+        monkeypatch, "price_bars",
+        lambda t, label: asked.append(label)
+        or pd.DataFrame({"Close": [10.0, 11.0, 12.0]}, index=pd.DatetimeIndex(DAYS)),
+    )
+    body = ask(client, range="inception").json()
+    assert body["range"] == "inception" and body["since"] == DAYS[1]
+    assert body["dates"] == DAYS[1:]
+    assert body["lines"][0]["points"] == pytest.approx([0.0, 12.0 / 11.0 - 1])
+    # A named download that reaches back that far, never the label itself.
+    assert asked and asked[0] in ("1y", "2y", "5y", "max")
+
+
+def test_inception_without_a_book_is_the_year(client, monkeypatch):
+    patch_loaders(
+        monkeypatch, "ledger_state",
+        lambda *a, **k: type("State", (), {"txs": []}),
+    )
+    patch_loaders(monkeypatch, "db_mtime", lambda db: 0.0)
+    body = ask(client, range="inception").json()
+    assert body["range"] == "1y" and body["since"] is None
+    assert body["dates"] == DAYS
 
 
 # ------------------------------------------------------- review's windows

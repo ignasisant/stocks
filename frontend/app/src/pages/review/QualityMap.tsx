@@ -67,11 +67,8 @@ import { MapFind } from "./MapFind";
 import { type ReturnWindow, type TrailStep, WINDOWS, useReturns } from "./returns";
 import { FIND_MIN, useRowWords } from "./Tables";
 import type { ReviewRow, ScorePoint } from "./types";
+import { CHEAP, GOOD } from "./verdicts";
 import { percent } from "../../shell/format";
-
-/** `stocks.analysis.review.GOOD` and `CHEAP`. */
-const GOOD = 60;
-const CHEAP = 50;
 
 // The right pad leaves room for a ticker label on a dot at 100.
 const PAD = { top: 14, right: 44, bottom: 34, left: 40 };
@@ -255,6 +252,7 @@ export function QualityMap({
   outsideLegend,
   footer,
   ruleOf,
+  highlight,
 }: {
   held: ReviewRow[];
   candidates: ReviewRow[];
@@ -269,6 +267,8 @@ export function QualityMap({
   footer?: ReactNode;
   /** A name's rule in its details, when that page judged it otherwise. */
   ruleOf?: (row: ReviewRow) => ReactNode | undefined;
+  /** Names the page has picked out (the verdict chips): the rest fade. */
+  highlight?: (row: ReviewRow) => boolean;
 }) {
   const t = useT();
   const [ref, width] = useWidth(640);
@@ -424,9 +424,11 @@ export function QualityMap({
     focus && focus.from !== "map"
       ? (placed.find((row) => row.ticker === focus.ticker) ?? null)
       : null;
-  const lit = (row: ReviewRow) => (pointed ? row === pointed : found.has(key(row)));
+  const lit = (row: ReviewRow) =>
+    pointed ? row === pointed : found.has(key(row)) && (highlight?.(row) ?? true);
   // A match is drawn over the faded names, never under one.
-  if (query || pointed || filtered) ordered.sort((a, b) => +lit(a) - +lit(b));
+  if (query || pointed || filtered || highlight)
+    ordered.sort((a, b) => +lit(a) - +lit(b));
   const quads: { text: string; x: number; y: number; end?: boolean }[] = [
     // Inner corner: the outer one is where the best names crowd.
     { text: t("review.quad_best"), x: x(CHEAP) + 6, y: y(100) + 14 },

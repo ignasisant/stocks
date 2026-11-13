@@ -20,6 +20,7 @@ from typing import Literal
 import pandas as pd
 
 from stocks.analysis import ranking
+from stocks.analysis.kpis import kpi
 from stocks.analysis.moat import moat_score
 from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
@@ -521,8 +522,7 @@ def quarterly_eps(raw: RawFundamentals) -> pd.DataFrame:
     year_end = _finite(raw.info.get("lastFiscalYearEnd"))
     end = datetime.fromtimestamp(year_end, tz=UTC).date() if year_end else None
     df.index = [
-        fiscal_quarter(c.date(), end) if hasattr(c, "date") else str(c)
-        for c in df.index
+        fiscal_quarter(c.date(), end) if hasattr(c, "date") else str(c) for c in df.index
     ]
     df = df.apply(pd.to_numeric, errors="coerce")
     return df.iloc[::-1]  # yfinance is newest-first; charts read left-to-right
@@ -557,16 +557,19 @@ def _statement_fx(info: dict) -> float | None:
 
     Statements are filed in `financialCurrency`, the price is quoted in
     `currency`, and an ADR mixes the two: Novo Nordisk files in DKK and trades
-    in USD, Alibaba files in CNY. 1.0 when they agree or either is unknown
-    (case folded, so a London line quoted in GBp against GBP filings is not a
-    mismatch); None when they differ and no rate could be had, so a ratio is
+    in USD, Alibaba files in CNY. Always the major unit, which is what Yahoo's
+    market cap is in: a London line quoted in GBp against GBP filings is 1.0,
+    and Naspers (ZAc, USD filings) read 1678 cents a dollar off Yahoo's own
+    pair, which made its yields a hundredfold. 1.0 when they agree or either is
+    unknown; None when they differ and no rate could be had, so a ratio is
     left blank rather than computed across two currencies.
     """
-    filed, quoted = info.get("financialCurrency"), info.get("currency")
-    if not filed or not quoted or str(filed).upper() == str(quoted).upper():
+    filed = info.get("financialCurrency")
+    quoted = quote_unit(info.get("currency"))[0]
+    if not filed or not quoted or str(filed).upper() == quoted:
         return 1.0
     try:
-        return fx.spot(str(filed), str(quoted))[0]
+        return fx.spot(str(filed), quoted)[0]
     except Exception:  # noqa: BLE001 - the ECB does not quote every currency
         pass
     # TWD (TSMC) is not an ECB currency; Yahoo quotes the pair itself.
@@ -688,7 +691,103 @@ def _cash_backing(raw: RawFundamentals) -> float | None:
     return float(sum(float(cfo[y]) for y in years)) / profit
 
 
-def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
+#: Balance-sheet rows that hold what a lender has lent: Yahoo files a card
+#: issuer's under "Net Loan", a consumer lender's under loans or notes.
+_LOAN_ROWS = ("Net Loan", "Loans Receivable", "Notes Receivable")
+
+
+def _loan_share(balance: pd.DataFrame, assets: float | None) -> float | None:
+    """The share of the assets lent out: what tells a lender (Sezzle, Capital
+    One) from a card network (Visa) when Yahoo files both as Credit Services."""
+    if not assets or assets <= 0:
+        return None
+    lent = [v for label in _LOAN_ROWS if (v := _latest(balance, label)) is not None]
+    return max(lent) / assets if lent else None
+
+
+def _share(part: float | None, assets: float | None) -> float | None:
+    """`part` over the total assets; None without either, or on a deficit."""
+    if part is None or not assets or assets <= 0 or part <= 0:
+        return None
+    return part / assets
+
+
+def _cash_on_capital(
+    raw: RawFundamentals,
+    cfo: float | None,
+    sbc: float | None,
+    invested: float | None,
+    goodwill: float | None,
+) -> float | None:
+    """The owner's cash over the capital the business runs on: price-free, so
+    a quality score can read "does it turn profit into cash" without a cheap
+    share price answering yes.
+
+    Cash is operating cash less share-based pay less the capex that keeps
+    the business where it is, taken as depreciation when capex runs above it:
+    the rest is growth, which an owner chose to spend (Amazon's data centres
+    read as a poor business on plain FCF). Capital is invested capital less
+    the cash it holds; past the goodwill too when that reads higher, as
+    `roic_ex_goodwill` does, since an acquisition's premium is a price."""
+    if not invested or invested <= 0:
+        return None
+    capex = _latest(raw.cashflow, "Capital Expenditure")
+    if cfo is None or capex is None or not invested:
+        return None
+    spent = -capex
+    worn = _latest(raw.cashflow, "Depreciation And Amortization")
+    kept = min(spent, worn) if worn is not None and worn > 0 else spent
+    owner = cfo - (sbc if sbc and sbc > 0 else 0.0) - kept
+    cash = _latest(raw.balance, "Cash Cash Equivalents And Short Term Investments")
+    if cash is None:
+        cash = _latest(raw.balance, "Cash And Cash Equivalents")
+    capital = invested - (cash or 0.0)
+    if capital <= 0:
+        # More cash than capital (Pinduoduo holds its merchants' money): the
+        # whole invested capital, the conservative read.
+        capital = invested
+    if capital <= 0:
+        return None
+    out = owner / capital
+    if goodwill and goodwill > 0 and capital - goodwill > 0:
+        out = max(out, owner / (capital - goodwill))
+    return out
+
+
+#: Past this gap between this year's and next year's EPS (either way), a
+#: filing-currency figure beside a quote-currency one is the likelier read
+#: than earnings that move that much in a year.
+_EPS_SCALE_GAP = 2.5
+
+
+def _quoted_eps(
+    info: Mapping, this_year: float, next_year: float, rate: float | None
+) -> float | None:
+    """This year's EPS in the quote's major currency, which next year's is in
+    (Yahoo's `forwardPE` divides the price by it). Where the filing currency
+    differs, the figure is taken as filed and converted when that brings it
+    nearer next year's: HSBC's London line gave 1.71 (USD) beside 1.40 (GBP),
+    Naspers 5.30 (USD) beside 99.5 (ZAR). Without a rate, kept when the two
+    are near enough to be one currency, else None."""
+    filed = info.get("financialCurrency")
+    quoted = quote_unit(info.get("currency"))[0]
+    if not filed or not quoted or str(filed).upper() == quoted:
+        return this_year
+    if this_year <= 0 or next_year <= 0:
+        return this_year
+    if rate is None:
+        rate = _statement_fx(dict(info))
+    if not rate or rate <= 0:
+        gap = abs(math.log(this_year / next_year))
+        return this_year if gap < math.log(_EPS_SCALE_GAP) else None
+    converted = this_year * rate
+    kept = abs(math.log(this_year / next_year))
+    return converted if abs(math.log(converted / next_year)) < kept else this_year
+
+
+def forward_pe(
+    info: Mapping, price, today: date | None = None, rate: float | None = None
+) -> float | None:
     """Price over the next twelve months' consensus EPS.
 
     Yahoo's `forwardPE` divides by `forwardEps`, which is next fiscal year's
@@ -697,6 +796,14 @@ def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
     blend is the analysts' NTM convention: this year's EPS for the part of
     it still ahead, next year's for the rest. Without both estimates and a
     fiscal-year end, Yahoo's figure stands.
+
+    On an ADR Yahoo can give this year's EPS in the filing currency and next
+    year's in the quote's: Alibaba on 2026-11-12 read 44.25 (CNY) beside
+    9.23 (USD), and the blend made a 10x stock read 4.2x. `rate` is
+    `_statement_fx(info)`, looked up when not given.
+
+    The estimates are in the major unit, the price in the quote's: Rolls-Royce
+    at 1369.6 pence over 0.51 pounds read 2750x, so the price is scaled first.
     """
     fallback = _finite(info.get("forwardPE"))
     this_year = _finite(info.get("epsCurrentYear"))
@@ -704,6 +811,10 @@ def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
     end = _finite(info.get("nextFiscalYearEnd"))
     price = _finite(price)
     if this_year is None or next_year is None or end is None or not price:
+        return fallback
+    price *= quote_unit(info.get("currency"))[1]
+    this_year = _quoted_eps(info, this_year, next_year, rate)
+    if this_year is None:
         return fallback
     today = today or date.today()
     year_end = datetime.fromtimestamp(end, tz=UTC).date()
@@ -739,7 +850,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["market_cap"] = info.get("marketCap")
     m["ev"] = info.get("enterpriseValue")
     m["pe_ttm"] = info.get("trailingPE")
-    m["pe_fwd"] = forward_pe(info, m["price"])
+    m["pe_fwd"] = None  # once the filing currency's rate is known, below
     m["pb"] = info.get("priceToBook")
     m["ev_ebitda"] = info.get("enterpriseToEbitda")
     m["ev_sales"] = info.get("enterpriseToRevenue")
@@ -790,6 +901,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
             filed=str(info.get("financialCurrency")),
             quoted=str(info.get("currency")),
         )
+    m["pe_fwd"] = forward_pe(info, m["price"], rate=rate)
     cap = m["market_cap"]
     # Yahoo drops the trailing P/E on a loss but keeps a negative forward one,
     # so a loss-maker (CoreWeave) read n/a beside "Loss"; it also drops it on
@@ -898,6 +1010,12 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
         else None
     )
     m["cfo_ni"] = _cash_backing(raw)
+    m["cash_roc"] = _cash_on_capital(raw, cfo, sbc, invested, goodwill)
+    m["loan_share"] = _loan_share(raw.balance, assets)
+    # Not KPIs: what the review's lens reads where Yahoo's industry fits a
+    # balance-sheet business and a fee business alike (`review.lens`).
+    m["equity_share"] = _share(_latest(raw.balance, "Stockholders Equity"), assets)
+    m["property_share"] = _share(_latest(raw.balance, "Investment Properties"), assets)
     # What an acquirer paid over book, against what it owns and what is the
     # owners': an impairment comes off both.
     equity_now = _latest(raw.balance, "Stockholders Equity")
@@ -922,9 +1040,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
             intangible = _latest(raw.balance, "Goodwill And Other Intangible Assets")
             tangible = common - (intangible or 0.0)
     has_tangible = tangible is not None and tangible > 0
-    m["ptbv"] = (
-        cap / (tangible * rate) if has_tangible and cap and rate else None
-    )
+    m["ptbv"] = cap / (tangible * rate) if has_tangible and cap and rate else None
     # ...earned for the common owners: after the preferred dividends.
     earned_common = _latest(raw.income, "Net Income Common Stockholders")
     if earned_common is None:
@@ -965,29 +1081,10 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
 # Why a KPI `compute_metrics` left blank is blank. The company's own reasons
 # first — a loss has no P/E per growth, no estimates no forward P/E — then the
 # feed's: no statements, too few years, no rate between two currencies, or a
-# Yahoo field that never came.
+# Yahoo field that never came. Where each key comes from is `kpis.KPIS`.
 MissingReason = Literal[
     "loss", "no_growth", "no_estimates", "no_statements", "short_history", "fx", "feed"
 ]
-_FROM_STATEMENTS = {
-    "roic": "income",
-    "roic_ex_goodwill": "income",
-    "fcf_yield": "cashflow",
-    "owner_fcf_yield": "cashflow",
-    "net_debt_ebitda": "income",
-    "share_dilution": "income",
-    "revenue_cagr": "income",
-    "net_income_cagr": "income",
-    "fcf_cagr": "cashflow",
-    "cash_conversion": "cashflow",
-    "ptbv": "balance",
-    "rotce": "balance",
-}
-_FROM_SERIES = frozenset(
-    {"share_dilution", "revenue_cagr", "net_income_cagr", "fcf_cagr"})
-_CONVERTED = frozenset(
-    {"fcf_yield", "owner_fcf_yield", "ev_ebitda", "ev_sales", "pb", "ptbv"})
-_ON_EBITDA = frozenset({"net_debt_ebitda", "ev_ebitda"})
 
 
 def missing_reasons(
@@ -998,14 +1095,16 @@ def missing_reasons(
 
     info = raw.info
     ebitda = _latest(raw.income, "EBITDA")
-    split = str(info.get("financialCurrency") or "").upper() != str(
-        info.get("currency") or ""
-    ).upper()
+    split = (
+        str(info.get("financialCurrency") or "").upper()
+        != str(info.get("currency") or "").upper()
+    )
     out: dict[str, MissingReason] = {}
     for key in keys:
         if metrics.get(key) is not None:
             continue
-        statement = getattr(raw, _FROM_STATEMENTS.get(key, ""), None)
+        source = kpi(key)
+        statement = getattr(raw, source.statement or "", None)
         if key == "peg":
             pe = metrics.get("pe_fwd")
             pe = metrics.get("pe_ttm") if pe is None else pe
@@ -1015,15 +1114,15 @@ def missing_reasons(
                 out[key] = "no_growth"
             else:
                 out[key] = "feed"
-        elif key in _ON_EBITDA and ebitda is not None and ebitda <= 0:
+        elif source.on_ebitda and ebitda is not None and ebitda <= 0:
             out[key] = "loss"
         elif key == "pe_fwd" and info.get("forwardEps") is None:
             out[key] = "no_estimates"
         elif isinstance(statement, pd.DataFrame) and statement.empty:
             out[key] = "no_statements"
-        elif key in _FROM_SERIES:
+        elif source.series:
             out[key] = "short_history"
-        elif key in _CONVERTED and split and _statement_fx(info) is None:
+        elif source.converted and split and _statement_fx(info) is None:
             out[key] = "fx"
         else:
             out[key] = "feed"
@@ -1183,42 +1282,90 @@ def format_value(key: str, value: float | str | None) -> str:
 # Percentage metrics carry fraction values (0.15 == 15%), so bands match.
 _VERDICT_BANDS: dict[str, list[tuple[float, str, str]]] = {
     # valuation multiples — lower is cheaper
-    "pe_ttm": [(15, "cheap", "green"), (25, "fair", "orange"),
-               (40, "expensive", "red"), (float("inf"), "very expensive", "red")],
-    "pe_fwd": [(15, "cheap", "green"), (25, "fair", "orange"),
-               (40, "expensive", "red"), (float("inf"), "very expensive", "red")],
-    "peg": [(1, "cheap", "green"), (2, "fair", "orange"),
-            (float("inf"), "expensive", "red")],
-    "pb": [(1.5, "cheap", "green"), (4, "fair", "orange"),
-           (float("inf"), "expensive", "red")],
-    "ev_ebitda": [(10, "cheap", "green"), (16, "fair", "orange"),
-                  (float("inf"), "expensive", "red")],
-    "ev_sales": [(3, "cheap", "green"), (8, "fair", "orange"),
-                 (float("inf"), "expensive", "red")],
-    "ptbv": [(1, "cheap", "green"), (2.5, "fair", "orange"),
-             (float("inf"), "expensive", "red")],
+    "pe_ttm": [
+        (15, "cheap", "green"),
+        (25, "fair", "orange"),
+        (40, "expensive", "red"),
+        (float("inf"), "very expensive", "red"),
+    ],
+    "pe_fwd": [
+        (15, "cheap", "green"),
+        (25, "fair", "orange"),
+        (40, "expensive", "red"),
+        (float("inf"), "very expensive", "red"),
+    ],
+    "peg": [
+        (1, "cheap", "green"),
+        (2, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "pb": [
+        (1.5, "cheap", "green"),
+        (4, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ev_ebitda": [
+        (10, "cheap", "green"),
+        (16, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ev_sales": [
+        (3, "cheap", "green"),
+        (8, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ptbv": [
+        (1, "cheap", "green"),
+        (2.5, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
     # quality / returns — higher is better (fraction values)
-    "rotce": [(0.10, "weak", "red"), (0.15, "decent", "orange"),
-              (float("inf"), "strong", "green")],
-    "roic": [(0.08, "weak", "red"), (0.15, "decent", "orange"),
-             (float("inf"), "strong", "green")],
-    "roe": [(0.10, "weak", "red"), (0.20, "decent", "orange"),
-            (float("inf"), "strong", "green")],
-    "fcf_yield": [(0.02, "low", "red"), (0.05, "decent", "orange"),
-                  (float("inf"), "high", "green")],
+    "rotce": [
+        (0.10, "weak", "red"),
+        (0.15, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "roic": [
+        (0.08, "weak", "red"),
+        (0.15, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "roe": [
+        (0.10, "weak", "red"),
+        (0.20, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "fcf_yield": [
+        (0.02, "low", "red"),
+        (0.05, "decent", "orange"),
+        (float("inf"), "high", "green"),
+    ],
     # leverage — lower is safer; below zero is net cash
-    "net_debt_ebitda": [(0, "net cash", "green"), (1, "low", "green"),
-                        (3, "moderate", "orange"), (float("inf"), "high", "red")],
+    "net_debt_ebitda": [
+        (0, "net cash", "green"),
+        (1, "low", "green"),
+        (3, "moderate", "orange"),
+        (float("inf"), "high", "red"),
+    ],
     # dilution CAGR — negative = buybacks (good), positive = dilution
-    "share_dilution": [(-0.005, "buybacks", "green"), (0.005, "flat", "gray"),
-                       (0.02, "dilutive", "orange"),
-                       (float("inf"), "heavy dilution", "red")],
+    "share_dilution": [
+        (-0.005, "buybacks", "green"),
+        (0.005, "flat", "gray"),
+        (0.02, "dilutive", "orange"),
+        (float("inf"), "heavy dilution", "red"),
+    ],
     # momentum — RSI(14): <30 oversold, 30-70 neutral, >70 overbought
-    "rsi": [(30, "oversold", "green"), (70, "neutral", "gray"),
-            (float("inf"), "overbought", "red")],
+    "rsi": [
+        (30, "oversold", "green"),
+        (70, "neutral", "gray"),
+        (float("inf"), "overbought", "red"),
+    ],
     # moat evidence score — thresholds mirror stocks.analysis.moat
-    "moat": [(45, "no moat", "red"), (70, "narrow", "orange"),
-             (float("inf"), "wide", "green")],
+    "moat": [
+        (45, "no moat", "red"),
+        (70, "narrow", "orange"),
+        (float("inf"), "wide", "green"),
+    ],
 }
 
 
@@ -1294,12 +1441,30 @@ def comparables_table(metrics: list[dict]) -> pd.DataFrame:
 # Comps ranking direction per KPI. Size (market cap, EV), price and raw FCF
 # say nothing about who screens better, so they stay out of the score.
 _RANK_LOWER_BETTER = frozenset(
-    {"pe_ttm", "pe_fwd", "peg", "pb", "ev_ebitda", "ev_sales",
-     "net_debt_ebitda", "share_dilution"}
+    {
+        "pe_ttm",
+        "pe_fwd",
+        "peg",
+        "pb",
+        "ev_ebitda",
+        "ev_sales",
+        "net_debt_ebitda",
+        "share_dilution",
+    }
 )
 _RANK_HIGHER_BETTER = frozenset(
-    {"roe", "roic", "gross_margin", "op_margin", "net_margin", "fcf_yield",
-     "cash_conversion", "revenue_cagr", "net_income_cagr", "fcf_cagr"}
+    {
+        "roe",
+        "roic",
+        "gross_margin",
+        "op_margin",
+        "net_margin",
+        "fcf_yield",
+        "cash_conversion",
+        "revenue_cagr",
+        "net_income_cagr",
+        "fcf_cagr",
+    }
 )
 # A ticker missing most KPIs can't win on the two it happens to have.
 _RANK_MIN_METRICS = 5
@@ -1320,26 +1485,60 @@ _RANK_LOSS_LAST = ("pe_ttm", "pe_fwd")
 # what its own lens reads, against the names that report the same.
 _LENS_BLANK = {
     "financial": frozenset(
-        {"ev_ebitda", "ev_sales", "gross_margin", "op_margin", "fcf_yield",
-         "cash_conversion", "fcf_cagr", "net_debt_ebitda", "roic", "peg"}
+        {
+            "ev_ebitda",
+            "ev_sales",
+            "gross_margin",
+            "op_margin",
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "net_debt_ebitda",
+            "roic",
+            "peg",
+        }
     ),
     "real_estate": frozenset(
-        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
-         "ev_sales", "peg"}
+        {
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "roic",
+            "gross_margin",
+            "ev_sales",
+            "peg",
+        }
     ),
     "utility": frozenset(
-        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
-         "ev_sales", "peg"}
+        {
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "roic",
+            "gross_margin",
+            "ev_sales",
+            "peg",
+        }
     ),
 }
 
 
 def _rankable(row: dict) -> dict:
-    from stocks.analysis.review import lens
+    from stocks.analysis.review import EARNINGS_DROP, lens
 
     out = dict(row)
     for key in _LENS_BLANK.get(lens(row), ()):
         out[key] = None
+    # Earnings the analysts see falling (the review's `earnings_falling`): the
+    # trailing P/E is on a year that will not repeat, LEG's revaluations at
+    # 3x beside 9x forward, and ranking both counted that year twice.
+    trailing, forward = out.get("pe_ttm"), out.get("pe_fwd")
+    if (
+        isinstance(trailing, (int, float))
+        and isinstance(forward, (int, float))
+        and 0 < trailing <= forward * (1 - EARNINGS_DROP)
+    ):
+        out["pe_ttm"] = None
     for key in _RANK_POSITIVE_ONLY + _RANK_LOSS_LAST:
         value = out.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value <= 0:

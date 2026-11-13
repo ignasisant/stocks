@@ -10,7 +10,8 @@
  * this does nothing.
  *
  * It also lays the strip's underline (`.ag-tabs-ink`, `ui/Tabs.tsx`) under the
- * open tab, as `--ink-x` / `--ink-w` on the strip: one mark that travels from
+ * open tab, as `--ink-x` / `--ink-w` on the strip — the selected tab, or in a
+ * strip of in-page links the one marked `aria-current="location"`: one mark that travels from
  * the tab left to the tab picked, so the eye follows the move instead of
  * seeing one line vanish and another appear. `data-ink` is set only after the
  * first placement, so the page opens with the line already in place rather
@@ -26,7 +27,9 @@ export function useTabStrip<T extends HTMLElement = HTMLDivElement>(active: stri
 
   const centre = (smooth: boolean) => {
     const row = strip.current;
-    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]');
+    const on = row?.querySelector<HTMLElement>(
+      '[aria-selected="true"], [aria-current="location"]',
+    );
     if (!row || !on) return;
     row.style.setProperty("--ink-x", `${on.offsetLeft}px`);
     row.style.setProperty("--ink-w", `${on.offsetWidth}`);
@@ -61,7 +64,7 @@ export function useTabStrip<T extends HTMLElement = HTMLDivElement>(active: stri
     });
     watch.observe(row);
     // A tab's count arriving widens it under a line placed before it came.
-    row.querySelectorAll('[role="tab"]').forEach((tab) => watch.observe(tab));
+    row.querySelectorAll('[role="tab"], a[href]').forEach((tab) => watch.observe(tab));
     void document.fonts?.ready.then(() => {
       centre(false);
       mark();

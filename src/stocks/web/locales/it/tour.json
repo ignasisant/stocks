@@ -55,7 +55,7 @@
   "tour.market_body": "Azione, fondo o moneta: prezzo, range 52s, trend, P/E, prossimi risultati e la tua posizione; sotto bilanci, analisti, insider, notizie e un **DCF**, ognuno con fonte. **Analizza con l'IA** lo passa all'assistente.",
   "tour.market_cta": "Apri un ticker",
   "tour.sector_title": "Screener per settori e calendario utili",
-  "tour.sector_body": "Scegli un settore e vedi le sue tre migliori società, per qualità e per momentum. Il calendario mostra i tuoi utili, dividendi, scadenze fiscali, operazioni e festività di mercato.",
+  "tour.sector_body": "Scegli un settore e vedi le sue tre migliori, per qualità o per momentum, e dove stanno le tue. Il calendario mostra i tuoi utili, dividendi, scadenze fiscali, operazioni e festività di mercato.",
   "tour.sector_cta": "Apri lo screener per settori",
   "tour.learn_title": "Impara",
   "tour.learn_body": "Brevi lezioni su investimenti e fisco spagnolo, raggruppate in **percorsi**, e un glossario di ogni termine usato. Segna una lezione come letta e il suo percorso mostra a che punto sei.",
@@ -178,5 +178,11 @@
   "tour.news_2026_11_1_email_title": "La tua settimana via email",
   "tour.news_2026_11_1_email_body": "Ogni venerdì dopo la chiusura USA, la tua settimana in cifre via email; disattivala in **Notifiche**.",
   "tour.news_2026_11_2_entry_title": "Criteri di ingresso",
-  "tour.news_2026_11_2_entry_body": "Scrivi cosa deve rispettare un acquisto o un rinforzo; **Vendere o rafforzare** avvisa se una mossa ne viola uno."
+  "tour.news_2026_11_2_entry_body": "Scrivi cosa deve rispettare un acquisto o un rinforzo; **Vendere o rafforzare** avvisa se una mossa ne viola uno.",
+  "tour.news_2026_11_3_ticker_title": "Un ticker, a colpo d'occhio",
+  "tour.news_2026_11_3_ticker_body": "La pagina di un'azienda apre con **la lettura**: sei segnali, ognuno porta alla sua sezione.",
+  "tour.news_2026_11_3_review_title": "Vendere o rafforzare, in ordine",
+  "tour.news_2026_11_3_review_body": "**Vendere o rafforzare** apre con il piano: prima le mosse, le tenute ripiegate e i titoli vicini a un cambio.",
+  "tour.news_2026_11_3_sector_title": "Settori, con i tuoi titoli dentro",
+  "tour.news_2026_11_3_sector_body": "**Settori** mostra in che posizione stanno i tuoi titoli e porta quelli che spunti in Vendere o rafforzare."
 }

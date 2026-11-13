@@ -7,7 +7,7 @@
  */
 
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnalystsSection } from "./Analysts";
 import type { Analysts, EpsRevisionRow, OptionsView } from "./types";
@@ -185,5 +185,66 @@ describe("AnalystsSection", () => {
       "ticker.options_iv",
     );
     expect(render(covered)).not.toContain("ticker.options_iv");
+  });
+});
+
+describe("AnalystsSection rating changes", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T12:00:00Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const change = (date: string, action: string, firm = "Firm") => ({
+    date,
+    firm,
+    action,
+    from_grade: "Buy",
+    to_grade: "Hold",
+    target: null,
+    prior_target: null,
+    target_move: null,
+  });
+
+  it("calls out this week's downgrades above the list", () => {
+    const html = render({
+      ...covered,
+      changes: [
+        change("2026-11-12", "downgrade", "A"),
+        change("2026-11-12", "downgrade", "B"),
+        change("2026-11-12", "upgrade", "C"),
+      ],
+    } as Analysts);
+    expect(html).toContain("ticker.analysts_downgrades_on");
+    expect(html).not.toContain("ticker.analysts_upgrades_on");
+  });
+
+  it("calls out upgrades only on a day with no downgrade", () => {
+    const html = render({
+      ...covered,
+      changes: [change("2026-11-11", "upgrade")],
+    } as Analysts);
+    expect(html).toContain("ticker.analysts_upgrades_on");
+  });
+
+  it("says nothing of a move older than a week", () => {
+    const html = render({
+      ...covered,
+      changes: [change("2026-10-01", "downgrade")],
+    } as Analysts);
+    expect(html).not.toContain("ticker.analysts_downgrades_on");
+  });
+
+  it("folds a long list behind a button, and shows a short one", () => {
+    const rows = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        change(`2026-09-${String(10 + i).padStart(2, "0")}`, "reiterated", `F${i}`),
+      );
+    const long = render({ ...covered, changes: rows(8) } as Analysts);
+    expect(long).toContain("ticker.analysts_show_changes");
+    expect(long).not.toContain("F0");
+    const short = render({ ...covered, changes: rows(3) } as Analysts);
+    expect(short).not.toContain("ticker.analysts_show_changes");
+    expect(short).toContain("F2");
   });
 });

@@ -112,6 +112,7 @@
 .ag-rev-table a.ag-tick,
 .ag-rev-added a.ag-tick,
 .ag-rev-coins a.ag-tick,
+.ag-rev-close a.ag-tick,
 .ag-rev-modal a.ag-tick {
   color: var(--ag-text-primary);
   text-decoration: none;
@@ -122,6 +123,7 @@
   .ag-rev-table a.ag-tick:hover .ag-tick-sym,
   .ag-rev-added a.ag-tick:hover .ag-tick-sym,
   .ag-rev-coins a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-close a.ag-tick:hover .ag-tick-sym,
   .ag-rev-modal a.ag-tick:hover .ag-tick-sym {
     text-decoration: underline;
   }
@@ -1692,19 +1694,70 @@
 
 /* ------------------------------------------------- the book as a whole */
 
-/* The plan's buckets as bars, then the other notes as rows led by what each
-   is about: six sentences of the same weight read as one paragraph. */
-.ag-rev-mix-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  flex-wrap: wrap;
-  margin-top: 0.75rem;
+/* One tile a note, led by what it is about and its figure in big type, so
+   the row of them reads at a glance before any sentence does. The plan's
+   buckets come first with their bar against the plan's share. */
+.ag-rev-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ag-rev-mix-head .ag-rev-h3 {
+.ag-rev-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-rev-tile-kind {
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-tile-fig {
+  font-size: var(--ag-fs-lg);
+  font-weight: 700;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.ag-rev-tile-text {
   margin: 0;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.ag-rev-tile-bar {
+  display: flex;
+}
+
+/* Off plan either way is the same news: one tone for over and under. */
+.ag-rev-tile-gap {
+  margin-left: 0.5rem;
+  font-weight: 600;
+  color: var(--ag-warn);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-rev-tile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
 }
 
 .ag-rev-go {
@@ -1738,158 +1791,516 @@
   }
 }
 
-/* One grid for every row, so bars start and figures line up down the list.
-   The bar stops at 32rem: past that a share reads no better and the figures
-   drift away from the name. */
-.ag-rev-mix-list {
-  display: grid;
-  grid-template-columns:
-    minmax(6rem, max-content) minmax(8rem, 32rem) max-content max-content
-    auto;
-  align-items: center;
-  gap: 0 1rem;
-  margin: 0.5rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ag-rev-mix-row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
-  align-items: center;
-  min-height: 2.25rem;
-}
-
-.ag-rev-mix-name {
-  font-size: var(--ag-fs-sm);
-  font-weight: 500;
-  color: var(--ag-text-primary);
-}
-
-.ag-rev-mix-bar {
-  display: flex;
-}
-
-.ag-rev-mix-fig {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.ag-rev-mix-fig b {
-  font-size: var(--ag-fs-sm);
-  font-weight: 600;
-  color: var(--ag-text-primary);
-}
-
-.ag-rev-mix-target {
-  font-size: var(--ag-fs-xs);
-  color: var(--ag-text-muted);
-}
-
-/* Off plan either way is the same news: one tone for over and under. */
-.ag-rev-mix-gap {
-  font-size: var(--ag-fs-xs);
-  font-weight: 600;
-  color: var(--ag-warn);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  text-align: right;
-}
-
-.ag-rev-note-list {
-  margin: 0.75rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ag-rev-mix + .ag-rev-note-list {
-  margin-top: 1rem;
-  border-top: 1px solid var(--ag-border);
-}
-
-.ag-rev-note {
-  display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
-  gap: 0 1rem;
-  align-items: baseline;
-  padding: 0.6rem 0;
-}
-
-.ag-rev-note + .ag-rev-note {
-  border-top: 1px solid var(--ag-border);
-}
-
-.ag-rev-note-kind {
-  grid-column: 1;
-  font-size: var(--ag-fs-xs);
-  font-weight: 500;
-  color: var(--ag-text-muted);
-}
-
-.ag-rev-note-text {
-  grid-column: 2;
-  margin: 0;
-  max-width: 75ch;
-  font-size: var(--ag-fs-sm);
-  line-height: 1.5;
-  color: var(--ag-text-secondary);
-  text-wrap: pretty;
-}
-
-/* Narrow: the name, figures and gap on one line, the bar full width under
-   them; a note's label sits over its sentence. */
-@container ag-main (max-width: 40rem) {
-  .ag-rev-mix-list {
-    grid-template-columns: minmax(0, 1fr) max-content max-content auto;
-    gap: 0 0.75rem;
-  }
-
-  .ag-rev-mix-row {
-    grid-template-areas:
-      "name fig gap help"
-      "bar bar bar bar";
-    padding: 0.4rem 0;
-  }
-
-  .ag-rev-mix-name {
-    grid-area: name;
-  }
-
-  .ag-rev-mix-fig {
-    grid-area: fig;
-  }
-
-  .ag-rev-mix-gap {
-    grid-area: gap;
-  }
-
-  .ag-rev-mix-help {
-    grid-area: help;
-  }
-
-  .ag-rev-mix-bar {
-    grid-area: bar;
-    padding-top: 0.35rem;
-  }
-
-  .ag-rev-note {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ag-rev-note-kind,
-  .ag-rev-note-text {
-    grid-column: 1;
-  }
-}
-
 /* The reader's own entry criteria a buy or an add breaks: a warning under
    the reasons, never a verdict. */
 .ag-rev-entry {
   margin: 0.25rem 0 0;
   font-size: var(--ag-fs-xs);
   color: var(--ag-warn);
+}
+
+/* ------------------------------------------------ the plan's headline */
+
+/* The plan in one sentence before its figures: how many to sell, trim, add
+   to and buy, and what holds. */
+.ag-rev-plan-head {
+  margin: 0.25rem 0 0.75rem;
+}
+
+.ag-rev-plan-say {
+  margin: 0 0 0.2rem;
+  max-width: 62ch;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ag-text-primary);
+  text-wrap: balance;
+}
+
+/* The next contribution and what it goes to, under the figures. */
+.ag-rev-plan-next {
+  margin: 0.75rem 0 0;
+  max-width: 70ch;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+/* A move's weights: the figures, then the bar that draws them on the plan's
+   one scale, so a 2 % position going to 6 % looks three times bigger. */
+.ag-rev-mv-weights {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.ag-rev-wbar {
+  position: relative;
+  display: block;
+  width: 6rem;
+  height: 4px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-rule-soft);
+}
+
+.ag-rev-wbar-kept,
+.ag-rev-wbar-move {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--ag-radius-pill);
+}
+
+.ag-rev-wbar-kept {
+  left: 0;
+  background: var(--ag-text-muted);
+}
+
+.ag-rev-wbar-down {
+  background: var(--ag-down);
+  opacity: 0.55;
+}
+
+.ag-rev-wbar-up {
+  background: var(--ag-up);
+}
+
+.ag-rev-wbar-mark {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ag-text-primary);
+}
+
+/* Folded, the tax still shows: under the money, the weights keep their
+   place beside the name. */
+.ag-rev-plan-brief .ag-rev-mv {
+  grid-template-areas:
+    "who weights money"
+    ". . note";
+}
+
+@container ag-rev-mvs (max-width: 20rem) {
+  .ag-rev-plan-brief .ag-rev-mv {
+    grid-template-areas:
+      "who money"
+      ". note";
+  }
+}
+
+@container ag-rev-mvs (max-width: 26rem) {
+  .ag-rev-mv-weights {
+    align-items: flex-start;
+  }
+}
+
+/* ----------------------------------------------------- near a move */
+
+/* The names a few points from a move: who, which move and how far, and the
+   score on its 0–100 scale with the line it has to cross. */
+.ag-rev-close-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-rev-close-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr) minmax(6rem, 12rem) auto;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+.ag-rev-close-row:last-child {
+  border-bottom: none;
+}
+
+.ag-rev-close-who {
+  min-width: 0;
+  font-weight: 600;
+}
+
+.ag-rev-close-who a.ag-tick {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ag-rev-close-who .ag-tick-name {
+  min-width: 0;
+  padding-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ag-rev-close-say {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.6rem;
+  margin: 0;
+  min-width: 0;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-rev-close-say .ag-rev-caption {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-close-gauge {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-rule-soft);
+}
+
+.ag-rev-close-way {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--ag-radius-pill);
+  opacity: 0.45;
+}
+
+.ag-rev-close-down {
+  background: var(--ag-down);
+}
+
+.ag-rev-close-up {
+  background: var(--ag-up);
+}
+
+.ag-rev-close-line {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ag-text-muted);
+}
+
+.ag-rev-close-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 2px solid var(--ag-surface-card);
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+}
+
+/* Narrow: name and details on one line, the sentence and gauge under. */
+@container ag-main (max-width: 40rem) {
+  .ag-rev-close-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "who more"
+      "say say"
+      "gauge gauge";
+  }
+
+  .ag-rev-close-who {
+    grid-area: who;
+  }
+
+  .ag-rev-close-say {
+    grid-area: say;
+  }
+
+  .ag-rev-close-row > :nth-child(3) {
+    grid-area: gauge;
+  }
+
+  .ag-rev-close-more {
+    grid-area: more;
+  }
+}
+
+/* --------------------------------------------------- the verdict split */
+
+/* Book and outside names as one stacked bar each, then a chip per verdict
+   that picks its names out on the map and in the tables. */
+.ag-rev-vbar-bars {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ag-rev-vbar-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ag-rev-vbar-label {
+  font-size: var(--ag-fs-sm);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+}
+
+.ag-rev-vbar-n {
+  margin-left: 0.25rem;
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-vbar-track {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--ag-radius-pill);
+  overflow: hidden;
+}
+
+.ag-rev-vbar-seg {
+  min-width: 4px;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.ag-rev-vbar-seg[data-dim] {
+  opacity: 0.2;
+}
+
+.ag-rev-vbar-down {
+  background: var(--ag-down);
+}
+
+.ag-rev-vbar-warn {
+  background: var(--ag-warn);
+}
+
+.ag-rev-vbar-up {
+  background: var(--ag-up);
+}
+
+.ag-rev-vbar-flat {
+  background: var(--ag-text-muted);
+}
+
+.ag-rev-vbar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.ag-rev-vbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+
+.ag-rev-vbar-chip[aria-pressed="true"] {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-vbar-chip:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+.ag-rev-vbar-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ag-rev-vbar-clear {
+  border-style: dashed;
+}
+
+@media (hover: hover) {
+  .ag-rev-vbar-chip:hover {
+    color: var(--ag-text-primary);
+    background: var(--ag-surface-hover);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-rev-vbar-chip {
+    min-height: 44px;
+  }
+}
+
+.ag-rev-picked-none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* ------------------------------------------------ the book by verdict */
+
+/* Each verdict group under a header that names it, counts it and folds it. */
+.ag-rev-table .ag-rev-group > th {
+  padding: 0.85rem 0 0.25rem;
+  text-align: left;
+  border-bottom-color: var(--ag-border);
+  background: var(--ag-surface-card);
+}
+
+.ag-rev-table tbody:first-of-type .ag-rev-group > th {
+  padding-top: 0.4rem;
+}
+
+.ag-dense > .ag-rev-group-dense {
+  padding-top: 0.6rem;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.ag-rev-group-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+  padding: 0 0.4rem;
+  margin-left: -0.4rem;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  cursor: pointer;
+}
+
+.ag-rev-group-btn::after {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-left: 0.15rem;
+  border-right: 1.5px solid var(--ag-text-muted);
+  border-bottom: 1.5px solid var(--ag-text-muted);
+  rotate: 45deg;
+  translate: 0 -0.1rem;
+  transition: rotate var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.ag-rev-group-btn[aria-expanded="false"]::after {
+  rotate: -45deg;
+  translate: 0 0;
+}
+
+.ag-rev-group-n {
+  font-weight: 500;
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-group-btn:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-group-btn:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-rev-group-btn {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------- the details panel */
+
+/* Wide, a row's details open as a panel at the right edge, full height, so
+   the table it came from stays in sight beside it; an open chat drawer moves
+   it left of itself (`chat.css`). A phone gets a sheet from the bottom. */
+:root .ag-rev-modal {
+  justify-content: flex-end;
+  align-items: stretch;
+  padding: 0;
+}
+
+:root .ag-rev-modal > .ag-rev-modal-card {
+  max-width: 30rem;
+  max-height: none;
+  height: 100%;
+  padding: max(1.1rem, env(safe-area-inset-top))
+    max(1.25rem, env(safe-area-inset-right)) max(1.1rem, env(safe-area-inset-bottom))
+    1.25rem;
+  border: none;
+  border-left: 1px solid var(--ag-border);
+  border-radius: 0;
+  animation: ag-rev-panel-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: translate var(--ag-dur-move) var(--ag-ease-out);
+}
+
+:root .ag-rev-modal[data-leaving] > .ag-rev-modal-card {
+  scale: 1;
+  translate: 100% 0;
+}
+
+@keyframes ag-rev-panel-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+@keyframes ag-rev-sheet-in {
+  from {
+    translate: 0 100%;
+  }
+}
+
+/* The modal sits in a portal on the body, outside `ag-main`: the viewport
+   is the room it has. */
+@media (max-width: 640px) {
+  :root .ag-rev-modal {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  :root .ag-rev-modal > .ag-rev-modal-card {
+    max-width: none;
+    height: auto;
+    max-height: 88dvh;
+    padding: 1.1rem max(1rem, env(safe-area-inset-right))
+      max(1.1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    border-left: none;
+    border-top: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
+    animation-name: ag-rev-sheet-in;
+  }
+
+  :root .ag-rev-modal[data-leaving] > .ag-rev-modal-card {
+    translate: 0 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .ag-rev-modal > .ag-rev-modal-card,
+  .ag-rev-vbar-seg,
+  .ag-rev-group-btn::after {
+    animation: none;
+    transition: none;
+  }
 }

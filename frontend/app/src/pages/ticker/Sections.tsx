@@ -119,7 +119,7 @@ function Cautions({ codes }: { codes: string[] }) {
  * hangs on its weight, which only the Review page draws, so the link goes
  * there. The warnings are left to `Cautions` below, not said twice.
  */
-function Judged({
+export function Judged({
   ticker,
   judged,
   cautions,
@@ -272,13 +272,6 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
 
   return (
     <Card fold="fundamentals" title={t("ticker.fundamentals")}>
-      {metrics.judged && metrics.judged.verdict !== "unrated" ? (
-        <Judged
-          ticker={metrics.ticker}
-          judged={metrics.judged}
-          cautions={metrics.cautions}
-        />
-      ) : null}
       <EntryFitLine ticker={metrics.ticker} />
       <KpiGrid>
         {/* The tiles the server says this grid has, in its order, and every one
@@ -1268,10 +1261,13 @@ function FundHoldings({ fund }: { fund: Fund }) {
 
 export function ComparablesSection({
   comps,
+  onShown,
   children,
 }: {
-  /** null until a peer is picked — nothing is compared before that. */
+  /** null until a peer is picked or the rivals are filled in. */
   comps: Comparables | null;
+  /** The card is on show (`ui/Fold`): when the page fills in the rivals. */
+  onShown?: () => void;
   /** The picker, which sits inside the card above the table. */
   children?: ReactNode;
 }) {
@@ -1286,7 +1282,12 @@ export function ComparablesSection({
     .filter(Boolean)
     .join(" ");
   return (
-    <Card fold="comparables" title={t("ticker.comparables")} note={note || undefined}>
+    <Card
+      fold="comparables"
+      title={t("ticker.comparables")}
+      note={note || undefined}
+      onShown={onShown}
+    >
       {children}
       {!comps ? <Note>{t("ticker.pick_peers")}</Note> : null}
       {comps ? (

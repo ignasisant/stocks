@@ -49,7 +49,7 @@ from stocks.analysis.fundamentals import (
 from stocks.analysis.history import PERIODS, bar_interval, listed, rangebreaks, ranges
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
-from stocks.analysis.portfolio import market_live, session_quote
+from stocks.analysis.portfolio import first_owned, market_live, session_quote
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.cache import carried
@@ -140,6 +140,10 @@ from stocks.schemas import (
 )
 
 router = APIRouter(prefix="/ticker", tags=["ticker"])
+
+# The comparison's opening window: from the book's first buy. Not one of
+# `compare.RANGES`, which `window_days` reads as calendar spans back from today.
+INCEPTION = "inception"
 
 Symbol = Annotated[
     str, Path(min_length=1, max_length=32, description="Ticker, e.g. AAPL or BTC-EUR.")
@@ -276,7 +280,14 @@ def compare(
     account: Account,
     range: Annotated[
         str,
-        Query(alias="range", description=f"One of: {', '.join(COMPARE_RANGES)}."),
+        Query(
+            alias="range",
+            description=(
+                f"One of: {INCEPTION}, {', '.join(COMPARE_RANGES)}. {INCEPTION} "
+                "opens on the book's first buy, or on the listing when that is "
+                "later; with no book it falls back to 1y."
+            ),
+        ),
     ] = "1y",
     others: Annotated[
         str | None,
@@ -299,22 +310,29 @@ def compare(
     already drew — costs no download.
     """
     label = range.strip().lower()
-    if label not in COMPARE_RANGES:
+    if label not in (INCEPTION, *COMPARE_RANGES):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"range must be one of {', '.join(COMPARE_RANGES)}",
+            detail=f"range must be one of {INCEPTION}, {', '.join(COMPARE_RANGES)}",
         )
     ticker = symbol.strip().upper()
     ccy = reporting_currency(account, base)
+    # Since inception the download is the shortest named one that reaches the
+    # book's first buy (`inception_period`), cut to that day below. No book,
+    # no inception: the year every other reader opens on.
+    since = _book_first_day(account) if label == INCEPTION else None
+    if label == INCEPTION and since is None:
+        label = "1y"
+    fetch = loaders.inception_period(str(since.date())) if since is not None else label
     with ThreadPoolExecutor(max_workers=MAX_COMPARED + 4) as pool:
-        shown = pool.submit(carried(loaders.price_bars), ticker, label)
+        shown = pool.submit(carried(loaders.price_bars), ticker, fetch)
         sector = pool.submit(carried(_sector_of), ticker)
         related = pool.submit(carried(_related_or_none), ticker)
         # An explicit list starts downloading at once; the opening one waits
         # on the sector and the rivals it is made of.
         asked = _compared(ticker, others) if others is not None else []
         closes = {
-            name: pool.submit(carried(_closes_or_none), name, label)
+            name: pool.submit(carried(_closes_or_none), name, fetch)
             for name in [ticker, *asked]
         }
         own_sector = sector.result()
@@ -325,7 +343,7 @@ def compare(
             opening = [*INDICES, *([etf] if etf else []), *shares[:OPENING_PEERS]]
             asked = _compared(ticker, ",".join(opening))
             closes |= {
-                name: pool.submit(carried(_closes_or_none), name, label)
+                name: pool.submit(carried(_closes_or_none), name, fetch)
                 for name in asked
             }
         names = [ticker, *asked]
@@ -347,8 +365,15 @@ def compare(
         CompareOffer(ticker=peer, name=named.get(peer, ""), role="peer")
         for peer in shares[:OFFERED_PEERS]
     ]
+    opens = str(since.date()) if since is not None else None
+    if since is not None and not df.empty:
+        # From the first session on or after the book's first buy; a name
+        # listed later opens on its own first, and `since` says which it was.
+        df = df[df.index >= since]
     if df.empty:
-        return Comparison(ticker=ticker, range=label, base=ccy, dates=[], offered=offered)
+        return Comparison(
+            ticker=ticker, range=label, base=ccy, dates=[], offered=offered, since=opens
+        )
 
     axis = day_index(df.index)
     rates, unpriced = rates_into(
@@ -386,7 +411,23 @@ def compare(
         ],
         offered=offered,
         missing=[name for name in asked if name not in drawn],
+        since=opens,
     )
+
+
+def _book_first_day(account: accounts.UserPaths) -> pd.Timestamp | None:
+    """The day of the book's first buy, or None for a reader with no trades.
+
+    The ledger's own dates rather than `today_sections.book_start`'s value
+    path: that one prices the whole book, and its first day with value is the
+    first buy's anyway.
+    """
+    db = str(account.db)
+    try:
+        firsts = first_owned(loaders.ledger_state(db, loaders.db_mtime(db)).txs)
+    except FileNotFoundError:
+        return None
+    return min(firsts.values()) if firsts else None
 
 
 def _compared(ticker: str, asked: str | None) -> list[str]:

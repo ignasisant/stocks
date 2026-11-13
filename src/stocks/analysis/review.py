@@ -109,6 +109,19 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
+from stocks.analysis import kpis
+from stocks.analysis.kpis import business
+
+#: The scores' scale: the metrics' definition (`kpis.VERSION`) and the
+#: formula over them. A point recorded under another scale would draw a move
+#: the business never made, so the score history is kept per scale
+#: (`score_history.NAME`). Bump `FORMULA` when a leg, a range or a lens
+#: moves; `tests/test_kpis.py` pins a fingerprint of the scores, so a change
+#: that moves them fails until it is bumped. 2: 2026-11-12, quality stopped
+#: reading the FCF yield and Credit Services lenders took the financial lens.
+FORMULA = 2
+SCALE = f"{kpis.VERSION}.{FORMULA}"
+
 # Held
 SELL = "sell"
 TRIM = "trim"
@@ -388,6 +401,31 @@ FINANCIALS = frozenset(
     }
 )
 
+#: Industries Yahoo fills with networks and lenders alike: Visa beside
+#: Sezzle and Capital One. A name in one is a lender, judged on its book,
+#: once loans are `LENDER_LOANS` of its assets: its return on capital is
+#: leverage on customers' debts, and on the standard lens a buy-now-pay-later
+#: book outscored Hermès on quality.
+LENDING = frozenset({"Credit Services"})
+LENDER_LOANS = 0.50
+
+#: Industries Yahoo fills with dealers and fee houses alike: Goldman Sachs
+#: and Morgan Stanley beside Lazard and the bitcoin miners. A dealer runs on
+#: borrowed money, equity `DEALER_EQUITY` of its assets or less (GS 7 %,
+#: Schwab 10 %, Stifel 15 %; Lazard 18 %, Evercore 38 %, MARA 48 %), and
+#: its free cash flow is its clients' balances moving: judged as a bank.
+DEALING = frozenset({"Capital Markets"})
+DEALER_EQUITY = 0.15
+
+#: Industries Yahoo fills with landlords and agents alike: Vonovia and LEG
+#: beside CBRE. A name whose assets are `LANDLORD_PROPERTY` investment
+#: property or more (LEG 93 %, Vonovia 88 %, Aroundtown 74 %; CBRE 2 %) is a
+#: landlord, judged as one: its earnings carry the revaluations, so a 3x
+#: trailing P/E on the standard lens was a property market's year. Not
+#: "Real Estate - Development": Forestar's lots for sale read 84 % on that line.
+LETTING = frozenset({"Real Estate Services", "Real Estate - Diversified"})
+LANDLORD_PROPERTY = 0.50
+
 #: Regulated networks: their return is the one the regulator allows, their
 #: capex is funded with debt on purpose, so ROIC, free cash flow and the moat
 #: read every one as a poor business. Renewables developers and merchant
@@ -416,7 +454,8 @@ REITS = frozenset(
 )
 
 #: Industries whose names read like a bank, an insurer, a landlord or a
-#: utility but that keep the standard lens on purpose (see the tables above).
+#: utility but that keep the standard lens on purpose, or unless their balance
+#: sheet says otherwise (see the tables above).
 STANDARD_ON_PURPOSE = frozenset(
     {
         "Capital Markets",
@@ -673,11 +712,22 @@ def per_share_growth(metrics: Mapping) -> float | None:
 
 
 def lens(metrics: Mapping) -> str:
-    """Which ratios judge this business, by Yahoo's industry."""
+    """Which ratios judge this business, by Yahoo's industry; where one
+    industry holds both kinds, by the balance sheet (`LENDER_LOANS`,
+    `DEALER_EQUITY`, `LANDLORD_PROPERTY`). A row without the figure keeps the
+    standard lens."""
     industry = metrics.get("industry")
     if industry in FINANCIALS:
         return FINANCIAL
+    if industry in LENDING and (_num(metrics, "loan_share") or 0) >= LENDER_LOANS:
+        return FINANCIAL
+    equity = _num(metrics, "equity_share")
+    if industry in DEALING and equity is not None and equity <= DEALER_EQUITY:
+        return FINANCIAL
     if industry in REITS:
+        return REAL_ESTATE
+    owned = _num(metrics, "property_share") or 0
+    if industry in LETTING and owned >= LANDLORD_PROPERTY:
         return REAL_ESTATE
     if industry in UTILITIES:
         return UTILITY
@@ -687,7 +737,7 @@ def lens(metrics: Mapping) -> str:
 def debt_line(metrics: Mapping) -> float:
     """Net debt over EBITDA from which the debt is heavy for this industry."""
     industry = metrics.get("industry") or ""
-    if industry in REITS:
+    if lens(metrics) == REAL_ESTATE:
         return REIT_DEBT
     if industry.startswith("Utilities - ") or industry == "Telecom Services":
         return REGULATED_DEBT
@@ -824,8 +874,38 @@ def _scaling(metrics: Mapping, growth: float) -> bool:
     return growth + fcf / revenue >= SCALING_RULE_40
 
 
+def _standard_quality(biz: Mapping, floated: bool) -> list[float]:
+    """The standard lens' quality legs, off the business alone (`business`):
+    return on capital, margin, cash on the capital, moat, rule of 40."""
+    # Cash on the capital, not on the price: with the FCF yield here a
+    # falling share price raised quality, and the map's two axes shared an
+    # input (Adobe's quality read its cheapness, Microsoft's its dearness).
+    cash = None if floated else _num(biz, "cash_roc")
+    quality = [
+        _lin(v, lo, hi)
+        for v, lo, hi in (
+            (_roic(biz), 0.0, 0.40),
+            (_num(biz, "op_margin"), 0.0, 0.40),
+            (cash, 0.0, 0.20),
+        )
+        if v is not None
+    ]
+    if (moat := _num(biz, "moat")) is not None:
+        quality.append(_clamp(moat))
+    rule_40 = _rule_40(biz, floated)
+    if quality and rule_40 is not None:
+        quality.append(_lin(rule_40, 0.0, 0.60))
+    return quality
+
+
 def score(metrics: Mapping) -> Scores:
-    """Quality and cheapness, 0-100, off `compute_metrics` output."""
+    """Quality and cheapness, 0-100, off `compute_metrics` output.
+
+    Each lens' quality reads `kpis.business(metrics)`, which raises on a
+    price: quality is the business, and only cheapness moves with the share.
+    Two inputs cross over, both on purpose: the stage (`_unsold` reads the
+    price-to-sales) and whether the cash flow is a float (`floated`, which
+    needs a yield to have been computed)."""
     view = lens(metrics)
     if view == FINANCIAL:
         return _financial_scores(metrics)
@@ -836,9 +916,6 @@ def score(metrics: Mapping) -> Scores:
     phase = stage(metrics)
     if phase == EARLY:
         return Scores(None, None, stage=EARLY)
-    roic = _roic(metrics)
-    moat = _num(metrics, "moat")
-    margin = _num(metrics, "op_margin")
     fcf = _fcf_yield(metrics)
     pe, trailing = _pe(metrics)
     ev = _num(metrics, "ev")
@@ -862,17 +939,7 @@ def score(metrics: Mapping) -> Scores:
             _growth_scores(metrics, fcf, pe, suspect, floated), trailing_pe=trailing
         )
 
-    quality = [
-        _lin(v, lo, hi)
-        for v, lo, hi in ((roic, 0.0, 0.40), (margin, 0.0, 0.40), (fcf, -0.02, 0.04))
-        if v is not None
-    ]
-    if moat is not None:
-        quality.append(_clamp(moat))
-    rule_40 = _rule_40(metrics, floated)
-    if quality and rule_40 is not None:
-        quality.append(_lin(rule_40, 0.0, 0.60))
-
+    quality = _standard_quality(business(metrics), floated)
     cheap: list[float] = []
     peak = _at_peak(metrics)
     if peak:
@@ -909,31 +976,28 @@ def score(metrics: Mapping) -> Scores:
     )
 
 
-# The KPIs that are a price over something the filings fix, and the ones that
-# are something over a price: at another price the first scale with it and
-# the second against it. Everything else in `compute_metrics` is the business.
-_PRICED = ("price", "market_cap", "pe_ttm", "pe_fwd", "pb", "ptbv", "ps", "turnover_usd")
-_YIELDS = ("fcf_yield", "owner_fcf_yield", "dividend_yield")
-
-
 def at_price(metrics: Mapping, factor: float) -> dict:
     """`metrics` as they read with the share price at `factor` times the one
-    they were taken at, the business unchanged.
+    they were taken at, the business unchanged: the priced kinds of
+    `kpis.KPIS` scale with it, the yields against it, the rest stays.
 
     The map's trail where no score was recorded that far back: the price is
     known for every day, the statements of that day are not, so this is where
     today's company would sit at that day's price. The enterprise value moves
     by the market cap's change only; the debt and cash under it stay. A
-    forward P/E keeps today's estimate of the earnings. Quality moves a
-    little too: it reads the cash yield as "does it make cash at all".
+    forward P/E keeps today's estimate of the earnings. Quality stays put:
+    no lens reads the price into it, so a price move is a sideways step. One
+    exception: a cash-burning name priced at `PRE_REVENUE_PS` times its sales
+    or more is judged early (`_unsold`), so a price move across that line
+    takes its quality away or gives it one.
     """
     out = dict(metrics)
     if not factor or factor <= 0 or factor != factor:
         return out
-    for key in _PRICED:
+    for key in kpis.PRICED:
         if (value := _num(metrics, key)) is not None:
             out[key] = value * factor
-    for key in _YIELDS:
+    for key in kpis.YIELDS:
         if (value := _num(metrics, key)) is not None:
             out[key] = value / factor
     ev = _num(metrics, "ev")
@@ -968,17 +1032,11 @@ def _pb_for_roe(metrics: Mapping) -> float | None:
     return pb / ((roe - BANK_GROWTH) / (COST_OF_EQUITY - BANK_GROWTH))
 
 
-def _financial_scores(metrics: Mapping) -> Scores:
-    """The financial lens: what the book earns, and what is paid for it."""
-    roe = _num(metrics, "roe")
-    earnings = _num(metrics, "net_income_cagr")
-    dilution = _num(metrics, "share_dilution")
-    pe, trailing = _pe(metrics)
-    # A bank is priced on its tangible book when the filings give one.
-    pb = _num(metrics, "ptbv") or _num(metrics, "pb")
-    fair = _pb_for_roe(metrics)
-
-    quality = [
+def _financial_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    earnings = _num(biz, "net_income_cagr")
+    dilution = _num(biz, "share_dilution")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.04, 0.18),
@@ -987,6 +1045,16 @@ def _financial_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _financial_scores(metrics: Mapping) -> Scores:
+    """The financial lens: what the book earns, and what is paid for it."""
+    pe, trailing = _pe(metrics)
+    # A bank is priced on its tangible book when the filings give one.
+    pb = _num(metrics, "ptbv") or _num(metrics, "pb")
+    fair = _pb_for_roe(metrics)
+
+    quality = _financial_quality(business(metrics))
     cheap: list[float] = []
     if pe is not None:
         cheap.append(_lin(-pe, -16.0, -6.0) if pe > 0 else 0.0)
@@ -1005,18 +1073,12 @@ def _financial_scores(metrics: Mapping) -> Scores:
     )
 
 
-def _real_estate_scores(metrics: Mapping) -> Scores:
-    """The landlord's lens: rents that grow without new shares, at a margin,
-    bought near book and on what they pay."""
-    roe = _num(metrics, "roe")
-    growth = _num(metrics, "revenue_cagr")
-    dilution = _num(metrics, "share_dilution")
-    margin = _num(metrics, "op_margin")
-    pe, trailing = _pe(metrics)
-    pb = _num(metrics, "pb")
-    ev_ebitda = _num(metrics, "ev_ebitda")
-
-    quality = [
+def _real_estate_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    growth = _num(biz, "revenue_cagr")
+    dilution = _num(biz, "share_dilution")
+    margin = _num(biz, "op_margin")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.0, 0.10),
@@ -1026,6 +1088,16 @@ def _real_estate_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _real_estate_scores(metrics: Mapping) -> Scores:
+    """The landlord's lens: rents that grow without new shares, at a margin,
+    bought near book and on what they pay."""
+    pe, trailing = _pe(metrics)
+    pb = _num(metrics, "pb")
+    ev_ebitda = _num(metrics, "ev_ebitda")
+
+    quality = _real_estate_quality(business(metrics))
     cheap: list[float] = []
     if pb is not None and pb > 0:
         cheap.append(_lin(-pb, -2.0, -0.7))
@@ -1046,18 +1118,12 @@ def _real_estate_scores(metrics: Mapping) -> Scores:
     )
 
 
-def _utility_scores(metrics: Mapping) -> Scores:
-    """The utility's lens: the return its regulator lets the equity earn, the
-    profit growing without new shares, and debt its tariffs can carry;
-    bought on earnings, EBITDA and what it pays."""
-    roe = _num(metrics, "roe")
-    earnings = _num(metrics, "net_income_cagr")
-    dilution = _num(metrics, "share_dilution")
-    debt = _num(metrics, "net_debt_ebitda")
-    pe, trailing = _pe(metrics)
-    ev_ebitda = _num(metrics, "ev_ebitda")
-
-    quality = [
+def _utility_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    earnings = _num(biz, "net_income_cagr")
+    dilution = _num(biz, "share_dilution")
+    debt = _num(biz, "net_debt_ebitda")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.04, 0.14),
@@ -1067,6 +1133,16 @@ def _utility_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _utility_scores(metrics: Mapping) -> Scores:
+    """The utility's lens: the return its regulator lets the equity earn, the
+    profit growing without new shares, and debt its tariffs can carry;
+    bought on earnings, EBITDA and what it pays."""
+    pe, trailing = _pe(metrics)
+    ev_ebitda = _num(metrics, "ev_ebitda")
+
+    quality = _utility_quality(business(metrics))
     cheap: list[float] = []
     if pe is not None:
         cheap.append(_lin(-pe, -25.0, -10.0) if pe > 0 else 0.0)
@@ -1103,17 +1179,16 @@ def _rule_40(metrics: Mapping, floated: bool) -> float | None:
     return min(growth, 1.0) + margin
 
 
-def _growth_scores(
-    metrics: Mapping, fcf: float | None, pe: float | None, suspect: bool, floated: bool
-) -> Scores:
-    """The growth lens: how good the growth is, and what is paid per point."""
+def _growth_pace(metrics: Mapping) -> float:
     # Past 100% a year the number is a base effect more than a pace.
-    growth = min(growth_of(metrics) or 0.0, 1.0)
-    fcf_margin = None if floated else _num(metrics, "fcf_margin")
-    gross = _num(metrics, "gross_margin")
-    moat = _num(metrics, "moat")
-    ev_sales = None if suspect else _num(metrics, "ev_sales")
+    return min(growth_of(metrics) or 0.0, 1.0)
 
+
+def _growth_quality(biz: Mapping, floated: bool) -> list[float]:
+    growth = _growth_pace(biz)
+    fcf_margin = None if floated else _num(biz, "fcf_margin")
+    gross = _num(biz, "gross_margin")
+    moat = _num(biz, "moat")
     quality: list[float] = []
     if fcf_margin is not None:
         quality.append(_lin(growth + fcf_margin, 0.0, 0.60))
@@ -1121,6 +1196,16 @@ def _growth_scores(
         quality.append(_lin(gross, 0.20, 0.80))
     if moat is not None:
         quality.append(_clamp(moat))
+    return quality
+
+
+def _growth_scores(
+    metrics: Mapping, fcf: float | None, pe: float | None, suspect: bool, floated: bool
+) -> Scores:
+    """The growth lens: how good the growth is, and what is paid per point."""
+    growth = _growth_pace(metrics)
+    ev_sales = None if suspect else _num(metrics, "ev_sales")
+    quality = _growth_quality(business(metrics), floated)
 
     cheap: list[float] = []
     if ev_sales is not None and ev_sales > 0 and growth > 0:
@@ -1149,15 +1234,20 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     median = _num(metrics, "op_margin_median")
     change = _num(metrics, "op_margin_change")
     if s.stage == MATURE and s.lens == STANDARD:
+        margin = _num(metrics, "op_margin")
         if _at_peak(metrics):
             out.append(R_PEAK_MARGIN)
-        if (
+        elif (
             change is not None
             and median is not None
             and median > 0
             and change <= -MARGIN_SLIDE
             and -change >= MARGIN_SLIDE_SHARE * median
+            and (margin is None or margin < median)
         ):
+            # The slide is first filed year to last; a margin today above
+            # the years' median is a cycle coming off an older top (Marathon
+            # Petroleum, Suncor), which the peak reads, not a sliding one.
             out.append(R_MARGIN_FALLING)
     if s.stage == MATURE and s.lens != FINANCIAL:
         # A bank's "sales" are its interest and fees, which follow rates.
@@ -1184,14 +1274,15 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
         and s.lens != FINANCIAL
     ):
         out.append(R_DEBT)
-    # A landlord paying out its earnings is the law; a lender's free cash
-    # flow is not what pays it, and a utility's is net of the capex its
-    # debt funds on purpose.
+    # A landlord paying out its earnings is the law, and its free cash flow
+    # is net of the buildings it buys (Landsec's dividend read twice it); a
+    # lender's free cash flow is not what pays it, and a utility's is net of
+    # the capex its debt funds on purpose.
     payout = _num(metrics, "payout_ratio")
     covered = _num(metrics, "dividend_fcf")
     short_of_cash = (
         covered is not None
-        and s.lens not in (FINANCIAL, UTILITY)
+        and s.lens not in (FINANCIAL, UTILITY, REAL_ESTATE)
         and (
             covered > DIVIDEND_FCF_HARD
             or (covered > DIVIDEND_FCF_MAX and (payout is None or payout > PAYOUT_TIGHT))

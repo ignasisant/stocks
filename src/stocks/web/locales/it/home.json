@@ -79,6 +79,8 @@
   "home.losers": "In ribasso",
   "home.movers_all": "Mostra tutti ({n})",
   "home.movers_less": "Mostra meno",
+  "home.movers_up": "{n} in rialzo",
+  "home.movers_down": "{n} in ribasso",
   "home.movers_premarket": "pre: la seduta di ieri più il pre-market di oggi.",
   "home.movers_pre_tag": "pre",
   "home.no_open_positions": "Nessuna posizione aperta — lo storico realizzato e il dettaglio fiscale sono nella pagina Portafoglio.",

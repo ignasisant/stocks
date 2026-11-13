@@ -187,6 +187,158 @@
   display: none;
 }
 
+/* ---------------------------------------------------------- section tabs */
+
+/* The page's index (`SectionTabs.tsx`), pinned under the top edge once the
+   header has gone. It runs over `.ag-main`'s gutter so the page slides under
+   an opaque band, not past a strip with gaps at both ends; the gutter is put
+   back as padding. Once stuck it also carries the symbol and its price. */
+.tk-tabs {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-inline: -1.5rem;
+  padding-inline: 1.5rem;
+  background: var(--ag-surface-page);
+}
+.tk-tabs[data-stuck] {
+  box-shadow: 0 1px 0 var(--ag-border);
+}
+@media (max-width: 640px) {
+  .tk-tabs {
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+  }
+}
+
+.tk-tabs-strip {
+  flex: 1;
+  min-width: 0;
+}
+.tk-tabs[data-stuck] .tk-tabs-strip {
+  border-bottom-color: transparent;
+}
+
+.tk-tab {
+  text-decoration: none;
+  color: inherit;
+}
+
+.tk-tabs-mini {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tk-tabs-mini .tk-logo {
+  width: 20px;
+  height: 20px;
+}
+@container ag-main (max-width: 30rem) {
+  /* A phone keeps the symbol and the move: the price is a tap away. */
+  .tk-tabs-mini .tk-logo,
+  .tk-tabs-price {
+    display: none;
+  }
+}
+
+/* A section the tabs jump to: its cards, spaced as the page's, landing just
+   under the pinned strip. */
+.tk-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-margin-top: calc(3.25rem + env(safe-area-inset-top, 0px));
+}
+
+/* ----------------------------------------------------------------- reading */
+
+/* `Reading.tsx`: six answers, each a link to the card that holds it. As many
+   across as the page has room for, one under the other on a phone. */
+.tk-signals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tk-signal {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: var(--ag-radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--ag-dur-hover) var(--ag-ease-out);
+}
+@media (hover: hover) {
+  .tk-signal:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+.tk-signal:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+.tk-signal-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tk-signal-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tk-signal-text b {
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ag-text-secondary);
+}
+.tk-signal-text span {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- opinions */
+
+/* The street, the insiders and the shorts. Wide: the analysts card on the
+   left the height of the two others stacked on the right. */
+.tk-opinions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@container ag-main (min-width: 68rem) {
+  .tk-opinions {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: start;
+  }
+  .tk-opinions > :first-child {
+    grid-row: span 2;
+  }
+}
+
 .tk-card-head {
   display: flex;
   flex-direction: column;

@@ -502,6 +502,24 @@ def test_a_sliding_margin_is_fading_pricing_power():
     assert review.R_MARGIN_FALLING not in reasons
 
 
+def test_a_margin_above_its_median_is_not_called_sliding():
+    """Prod 2026-11-12: Marathon Petroleum read both "at a peak" and "falling",
+    Suncor "falling" at 24 % against a 17 % median: the slide ran from an older
+    top, and today's margin is above the years' normal."""
+    peak_and_slid = {
+        **CHEAP_QUALITY, "op_margin": 0.117, "op_margin_median": 0.064,
+        "op_margin_change": -0.063, "revenue_down_years": 3,
+    }
+    reasons = review.judge_held(peak_and_slid, weight=0.02).reasons
+    assert review.R_PEAK_MARGIN in reasons
+    assert review.R_MARGIN_FALLING not in reasons
+    above = {
+        **CHEAP_QUALITY, "op_margin": 0.24, "op_margin_median": 0.168,
+        "op_margin_change": -0.069,
+    }
+    assert review.R_MARGIN_FALLING not in review.judge_held(above, weight=0.02).reasons
+
+
 def test_earnings_expected_to_shrink_make_a_low_pe_no_bargain():
     # Novo Nordisk, October 2026: 9.4x trailing, 11.6x forward.
     _blocked({**CHEAP_QUALITY, "pe_ttm": 9.4, "pe_fwd": 11.6}, review.R_EARNINGS_FALLING)
@@ -1073,6 +1091,15 @@ REIT = {
 }
 
 
+def test_a_reit_paying_more_than_its_free_cash_flow_is_not_stretched():
+    """Prod 2026-11-12: Landsec's dividend read twice its free cash flow,
+    which is net of the buildings it bought; a landlord's lens judges the
+    payout on its earnings, by law."""
+    landsec = {**REIT, "payout_ratio": 0.68, "dividend_fcf": 2.0}
+    v = review.judge_held(landsec, weight=0.02)
+    assert review.R_PAYOUT_STRETCHED not in v.reasons
+
+
 def test_a_reit_is_not_a_heavy_debtor_at_six_times_ebitda():
     v = review.judge_held({**REIT, "net_debt_ebitda": 6.0}, weight=0.02)
     assert review.R_DEBT not in v.reasons
@@ -1329,8 +1356,73 @@ def test_at_a_lower_price_the_same_business_reads_cheaper():
     assert then["ev_ebitda"] == pytest.approx(26.0 * 1.6 / 3.0)
     assert then["roic"] == metrics["roic"] and then["moat"] == metrics["moat"]
     now, past = review.score(metrics), review.score(then)
-    # Quality reads the cash yield too, so it moves, but far less.
-    assert past.cheapness - now.cheapness > 3 * abs(past.quality - now.quality)
+    assert past.cheapness > now.cheapness
+    # No lens reads the price into quality: the trail is a sideways step.
+    assert past.quality == pytest.approx(now.quality)
+
+
+@pytest.mark.parametrize("factor", [0.3, 0.7, 1.5, 3.0])
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        {**CHEAP_QUALITY, "market_cap": 9e10, "cash_roc": 0.25},
+        {**DEAR_WEAK, "market_cap": 9e11, "cash_roc": 0.03},
+        {**DEAR_QUALITY, "market_cap": 2.8e12, "cash_roc": 0.30},
+        {**CHEAP_QUALITY, "industry": "Banks - Regional", "roe": 0.14, "pb": 1.1},
+    ],
+)
+def test_quality_does_not_move_with_the_price(metrics, factor):
+    """2026-11-12: the FCF yield in quality made Adobe's quality its
+    cheapness. Every multiple and yield moves; quality must not."""
+    then = review.at_price(metrics, factor)
+    assert review.score(then).quality == pytest.approx(review.score(metrics).quality)
+
+
+def test_quality_reads_cash_on_capital():
+    """Owner cash over the capital the business runs on: more of it, more
+    quality, whatever the price."""
+    lean = review.score({**CHEAP_QUALITY, "cash_roc": 0.02}).quality
+    rich = review.score({**CHEAP_QUALITY, "cash_roc": 0.20}).quality
+    assert rich > lean
+
+
+def test_a_lender_is_judged_on_its_book_a_network_is_not():
+    """Credit Services holds Visa beside Sezzle: only a balance sheet that is
+    mostly loans takes the financial lens."""
+    lender = {**CHEAP_QUALITY, "industry": "Credit Services", "loan_share": 0.64}
+    network = {**CHEAP_QUALITY, "industry": "Credit Services", "loan_share": 0.05}
+    unknown = {**CHEAP_QUALITY, "industry": "Credit Services"}
+    assert review.lens(lender) == review.FINANCIAL
+    assert review.lens(network) == review.STANDARD
+    assert review.lens(unknown) == review.STANDARD
+
+
+def test_a_dealer_is_judged_on_its_book_a_fee_house_is_not():
+    """Capital Markets holds Goldman Sachs beside Lazard and the bitcoin
+    miners: only a balance sheet geared like a bank's takes the bank lens."""
+    dealer = {**CHEAP_QUALITY, "industry": "Capital Markets", "equity_share": 0.07}
+    adviser = {**CHEAP_QUALITY, "industry": "Capital Markets", "equity_share": 0.38}
+    unknown = {**CHEAP_QUALITY, "industry": "Capital Markets"}
+    assert review.lens(dealer) == review.FINANCIAL
+    assert review.lens(adviser) == review.STANDARD
+    assert review.lens(unknown) == review.STANDARD
+    # The same gearing elsewhere is not a dealer's.
+    geared = {**dealer, "industry": "Software - Application"}
+    assert review.lens(geared) == review.STANDARD
+
+
+def test_a_landlord_filed_as_real_estate_services_is_judged_as_one():
+    """Vonovia and LEG sit beside CBRE under Real Estate Services; their
+    assets are buildings, and on the standard lens a revaluation year read
+    LEG at 3x earnings."""
+    services = {**CHEAP_QUALITY, "industry": "Real Estate Services"}
+    landlord = {**services, "property_share": 0.93}
+    agent = {**services, "property_share": 0.02}
+    assert review.lens(landlord) == review.REAL_ESTATE
+    assert review.lens(agent) == review.STANDARD
+    assert review.lens({**agent, "property_share": None}) == review.STANDARD
+    diversified = {**landlord, "industry": "Real Estate - Diversified"}
+    assert review.lens(diversified) == review.REAL_ESTATE
 
 
 def test_at_its_own_price_nothing_moves():

@@ -626,6 +626,27 @@ RELEASES: tuple[Release, ...] = (
             News(slug="entry", icon="checklist", step="plan"),
         ),
     ),
+    Release(
+        version="2026.11.3",
+        date="2026-11",
+        items=(
+            # A screen rebuilt under the reader: a company's page now opens
+            # on the read (six answers, each a link to its card) under a
+            # pinned strip of section tabs, so where things sit has moved.
+            # The rest of the rebuild (opinions side by side, rivals filled
+            # in, Compare from the book's first day) is a sentence in the
+            # market step's knowledge, no card of its own.
+            News(slug="ticker", icon="query_stats", step="market"),
+            # Sell or add rebuilt: the plan says the moves in one line, the
+            # table groups by verdict with the holds folded, a chip per
+            # verdict picks names out, and the near misses get a card.
+            News(slug="review", icon="swap_vert", step="review"),
+            # Sectors rebuilt: chips with each scan's age and the reader's
+            # weight replace the select, the reader's own names are placed
+            # in the ranking, and ticked rows go to Sell or add together.
+            News(slug="sector", icon="donut_small", step="sector"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version
