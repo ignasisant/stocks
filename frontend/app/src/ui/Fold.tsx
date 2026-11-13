@@ -23,6 +23,12 @@ import "./ui.css";
 
 const KEY = "ag.fold.";
 
+/**
+ * A page's in-page jump, with the id it landed on as `detail`: the folds in
+ * or around that element open, as for a `#hash` landing.
+ */
+export const LAND_EVENT = "ag:land";
+
 function remembered(id: string): boolean {
   try {
     return localStorage.getItem(KEY + id) === "1";
@@ -64,15 +70,26 @@ export function Fold({
   }, [mobile, open, onShown]);
   useEffect(() => {
     if (!mobile) return;
-    const land = () => {
-      const target = location.hash
-        ? document.getElementById(location.hash.slice(1))
-        : null;
-      if (target && fold.current?.contains(target)) setOpen(true);
+    // Inside the target, or the target a whole section this fold sits in: a
+    // jump to "Opinions" asks for every card under that heading.
+    const land = (event?: Event) => {
+      const id =
+        event instanceof CustomEvent && typeof event.detail === "string"
+          ? event.detail
+          : location.hash.slice(1);
+      const target = id ? document.getElementById(id) : null;
+      const here = fold.current;
+      if (target && here && (here.contains(target) || target.contains(here))) {
+        setOpen(true);
+      }
     };
     land();
     addEventListener("hashchange", land);
-    return () => removeEventListener("hashchange", land);
+    addEventListener(LAND_EVENT, land);
+    return () => {
+      removeEventListener("hashchange", land);
+      removeEventListener(LAND_EVENT, land);
+    };
   }, [mobile]);
   if (!mobile) {
     return (

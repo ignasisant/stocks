@@ -639,6 +639,7 @@ export type Comparison = {
   "range": string;
   "base": string;
   "dates": string[];
+  "since": string | null;
   "lines": CompareLine[];
   "offered": CompareOffer[];
   "missing": string[];

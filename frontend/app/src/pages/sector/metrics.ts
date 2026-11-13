@@ -135,3 +135,14 @@ export function passes(row: CohortRow, screens: readonly Screen[]): boolean {
     return screen.kind === "min" ? value >= screen.value : value <= screen.value;
   });
 }
+
+/**
+ * Whether a metric's cells are tinted by their standing in the cohort.
+ *
+ * Money is not: a bigger price or market cap is neither better nor worse, so
+ * green on the largest company would claim a judgement the figure does not
+ * make. Every other unit is a ratio someone ranks by.
+ */
+export function tinted(key: string): boolean {
+  return UNITS[key] !== "money";
+}

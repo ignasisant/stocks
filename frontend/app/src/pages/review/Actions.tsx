@@ -19,10 +19,15 @@
  * would eat what they bring. The adds the sales cannot pay for are listed
  * apart, as what new money would buy, never as cash the plan spends.
  *
- * Folded, the plan is its headline: the figures, then every name to sell, to
- * add to and to buy with new money, one dense line each — who, from which
- * weight to which, how much. The full read (why, tax, details, and the moves
- * drawn against the S&P 500 over the tables' window) unfolds below.
+ * Folded, the plan is its headline: one sentence of what to do ("sell 2,
+ * trim 1 and add to 3"), the figures, then every name to sell, to add to and
+ * to buy with new money, one dense line each — who, from which weight to
+ * which (drawn as a bar on one scale for the whole plan), how much, and what
+ * it costs in tax. The full read (why, details, and the moves drawn against
+ * the S&P 500 over the tables' window) unfolds below.
+ *
+ * With a contribution set in the reader's plan, one line says where the next
+ * one goes: the first of what new money would buy, then the next ones.
  */
 
 import { Suspense, lazy, useState } from "react";
@@ -53,6 +58,8 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
   const waiting = waitingMoves(data);
   const net = plan.buys - plan.sells;
   const scale = Math.max(plan.sells, plan.buys, 1);
+  // Every weight bar in the plan on one scale, so a long bar is a big name.
+  const span = weightSpan([...moves, ...waiting], data.total);
   const [open, setOpen] = useState(false);
   const brief = !open;
   const returns = useReturns();
@@ -69,9 +76,14 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
       {moves.length === 0 && filtered ? (
         <p className="ag-rev-caption">{t("review.moves_none")}</p>
       ) : moves.length === 0 ? (
-        <Stay data={data} />
+        <>
+          <Stay data={data} />
+          <Next rows={waiting} upcoming={data.investor_plan} base={data.base} />
+        </>
       ) : (
         <>
+          <Headline data={data} out={out} into={into} />
+          <Next rows={waiting} upcoming={data.investor_plan} base={data.base} />
           <div className="ag-rev-plan-sum">
             <div className="ag-rev-plan-fig">
               <span className="ag-rev-plan-label">
@@ -143,6 +155,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
               base={data.base}
               taxCurrency={plan.tax_currency}
               focus={focus}
+              span={span}
             />
             <MoveList
               title={t("review.in_title")}
@@ -152,6 +165,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
               base={data.base}
               taxCurrency={plan.tax_currency}
               focus={focus}
+              span={span}
             />
             {brief && waiting.length > 0 ? (
               <Waiting
@@ -159,7 +173,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
                 total={plan.new_money ?? 0}
                 book={data.total}
                 base={data.base}
-                upcoming={data.investor_plan}
+                span={span}
                 brief
               />
             ) : null}
@@ -177,7 +191,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
           total={plan.new_money ?? 0}
           book={data.total}
           base={data.base}
-          upcoming={data.investor_plan}
+          span={span}
         />
       ) : null}
       {moves.length > 0 ? (
@@ -191,6 +205,129 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
         </button>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The plan in one sentence: "Sell 2, trim 1 and add to 3", then how many
+ * names stay as they are and how many of those are close to a move.
+ */
+function Headline({
+  data,
+  out,
+  into,
+}: {
+  data: Review;
+  out: ReviewRow[];
+  into: ReviewRow[];
+}) {
+  const t = useT();
+  const lang = useLang();
+  const count = (rows: ReviewRow[], test: (row: ReviewRow) => boolean) =>
+    rows.filter(test).length;
+  const parts = (
+    [
+      ["sell", count(out, (row) => row.verdict === "sell")],
+      ["trim", count(out, (row) => row.verdict !== "sell")],
+      ["add", count(into, (row) => row.held)],
+      ["buy", count(into, (row) => !row.held)],
+    ] as const
+  ).flatMap(([kind, n]) => (n ? [t(`review.head_${kind}`, { count: n })] : []));
+  const said = new Intl.ListFormat(lang, { type: "conjunction" }).format(parts);
+  const moving = new Set([...out, ...into].map((row) => row.ticker));
+  const rest = data.held.filter((row) => !moving.has(row.ticker));
+  const close = rest.filter((row) => row.reasons.includes("close_call")).length;
+  return (
+    <div className="ag-rev-plan-head">
+      <p className="ag-rev-plan-say">
+        {said.charAt(0).toLocaleUpperCase(lang) + said.slice(1)}
+      </p>
+      {rest.length > 0 ? (
+        <p className="ag-rev-caption">
+          {t("review.head_rest", { count: rest.length })}
+          {close > 0 ? ` · ${t("review.head_close", { count: close })}` : null}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Where the next contribution goes, when the reader's plan sets one: the
+ * first of what new money would buy, then the next two.
+ */
+function Next({
+  rows,
+  upcoming,
+  base,
+}: {
+  rows: ReviewRow[];
+  upcoming?: ReviewInvestorPlan;
+  base: string;
+}) {
+  const t = useT();
+  const lang = useLang();
+  const day = upcoming?.next_contribution;
+  const amount = upcoming?.contribution;
+  const first = rows[0];
+  if (!day || !amount || !first) return null;
+  const then = rows.slice(1, 3).map((row) => row.symbol || row.ticker);
+  return (
+    <p className="ag-rev-plan-next">
+      {t("review.next_contribution", {
+        amount: money(amount, { currency: base, lang }) ?? t("review.na"),
+        date: longDay(day, lang),
+        first: first.symbol || first.ticker,
+      })}
+      {then.length
+        ? ` ${t("review.next_then", {
+            names: new Intl.ListFormat(lang, { type: "conjunction" }).format(then),
+          })}`
+        : null}
+    </p>
+  );
+}
+
+/** The widest weight any row in the plan goes from or to: the bars' 100 %. */
+function weightSpan(rows: ReviewRow[], book: number | null): number {
+  let top = 0;
+  for (const row of rows) {
+    const to =
+      row.new_money && book
+        ? (row.target_weight ?? row.weight ?? 0) + row.new_money / book
+        : row.target_weight;
+    top = Math.max(top, row.weight ?? 0, to ?? 0);
+  }
+  return top || 1;
+}
+
+/**
+ * A name's weight now and where the move takes it, on the plan's one scale:
+ * the part it keeps solid, the part that leaves or arrives in the move's
+ * tone, and a tick at the mark. The figures beside it say the same.
+ */
+function WeightBar({
+  from,
+  to,
+  span,
+}: {
+  from: number | null;
+  to: number | null;
+  span: number;
+}) {
+  if (to === null) return null;
+  const now = Math.max(0, from ?? 0);
+  const pct = (value: number) => `${Math.min(100, (value / span) * 100)}%`;
+  const kept = Math.min(now, to);
+  return (
+    <span className="ag-rev-wbar" aria-hidden="true">
+      <span className="ag-rev-wbar-kept" style={{ width: pct(kept) }} />
+      <span
+        className={`ag-rev-wbar-move ag-rev-wbar-${to < now ? "down" : "up"}`}
+        style={{ left: pct(kept), width: pct(Math.abs(to - now)) }}
+      />
+      <span className="ag-rev-wbar-mark" style={{ left: pct(to) }} />
+    </span>
   );
 }
 
@@ -226,21 +363,19 @@ function Waiting({
   total,
   book,
   base,
-  upcoming,
+  span,
   brief = false,
 }: {
   rows: ReviewRow[];
   total: number;
   book: number | null;
   base: string;
-  /** The plan's contribution, which the list is sized to when it is set. */
-  upcoming?: ReviewInvestorPlan;
+  span: number;
   brief?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
-  const due = upcoming?.next_contribution && upcoming.contribution;
   return (
     <div className={`ag-rev-mvs${brief ? "" : " ag-rev-wait"}`}>
       <h3 className="ag-rev-mvs-head">
@@ -252,14 +387,6 @@ function Waiting({
           {money(total, { currency: base, lang, signed: true })}
         </span>
       </h3>
-      {due ? (
-        <p className="ag-rev-caption">
-          {t("review.wait_contribution", {
-            date: longDay(upcoming.next_contribution ?? "", lang),
-            amount: money(upcoming.contribution, { currency: base, lang }) ?? na,
-          })}
-        </p>
-      ) : null}
       <ul className="ag-rev-mv-list">
         {rows.map((row) => {
           const from = row.target_weight ?? row.weight;
@@ -270,9 +397,12 @@ function Waiting({
                 <TickerCell ticker={row.ticker} />
               </div>
               <span className="ag-rev-mv-weights">
-                {percent(from, { lang }) ?? na}
-                <i aria-hidden="true">→</i>
-                {percent(to, { lang }) ?? na}
+                <span>
+                  {percent(from, { lang }) ?? na}
+                  <i aria-hidden="true">→</i>
+                  {percent(to, { lang }) ?? na}
+                </span>
+                <WeightBar from={from} to={to} span={span} />
               </span>
               <b className="ag-rev-mv-money ag-rev-tone-up">
                 {money(row.new_money ?? null, { currency: base, lang, signed: true }) ??
@@ -354,6 +484,7 @@ function MoveList({
   base,
   taxCurrency,
   focus,
+  span,
 }: {
   title: string;
   rows: ReviewRow[];
@@ -362,6 +493,7 @@ function MoveList({
   base: string;
   taxCurrency: string;
   focus: ReturnType<typeof useListFocus>;
+  span: number;
 }) {
   const lang = useLang();
   if (rows.length === 0) return null;
@@ -386,6 +518,7 @@ function MoveList({
             taxCurrency={taxCurrency}
             on={focus.on(row.ticker)}
             bind={focus.bind(row.ticker)}
+            span={span}
           />
         ))}
       </ul>
@@ -400,6 +533,7 @@ function Move({
   taxCurrency,
   on,
   bind,
+  span,
 }: {
   row: ReviewRow;
   brief: boolean;
@@ -407,6 +541,7 @@ function Move({
   taxCurrency: string;
   on: boolean;
   bind: ReturnType<ReturnType<typeof useListFocus>["bind"]>;
+  span: number;
 }) {
   const t = useT();
   const lang = useLang();
@@ -443,20 +578,28 @@ function Move({
         {row.verdict === "trim" ? <VerdictChip row={row} /> : null}
       </div>
       <span className="ag-rev-mv-weights">
-        {row.held ? (percent(row.weight, { lang }) ?? na) : t("review.move_new")}
-        <i aria-hidden="true">→</i>
-        {percent(row.target_weight, { lang }) ?? na}
+        <span>
+          {row.held ? (percent(row.weight, { lang }) ?? na) : t("review.move_new")}
+          <i aria-hidden="true">→</i>
+          {percent(row.target_weight, { lang }) ?? na}
+        </span>
+        <WeightBar
+          from={row.held ? row.weight : 0}
+          to={row.target_weight}
+          span={span}
+        />
       </span>
       <b className={`ag-rev-mv-money ag-rev-tone-${tone}`}>
         {money(row.delta, { currency: base, lang, signed: true }) ?? na}
       </b>
+      {/* What the move costs is part of the decision: shown folded too. */}
+      {note ? <span className="ag-rev-mv-note">{note}</span> : null}
       {brief ? null : (
         <>
           <div className="ag-rev-mv-why">
             <Reasons reasons={row.reasons} limit={3} />
             <EntryBreaks lines={row.entry} />
           </div>
-          {note ? <span className="ag-rev-mv-note">{note}</span> : null}
           <span className="ag-rev-mv-more">
             <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
           </span>

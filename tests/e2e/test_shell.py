@@ -26,7 +26,7 @@ def test_every_page_draws_for_a_guest(page: Page, path: str):
     requests the API refuses most often: a page that throws on a 401 or a 503
     instead of drawing its empty state throws for them first."""
     page.goto(f"/{path}")
-    expect(page.get_by_role("navigation", name="Sections")).to_be_visible()
+    expect(page.get_by_role("navigation", name="Sections", exact=True)).to_be_visible()
     expect(page).to_have_title(re.compile(r" · TopStocks$"))
     expect(page.locator("main.ag-main")).not_to_be_empty()
 
@@ -35,7 +35,7 @@ def test_every_page_draws_for_a_guest(page: Page, path: str):
 def test_every_page_draws_for_a_signed_in_account(page: Page, sign_in, path: str):
     sign_in()
     page.goto(f"/{path}")
-    expect(page.get_by_role("navigation", name="Sections")).to_be_visible()
+    expect(page.get_by_role("navigation", name="Sections", exact=True)).to_be_visible()
     expect(page.locator("main.ag-main")).not_to_be_empty()
 
 
@@ -72,7 +72,7 @@ def test_the_menu_moves_between_pages_without_a_document_load(page: Page, sign_i
     sign_in()
     page.goto("/home")
     page.evaluate("window.__sameDocument = true")
-    page.get_by_role("navigation", name="Sections").get_by_role(
+    page.get_by_role("navigation", name="Sections", exact=True).get_by_role(
         "link", name="Sectors"
     ).click()
     expect(page).to_have_url(re.compile(r"/sector$"))
@@ -108,7 +108,7 @@ def test_a_phone_gets_a_bottom_tab_bar_and_no_sideways_scroll(
         as_guest(context, base_url)
         page = context.new_page()
         page.goto(f"/{path}")
-        nav = page.get_by_role("navigation", name="Sections")
+        nav = page.get_by_role("navigation", name="Sections", exact=True)
         expect(nav).to_be_visible()
         box = nav.bounding_box()
         assert box is not None
@@ -140,7 +140,7 @@ def test_a_phone_reaches_the_other_pages_through_more(browser, base_url: str):
         as_guest(context, base_url)
         page = context.new_page()
         page.goto("/home")
-        nav = page.get_by_role("navigation", name="Sections")
+        nav = page.get_by_role("navigation", name="Sections", exact=True)
         pulse = nav.get_by_role("link", name="Pulse")
         expect(pulse).to_be_hidden()
         nav.get_by_role("button", name="More").click()

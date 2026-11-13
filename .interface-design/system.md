@@ -143,7 +143,11 @@ fixed meaning — they are not a series palette.
   pressed option. `className` places the track, never restyles it. Inside a
   side panel, label stacks over control and options wrap. Any one-of-a-few
   choice is this, popovers included (chat's research/lens mode); pills or
-  chips only where several can be on at once.
+  chips only where several can be on at once. One exception: a one-of-many
+  whose options each carry a line of data (Sectors' rail: the scan's age and
+  your weight) is a **chip rail** — `aria-pressed` buttons in a labelled
+  group, one row that scrolls sideways on a phone with the pressed chip
+  scrolled into view, the pick in the URL.
 - **Progress checklist** (chat's deep-research plan, `.ag-chat-plan`): an
   `<ol>` whose `aria-label` counts "n of m done"; each row a 14px ring that
   fills `--ag-brand-cta` with a check when done, the text turning secondary,
@@ -157,12 +161,15 @@ fixed meaning — they are not a series palette.
   on a neutral `--ag-border` track (a purple track reads as a fill), the target as a 2px primary tick across it;
   `aria-hidden`, the words beside it or in `.ag-sr`. Profile's plan tab and
   Review's "Frente a tu plan" draw the same one.
-- **Book notes** (Review "Tu cartera en conjunto"): never a stack of
-  same-weight sentences. Plan drift is rows on one subgrid (name · bar ·
-  figure + muted "plan x" · gap in p. p. in `--ag-warn` · "?"), the
-  sentence in `.ag-sr`; every other note a row led by a muted kind label
-  (Sector, Divisa…) over `--ag-fs-sm` secondary text, hairline between
-  rows, 75ch cap. Narrow: bar under its row, label over its sentence.
+- **Book notes** (Review "Tu cartera en conjunto", `.ag-rev-tiles`): never a
+  stack of same-weight sentences. Each note is a tile in an `auto-fill
+  minmax(min(100%, 15rem), 1fr)` grid, plan drift first: a muted kind label
+  ("Against your plan · Cash", Sector, Currency), one big tabular figure
+  (the weight, else the money, else the count), then either the mix bar +
+  "plan x" + the gap in p. p. in `--ag-warn` (either way off plan is the same
+  news) with a "?" and an "Open My plan →" line link at the foot, or the
+  note's sentence in `--ag-fs-sm` secondary. The drift tile's sentence sits
+  in `.ag-sr`.
 - **Dense rows** tint `--ag-surface-hover` on hover, `(hover: hover)` only.
 - **Line action link** (`pages/home/Go.tsx`, `.hm-daily-go` / `.td-go`): a
   daily line ends on accent `--ag-fs-sm` 600 text naming where it lands
@@ -267,9 +274,11 @@ fixed meaning — they are not a series palette.
   chevron in the table's last column (`aria-haspopup="dialog"`, 44px
   coarse), "Details ›" under a card or dense row. It opens a dialog, never an
   inline fold (a fold took the width of a ~17rem card and pushed the list a
-  screen down): `.ag-rev-modal`, the calendar's modal shell (veil, z 65,
-  card 38rem, 90dvh scroll inside), portalled to `body` because `.ag-main` is
-  a size container. Head = `TickerCell` + Close; then the rule, every reason
+  screen down): `.ag-rev-modal` (veil, z 65), portalled to `body` because
+  `.ag-main` is a size container. Drawn as a **side panel**: full height at
+  the right edge, ≤30rem, sliding in from the right, so the row it explains
+  stays in view; under 640px of viewport a **bottom sheet** (88dvh, rising
+  from the bottom). Reduced motion: no slide. Head = `TickerCell` + Close; then the rule, every reason
   spelled out (name beside rule, rule drops under at <16rem — flex, never a
   page query), the numbers as `dl` tiles (`--ag-surface-page` in the card,
   `auto-fill minmax(min(100%,7.25rem),1fr)` → 2 abreast on a phone). Esc,
@@ -343,7 +352,34 @@ fixed meaning — they are not a series palette.
   details chevron, reasons (≤3) and a short tax / buy-after note under it.
   Lists sit side by side via `auto-fit minmax(min(100%, 22rem), 1fr)`; each
   list is its own `ag-rev-mvs` container and drops the weights under the
-  name below 26rem.
+  name below 26rem. Over the figure, the plan in one bold line ("Sell 1 and
+  add to 1") with a caption of what stays and what is near a change, and,
+  when a contribution is planned, where it goes first. Each move's weight
+  is a small bar (now → target, the target a tick) under the two figures.
+- **Verdict bar** (`pages/review/VerdictBar.tsx`): one stacked bar per side
+  (your book, the names outside it), a segment per verdict in reading order
+  and in its tone, `role="img"` with the split spelled out; under it a chip
+  per verdict with its count (`aria-pressed`, several at once, 44px
+  coarse) and "All" while any is on. A pick dims the other segments, lights
+  its names on the map and narrows both tables; it rides `?v=` and never
+  cuts the plan. A pick that empties a table says so with an "All" button.
+- **Grouped table** (Review holdings): rows grouped by verdict in reading
+  order, each group a `tbody` led by a `th scope="rowgroup"` toggle (tone
+  dot, name, muted count, chevron, `aria-expanded`); the dense phone list
+  gets the same heads. On a long book (≥6 rows, more than one group, no
+  pick) the holds start folded; a search opens every group. Columns that
+  would be a column of dashes for every row (target, move, tax) are left out.
+- **Near a change** (`pages/review/Close.tsx`): a list, never a table, of
+  the names a few points from another verdict: who | "4 pts from adding"
+  in the move's tone + the score and its line as a caption | a 0–100 gauge
+  (dot = score, tick = line, the way between them in the tone) | details
+  chevron. Nearest first; a name whose scores do not say which line keeps
+  its row with "near a change" and no gauge, never a guessed distance.
+- **Row picking** (Sectors' cohort): a checkbox per row, beside the row's
+  link on a phone (never inside it), capped with the rest disabled at the
+  cap; the picks gather in one bar under the table, sticky to the bottom
+  while it scrolls, that carries them to the next screen (`/review?add=`)
+  or clears them.
 - **Linked focus across sections** (`pages/review/focus.tsx`): one name
   pointed at (hover or keyboard focus, settled 70ms; touch never points) in
   the plan, the map or a wide table lights in every other section: its row
@@ -543,7 +579,30 @@ fixed meaning — they are not a series palette.
   (Save → Saved).
 - **Tabs** (`ui/Tabs.tsx`, the only one): WAI-ARIA tablist with manual
   activation (arrows move focus, Enter/Space pick), one `.ag-tabs-ink`
-  underline that slides to the picked tab. Never a per-page tab strip.
+  underline that slides to the picked tab. Never a per-page tab strip — the
+  one exception is the page index below, which is links, not tabs.
+- **Page index** (`pages/ticker/SectionTabs.tsx`, the only one): on a page
+  of three or more sections, a sticky strip of in-page links that wears the
+  Tabs look (`.ag-tabs` + `useTabStrip` ink) but is a `<nav>`, every section
+  still on the page; the one in view is `aria-current="location"` (scroll-spy
+  on the strip's foot). Stuck (pinned at its `top` with the header gone
+  under it) it gains the 1px edge and, before the links, the symbol and the
+  day move (logo and price too where the container is wider than 30rem). A
+  jump is instant, opens the folds in the target (`LAND_EVENT`) and holds it
+  under the strip for 1.5 s while cards above settle or the lazy ones below
+  make room; a wheel, touch or key ends the hold. A page opened on a
+  `#tk-s-…` link makes the same jump once that section is drawn. Sections
+  take `scroll-margin-top` the strip's height. Fewer than three sections: no
+  strip. Unlike other sticky headers the edge is not a `scroll-state` query:
+  the mini is React content and needs the stuck state in JS anyway, so one
+  `data-stuck` draws both and they never disagree.
+- **The read** (`pages/ticker/Reading.tsx`, `.tk-signals`): a summary card of
+  one line per question, as many columns as fit (min 15rem). Each line an
+  8px dot, an 11px/600 secondary label and a 12px primary answer, the whole
+  line a 44px link to the card that answers in full. The dot's tone is the
+  one that card already draws (moat band, P/E vs its 5 years, trend, mean
+  rating; insiders only for a cluster of buyers) — the read never judges on
+  its own. A card that has not answered says "Loading…", never a guess.
 - **Popovers** grow from their trigger: `ag-pop-in` (fade + scale 0.96) with
   `transform-origin` at the trigger's corner (search panel top left, KPI help
   at its "?", ticker menu top right).
@@ -625,6 +684,14 @@ fixed meaning — they are not a series palette.
 - Diverging ramps rise in lightness from the neutral outwards; the diagonal and
   "no data" never use the ramp (surface grey / dashed outline).
 - Rank "most linked" by what the book holds, not by raw value.
+- **A table shaded by standing** (Sectors' cohort): each figure tinted by
+  its percentile in the group — `--ag-up` toward the better end, `--ag-down`
+  toward the worse, strength from the distance to the middle, nothing near
+  it, `lower_is_better` respected. Money columns (price, market cap, EV,
+  FCF) and empty cells stay plain. The tint is a `background-image` layer so
+  row hover still shows through. On the phone's dense rows only the headline
+  figure (the ranked-by metric) is shaded, as a small pill; the dim line stays
+  plain.
 
 ## Phone adaptations
 
@@ -658,7 +725,8 @@ a laptop page the same way.
   Never fold the hero, the price chart, a holding, or anything the first
   screen answers with. A folded card renders nothing below its heading, and
   its heading row shows the title alone (captions, badges, sources wait).
-  A link that lands inside a fold (`#anchor`, a jump bar) opens it; so does
+  A link that lands inside a fold (`#anchor`, a jump bar) opens it, and a jump
+  to a whole section opens every fold under it; so does
   `opened` when the URL names part of it (`?tab=`). Adopted on Ticker,
   Earnings list (book, past dividends, past results) and Sentiment (snapshot,
   book, detail). Not on Home: its cards are the reader's own pick, and the

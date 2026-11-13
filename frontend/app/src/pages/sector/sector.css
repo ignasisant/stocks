@@ -40,24 +40,104 @@
   margin: 0.75rem 0 0.35rem;
 }
 
-/* ------------------------------------------------------------- the picker */
+/* --------------------------------------------------------------- the rail */
 
-.ag-sec-pick {
+/* Eleven chips in one swiped line: the page's width, bleeding to its edges
+   on a phone, the right edge fading so the line reads as going on. */
+.ag-sec-rail {
   display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  max-width: 22rem;
-  margin-bottom: 0.8rem;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 2px 0 6px;
+  margin-bottom: 0.6rem;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
 }
 
-.ag-sec-pick > span {
-  font-size: var(--ag-fs-sm);
+.ag-sec-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.ag-sec-chip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  font: inherit;
+  text-align: left;
   color: var(--ag-text-secondary);
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  transition:
+    border-color var(--ag-dur-press) var(--ag-ease-out),
+    background-color var(--ag-dur-press) var(--ag-ease-out);
+}
+
+/* The last chip clears the fade, so it can be read once scrolled to. */
+.ag-sec-chip:last-child {
+  margin-right: 2rem;
+}
+
+@media (hover: hover) {
+  .ag-sec-chip:hover {
+    border-color: var(--ag-border-focus);
+  }
+}
+
+.ag-sec-chip:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+.ag-sec-chip-on {
+  color: var(--ag-text-primary);
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+}
+
+.ag-sec-chip-name {
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ag-sec-chip-meta {
+  display: flex;
+  gap: 0.45rem;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-sec-chip-stale {
+  color: var(--ag-warn);
+}
+
+.ag-sec-chip-you {
+  color: var(--ag-text-secondary);
+  font-weight: 500;
+}
+
+@media (pointer: coarse) {
+  .ag-sec-chip {
+    min-height: 44px;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-sec-chip {
+    transition: none;
+  }
 }
 
 /* Inputs sit on the sunken surface, darker than the card they are in, at the
    DS input radius — the `.pf-dropdown` look. */
-.ag-sec-pick select,
 .ag-sec-field select,
 .ag-sec-filter > input {
   font: inherit;
@@ -72,14 +152,12 @@
 }
 
 @media (hover: hover) {
-  .ag-sec-pick select:hover,
   .ag-sec-field select:hover,
   .ag-sec-filter > input:hover {
     border-color: var(--ag-border-focus);
   }
 }
 
-.ag-sec-pick select:focus-visible,
 .ag-sec-field select:focus-visible,
 .ag-sec-filter > input:focus-visible {
   outline: 2px solid var(--ag-brand-accent);
@@ -105,10 +183,28 @@
   }
 }
 
+/* The title on the left, the lens switch on the right; the switch drops
+   under the title when the two do not fit on one line. */
+.ag-sec-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.ag-sec-card-head > .ag-sec-h2 {
+  margin: 0;
+}
+
 .ag-sec-podium {
   display: flex;
   flex-wrap: wrap;
   gap: 1.1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .ag-sec-place {
@@ -192,6 +288,202 @@
   opacity: 0.55;
 }
 
+/* The score as a bar the three are compared on: a percentile in this cohort,
+   so its length is the claim, not the "/100". */
+.ag-sec-bar {
+  display: block;
+  height: 4px;
+  margin: 0.3rem 0 0.4rem;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  overflow: hidden;
+}
+
+.ag-sec-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ag-brand-accent);
+}
+
+/* What to do with the place: its verdict as a new buy, and the way there. */
+.ag-sec-act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.ag-sec-act-link {
+  font-size: var(--ag-fs-sm);
+  font-weight: 500;
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .ag-sec-act-link:hover {
+    text-decoration: underline;
+  }
+}
+
+.ag-sec-act-link:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+  border-radius: var(--ag-radius-sm);
+}
+
+@media (pointer: coarse) {
+  .ag-sec-act-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* --------------------------------------------------------- freshness */
+
+/* The scan's date with its rescan beside it; on the warn band when the scan
+   is over a week old, since the figures under it may have moved. */
+.ag-sec-fresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  margin: 0 0 0.8rem;
+}
+
+.ag-sec-fresh-text {
+  flex: 1 1 14rem;
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-sec-fresh .ag-sec-rescan {
+  margin: 0;
+}
+
+.ag-sec-stale {
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-warn-fill-soft);
+  padding: 0.55rem 0.8rem;
+}
+
+.ag-sec-stale .ag-sec-fresh-text {
+  color: var(--ag-text-primary);
+}
+
+/* There is no progress figure, so the bar says "working", not "how far". */
+.ag-sec-progress {
+  flex: 1 0 100%;
+  display: block;
+  height: 3px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  overflow: hidden;
+  position: relative;
+}
+
+.ag-sec-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: inherit;
+  background: var(--ag-brand-accent);
+  animation: ag-sec-slide 1.2s var(--ag-ease-out) infinite;
+}
+
+@keyframes ag-sec-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-sec-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* ------------------------------------------------------- you in the sector */
+
+.ag-sec-you {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ag-sec-you-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.55rem 0;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-sec-you-row + .ag-sec-you-row {
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-sec-you-row > .ag-sec-who {
+  flex: 1 1 12rem;
+}
+
+.ag-sec-you-place {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-sec-you-weight,
+.ag-sec-you-ahead {
+  color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------ the top three */
+
+/* Under the written read, inside its card: no border of its own. */
+.ag-sec-top3 {
+  margin-top: 0.75rem;
+}
+
+.ag-sec-top3 caption {
+  caption-side: top;
+  text-align: left;
+  margin-bottom: 0.4rem;
+}
+
+.ag-sec-table .ag-sec-top3-head {
+  text-align: right;
+}
+
+.ag-sec-table td.ag-sec-lead {
+  color: var(--ag-up);
+  font-weight: 600;
+}
+
+.ag-sec-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --------------------------------------------------- the cohort, and below */
 
 .ag-sec-cohort {
@@ -257,6 +549,7 @@
 /* Under the map's legend: the buys carried to Sell or add (`SectorMap`). */
 .ag-sec-map-next {
   margin: 0.5rem 0 0;
+  font-size: var(--ag-fs-xs);
 }
 
 @media (pointer: coarse) {
@@ -496,17 +789,36 @@
 
 @media (hover: hover) {
   .ag-sec-table tbody tr:hover > * {
-    background: var(--ag-surface-hover);
+    background-color: var(--ag-surface-hover);
   }
 }
 
-.ag-sec-table .ag-sec-who a {
+/* A figure's standing in the cohort (`rank.tint`), painted as an image layer
+   over the cell's colour, so the row's hover still shows under it. */
+.ag-sec-table td[style],
+.ag-sec-heat {
+  background-image: linear-gradient(var(--sec-tint), var(--sec-tint));
+}
+
+/* On a phone only the headline figure is shaded: the dim line under the
+   symbol is running text, and tinting words in it reads as highlighting. */
+.ag-sec-heat {
+  border-radius: var(--ag-radius-xs);
+  padding: 1px 6px;
+  margin-right: -6px;
+}
+
+.ag-sec-table .ag-sec-who a,
+.ag-sec-you a.ag-tick,
+.ag-sec-top3 a.ag-tick {
   color: var(--ag-text-primary);
   text-decoration: none;
 }
 
 @media (hover: hover) {
-  .ag-sec-table .ag-sec-who a:hover b {
+  .ag-sec-table .ag-sec-who a:hover b,
+  .ag-sec-you a.ag-tick:hover,
+  .ag-sec-top3 a.ag-tick:hover {
     text-decoration: underline;
   }
 }
@@ -574,22 +886,7 @@
   font-size: var(--ag-fs-xs);
 }
 
-/* ------------------------------------------------------ picker + rescan */
-
-/* The picker and the rescan share a row, bottom-aligned, and wrap onto two
-   lines on a phone rather than squeezing the select. */
-.ag-sec-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.6rem 0.8rem;
-  margin-bottom: 0.8rem;
-}
-
-.ag-sec-top .ag-sec-pick {
-  flex: 1 1 14rem;
-  margin-bottom: 0;
-}
+/* ------------------------------------------------------------ rescan */
 
 .ag-sec-rescan {
   flex: none;
@@ -660,4 +957,121 @@
   font-size: var(--ag-fs-xs);
   font-weight: 500;
   color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------- picking rows to weigh */
+
+.ag-sec-screens {
+  margin-block: 0.4rem 0.6rem;
+}
+
+.ag-sec-tick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  cursor: pointer;
+}
+
+.ag-sec-tick input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--ag-brand-accent);
+  cursor: inherit;
+}
+
+.ag-sec-tick input:disabled {
+  cursor: not-allowed;
+}
+
+@media (pointer: coarse) {
+  .ag-sec-tick {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Phone: the box beside the dense row, never inside its link. */
+.ag-sec-dense-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+}
+
+/* Each dense row is the last child of its wrapper, so the wrapper draws the
+   rule the shell draws between rows. */
+.ag-sec-dense-row:last-child {
+  border-bottom: none;
+}
+
+.ag-sec-dense-row > .ag-sec-tick {
+  padding-right: 0.25rem;
+}
+
+.ag-sec-dense-row > .ag-dense-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* What is picked and where it goes. It sits under the table and sticks to
+   the foot of the screen while the rows above it scroll, so the action is
+   never a scroll away. */
+.ag-sec-picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  min-height: 2.25rem;
+  margin: 0.4rem 0;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-sec-picked:has(.ag-sec-picked-go) {
+  position: sticky;
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 2;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
+}
+
+.ag-sec-picked > .ag-sec-caption {
+  margin: 0;
+}
+
+.ag-sec-picked-go {
+  text-decoration: none;
+}
+
+.ag-sec-picked-clear {
+  font: inherit;
+  color: var(--ag-text-secondary);
+  background: none;
+  border: 0;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .ag-sec-picked-clear:hover {
+    color: var(--ag-text-primary);
+    text-decoration: underline;
+  }
+}
+
+.ag-sec-picked-clear:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+  border-radius: var(--ag-radius-sm);
+}
+
+@media (pointer: coarse) {
+  .ag-sec-picked-go,
+  .ag-sec-picked-clear {
+    min-height: 44px;
+  }
 }

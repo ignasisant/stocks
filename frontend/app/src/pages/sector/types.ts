@@ -64,3 +64,13 @@ export type SectorCohort = {
    * rather than `metric_keys`. */
   tech_rows: CohortRow[];
 };
+
+/**
+ * The two fields of `/pulse/book` this page reads: the reader's weight per
+ * sector (fractions of 1, keyed as `info["sector"]` spells it, the same names
+ * as `SectorSummary.sector`) and why the replay could not be priced, if not.
+ */
+export type BookSectors = {
+  sector_weights: Record<string, number>;
+  unavailable: string | null;
+};

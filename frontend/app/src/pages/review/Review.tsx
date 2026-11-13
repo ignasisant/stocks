@@ -26,6 +26,13 @@
  * The include, sector and weight filters (`filter.ts`) cut every section at
  * once, the plan's figures and the question for the assistant included, and
  * ride the URL with the rest. They filter what came back; they never refetch.
+ *
+ * The verdict chips over the map (`VerdictBar`, `?v=`) are a lighter cut: they
+ * light their names on the map and narrow the two tables, and leave the plan,
+ * the notes and the question whole — the plan is about the whole read.
+ *
+ * Under the plan, the names a few points from a move (`Close.tsx`): what
+ * would change the plan next, each with how far it has to go.
  */
 
 import { useEffect, useState } from "react";
@@ -52,6 +59,9 @@ import { FocusProvider } from "./focus";
 import { LinesProvider } from "./lines";
 import { ReturnsProvider } from "./returns";
 import { CandidateTable, HeldTable } from "./Tables";
+import { CloseCalls } from "./Close";
+import { VerdictBar } from "./VerdictBar";
+import { parseVerdicts, pickVerdicts, verdictParam } from "./verdicts";
 import {
   CLEAR,
   type Filter,
@@ -63,9 +73,9 @@ import {
 } from "./filter";
 import { askAgain, longDay, MAX_ADDED, parseAdded, SYMBOL } from "./format";
 import { buildPrompt, noteText } from "./prompt";
-import type { Review, ReviewNote, ReviewRow } from "./types";
+import type { Review, ReviewNote, ReviewRow, Verdict } from "./types";
 import "./review.css";
-import { percent } from "../../shell/format";
+import { money, percent } from "../../shell/format";
 
 const RETRY_MS = 3000;
 
@@ -146,6 +156,9 @@ export default function Page() {
   };
   const canAdd = added.length < MAX_ADDED ? addOne : undefined;
 
+  const verdicts = parseVerdicts(params.get("v"));
+  const setVerdicts = (next: Verdict[]) => setParams({ v: verdictParam(next) });
+
   return (
     <>
       {book ? (
@@ -171,6 +184,8 @@ export default function Page() {
               filter={filter}
               onFilter={setFilter}
               onAdd={canAdd}
+              verdicts={verdicts}
+              onVerdicts={setVerdicts}
               measured
             />
           </div>
@@ -212,6 +227,8 @@ function Screen({
   filter,
   onFilter,
   onAdd,
+  verdicts = [],
+  onVerdicts,
   measured = false,
 }: {
   data: Review;
@@ -219,6 +236,10 @@ function Screen({
   onFilter: (next: Filter) => void;
   /** Weighs a ticker from the map's search; the import wall's glass has none. */
   onAdd?: (ticker: string) => void;
+  /** The verdicts picked out over the map (`?v=`); none is every row. */
+  verdicts?: Verdict[];
+  /** Picks them; the import wall's glass has no chips. */
+  onVerdicts?: (next: Verdict[]) => void;
   /** Ask what each name returned; the import wall's glass does not. */
   measured?: boolean;
 }) {
@@ -229,6 +250,10 @@ function Screen({
   const plan = data.plan;
   const empty = all.held.length === 0 && all.candidates.length === 0;
   const none = data.held.length === 0 && data.candidates.length === 0;
+  const lit = new Set(verdicts);
+  const held = pickVerdicts(data.held, verdicts);
+  const outside = pickVerdicts(data.candidates, verdicts);
+  const clearVerdicts = onVerdicts ? () => onVerdicts([]) : undefined;
 
   if (empty) {
     return (
@@ -275,24 +300,44 @@ function Screen({
           scroll past a screen of before reaching the plan. */}
         {data.held.length > 0 && <Plan data={data} filtered={isFiltered(filter)} />}
 
+        <CloseCalls
+          rows={[...data.held, ...data.candidates]}
+          taxCurrency={plan.tax_currency}
+        />
+
         <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
+
+        {onVerdicts ? (
+          <VerdictBar
+            held={data.held}
+            candidates={data.candidates}
+            picked={verdicts}
+            onPick={onVerdicts}
+          />
+        ) : null}
 
         <QualityMap
           held={data.held}
           candidates={data.candidates}
           taxCurrency={plan.tax_currency}
           onAdd={onAdd}
+          highlight={lit.size ? (row) => lit.has(row.verdict) : undefined}
         />
 
         {data.held.length > 0 && (
           <section className="ag-rev-card">
             <h2 className="ag-rev-h2">{t("review.held_title")}</h2>
             <p className="ag-rev-caption">{t("review.held_help")}</p>
-            <HeldTable
-              rows={data.held}
-              base={data.base}
-              taxCurrency={plan.tax_currency}
-            />
+            {held.length > 0 ? (
+              <HeldTable
+                rows={held}
+                base={data.base}
+                taxCurrency={plan.tax_currency}
+                picked={verdicts.length > 0}
+              />
+            ) : (
+              <PickedNone onClear={clearVerdicts} />
+            )}
             <Coins rows={coins} />
           </section>
         )}
@@ -303,8 +348,10 @@ function Screen({
           <section className="ag-rev-card">
             <h2 className="ag-rev-h2">{t("review.outside_title")}</h2>
             <p className="ag-rev-caption">{t("review.outside_help")}</p>
-            {data.candidates.length > 0 ? (
-              <CandidateTable rows={data.candidates} />
+            {outside.length > 0 ? (
+              <CandidateTable rows={outside} />
+            ) : data.candidates.length > 0 ? (
+              <PickedNone onClear={clearVerdicts} />
             ) : (
               <p className="ag-rev-caption">{t("review.outside_empty")}</p>
             )}
@@ -328,62 +375,94 @@ function Screen({
 /** Notes that set a plan bucket against the book: drawn as bars, not prose. */
 const MIX = new Set(["plan_over", "plan_under"]);
 
+/** The verdicts picked leave a table empty: say so, with the way back. */
+function PickedNone({ onClear }: { onClear?: () => void }) {
+  const t = useT();
+  return (
+    <p className="ag-rev-caption ag-rev-picked-none">
+      {t("review.vbar_none")}{" "}
+      {onClear ? (
+        <button type="button" className="ag-btn" onClick={onClear}>
+          {t("review.vbar_all")}
+        </button>
+      ) : null}
+    </p>
+  );
+}
+
 /** What the read says about the whole book: too few names, one sector,
  *  country or currency carrying it, funds at its core, cash idle beside
  *  buys, coins past a quarter, losses that would cut the plan's tax.
  *  Unfiltered — a note is about the book, not about what the filters leave
- *  on screen. The plan's buckets come first as bars (where the book sits,
- *  where the plan puts it), the rest as rows led by what each is about. */
+ *  on screen. One tile each, led by what it is about and its figure in big
+ *  type, so the row of them reads as a glance before the sentences do; the
+ *  plan's buckets carry their bar against the plan's share. */
 function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: string }) {
   const t = useT();
-  const lang = useLang();
   if (notes.length === 0) return null;
-  const mix = notes.filter((note) => MIX.has(note.key));
-  const rest = notes.filter((note) => !MIX.has(note.key));
   const key = (note: ReviewNote) =>
     `${note.key}-${note.sector ?? note.country ?? note.currency ?? note.bucket ?? ""}`;
+  // The plan's buckets first: they are the reader's own targets.
+  const ordered = [
+    ...notes.filter((note) => MIX.has(note.key)),
+    ...notes.filter((note) => !MIX.has(note.key)),
+  ];
   return (
     <section className="ag-rev-card ag-rev-notes" aria-labelledby="ag-rev-notes-h">
       <h2 className="ag-rev-h2" id="ag-rev-notes-h">
         {t("review.notes_title")}
       </h2>
-      {mix.length > 0 && (
-        <div className="ag-rev-mix">
-          <div className="ag-rev-mix-head">
-            <h3 className="ag-rev-h3">{t("review.mix_title")}</h3>
-            <Go go="profile?tab=plan" className="ag-rev-go" />
-          </div>
-          <ul className="ag-rev-mix-list">
-            {mix.map((note) => (
-              <MixRow key={key(note)} note={note} taxCurrency={taxCurrency} />
-            ))}
-          </ul>
-        </div>
-      )}
-      {rest.length > 0 && (
-        <ul className="ag-rev-note-list">
-          {rest.map((note) => {
-            const help = maybe(t, `review.note_${note.key}_help`);
-            const kind = maybe(t, `review.note_kind_${note.key}`);
-            return (
-              <li key={key(note)} className="ag-rev-note">
-                {kind ? <span className="ag-rev-note-kind">{kind}</span> : null}
-                <p className="ag-rev-note-text">
-                  {noteText(note, taxCurrency, t, lang)}
-                  {help ? <Help text={help} /> : null}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <ul className="ag-rev-tiles">
+        {ordered.map((note) =>
+          MIX.has(note.key) ? (
+            <MixTile key={key(note)} note={note} taxCurrency={taxCurrency} />
+          ) : (
+            <NoteTile key={key(note)} note={note} taxCurrency={taxCurrency} />
+          ),
+        )}
+      </ul>
     </section>
   );
 }
 
-/** One plan bucket off its target: name, bar, today's share against the
- *  plan's, and the gap in points. The sentence is read out; the row drawn. */
-function MixRow({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }) {
+/** A note's one figure: its share, else its money, else its count. */
+function noteFigure(
+  note: ReviewNote,
+  taxCurrency: string,
+  lang: string,
+): string | null {
+  if (note.weight !== null) return percent(note.weight, { lang });
+  if (note.amount !== null) return money(note.amount, { currency: taxCurrency, lang });
+  if (note.count !== null) return formatter(lang, {}).format(note.count);
+  return null;
+}
+
+function NoteTile({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }) {
+  const t = useT();
+  const lang = useLang();
+  const help = maybe(t, `review.note_${note.key}_help`);
+  const kind = maybe(t, `review.note_kind_${note.key}`);
+  const figure = noteFigure(note, taxCurrency, lang);
+  return (
+    <li className="ag-rev-tile">
+      {kind ? <span className="ag-rev-tile-kind">{kind}</span> : null}
+      {figure ? (
+        <b className="ag-rev-tile-fig" aria-hidden="true">
+          {figure}
+        </b>
+      ) : null}
+      <p className="ag-rev-tile-text">
+        {noteText(note, taxCurrency, t, lang)}
+        {help ? <Help text={help} /> : null}
+      </p>
+    </li>
+  );
+}
+
+/** One plan bucket off its target: its share today in big type, the bar
+ *  against the plan's, the plan's share and the gap in points, and the way
+ *  to the plan. The sentence is read out; the tile drawn. */
+function MixTile({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }) {
   const t = useT();
   const lang = useLang();
   const help = maybe(t, `review.note_${note.key}_help`);
@@ -398,26 +477,30 @@ function MixRow({ note, taxCurrency }: { note: ReviewNote; taxCurrency: string }
           maximumFractionDigits: 1,
         }).format((weight - target) * 100);
   return (
-    <li className="ag-rev-mix-row">
+    <li className="ag-rev-tile ag-rev-tile-mix">
       <span className="ag-sr">{noteText(note, taxCurrency, t, lang)}</span>
-      <span className="ag-rev-mix-name" aria-hidden="true">
-        {note.bucket ? t(`profile.plan_bucket_${note.bucket}`) : ""}
+      <span className="ag-rev-tile-kind" aria-hidden="true">
+        {t("review.mix_title")}
+        {note.bucket ? ` · ${t(`profile.plan_bucket_${note.bucket}`)}` : ""}
       </span>
-      <span className="ag-rev-mix-bar">
+      <b className="ag-rev-tile-fig" aria-hidden="true">
+        {percent(note.weight, { lang }) ?? t("review.na")}
+      </b>
+      <span className="ag-rev-tile-bar" aria-hidden="true">
         <MixBar actual={weight * 100} target={target === null ? null : target * 100} />
       </span>
-      <span className="ag-rev-mix-fig" aria-hidden="true">
-        <b>{percent(note.weight, { lang }) ?? t("review.na")}</b>
-        {target !== null ? (
-          <span className="ag-rev-mix-target">
-            {t("review.mix_target", { target: percent(target, { lang }) ?? "" })}
-          </span>
+      <span className="ag-rev-tile-text" aria-hidden="true">
+        {target !== null
+          ? t("review.mix_target", { target: percent(target, { lang }) ?? "" })
+          : null}
+        {gap !== null ? (
+          <span className="ag-rev-tile-gap">{t("review.mix_gap", { gap })}</span>
         ) : null}
       </span>
-      <span className="ag-rev-mix-gap" aria-hidden="true">
-        {gap === null ? "" : t("review.mix_gap", { gap })}
+      <span className="ag-rev-tile-foot">
+        {help ? <Help text={help} /> : <span />}
+        <Go go="profile?tab=plan" className="ag-rev-go" />
       </span>
-      <span className="ag-rev-mix-help">{help ? <Help text={help} /> : null}</span>
     </li>
   );
 }

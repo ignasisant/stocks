@@ -55,7 +55,7 @@
   "tour.market_body": "Any stock, fund or coin: price, 52w range, trend, P/E, next results and your position; below, financials, analysts, insiders, news and a **DCF**, each with its source. **Analyze with AI** hands it to the assistant.",
   "tour.market_cta": "Open a ticker",
   "tour.sector_title": "Sector screen and earnings calendar",
-  "tour.sector_body": "Pick a sector and see its best three companies, by quality and by momentum. The calendar shows your earnings, dividends, tax deadlines, trades and market holidays.",
+  "tour.sector_body": "Pick a sector to see its best three, by quality or momentum, and where yours rank. The calendar shows your earnings, dividends, tax deadlines, trades and market holidays.",
   "tour.sector_cta": "Open the sector screen",
   "tour.learn_title": "Learn",
   "tour.learn_body": "Short lessons on investing and Spanish tax, grouped into **paths**, and a glossary of every term they use. Mark a lesson read and its path shows how far you are.",
@@ -178,5 +178,11 @@
   "tour.news_2026_11_1_email_title": "Your week by email",
   "tour.news_2026_11_1_email_body": "Every Friday after the US close, your week in numbers in your inbox; switch it off in **Notifications**.",
   "tour.news_2026_11_2_entry_title": "Entry criteria",
-  "tour.news_2026_11_2_entry_body": "Write what a buy or an add has to meet; **Sell or add** warns when a move breaks a line."
+  "tour.news_2026_11_2_entry_body": "Write what a buy or an add has to meet; **Sell or add** warns when a move breaks a line.",
+  "tour.news_2026_11_3_ticker_title": "A ticker, read at a glance",
+  "tour.news_2026_11_3_ticker_body": "A company's page opens on **the read**: six signals, each a jump to its section.",
+  "tour.news_2026_11_3_review_title": "Sell or add, in the order to act",
+  "tour.news_2026_11_3_review_body": "**Sell or add** opens on the plan: moves first, holds folded, and the names a few points from a change.",
+  "tour.news_2026_11_3_sector_title": "Sectors, with your names in them",
+  "tour.news_2026_11_3_sector_body": "**Sectors** shows where your names rank in each sector and sends the ones you tick to Sell or add."
 }

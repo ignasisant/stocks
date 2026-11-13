@@ -27,7 +27,14 @@
  * guided tour, and with them the page's "Analyse with AI" button.
  */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { type Query, useApi } from "../../shell/useApi";
 import { useInView } from "../../shell/useInView";
 import { Skeleton } from "../../shell/Layout";
@@ -57,6 +64,7 @@ import {
   getMetrics,
   getDcf,
   getMoat,
+  getPeers,
   getPosition,
   getProfile,
   getQuote,
@@ -82,6 +90,10 @@ import {
   MoatSection,
 } from "./Sections";
 import { FundFitSection } from "./FundFit";
+import { ReadingSection } from "./Reading";
+import { SectionTabs, sectionId, type SectionKey } from "./SectionTabs";
+import { DASH, percent } from "../../shell/format";
+import { num } from "../../shell/numbers";
 import { Card, Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
@@ -118,6 +130,7 @@ function remember(key: string, value: string): void {
 
 export default function Page() {
   const t = useT();
+  const head = useRef<HTMLElement>(null);
   const base = useCurrency();
   const mobile = useMobile();
   const { params, setParams } = useRoute();
@@ -140,10 +153,19 @@ export default function Page() {
     const stored = remembered(CANDLES_KEY, "");
     return stored === "" ? null : stored === "1";
   });
-  // Empty on purpose and reset whenever the company changes: each peer is a
-  // fundamentals pull, so nothing is compared until a reader asks for one.
+  // Reset whenever the company changes. Each peer is a fundamentals pull, so
+  // the rivals are filled in only once the comps card is on show, and never
+  // over a list the reader has touched (`picksPeers`).
   const [peers, setPeers] = useState<string[]>([]);
-  useEffect(() => setPeers([]), [asked]);
+  const [peersPicked, setPeersPicked] = useState(false);
+  useEffect(() => {
+    setPeers([]);
+    setPeersPicked(false);
+  }, [asked]);
+  const picksPeers = useCallback((next: string[]) => {
+    setPeersPicked(true);
+    setPeers(next);
+  }, []);
   // The reader's alerts and rules here, as the header's actions read them,
   // for the line of their own marks under the price.
   const [mine, setMine] = useState<Mine | null>(null);
@@ -333,13 +355,17 @@ export default function Page() {
     [ticker],
   );
   const wanted = (id: SlotId) => seen.ticker === ticker && seen.ids.has(id);
-  const wantsMetrics = wanted("fundamentals") || wanted("valuation");
+  // The read at the top asks for four cards' answers once the chart has had
+  // its turn: it is the first thing on screen, but the price is what a reader
+  // came for, and these are each a cold pull of their own.
+  const reads = wanted("reading") && bars.state !== "loading";
+  const wantsMetrics = wanted("fundamentals") || wanted("valuation") || reads;
   const wantsFinancials = wanted("results");
   const wantsDcf = wanted("dcf");
-  const wantsMoat = wanted("moat");
-  const wantsInsiders = wanted("insiders");
+  const wantsMoat = wanted("moat") || reads;
+  const wantsInsiders = wanted("insiders") || reads;
   const wantsShorts = wanted("shorts");
-  const wantsAnalysts = wanted("analysts");
+  const wantsAnalysts = wanted("analysts") || reads;
   const wantsCycle = wanted("cycle");
   const wantsPositioning = wanted("positioning");
 
@@ -395,10 +421,11 @@ export default function Page() {
 
   // Its own request: cold it is a handful of option chains, and the card
   // draws without it.
+  const wantsOptions = wanted("analysts");
   const options = useApi(
     () =>
-      ticker && company && wantsAnalysts ? getOptions(ticker) : Promise.resolve(null),
-    [ticker, company, wantsAnalysts],
+      ticker && company && wantsOptions ? getOptions(ticker) : Promise.resolve(null),
+    [ticker, company, wantsOptions],
   );
 
   const stats = useApi(
@@ -450,6 +477,30 @@ export default function Page() {
     [ticker, peers.join(",")],
   );
 
+  // The closest rivals, once the comps card is on show and while the reader
+  // has not picked their own: an empty table asks a question the page can
+  // answer. Three, so the one request stays a short one.
+  const fillsPeers = Boolean(
+    ticker && company && wanted("comparables") && !peersPicked,
+  );
+  useEffect(() => {
+    if (!ticker || !fillsPeers) return;
+    let live = true;
+    getPeers(ticker)
+      .then((body) => {
+        if (!live) return;
+        const rivals = body.related
+          .filter((one) => one.source === "rival" && one.ticker !== ticker)
+          .slice(0, AUTO_PEERS)
+          .map((one) => one.ticker);
+        setPeers((was) => (was.length ? was : rivals));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [ticker, fillsPeers]);
+
   const held = position.state === "loaded" ? position.data : null;
   const entry =
     entries.find((one) => one.ticker.toUpperCase() === (ticker ?? "")) ?? null;
@@ -461,9 +512,39 @@ export default function Page() {
           number | null) ?? null)
       : null;
 
+  // For the read: `undefined` while a card's answer is still to come, `null`
+  // when it failed and there is none to give.
+  const loaded = <T,>(query: Query<T | undefined>): T | undefined | null =>
+    query.state === "loaded"
+      ? query.data
+      : query.state === "loading"
+        ? undefined
+        : null;
+  const sections = pageSections(t, {
+    company,
+    crypto,
+    fund: Boolean(shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund),
+    compare: shape.compare,
+  });
+  const live = quote.state === "loaded" ? quote.data : null;
+  const mini = (
+    <>
+      {drawn?.logo ? <img className="tk-logo" src={drawn.logo} alt="" /> : null}
+      <b>{drawn?.symbol || ticker}</b>
+      {live?.price != null ? (
+        <span className="tk-tabs-price">{num(live.price, 2)}</span>
+      ) : null}
+      {live?.pct != null ? (
+        <span className={live.pct >= 0 ? "ag-tone-up" : "ag-tone-down"}>
+          {percent(live.pct, { digits: 1, signed: "always", tight: true }) ?? DASH}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="tk-page">
-      <header className="tk-header">
+      <header className="tk-header" ref={head}>
         <div className="tk-id">
           {drawn?.logo ? <img className="tk-logo" src={drawn.logo} alt="" /> : null}
           <div className="tk-names">
@@ -557,9 +638,10 @@ export default function Page() {
         <Empty>{t("ticker.not_found", { ticker })}</Empty>
       ) : (
         <>
-          {/* The bars go down as a query: the price card keeps its range and
-              chart controls through a failed fetch and shows the error in the
-              chart's slot. */}
+          {/* The page's index, under the header and pinned once that scrolls
+              away. Only for a page long enough to need one. */}
+          <SectionTabs sections={sections} head={head} mini={mini} />
+
           {/* Before the figures it corrects: a missing split makes every one
               of them wrong, so the line that says so is read first. */}
           {shape.holdable ? (
@@ -569,251 +651,350 @@ export default function Page() {
               onChanged={position.state === "loaded" ? position.reload : noop}
             />
           ) : null}
-          <PriceSection
-            query={chartReady ? bars : { state: "loading" }}
-            quote={quote.state === "loaded" ? quote.data : null}
-            events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
-            position={held}
-            range={shown}
-            offered={offered}
-            onRange={onRange}
-            candles={candles ?? !mobile}
-            onCandles={onCandles}
-            shape={shape}
-            fund={fund.state === "loaded" ? fund.data : null}
-            stats={stats.state === "loaded" ? stats.data : null}
-            cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
-            valuation={valuation.state === "loaded" ? valuation.data : null}
-            trend={trend.state === "loaded" ? trend.data : null}
-            ticker={ticker}
-            mine={mine}
-          />
 
-          {/* Compare sits one card from the foot of the page, whatever the
-              kind: the figures a reader came for go first, and "did it beat
-              the index" closes the read. A fund and an index have one card
-              under the price, so there it is the card after the price. */}
-          {shape.compare && !shape.sections.company && !crypto ? (
-            <Slot
-              key={`compare:${ticker}`}
-              id="compare"
-              title={t("ticker.compare")}
-              note={t("ticker.compare_note", { base })}
-              ready={wanted("compare")}
-              onSeen={onSeen}
-            >
-              <CompareSection ticker={ticker} base={base} />
-            </Slot>
+          {/* A company's answers to the six questions, before any of the cards
+              that hold them. */}
+          {company ? (
+            <Section at="summary" label={t("ticker.tab_summary")}>
+              <Watch id="reading" onSeen={onSeen}>
+                {() => (
+                  <ReadingSection
+                    trend={trend.state === "loaded" ? trend.data : null}
+                    valuation={valuation.state === "loaded" ? valuation.data : null}
+                    events={
+                      events.state === "loaded" ? (events.data?.earnings ?? []) : []
+                    }
+                    quote={live}
+                    metrics={loaded(metrics)}
+                    analysts={loaded(analysts)}
+                    insiders={loaded(insiders)}
+                    moat={loaded(moat)}
+                  />
+                )}
+              </Watch>
+            </Section>
           ) : null}
 
-          {/* A fund stops here. */}
+          {/* The bars go down as a query: the price card keeps its range and
+              chart controls through a failed fetch and shows the error in the
+              chart's slot. */}
+          <Section at="price" label={t("ticker.tab_price")}>
+            <PriceSection
+              query={chartReady ? bars : { state: "loading" }}
+              quote={live}
+              events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
+              position={held}
+              range={shown}
+              offered={offered}
+              onRange={onRange}
+              candles={candles ?? !mobile}
+              onCandles={onCandles}
+              shape={shape}
+              fund={fund.state === "loaded" ? fund.data : null}
+              stats={stats.state === "loaded" ? stats.data : null}
+              cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
+              valuation={valuation.state === "loaded" ? valuation.data : null}
+              trend={trend.state === "loaded" ? trend.data : null}
+              ticker={ticker}
+              mine={mine}
+            />
+          </Section>
+
+          {/* A fund: its profile and how it sits with the reader's book. */}
           {shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund ? (
-            <FundSection fund={fund.data} holdings={shape.sections.fundHoldings} />
-          ) : null}
-          {fund.state === "loaded" &&
-          fund.data &&
-          fit.state === "loaded" &&
-          fit.data ? (
-            <FundFitSection fund={fund.data} fit={fit.data} />
+            <Section at="fund" label={t("ticker.tab_fund")}>
+              <FundSection fund={fund.data} holdings={shape.sections.fundHoldings} />
+              {fit.state === "loaded" && fit.data ? (
+                <FundFitSection fund={fund.data} fit={fit.data} />
+              ) : null}
+            </Section>
           ) : null}
 
-          {/* …and a coin pair here: no statements, no Form 4, no comps. */}
-          {/* Your coin first — the line no market source has — then where it
-              sits in its cycle, then how the leveraged crowd holds it. */}
-          {coinHolding.state === "loaded" && coinHolding.data ? (
-            <HoldingSection holding={coinHolding.data} coin={coin} />
-          ) : null}
-          {shape.sections.cycle ? (
-            <Slot
-              key={`cycle:${ticker}`}
-              id="cycle"
-              title={t("ticker.cycle_title")}
-              ready={settled(cycle)}
-              onSeen={onSeen}
-            >
-              {cycle.state === "loaded" && cycle.data ? (
-                <CycleSection cycle={cycle.data} coin={coin} />
+          {/* A coin pair: your coin first — the line no market source has —
+              then where it sits in its cycle, then how the leveraged crowd
+              holds it. No statements, no Form 4, no comps. */}
+          {crypto ? (
+            <Section at="market" label={t("ticker.tab_market")}>
+              {coinHolding.state === "loaded" && coinHolding.data ? (
+                <HoldingSection holding={coinHolding.data} coin={coin} />
               ) : null}
-            </Slot>
-          ) : null}
-          {shape.sections.positioning ? (
-            <Slot
-              key={`positioning:${ticker}`}
-              id="positioning"
-              title={t("ticker.positioning_title")}
-              ready={settled(positioning)}
-              onSeen={onSeen}
-            >
-              {positioning.state === "loaded" && positioning.data ? (
-                <PositioningSection data={positioning.data} coin={coin} />
+              {shape.sections.cycle ? (
+                <Slot
+                  key={`cycle:${ticker}`}
+                  id="cycle"
+                  title={t("ticker.cycle_title")}
+                  ready={settled(cycle)}
+                  onSeen={onSeen}
+                >
+                  {cycle.state === "loaded" && cycle.data ? (
+                    <CycleSection cycle={cycle.data} coin={coin} />
+                  ) : null}
+                </Slot>
               ) : null}
-            </Slot>
-          ) : null}
-          {shape.compare && crypto ? (
-            <Slot
-              key={`compare:${ticker}`}
-              id="compare"
-              title={t("ticker.compare")}
-              note={t("ticker.compare_note", { base })}
-              ready={wanted("compare")}
-              onSeen={onSeen}
-            >
-              <CompareSection ticker={ticker} base={base} />
-            </Slot>
-          ) : null}
-          {crypto && stats.state === "loaded" && stats.data ? (
-            <AssetStatsSection stats={stats.data} />
+              {shape.sections.positioning ? (
+                <Slot
+                  key={`positioning:${ticker}`}
+                  id="positioning"
+                  title={t("ticker.positioning_title")}
+                  ready={settled(positioning)}
+                  onSeen={onSeen}
+                >
+                  {positioning.state === "loaded" && positioning.data ? (
+                    <PositioningSection data={positioning.data} coin={coin} />
+                  ) : null}
+                </Slot>
+              ) : null}
+              {stats.state === "loaded" && stats.data ? (
+                <AssetStatsSection stats={stats.data} />
+              ) : null}
+            </Section>
           ) : null}
 
-          {/* A company: annual results, then the KPI grid, then the multiple
-              against its own history. */}
           {company ? (
             <>
-              <Slot
-                key={`results:${ticker}`}
-                id="results"
-                title={t("ticker.chart_annual_title")}
-                ready={settled(financials)}
-                onSeen={onSeen}
-              >
-                {financials.state === "loaded" && financials.data ? (
-                  <FinancialsChart data={financials.data} />
-                ) : null}
-              </Slot>
+              {/* What it is worth: the multiple against its own history, then
+                  the cash it should make. */}
+              <Section at="valuation" label={t("ticker.tab_valuation")}>
+                {/* Its figures are the price card's too, so they are already
+                    here; the slot waits for the grid's P/E it is checked
+                    against. */}
+                <Slot
+                  key={`valuation:${ticker}`}
+                  id="valuation"
+                  title={t("ticker.valuation_history")}
+                  ready={wanted("valuation") && settled(metrics) && settled(valuation)}
+                  onSeen={onSeen}
+                >
+                  {valuation.state === "loaded" && valuation.data ? (
+                    <ValuationChart
+                      data={valuation.data}
+                      fundamentalPe={gridPe}
+                      trades={held?.trades ?? []}
+                    />
+                  ) : null}
+                </Slot>
 
-              <Slot
-                key={`fundamentals:${ticker}`}
-                id="fundamentals"
-                title={t("ticker.fundamentals")}
-                ready={settled(metrics)}
-                onSeen={onSeen}
-              >
-                {metrics.state === "loaded" && metrics.data ? (
-                  <MetricsSection metrics={metrics.data} />
-                ) : null}
-              </Slot>
+                <Slot
+                  key={`dcf:${ticker}`}
+                  id="dcf"
+                  title={t("ticker.dcf")}
+                  ready={settled(dcf)}
+                  onSeen={onSeen}
+                >
+                  {dcf.state === "loaded" && dcf.data ? (
+                    <DcfSection dcf={dcf.data} />
+                  ) : null}
+                </Slot>
+              </Section>
 
-              {/* Its figures are the price card's too, so they are already
-                  here; the slot waits for the grid's P/E it is checked
-                  against. */}
-              <Slot
-                key={`valuation:${ticker}`}
-                id="valuation"
-                title={t("ticker.valuation_history")}
-                ready={wanted("valuation") && settled(metrics) && settled(valuation)}
-                onSeen={onSeen}
-              >
-                {valuation.state === "loaded" && valuation.data ? (
-                  <ValuationChart
-                    data={valuation.data}
-                    fundamentalPe={gridPe}
-                    trades={held?.trades ?? []}
-                  />
-                ) : null}
-              </Slot>
+              {/* The business: annual results, the KPI grid, how defensible. */}
+              <Section at="business" label={t("ticker.tab_business")}>
+                <Slot
+                  key={`results:${ticker}`}
+                  id="results"
+                  title={t("ticker.chart_annual_title")}
+                  ready={settled(financials)}
+                  onSeen={onSeen}
+                >
+                  {financials.state === "loaded" && financials.data ? (
+                    <FinancialsChart data={financials.data} />
+                  ) : null}
+                </Slot>
 
-              <Slot
-                key={`dcf:${ticker}`}
-                id="dcf"
-                title={t("ticker.dcf")}
-                ready={settled(dcf)}
-                onSeen={onSeen}
-              >
-                {dcf.state === "loaded" && dcf.data ? (
-                  <DcfSection dcf={dcf.data} />
-                ) : null}
-              </Slot>
+                <Slot
+                  key={`fundamentals:${ticker}`}
+                  id="fundamentals"
+                  title={t("ticker.fundamentals")}
+                  ready={settled(metrics)}
+                  onSeen={onSeen}
+                >
+                  {metrics.state === "loaded" && metrics.data ? (
+                    <MetricsSection metrics={metrics.data} />
+                  ) : null}
+                </Slot>
 
-              {/* What the street makes of it, right after what it is priced at. */}
-              <Slot
-                key={`analysts:${ticker}`}
-                id="analysts"
-                title={t("ticker.analysts")}
-                ready={settled(analysts)}
-                onSeen={onSeen}
-              >
-                {analysts.state === "loaded" && analysts.data ? (
-                  <AnalystsSection
-                    data={analysts.data}
-                    options={options.state === "loaded" ? options.data : null}
-                  />
-                ) : null}
-              </Slot>
+                <Slot
+                  key={`moat:${ticker}`}
+                  id="moat"
+                  title={t("ticker.moat")}
+                  ready={settled(moat)}
+                  onSeen={onSeen}
+                >
+                  {moat.state === "loaded" && moat.data ? (
+                    <MoatSection moat={moat.data} />
+                  ) : null}
+                </Slot>
+              </Section>
 
-              <Slot
-                key={`moat:${ticker}`}
-                id="moat"
-                title={t("ticker.moat")}
-                ready={settled(moat)}
-                onSeen={onSeen}
-              >
-                {moat.state === "loaded" && moat.data ? (
-                  <MoatSection moat={moat.data} />
-                ) : null}
-              </Slot>
+              {/* Who else has a view: the street, the insiders, the shorts.
+                  Side by side where the page is wide enough
+                  (`.tk-opinions`). */}
+              <Section at="opinions" label={t("ticker.tab_opinions")}>
+                <div className="tk-opinions">
+                  <Slot
+                    key={`analysts:${ticker}`}
+                    id="analysts"
+                    title={t("ticker.analysts")}
+                    ready={settled(analysts)}
+                    onSeen={onSeen}
+                  >
+                    {analysts.state === "loaded" && analysts.data ? (
+                      <AnalystsSection
+                        data={analysts.data}
+                        options={options.state === "loaded" ? options.data : null}
+                      />
+                    ) : null}
+                  </Slot>
 
-              <Slot
-                key={`insiders:${ticker}`}
-                id="insiders"
-                title={t("ticker.insider_activity")}
-                ready={settled(insiders)}
-                onSeen={onSeen}
-              >
-                {insiders.state === "loaded" && insiders.data ? (
-                  <InsidersSection insiders={insiders.data} />
-                ) : null}
-              </Slot>
+                  <Slot
+                    key={`insiders:${ticker}`}
+                    id="insiders"
+                    title={t("ticker.insider_activity")}
+                    ready={settled(insiders)}
+                    onSeen={onSeen}
+                  >
+                    {insiders.state === "loaded" && insiders.data ? (
+                      <InsidersSection insiders={insiders.data} />
+                    ) : null}
+                  </Slot>
 
-              <Slot
-                key={`shorts:${ticker}`}
-                id="shorts"
-                title={t("ticker.shorts_title")}
-                ready={settled(shorts)}
-                onSeen={onSeen}
-              >
-                {shorts.state === "loaded" && shorts.data ? (
-                  <ShortsSection shorts={shorts.data} />
-                ) : null}
-              </Slot>
+                  <Slot
+                    key={`shorts:${ticker}`}
+                    id="shorts"
+                    title={t("ticker.shorts_title")}
+                    ready={settled(shorts)}
+                    onSeen={onSeen}
+                  >
+                    {shorts.state === "loaded" && shorts.data ? (
+                      <ShortsSection shorts={shorts.data} />
+                    ) : null}
+                  </Slot>
+                </div>
+              </Section>
             </>
           ) : null}
 
-          {company ? (
-            <ComparablesSection comps={comps.state === "loaded" ? comps.data : null}>
-              <PeerPicker
-                ticker={ticker}
-                watchlist={entries}
-                peers={peers}
-                onPeers={setPeers}
-              />
-            </ComparablesSection>
+          {/* "Did it beat the index" closes the read, whatever the kind; a
+              company's rivals table goes with it. Not before the profile
+              answers: alone under the price card it would count as seen, and
+              be asked for before the sections that then come in above it. */}
+          {company || (shape.compare && profile.state !== "loading") ? (
+            <Section at="compare" label={t("ticker.tab_compare")}>
+              {shape.compare ? (
+                <Slot
+                  key={`compare:${ticker}`}
+                  id="compare"
+                  title={t("ticker.compare")}
+                  note={t("ticker.compare_note", { base })}
+                  ready={wanted("compare")}
+                  onSeen={onSeen}
+                >
+                  <CompareSection ticker={ticker} base={base} />
+                </Slot>
+              ) : null}
+              {company ? (
+                <Watch
+                  key={`comparables:${ticker}`}
+                  id="comparables"
+                  onSeen={onSeen}
+                  folds
+                >
+                  {(onShown) => (
+                    <ComparablesSection
+                      comps={comps.state === "loaded" ? comps.data : null}
+                      onShown={onShown}
+                    >
+                      <PeerPicker
+                        ticker={ticker}
+                        watchlist={entries}
+                        peers={peers}
+                        onPeers={picksPeers}
+                      />
+                    </ComparablesSection>
+                  )}
+                </Watch>
+              ) : null}
+              {company ? <KpiSourcesSection /> : null}
+            </Section>
           ) : null}
-
-          {/* Not before the profile answers: alone under the price card it
-              would count as seen, and be asked for before the sections that
-              then come in above it. */}
-          {shape.compare && company ? (
-            <Slot
-              key={`compare:${ticker}`}
-              id="compare"
-              title={t("ticker.compare")}
-              note={t("ticker.compare_note", { base })}
-              ready={wanted("compare")}
-              onSeen={onSeen}
-            >
-              <CompareSection ticker={ticker} base={base} />
-            </Slot>
-          ) : null}
-
-          {company ? <KpiSourcesSection /> : null}
         </>
       )}
     </div>
   );
 }
 
+/** Rivals filled in for a company whose reader has not picked their own. */
+const AUTO_PEERS = 3;
+
+/**
+ * The page's sections in reading order, for the strip of tabs: only the ones
+ * this kind of asset draws.
+ */
+function pageSections(
+  t: ReturnType<typeof useT>,
+  has: { company: boolean; crypto: boolean; fund: boolean; compare: boolean },
+): { key: SectionKey; label: string }[] {
+  const keys: SectionKey[] = has.company
+    ? ["summary", "price", "valuation", "business", "opinions", "compare"]
+    : [
+        "price",
+        ...(has.fund ? (["fund"] as const) : []),
+        ...(has.crypto ? (["market"] as const) : []),
+        ...(has.compare ? (["compare"] as const) : []),
+      ];
+  return keys.map((key) => ({ key, label: t(`ticker.tab_${key}`) }));
+}
+
+/** One of the page's sections: the place a tab jumps to. */
+function Section({
+  at,
+  label,
+  children,
+}: {
+  at: SectionKey;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={sectionId(at)} className="tk-sec" aria-label={label}>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * A part of the page drawn at once but marked seen (`onSeen`) only once it is
+ * near the viewport — and, with `folds`, once its card is on show, which the
+ * card reports through the callback it is handed.
+ */
+function Watch({
+  id,
+  onSeen,
+  folds = false,
+  children,
+}: {
+  id: SlotId;
+  onSeen: (id: SlotId) => void;
+  folds?: boolean;
+  children: (onShown: () => void) => ReactNode;
+}) {
+  const [ref, near] = useInView<HTMLDivElement>();
+  const [shown, setShown] = useState(!folds);
+  const show = useCallback(() => setShown(true), []);
+  useEffect(() => {
+    if (near && shown) onSeen(id);
+  }, [near, shown, id, onSeen]);
+  return (
+    <div ref={ref} className="tk-slot">
+      {children(show)}
+    </div>
+  );
+}
+
 /** The sections below the price that wait to be seen; each is its card's fold id. */
 type SlotId =
+  | "reading"
+  | "comparables"
   | "results"
   | "fundamentals"
   | "valuation"

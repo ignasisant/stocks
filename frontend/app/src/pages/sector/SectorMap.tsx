@@ -13,23 +13,22 @@
  * links to its dots), no returns provider (no trails — they need each name's
  * filings, and this page reads tonight's scan and nothing else).
  *
- * Held names are joined here from the one positions request the cohort table
- * makes too, so they are filled and sized by weight as on Review. Their colour
+ * Held names are joined here from the page's one positions request (the
+ * cohort table reads the same answer), so they are filled and sized by weight
+ * as on Review. Their colour
  * is still the read as a new buy: a held name's own verdict hangs on its
  * weight, which is Review's to draw, and the caption and its details say so.
  */
 
-import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import { useApi } from "../../shell/useApi";
 import { MAX_ADDED } from "../review/format";
 import { QualityMap } from "../review/QualityMap";
 import type { ReviewRow } from "../review/types";
 import "../review/review.css";
 import type { CohortRow } from "./types";
 
-type Held = {
+export type Held = {
   ticker: string;
   currency: string;
   value: number | null;
@@ -73,13 +72,17 @@ function asReviewRow(row: CohortRow, held: Held | undefined): ReviewRow | null {
   };
 }
 
-export function SectorMap({ rows }: { rows: CohortRow[] }) {
+export function SectorMap({
+  rows,
+  positions,
+}: {
+  rows: CohortRow[];
+  /** The reader's positions, from the page's one request; null until in. */
+  positions: Held[] | null;
+}) {
   const t = useT();
-  const book = useApi(() => get("/portfolio/positions"), []);
   const owned = new Map(
-    book.state === "loaded"
-      ? book.data.positions.map((p) => [p.ticker.toUpperCase(), p] as const)
-      : [],
+    (positions ?? []).map((p) => [p.ticker.toUpperCase(), p] as const),
   );
   const judged = rows.flatMap((row) => {
     const one = asReviewRow(row, owned.get(row.ticker.toUpperCase()));
@@ -110,7 +113,7 @@ export function SectorMap({ rows }: { rows: CohortRow[] }) {
       footer={
         // Not before the book has answered: until then a name the reader
         // owns would be offered as a buy.
-        book.state !== "loading" && buys.length > 0 ? (
+        positions !== null && buys.length > 0 ? (
           <p className="ag-sec-caption ag-sec-map-next">
             <Link page="review" params={{ add: buys.join(",") }}>
               {t("sector.map_to_review", { count: buys.length })}

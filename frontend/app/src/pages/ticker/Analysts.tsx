@@ -14,6 +14,7 @@
  *   more about the next quarters than the label they print on it.
  */
 
+import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Kpi, KpiGrid, toneOf, type Tone } from "../../ui/Kpi";
 import { currencySymbol, type Translate } from "./format";
@@ -130,6 +131,7 @@ export function AnalystsSection({
       {data.revisions.length ? (
         <Revisions rows={data.revisions} currency={data.currency} />
       ) : null}
+      {data.changes?.length ? <NewestMoves rows={data.changes} /> : null}
       {data.changes?.length ? (
         <Changes rows={data.changes} currency={data.currency} />
       ) : null}
@@ -217,11 +219,26 @@ function Changes({
       : now;
   };
   const key = (row: RatingChange) => `${row.date}-${row.firm}-${row.target}`;
+  // A long list folds behind its count: the banner above already says what
+  // the newest day did, and twenty rows of it push the insiders off screen.
+  const [open, setOpen] = useState(rows.length <= FOLD_CHANGES);
 
   return (
     <div className="tk-changes">
       <Subhead>{t("ticker.analysts_changes")}</Subhead>
-      {mobile ? (
+      {rows.length > FOLD_CHANGES ? (
+        <button
+          type="button"
+          className="ag-btn tk-show-more"
+          aria-expanded={open}
+          onClick={() => setOpen((was) => !was)}
+        >
+          {open
+            ? t("ticker.analysts_hide_changes")
+            : t("ticker.analysts_show_changes", { n: rows.length })}
+        </button>
+      ) : null}
+      {!open ? null : mobile ? (
         <div className="tk-stack">
           {rows.map((row) => (
             <div className="tk-stack-card" key={key(row)}>
@@ -268,6 +285,42 @@ function Changes({
       <Note>{t("ticker.analysts_changes_caption")}</Note>
     </div>
   );
+}
+
+/** Rows past this fold behind a "show" button. */
+const FOLD_CHANGES = 5;
+
+/** A newest day older than this is history, not news worth a banner. */
+const RECENT_DAYS = 7;
+
+/**
+ * What the newest day of rating moves did, said once above the list: a
+ * morning with ten downgrades is the news, not row seven of a table.
+ */
+function NewestMoves({ rows }: { rows: RatingChange[] }) {
+  const t = useT();
+  const lang = useLang();
+  const newest = rows.reduce((max, row) => (row.date > max ? row.date : max), "");
+  if (!newest) return null;
+  const age = (Date.now() - Date.parse(`${newest}T00:00:00Z`)) / 86_400_000;
+  if (age > RECENT_DAYS) return null;
+  const day = rows.filter((row) => row.date === newest);
+  const down = day.filter((row) => row.action === "downgrade").length;
+  const up = day.filter((row) => row.action === "upgrade").length;
+  const date = shortDay(newest, lang);
+  if (down > 0) {
+    return (
+      <Banner tone="warn">
+        {t("ticker.analysts_downgrades_on", { n: down, date })}
+      </Banner>
+    );
+  }
+  if (up > 0) {
+    return (
+      <Banner tone="good">{t("ticker.analysts_upgrades_on", { n: up, date })}</Banner>
+    );
+  }
+  return null;
 }
 
 /** "20 Oct" from an ISO day, in the reader's language; UTC so the day holds. */
@@ -545,13 +598,13 @@ function upsideChip(value: number | null) {
 }
 
 /** 1–2.5 is a buy side, 3.5–5 a sell side, the middle a hold. */
-function ratingTone(mean: number): Tone {
+export function ratingTone(mean: number): Tone {
   if (mean <= 2.5) return "up";
   if (mean >= 3.5) return "down";
   return "flat";
 }
 
-function ratingLabel(t: Translate, rating: string | null): string {
+export function ratingLabel(t: Translate, rating: string | null): string {
   const labels: Record<string, string> = {
     "strong buy": t("ticker.analysts_strong_buy"),
     buy: t("ticker.analysts_buy"),
