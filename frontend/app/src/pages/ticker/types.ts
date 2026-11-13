@@ -362,6 +362,10 @@ export type TickerJudged = {
   reasons: string[];
   quality: number | null;
   cheapness: number | null;
+  /** The cash flow's yearly growth, for ever, the price pays for; null off the standard lens. */
+  implied_growth?: number | null;
+  /** The lower of the cash flow's and the sales' multi-year pace. */
+  past_growth?: number | null;
 };
 
 export type Metrics = {

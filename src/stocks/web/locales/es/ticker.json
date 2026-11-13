@@ -143,6 +143,8 @@
   "ticker.judged_title": "Como compra nueva",
   "ticker.judged_scores": "Calidad {quality} · Precio {cheapness}",
   "ticker.judged_link": "Ver en Vender o reforzar",
+  "ticker.judged_implied": "Crecimiento que paga el precio: {implied} al año, para siempre",
+  "ticker.judged_implied_past": "Crecimiento que paga el precio: {implied} al año, para siempre · histórico: {past}",
   "ticker.market_cap_fx": "Capitalización: {usd} USD ≈ {conv} {ccy} (spot BCE {rate}, {as_of})",
   "ticker.fx_unavailable": "Conversión de divisa no disponible (endpoint de FX inaccesible).",
   "ticker.moat": "Foso (moat)",

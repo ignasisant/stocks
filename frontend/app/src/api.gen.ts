@@ -3443,6 +3443,8 @@ export type TickerJudged = {
   "reasons": string[];
   "quality": number | null;
   "cheapness": number | null;
+  "implied_growth": number | null;
+  "past_growth": number | null;
 };
 
 export type TickerPosition = {

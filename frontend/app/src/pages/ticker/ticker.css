@@ -2421,6 +2421,25 @@
   font-size: var(--ag-fs-sm);
 }
 
+/* What the price assumes, beside what the business did; warn when the two
+   part ways (`priced_for_decline`). */
+.tk-judged-implied {
+  margin: 6px 0 0;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline, so on a phone the "?" follows the last word instead of a line of
+   its own. */
+.tk-judged-implied > :last-child {
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.tk-judged-implied.is-warn {
+  color: var(--ag-warn);
+}
+
 @media (pointer: coarse) {
   .tk-judged-link,
   .tk-entry-edit {

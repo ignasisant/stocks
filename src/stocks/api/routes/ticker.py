@@ -895,6 +895,8 @@ def _judged(computed: dict) -> TickerJudged:
         reasons=list(verdict.reasons),
         quality=_num(verdict.quality),
         cheapness=_num(verdict.cheapness),
+        implied_growth=_num(review.implied_growth(computed)),
+        past_growth=_num(review.past_growth(computed)),
     )
 
 

@@ -25,6 +25,7 @@ export const SHOWN = [
   "growth_pe",
   "fcf_yield",
   "owner_fcf_yield",
+  "implied_growth",
   "ev_ebitda",
   "roic",
   "roic_ex_goodwill",
@@ -71,6 +72,7 @@ export function tipFigures(
 export const OWN_LABEL = new Set<string>([
   "growth_pe",
   "owner_fcf_yield",
+  "implied_growth",
   "roic_ex_goodwill",
   "revenue_growth",
   "fcf_margin",
@@ -93,6 +95,7 @@ const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   net_debt_ebitda: "x",
   fcf_yield: "pct",
   owner_fcf_yield: "pct",
+  implied_growth: "pct",
   roic: "pct",
   roic_ex_goodwill: "pct",
   op_margin: "pct",
