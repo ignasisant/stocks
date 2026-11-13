@@ -133,8 +133,16 @@ export function Judged({
   const quality = score(judged.quality);
   const cheapness = score(judged.cheapness);
   const shown = new Set(cautions);
-  const implied = percent(judged.implied_growth ?? null, { digits: 1, tight: true });
-  const past = percent(judged.past_growth ?? null, { digits: 1, tight: true });
+  const implied = percent(judged.implied_growth ?? null, {
+    digits: 1,
+    tight: true,
+    signed: true,
+  });
+  const past = percent(judged.past_growth ?? null, {
+    digits: 1,
+    tight: true,
+    signed: true,
+  });
   // The line says it with the figures; the reason would only repeat it.
   const feared = judged.reasons.includes("priced_for_decline");
   if (implied !== null && feared) shown.add("priced_for_decline");

@@ -440,6 +440,9 @@ def test_no_decline_warning_without_a_record_or_without_the_fear():
     lumpy = {**FEARED, "fcf_cagr": 0.01}
     assert review.past_growth(lumpy) == 0.01
     assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(lumpy).reasons
+    alone = {k: v for k, v in FEARED.items() if k != "fcf_cagr"}
+    assert review.past_growth(alone) is None
+    assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(alone).reasons
     # A price that still assumes growth.
     priced = {**FEARED, "owner_fcf_yield": 0.04, "fcf_yield": 0.05, "pe_fwd": 22.0}
     assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(priced).reasons

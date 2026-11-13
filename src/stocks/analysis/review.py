@@ -849,11 +849,12 @@ def implied_growth(metrics: Mapping) -> float | None:
 def past_growth(metrics: Mapping) -> float | None:
     """The record `implied_growth` is set against: the lower of the free cash
     flow's and the sales' multi-year pace, so neither one good stretch nor a
-    one-off quarter makes the past look better than it was."""
-    paces = [
-        g for g in (_num(metrics, "fcf_cagr"), sustained_growth(metrics)) if g is not None
-    ]
-    return min(paces) if paces else None
+    one-off quarter makes the past look better than it was. None unless both
+    are on file: one series alone is not a record."""
+    cash, sales = _num(metrics, "fcf_cagr"), sustained_growth(metrics)
+    if cash is None or sales is None:
+        return None
+    return min(cash, sales)
 
 
 def priced_for_decline(metrics: Mapping) -> bool:
