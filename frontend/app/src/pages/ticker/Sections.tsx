@@ -133,6 +133,11 @@ export function Judged({
   const quality = score(judged.quality);
   const cheapness = score(judged.cheapness);
   const shown = new Set(cautions);
+  const implied = percent(judged.implied_growth ?? null, { digits: 1, tight: true });
+  const past = percent(judged.past_growth ?? null, { digits: 1, tight: true });
+  // The line says it with the figures; the reason would only repeat it.
+  const feared = judged.reasons.includes("priced_for_decline");
+  if (implied !== null && feared) shown.add("priced_for_decline");
   const reasons = judged.reasons.filter((code) => !shown.has(code)).slice(0, 3);
   return (
     <div className="tk-judged" role="group" aria-label={t("ticker.judged_title")}>
@@ -156,6 +161,14 @@ export function Judged({
           {t("ticker.judged_link")}
         </Link>
       </div>
+      {implied !== null ? (
+        <p className={feared ? "tk-judged-implied is-warn" : "tk-judged-implied"}>
+          {past !== null
+            ? t("ticker.judged_implied_past", { implied, past })
+            : t("ticker.judged_implied", { implied })}
+          <Help text={help("review.metric_implied_growth_help")} />
+        </p>
+      ) : null}
       {reasons.length > 0 ? (
         <p className="tk-judged-why">
           {reasons.map((code) => t(`review.reason_${code}`)).join(" · ")}

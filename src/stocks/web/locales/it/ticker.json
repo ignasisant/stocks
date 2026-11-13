@@ -143,6 +143,8 @@
   "ticker.judged_title": "Come nuovo acquisto",
   "ticker.judged_scores": "Qualità {quality} · Prezzo {cheapness}",
   "ticker.judged_link": "Apri in Vendere o rafforzare",
+  "ticker.judged_implied": "Il prezzo assume che la cassa cresca del {implied} l'anno, per sempre",
+  "ticker.judged_implied_past": "Il prezzo assume che la cassa cresca del {implied} l'anno, per sempre; è cresciuta del {past}",
   "ticker.market_cap_fx": "Capitalizzazione: {usd} USD ≈ {conv} {ccy} (cambio BCE {rate}, {as_of})",
   "ticker.fx_unavailable": "Conversione di valuta non disponibile (servizio dei cambi irraggiungibile).",
   "ticker.moat": "Moat",

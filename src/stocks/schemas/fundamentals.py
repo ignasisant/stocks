@@ -61,6 +61,17 @@ class TickerJudged(BaseModel):
     )
     quality: float | None = Field(default=None, description="0-100; null unscored.")
     cheapness: float | None = Field(default=None, description="0-100; null unscored.")
+    implied_growth: float | None = Field(
+        default=None,
+        description=(
+            "Ratio: the owner's free cash flow's yearly growth, for ever, the "
+            "price pays for at `review.HURDLE`; null off the standard lens."
+        ),
+    )
+    past_growth: float | None = Field(
+        default=None,
+        description="Ratio: the lower of the cash flow's and the sales' multi-year pace.",
+    )
 
 
 class MetricTile(BaseModel):

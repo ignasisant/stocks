@@ -399,6 +399,52 @@ def test_the_row_carries_the_growth_adjusted_pe():
     assert review.judge_held(COMPOUNDER, weight=0.02).metrics["growth_pe"] is None
 
 
+# What the price assumes. Adobe, 2026-11-13: owner FCF yield 8.5 % after a
+# decade of 10 % growth, so the price assumes the cash stops growing.
+FEARED = {
+    "pe_fwd": 8.75, "fcf_yield": 0.1055, "owner_fcf_yield": 0.0847,
+    "ev_ebitda": 9.6, "ev": 1e11, "roic": 0.41, "op_margin_median": 0.35,
+    "moat": 90.0, "revenue_cagr": 0.105, "fcf_cagr": 0.10, "net_income_cagr": 0.14,
+    "share_dilution": -0.046, "net_debt_ebitda": 0.08, "fcf_margin": 0.33,
+    "revenue_down_years": 0, "industry": "Software - Application",
+}
+
+
+def test_implied_growth_is_the_perpetuity_the_owner_yield_prices():
+    g = review.implied_growth(FEARED)
+    # yield = (hurdle - g) / (1 + g), solved for g.
+    assert g == pytest.approx((review.HURDLE - 0.0847) / 1.0847)
+    assert 0 < g < 0.01
+    # The cash leaving when the owner's view is missing; none without cash.
+    plain = {k: v for k, v in FEARED.items() if k != "owner_fcf_yield"}
+    assert review.implied_growth(plain) < 0
+    assert review.implied_growth({**FEARED, "owner_fcf_yield": -0.02}) is None
+    # A lender's free cash flow is not what it is worth on.
+    bank = {**FEARED, "industry": "Banks - Regional"}
+    assert review.implied_growth(bank) is None
+
+
+def test_a_price_that_assumes_a_decline_the_record_does_not_show_is_said():
+    v = review.judge_candidate(FEARED)
+    assert v.verdict == review.BUY  # a warning, not a caution
+    feared = v.reasons.index(review.R_PRICED_FOR_DECLINE)
+    assert feared == v.reasons.index(review.R_CHEAP) + 1
+    assert v.metrics["implied_growth"] == review.implied_growth(FEARED)
+
+
+def test_no_decline_warning_without_a_record_or_without_the_fear():
+    # A record that never grew: the flat price is the record's.
+    stalled = {**FEARED, "revenue_cagr": 0.02, "fcf_cagr": 0.02, "net_income_cagr": 0.0}
+    assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(stalled).reasons
+    # One good series is not a record: the lower pace decides.
+    lumpy = {**FEARED, "fcf_cagr": 0.01}
+    assert review.past_growth(lumpy) == 0.01
+    assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(lumpy).reasons
+    # A price that still assumes growth.
+    priced = {**FEARED, "owner_fcf_yield": 0.04, "fcf_yield": 0.05, "pe_fwd": 22.0}
+    assert review.R_PRICED_FOR_DECLINE not in review.judge_candidate(priced).reasons
+
+
 # The cautions: good scores the numbers behind them may not hold. They stop
 # an add or a buy, never make one.
 def _blocked(metrics: dict, reason: str) -> None:

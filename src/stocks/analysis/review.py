@@ -244,6 +244,17 @@ PEG_LO = 0.5
 PEG_HI = 2.5
 PEG_GROWTH_CAP = 0.40
 PEG_CHEAP = 1.0
+# What the price assumes: the pace the owner's free cash flow would have to
+# grow at for ever to return `HURDLE` a year at today's price (a perpetuity:
+# yield = (hurdle - g) / (1 + g)). The filings say what the business did; this
+# says what the market expects of it next. At or under `PRICED_FLAT` against a
+# record of `PAST_GROWING` or more, the market prices a decline the filings do
+# not show yet (`R_PRICED_FOR_DECLINE`): a cheap price may be right about a
+# threat the past cannot see (a product a new technology copies), so the
+# reader's thesis has to answer it. A warning, not a caution: the buy stands.
+HURDLE = 0.09
+PRICED_FLAT = 0.01
+PAST_GROWING = 0.05
 # An operating margin this many times its own median over the filed years,
 # and at least `PEAK_GAP` above it, is a peak at a company whose sales fell in
 # one of those years, unless they now grow `RULE_40_MIN`. Without a down year
@@ -357,6 +368,7 @@ SHOWN = (
     "growth_pe",
     "fcf_yield",
     "owner_fcf_yield",
+    "implied_growth",
     "ev_ebitda",
     "roic",
     "roic_ex_goodwill",
@@ -527,6 +539,7 @@ R_BET_HEAVY = "bet_heavy"
 R_FCF_FLOAT = "fcf_float"
 R_SHARE_PAY = "share_pay"
 R_CHEAP_FOR_GROWTH = "cheap_for_growth"
+R_PRICED_FOR_DECLINE = "priced_for_decline"
 R_PEAK_MARGIN = "peak_margin"
 R_SALES_FALLING = "sales_falling"
 R_MARGIN_FALLING = "margin_falling"
@@ -592,6 +605,7 @@ _FINANCIAL_SUPPRESSED = frozenset(
         R_MARGIN_FALLING,
         R_RULE_40,
         R_CHEAP_FOR_GROWTH,
+        R_PRICED_FOR_DECLINE,
         R_WIDE_MOAT,
         R_NO_MOAT,
         R_SHORT_RUNWAY,
@@ -815,6 +829,44 @@ def growth_pe(metrics: Mapping, pe: float | None = None) -> float | None:
     if pe is None or pe <= 0 or growth is None or growth <= 0:
         return None
     return pe / (min(growth, PEG_GROWTH_CAP) * 100)
+
+
+def implied_growth(metrics: Mapping) -> float | None:
+    """The yearly growth of the owner's free cash flow, for ever, that today's
+    price assumes at a `HURDLE` return; None where free cash flow is not what
+    the business is worth on (a lender, a landlord, a utility) or there is
+    none to price."""
+    if lens(metrics) != STANDARD:
+        return None
+    paid = _num(metrics, "owner_fcf_yield")
+    if paid is None:
+        paid = _num(metrics, "fcf_yield")
+    if paid is None or paid <= 0:
+        return None
+    return (HURDLE - paid) / (1 + paid)
+
+
+def past_growth(metrics: Mapping) -> float | None:
+    """The record `implied_growth` is set against: the lower of the free cash
+    flow's and the sales' multi-year pace, so neither one good stretch nor a
+    one-off quarter makes the past look better than it was."""
+    paces = [
+        g for g in (_num(metrics, "fcf_cagr"), sustained_growth(metrics)) if g is not None
+    ]
+    return min(paces) if paces else None
+
+
+def priced_for_decline(metrics: Mapping) -> bool:
+    """The price assumes the cash flow stops growing (`PRICED_FLAT`) after a
+    record of growing it (`PAST_GROWING`)."""
+    implied = implied_growth(metrics)
+    past = past_growth(metrics)
+    return (
+        implied is not None
+        and past is not None
+        and implied <= PRICED_FLAT
+        and past >= PAST_GROWING
+    )
 
 
 def _unsold(metrics: Mapping) -> bool:
@@ -1347,6 +1399,9 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     if s.cheapness is not None:
         if s.cheapness >= CHEAP:
             out.append(R_CHEAP)
+            # Said next to the price it explains, before the record's praise.
+            if s.stage == MATURE and not s.suspect and priced_for_decline(metrics):
+                out.append(R_PRICED_FOR_DECLINE)
         elif s.cheapness < 30:
             out.append(R_EXPENSIVE)
     if pe is not None and pe <= 0:
@@ -1593,7 +1648,7 @@ _FINANCIAL_ONLY = frozenset({"ptbv", "rotce"})
 
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
     metrics = metrics or {}
-    derived = {"growth_pe": growth_pe(metrics)}
+    derived = {"growth_pe": growth_pe(metrics), "implied_growth": implied_growth(metrics)}
     bank = lens(metrics) == FINANCIAL
     return {
         key: None
