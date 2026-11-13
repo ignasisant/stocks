@@ -68,7 +68,15 @@ _METRICS_TTL = 4 * 3600.0
 _metrics_gate = threading.BoundedSemaphore(6)
 
 
-@ttl_cache(_METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics")
+# The persisted name carries the metrics' version: entries are mirrored to the
+# bucket and read back by a new process, so a dict built before a KPI was
+# added or redefined (2026-11-12: `cash_roc`, `loan_share`, `equity_share`,
+# `property_share`, an ADR's and a pence line's forward P/E) would otherwise be
+# scored, and recorded in the map's history, for up to a day after the deploy
+# that changed them.
+@ttl_cache(
+    _METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics-3"
+)
 def review_metrics(ticker: str) -> dict:
     """`compute_metrics` over `fundamentals(ticker)`, memoized as the dict."""
     from stocks.analysis.fundamentals import compute_metrics
@@ -80,12 +88,13 @@ def review_metrics(ticker: str) -> dict:
 # Where each name's business stood at its last few filings, for the review
 # map's "then" point. A filing lands once a quarter at most, so a day is fresh
 # and a week still right; kept apart from `review_metrics` so the API's row
-# metrics stay today's.
+# metrics stay today's. Versioned with it: each entry is `compute_metrics`
+# dicts, scored by the same lens.
 @ttl_cache(
     24 * 3600.0,
     max_entries=256,
     stale_s=7 * 86400.0,
-    persist="review_history",
+    persist="review_history-2",
     disk_max=128,
 )
 def review_history(ticker: str) -> list[dict]:

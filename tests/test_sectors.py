@@ -421,3 +421,24 @@ def test_a_thin_industry_falls_back_to_the_sector_cohort_without_the_subject():
     assert (kind, name) == ("sector", "Technology")
     assert [r["ticker"] for r in rows] == ["AMD", "AAPL", "MSFT"]
     assert sectors.peer_rows(scans, "XOM", "Oil & Gas Integrated", "Energy") is None
+
+
+def test_a_second_share_class_takes_no_place_of_its_own():
+    """GOOG and GOOGL file one set of accounts; the ETF lists both."""
+    filed = {"roic": 0.31, "op_margin": 0.32, "gross_margin": 0.59,
+             "net_margin": 0.29, "revenue_cagr": 0.13, "moat": 88.0}
+    rows = [{"ticker": "GOOGL", **filed, "market_cap": 4.33e12},
+            {"ticker": "GOOG", **filed, "market_cap": 4.27e12},
+            {"ticker": "META", **filed, "roic": 0.29}]
+    assert [r["ticker"] for r in sectors._one_class(rows)] == ["GOOGL", "META"]
+    sparse = [{"ticker": "A", "roic": 0.1}, {"ticker": "B", "roic": 0.1}]
+    assert sectors._one_class(sparse) == sparse, "too few figures to call it one"
+
+
+def test_a_trailing_pe_on_a_year_that_will_not_repeat_is_not_ranked():
+    from stocks.analysis.fundamentals import _rankable
+
+    once = _rankable({"ticker": "LEG.DE", "pe_ttm": 3.3, "pe_fwd": 8.8})
+    assert once["pe_ttm"] is None and once["pe_fwd"] == 8.8
+    steady = _rankable({"ticker": "UBER", "pe_ttm": 15.6, "pe_fwd": 16.2})
+    assert steady["pe_ttm"] == 15.6

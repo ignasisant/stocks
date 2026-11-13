@@ -312,6 +312,30 @@ def _scan_technicals(cohort: list[str]) -> _TechScan:
     return rows, scores, podium
 
 
+# Figures off the statements alone: two share classes of one company (GOOG and
+# GOOGL, FOX and FOXA) file the same accounts and match on every one, while
+# two companies never match on all of them.
+_FILED = ("roic", "op_margin", "gross_margin", "net_margin", "revenue_cagr", "moat")
+
+
+def _one_class(metrics: list[dict]) -> list[dict]:
+    """`metrics` with a company's second share class left out (the ETF lists
+    both), so one business does not take two places on the podium."""
+    seen: set[tuple] = set()
+    out = []
+    for row in metrics:
+        filed = tuple(
+            round(v, 9) if isinstance(v, float) else v
+            for v in (row.get(k) for k in _FILED)
+        )
+        if sum(v is not None for v in filed) >= 4:
+            if filed in seen:
+                continue
+            seen.add(filed)
+        out.append(row)
+    return out
+
+
 def scan_sector(
     sector: str, extra: tuple[str, ...] = (), *, as_of: str | None = None
 ) -> SectorScan:
@@ -324,7 +348,11 @@ def scan_sector(
         raise ValueError(f"unknown sector: {sector!r}")
     cohort = list(dict.fromkeys([*etf_candidates(sector),
                                  *(s.upper() for s in extra)]))
-    metrics = fetch_metrics_many(cohort, drop_funds=True) if cohort else []
+    fetched = fetch_metrics_many(cohort, drop_funds=True) if cohort else []
+    metrics = _one_class(fetched)
+    # The technical table keeps to the same names: one class per company.
+    twins = {r.get("ticker") for r in fetched} - {r.get("ticker") for r in metrics}
+    cohort = [t for t in cohort if t not in twins]
     # Gaps in US names' rows read from the SEC's filed figures, one frames
     # download for the whole scan (data.frames) — never over a Yahoo figure.
     filled = frames.fill_gaps(metrics) if metrics else 0

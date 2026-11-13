@@ -557,16 +557,19 @@ def _statement_fx(info: dict) -> float | None:
 
     Statements are filed in `financialCurrency`, the price is quoted in
     `currency`, and an ADR mixes the two: Novo Nordisk files in DKK and trades
-    in USD, Alibaba files in CNY. 1.0 when they agree or either is unknown
-    (case folded, so a London line quoted in GBp against GBP filings is not a
-    mismatch); None when they differ and no rate could be had, so a ratio is
+    in USD, Alibaba files in CNY. Always the major unit, which is what Yahoo's
+    market cap is in: a London line quoted in GBp against GBP filings is 1.0,
+    and Naspers (ZAc, USD filings) read 1678 cents a dollar off Yahoo's own
+    pair, which made its yields a hundredfold. 1.0 when they agree or either is
+    unknown; None when they differ and no rate could be had, so a ratio is
     left blank rather than computed across two currencies.
     """
-    filed, quoted = info.get("financialCurrency"), info.get("currency")
-    if not filed or not quoted or str(filed).upper() == str(quoted).upper():
+    filed = info.get("financialCurrency")
+    quoted = quote_unit(info.get("currency"))[0]
+    if not filed or not quoted or str(filed).upper() == quoted:
         return 1.0
     try:
-        return fx.spot(str(filed), str(quoted))[0]
+        return fx.spot(str(filed), quoted)[0]
     except Exception:  # noqa: BLE001 - the ECB does not quote every currency
         pass
     # TWD (TSMC) is not an ECB currency; Yahoo quotes the pair itself.
@@ -688,7 +691,103 @@ def _cash_backing(raw: RawFundamentals) -> float | None:
     return float(sum(float(cfo[y]) for y in years)) / profit
 
 
-def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
+#: Balance-sheet rows that hold what a lender has lent: Yahoo files a card
+#: issuer's under "Net Loan", a consumer lender's under loans or notes.
+_LOAN_ROWS = ("Net Loan", "Loans Receivable", "Notes Receivable")
+
+
+def _loan_share(balance: pd.DataFrame, assets: float | None) -> float | None:
+    """The share of the assets lent out: what tells a lender (Sezzle, Capital
+    One) from a card network (Visa) when Yahoo files both as Credit Services."""
+    if not assets or assets <= 0:
+        return None
+    lent = [v for label in _LOAN_ROWS if (v := _latest(balance, label)) is not None]
+    return max(lent) / assets if lent else None
+
+
+def _share(part: float | None, assets: float | None) -> float | None:
+    """`part` over the total assets; None without either, or on a deficit."""
+    if part is None or not assets or assets <= 0 or part <= 0:
+        return None
+    return part / assets
+
+
+def _cash_on_capital(
+    raw: RawFundamentals,
+    cfo: float | None,
+    sbc: float | None,
+    invested: float | None,
+    goodwill: float | None,
+) -> float | None:
+    """The owner's cash over the capital the business runs on: price-free, so
+    a quality score can read "does it turn profit into cash" without a cheap
+    share price answering yes.
+
+    Cash is operating cash less share-based pay less the capex that keeps
+    the business where it is, taken as depreciation when capex runs above it:
+    the rest is growth, which an owner chose to spend (Amazon's data centres
+    read as a poor business on plain FCF). Capital is invested capital less
+    the cash it holds; past the goodwill too when that reads higher, as
+    `roic_ex_goodwill` does, since an acquisition's premium is a price."""
+    if not invested or invested <= 0:
+        return None
+    capex = _latest(raw.cashflow, "Capital Expenditure")
+    if cfo is None or capex is None or not invested:
+        return None
+    spent = -capex
+    worn = _latest(raw.cashflow, "Depreciation And Amortization")
+    kept = min(spent, worn) if worn is not None and worn > 0 else spent
+    owner = cfo - (sbc if sbc and sbc > 0 else 0.0) - kept
+    cash = _latest(raw.balance, "Cash Cash Equivalents And Short Term Investments")
+    if cash is None:
+        cash = _latest(raw.balance, "Cash And Cash Equivalents")
+    capital = invested - (cash or 0.0)
+    if capital <= 0:
+        # More cash than capital (Pinduoduo holds its merchants' money): the
+        # whole invested capital, the conservative read.
+        capital = invested
+    if capital <= 0:
+        return None
+    out = owner / capital
+    if goodwill and goodwill > 0 and capital - goodwill > 0:
+        out = max(out, owner / (capital - goodwill))
+    return out
+
+
+#: Past this gap between this year's and next year's EPS (either way), a
+#: filing-currency figure beside a quote-currency one is the likelier read
+#: than earnings that move that much in a year.
+_EPS_SCALE_GAP = 2.5
+
+
+def _quoted_eps(
+    info: Mapping, this_year: float, next_year: float, rate: float | None
+) -> float | None:
+    """This year's EPS in the quote's major currency, which next year's is in
+    (Yahoo's `forwardPE` divides the price by it). Where the filing currency
+    differs, the figure is taken as filed and converted when that brings it
+    nearer next year's: HSBC's London line gave 1.71 (USD) beside 1.40 (GBP),
+    Naspers 5.30 (USD) beside 99.5 (ZAR). Without a rate, kept when the two
+    are near enough to be one currency, else None."""
+    filed = info.get("financialCurrency")
+    quoted = quote_unit(info.get("currency"))[0]
+    if not filed or not quoted or str(filed).upper() == quoted:
+        return this_year
+    if this_year <= 0 or next_year <= 0:
+        return this_year
+    if rate is None:
+        rate = _statement_fx(dict(info))
+    if not rate or rate <= 0:
+        gap = abs(math.log(this_year / next_year))
+        return this_year if gap < math.log(_EPS_SCALE_GAP) else None
+    converted = this_year * rate
+    kept = abs(math.log(this_year / next_year))
+    return converted if abs(math.log(converted / next_year)) < kept else this_year
+
+
+def forward_pe(
+    info: Mapping, price, today: date | None = None, rate: float | None = None
+) -> float | None:
     """Price over the next twelve months' consensus EPS.
 
     Yahoo's `forwardPE` divides by `forwardEps`, which is next fiscal year's
@@ -697,6 +796,14 @@ def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
     blend is the analysts' NTM convention: this year's EPS for the part of
     it still ahead, next year's for the rest. Without both estimates and a
     fiscal-year end, Yahoo's figure stands.
+
+    On an ADR Yahoo can give this year's EPS in the filing currency and next
+    year's in the quote's: Alibaba on 2026-11-12 read 44.25 (CNY) beside
+    9.23 (USD), and the blend made a 10x stock read 4.2x. `rate` is
+    `_statement_fx(info)`, looked up when not given.
+
+    The estimates are in the major unit, the price in the quote's: Rolls-Royce
+    at 1369.6 pence over 0.51 pounds read 2750x, so the price is scaled first.
     """
     fallback = _finite(info.get("forwardPE"))
     this_year = _finite(info.get("epsCurrentYear"))
@@ -704,6 +811,10 @@ def forward_pe(info: Mapping, price, today: date | None = None) -> float | None:
     end = _finite(info.get("nextFiscalYearEnd"))
     price = _finite(price)
     if this_year is None or next_year is None or end is None or not price:
+        return fallback
+    price *= quote_unit(info.get("currency"))[1]
+    this_year = _quoted_eps(info, this_year, next_year, rate)
+    if this_year is None:
         return fallback
     today = today or date.today()
     year_end = datetime.fromtimestamp(end, tz=UTC).date()
@@ -739,7 +850,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["market_cap"] = info.get("marketCap")
     m["ev"] = info.get("enterpriseValue")
     m["pe_ttm"] = info.get("trailingPE")
-    m["pe_fwd"] = forward_pe(info, m["price"])
+    m["pe_fwd"] = None  # once the filing currency's rate is known, below
     m["pb"] = info.get("priceToBook")
     m["ev_ebitda"] = info.get("enterpriseToEbitda")
     m["ev_sales"] = info.get("enterpriseToRevenue")
@@ -790,6 +901,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
             filed=str(info.get("financialCurrency")),
             quoted=str(info.get("currency")),
         )
+    m["pe_fwd"] = forward_pe(info, m["price"], rate=rate)
     cap = m["market_cap"]
     # Yahoo drops the trailing P/E on a loss but keeps a negative forward one,
     # so a loss-maker (CoreWeave) read n/a beside "Loss"; it also drops it on
@@ -898,6 +1010,12 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
         else None
     )
     m["cfo_ni"] = _cash_backing(raw)
+    m["cash_roc"] = _cash_on_capital(raw, cfo, sbc, invested, goodwill)
+    m["loan_share"] = _loan_share(raw.balance, assets)
+    # Not KPIs: what the review's lens reads where Yahoo's industry fits a
+    # balance-sheet business and a fee business alike (`review.lens`).
+    m["equity_share"] = _share(_latest(raw.balance, "Stockholders Equity"), assets)
+    m["property_share"] = _share(_latest(raw.balance, "Investment Properties"), assets)
     # What an acquirer paid over book, against what it owns and what is the
     # owners': an impairment comes off both.
     equity_now = _latest(raw.balance, "Stockholders Equity")
@@ -1335,11 +1453,21 @@ _LENS_BLANK = {
 
 
 def _rankable(row: dict) -> dict:
-    from stocks.analysis.review import lens
+    from stocks.analysis.review import EARNINGS_DROP, lens
 
     out = dict(row)
     for key in _LENS_BLANK.get(lens(row), ()):
         out[key] = None
+    # Earnings the analysts see falling (the review's `earnings_falling`): the
+    # trailing P/E is on a year that will not repeat, LEG's revaluations at
+    # 3x beside 9x forward, and ranking both counted that year twice.
+    trailing, forward = out.get("pe_ttm"), out.get("pe_fwd")
+    if (
+        isinstance(trailing, (int, float))
+        and isinstance(forward, (int, float))
+        and 0 < trailing <= forward * (1 - EARNINGS_DROP)
+    ):
+        out["pe_ttm"] = None
     for key in _RANK_POSITIVE_ONLY + _RANK_LOSS_LAST:
         value = out.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and value <= 0:

@@ -388,6 +388,31 @@ FINANCIALS = frozenset(
     }
 )
 
+#: Industries Yahoo fills with networks and lenders alike: Visa beside
+#: Sezzle and Capital One. A name in one is a lender, judged on its book,
+#: once loans are `LENDER_LOANS` of its assets: its return on capital is
+#: leverage on customers' debts, and on the standard lens a buy-now-pay-later
+#: book outscored Hermès on quality.
+LENDING = frozenset({"Credit Services"})
+LENDER_LOANS = 0.50
+
+#: Industries Yahoo fills with dealers and fee houses alike: Goldman Sachs
+#: and Morgan Stanley beside Lazard and the bitcoin miners. A dealer runs on
+#: borrowed money, equity `DEALER_EQUITY` of its assets or less (GS 7 %,
+#: Schwab 10 %, Stifel 15 %; Lazard 18 %, Evercore 38 %, MARA 48 %), and
+#: its free cash flow is its clients' balances moving: judged as a bank.
+DEALING = frozenset({"Capital Markets"})
+DEALER_EQUITY = 0.15
+
+#: Industries Yahoo fills with landlords and agents alike: Vonovia and LEG
+#: beside CBRE. A name whose assets are `LANDLORD_PROPERTY` investment
+#: property or more (LEG 93 %, Vonovia 88 %, Aroundtown 74 %; CBRE 2 %) is a
+#: landlord, judged as one: its earnings carry the revaluations, so a 3x
+#: trailing P/E on the standard lens was a property market's year. Not
+#: "Real Estate - Development": Forestar's lots for sale read 84 % on that line.
+LETTING = frozenset({"Real Estate Services", "Real Estate - Diversified"})
+LANDLORD_PROPERTY = 0.50
+
 #: Regulated networks: their return is the one the regulator allows, their
 #: capex is funded with debt on purpose, so ROIC, free cash flow and the moat
 #: read every one as a poor business. Renewables developers and merchant
@@ -416,7 +441,8 @@ REITS = frozenset(
 )
 
 #: Industries whose names read like a bank, an insurer, a landlord or a
-#: utility but that keep the standard lens on purpose (see the tables above).
+#: utility but that keep the standard lens on purpose, or unless their balance
+#: sheet says otherwise (see the tables above).
 STANDARD_ON_PURPOSE = frozenset(
     {
         "Capital Markets",
@@ -673,11 +699,22 @@ def per_share_growth(metrics: Mapping) -> float | None:
 
 
 def lens(metrics: Mapping) -> str:
-    """Which ratios judge this business, by Yahoo's industry."""
+    """Which ratios judge this business, by Yahoo's industry; where one
+    industry holds both kinds, by the balance sheet (`LENDER_LOANS`,
+    `DEALER_EQUITY`, `LANDLORD_PROPERTY`). A row without the figure keeps the
+    standard lens."""
     industry = metrics.get("industry")
     if industry in FINANCIALS:
         return FINANCIAL
+    if industry in LENDING and (_num(metrics, "loan_share") or 0) >= LENDER_LOANS:
+        return FINANCIAL
+    equity = _num(metrics, "equity_share")
+    if industry in DEALING and equity is not None and equity <= DEALER_EQUITY:
+        return FINANCIAL
     if industry in REITS:
+        return REAL_ESTATE
+    owned = _num(metrics, "property_share") or 0
+    if industry in LETTING and owned >= LANDLORD_PROPERTY:
         return REAL_ESTATE
     if industry in UTILITIES:
         return UTILITY
@@ -687,7 +724,7 @@ def lens(metrics: Mapping) -> str:
 def debt_line(metrics: Mapping) -> float:
     """Net debt over EBITDA from which the debt is heavy for this industry."""
     industry = metrics.get("industry") or ""
-    if industry in REITS:
+    if lens(metrics) == REAL_ESTATE:
         return REIT_DEBT
     if industry.startswith("Utilities - ") or industry == "Telecom Services":
         return REGULATED_DEBT
@@ -862,9 +899,13 @@ def score(metrics: Mapping) -> Scores:
             _growth_scores(metrics, fcf, pe, suspect, floated), trailing_pe=trailing
         )
 
+    # Cash on the capital, not on the price: with the FCF yield here a
+    # falling share price raised quality, and the map's two axes shared an
+    # input (Adobe's quality read its cheapness, Microsoft's its dearness).
+    cash = None if floated else _num(metrics, "cash_roc")
     quality = [
         _lin(v, lo, hi)
-        for v, lo, hi in ((roic, 0.0, 0.40), (margin, 0.0, 0.40), (fcf, -0.02, 0.04))
+        for v, lo, hi in ((roic, 0.0, 0.40), (margin, 0.0, 0.40), (cash, 0.0, 0.20))
         if v is not None
     ]
     if moat is not None:
@@ -924,8 +965,11 @@ def at_price(metrics: Mapping, factor: float) -> dict:
     known for every day, the statements of that day are not, so this is where
     today's company would sit at that day's price. The enterprise value moves
     by the market cap's change only; the debt and cash under it stay. A
-    forward P/E keeps today's estimate of the earnings. Quality moves a
-    little too: it reads the cash yield as "does it make cash at all".
+    forward P/E keeps today's estimate of the earnings. Quality stays put:
+    no lens reads the price into it, so a price move is a sideways step. One
+    exception: a cash-burning name priced at `PRE_REVENUE_PS` times its sales
+    or more is judged early (`_unsold`), so a price move across that line
+    takes its quality away or gives it one.
     """
     out = dict(metrics)
     if not factor or factor <= 0 or factor != factor:
@@ -1149,15 +1193,20 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     median = _num(metrics, "op_margin_median")
     change = _num(metrics, "op_margin_change")
     if s.stage == MATURE and s.lens == STANDARD:
+        margin = _num(metrics, "op_margin")
         if _at_peak(metrics):
             out.append(R_PEAK_MARGIN)
-        if (
+        elif (
             change is not None
             and median is not None
             and median > 0
             and change <= -MARGIN_SLIDE
             and -change >= MARGIN_SLIDE_SHARE * median
+            and (margin is None or margin < median)
         ):
+            # The slide is first filed year to last; a margin today above
+            # the years' median is a cycle coming off an older top (Marathon
+            # Petroleum, Suncor), which the peak reads, not a sliding one.
             out.append(R_MARGIN_FALLING)
     if s.stage == MATURE and s.lens != FINANCIAL:
         # A bank's "sales" are its interest and fees, which follow rates.
@@ -1184,14 +1233,15 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
         and s.lens != FINANCIAL
     ):
         out.append(R_DEBT)
-    # A landlord paying out its earnings is the law; a lender's free cash
-    # flow is not what pays it, and a utility's is net of the capex its
-    # debt funds on purpose.
+    # A landlord paying out its earnings is the law, and its free cash flow
+    # is net of the buildings it buys (Landsec's dividend read twice it); a
+    # lender's free cash flow is not what pays it, and a utility's is net of
+    # the capex its debt funds on purpose.
     payout = _num(metrics, "payout_ratio")
     covered = _num(metrics, "dividend_fcf")
     short_of_cash = (
         covered is not None
-        and s.lens not in (FINANCIAL, UTILITY)
+        and s.lens not in (FINANCIAL, UTILITY, REAL_ESTATE)
         and (
             covered > DIVIDEND_FCF_HARD
             or (covered > DIVIDEND_FCF_MAX and (payout is None or payout > PAYOUT_TIGHT))
