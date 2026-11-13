@@ -91,6 +91,39 @@ def test_extension_gates_which_parsers_are_tried():
     assert not found.recognised  # unreadable, but reported rather than raised
 
 
+def _workbook(text: str) -> bytes:
+    import io
+
+    import openpyxl
+
+    book = openpyxl.Workbook()
+    for line in text.strip().splitlines():
+        book.active.append(line.split(";"))
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+def test_a_workbook_named_csv_is_read_as_the_workbook_it_is():
+    """A Revolut .xlsx arrived named .csv (2026-11-11): the CSV reader choked
+    on the zip, under the broker the reader picked and under none."""
+    book = _workbook(UNKNOWN_CSV)
+    for prefer in (None, "generic", "revolut"):
+        found = autodetect.read("extracto.csv", book, _StubProvider(), "k",
+                                prefer=prefer)
+        assert found.platform == autodetect.LLM_KEY, prefer
+        tx = found.result.transactions[0]
+        assert (tx.date, tx.ticker, tx.action, tx.price) == (
+            "2024-01-02", "AAPL", "buy", 180.5), prefer
+
+
+def test_a_csv_keeps_its_name():
+    assert autodetect._true_name("t212.csv", T212_CSV.encode()) == "t212.csv"
+    assert autodetect._true_name("a.pdf", b"%PDF-1.7") == "a.pdf"
+    assert autodetect._true_name("a.xlsm", b"PK\x03\x04") == "a.xlsm"
+    assert autodetect._true_name("statement", b"%PDF-1.7") == "statement.pdf"
+
+
 def test_a_parser_that_raises_is_treated_as_declining():
     """One broken parser must not take the whole cascade down with it."""
     from stocks.portfolio import platforms
