@@ -82,14 +82,17 @@ _YEAR = 252
 _MONEY_MARKET_RE = re.compile(
     r"overnight|money[- ]market|€STR|\bESTR\b|\bSOFR\b|\bSONIA\b"
     r"|\b0-1 ?y(ea)?rs?\b|\b0-[136] ?m(onths?)?\b|\b1-3 ?m(onths?)?\b"
-    r"|t-bill|treasury bills?|geldmarkt|mon[eé]taire|monetari|liquidity",
+    r"|t-bill|treasury bills?|geldmarkt|mon[eé]taire|monetari|liquidity"
+    r"|tr[eé]sorerie|tesorer[ií]a",
     re.IGNORECASE,
 )
 # No bare "government" or "municipal": a US money-market fund is often called
 # "Government Cash Reserves", and its asset mix and price say what it is.
 _BOND_RE = re.compile(
     r"\bbonds?\b|treasur|fixed income|aggregate|high yield|renta fija"
-    r"|\bgilts?\b|\bgovt\b|\bobligations?\b|anleihen",
+    r"|\bgilts?\b|\bgovt\b|\bobligations?\b|anleihen"
+    # Morningstar's abbreviations in a fund's NAV-line name ("Global Gvt Bd")
+    r"|\bgvt\b|\bbd\b",
     re.IGNORECASE,
 )
 

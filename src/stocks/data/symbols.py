@@ -35,9 +35,25 @@ from stocks.fuzzy import MIN_QUERY
 
 SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
 
-# Tradable instruments only — Yahoo also returns mutual funds, futures and
-# currencies for a plain word query, none of which the app can chart.
-QUOTE_TYPES = {"EQUITY", "ETF"}
+# What a reader can own and the app can price. Yahoo also returns futures,
+# currencies and indices for a plain word query, which it cannot.
+#
+# MUTUALFUND is a non-listed fund (Pictet-Security, Cobas Internacional,
+# Vanguard Global Stock Index): Yahoo keeps its daily NAV under a Morningstar
+# id (`is_nav_line`), which charts and prices like any other line. Without it
+# the search offered only the fund's German floor quotes, which carry no
+# prices, and an ISIN from the broker found nothing at all.
+QUOTE_TYPES = {"EQUITY", "ETF", "MUTUALFUND"}
+
+# A broker's bare code (SIE, BOY) is always a listed share or ETF, never a
+# NAV line, so code resolution keeps to those and no fund can take a code.
+CODE_TYPES = {"EQUITY", "ETF"}
+
+FUND_TYPES = {"ETF", "MUTUALFUND"}
+
+# Morningstar's id, as Yahoo quotes a fund's NAV: 0P0000XMWU.F (Frankfurt
+# feed), 0P0000RU81.L, 0P0001CB1C (bare, Pink sheets).
+_NAV_LINE = re.compile(r"^0P[0-9A-Z]{8}(\.[A-Z]{1,3})?$")
 
 # This runs per keystroke behind a cache, so it must fail FAST and then stay
 # quiet: Yahoo throttles datacenter egress IPs, and a search field
@@ -148,7 +164,10 @@ def search_rows(query: str, limit: int = 6) -> list[tuple[str, str, str, str]]:
         # longname first: it is the full legal name, spelled the same on every
         # venue ("Mips AB (publ)"), while shortname is a 30-char truncation of
         # whatever the local exchange prints ("ASML Holding N.V. - New York Re").
+        # A NAV line's shortname is its own id ("0P0000XMWU.F"), not a name.
         short = _clean(str(row.get("shortname") or ""))
+        if short.upper() == symbol.upper():
+            short = ""
         long = _clean(str(row.get("longname") or ""))
         name = long or short or symbol
         keys = {k for k in (_norm(long), _norm(short)) if k} or {_norm(symbol)}
@@ -158,9 +177,11 @@ def search_rows(query: str, limit: int = 6) -> list[tuple[str, str, str, str]]:
         out.append(
             (symbol, name, str(row.get("exchDisp") or ""), str(row.get("quoteType")))
         )
-        if len(out) >= limit:
-            break
-    return out
+    # A fund's German floor quote (P3IE.MU for Pictet-Security) is a line
+    # nobody trades and Yahoo keeps no prices for; its NAV line is the one to
+    # open, so the floors go after it. Shares keep Yahoo's order.
+    out.sort(key=lambda r: r[3] in FUND_TYPES and on_floor(r[0]))
+    return out[:limit]
 
 
 # ------------------------------------------------------------------ ISINs
@@ -283,6 +304,10 @@ def symbol_for_isin(isin: str) -> str | None:
         _isin_misses.add(key)
         return None
     symbol = found[0]
+    if rows[0].get("quoteType") == "MUTUALFUND" and on_floor(symbol):
+        # A fund's ISIN is sometimes answered with a floor quote first
+        # ("IE00BYX5NX33.SG", no prices) and its NAV line below it.
+        symbol = next((s for s in found if not on_floor(s)), symbol)
     if key.startswith("US"):
         # A US security's ISIN is regularly answered with a European line
         # first ("US7223041028" -> "9PDA.SG", Stuttgart). The home listing is
@@ -319,7 +344,7 @@ def _us_home_by_name(row: dict, fallback: str) -> str:
             if (
                 symbol
                 and "." not in symbol
-                and found.get("quoteType") in QUOTE_TYPES
+                and found.get("quoteType") in CODE_TYPES
                 and name.startswith(stem)
             ):
                 return symbol
@@ -459,8 +484,18 @@ def _suffix(symbol: str) -> str:
 
 
 def on_floor(symbol: str) -> bool:
-    """Whether `symbol` is a German regional floor's line (MEQA.F, OZTA.SG)."""
-    return _suffix((symbol or "").strip().upper()) in _FLOORS
+    """Whether `symbol` is a German regional floor's line (MEQA.F, OZTA.SG).
+
+    A NAV line ends in ".F" too (0P0000XMWU.F), but that suffix is only where
+    Yahoo files Morningstar's feed: it is the fund's own price, not a floor's.
+    """
+    sym = (symbol or "").strip().upper()
+    return _suffix(sym) in _FLOORS and not is_nav_line(sym)
+
+
+def is_nav_line(symbol: str) -> bool:
+    """Whether `symbol` is a fund's NAV as Yahoo quotes it (a Morningstar id)."""
+    return bool(_NAV_LINE.match((symbol or "").strip().upper()))
 
 
 def _issuer(name: str) -> str:
@@ -580,7 +615,7 @@ def _home_by_name(
             symbol = _symbol(found)
             name = _norm(str(found.get("longname") or found.get("shortname") or ""))
             if (
-                found.get("quoteType") not in QUOTE_TYPES
+                found.get("quoteType") not in CODE_TYPES
                 or symbol in tried
                 or symbol == _symbol(row)
                 or _suffix(symbol) not in venues
@@ -653,7 +688,7 @@ def symbol_for_code(
             found = [
                 row
                 for row in rows
-                if row.get("quoteType") in QUOTE_TYPES and _symbol(row) in rank
+                if row.get("quoteType") in CODE_TYPES and _symbol(row) in rank
             ]
             return min(found, key=lambda row: rank[_symbol(row)]) if found else None
 
@@ -731,7 +766,7 @@ def lines_for(query: str, currency: str, limit: int = 6) -> list[tuple[str, str,
     for row in _quotes(query, 12, min_len=1):
         symbol = _symbol(row)
         if (
-            row.get("quoteType") not in QUOTE_TYPES
+            row.get("quoteType") not in CODE_TYPES
             or not on_venues(symbol, cur)
             or any(symbol == seen for seen, _, _ in found)
         ):
@@ -780,7 +815,7 @@ def listings_for_code(code: str, currency: str, limit: int = 6) -> list[str]:
         {
             symbol
             for row in _quotes(wanted, 12, min_len=1)
-            if row.get("quoteType") in QUOTE_TYPES
+            if row.get("quoteType") in CODE_TYPES
             and (symbol := str(row.get("symbol") or "").strip().upper()) in rank
         },
         key=rank.__getitem__,

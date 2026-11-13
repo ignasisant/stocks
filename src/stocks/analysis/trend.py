@@ -31,6 +31,7 @@ import pandas as pd
 from stocks.analysis.indicators import atr, rsi, sma
 from stocks.analysis.sentiment import INDICES, Index
 from stocks.data.crypto import is_crypto
+from stocks.data.symbols import is_nav_line
 from stocks.frames import naive_dates
 
 SMA_LONG = 200
@@ -71,10 +72,11 @@ def benchmark_for(symbol: str, country: str | None = None) -> Index | None:
     German floor (APC.DE is Apple) reads against its own country's index when
     `country` names one, accepting the currency mismatch: the question is
     whether the company led its market, and the DAX does not answer that for
-    Apple. Coin pairs, indices and listings with no mapped market get None.
+    Apple. Coin pairs, indices, a fund's NAV line (0P0000XMWU.F: its suffix
+    is Yahoo's feed, not a market) and listings with no mapped market get None.
     """
     code = symbol.strip().upper()
-    if not code or code.startswith("^") or is_crypto(code):
+    if not code or code.startswith("^") or is_crypto(code) or is_nav_line(code):
         return None
     suffix = code[code.rfind("."):] if "." in code else ""
     if suffix in _GERMAN_FLOORS and country and country != "Germany":

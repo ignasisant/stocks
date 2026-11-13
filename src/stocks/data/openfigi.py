@@ -126,6 +126,14 @@ HOME: dict[str, tuple[str, ...]] = {
     "JP": ("JT",),
 }
 
+# An open-end fund (Pictet-Security, Cobas Internacional) is bought from its
+# manager at the day's NAV. OpenFIGI still lists it under a home exchange and
+# a Bloomberg mnemonic (ES0119199000 -> SM "COBASIN", IE00B03HD191 -> ID
+# "VANGEIS"), which spell a Yahoo symbol that does not exist, and its German
+# floor lines (P3IE.DE) carry no prices. Its line is Yahoo's NAV line, which
+# only Yahoo's own search knows, so no listing is offered for one here.
+OPEN_END = "Open-End Fund"
+
 _ISIN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 _TICKER = re.compile(r"^[A-Z0-9][A-Z0-9-]{0,9}$")
 # Milan's EuroTLX lines of foreign shares: "1AAPL", "1MSFT". Not the issuer's.
@@ -150,6 +158,14 @@ class Security:
     kind: str  # OpenFIGI securityType2: "Common Stock", "Mutual Fund" (ETFs) ...
     figi: str  # composite FIGI
     listings: tuple[Listing, ...]
+    # securityType, the finer word: "ETP" for an ETF, "Open-End Fund" for a
+    # fund that is bought from its manager at NAV — both "Mutual Fund" above.
+    type: str = ""
+
+    @property
+    def open_end(self) -> bool:
+        """A fund dealt at NAV, not on an exchange (`OPEN_END`)."""
+        return self.type == OPEN_END
 
 
 def yahoo_symbol(exch: str, ticker: str) -> str | None:
@@ -228,6 +244,8 @@ def clear() -> None:
 def _fresh(entry: dict | None, now: float) -> bool:
     if not entry:
         return False
+    if entry.get("kind") == "Mutual Fund" and "type" not in entry:
+        return False  # kept before `type` was: ETF or open-end fund, unknown
     ttl = MISS_TTL_S if entry.get("miss") else HIT_TTL_S
     return now - float(entry.get("at", 0)) < ttl
 
@@ -246,6 +264,7 @@ def _security(isin: str, entry: dict) -> Security | None:
         str(entry.get("kind", "")),
         str(entry.get("figi", "")),
         listings,
+        str(entry.get("type", "")),
     )
 
 
@@ -265,6 +284,7 @@ def _entry(rows: list[dict], now: float) -> dict:
         "name": str(first.get("name", "")),
         "kind": str(first.get("securityType2") or first.get("securityType") or ""),
         "figi": str(first.get("compositeFIGI") or ""),
+        "type": str(first.get("securityType") or ""),
         "listings": keep,
     }
 
@@ -421,12 +441,13 @@ def home(isin: str) -> str | None:
     """The Yahoo symbol of the ISIN's primary listing, or None.
 
     Only where the country prefix names one (`HOME`); an ETF's or a shell
-    company's ISIN does not, and is left to `candidates` and Yahoo.
+    company's ISIN does not, and is left to `candidates` and Yahoo. Never for
+    an open-end fund (`OPEN_END`), whose "home" is a Bloomberg mnemonic.
     """
     key = (isin or "").strip().upper()
     exchanges = HOME.get(key[:2])
     sec = securities([key]).get(key) if exchanges else None
-    if not sec or not exchanges:
+    if not sec or not exchanges or sec.open_end:
         return None
     found = _rank(sec, exchanges)
     return found[0].symbol if found else None
@@ -442,7 +463,7 @@ def candidates(isin: str, venues: tuple[str, ...]) -> list[str]:
     """
     key = (isin or "").strip().upper()
     sec = securities([key]).get(key)
-    if not sec:
+    if not sec or sec.open_end:
         return []
     primary = home(key)
     out: list[str] = [primary] if primary and _suffix_in(primary, venues) else []
