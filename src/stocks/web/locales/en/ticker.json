@@ -31,6 +31,8 @@
   "ticker.period_1y": "1Y",
   "ticker.period_2y": "2Y",
   "ticker.period_5y": "5Y",
+  "ticker.period_10y": "10Y",
+  "ticker.period_20y": "20Y",
   "ticker.period_max": "Max",
   "ticker.chart_type": "Chart type",
   "ticker.chart_candles": "Candles",

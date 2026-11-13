@@ -52,7 +52,7 @@ def _synthetic(bars: int, interval: str) -> pd.DataFrame:
 
 def test_every_label_downloads_the_slowest_averages_warmup():
     for label, (period, interval) in PERIODS.items():
-        if label == "max":  # everything there is: no bars before the first
+        if period == "max":  # everything there is: no bars before the first
             continue
         per_session = _PER_SESSION[interval]
         downloaded = _SESSIONS[period] * per_session
@@ -153,6 +153,21 @@ def test_the_first_bar_stays_the_listing_day():
     assert out.index[0] == df.index[0]
     assert out["Close"].iloc[0] == df["Close"].iloc[0]
     assert out.attrs["first_trade"] == "2004-01-05"
+
+
+def test_a_decade_off_an_old_listing_is_weekly_from_its_own_first_day():
+    """10Y and 20Y are cut from the "max" download and drawn as coarse as it
+    is: ten years of dailies is twice MAX_BARS. The window's first bar is its
+    first session, and the listing date is not taken from it."""
+    df = _ohlc("1980-12-12", "2024-06-28")
+    for label in ("10y", "20y"):
+        out = shape(df, label)
+        assert len(out) <= MAX_BARS
+        assert out.index[0] >= df.index[-1] - WINDOW[label]
+        assert out.attrs.get("first_trade") != str(out.index[0].date())
+    assert bar_interval(shape(df, "10y"), "10y") == "1wk"
+    assert ranges(df, "1980-12-12")[-3:] == ["10y", "20y", "max"]
+    assert "20y" not in ranges(df, "2010-01-04")
 
 
 def test_a_bucket_is_dated_by_its_last_session():

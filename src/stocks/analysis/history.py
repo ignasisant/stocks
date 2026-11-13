@@ -35,6 +35,11 @@ PERIODS: dict[str, tuple[str, str]] = {
     "1y": ("2y", "1d"),
     "2y": ("5y", "1d"),
     "5y": ("10y", "1d"),
+    # Decades are cut from the whole history: Yahoo has no 20y/30y period, and
+    # it is the download "max" already holds, so flipping between them is one
+    # fetch.
+    "10y": ("max", "1d"),
+    "20y": ("max", "1d"),
     # Everything since the listing, untrimmed. The one label with no run-up:
     # there are no bars before the first one, so its SMA200 opens 200 sessions
     # in, which is also where the stock's own history gives it one.
@@ -51,11 +56,14 @@ WINDOW: dict[str, pd.DateOffset] = {
     "1y": pd.DateOffset(years=1),
     "2y": pd.DateOffset(years=2),
     "5y": pd.DateOffset(years=5),
+    "10y": pd.DateOffset(years=10),
+    "20y": pd.DateOffset(years=20),
 }
 
 
 # "max" over an old listing is every session since it: ~11,500 daily bars for a
-# stock listed in 1980, 2 MB of JSON and a candle per fraction of a pixel. It is
+# stock listed in 1980, 2 MB of JSON and a candle per fraction of a pixel. It,
+# and a 10y or 20y window cut from it, is
 # drawn at the finest of these bar sizes that stays within MAX_BARS — about
 # five years of dailies, the densest any other label draws — as Yahoo's own
 # "Max" chart goes monthly. Bucket rule per bar size, for `DataFrame.resample`.
@@ -108,7 +116,7 @@ def ranges(df: pd.DataFrame, since: str | None) -> list[str]:
     ]
 
 
-def coarsen(df: pd.DataFrame) -> pd.DataFrame:
+def coarsen(df: pd.DataFrame, label: str = "max") -> pd.DataFrame:
     """A long daily frame regrouped into weekly or monthly bars (see MAX_BARS).
 
     The indicators were computed on the dailies and are sampled, not redone:
@@ -116,8 +124,9 @@ def coarsen(df: pd.DataFrame) -> pd.DataFrame:
     labels draw, read at each month's last session. Each bar is dated by the
     last session it holds, so an event or a fill looked up as "the first bar
     on or after its day" lands in the bucket that contains it. The first bar
-    stays the listing day on its own: the change "since inception" is measured
-    from the first close, and a bucket's close is its last session's.
+    stays the window's first day on its own (the listing day on "max"): the
+    change over the range is measured from the first close, and a bucket's
+    close is its last session's.
 
     The bar size goes in `attrs["interval"]`, the listing date in
     `attrs["first_trade"]` — the first bar no longer spans the whole start.
@@ -134,7 +143,7 @@ def coarsen(df: pd.DataFrame) -> pd.DataFrame:
         buckets = buckets[buckets["_at"].notna()]
         out = pd.concat([dated.iloc[:1], buckets]).set_index("_at")
         out.index.name = df.index.name
-        out.attrs = {**df.attrs, "first_trade": listed(df, "max"), "interval": interval}
+        out.attrs = {**df.attrs, "first_trade": listed(df, label), "interval": interval}
         if len(out) <= MAX_BARS:
             break
     return out
@@ -197,7 +206,8 @@ def shape(df: pd.DataFrame, label: str) -> pd.DataFrame:
     if isinstance(index, pd.DatetimeIndex) and index.tz is not None:
         df = df.copy()
         df.index = index.tz_localize(None)
-    return coarsen(df) if label == "max" else df
+    # Any daily window past MAX_BARS: "max", and the decades cut from it.
+    return df if label in ("1d", "1w") else coarsen(df, label)
 
 
 def bar_interval(df: pd.DataFrame, label: str) -> str:
