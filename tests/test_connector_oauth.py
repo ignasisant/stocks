@@ -340,6 +340,26 @@ def test_a_decision_from_another_origin_is_refused(site, sign_in):
     assert r.status_code == 403
 
 
+def test_an_expired_consent_says_why_in_the_log(site, sign_in, monkeypatch):
+    """A 400 from the consent page is otherwise silent in prod."""
+    from stocks import obs
+
+    warned: list[tuple[str, str]] = []
+    monkeypatch.setattr(obs, "warn", lambda name, **kw: warned.append(
+        (name, kw.get("reason", ""))))
+    sign_in(site, EMAIL)
+    client_id = register(site)["client_id"]
+    page = site.get(authorize(site, client_id, pkce()[1]))
+    r = site.post(
+        oauth.CONSENT_PATH,
+        data={**form_fields(page.text), "req": "stale", "decision": "allow"},
+        headers={"Origin": ORIGIN},
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert warned == [("mcp.consent_refused", "expired")]
+
+
 def test_a_form_drawn_for_someone_else_is_refused(site, sign_in):
     sign_in(site, EMAIL)
     client_id = register(site)["client_id"]
@@ -537,8 +557,39 @@ def test_a_metadata_document_client_connects_without_registering(
     assert fetched == [DOC_URL]  # cached: one fetch for the whole dance
 
 
+def test_a_document_preferring_a_jwt_but_supporting_none_connects(
+    site, sign_in, book, monkeypatch
+):
+    """ChatGPT's document: private_key_jwt preferred, "none" also supported.
+
+    Our metadata offers no JWT method, so it falls back to none; a stray
+    client_assertion on the token request changes nothing.
+    """
+    from stocks.connector import clients
+
+    async def fetch(url: str) -> bytes:
+        return _document(
+            token_endpoint_auth_method="private_key_jwt",
+            token_endpoint_auth_methods_supported=["none", "private_key_jwt"],
+            grant_types=["authorization_code", "refresh_token",
+                         "urn:ietf:params:oauth:grant-type:jwt-bearer"],
+        )
+
+    monkeypatch.setattr(clients, "_fetch_document", fetch)
+    sign_in(site, EMAIL)
+    verifier, challenge = pkce()
+    consent = authorize(site, DOC_URL, challenge)
+    code = code_from(decide(site, consent))
+    r = exchange(site, DOC_URL, code, verifier)
+    assert r.status_code == 200, r.text
+    assert r.json()["refresh_token"]
+
+
 @pytest.mark.parametrize("doc", [
     _document(client_id="https://client.example/other.json"),
+    _document(token_endpoint_auth_method="private_key_jwt"),
+    _document(token_endpoint_auth_method="private_key_jwt",
+              token_endpoint_auth_methods_supported=["private_key_jwt"]),
     _document(client_secret="s3cret"),
     _document(token_endpoint_auth_method="client_secret_post"),
     _document(redirect_uris=["myapp://callback"]),
