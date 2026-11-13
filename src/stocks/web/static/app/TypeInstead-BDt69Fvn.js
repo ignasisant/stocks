@@ -1,1 +1,0 @@
-import{Ut as e,fn as t,vn as n}from"./app-EWV5emkx.js";var r=n();function i({className:n=`ag-btn`}){let i=t();return(0,r.jsx)(`button`,{className:n,onClick:()=>e(i(`import.type_prompt`)),type:`button`,children:i(`import.type_button`)})}export{i as t};
