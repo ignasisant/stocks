@@ -428,6 +428,7 @@ function MoversCard({
           onPick={setRange}
         />
       </div>
+      {folds ? <MoverTally up={gainers.length} down={losers.length} /> : null}
       <div className="hm-split hm-split-tables">
         <MoverTable label={t("home.gainers")} rows={shown.gainers} held={held} />
         <MoverTable label={t("home.losers")} rows={shown.losers} held={held} />
@@ -446,6 +447,38 @@ function MoversCard({
         </button>
       ) : null}
     </Card>
+  );
+}
+
+/**
+ * How many names went up and how many down, over the whole book.
+ *
+ * Drawn only when the tables are cut: with every name on screen the count is
+ * already there to read, and past the cut it is the one thing the rows cannot
+ * say — 30 down and 5 up is a different day from 5 down and 30 up, whatever
+ * the top few did. The bar is the same count at a glance; the text carries it.
+ */
+function MoverTally({ up, down }: { up: number; down: number }) {
+  const t = useT();
+  const total = up + down;
+  return (
+    <div className="hm-tally">
+      <p className="hm-tally-text">
+        <span className="hm-tally-up">{t("home.movers_up", { n: up })}</span>
+        <span aria-hidden="true"> · </span>
+        <span className="hm-tally-down">{t("home.movers_down", { n: down })}</span>
+      </p>
+      {total > 0 ? (
+        <div className="hm-tally-bar" aria-hidden="true">
+          {up > 0 ? (
+            <span className="hm-tally-bar-up" style={{ flexGrow: up }} />
+          ) : null}
+          {down > 0 ? (
+            <span className="hm-tally-bar-down" style={{ flexGrow: down }} />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

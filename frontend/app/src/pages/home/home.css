@@ -108,6 +108,49 @@
   font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
+/* The movers' up/down count over the whole book, shown when the tables cut:
+   a line of figures and a two-segment bar the width of the card. */
+.hm-tally {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.hm-tally-text {
+  margin: 0;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-muted);
+}
+
+.hm-tally-up {
+  color: var(--ag-up);
+  font-weight: 600;
+}
+
+.hm-tally-down {
+  color: var(--ag-down);
+  font-weight: 600;
+}
+
+.hm-tally-bar {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hm-tally-bar-up {
+  flex-basis: 0;
+  background: var(--ag-up);
+}
+
+.hm-tally-bar-down {
+  flex-basis: 0;
+  background: var(--ag-down);
+}
+
 /* The movers card's "show all": a link's look on a button, since it unfolds
    the card in place rather than going anywhere. */
 .hm-more {
