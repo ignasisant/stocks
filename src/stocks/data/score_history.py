@@ -27,11 +27,11 @@ from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR
 
 DIR = DATA_DIR / "scores"
-#: One file per scale of the review engine's scores: a point recorded under
-#: another formula would draw a move the business never made. Bumped
-#: 2026-11-12 when quality stopped reading the FCF yield and Credit Services
-#: lenders moved to the financial lens.
-NAME = "history-2.json"
+#: One file per scale of the review engine's scores (`review.SCALE`, which
+#: this layer cannot import; `tests/test_kpis.py` holds the two together): a
+#: point recorded under another formula would draw a move the business never
+#: made.
+NAME = "history-3.2.json"
 
 DAILY_DAYS = 45
 KEEP_DAYS = 800

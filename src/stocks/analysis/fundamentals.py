@@ -20,6 +20,7 @@ from typing import Literal
 import pandas as pd
 
 from stocks.analysis import ranking
+from stocks.analysis.kpis import kpi
 from stocks.analysis.moat import moat_score
 from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
@@ -521,8 +522,7 @@ def quarterly_eps(raw: RawFundamentals) -> pd.DataFrame:
     year_end = _finite(raw.info.get("lastFiscalYearEnd"))
     end = datetime.fromtimestamp(year_end, tz=UTC).date() if year_end else None
     df.index = [
-        fiscal_quarter(c.date(), end) if hasattr(c, "date") else str(c)
-        for c in df.index
+        fiscal_quarter(c.date(), end) if hasattr(c, "date") else str(c) for c in df.index
     ]
     df = df.apply(pd.to_numeric, errors="coerce")
     return df.iloc[::-1]  # yfinance is newest-first; charts read left-to-right
@@ -1040,9 +1040,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
             intangible = _latest(raw.balance, "Goodwill And Other Intangible Assets")
             tangible = common - (intangible or 0.0)
     has_tangible = tangible is not None and tangible > 0
-    m["ptbv"] = (
-        cap / (tangible * rate) if has_tangible and cap and rate else None
-    )
+    m["ptbv"] = cap / (tangible * rate) if has_tangible and cap and rate else None
     # ...earned for the common owners: after the preferred dividends.
     earned_common = _latest(raw.income, "Net Income Common Stockholders")
     if earned_common is None:
@@ -1083,29 +1081,10 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
 # Why a KPI `compute_metrics` left blank is blank. The company's own reasons
 # first — a loss has no P/E per growth, no estimates no forward P/E — then the
 # feed's: no statements, too few years, no rate between two currencies, or a
-# Yahoo field that never came.
+# Yahoo field that never came. Where each key comes from is `kpis.KPIS`.
 MissingReason = Literal[
     "loss", "no_growth", "no_estimates", "no_statements", "short_history", "fx", "feed"
 ]
-_FROM_STATEMENTS = {
-    "roic": "income",
-    "roic_ex_goodwill": "income",
-    "fcf_yield": "cashflow",
-    "owner_fcf_yield": "cashflow",
-    "net_debt_ebitda": "income",
-    "share_dilution": "income",
-    "revenue_cagr": "income",
-    "net_income_cagr": "income",
-    "fcf_cagr": "cashflow",
-    "cash_conversion": "cashflow",
-    "ptbv": "balance",
-    "rotce": "balance",
-}
-_FROM_SERIES = frozenset(
-    {"share_dilution", "revenue_cagr", "net_income_cagr", "fcf_cagr"})
-_CONVERTED = frozenset(
-    {"fcf_yield", "owner_fcf_yield", "ev_ebitda", "ev_sales", "pb", "ptbv"})
-_ON_EBITDA = frozenset({"net_debt_ebitda", "ev_ebitda"})
 
 
 def missing_reasons(
@@ -1116,14 +1095,16 @@ def missing_reasons(
 
     info = raw.info
     ebitda = _latest(raw.income, "EBITDA")
-    split = str(info.get("financialCurrency") or "").upper() != str(
-        info.get("currency") or ""
-    ).upper()
+    split = (
+        str(info.get("financialCurrency") or "").upper()
+        != str(info.get("currency") or "").upper()
+    )
     out: dict[str, MissingReason] = {}
     for key in keys:
         if metrics.get(key) is not None:
             continue
-        statement = getattr(raw, _FROM_STATEMENTS.get(key, ""), None)
+        source = kpi(key)
+        statement = getattr(raw, source.statement or "", None)
         if key == "peg":
             pe = metrics.get("pe_fwd")
             pe = metrics.get("pe_ttm") if pe is None else pe
@@ -1133,15 +1114,15 @@ def missing_reasons(
                 out[key] = "no_growth"
             else:
                 out[key] = "feed"
-        elif key in _ON_EBITDA and ebitda is not None and ebitda <= 0:
+        elif source.on_ebitda and ebitda is not None and ebitda <= 0:
             out[key] = "loss"
         elif key == "pe_fwd" and info.get("forwardEps") is None:
             out[key] = "no_estimates"
         elif isinstance(statement, pd.DataFrame) and statement.empty:
             out[key] = "no_statements"
-        elif key in _FROM_SERIES:
+        elif source.series:
             out[key] = "short_history"
-        elif key in _CONVERTED and split and _statement_fx(info) is None:
+        elif source.converted and split and _statement_fx(info) is None:
             out[key] = "fx"
         else:
             out[key] = "feed"
@@ -1301,42 +1282,90 @@ def format_value(key: str, value: float | str | None) -> str:
 # Percentage metrics carry fraction values (0.15 == 15%), so bands match.
 _VERDICT_BANDS: dict[str, list[tuple[float, str, str]]] = {
     # valuation multiples — lower is cheaper
-    "pe_ttm": [(15, "cheap", "green"), (25, "fair", "orange"),
-               (40, "expensive", "red"), (float("inf"), "very expensive", "red")],
-    "pe_fwd": [(15, "cheap", "green"), (25, "fair", "orange"),
-               (40, "expensive", "red"), (float("inf"), "very expensive", "red")],
-    "peg": [(1, "cheap", "green"), (2, "fair", "orange"),
-            (float("inf"), "expensive", "red")],
-    "pb": [(1.5, "cheap", "green"), (4, "fair", "orange"),
-           (float("inf"), "expensive", "red")],
-    "ev_ebitda": [(10, "cheap", "green"), (16, "fair", "orange"),
-                  (float("inf"), "expensive", "red")],
-    "ev_sales": [(3, "cheap", "green"), (8, "fair", "orange"),
-                 (float("inf"), "expensive", "red")],
-    "ptbv": [(1, "cheap", "green"), (2.5, "fair", "orange"),
-             (float("inf"), "expensive", "red")],
+    "pe_ttm": [
+        (15, "cheap", "green"),
+        (25, "fair", "orange"),
+        (40, "expensive", "red"),
+        (float("inf"), "very expensive", "red"),
+    ],
+    "pe_fwd": [
+        (15, "cheap", "green"),
+        (25, "fair", "orange"),
+        (40, "expensive", "red"),
+        (float("inf"), "very expensive", "red"),
+    ],
+    "peg": [
+        (1, "cheap", "green"),
+        (2, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "pb": [
+        (1.5, "cheap", "green"),
+        (4, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ev_ebitda": [
+        (10, "cheap", "green"),
+        (16, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ev_sales": [
+        (3, "cheap", "green"),
+        (8, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
+    "ptbv": [
+        (1, "cheap", "green"),
+        (2.5, "fair", "orange"),
+        (float("inf"), "expensive", "red"),
+    ],
     # quality / returns — higher is better (fraction values)
-    "rotce": [(0.10, "weak", "red"), (0.15, "decent", "orange"),
-              (float("inf"), "strong", "green")],
-    "roic": [(0.08, "weak", "red"), (0.15, "decent", "orange"),
-             (float("inf"), "strong", "green")],
-    "roe": [(0.10, "weak", "red"), (0.20, "decent", "orange"),
-            (float("inf"), "strong", "green")],
-    "fcf_yield": [(0.02, "low", "red"), (0.05, "decent", "orange"),
-                  (float("inf"), "high", "green")],
+    "rotce": [
+        (0.10, "weak", "red"),
+        (0.15, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "roic": [
+        (0.08, "weak", "red"),
+        (0.15, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "roe": [
+        (0.10, "weak", "red"),
+        (0.20, "decent", "orange"),
+        (float("inf"), "strong", "green"),
+    ],
+    "fcf_yield": [
+        (0.02, "low", "red"),
+        (0.05, "decent", "orange"),
+        (float("inf"), "high", "green"),
+    ],
     # leverage — lower is safer; below zero is net cash
-    "net_debt_ebitda": [(0, "net cash", "green"), (1, "low", "green"),
-                        (3, "moderate", "orange"), (float("inf"), "high", "red")],
+    "net_debt_ebitda": [
+        (0, "net cash", "green"),
+        (1, "low", "green"),
+        (3, "moderate", "orange"),
+        (float("inf"), "high", "red"),
+    ],
     # dilution CAGR — negative = buybacks (good), positive = dilution
-    "share_dilution": [(-0.005, "buybacks", "green"), (0.005, "flat", "gray"),
-                       (0.02, "dilutive", "orange"),
-                       (float("inf"), "heavy dilution", "red")],
+    "share_dilution": [
+        (-0.005, "buybacks", "green"),
+        (0.005, "flat", "gray"),
+        (0.02, "dilutive", "orange"),
+        (float("inf"), "heavy dilution", "red"),
+    ],
     # momentum — RSI(14): <30 oversold, 30-70 neutral, >70 overbought
-    "rsi": [(30, "oversold", "green"), (70, "neutral", "gray"),
-            (float("inf"), "overbought", "red")],
+    "rsi": [
+        (30, "oversold", "green"),
+        (70, "neutral", "gray"),
+        (float("inf"), "overbought", "red"),
+    ],
     # moat evidence score — thresholds mirror stocks.analysis.moat
-    "moat": [(45, "no moat", "red"), (70, "narrow", "orange"),
-             (float("inf"), "wide", "green")],
+    "moat": [
+        (45, "no moat", "red"),
+        (70, "narrow", "orange"),
+        (float("inf"), "wide", "green"),
+    ],
 }
 
 
@@ -1412,12 +1441,30 @@ def comparables_table(metrics: list[dict]) -> pd.DataFrame:
 # Comps ranking direction per KPI. Size (market cap, EV), price and raw FCF
 # say nothing about who screens better, so they stay out of the score.
 _RANK_LOWER_BETTER = frozenset(
-    {"pe_ttm", "pe_fwd", "peg", "pb", "ev_ebitda", "ev_sales",
-     "net_debt_ebitda", "share_dilution"}
+    {
+        "pe_ttm",
+        "pe_fwd",
+        "peg",
+        "pb",
+        "ev_ebitda",
+        "ev_sales",
+        "net_debt_ebitda",
+        "share_dilution",
+    }
 )
 _RANK_HIGHER_BETTER = frozenset(
-    {"roe", "roic", "gross_margin", "op_margin", "net_margin", "fcf_yield",
-     "cash_conversion", "revenue_cagr", "net_income_cagr", "fcf_cagr"}
+    {
+        "roe",
+        "roic",
+        "gross_margin",
+        "op_margin",
+        "net_margin",
+        "fcf_yield",
+        "cash_conversion",
+        "revenue_cagr",
+        "net_income_cagr",
+        "fcf_cagr",
+    }
 )
 # A ticker missing most KPIs can't win on the two it happens to have.
 _RANK_MIN_METRICS = 5
@@ -1438,16 +1485,40 @@ _RANK_LOSS_LAST = ("pe_ttm", "pe_fwd")
 # what its own lens reads, against the names that report the same.
 _LENS_BLANK = {
     "financial": frozenset(
-        {"ev_ebitda", "ev_sales", "gross_margin", "op_margin", "fcf_yield",
-         "cash_conversion", "fcf_cagr", "net_debt_ebitda", "roic", "peg"}
+        {
+            "ev_ebitda",
+            "ev_sales",
+            "gross_margin",
+            "op_margin",
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "net_debt_ebitda",
+            "roic",
+            "peg",
+        }
     ),
     "real_estate": frozenset(
-        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
-         "ev_sales", "peg"}
+        {
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "roic",
+            "gross_margin",
+            "ev_sales",
+            "peg",
+        }
     ),
     "utility": frozenset(
-        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
-         "ev_sales", "peg"}
+        {
+            "fcf_yield",
+            "cash_conversion",
+            "fcf_cagr",
+            "roic",
+            "gross_margin",
+            "ev_sales",
+            "peg",
+        }
     ),
 }
 

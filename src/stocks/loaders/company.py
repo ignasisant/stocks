@@ -9,6 +9,7 @@ import time
 from datetime import date
 
 from stocks import obs
+from stocks.analysis import kpis
 from stocks.cache import disk_path, read_entry, ttl_cache, write_entry
 from stocks.loaders.bars import _EVENTS_TTL
 from stocks.loaders.names import display_symbol
@@ -68,14 +69,15 @@ _METRICS_TTL = 4 * 3600.0
 _metrics_gate = threading.BoundedSemaphore(6)
 
 
-# The persisted name carries the metrics' version: entries are mirrored to the
-# bucket and read back by a new process, so a dict built before a KPI was
-# added or redefined (2026-11-12: `cash_roc`, `loan_share`, `equity_share`,
-# `property_share`, an ADR's and a pence line's forward P/E) would otherwise be
-# scored, and recorded in the map's history, for up to a day after the deploy
-# that changed them.
+# The persisted name carries the metrics' version (`kpis.VERSION`): entries
+# are mirrored to the bucket and read back by a new process, so a dict built
+# before a KPI was added or redefined would otherwise be scored, and recorded
+# in the map's history, for up to a day after the deploy that changed them.
 @ttl_cache(
-    _METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics-3"
+    _METRICS_TTL,
+    max_entries=256,
+    stale_s=20 * 3600.0,
+    persist=f"review_metrics-{kpis.VERSION}",
 )
 def review_metrics(ticker: str) -> dict:
     """`compute_metrics` over `fundamentals(ticker)`, memoized as the dict."""
@@ -94,7 +96,7 @@ def review_metrics(ticker: str) -> dict:
     24 * 3600.0,
     max_entries=256,
     stale_s=7 * 86400.0,
-    persist="review_history-2",
+    persist=f"review_history-{kpis.VERSION}",
     disk_max=128,
 )
 def review_history(ticker: str) -> list[dict]:

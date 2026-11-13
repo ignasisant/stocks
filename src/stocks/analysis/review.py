@@ -109,6 +109,19 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
+from stocks.analysis import kpis
+from stocks.analysis.kpis import business
+
+#: The scores' scale: the metrics' definition (`kpis.VERSION`) and the
+#: formula over them. A point recorded under another scale would draw a move
+#: the business never made, so the score history is kept per scale
+#: (`score_history.NAME`). Bump `FORMULA` when a leg, a range or a lens
+#: moves; `tests/test_kpis.py` pins a fingerprint of the scores, so a change
+#: that moves them fails until it is bumped. 2: 2026-11-12, quality stopped
+#: reading the FCF yield and Credit Services lenders took the financial lens.
+FORMULA = 2
+SCALE = f"{kpis.VERSION}.{FORMULA}"
+
 # Held
 SELL = "sell"
 TRIM = "trim"
@@ -861,8 +874,38 @@ def _scaling(metrics: Mapping, growth: float) -> bool:
     return growth + fcf / revenue >= SCALING_RULE_40
 
 
+def _standard_quality(biz: Mapping, floated: bool) -> list[float]:
+    """The standard lens' quality legs, off the business alone (`business`):
+    return on capital, margin, cash on the capital, moat, rule of 40."""
+    # Cash on the capital, not on the price: with the FCF yield here a
+    # falling share price raised quality, and the map's two axes shared an
+    # input (Adobe's quality read its cheapness, Microsoft's its dearness).
+    cash = None if floated else _num(biz, "cash_roc")
+    quality = [
+        _lin(v, lo, hi)
+        for v, lo, hi in (
+            (_roic(biz), 0.0, 0.40),
+            (_num(biz, "op_margin"), 0.0, 0.40),
+            (cash, 0.0, 0.20),
+        )
+        if v is not None
+    ]
+    if (moat := _num(biz, "moat")) is not None:
+        quality.append(_clamp(moat))
+    rule_40 = _rule_40(biz, floated)
+    if quality and rule_40 is not None:
+        quality.append(_lin(rule_40, 0.0, 0.60))
+    return quality
+
+
 def score(metrics: Mapping) -> Scores:
-    """Quality and cheapness, 0-100, off `compute_metrics` output."""
+    """Quality and cheapness, 0-100, off `compute_metrics` output.
+
+    Each lens' quality reads `kpis.business(metrics)`, which raises on a
+    price: quality is the business, and only cheapness moves with the share.
+    Two inputs cross over, both on purpose: the stage (`_unsold` reads the
+    price-to-sales) and whether the cash flow is a float (`floated`, which
+    needs a yield to have been computed)."""
     view = lens(metrics)
     if view == FINANCIAL:
         return _financial_scores(metrics)
@@ -873,9 +916,6 @@ def score(metrics: Mapping) -> Scores:
     phase = stage(metrics)
     if phase == EARLY:
         return Scores(None, None, stage=EARLY)
-    roic = _roic(metrics)
-    moat = _num(metrics, "moat")
-    margin = _num(metrics, "op_margin")
     fcf = _fcf_yield(metrics)
     pe, trailing = _pe(metrics)
     ev = _num(metrics, "ev")
@@ -899,21 +939,7 @@ def score(metrics: Mapping) -> Scores:
             _growth_scores(metrics, fcf, pe, suspect, floated), trailing_pe=trailing
         )
 
-    # Cash on the capital, not on the price: with the FCF yield here a
-    # falling share price raised quality, and the map's two axes shared an
-    # input (Adobe's quality read its cheapness, Microsoft's its dearness).
-    cash = None if floated else _num(metrics, "cash_roc")
-    quality = [
-        _lin(v, lo, hi)
-        for v, lo, hi in ((roic, 0.0, 0.40), (margin, 0.0, 0.40), (cash, 0.0, 0.20))
-        if v is not None
-    ]
-    if moat is not None:
-        quality.append(_clamp(moat))
-    rule_40 = _rule_40(metrics, floated)
-    if quality and rule_40 is not None:
-        quality.append(_lin(rule_40, 0.0, 0.60))
-
+    quality = _standard_quality(business(metrics), floated)
     cheap: list[float] = []
     peak = _at_peak(metrics)
     if peak:
@@ -950,16 +976,10 @@ def score(metrics: Mapping) -> Scores:
     )
 
 
-# The KPIs that are a price over something the filings fix, and the ones that
-# are something over a price: at another price the first scale with it and
-# the second against it. Everything else in `compute_metrics` is the business.
-_PRICED = ("price", "market_cap", "pe_ttm", "pe_fwd", "pb", "ptbv", "ps", "turnover_usd")
-_YIELDS = ("fcf_yield", "owner_fcf_yield", "dividend_yield")
-
-
 def at_price(metrics: Mapping, factor: float) -> dict:
     """`metrics` as they read with the share price at `factor` times the one
-    they were taken at, the business unchanged.
+    they were taken at, the business unchanged: the priced kinds of
+    `kpis.KPIS` scale with it, the yields against it, the rest stays.
 
     The map's trail where no score was recorded that far back: the price is
     known for every day, the statements of that day are not, so this is where
@@ -974,10 +994,10 @@ def at_price(metrics: Mapping, factor: float) -> dict:
     out = dict(metrics)
     if not factor or factor <= 0 or factor != factor:
         return out
-    for key in _PRICED:
+    for key in kpis.PRICED:
         if (value := _num(metrics, key)) is not None:
             out[key] = value * factor
-    for key in _YIELDS:
+    for key in kpis.YIELDS:
         if (value := _num(metrics, key)) is not None:
             out[key] = value / factor
     ev = _num(metrics, "ev")
@@ -1012,17 +1032,11 @@ def _pb_for_roe(metrics: Mapping) -> float | None:
     return pb / ((roe - BANK_GROWTH) / (COST_OF_EQUITY - BANK_GROWTH))
 
 
-def _financial_scores(metrics: Mapping) -> Scores:
-    """The financial lens: what the book earns, and what is paid for it."""
-    roe = _num(metrics, "roe")
-    earnings = _num(metrics, "net_income_cagr")
-    dilution = _num(metrics, "share_dilution")
-    pe, trailing = _pe(metrics)
-    # A bank is priced on its tangible book when the filings give one.
-    pb = _num(metrics, "ptbv") or _num(metrics, "pb")
-    fair = _pb_for_roe(metrics)
-
-    quality = [
+def _financial_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    earnings = _num(biz, "net_income_cagr")
+    dilution = _num(biz, "share_dilution")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.04, 0.18),
@@ -1031,6 +1045,16 @@ def _financial_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _financial_scores(metrics: Mapping) -> Scores:
+    """The financial lens: what the book earns, and what is paid for it."""
+    pe, trailing = _pe(metrics)
+    # A bank is priced on its tangible book when the filings give one.
+    pb = _num(metrics, "ptbv") or _num(metrics, "pb")
+    fair = _pb_for_roe(metrics)
+
+    quality = _financial_quality(business(metrics))
     cheap: list[float] = []
     if pe is not None:
         cheap.append(_lin(-pe, -16.0, -6.0) if pe > 0 else 0.0)
@@ -1049,18 +1073,12 @@ def _financial_scores(metrics: Mapping) -> Scores:
     )
 
 
-def _real_estate_scores(metrics: Mapping) -> Scores:
-    """The landlord's lens: rents that grow without new shares, at a margin,
-    bought near book and on what they pay."""
-    roe = _num(metrics, "roe")
-    growth = _num(metrics, "revenue_cagr")
-    dilution = _num(metrics, "share_dilution")
-    margin = _num(metrics, "op_margin")
-    pe, trailing = _pe(metrics)
-    pb = _num(metrics, "pb")
-    ev_ebitda = _num(metrics, "ev_ebitda")
-
-    quality = [
+def _real_estate_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    growth = _num(biz, "revenue_cagr")
+    dilution = _num(biz, "share_dilution")
+    margin = _num(biz, "op_margin")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.0, 0.10),
@@ -1070,6 +1088,16 @@ def _real_estate_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _real_estate_scores(metrics: Mapping) -> Scores:
+    """The landlord's lens: rents that grow without new shares, at a margin,
+    bought near book and on what they pay."""
+    pe, trailing = _pe(metrics)
+    pb = _num(metrics, "pb")
+    ev_ebitda = _num(metrics, "ev_ebitda")
+
+    quality = _real_estate_quality(business(metrics))
     cheap: list[float] = []
     if pb is not None and pb > 0:
         cheap.append(_lin(-pb, -2.0, -0.7))
@@ -1090,18 +1118,12 @@ def _real_estate_scores(metrics: Mapping) -> Scores:
     )
 
 
-def _utility_scores(metrics: Mapping) -> Scores:
-    """The utility's lens: the return its regulator lets the equity earn, the
-    profit growing without new shares, and debt its tariffs can carry;
-    bought on earnings, EBITDA and what it pays."""
-    roe = _num(metrics, "roe")
-    earnings = _num(metrics, "net_income_cagr")
-    dilution = _num(metrics, "share_dilution")
-    debt = _num(metrics, "net_debt_ebitda")
-    pe, trailing = _pe(metrics)
-    ev_ebitda = _num(metrics, "ev_ebitda")
-
-    quality = [
+def _utility_quality(biz: Mapping) -> list[float]:
+    roe = _num(biz, "roe")
+    earnings = _num(biz, "net_income_cagr")
+    dilution = _num(biz, "share_dilution")
+    debt = _num(biz, "net_debt_ebitda")
+    return [
         _lin(v, lo, hi)
         for v, lo, hi in (
             (roe, 0.04, 0.14),
@@ -1111,6 +1133,16 @@ def _utility_scores(metrics: Mapping) -> Scores:
         )
         if v is not None
     ]
+
+
+def _utility_scores(metrics: Mapping) -> Scores:
+    """The utility's lens: the return its regulator lets the equity earn, the
+    profit growing without new shares, and debt its tariffs can carry;
+    bought on earnings, EBITDA and what it pays."""
+    pe, trailing = _pe(metrics)
+    ev_ebitda = _num(metrics, "ev_ebitda")
+
+    quality = _utility_quality(business(metrics))
     cheap: list[float] = []
     if pe is not None:
         cheap.append(_lin(-pe, -25.0, -10.0) if pe > 0 else 0.0)
@@ -1147,17 +1179,16 @@ def _rule_40(metrics: Mapping, floated: bool) -> float | None:
     return min(growth, 1.0) + margin
 
 
-def _growth_scores(
-    metrics: Mapping, fcf: float | None, pe: float | None, suspect: bool, floated: bool
-) -> Scores:
-    """The growth lens: how good the growth is, and what is paid per point."""
+def _growth_pace(metrics: Mapping) -> float:
     # Past 100% a year the number is a base effect more than a pace.
-    growth = min(growth_of(metrics) or 0.0, 1.0)
-    fcf_margin = None if floated else _num(metrics, "fcf_margin")
-    gross = _num(metrics, "gross_margin")
-    moat = _num(metrics, "moat")
-    ev_sales = None if suspect else _num(metrics, "ev_sales")
+    return min(growth_of(metrics) or 0.0, 1.0)
 
+
+def _growth_quality(biz: Mapping, floated: bool) -> list[float]:
+    growth = _growth_pace(biz)
+    fcf_margin = None if floated else _num(biz, "fcf_margin")
+    gross = _num(biz, "gross_margin")
+    moat = _num(biz, "moat")
     quality: list[float] = []
     if fcf_margin is not None:
         quality.append(_lin(growth + fcf_margin, 0.0, 0.60))
@@ -1165,6 +1196,16 @@ def _growth_scores(
         quality.append(_lin(gross, 0.20, 0.80))
     if moat is not None:
         quality.append(_clamp(moat))
+    return quality
+
+
+def _growth_scores(
+    metrics: Mapping, fcf: float | None, pe: float | None, suspect: bool, floated: bool
+) -> Scores:
+    """The growth lens: how good the growth is, and what is paid per point."""
+    growth = _growth_pace(metrics)
+    ev_sales = None if suspect else _num(metrics, "ev_sales")
+    quality = _growth_quality(business(metrics), floated)
 
     cheap: list[float] = []
     if ev_sales is not None and ev_sales > 0 and growth > 0:
