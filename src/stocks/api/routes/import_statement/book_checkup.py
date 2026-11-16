@@ -55,7 +55,7 @@ class ReuploadHint(BaseModel):
     split_date: str = Field(description="The split written after that import.")
 
 
-HealKind = Literal["fee_in_coins", "net_dividends"]
+HealKind = Literal["fee_in_coins", "net_dividends", "bare_coins"]
 
 
 class Healed(BaseModel):

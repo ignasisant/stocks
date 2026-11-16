@@ -22,7 +22,7 @@ from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.data import fetch, symbols
 from stocks.data.dividends import DividendHistory
-from stocks.portfolio import edits, heal, held, validate
+from stocks.portfolio import edits, heal, held, validate, venue
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from tests.patching import patch_import, patch_loaders
 
@@ -393,3 +393,63 @@ def test_the_chat_check_names_the_statement_to_upload_again(tmp_path):
     assert '"broker": "clicktrade"' in drafted.text
     assert drafted.book is None  # an upload, not an edit
     assert checked(db, "MSFT").text.startswith("chat.book_healthy")
+
+
+# ------------------------------------------------------------- bare coins
+# A Revolut statement printed Bitcoin as "BTC", and books imported before the
+# importer learned to price a bare coin as its pair (`venue.coin_pair`) hold
+# it under Yahoo's bare "BTC", a forty-dollar trust: unpriced, held at cost
+# (prod 2026-11-11). Proven by price like the import does, then moved once.
+BTC = [
+    Transaction("2025-03-03", "BTC", "buy", 0.01, 80000.0, "EUR", 1.0, "revolut"),
+    Transaction("2025-06-02", "BTC", "buy", 0.01, 92000.0, "EUR", 1.0, "revolut"),
+]
+PICK = venue.pick  # bound at import, before conftest's autouse stub
+TRUST_BTC = Transaction("2025-06-02", "BTC", "buy", 2.0, 41.0, "USD", 0.0, "ibkr")
+
+
+@pytest.fixture
+def real_pick(monkeypatch):
+    """The heal decides with the import's own `pick`, which conftest stubs."""
+    monkeypatch.setattr(venue, "pick", PICK)
+
+
+def closes(prices: dict[str, float]):
+    return lambda symbol, day: prices.get(symbol)
+
+
+def no_rate(currency, day):
+    return None
+
+
+def test_a_bare_coin_moves_to_its_pair_once(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many([*BTC, TRUST_BTC], db)
+    close = closes({"BTC-EUR": 88000.0, "BTC": 41.0})
+    done = heal.bare_coins(db, close, no_rate)
+    assert done is not None and done.source == "doctor"
+    labels = sorted((t.ticker, t.currency) for t in all_transactions(db))
+    # The dollar "BTC" is the trust the other broker bought: it stays.
+    assert labels == [("BTC", "USD"), ("BTC-EUR", "EUR"), ("BTC-EUR", "EUR")]
+    assert [(k, c.id) for k, c in heal.recent(db)] == [("bare_coins", done.id)]
+    assert heal.bare_coins(db, close, no_rate) is None
+
+
+def test_a_bare_coin_the_price_does_not_prove_stays(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many(BTC, db)
+    assert heal.bare_coins(db, closes({}), no_rate) is None  # Yahoo said nothing
+    assert heal.bare_coins(db, closes({"BTC-EUR": 20000.0}), no_rate) is None
+    assert {t.ticker for t in all_transactions(db)} == {"BTC"}
+    # Unproven is not refused: asked again on the next warm.
+    assert heal.bare_coins(db, closes({"BTC-EUR": 88000.0}), no_rate) is not None
+
+
+def test_an_undone_coin_move_is_never_written_again(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many(BTC, db)
+    close = closes({"BTC-EUR": 88000.0})
+    done = heal.bare_coins(db, close, no_rate)
+    edits.undo(done.id, path=db)
+    assert heal.bare_coins(db, close, no_rate) is None
+    assert {t.ticker for t in all_transactions(db)} == {"BTC"}

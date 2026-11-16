@@ -379,6 +379,8 @@
   "import.healed_fee_in_coins_one": "Commissione Revolut tolta dalle monete in {n} acquisto crypto.",
   "import.healed_net_dividends": "Ritenuta rimessa su {n} dividendi Revolut, in base a quanto spettava alle azioni.",
   "import.healed_net_dividends_one": "Ritenuta rimessa su {n} dividendo Revolut, in base a quanto spettava alle azioni.",
+  "import.healed_bare_coins": "{n} righe crypto spostate sulla quotazione della loro moneta.",
+  "import.healed_bare_coins_one": "{n} riga crypto spostata sulla quotazione della sua moneta.",
   "import.remembered": "La tua ultima importazione era di {platform}. Cambiala se questa non lo è.",
   "import.guide_title": "Come esportarlo da {platform}",
   "import.guide_revolut": "Apri Azioni in Revolut|Vai su Estratti conto|Scarica il CSV",

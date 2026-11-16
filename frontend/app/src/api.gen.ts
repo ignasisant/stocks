@@ -1415,7 +1415,7 @@ export type HalvingPhase = {
 };
 
 export type Healed = {
-  "kind": "fee_in_coins" | "net_dividends";
+  "kind": "fee_in_coins" | "net_dividends" | "bare_coins";
   "change_id": number;
   "rows": number;
   "at": string;

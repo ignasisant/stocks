@@ -379,6 +379,8 @@
   "import.healed_fee_in_coins_one": "Revolut fee taken out of the coins in {n} crypto buy.",
   "import.healed_net_dividends": "Withholding put back on {n} Revolut dividends, from what the shares were owed.",
   "import.healed_net_dividends_one": "Withholding put back on {n} Revolut dividend, from what the shares were owed.",
+  "import.healed_bare_coins": "{n} crypto rows moved to the coin's own price line.",
+  "import.healed_bare_coins_one": "{n} crypto row moved to the coin's own price line.",
   "import.remembered": "Your last import came from {platform}. Change it if this one doesn’t.",
   "import.guide_title": "How to export it from {platform}",
   "import.guide_revolut": "Open Stocks in Revolut|Go to Statements|Download the CSV",

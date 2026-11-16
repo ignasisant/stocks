@@ -9,6 +9,12 @@ are written here from the warm cron, through the edit journal (source
 ``doctor``) so Import can say what changed and the reader's Undo takes it
 back. Each runs once: a repair the reader undid is never written again.
 
+A coin a Revolut statement printed bare ("BTC") and an import before
+`venue.coin_pair` booked as Yahoo's bare symbol (`bare_coins`) is unpriced on
+every such book alike, and its pair is proven by price the way the import
+proves it. Marked per (code, currency): a move written, or undone, is never
+written again; one the price could not prove yet is asked about next time.
+
 Revolut's stock dividends (`net_dividends`) are booked net with nothing
 withheld, and a statement keeps bringing new ones, so that repair is marked
 per row rather than per book: a row written, or undone, is never touched
@@ -24,11 +30,12 @@ from pathlib import Path
 
 from stocks import obs, storage
 from stocks.data.dividends import DividendHistory
-from stocks.portfolio import demo, dividends, doctor, edits, revolut, transfers
+from stocks.portfolio import demo, dividends, doctor, edits, revolut, transfers, venue
 from stocks.portfolio.ledger import all_transactions, connect
 
 FEE_IN_COINS = "fee_in_coins"
 NET_DIVIDENDS = "net_dividends"
+BARE_COINS = "bare_coins"
 
 
 def _done(db: Path, name: str) -> bool:
@@ -131,6 +138,67 @@ def net_dividends(
     _mark_all(db, [f"{NET_DIVIDENDS}:{w.tx.id}" for w in found], done.id)
     obs.event("ledger.healed", kind=NET_DIVIDENDS, rows=len(ops))
     return done
+
+
+def bare_coins(
+    db: Path | str,
+    close: Callable[[str, str], float | None],
+    usd_rate: Callable[[str, str], float | None],
+) -> edits.Changeset | None:
+    """Move a coin booked under its bare code to the pair it was traded as.
+
+    `venue.pick` decides, on the same evidence an import asks for: the
+    book's latest fills against the pair's close on those days, and the bare
+    line (a US share with the coin's letters) not explaining them as well.
+    `close(symbol, day)` and `usd_rate(currency, day)` are the warm's own
+    bounded lookups. Only coins are asked about here: a bare share code is
+    the import's question, with a search behind it.
+    """
+    db = Path(db)
+    if not db.exists():
+        return None
+    rows = [t for t in demo.without(all_transactions(db)) if t.id is not None]
+    seen = _marked(db, BARE_COINS)
+    keys = [
+        k for k in dict.fromkeys(
+            (t.ticker, t.currency) for t in rows if venue.coin_pair(t.ticker, t.currency)
+            and not venue.is_crypto(t.ticker)
+        )
+        if _coin_mark(k) not in seen
+    ]
+    if not keys:
+        return None
+    moved: dict[venue.Key, str] = {}
+    for key in keys:
+        mine = [t for t in rows if (t.ticker, t.currency) == key]
+        rest = [t for t in rows if (t.ticker, t.currency) != key]
+        pair = venue.pick(
+            key, mine, rest,
+            quoted=lambda code: False,
+            candidates=lambda code, currency: [],
+            close=close,
+            usd_rate=usd_rate,
+        )
+        if pair:
+            moved[key] = pair
+    if not moved:
+        return None
+    ops = [
+        {"op": "update", "id": t.id, "fields": {"ticker": moved[(t.ticker, t.currency)]}}
+        for t in rows
+        if (t.ticker, t.currency) in moved
+    ][: edits.MAX_OPS]
+    names = sorted(set(moved.values()))
+    summary = f"{len(ops)} crypto rows moved to their pair ({', '.join(names)})"
+    planned = edits.plan(ops, db)
+    done = edits.commit(ops, planned.token, source="doctor", summary=summary, path=db)
+    _mark_all(db, [_coin_mark(k) for k in moved], done.id)
+    obs.event("ledger.healed", kind=BARE_COINS, rows=len(ops), pairs=names)
+    return done
+
+
+def _coin_mark(key: tuple[str, str]) -> str:
+    return f"{BARE_COINS}:{key[0]}/{key[1]}"
 
 
 def recent(db: Path | str) -> list[tuple[str, edits.Changeset]]:

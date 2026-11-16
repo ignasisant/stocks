@@ -765,7 +765,7 @@ export type Finding = {
 
 /** A repair the app wrote by itself; undoing its change takes it back for good. */
 export type Healed = {
-  kind: "fee_in_coins" | "net_dividends";
+  kind: "fee_in_coins" | "net_dividends" | "bare_coins";
   change_id: number;
   rows: number;
   at: string;
