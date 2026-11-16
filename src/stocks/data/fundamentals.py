@@ -50,6 +50,8 @@ def fetch_fundamentals(ticker: str) -> RawFundamentals:
     every company it touches for free.
     """
     symbol = fetch.resolve(ticker)
+    if fetch.unaskable(symbol):
+        return RawFundamentals(ticker=ticker.upper())
     blob = fetch.retry(lambda: fetch.info(symbol))
     t = yf.Ticker(symbol)
 

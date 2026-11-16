@@ -841,3 +841,17 @@ def test_each_provider_gets_a_background_job_s_time(monkeypatch):
     monkeypatch.setattr(daily.engine, "complete_attempts", attempts)
     daily.generate({}, {}, facts(), "en", DAY)
     assert seen and seen[0] >= 165
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+def test_a_thesis_rule_line_names_its_pillar(lang):
+    """Prod 2026-11-16: an exit rule on the thesis reached the briefing's own
+    line and its copy, formatted with the level alone, raised KeyError
+    'pillar' — POST /api/v1/daily answered 500."""
+    from stocks.chat.daily.fallback import _criterion_slots
+
+    slots = _criterion_slots({"ticker": "NVDA", "rule": "thesis",
+                              "pillar": "data-centre demand", "quote": "q",
+                              "source": "s"}, lang)
+    assert "data-centre demand" in slots["rule"]
+    assert (slots["quote"], slots["source"]) == ("q", "s")

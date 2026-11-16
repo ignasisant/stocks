@@ -492,3 +492,33 @@ def test_a_question_about_results_or_a_move_gets_the_quote_too():
     rule = agent.GATHER_SYSTEM
     assert "results" in rule and "get_quotes" in rule
     assert "premarket and after-hours" in rule
+
+
+def test_a_question_about_using_the_app_gets_its_documents_not_the_web():
+    """"Cómo sacar el máximo rendimiento de top stocks" (rated down
+    2026-11-10) searched the web for investing tips: neither the gather nor
+    the planner knew the app's own name, and "getting the most out of it" was
+    not on the list of questions about the app."""
+    from stocks.chat import websearch
+
+    rule = agent.GATHER_SYSTEM
+    assert "TopStocks" in rule and "get the most out of it" in rule
+    assert "portfolio_snapshot" in rule.split("get the most out of it")[1][:200]
+    assert "TopStocks" in websearch._PLANNER_SYSTEM
+    assert "get the most out of it" in websearch._PLANNER_SYSTEM
+
+
+def test_the_gather_is_told_what_the_reader_is_looking_at():
+    """"Quality against price this one" on /review, after an answer about
+    ADBE (rated down 2026-11-11): the gather was told "the ticker in focus
+    (Current view)" is what "this" means but never shown the view, so it had
+    no ticker for "this one" and fetched QUAL for the word "Quality"."""
+    p = _Provider(ToolRun("DONE", []))
+    view = ("Current view: The user is currently on the Review page. No ticker"
+            " is in focus; the conversation is about ADBE.\n\n")
+    agent.gather(p, "k", _MSGS, toolbox.Context(), view=view)
+    (_, _, system, _, _) = p.calls[0]
+    assert "the conversation is about ADBE" in system
+    rule = agent.GATHER_SYSTEM
+    assert "the conversation is about" in rule  # "this" without a focus
+    assert '"Quality"' in rule  # a plain word is not a ticker

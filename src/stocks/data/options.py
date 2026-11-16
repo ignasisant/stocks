@@ -90,9 +90,9 @@ def fetch_chains(ticker: str, today: date | None = None) -> RawOptions | None:
     """
     import yfinance as yf
 
-    from stocks.data.fetch import retired, retry
+    from stocks.data.fetch import retry, unaskable
 
-    if retired(ticker):
+    if unaskable(ticker):
         return None
     handle = yf.Ticker(ticker)
     expiries = retry(lambda: handle.options, attempts=2)

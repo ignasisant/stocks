@@ -871,12 +871,19 @@ _TPM_MARGIN = 0.9
 _tpm_skew: dict[str, float] = {}
 _REQUESTED = re.compile(r"Limit (\d+), Requested (\d+)")
 
+# The limit a 413 named, per (backend, model), when it is under the backend's
+# own: groq admits 8000 a minute but caps qwen's input at 7000 ("(ITPM): Limit
+# 7000"), and a refit sized to 8000 came back 413 every time (prod
+# 2026-11-16). Kept for the life of the process, only ever lowered.
+_tpm_limit: dict[tuple[str, str], int] = {}
+
 
 def _tpm_cap(b: _FreeBackend) -> int:
     """Tokens, by our count, a request to `b` may carry; 0 = uncapped."""
     if not b.tpm:
         return 0
-    return int(b.tpm * _TPM_MARGIN / _tpm_skew.get(b.id, 1.0))
+    limit = min(b.tpm, _tpm_limit.get((b.id, b.model), b.tpm))
+    return int(limit * _TPM_MARGIN / _tpm_skew.get(b.id, 1.0))
 
 
 def _learn_skew(b: _FreeBackend, exc: Exception, sent: int) -> bool:
@@ -887,6 +894,10 @@ def _learn_skew(b: _FreeBackend, exc: Exception, sent: int) -> bool:
     m = _REQUESTED.search(str(exc))
     if not m:
         return False
+    limit = int(m.group(1))
+    if limit < _tpm_limit.get((b.id, b.model), b.tpm or limit + 1):
+        _tpm_limit[(b.id, b.model)] = limit
+        obs.warn("llm.free.tpm_limit", backend=b.id, model=b.model, limit=limit)
     skew = int(m.group(2)) / sent
     if skew > _tpm_skew.get(b.id, 1.0):
         _tpm_skew[b.id] = skew

@@ -183,6 +183,10 @@ GOLDEN = [
     ("how does my portfolio react to this regime", {"pulse-risk-appetite"}),
     ("how are sector peers chosen", {"sector-screen"}),
     ("¿cómo se elige la cohorte del sector?", {"sector-screen"}),
+    # Rated down 2026-11-10: the chat searched the web for investing tips.
+    ("como sacar el maximo rendimiento de top stocks", {"getting-the-most"}),
+    ("how do I get the most out of TopStocks?", {"getting-the-most"}),
+    ("¿qué me falta configurar en la app?", {"getting-the-most"}),
 ]
 
 

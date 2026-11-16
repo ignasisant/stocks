@@ -495,6 +495,7 @@ export type Checkup = {
   "reupload": ReuploadHint[];
   "findings": BookFinding[];
   "healed": Healed[];
+  "prices": PriceMismatch[];
 };
 
 export type ClientError = {
@@ -1415,7 +1416,7 @@ export type HalvingPhase = {
 };
 
 export type Healed = {
-  "kind": "fee_in_coins" | "net_dividends";
+  "kind": "fee_in_coins" | "net_dividends" | "bare_coins";
   "change_id": number;
   "rows": number;
   "at": string;
@@ -2353,6 +2354,14 @@ export type PriceEvents = {
   "ticker": string;
   "earnings": EarningsEvent[];
   "cycle": CycleEvent[];
+};
+
+export type PriceMismatch = {
+  "ticker": string;
+  "date": string;
+  "price": number;
+  "currency": string;
+  "close": number;
 };
 
 export type Profile = {

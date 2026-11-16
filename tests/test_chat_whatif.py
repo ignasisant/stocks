@@ -56,6 +56,17 @@ def test_part_of_a_holding_sells_the_lots_the_rule_says_go_first(book):
     assert sale.extra_tax == pytest.approx(95.0)
 
 
+def test_a_buy_booked_today_is_held_when_today_s_sale_replays(book):
+    """Prod 2026-11-16: a trade added the same day, then the harvest card.
+    The simulated sale carried no ledger id, sorted first among today's rows
+    and met only the shares held before the buy: ValueError, a 500."""
+    db, prefs = book
+    add_many([Transaction(TODAY.isoformat(), "AAPL", "buy", 5, 140.0, "EUR")], db)
+    sale = _sale(book)
+    assert (sale.held, sale.shares) == (25.0, 25.0)
+    assert sale.gain == pytest.approx(25 * 150.0 - 2200.0 - 700.0)
+
+
 def test_a_count_is_asked_with_the_holding_s_size(book):
     sale = _sale(book, shares=lambda held: whatif.shares_asked("vendo la mitad", held))
     assert sale.shares == 10.0

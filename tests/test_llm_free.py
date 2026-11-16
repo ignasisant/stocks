@@ -113,10 +113,12 @@ def _retired(bid, live_model=None):
 
 @pytest.fixture(autouse=True)
 def _clear_live_model_cache():
-    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew):
+    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew,
+                 llm._tpm_limit):
         memo.clear()
     yield
-    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew):
+    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew,
+                 llm._tpm_limit):
         memo.clear()
 
 
@@ -351,6 +353,32 @@ def test_a_413_learns_the_skew_and_retries_groq_cut_last(monkeypatch):
     assert [who for who, _ in seen] == ["groq", "openrouter", "groq"]
     assert seen[-1][1] < seen[0][1]
     assert llm._tpm_skew["groq"] == pytest.approx(1.15, abs=0.01)
+
+
+def test_a_413_with_a_lower_limit_refits_under_that_model_s_limit(monkeypatch):
+    # Prod 2026-11-16: groq caps qwen at 7000 input tokens a minute, not the
+    # backend's 8000, and every refit sized to 8000 came back 413 again
+    # ("Limit 7000, Requested 7116").
+    from stocks.llm import tokens
+
+    seen = []
+    thread = _thread(1, words=6880)  # one long paste: cut to the token
+
+    def groq(api_key, model, system, messages):
+        sent = tokens.count(system) + tokens.count_messages(messages)
+        seen.append(sent)
+        if sent * 1.05 > 7000:
+            exc = RuntimeError(f"Error code: 413 - Request too large (ITPM): "
+                               f"Limit 7000, Requested {int(sent * 1.05)}")
+            exc.status_code = 413
+            raise exc
+        yield "q"
+
+    assert 7000 / 1.05 < tokens.count("sys") + tokens.count_messages(thread) <= 7200
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "qwen", groq, tpm=8000), _dead("openrouter")])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["q"]
+    assert len(seen) == 2 and seen[-1] * 1.05 <= 7000
 
 
 def test_error_mapping():
