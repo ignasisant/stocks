@@ -748,6 +748,17 @@ def test_a_figure_the_facts_do_not_round_to_is_still_rejected(line, figure):
     assert daily.audit([line], facts) == figure
 
 
+def test_a_ticker_that_starts_with_a_digit_owns_its_figures():
+    """The prod rejection (sector verdict, Industrials): Komatsu lists as
+    6301.T, and a true line about it that also named UBER was audited against
+    UBER's figures alone, because 6301.T was not read as a ticker."""
+    facts = {"podium": [{"ticker": "6301.T", "roic_pct": 8.9},
+                        {"ticker": "UBER", "roic_pct": 12.4}]}
+    line = "6301.T aporta un ROIC del 8,9 %, por encima de UBER en valoración"
+    assert daily.audit([line], facts) is None
+    assert daily.audit(["6301.T aporta un ROIC del 12,4 %"], facts) == "12,4 %"
+
+
 def test_a_unicode_minus_keeps_its_sign():
     assert daily.audit(["NVDA cae un −1,48 % hoy"], {"pct": 1.48}) == "−1,48 %"
 

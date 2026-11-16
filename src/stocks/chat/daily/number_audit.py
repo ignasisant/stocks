@@ -28,7 +28,10 @@ _MONEY_RE = re.compile(
 )
 _DMY_RE = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b")
 _ISO_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
-_TICKER_RE = re.compile(r"\b[A-Z][A-Z0-9.\-]{0,9}\b")
+# Tokyo, Hong Kong and Seoul list under numbers (6301.T, 0700.HK): a symbol
+# may start with a digit. Only tokens that are a ticker in the facts count,
+# so a bare figure read here is harmless.
+_TICKER_RE = re.compile(r"\b[A-Z0-9][A-Z0-9.\-]{0,9}\b")
 # What counts as the same number. Absolute for percentages (a 2-dp fact
 # printed to 1 dp moves by at most 0.05); relative above 100, where the model
 # prints a rounded amount ("€1,235" for 1234.56).
