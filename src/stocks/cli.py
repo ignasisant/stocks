@@ -68,7 +68,7 @@ def cmd_alerts(args: argparse.Namespace) -> None:
 
 def cmd_sector_scan(args: argparse.Namespace) -> None:
     """Build tonight's sector cohorts. Market-wide, so no account fan-out."""
-    from stocks.analysis.sectors import SECTORS, run_scan
+    from stocks.analysis.sectors import SCAN_FILE, SECTORS, run_scan
     from stocks.chat import sector_ai
 
     names = tuple(args.sector or ())
@@ -79,6 +79,22 @@ def cmd_sector_scan(args: argparse.Namespace) -> None:
     status = run_scan(names, propose=propose, dry_run=args.dry_run)
     for sector, result in status.items():
         print(f"{sector}: {result}")
+    if args.publish and not args.dry_run:
+        _check_published(SCAN_FILE)
+
+
+def _check_published(path) -> None:
+    """Fail the run unless the bucket holds the file it just wrote (`--publish`).
+
+    A scan job's only product is that shared file; written locally and lost
+    with the runner, it is a green run every reader never sees."""
+    from stocks import storage
+
+    try:
+        key = storage.published(path)
+    except Exception as exc:  # noqa: BLE001 — every cause is the same failed run
+        raise SystemExit(f"not published: {exc}") from exc
+    print(f"published: {storage.bucket()}/{key}")
 
 
 def cmd_holdings_13f(args: argparse.Namespace) -> None:
@@ -95,10 +111,12 @@ def cmd_holdings_13f(args: argparse.Namespace) -> None:
 
 def cmd_crypto_scan(args: argparse.Namespace) -> None:
     """Tonight's crypto market figures. Market-wide, so no account fan-out."""
-    from stocks.analysis.crypto_scan import run_scan
+    from stocks.analysis.crypto_scan import SCAN_FILE, run_scan
 
     for part, result in run_scan(dry_run=args.dry_run).items():
         print(f"{part}: {result}")
+    if args.publish and not args.dry_run:
+        _check_published(SCAN_FILE)
 
 
 def cmd_today_market(args: argparse.Namespace) -> None:
@@ -1355,6 +1373,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true",
         help="scan and print the result without writing the stored file",
     )
+    p_sector.add_argument(
+        "--publish", action="store_true",
+        help="fail unless the bucket ends up holding the file written (cron)",
+    )
     p_sector.set_defaults(func=cmd_sector_scan)
 
     p_13f = sub.add_parser(
@@ -1378,6 +1400,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_crypto.add_argument(
         "--dry-run", action="store_true",
         help="fetch and print the result without writing the stored file",
+    )
+    p_crypto.add_argument(
+        "--publish", action="store_true",
+        help="fail unless the bucket ends up holding the file written (cron)",
     )
     p_crypto.set_defaults(func=cmd_crypto_scan)
 

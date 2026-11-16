@@ -460,3 +460,41 @@ def test_the_client_pools_enough_connections_for_the_threads_sharing_it(monkeypa
     monkeypatch.setattr(boto3, "client", lambda *a, **kw: seen.update(kw) or object())
     storage._client()
     assert seen["config"].max_pool_connections >= 32
+
+
+# ------------------------------------------------- published (nightly scans)
+
+
+def test_published_returns_the_key_once_the_bucket_matches(bucket, tmp_path):
+    f = tmp_path / "data/sector_scan.json"
+    f.parent.mkdir()
+    f.write_text('{"saved": "2026-11-16"}')
+    storage.persist(f)
+    assert storage.published(f) == "data/sector_scan.json"
+
+
+def test_published_refuses_a_bucket_still_holding_the_old_file(bucket, tmp_path):
+    """The failure a green scan job hid for a month: tonight's file locally,
+    last month's in the bucket every reader restores from."""
+    f = tmp_path / "data/sector_scan.json"
+    f.parent.mkdir()
+    bucket.objects["data/sector_scan.json"] = b'{"saved": "2026-10-14"}'
+    f.write_text('{"saved": "2026-11-16"}')
+    with pytest.raises(RuntimeError, match="different"):
+        storage.published(f)
+
+
+def test_published_refuses_a_missing_object(bucket, tmp_path):
+    f = tmp_path / "data/crypto_scan.json"
+    f.parent.mkdir()
+    f.write_text("{}")
+    with pytest.raises(RuntimeError, match="has no data/crypto_scan.json"):
+        storage.published(f)
+
+
+def test_published_refuses_when_storage_is_off(disabled, tmp_path):
+    f = tmp_path / "data/sector_scan.json"
+    f.parent.mkdir()
+    f.write_text("{}")
+    with pytest.raises(RuntimeError, match="not configured"):
+        storage.published(f)
