@@ -67,6 +67,7 @@ import {
   getMoat,
   getPeers,
   getPosition,
+  heldPosition,
   getProfile,
   getQuote,
   getTrend,
@@ -502,7 +503,10 @@ export default function Page() {
     };
   }, [ticker, fillsPeers]);
 
-  const held = position.state === "loaded" ? position.data : null;
+  const held = useMemo(
+    () => heldPosition(position.state === "loaded" ? position.data : null),
+    [position],
+  );
   const entry =
     entries.find((one) => one.ticker.toUpperCase() === (ticker ?? "")) ?? null;
   // The grid's own P/E, for the valuation card's vintage warning: the two are
