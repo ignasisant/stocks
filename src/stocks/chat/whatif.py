@@ -155,10 +155,14 @@ class Replay:
         from stocks.portfolio.positions import build
 
         jur = self.jurisdiction
+        # Ids past the ledger's own: the replay orders a day's rows by id, and
+        # one without sorted first, before a trade booked earlier today.
+        last = max((t.id or 0 for t in self.transactions), default=0)
         txs = [*self.transactions, *(
             Transaction(date=self.day, ticker=ticker, action="sell", quantity=count,
-                        price=price, currency=currency)
-            for ticker, count, price, currency in sales if count > 0
+                        price=price, currency=currency, id=last + n)
+            for n, (ticker, count, price, currency) in enumerate(
+                (s for s in sales if s[1] > 0), start=1)
         )]
         _, realized = build(txs, base=jur.currency, matching=jur.matching)
         return realized, jur.fiscal_year(realized, self.year, tax.buy_dates(txs),
