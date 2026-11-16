@@ -133,15 +133,18 @@ def _criterion_slots(action: dict, lang: str) -> dict:
     price = rule in ("below", "buy_below", "buy_pe_fwd_below")
     level = float(action.get("level") or 0)
     value = float(action.get("value") or 0)
-    text = translate(f"home.daily_crit_{rule}", lang,
-                     level=fmt_num(level, 2 if price else
-                                   0 if level.is_integer() else 1, lang))
-    if int(action.get("quarters") or 1) > 1:
-        text = translate("home.daily_crit_run", lang, rule=text,
-                         n=int(action["quarters"]))
     if rule in journal.THESIS_RULES:
+        # Its copy names the pillar and has no level: home.daily_crit_thesis
+        # formatted with level= alone raised KeyError (prod 2026-11-16, a 500).
         text = translate("home.daily_crit_thesis", lang,
                          pillar=str(action.get("pillar") or ""))
+    else:
+        text = translate(f"home.daily_crit_{rule}", lang,
+                         level=fmt_num(level, 2 if price else
+                                       0 if level.is_integer() else 1, lang))
+        if int(action.get("quarters") or 1) > 1:
+            text = translate("home.daily_crit_run", lang, rule=text,
+                             n=int(action["quarters"]))
     return {
         "ticker": str(action.get("ticker") or ""),
         "rule": text,
