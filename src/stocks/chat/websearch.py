@@ -98,12 +98,14 @@ class Result:
 # after this by structured.render.
 _PLANNER_SYSTEM = (
     "You write the web searches for the latest message in a stock-tracker "
-    "chat. Searching is the default: anything about a company, ticker, fund, "
+    "chat. The app is called TopStocks (also written \"Top Stocks\"). "
+    "Searching is the default: anything about a company, ticker, fund, "
     "coin, market, the economy or an event gets searched, even when you think "
     "you know the answer — prices, news and the reasons behind a move change "
     f"daily. Give at most {MAX_QUERIES} web search queries. Return an empty "
     "list only when the message needs nothing from the outside world: "
-    "greetings and thanks, questions about how the app works, the user's own "
+    "greetings and thanks, questions about TopStocks itself (how it works, "
+    "what it can do, how to get the most out of it), the user's own "
     "positions and their arithmetic, or definitions of long-settled terms. "
     "Write queries in the language most likely to find good sources (usually "
     "English), include tickers or company names, and put the current year in "
@@ -197,6 +199,16 @@ _BOOK_RE = re.compile(
     r"\b(app|aplicaci[oó]n|importar|import)\b",
     re.IGNORECASE,
 )
+# The app by name. Written as one word it is always the app; written "top
+# stocks" it is also the market's best stocks, so only as the thing being
+# used or got the most out of: "cómo sacar el máximo rendimiento de top
+# stocks" searched the web for generic investing tips (rated 2026-11-10).
+_APP_RE = re.compile(
+    r"\btop-?stocks\b|\baguait\b|"
+    r"\b(sac\w*|partido|exprim\w*|aprovech\w*|us(?:ar|o|e|ing)|utiliz\w*|"
+    r"most out of|make the most of|more out of)\b.{0,40}\btop stocks\b",
+    re.IGNORECASE,
+)
 _SYMBOL = r"[A-Z0-9][A-Z0-9.\-]{0,14}"
 _FOCUS_RE = re.compile(rf"ticker in focus is ({_SYMBOL})", re.IGNORECASE)
 # What the thread is about outranks the page behind it (engine `web_context`).
@@ -222,7 +234,8 @@ def heuristic_queries(question: str, context: str = "") -> list[str]:
     if not q.strip("¿?¡!. "):
         return []
     if not (_FRESH_RE.search(q) or names_ticker) and (
-            _QUIET_RE.search(q) or _TIMELESS_RE.search(q) or _BOOK_RE.search(q)):
+            _QUIET_RE.search(q) or _TIMELESS_RE.search(q) or _BOOK_RE.search(q)
+            or _APP_RE.search(q)):
         return []
     about = _TOPIC_RE.search(context) or _FOCUS_RE.search(context)
     year = _TODAY_RE.search(context)

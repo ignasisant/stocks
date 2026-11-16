@@ -704,6 +704,38 @@
   goals:
     - Lists concrete things in this app (portfolio questions, tickers, import, alerts), briefly
 
+# Prod 2026-11-10 (rated down): "rendimiento de top stocks" read as the
+# market's best stocks, and the answer was generic investing tips from the
+# web. The app's own checklist is the answer (KB getting-the-most).
+- id: assistant-most-out-of
+  area: assistant
+  kind: howto
+  message: "como sacar el maximo rendimiento de top stocks"
+  goals:
+    - Answers about TopStocks itself, not about which stocks to buy or generic investing strategy
+    - Names concrete things to set up in the app (a complete import, the plan, exit rules, tax residence, notifications)
+    - Says the guided tour shows which of them this account already has switched on
+  mentions: [plan, importa, alertas, notificaciones, tour]
+
+- id: assistant-most-out-of-en
+  area: assistant
+  kind: howto
+  lang: en
+  message: "how do I get the most out of TopStocks?"
+  goals:
+    - Answers about TopStocks itself, not about which stocks to buy or generic investing strategy
+    - Names concrete things to set up in the app (a complete import, the plan, exit rules, tax residence, notifications)
+  mentions: [plan, import, alerts, notifications, tour]
+
+- id: assistant-what-to-set-up
+  area: assistant
+  kind: howto
+  message: "¿qué me falta configurar para aprovechar mejor la app?"
+  goals:
+    - Lists what to set up in TopStocks, most consequential first (the book's own records before the extras)
+    - Points to the guided tour or the Profile tabs where each one is switched on
+  mentions: [plan, perfil, tour, notificaciones]
+
 - id: assistant-memory
   area: assistant
   kind: howto
