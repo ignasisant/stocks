@@ -8,6 +8,7 @@
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { useLang, useT } from "../../shell/i18n";
+import { useGuest } from "../../shell/session";
 import { moneyIn, shares as formatShares } from "../../shell/format";
 import { TickerCell } from "../../shell/tickers";
 import { Skeleton } from "../../shell/Layout";
@@ -44,7 +45,14 @@ export function worthSelling(data: HarvestData): HarvestCandidate[] {
 export default function Harvest() {
   const t = useT();
   const lang = useLang();
-  const query = useApi(() => get<HarvestData | null>("/portfolio/tax/harvest"), []);
+  // The demo book has no tax year of its own and the route refuses a guest,
+  // so a guest gets no card rather than a 401 on every visit.
+  const guest = useGuest();
+  const query = useApi(
+    () =>
+      guest ? Promise.resolve(null) : get<HarvestData | null>("/portfolio/tax/harvest"),
+    [guest],
+  );
   if (query.state === "loading") return <Skeleton rows={3} />;
   if (query.state !== "loaded" || !query.data) return null;
   const data = query.data;
