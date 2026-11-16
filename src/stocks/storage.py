@@ -257,6 +257,31 @@ def restore_stem(directory: Path, stem: str) -> str | None:
     return name
 
 
+def published(path: Path) -> str:
+    """Prove the bucket holds exactly the local `path`; its key when it does.
+
+    For jobs whose whole product is one shared file (the nightly scans): their
+    write mirrors to the bucket inside `obs.swallow`, and a job with storage
+    unconfigured skips the mirror without a word — either way the run ends
+    green while every reader keeps last month's file. Raises RuntimeError
+    when storage is off, the key is missing, or the bytes differ.
+    """
+    if not enabled():
+        raise RuntimeError(
+            "storage is not configured (STOCKS_STORAGE_* or [storage]): "
+            f"{path.name} was written locally only and no reader will see it"
+        )
+    key = _key(path)
+    if key is None:
+        raise RuntimeError(f"{path} is outside the project root: no bucket key")
+    remote = read_key(key)
+    if remote is None:
+        raise RuntimeError(f"bucket {bucket()} has no {key}")
+    if remote != path.read_bytes():
+        raise RuntimeError(f"bucket {bucket()} holds a different {key}")
+    return key
+
+
 def read(path: Path) -> bytes | None:
     """The bucket's copy of a local file, leaving the local one alone; None
     when missing, outside the repo, or storage is off. For files the caller
