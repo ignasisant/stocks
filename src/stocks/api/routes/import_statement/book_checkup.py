@@ -68,6 +68,14 @@ class Healed(BaseModel):
     summary: str
 
 
+class PriceMismatch(BaseModel):
+    ticker: str
+    date: str = Field(description="The latest fill the price disagrees with.")
+    price: float = Field(description="That fill's price, as booked.")
+    currency: str
+    close: float = Field(description="The close on or before that day, in `currency`.")
+
+
 class Checkup(BaseModel):
     held: list[HeldSale] = Field(
         default_factory=list,
@@ -85,6 +93,14 @@ class Checkup(BaseModel):
     )
     healed: list[Healed] = Field(
         default_factory=list, description="Repairs the app wrote by itself."
+    )
+    prices: list[PriceMismatch] = Field(
+        default_factory=list,
+        description=(
+            "Open positions whose own fills say the price series is another "
+            "instrument, so they read at cost: the price booked or the ticker "
+            "is wrong."
+        ),
     )
 
 
@@ -132,7 +148,8 @@ def _finding(f: doctor.Finding) -> BookFinding:
 @router.get("/checkup", response_model=Checkup, summary="What the book can fix now")
 def checkup(account: Account) -> Checkup:
     """Everything the repairs card offers besides moves and splits. Reads the
-    ledger only; the one write is dropping held sales the book already has."""
+    ledger and the book's last kept prices, never a download; the one write is
+    dropping held sales the book already has."""
     rows = _real_rows(account)
     if not rows:
         return Checkup()
@@ -164,7 +181,20 @@ def checkup(account: Account) -> Checkup:
             for kind, c in heal.recent(account.db)
             if kind in get_args(HealKind)
         ],
+        prices=_prices(account.db),
     )
+
+
+def _prices(db) -> list[PriceMismatch]:
+    with obs.swallow("checkup.prices"):
+        return [
+            PriceMismatch(
+                ticker=m.ticker, date=m.date, price=m.price,
+                currency=m.currency, close=_num(m.close) or 0.0,
+            )
+            for m in loaders.price_mismatches(str(db))
+        ]
+    return []
 
 
 @router.post("/held/apply", response_model=HeldApplied, summary="Write held sales")

@@ -372,6 +372,7 @@
   "import.fix_duplicate": "{quantity} on {date} imported twice ({kept} and {dropped}). Remove one.",
   "import.fix_fee_in_coins": "Revolut fee counted as coins in {n} crypto buys.",
   "import.fix_fee_in_coins_one": "Revolut fee counted as coins in {n} crypto buy.",
+  "import.price_off": "Booked at {price} on {date}, but it closed at {close}: valued at cost. Check that price or the ticker.",
   "import.toast_fixed": "Fixed.",
   "import.undo": "Undo",
   "import.toast_undone": "Undone.",

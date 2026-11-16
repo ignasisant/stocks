@@ -453,3 +453,63 @@ def test_an_undone_coin_move_is_never_written_again(tmp_path, real_pick):
     edits.undo(done.id, path=db)
     assert heal.bare_coins(db, close, no_rate) is None
     assert {t.ticker for t in all_transactions(db)} == {"BTC"}
+
+
+# ------------------------------------------------- prices the fills disagree with
+def kept_frames(monkeypatch, **closes: float) -> None:
+    """The book's last kept frames: one flat close per name over 2024."""
+    import pandas as pd
+
+    from stocks.data import listing
+    from stocks.loaders import closes as loader
+
+    days = pd.bdate_range("2024-01-01", "2024-12-31")
+    frames = {
+        ticker: pd.DataFrame({"Close": close, "Adj Close": close}, index=days)
+        for ticker, close in closes.items()
+    }
+    monkeypatch.setattr(loader, "_stored_base", lambda db: ("2024-01-01", frames, 0.0))
+    monkeypatch.setattr(listing, "listing_currencies", lambda tickers, **_: {})
+
+
+def test_a_held_name_its_fills_say_is_another_instrument_is_named(
+    client, account, signed_in, monkeypatch
+):
+    # ERR-04: a fund imported at a price a hundred times its NAV line reads
+    # unpriced, carried at cost, and nothing on screen said why.
+    fund = Transaction("2024-06-03", "FUND", "buy", 3.0, 1050.0, "EUR", 0.0,
+                       "myinvestor Fund")
+    fine = Transaction("2024-03-01", "AMZN", "buy", 2.0, 180.0, "USD", 1.0,
+                       "revolut Amazon")
+    add_many([fund, fine], account.db)
+    kept_frames(monkeypatch, FUND=10.5, AMZN=185.0)
+
+    [off] = signed_in.get("/v1/import/checkup").json()["prices"]
+    assert (off["ticker"], off["date"], off["price"], off["currency"]) == (
+        "FUND", "2024-06-03", 1050.0, "EUR"
+    )
+    assert off["close"] == pytest.approx(10.5)
+
+
+def test_a_name_no_longer_held_or_never_priced_is_not_named(
+    client, account, signed_in, monkeypatch
+):
+    sold = [
+        Transaction("2024-06-03", "FUND", "buy", 3.0, 1050.0, "EUR", 0.0, "x Fund"),
+        Transaction("2024-09-02", "FUND", "sell", 3.0, 1080.0, "EUR", 0.0, "x Fund"),
+        Transaction("2024-03-01", "AMZN", "buy", 2.0, 180.0, "USD", 1.0, "x Amazon"),
+    ]
+    add_many(sold, account.db)
+    kept_frames(monkeypatch, FUND=10.5)
+
+    assert signed_in.get("/v1/import/checkup").json()["prices"] == []
+
+
+def test_a_book_whose_prices_were_never_kept_names_nothing(
+    client, account, signed_in, monkeypatch
+):
+    from stocks.loaders import closes as loader
+
+    add_many([BUY], account.db)
+    monkeypatch.setattr(loader, "_stored_base", lambda db: None)
+    assert signed_in.get("/v1/import/checkup").json()["prices"] == []

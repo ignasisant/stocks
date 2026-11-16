@@ -372,6 +372,7 @@
   "import.fix_duplicate": "{quantity} del {date} importadas dos veces ({kept} y {dropped}). Quitar una.",
   "import.fix_fee_in_coins": "Comisión de Revolut contada como monedas en {n} compras cripto.",
   "import.fix_fee_in_coins_one": "Comisión de Revolut contada como monedas en {n} compra cripto.",
+  "import.price_off": "Anotada a {price} el {date}, pero cerró a {close}: se valora a coste. Revisa ese precio o el ticker.",
   "import.toast_fixed": "Arreglado.",
   "import.undo": "Deshacer",
   "import.toast_undone": "Deshecho.",

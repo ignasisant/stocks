@@ -1,7 +1,8 @@
 /**
  * What the book can fix now, besides moves and splits (`GET /import/checkup`).
  *
- * Four kinds, all read from the ledger so it loads with the card:
+ * Five kinds, read from the ledger and the book's last kept prices (never a
+ * download) so it loads with the card:
  *
  * * sales an import held back for want of shares, which a split or transfer
  *   written since now covers — ticked, and written on a press;
@@ -11,7 +12,10 @@
  * * the doctor's findings that carry their fix — one name under two labels, a
  *   trade imported from two brokers, a Revolut fee left in the coins;
  * * the repairs the app made by itself, each with its Undo. Undone, a repair is
- *   never written again.
+ *   never written again;
+ * * open positions whose own fills disagree with their price series by an order
+ *   of magnitude, so they read at cost: a price booked wrong or the wrong
+ *   ticker. Only the reader can tell which, so it is said, not fixed.
  *
  * Every apply names what it accepts and the server rebuilds it from a scan of
  * its own, so a stale card is a 409 and a fresh look, never a wrong write.
@@ -32,6 +36,7 @@ import {
   type Finding,
   type Healed,
   type HeldSale,
+  type PriceMismatch,
   type ReuploadHint,
   undoChange,
 } from "./api";
@@ -40,7 +45,10 @@ import { useVocabulary } from "./text";
 
 /** How many entries ask the reader for something — the rail's badge. */
 const waitingIn = (found: Found): number =>
-  found.held.length + found.reupload.length + found.findings.length;
+  found.held.length +
+  found.reupload.length +
+  found.findings.length +
+  found.prices.length;
 
 export function Checkup({
   nonce,
@@ -79,6 +87,9 @@ export function Checkup({
       ))}
       {found.findings.map((finding) => (
         <Fix finding={finding} key={finding.key} onApplied={done} onStale={refresh} />
+      ))}
+      {found.prices.map((off) => (
+        <PriceOff key={off.ticker} off={off} />
       ))}
       {found.healed.map((healed) => (
         <HealedLine healed={healed} key={healed.change_id} onUndone={done} />
@@ -277,6 +288,30 @@ function Fix({
       >
         {t("import.fix")}
       </button>
+    </div>
+  );
+}
+
+/** A position read at cost because its fills and its prices disagree. */
+function PriceOff({ off }: { off: PriceMismatch }) {
+  const t = useT();
+  const vocab = useVocabulary();
+  const money = (value: number) =>
+    `${vocab.num(value, Math.abs(value) < 1 ? 4 : 2)} ${off.currency}`;
+  return (
+    <div className="im-repair im-fix">
+      <div className="im-fix-text">
+        <h2 className="im-h3">
+          <TickerCell name={false} ticker={off.ticker} />
+        </h2>
+        <p className="im-fine">
+          {t("import.price_off", {
+            price: money(off.price),
+            date: off.date,
+            close: money(off.close),
+          })}
+        </p>
+      </div>
     </div>
   );
 }
