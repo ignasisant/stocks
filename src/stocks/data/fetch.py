@@ -361,6 +361,19 @@ def retired(symbol: str) -> bool:
     return symbol.upper().endswith(".OLD")
 
 
+def unaskable(symbol: str) -> bool:
+    """Whether `symbol` must not reach `yf.Ticker` one symbol at a time: a
+    retired line (`retired`), or an ISIN nothing has placed on a line yet.
+
+    yfinance treats an ISIN-shaped symbol as a search and raises "Invalid
+    ISIN number" from the constructor when the search finds nothing, so an
+    unplaced fund answered every ticker route with a 500 (prod 2026-11-13,
+    ten routes for one MyInvestor fund). It has no bars, profile or
+    statements to give until `symbol_for_isin` maps it.
+    """
+    return retired(symbol) or is_isin(symbol)
+
+
 def relisted(ticker: str) -> None:
     """Drop the verdict on `ticker`: it has just been mapped to a line Yahoo
     does list, and the next download asks that one."""
@@ -548,7 +561,7 @@ def info(ticker: str) -> dict:
     under a lock, so a `load_meta` fan-out over one ticker fetches once.
     """
     key = resolve(ticker)
-    if retired(key):
+    if unaskable(key):
         return {}
     now = time.monotonic()
     with _info_lock:
@@ -681,7 +694,7 @@ def close_on(ticker: str, day: str) -> float | None:
     with _close_lock:
         if key in _close_memo:
             return _close_memo[key]
-    if retired(key[0]):
+    if unaskable(key[0]):
         return None
     if throttle_remaining():
         return _close_fallback(ticker, key[0], day)
@@ -743,8 +756,13 @@ def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.D
     last spring would draw the same bars as "max".
     """
     symbol = resolve(ticker)
-    if retired(symbol):
-        return pd.DataFrame(index=pd.DatetimeIndex([], name="Date"))
+    if unaskable(symbol):
+        # The columns a blank download has too: the indicators read "Close".
+        return pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"],
+            index=pd.DatetimeIndex([], name="Date"),
+            dtype=float,
+        )
     handle = yf.Ticker(symbol)
     try:
         df = retry(lambda: handle.history(period=period, interval=interval))
@@ -1242,7 +1260,7 @@ def _coingecko_fallback(
 
 def latest_price(ticker: str) -> float:
     """Most recent price — fast_info first, 5d history as fallback."""
-    if retired(resolve(ticker)):
+    if unaskable(resolve(ticker)):
         raise ValueError(f"no data for {ticker}")
     t = yf.Ticker(resolve(ticker))
     with obs.swallow("yahoo.fast_info", ticker=ticker):

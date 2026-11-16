@@ -80,6 +80,10 @@ def fetch_estimates(ticker: str) -> RawEstimates:
     """
     import yfinance as yf
 
+    from stocks.data.fetch import resolve, unaskable
+
+    if unaskable(resolve(ticker)):
+        return RawEstimates(ticker=ticker.upper())
     t = yf.Ticker(ticker)
 
     def _safe(getter, default):
@@ -483,9 +487,9 @@ def fetch_rating_changes(ticker: str) -> pd.DataFrame:
     """
     import yfinance as yf
 
-    from stocks.data.fetch import retired, retry
+    from stocks.data.fetch import retry, unaskable
 
-    if "." in ticker or ticker.startswith("^") or retired(ticker):
+    if "." in ticker or ticker.startswith("^") or unaskable(ticker):
         return pd.DataFrame()
     frame = retry(lambda: yf.Ticker(ticker).upgrades_downgrades, attempts=2)
     return pd.DataFrame() if frame is None else frame
