@@ -739,6 +739,12 @@ def test_the_rivals_median_and_outliers_ride_along(client, monkeypatch):
     assert body["peer_range"][row] == "19.0x – 21.0x"
     assert body["outliers"] == {"S": [row]}
     assert len(body["peer_median"]) == len(body["labels"])
+    # Which way is better rides along, so a client can colour a bar without
+    # guessing from a label.
+    assert body["keys"][row] == "pe_ttm"
+    assert body["lower_better"][row] is True
+    assert body["lower_better"][body["keys"].index("roic")] is False
+    assert len(body["keys"]) == len(body["lower_better"]) == len(body["labels"])
 
 
 def test_the_fan_out_is_bounded(client):

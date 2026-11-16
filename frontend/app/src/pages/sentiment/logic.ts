@@ -101,3 +101,75 @@ export function topSectors(
     ),
   };
 }
+
+/**
+ * The composite's five bands, in scale order, with their lower edges.
+ *
+ * Mirrors `stocks.analysis.sentiment.REGIME_BANDS` (a band spans from its edge
+ * to the next one). The API sends the band a score is in but not where the
+ * bands start, and the meter has to draw all five, so the edges live here too.
+ */
+export const BANDS: readonly { key: string; from: number }[] = [
+  { key: "stress", from: 0 },
+  { key: "caution", from: 20 },
+  { key: "neutral", from: 40 },
+  { key: "appetite", from: 60 },
+  { key: "euphoria", from: 80 },
+];
+
+/** A band's share of the 0-100 scale, in points. */
+export function bandSpan(index: number): number {
+  const next = BANDS[index + 1];
+  const here = BANDS[index];
+  return (next ? next.from : 100) - (here ? here.from : 0);
+}
+
+/**
+ * Buckets a book can hold that no sector fund tracks. They are not sectors, and
+ * a tilt row for them reads as "you are 2% overweight in crypto against the
+ * S&P", which is a comparison with something the index does not hold.
+ */
+const NO_SECTOR = new Set(["Unknown", "Crypto", "Funds"]);
+
+/**
+ * The sector tilt split for drawing: the real sectors, largest overweight
+ * first, and the share of the book that sits outside any sector.
+ *
+ * `unsectored` is the sum of those buckets' tilt. The benchmark holds none of
+ * them, so their tilt is their weight and the figure reads as "this much of
+ * your book is not compared". Null when there is none, so the caption is not
+ * drawn for a book made only of sectors.
+ */
+export function splitTilt(tilt: Record<string, number>): {
+  rows: [string, number][];
+  unsectored: number | null;
+} {
+  const rows: [string, number][] = [];
+  let unsectored = 0;
+  for (const [name, value] of Object.entries(tilt)) {
+    if (NO_SECTOR.has(name)) unsectored += value;
+    else rows.push([name, value]);
+  }
+  rows.sort((a, b) => b[1] - a[1]);
+  return { rows, unsectored: unsectored > 0 ? unsectored : null };
+}
+
+/**
+ * Which side of the 50 line a component sits on, and how far, as percentages of
+ * the track: appetite grows right from the middle, tension grows left.
+ */
+export function fromMiddle(score: number): {
+  side: "appetite" | "tension";
+  width: number;
+} {
+  const clamped = Math.max(0, Math.min(100, score));
+  return clamped >= 50
+    ? { side: "appetite", width: clamped - 50 }
+    : { side: "tension", width: 50 - clamped };
+}
+
+/** The point of a chart under a pointer: its index in the series, clamped. */
+export function indexAt(x: number, width: number, count: number): number {
+  if (count <= 1 || width <= 0) return 0;
+  return Math.max(0, Math.min(count - 1, Math.round((x / width) * (count - 1))));
+}

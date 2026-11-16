@@ -20,7 +20,7 @@ import pytest
 from stocks.chat import allocation, charts, debate, harvest, rebalance, whatif
 
 LOCALES = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "locales"
-SLOTS = {"top": "ASML.AS", "n": 12}
+SLOTS = {"top": "ASML.AS", "n": 12, "ticker": "NVDA"}
 GATES = {
     "chart": charts.wants,
     "mix": allocation.wants,
@@ -37,7 +37,15 @@ OPENS = {
     "rebalance": "rebalance",
     "movers": None,
     "earnings": None,
+    # Two per page the reader asks from (`PAGE` in Empty.tsx): all prose.
+    **{
+        f"{page}_{n}": None
+        for page in ("today", "portfolio", "review", "ticker", "sector", "earnings")
+        for n in (1, 2)
+    },
 }
+# The concentration question is the one a page starter that opens a surface.
+OPENS["portfolio_1"] = "mix"
 
 
 def _asked(lang: str, name: str) -> str:

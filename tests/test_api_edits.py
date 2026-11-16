@@ -225,3 +225,101 @@ def test_health_finds_the_move_and_its_fix_goes_through_the_same_two_steps(
     assert done.status_code == 201
     after = client.get("/v1/portfolio/health", params=WHO, headers=AUTH).json()
     assert after == {"findings": []}
+
+
+# ------------------------------------------------- removing a holding by mistake
+
+
+def _grifols_moved(account):
+    """The arrival names the ISIN in its note, so the book reads one holding
+    under GRF.MC; beside it a dividend of it and one company on two venues
+    nothing maps together (a code the map does join, Revolut's ASML for
+    ASML.AS, is one holding on the page and goes with it)."""
+    add_many(
+        [
+            Transaction("2026-08-21", "GRF.MC", "buy", 5, 8.5, "EUR", 0.0,
+                        "ibkr ES0171996087"),
+            Transaction("2026-09-01", "GRF.MC", "dividend", 105, 0.1, "EUR", 0.0,
+                        "ibkr ES0171996087"),
+            Transaction("2026-01-10", "ACME.MC", "buy", 2, 60.0, "EUR", 0.0, "ibkr"),
+            Transaction("2026-01-11", "ACME", "buy", 1, 65.0, "USD", 0.0, "revolut"),
+        ],
+        account.db,
+    )
+
+
+def test_removing_a_holding_takes_every_row_it_shows_under_and_undoes(
+    account, signed_in
+):
+    _grifols_moved(account)
+    before = all_transactions(account.db)
+    grifols = {t.id for t in before if t.ticker in ("GRF.MC", "ES0171996087")}
+    planned = signed_in.post("/v1/portfolio/positions/GRF.MC/removal")
+    assert planned.status_code == 200
+    body = planned.json()
+    assert body["ok"] and body["token"]
+    # The ISIN rows answer to the label the page shows, and the dividend goes too.
+    assert {c["id"] for c in body["changes"]} == grifols
+    assert {c["kind"] for c in body["changes"]} == {"deleted"}
+    assert all_transactions(account.db) == before
+
+    done = signed_in.post(
+        "/v1/portfolio/changes",
+        json={"ops": body["ops"], "token": body["token"], "summary": "Removed GRF.MC"},
+    )
+    assert done.status_code == 201
+    left = {t.ticker for t in all_transactions(account.db)}
+    assert left == {"ACME.MC", "ACME"}
+
+    undone = signed_in.request("DELETE", f"/v1/portfolio/changes/{done.json()['id']}")
+    assert undone.status_code == 200
+    assert all_transactions(account.db) == before
+
+
+def test_removing_a_listing_leaves_the_same_company_on_another_venue(
+    account, signed_in
+):
+    _grifols_moved(account)
+    body = signed_in.post("/v1/portfolio/positions/acme.mc/removal").json()
+    rows = {t.id: t.ticker for t in all_transactions(account.db)}
+    assert [rows[c["id"]] for c in body["changes"]] == ["ACME.MC"]
+
+
+def test_removing_a_holding_the_book_never_had_is_a_404(account, signed_in):
+    response = signed_in.post("/v1/portfolio/positions/NVDA/removal")
+    assert response.status_code == 404
+    assert "NVDA" in response.json()["detail"]
+
+
+def test_a_token_cannot_plan_a_removal(account, client):
+    response = client.post(
+        "/v1/portfolio/positions/GRF.MC/removal", headers=AUTH, params=WHO
+    )
+    assert response.status_code == 403
+    assert len(all_transactions(account.db)) == 3
+
+
+@pytest.mark.parametrize("symbol", ["GRF.MC", "ACME.MC", "ACME"])
+def test_removal_takes_the_rows_the_ticker_page_shows(
+    client, account, signed_in, monkeypatch, symbol
+):
+    """`inBook` and the buy and sell marks come off `GET /ticker/{s}/position`,
+    the rows that go off `edits.position_ids`: one press must remove what the
+    page showed, no more and no less."""
+    import pandas as pd
+
+    from stocks.api.routes import ticker as ticker_route
+
+    monkeypatch.setattr(ticker_route, "listing_currencies", lambda names: {})
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: pd.DataFrame())
+    _grifols_moved(account)
+    page = client.get(f"/v1/ticker/{symbol}/position", params=WHO, headers=AUTH).json()
+    assert page["held"]
+    plan = signed_in.post(f"/v1/portfolio/positions/{symbol}/removal").json()
+    removed = sorted(
+        (c["before"]["date"], c["before"]["action"], c["before"]["quantity"])
+        for c in plan["changes"]
+        if c["before"]["action"] in ("buy", "sell")
+    )
+    shown = sorted((t["date"], t["action"], t["quantity"]) for t in page["trades"])
+    assert removed == shown

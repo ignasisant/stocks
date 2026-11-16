@@ -97,35 +97,53 @@ export function DayAttribution({
   const t = useT();
   const figures = useFigures(currency);
   const alpha = data.alpha;
+  // Each block's bar is its share of the largest block's size, either way.
+  const widest = Math.max(...data.blocks.map((block) => Math.abs(block.amount)), 0);
   return (
     <div className="td-attr">
-      {data.up.length || data.down.length ? (
-        <div className="td-attr-sides">
-          <Side title={t("today.day_up")} rows={data.up} figures={figures} />
-          <Side title={t("today.day_down")} rows={data.down} figures={figures} />
-        </div>
-      ) : null}
-      {data.blocks.length ? (
-        <div className="td-attr-side">
-          <h3 className="td-attr-head">{t("today.day_blocks")}</h3>
-          <ul className="td-attr-rows">
-            {data.blocks.map((block) => (
-              <li
-                key={`${block.kind}:${block.label}`}
-                className={block.kind === "fund" ? "ag-row-reach" : undefined}
-              >
-                <BlockName block={block} />
+      <div className="td-attr-sides">
+        <Side title={t("today.day_up")} rows={data.up} figures={figures} />
+        <Side title={t("today.day_down")} rows={data.down} figures={figures} />
+        {data.blocks.length ? (
+          <div className="td-attr-side">
+            <h3 className="td-attr-head">{t("today.day_blocks")}</h3>
+            <ul className="td-attr-rows td-attr-blocks">
+              {data.blocks.map((block) => (
+                <li
+                  key={`${block.kind}:${block.label}`}
+                  className={block.kind === "fund" ? "ag-row-reach" : undefined}
+                >
+                  <BlockName block={block} />
+                  <span
+                    className={`td-attr-bar ${block.amount < 0 ? "td-attr-bar-down" : "td-attr-bar-up"}`}
+                    aria-hidden="true"
+                  >
+                    <i
+                      style={{
+                        width: `${widest ? Math.max(4, (Math.abs(block.amount) / widest) * 100) : 0}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="td-attr-fig">
+                    <strong className={tone(block.amount)}>
+                      {figures.money(block.amount)}
+                    </strong>
+                    <small>{figures.pp(block.pp)}</small>
+                  </span>
+                </li>
+              ))}
+              <li className="td-attr-total">
+                <span>{t("today.day_total")}</span>
                 <span className="td-attr-fig">
-                  <strong className={tone(block.amount)}>
-                    {figures.money(block.amount)}
+                  <strong className={tone(data.amount)}>
+                    {figures.money(data.amount)}
                   </strong>
-                  <small>{figures.pp(block.pp)}</small>
                 </span>
               </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+            </ul>
+          </div>
+        ) : null}
+      </div>
       {data.explained.length ? (
         <ul className="td-lines td-attr-why">
           {data.explained.map((row) => (

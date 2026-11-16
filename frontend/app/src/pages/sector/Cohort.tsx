@@ -22,7 +22,15 @@ import { DenseRow, type DenseSpec, Responsive } from "../../ui/Rows";
 import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 import { MAX_ADDED, SYMBOL } from "../review/format";
 import { useLabels } from "./labels";
-import { formatMetric, ordered, passes, type Screen, tinted } from "./metrics";
+import {
+  formatMetric,
+  isPercent,
+  ordered,
+  passes,
+  type Screen,
+  tinted,
+  toWire,
+} from "./metrics";
 import { percentiles, tint } from "./rank";
 import type { CohortRow, SectorCohort } from "./types";
 
@@ -45,8 +53,8 @@ function narrowAtOpen(): boolean {
 /** The three filters the screen offers, with the thresholds it opens on. */
 const SCREENS: { metric: string; kind: "min" | "max"; value: string }[] = [
   { metric: "pe_ttm", kind: "max", value: "40" },
-  { metric: "roic", kind: "min", value: "0.15" },
-  { metric: "fcf_yield", kind: "min", value: "0.03" },
+  { metric: "roic", kind: "min", value: "15" },
+  { metric: "fcf_yield", kind: "min", value: "3" },
 ];
 
 /** How many columns a phone opens with, before anyone adds more. */
@@ -144,7 +152,7 @@ export function Cohort({
     .map((screen) => ({
       metric: screen.metric,
       kind: screen.kind,
-      value: threshold(settled[screen.metric] ?? ""),
+      value: toWire(screen.metric, threshold(settled[screen.metric] ?? "")),
     }))
     .filter((screen) => Number.isFinite(screen.value));
 
@@ -199,7 +207,10 @@ export function Cohort({
           what it applies is read before it is applied. */}
       <ToggleRow label={t("sector.screen")} className="ag-sec-chips ag-sec-screens">
         {offered.map((screen) => {
-          const value = threshold(thresholds[screen.metric] ?? "");
+          const value = toWire(
+            screen.metric,
+            threshold(thresholds[screen.metric] ?? ""),
+          );
           return (
             <ToggleChip
               key={screen.metric}
@@ -296,6 +307,7 @@ export function Cohort({
                 type="text"
                 inputMode="decimal"
                 value={thresholds[screen.metric] ?? screen.value}
+                aria-label={`${labels.metric(screen.metric)}${isPercent(screen.metric) ? " (%)" : ""}`}
                 onChange={(event) => {
                   const text = event.target.value;
                   setThresholds((current) => ({ ...current, [screen.metric]: text }));

@@ -38,12 +38,14 @@ import {
   MAX_BYTES,
   asBase64,
   book,
+  heldTickers,
   lastImport,
   listPlatforms,
   nameOf,
   preview as previewOf,
   reportUnreadable,
   scanMoves,
+  undoLast,
 } from "./api";
 import type { Book, Platform, Preview, Result, Staged } from "./api";
 import { Eyebrow, jump } from "./Card";
@@ -63,6 +65,9 @@ import { NO_WIPE, Wipe } from "./Wipe";
 import type { WipeChoice } from "./Wipe";
 import { forget, keep, land, mark, preview as remembered, restored } from "./kept";
 import { pastedFile } from "./paste";
+import { heldSet, kindsOf, newPositions } from "./tally";
+import type { Kinds } from "./tally";
+import { ToAssistant } from "./ToAssistant";
 import { platformHint, useVocabulary } from "./text";
 import { SignInWall } from "../../shell/guest";
 import { useGuest } from "../../shell/session";
@@ -179,10 +184,26 @@ function Importer({
   // What the page held when the reader followed one of its links away: back
   // here, the review they left rather than an empty drop zone (`kept`).
   const [left] = useState(restored);
+  // Bumped by anything that writes: the ledger count, the last-import record,
+  // both repairs and the preview itself are stale the moment a commit, an
+  // undo, a repair or a wipe lands.
+  const [writes, setWrites] = useState(0);
+  const wrote = () => {
+    forget();
+    setWrites((n) => n + 1);
+  };
+  // A write re-reads both; the figures on screen stay up, dimmed, meanwhile.
+  const ledger = useApi(() => book(), [writes], { keep: true });
+  const last = useApi(() => lastImport(), [writes], { keep: true });
+  const record = last.state === "loaded" ? last.data : null;
+  // No platform named by the link or the page left behind: the one the last
+  // import used, which is the likeliest for the next. Still a plain choice.
+  const asked = params.get("platform") ?? left?.platform;
+  const recalled = asked
+    ? undefined
+    : platforms.find((e) => e.key === record?.platform);
   const platform =
-    platforms.find(
-      (entry) => entry.key === (params.get("platform") ?? left?.platform),
-    ) ?? platforms[0]!;
+    platforms.find((entry) => entry.key === asked) ?? recalled ?? platforms[0]!;
   // The picked platform is only tried first: the model reads every file and
   // every parser checks it, so a Revolut PDF dropped under Trading 212 is read
   // anyway. An older server sends no list, and there the platform's is it.
@@ -195,16 +216,11 @@ function Importer({
   // A file the browser was handed and could not read.
   const [unreadable, setUnreadable] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  // What the commit booked, by kind, counted when it landed: the book moves
+  // under it a moment later.
+  const [booked, setBooked] = useState<Booked | null>(null);
   const [dragging, setDragging] = useState(false);
   const [wipe, setWipe] = useState<WipeChoice>(left?.wipe ?? NO_WIPE);
-  // Bumped by anything that writes: the ledger count, the last-import record,
-  // both repairs and the preview itself are stale the moment a commit, an
-  // undo, a repair or a wipe lands.
-  const [writes, setWrites] = useState(0);
-  const wrote = () => {
-    forget();
-    setWrites((n) => n + 1);
-  };
   // A move proposal the server no longer makes (409): ask again.
   const [again, setAgain] = useState(0);
   // Commits made here, and the splits the scan after each one found missing.
@@ -221,9 +237,6 @@ function Importer({
   // Before the preview is asked, so the ask finds this statement kept.
   useEffect(() => keep(staged, wipe, platform.key), [staged, wipe, platform.key]);
 
-  // A write re-reads both; the figures on screen stay up, dimmed, meanwhile.
-  const ledger = useApi(() => book(), [writes], { keep: true });
-  const last = useApi(() => lastImport(), [writes], { keep: true });
   // The platform is part of this query's identity and not just its input: it
   // is the parser tried first, and the one whose reading the model is checked
   // against. The wipe is too: with it set, validation runs against an empty ledger, and a
@@ -264,7 +277,6 @@ function Importer({
   // and `_real_rows` leaves them out of both scans for the same reason.
   const real = held ? (held.complete ? held.total - held.demo : held.total) : 0;
   const nothingReal = held !== null && held.complete && real === 0;
-  const record = last.state === "loaded" ? last.data : null;
   const hasLast = !!record?.filename;
   const empty = !staged && !result && nothingReal && record !== null && !hasLast;
 
@@ -275,6 +287,14 @@ function Importer({
     [real > 0, writes, again],
   );
   const moves = moveScan.state === "loaded" ? moveScan.data.moves : [];
+  // What the book holds now, to tell a purchase of a name already held from a
+  // first one. Ledger only, so it never waits on a price.
+  const heldNow = useApi(
+    async () => (real > 0 ? heldSet(await heldTickers()) : new Set<string>()),
+    [real > 0, writes],
+    { keep: true },
+  );
+  const heldTickerSet = heldNow.state === "loaded" ? heldNow.data : null;
 
   const stage = async (
     name: string,
@@ -429,6 +449,7 @@ function Importer({
           errors={errors}
           file={file}
           hint={!staged && !empty}
+          remembered={!!recalled && !staged}
           onChoose={choose}
           onDragging={setDragging}
           onDrop={onDrop}
@@ -438,6 +459,7 @@ function Importer({
           platform={platform}
           platforms={platforms}
           staged={staged}
+          assistant={<ToAssistant accepts={kinds} onHanded={clear} staged={staged} />}
           // Before the preview and not beside the commit: the wipe decides
           // what the validation is run against.
           wipe={
@@ -492,8 +514,16 @@ function Importer({
               const panel = (shown: Preview, keep: boolean) => (
                 <CommitPanel
                   keep={keep}
-                  onCommitted={(committed) => {
+                  before={held ? real : null}
+                  held={heldTickerSet}
+                  onCommitted={(committed, sent) => {
                     setResult(committed);
+                    setBooked({
+                      kinds: kindsOf(sent, committed.rejected),
+                      fresh: heldTickerSet
+                        ? newPositions(sent, heldTickerSet).length
+                        : null,
+                    });
                     setStaged(null);
                     setWipe(NO_WIPE);
                     pasted.current = "";
@@ -531,7 +561,17 @@ function Importer({
         )}
 
         {result && (
-          <Committed gaps={gaps} ledger={ledger} onAgain={clear} result={result} />
+          <Committed
+            booked={booked}
+            gaps={gaps}
+            ledger={ledger}
+            onAgain={clear}
+            onUndone={() => {
+              setResult(null);
+              wrote();
+            }}
+            result={result}
+          />
         )}
 
         {/* Only on the empty path, and only with nothing real to lose: the
@@ -604,12 +644,19 @@ function Importer({
  * moved, so it can refuse rows the preview accepted. Those are reported here rather
  * than dropped quietly, and their count is said even when it is zero.
  */
+type Booked = { kinds: Kinds; fresh: number | null };
+
 function Committed({
+  booked,
   gaps,
   ledger,
   result,
   onAgain,
+  onUndone,
 }: {
+  booked: Booked | null;
+  /** The batch was taken back: nothing of it is left to show. */
+  onUndone: () => void;
   /** Splits the scan after this commit found missing from the book. */
   gaps: number;
   ledger: Query<Book>;
@@ -618,6 +665,30 @@ function Committed({
 }) {
   const t = useT();
   const vocab = useVocabulary();
+  // Undo asks first: the rail's button acts at once, this one sits under a
+  // "done" the reader may have taken for final, so it says what it removes.
+  const [asking, setAsking] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+  const undo = async () => {
+    setUndoing(true);
+    try {
+      await undoLast();
+    } catch {
+      // Nothing was removed; the record re-read below says what is left.
+    } finally {
+      setUndoing(false);
+      setAsking(false);
+      onUndone();
+    }
+  };
+  const kpis: [string, number | null][] = booked
+    ? [
+        ["import.done_k_buys", booked.kinds.buys],
+        ["import.done_k_sells", booked.kinds.sells],
+        ["import.done_k_dividends", booked.kinds.dividends],
+        ["import.done_k_new", booked.fresh],
+      ]
+    : [];
   return (
     <section aria-live="polite" className="im-card im-done">
       <div className="im-done-main">
@@ -653,14 +724,60 @@ function Committed({
           <Link className="im-btn im-btn-primary" page="portfolio">
             {t("import.go_to", { page: t("nav.portfolio") })}
           </Link>
-          <Link className="im-btn im-btn-outline" page="home">
-            {t("import.go_to", { page: t("nav.home") })}
+          <Link className="im-btn im-btn-outline" page="today">
+            {t("import.go_to", { page: t("nav.today") })}
           </Link>
           <button className="im-btn im-btn-text" onClick={onAgain} type="button">
             {t("import.import_another")}
           </button>
         </div>
       </div>
+      {kpis.some(([, n]) => n) && (
+        <dl className="im-done-kpis">
+          {kpis
+            .filter(([, n]) => n !== null && n > 0)
+            .map(([key, n]) => (
+              <div className="im-done-kpi" key={key}>
+                <dt>{t(key)}</dt>
+                <dd>{vocab.num(n ?? 0, 0)}</dd>
+              </div>
+            ))}
+        </dl>
+      )}
+      {result.imported > 0 &&
+        (asking ? (
+          <div className="im-undo-ask" role="group" aria-label={t("import.undo_ask")}>
+            <p>
+              <strong>{t("import.undo_ask")}</strong> {t("import.undo_sure")}
+            </p>
+            <button
+              className="im-btn im-btn-danger-outline"
+              disabled={undoing}
+              onClick={() => void undo()}
+              type="button"
+            >
+              {t("import.undo_yes")}
+            </button>
+            <button
+              className="im-btn im-btn-text"
+              disabled={undoing}
+              onClick={() => setAsking(false)}
+              type="button"
+            >
+              {t("import.undo_no")}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <button
+              className="im-btn im-btn-text"
+              onClick={() => setAsking(true)}
+              type="button"
+            >
+              {t("import.undo_ask")}
+            </button>
+          </div>
+        ))}
       {/* Said in the commit's own card: shares bought before a split read as
           a vast loss, and that must not be the first thing the book shows. */}
       {gaps > 0 && (

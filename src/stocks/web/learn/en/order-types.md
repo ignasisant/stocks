@@ -6,6 +6,10 @@ minutes: 4
 as_of: 2026-10-25
 terms: market_order, limit_order, stop_order, bid_ask_spread, liquidity
 app: ticker
+quiz_q: You place a limit buy at 10.05 and the stock trades at 10.20. What happens?
+quiz_options: It buys at 10.20 | It waits and buys only at 10.05 or lower | It is cancelled at once
+quiz_answer: 2
+quiz_why: A limit order never pays more than your price: it stays open until the market comes down to it, or it never fills.
 ---
 When you buy or sell you choose not only what and how much, but also how. The order type decides the price you may end up trading at.
 

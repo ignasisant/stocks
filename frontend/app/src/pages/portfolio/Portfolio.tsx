@@ -20,10 +20,11 @@ import { useState } from "react";
 import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { GuestBanner } from "../../shell/guest";
 import { useCurrency, useGuest } from "../../shell/session";
+import { compactMoneyIn } from "../../shell/format";
 import type { Summary, Transactions } from "./api";
 import { Tabs } from "../../ui/Tabs";
 import { Empty, Warn } from "./ui";
@@ -145,6 +146,19 @@ export default function Page() {
   const active = TABS.find((tab) => tab[0] === slug) ?? TABS[0];
   const Tab = active[2];
 
+  // What each tab holds, said on the tab itself. Only what the summary above
+  // already answers: a badge that cost a fetch of its own would hold the
+  // strip back for the sake of a hint.
+  const lang = useLang();
+  const compact = compactMoneyIn(lang, base);
+  const badge = (id: string): string | null => {
+    if (summary.state !== "loaded") return null;
+    if (id === "overview") return compact(summary.data.value);
+    if (id === "positions") return String(summary.data.positions);
+    return null;
+  };
+  const unpriced = summary.state === "loaded" ? summary.data.unpriced : 0;
+
   return (
     <>
       <h1>{t("nav.portfolio")}</h1>
@@ -185,13 +199,46 @@ export default function Page() {
                 <Warn>{t("portfolio.ledger_no_positions")}</Warn>
               ) : (
                 <>
-                  <Tabs
-                    className="pf-tabs"
-                    label={t("nav.portfolio")}
-                    items={TABS.map(([id, label]) => ({ id, label: t(label) }))}
-                    active={active[0]}
-                    onPick={(tab) => setParams({ tab })}
-                  />
+                  <div className="pf-tabbar">
+                    <Tabs
+                      className="pf-tabs"
+                      label={t("nav.portfolio")}
+                      items={TABS.map(([id, label]) => ({
+                        id,
+                        label: (
+                          <>
+                            {t(label)}
+                            {badge(id) ? (
+                              <small className="pf-tab-badge">{badge(id)}</small>
+                            ) : null}
+                          </>
+                        ),
+                      }))}
+                      active={active[0]}
+                      onPick={(tab) => setParams({ tab })}
+                    />
+                  </div>
+                  {/* What is missing says so at the top, not in a footnote of
+                      the tab it happens to touch. */}
+                  {unpriced > 0 ? (
+                    <div className="pf-notice" role="status">
+                      <span>
+                        {t("portfolio.unpriced_notice", { n: unpriced })}
+                        {summary.state === "loaded" && summary.data.unlisted?.length
+                          ? ` (${summary.data.unlisted.join(", ")})`
+                          : ""}
+                      </span>
+                      {active[0] !== "positions" ? (
+                        <button
+                          className="ag-btn"
+                          type="button"
+                          onClick={() => setParams({ tab: "positions" })}
+                        >
+                          {t("portfolio.unpriced_see")}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <Tab />
                 </>
               )}

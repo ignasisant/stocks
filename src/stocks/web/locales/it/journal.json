@@ -144,5 +144,15 @@
   "journal.entry_empty": "Ancora nessuna. Decidi ora a che prezzo o con quali cifre compreresti.",
   "journal.entry_propose": "Scrivile con l'assistente",
   "journal.entry_edit": "Cambiale con l'assistente",
-  "journal.entry_prompt": "Aiutami a scrivere le regole di acquisto per {ticker}: il prezzo, il calo o le cifre a cui comprerei o rafforzerei."
+  "journal.entry_prompt": "Aiutami a scrivere le regole di acquisto per {ticker}: il prezzo, il calo o le cifre a cui comprerei o rafforzerei.",
+  "journal.kpi_proposed": "Proposte",
+  "journal.kpi_followed": "Seguite",
+  "journal.kpi_declined": "Rifiutate",
+  "journal.kpi_lapsed": "Scadute",
+  "journal.kpi_open": "Aperte",
+  "journal.kpi_its_way": "Giuste a un mese",
+  "journal.record_note": "Una vendita o un acquisto nel portafoglio conta come seguirla; non si chiede nulla. Sono conteggi, non un verdetto su com'è andata.",
+  "journal.show_stay": "Mostra «Mantieni il portafoglio» ({n})",
+  "journal.rules_head": "Le tue regole · {n}",
+  "journal.proposals_head": "Proposte · {n}"
 }

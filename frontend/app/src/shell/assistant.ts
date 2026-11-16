@@ -90,6 +90,52 @@ export function useAssistantFills(handler: () => void): void {
   }, [handler]);
 }
 
+const attachListeners = new Set<(file: File) => void>();
+const takerWatchers = new Set<() => void>();
+
+function takersChanged(): void {
+  for (const watcher of takerWatchers) watcher();
+}
+
+/**
+ * Open the assistant with a statement to import, as if it had been dropped on
+ * the conversation. The Import page's "Import with the assistant" — the
+ * drawer reads it with the same reader the page uses and shows the rows
+ * before anything is written: a second way to the same import. A no-op with
+ * nothing listening, like the others: a guest's locked drawer cannot import.
+ */
+export function attachAssistant(file: File): void {
+  for (const listener of attachListeners) listener(file);
+}
+
+/** Subscribe to those statements. The drawer is the only caller. */
+export function useAssistantAttach(handler: (file: File) => void): void {
+  useEffect(() => {
+    attachListeners.add(handler);
+    takersChanged();
+    return () => {
+      attachListeners.delete(handler);
+      takersChanged();
+    };
+  }, [handler]);
+}
+
+/**
+ * Whether anything would take `attachAssistant` — an account's drawer. A
+ * subscription, not a read: the drawer registers in an effect, after a page
+ * loaded straight from its URL has already drawn once.
+ */
+export function useAssistantTakesFiles(): boolean {
+  return useSyncExternalStore(
+    (watcher) => {
+      takerWatchers.add(watcher);
+      return () => takerWatchers.delete(watcher);
+    },
+    () => attachListeners.size > 0,
+    () => false,
+  );
+}
+
 const threadListeners = new Set<(cid: string) => void>();
 
 /**

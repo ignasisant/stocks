@@ -36,7 +36,9 @@ import {
   INCEPTION,
   SPANS,
   compareData,
+  POSITIONS_SHOWN,
   compareOrder,
+  gapInMoney,
   notable,
   openingSpan,
   pickBench,
@@ -45,7 +47,7 @@ import {
 } from "./card";
 import type { TodayBenchmark, TodayRow, TodaySection } from "./types";
 import { Segmented } from "../../ui/Segmented";
-import { decimal, percent } from "../../shell/format";
+import { decimal, money, percent } from "../../shell/format";
 import { TickerCell } from "../../shell/tickers";
 
 type Shown = { row: TodayRow; data: CompareData; hot: boolean };
@@ -126,6 +128,10 @@ function Benchmarks({
   const lang = useLang();
   const f = useFigures();
   const all = span === INCEPTION;
+  // What the book made beyond each index on the same money, in money.
+  const gap = (mark: TodayBenchmark) => gapInMoney(marks, mark);
+  const cash = (value: number) =>
+    money(value, { currency, lang, signed: "always", digits: 0 }) ?? "";
   const help = (mark: TodayBenchmark) =>
     mark.symbol === BOOK
       ? t(all ? "today.bench_book_all_help" : "today.bench_book_help")
@@ -151,6 +157,14 @@ function Benchmarks({
           >
             <span className="td-bench-name">{name}</span>
             <Move value={move} text={f.pct(move)} />
+            {all && gap(mark) !== null ? (
+              <span className="td-bench-gap">
+                <Move
+                  value={gap(mark)}
+                  text={t("today.bench_gap", { amount: cash(gap(mark) ?? 0) })}
+                />
+              </span>
+            ) : null}
           </button>
         );
       })}
@@ -171,6 +185,7 @@ export function Compare({ section }: { section: TodaySection }) {
   const f = useFigures();
   const [span, setSpan] = useState<Span>(() => openingSpan(section));
   const [picked, setPicked] = useState<string | null>(null);
+  const [allRows, setAllRows] = useState(false);
   const marks = section.benchmarks ?? [];
   const bench = pickBench(marks, picked);
   const benchName = !bench
@@ -181,10 +196,12 @@ export function Compare({ section }: { section: TodaySection }) {
   const vsIndex = benchName
     ? t("today.col_vs", { name: benchName })
     : t("today.col_vs_index");
-  const shown: Shown[] = compareOrder(section.rows, span).map((row) => {
+  const every: Shown[] = compareOrder(section.rows, span).map((row) => {
     const data = compareData(row, span, bench);
     return { row, data, hot: notable(data) };
   });
+  const cut = every.length > POSITIONS_SHOWN + 1;
+  const shown = cut && !allRows ? every.slice(0, POSITIONS_SHOWN) : every;
   // Since inception, a name listed after the book began is measured from
   // its listing, and every gap on its row over that same window.
   const listedLater = (row: TodayRow) =>
@@ -303,6 +320,18 @@ export function Compare({ section }: { section: TodaySection }) {
         />
       ) : null}
       <Responsive wide={wide} narrow={narrow} />
+      {cut ? (
+        <button
+          type="button"
+          className="td-more td-more-btn"
+          aria-expanded={allRows}
+          onClick={() => setAllRows((was) => !was)}
+        >
+          {allRows
+            ? t("today.positions_top", { count: POSITIONS_SHOWN })
+            : t("today.positions_all", { count: every.length })}
+        </button>
+      ) : null}
       <Link page="review" className="td-more">
         {t("today.open_review")}
       </Link>

@@ -86,6 +86,14 @@ class Position(BaseModel):
     day_pct: float | None = Field(
         default=None, description="The same move as a fraction of yesterday's value."
     )
+    week_pct: float | None = Field(
+        default=None,
+        description="Move over ~7 days, reporting currency, as a fraction.",
+    )
+    month_pct: float | None = Field(
+        default=None,
+        description="Move over ~30 days, reporting currency, as a fraction.",
+    )
     market_active: bool = Field(
         default=True,
         description=(

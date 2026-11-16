@@ -3,7 +3,7 @@
  * next, which terms a search matches, and a guest's ticks in the browser.
  */
 
-import type { Curriculum, LearnPath, Term } from "./types";
+import type { Curriculum, LearnPath, LessonRef, Term } from "./types";
 
 /** `learn.path_<id>_title`'s id part: catalog keys take no hyphens. */
 export const pathKey = (id: string) => id.replace(/-/g, "_");
@@ -99,4 +99,96 @@ export function place(curriculum: Curriculum, lesson: string): Place | null {
     if (at >= 0) return { at: at + 1, total: path.lessons.length };
   }
   return null;
+}
+
+/** The lesson to open next: the first unread one in path order, where it sits
+    in its path, and the minutes left across every path (and in all of them). */
+export type NextUp = {
+  path: LearnPath;
+  lesson: LessonRef;
+  at: number;
+  total: number;
+  read: number;
+  all: number;
+  minutesLeft: number;
+  minutesAll: number;
+};
+
+export function nextUp(
+  curriculum: Curriculum,
+  done: ReadonlySet<string>,
+): NextUp | null {
+  const lessons = curriculum.paths.flatMap((path) => path.lessons);
+  const open = curriculum.paths.find((path) =>
+    path.lessons.some((x) => !done.has(x.id)),
+  );
+  if (!open) return null;
+  const lesson = open.lessons.find((x) => !done.has(x.id))!;
+  const minutes = (list: readonly LessonRef[]) =>
+    list.reduce((sum, x) => sum + x.minutes, 0);
+  return {
+    path: open,
+    lesson,
+    at: open.lessons.indexOf(lesson) + 1,
+    total: open.lessons.length,
+    read: lessons.filter((x) => done.has(x.id)).length,
+    all: lessons.length,
+    minutesLeft: minutes(lessons.filter((x) => !done.has(x.id))),
+    minutesAll: minutes(lessons),
+  };
+}
+
+/** Lesson id → the id of the path that holds it. */
+export function lessonPaths(curriculum: Curriculum): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const path of curriculum.paths)
+    for (const lesson of path.lessons) out[lesson.id] = path.id;
+  return out;
+}
+
+/** The glossary's terms taught on `path`; null is every term. */
+export function inPath(
+  terms: readonly Term[],
+  path: string | null,
+  paths: Readonly<Record<string, string>>,
+): Term[] {
+  if (!path) return [...terms];
+  return terms.filter((term) => term.lesson && paths[term.lesson.id] === path);
+}
+
+export type Piece = { text: string; hit: boolean };
+
+/** `text` cut where `query` occurs, case and accents ignored, so a match can
+    be drawn marked. An empty query is the whole text, unmarked. */
+export function highlight(text: string, query: string): Piece[] {
+  const q = fold(query);
+  if (!q) return [{ text, hit: false }];
+  let folded = "";
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const part = char.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+    for (let i = 0; i < part.length; i++) {
+      starts.push(at);
+      ends.push(at + char.length);
+    }
+    folded += part;
+    at += char.length;
+  }
+  const pieces: Piece[] = [];
+  let from = 0;
+  let found = folded.indexOf(q);
+  while (found >= 0) {
+    const start = starts[found]!;
+    const end = ends[found + q.length - 1]!;
+    if (start >= from) {
+      if (start > from) pieces.push({ text: text.slice(from, start), hit: false });
+      pieces.push({ text: text.slice(start, end), hit: true });
+      from = end;
+    }
+    found = folded.indexOf(q, found + q.length);
+  }
+  if (from < text.length) pieces.push({ text: text.slice(from), hit: false });
+  return pieces;
 }

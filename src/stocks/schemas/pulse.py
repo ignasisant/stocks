@@ -250,6 +250,10 @@ class MarketTile(BaseModel):
     percentile: float | None = Field(
         default=None, description="Where the level sits in its own year (VIX only)."
     )
+    spark: list[float] = Field(
+        default_factory=list,
+        description="The last sessions' levels, oldest first, for the tile's minichart.",
+    )
     linkable: bool = Field(
         default=True,
         description="Whether the symbol has a ticker page (FRED ids do not).",

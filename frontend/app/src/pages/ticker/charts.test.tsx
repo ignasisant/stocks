@@ -63,6 +63,7 @@ const financials: Financials = {
 const valuation: Valuation = {
   ticker: "X",
   source: "edgar",
+  basis: "ttm",
   current: 20,
   current_verdict: null,
   current_tone: null,
@@ -139,6 +140,23 @@ describe("P/E chart verdict", () => {
       />,
     );
     expect(html).toContain(">Muy cara<");
+  });
+
+  it("says a 20-F filer's line runs on fiscal years, and still draws it with no today", () => {
+    dom();
+    const ttm = renderToStaticMarkup(
+      <ValuationChart data={valuation} fundamentalPe={20} />,
+    );
+    const annual = renderToStaticMarkup(
+      <ValuationChart
+        data={{ ...valuation, basis: "annual", current: null }}
+        fundamentalPe={20}
+      />,
+    );
+    expect(ttm).toContain("ticker.pe_caption<");
+    expect(annual).toContain("ticker.pe_caption_annual");
+    expect(annual).not.toContain("ticker.pe_insufficient");
+    expect(annual).toContain("<svg");
   });
 });
 

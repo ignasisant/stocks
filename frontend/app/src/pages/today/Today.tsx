@@ -16,8 +16,11 @@
  * Read like a newspaper: a mono dateline, one headline as the focal point,
  * figures in tiles, then the sections in a fixed order — what to act on,
  * then what is yours (your names against their benchmarks, news and insider
- * trades on them), then the market — the market in a narrower column of its
- * own where the page is wide. A tab strip narrows it to one section; `?tab=`
+ * trades on them), then the market. Under All the market's read opens the
+ * body as one card (its lines by topic, the regime, a strip of quotes), and
+ * the sections below run the full width: the wide ones (the book, the day,
+ * the comparisons) alone, the rest side by side in pairs where there is room.
+ * A tab strip narrows it to one section; `?tab=`
  * makes that a link. A section with nothing in it is not drawn and not
  * offered as a tab. Under All a long list shows its first few rows and how
  * many more its own tab holds.
@@ -28,7 +31,7 @@
  * filing.
  */
 
-import { useState } from "react";
+import { Children, useEffect, useRef, useState, type ReactNode } from "react";
 import { openAssistant, openThread } from "../../shell/assistant";
 import { SignInWall } from "../../shell/guest";
 import { useLang, useT } from "../../shell/i18n";
@@ -44,15 +47,19 @@ import { monthDay, parseDay } from "../home/format";
 import { stampKey, useAnalyses } from "./Analysis";
 import { DayAttribution } from "./Attribution";
 import { BookChart, BookKpis, IndexKpis, SectionChart } from "./Book";
+import { MarketBrief } from "./Brief";
 import {
+  ROUTINES_OPEN,
   TAB_LABELS,
   activeTab,
+  newsTickers,
   badgeKey,
   linesOf,
   noteKey,
   sectionOf,
   sectionsOf,
   shows,
+  sinceInception,
   stampOf,
   tabsOf,
   type TabId,
@@ -60,6 +67,7 @@ import {
 import { Compare } from "./Compare";
 import { Macro, Trends } from "./Market";
 import { Block, Lines, Rows } from "./Section";
+import { useTickerProfile } from "../../shell/tickers";
 import type { PersonalCard, TodayCard, TodaySection } from "./types";
 import { useToday } from "./useToday";
 import "../home/home.css";
@@ -105,6 +113,71 @@ function IconButton({
   );
 }
 
+/** Sections side by side where the page has room for both, one under the
+ * other where it has not; a lone one takes the whole row. */
+function Pair({ children }: { children: ReactNode }) {
+  const kids = Children.toArray(children);
+  if (!kids.length) return null;
+  return <div className="td-pair">{kids}</div>;
+}
+
+/** The tab strip, kept in view while the page scrolls under it: clear at
+ * rest, frosted once it is pinned so the text going under it stays legible. */
+function StickyTabs({ children }: { children: ReactNode }) {
+  const bar = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const el = bar.current;
+      if (!el) return;
+      const pin = parseFloat(getComputedStyle(el).top) || 0;
+      setStuck(scrollY > 0 && el.getBoundingClientRect().top <= pin + 1);
+    };
+    const queue = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    addEventListener("scroll", queue, { passive: true });
+    addEventListener("resize", queue);
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener("scroll", queue);
+      removeEventListener("resize", queue);
+    };
+  }, []);
+  return (
+    <div ref={bar} className="td-tabs-bar" data-stuck={stuck ? "" : undefined}>
+      {children}
+    </div>
+  );
+}
+
+/** One chip of the news filter: the holding's logo, its symbol and its count. */
+function NewsChip({
+  ticker,
+  count,
+  on,
+  onPick,
+}: {
+  ticker: string;
+  count: number;
+  on: boolean;
+  onPick: () => void;
+}) {
+  const profile = useTickerProfile(ticker);
+  return (
+    <button type="button" className="td-chip" aria-pressed={on} onClick={onPick}>
+      {profile?.logo ? (
+        <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
+      ) : null}
+      <span>{ticker}</span>
+      <span className="td-chip-n">{count}</span>
+    </button>
+  );
+}
+
 /** How many rows a computed section shows under All; its own tab has them all. */
 const FRONT_ROWS = 4;
 
@@ -121,7 +194,15 @@ function Computed({
   /** Open the section's own tab; set only under All, where the list is cut. */
   onMore?: () => void;
 }) {
+  const t = useT();
+  const [only, setOnly] = useState<string | null>(null);
   if (!section || (!section.rows.length && !section.missing.length)) return null;
+  // The news can be narrowed to one holding; a filter chosen is the whole
+  // list of that name, so the front page's cut does not apply to it.
+  const chips = section.id === "news" ? newsTickers(section.rows) : [];
+  const rows = only
+    ? section.rows.filter((row) => row.tickers.includes(only))
+    : section.rows;
   return (
     <Block
       id={section.id}
@@ -131,11 +212,31 @@ function Computed({
       note={section.note}
       missing={section.missing}
     >
-      {section.rows.length ? (
+      {chips.length > 1 ? (
+        <div className="td-chips" role="group" aria-label={t("today.news_filter")}>
+          <button
+            type="button"
+            className="td-chip"
+            aria-pressed={only === null}
+            onClick={() => setOnly(null)}
+          >
+            {t("today.news_all")}
+          </button>
+          {chips.map((chip) => (
+            <NewsChip
+              key={chip.ticker}
+              {...chip}
+              on={only === chip.ticker}
+              onPick={() => setOnly(only === chip.ticker ? null : chip.ticker)}
+            />
+          ))}
+        </div>
+      ) : null}
+      {rows.length ? (
         <Rows
-          rows={section.rows}
-          limit={onMore ? FRONT_ROWS : undefined}
-          onMore={onMore}
+          rows={rows}
+          limit={onMore && !only ? FRONT_ROWS : undefined}
+          onMore={onMore && !only ? onMore : undefined}
         />
       ) : null}
     </Block>
@@ -149,6 +250,8 @@ export default function Today() {
   const { params, setParams } = useRoute();
   const { state, stalled, regenerate, restart } = useToday(lang, guest);
   const [editing, setEditing] = useState(false);
+  // Under All only the first routines are open; the rest are one press away.
+  const [folded, setFolded] = useState(true);
 
   // The card on screen: none while today's is being written for the first
   // time (an older one is not what the reader came for), none for a guest.
@@ -244,26 +347,60 @@ export default function Today() {
   ) : null;
 
   const compare = card ? sectionOf(card, "compare") : null;
+  const since = sinceInception(compare);
   const front = active === "all";
-  const yours = (
-    <>
-      {shows(active, "alerts") && alerts.length ? (
-        <Block id="alerts" title={t("home.daily_sec_alerts")} count={alerts.length}>
-          <Lines items={alerts} {...lineProps} />
-        </Block>
+  const cutRoutines = front && folded && brief.length > ROUTINES_OPEN + 1;
+  const routines = cutRoutines ? brief.slice(0, ROUTINES_OPEN) : brief;
+  const hidden = cutRoutines ? brief.slice(ROUTINES_OPEN) : [];
+  const macroOn = shows(active, "macro") && Boolean(market);
+  const trendsOn = shows(active, "trends") && Boolean(market);
+  const asideOn = macroOn || trendsOn;
+  const mainOn = active === "all" || (active !== "macro" && active !== "trends");
+  const main = (
+    <div className="td-main">
+      <Pair>
+        {shows(active, "alerts") && alerts.length ? (
+          <Block id="alerts" title={t("home.daily_sec_alerts")} count={alerts.length}>
+            <Lines items={alerts} {...lineProps} />
+          </Block>
+        ) : null}
+        {shows(active, "routines")
+          ? routines.map((section, n) => (
+              <Block key={n} id={`brief-${n}`} title={section.title}>
+                {section.lines.length ? (
+                  <Lines items={section.lines} {...lineProps} />
+                ) : null}
+                <SectionChart section={section} />
+              </Block>
+            ))
+          : null}
+        {shows(active, "book") && !brief.length && watch.length ? (
+          <Block id="watch" title={t("home.daily_sec_watch")}>
+            <Lines items={watch} {...lineProps} />
+          </Block>
+        ) : null}
+      </Pair>
+      {front && brief.length > ROUTINES_OPEN + 1 ? (
+        <button
+          type="button"
+          className="td-fold"
+          aria-expanded={!folded}
+          onClick={() => setFolded((was) => !was)}
+        >
+          <b>
+            {folded
+              ? t("today.routines_more", { count: brief.length - ROUTINES_OPEN })
+              : t("today.routines_fold", { count: brief.length - ROUTINES_OPEN })}
+          </b>
+          {folded ? (
+            <span className="td-fold-list">
+              {hidden.map((section) => section.title).join(" · ")}
+            </span>
+          ) : null}
+        </button>
       ) : null}
-      {shows(active, "routines")
-        ? brief.map((section, n) => (
-            <Block key={n} id={`brief-${n}`} title={section.title}>
-              {section.lines.length ? (
-                <Lines items={section.lines} {...lineProps} />
-              ) : null}
-              <SectionChart section={section} />
-            </Block>
-          ))
-        : null}
       {shows(active, "book") && book ? (
-        <Block id="book" title={t("home.daily_sec_book")} help={t("today.book_help")}>
+        <Block id="book" title={t("today.sec_book")} help={t("today.book_help")}>
           <BookChart book={book} />
         </Block>
       ) : null}
@@ -274,11 +411,6 @@ export default function Today() {
             currency={book.currency}
             index={book.index}
           />
-        </Block>
-      ) : null}
-      {shows(active, "book") && !brief.length && watch.length ? (
-        <Block id="watch" title={t("home.daily_sec_watch")}>
-          <Lines items={watch} {...lineProps} />
         </Block>
       ) : null}
       {/* Drawn with no rows when a source failed, as news and insiders are:
@@ -294,37 +426,50 @@ export default function Today() {
           {compare.rows.length ? <Compare section={compare} /> : null}
         </Block>
       ) : null}
-      {shows(active, "news") ? (
-        <Computed
-          section={sectionOf(card, "news")}
-          title={t("today.section_news")}
-          help={t("today.news_help")}
-          onMore={front ? () => pick("news") : undefined}
-        />
-      ) : null}
-      {shows(active, "insiders") ? (
-        <Computed
-          section={sectionOf(card, "insiders")}
-          title={t("today.section_insiders")}
-          help={t("today.insiders_help")}
-          onMore={front ? () => pick("insiders") : undefined}
-        />
-      ) : null}
-    </>
+      <Pair>
+        {shows(active, "news") ? (
+          <Computed
+            section={sectionOf(card, "news")}
+            title={t("today.section_news")}
+            help={t("today.news_help")}
+            onMore={front ? () => pick("news") : undefined}
+          />
+        ) : null}
+        {shows(active, "insiders") ? (
+          <Computed
+            section={sectionOf(card, "insiders")}
+            title={t("today.section_insiders")}
+            help={t("today.insiders_help")}
+            onMore={front ? () => pick("insiders") : undefined}
+          />
+        ) : null}
+      </Pair>
+    </div>
   );
-
-  const context = (
-    <>
-      {shows(active, "macro") && market ? (
+  const aside = (
+    <aside className="td-aside" aria-label={t("today.sec_macro")}>
+      {/* Under All the model's lines are in the market card above. */}
+      {macroOn && market ? (
         <Block id="macro" title={t("today.sec_macro")} help={t("today.macro_help")}>
-          <Macro market={market} />
+          <Macro market={market} written={!front} />
         </Block>
       ) : null}
-      {shows(active, "trends") && market ? (
+      {trendsOn && market ? (
         <Block id="trends" title={t("today.sec_trends")} help={t("today.trends_help")}>
-          <Trends market={market} />
+          <Trends market={market} written={!front} />
         </Block>
       ) : null}
+    </aside>
+  );
+  const body = (
+    <>
+      {front && market ? (
+        <MarketBrief market={market} headline={Boolean(card?.headline)} />
+      ) : null}
+      <div className={mainOn && asideOn ? "td-cols td-cols-2" : "td-cols"}>
+        {mainOn ? main : null}
+        {asideOn ? aside : null}
+      </div>
     </>
   );
 
@@ -371,7 +516,13 @@ export default function Today() {
         {market && view.market_stale && session ? (
           <p className="hm-note">{t("today.market_stale", { date: session })}</p>
         ) : null}
-        {headline && !regenerating ? <p className="td-headline">{headline}</p> : null}
+        {/* The slot keeps its two lines while the card is written, so the
+            figures below do not jump when the headline lands. */}
+        <div
+          className={busy ? "td-headline-slot td-headline-wait" : "td-headline-slot"}
+        >
+          {headline && !regenerating ? <p className="td-headline">{headline}</p> : null}
+        </div>
         {writing || regenerating ? (
           <Status label={t("today.writing")} />
         ) : card?.pending && stalled ? (
@@ -401,31 +552,30 @@ export default function Today() {
       ) : (
         <>
           {book ? (
-            <BookKpis book={book} />
+            <BookKpis book={book} since={since} />
           ) : market?.index ? (
             <IndexKpis index={market.index} />
           ) : null}
 
           {tabs.length > 1 ? (
-            <Tabs
-              items={tabs.map((tab) => ({
-                id: tab.id,
-                label: t(TAB_LABELS[tab.id]),
-                count: tab.count,
-              }))}
-              active={active}
-              onPick={pick}
-            />
+            <StickyTabs>
+              <Tabs
+                className="td-tabs"
+                items={tabs.map((tab) => ({
+                  id: tab.id,
+                  label: t(TAB_LABELS[tab.id]),
+                  count: tab.count,
+                }))}
+                active={active}
+                onPick={pick}
+              />
+            </StickyTabs>
           ) : null}
 
           {writing || regenerating ? <Skeleton rows={3} /> : null}
 
-          <div
-            className={active === "all" ? "td-body td-body-two" : "td-body"}
-            role="tabpanel"
-          >
-            <div className="td-col">{yours}</div>
-            <div className="td-col td-side">{context}</div>
+          <div className="td-body" role="tabpanel">
+            {body}
           </div>
 
           {guest ? <SignInWall text="today.guest_wall" /> : null}

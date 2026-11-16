@@ -11,10 +11,11 @@
 
 import { Link } from "../../shell/router";
 import { useLang, useT } from "../../shell/i18n";
-import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
+import { Chip, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
 import { NA, fixed, signedPercent, share, signed } from "./format";
+import { BANDS, bandSpan } from "./logic";
 import type { Pulse, PulseBook } from "./types";
 import { Badge } from "../../ui/Badge";
 import { num } from "../../shell/numbers";
@@ -32,6 +33,25 @@ const REGIMES = new Set([
 /** Horizons the score deltas are quoted over, in sessions — the page's own set. */
 const WEEK = 5;
 const MONTH = 21;
+
+/** One of the hero's three figures: a link down to the card that explains it. */
+function Figure({
+  label,
+  value,
+  chip,
+}: {
+  label: string;
+  value: string;
+  chip: ChipSpec | null;
+}) {
+  return (
+    <a className="sn-chip-fig" href="#ag-book">
+      <small>{label}</small>
+      <b>{value}</b>
+      <Chip chip={chip} />
+    </a>
+  );
+}
 
 function regimeKey(regime: string): string {
   return REGIMES.has(regime) ? regime : "unknown";
@@ -152,18 +172,50 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
         </span>
       </div>
 
-      <div className={`sn-meter${known ? "" : " sn-meter-flat"}`}>
+      {/* Five bands, named under the track, so the needle says WHERE it is and
+          not only how far along: 38 is "caution", and the reader can see the
+          edge it would have to cross to be neutral. */}
+      <div
+        className={`sn-meter${known ? "" : " sn-meter-flat"}`}
+        role="img"
+        aria-label={
+          !known
+            ? t("sentiment.regime_unknown")
+            : ghost === null
+              ? t("sentiment.meter_label_plain", {
+                  score: fixed(pulse.score, 0),
+                  band: t(`sentiment.regime_${band}`),
+                })
+              : t("sentiment.meter_label", {
+                  score: fixed(pulse.score, 0),
+                  band: t(`sentiment.regime_${band}`),
+                  then: fixed(ghost, 0),
+                })
+        }
+      >
+        {known &&
+          BANDS.map((entry, i) => (
+            <i
+              key={entry.key}
+              className={`sn-band sn-regime-${entry.key}`}
+              style={{ flex: bandSpan(i) }}
+            />
+          ))}
         {ghost !== null && (
           <div className="sn-meter-ghost" style={{ left: `calc(${ghost}% - 1px)` }} />
         )}
         <div className="sn-meter-pin" style={{ left: `calc(${pin}% - 2.5px)` }} />
       </div>
-      <div className="sn-meter-scale">
-        <span>0 {t("sentiment.regime_stress").toUpperCase()}</span>
-        <span>20</span>
-        <span>40 {t("sentiment.regime_neutral").toUpperCase()} 60</span>
-        <span>80</span>
-        <span>{t("sentiment.regime_euphoria").toUpperCase()} 100</span>
+      <div className="sn-meter-scale" aria-hidden="true">
+        {BANDS.map((entry, i) => (
+          <span
+            key={entry.key}
+            style={{ flex: bandSpan(i) }}
+            className={known && entry.key === band ? "sn-on" : undefined}
+          >
+            {t(`sentiment.regime_${entry.key}`)}
+          </span>
+        ))}
       </div>
       <p className="sn-help">{t("sentiment.pulse_help")}</p>
 
@@ -178,12 +230,7 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
               })}
             </span>
           </div>
-          <HeroSpark values={scores} />
-          <div className="sn-sparkbox-y">
-            <span>80</span>
-            <span>50</span>
-            <span>20</span>
-          </div>
+          <HeroSpark points={pulse.history} />
         </div>
       )}
 
@@ -279,39 +326,37 @@ export function Side({
           })}
         </p>
       )}
-      <Kpi
-        label={t("sentiment.beta_equity")}
-        value={fixed(book.beta, 2)}
-        chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
-      />
-      {book.bond_correlation !== null && (
-        <Kpi
-          label={t("sentiment.side_corr")}
-          value={signed(book.bond_correlation, 2)}
-          chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
+      {/* The three figures that carry the sentence, each a way into the full
+          card below where they already live with their explanation — so this
+          half states the point once and sends the reader on, instead of
+          drawing the book card's tiles a second time. */}
+      <div className="sn-chips">
+        <Figure
+          label={t("sentiment.beta_equity")}
+          value={fixed(book.beta, 2)}
+          chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
         />
-      )}
-      <Kpi
-        label={t("sentiment.usd_share")}
-        value={share(book.usd_share)}
-        chip={
-          drag === null
-            ? null
-            : chipFor(drag, t("sentiment.fx_pill", { value: signedPercent(drag, 2) }))
-        }
-      />
+        {book.bond_correlation !== null && (
+          <Figure
+            label={t("sentiment.side_corr")}
+            value={signed(book.bond_correlation, 2)}
+            chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
+          />
+        )}
+        <Figure
+          label={t("sentiment.usd_share")}
+          value={share(book.usd_share)}
+          chip={
+            drag === null
+              ? null
+              : chipFor(drag, t("sentiment.fx_pill", { value: signedPercent(drag, 2) }))
+          }
+        />
+      </div>
       {/* The dollar share survived the outage — it is read off the positions
           — while the beta and the correlation need the index series. Say so
           under the rows rather than letting two "n/a"s explain themselves. */}
       {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
-      <p className="sn-help">
-        {book.beta_rolling === null || book.beta_rolling_then === null
-          ? t("sentiment.side_help_plain")
-          : t("sentiment.side_help", {
-              then: fixed(book.beta_rolling_then, 2),
-              now: fixed(book.beta_rolling, 2),
-            })}
-      </p>
       <a className="sn-more" href="#ag-book">
         {t("sentiment.side_more")}
       </a>

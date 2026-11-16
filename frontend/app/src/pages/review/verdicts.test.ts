@@ -6,6 +6,9 @@ import {
   closeCalls,
   groupByVerdict,
   hasMoves,
+  mapKeys,
+  mapMark,
+  verdictMark,
   parseVerdicts,
   pickVerdicts,
   verdictCounts,
@@ -154,5 +157,53 @@ describe("closeCall", () => {
       row({ ticker: "SKIP" }),
     ]);
     expect(calls.map((call) => call.row.ticker)).toEqual(["NEAR", "FAR", "NONE"]);
+  });
+});
+
+describe("mapMark", () => {
+  it("colours a name by the move it is, close calls apart from quiet holds", () => {
+    const at = (verdict: Verdict, reasons: string[] = []) =>
+      mapMark(row({ ticker: "X", verdict, reasons }));
+    expect(at("sell")).toBe("sell");
+    expect(at("trim")).toBe("trim");
+    expect(at("pass")).toBe("sell");
+    expect(at("add")).toBe("add");
+    expect(at("hold")).toBe("still");
+    expect(at("hold", ["close_call"])).toBe("near");
+    expect(at("watch")).toBe("watch");
+    expect(at("watch", ["close_call"])).toBe("near");
+    expect(at("buy")).toBe("buy");
+    expect(at("bet")).toBe("bet");
+    expect(at("core")).toBe("still");
+  });
+});
+
+describe("mapKeys", () => {
+  it("lists each colour worn once, its verdicts in reading order, quiet holds left out", () => {
+    const keys = mapKeys([
+      row({ ticker: "A", verdict: "pass", held: false }),
+      row({ ticker: "B", verdict: "hold" }),
+      row({ ticker: "C", verdict: "sell" }),
+      row({ ticker: "D", verdict: "hold", reasons: ["close_call"] }),
+      row({ ticker: "E", verdict: "buy", held: false }),
+    ]);
+    expect(keys).toEqual([
+      { mark: "sell", verdicts: ["sell", "pass"] },
+      { mark: "near", verdicts: ["hold"] },
+      { mark: "buy", verdicts: ["buy"] },
+    ]);
+  });
+});
+
+describe("verdictMark", () => {
+  it("gives the bar, the chips and the map one colour per verdict", () => {
+    expect(verdictMark("sell")).toBe("sell");
+    expect(verdictMark("pass")).toBe("sell");
+    expect(verdictMark("trim")).toBe("trim");
+    expect(verdictMark("add")).toBe("add");
+    expect(verdictMark("buy")).toBe("buy");
+    expect(verdictMark("bet")).toBe("bet");
+    expect(verdictMark("watch")).toBe("watch");
+    expect(verdictMark("hold")).toBe("still");
   });
 });

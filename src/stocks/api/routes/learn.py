@@ -39,6 +39,9 @@ class LessonRef(BaseModel):
 class PathOut(BaseModel):
     id: str
     icon: str
+    #: The oldest review date among the path's lessons: the path is "up to
+    #: date" as of that day.
+    as_of: str = ""
     lessons: list[LessonRef]
 
 
@@ -56,6 +59,13 @@ class TermRef(BaseModel):
     desc: str
 
 
+class QuizOut(BaseModel):
+    question: str
+    options: list[str]
+    answer: int
+    why: str
+
+
 class LessonOut(BaseModel):
     id: str
     path: str
@@ -68,6 +78,7 @@ class LessonOut(BaseModel):
     before: LessonRef | None
     after: LessonRef | None
     done: bool
+    quiz: QuizOut | None = None
 
 
 class TermOut(BaseModel):
@@ -116,6 +127,10 @@ def curriculum(account: Account, who: Who, lang: Lang = "en") -> Curriculum:
         PathOut(
             id=path.id,
             icon=path.icon,
+            as_of=min(
+                (x.as_of for i in path.lessons if (x := learn.lesson(i, lang))),
+                default="",
+            ),
             lessons=[ref for i in path.lessons if (ref := _ref(i, lang))],
         )
         for path in learn.paths()
@@ -149,6 +164,9 @@ def lesson(
         before=_ref(before, lang),
         after=_ref(after, lang),
         done=found.id in _done(account, who),
+        quiz=QuizOut(question=found.quiz.question, options=list(found.quiz.options),
+                     answer=found.quiz.answer, why=found.quiz.why)
+        if found.quiz else None,
     )
 
 

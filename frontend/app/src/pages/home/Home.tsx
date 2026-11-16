@@ -5,8 +5,9 @@
  * The running order is the reader's. The page draws the cards in
  * `prefs.home_layout` (see `cards.ts`), and the default a new account gets is
  * the order the page always had, with the market strip on top: the market,
- * the AI "Daily action" briefing, the Portfolio page's headline metrics, the
- * movers beside the 52-week extremes, the earnings calendar, the recent
+ * the AI "Daily action" briefing, the movers (every position, the full
+ * row), the 52-week extremes, the Portfolio page's headline metrics, the
+ * earnings calendar, the recent
  * transactions, the watchlist groups. Risk, dividends, the tax year and
  * sector rotation wait in the editor's tray. Every ticker cell links to its
  * own page; the full ledger analytics stay on Portfolio.
@@ -70,7 +71,7 @@ import { Glance, MoversSlot, useBook } from "./Glance";
 import { MarketCard } from "./Market";
 import { EarningsCard } from "./Earnings";
 import { RecentTransactions } from "./Transactions";
-import { ExtremesCard, moverRows, useExtremes } from "./Extremes";
+import { ExtremesCard, useExtremes } from "./Extremes";
 import { WatchlistGroups } from "./Watchlist";
 import { DividendsCard, RiskCard, RotationCard, TaxCard } from "./Extras";
 import {
@@ -204,7 +205,7 @@ export default function Page() {
   // One read behind the glance and the movers, and none until one of them is
   // in view.
   const book = useBook(nonce, !guest && (wanted("glance") || wanted("movers")));
-  // Read here rather than in its card: the movers beside it match its rows.
+  // Read here, like the book, so a refresh's nonce reaches it.
   const extremes = useExtremes(nonce, wanted("extremes"));
 
   const draw = (id: CardId): ReactNode => {
@@ -216,13 +217,7 @@ export default function Page() {
       case "glance":
         return <Glance query={book} ledger={ledger} />;
       case "movers":
-        return (
-          <MoversSlot
-            query={book}
-            alone={!shown.has("glance")}
-            rows={moverRows(extremes)}
-          />
-        );
+        return <MoversSlot query={book} alone={!shown.has("glance")} />;
       case "extremes":
         return <ExtremesCard query={extremes} book={book} />;
       case "earnings":

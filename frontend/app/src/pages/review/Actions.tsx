@@ -1,37 +1,34 @@
 /**
  * The plan: what the read asks the reader to do, and what it costs.
  *
- * It answers the page's one question before anything else is read: the cash
- * the moves need (or free), drawn as two bars on one scale so the sales are
- * seen paying for the adds and the gap is what new money has to cover. The
- * sale's tax sits beside it, because a plan that frees cash and costs tax is
- * two numbers, not one.
+ * Two cards. The answer first: the plan in one sentence ("sell 2, trim 1 and
+ * add to 3"), where the next contribution goes, and three figures beside it —
+ * what the sales free, what the adds spend, and the sale's tax, because a
+ * plan that frees cash and costs tax is two numbers, not one. What the adds
+ * still need, or what the sales leave without a home, is said under it.
  *
- * Under it the moves, one row each, split by direction: the sales and trims
- * that free cash, then the adds that spend it, each list led by its biggest
- * amount. A row is the whole decision on one line of sight — who, from which
- * weight to which, how much money, why, and what it costs in tax or when it
- * can be done; its details open in the dialog the tables' rows open. Holding
- * is not a move, so the quiet rows are the table's, not here.
+ * Then "what to move", beside the names close to a move (`beside`) and under
+ * the verdict split (`between`): one row a move, split by direction — the
+ * sales and trims that free cash, then the adds that spend it, each list led
+ * by its biggest amount. A row is the whole decision on one line of sight —
+ * who and why, from which weight to which (drawn as a bar on one scale for
+ * the whole plan), how much money, and what it costs in tax or when it can
+ * be done; its details open in the dialog the tables' rows open. Holding is
+ * not a move, so the quiet rows are the table's, not here. The adds the
+ * sales cannot pay for come last, as what new money would buy, never as cash
+ * the plan spends. The moves drawn against the S&P 500 over the tables'
+ * window unfold under the lists.
  *
  * A plan that moves nothing is advice too, said as such: the book is fine as
  * it is today, and why — names a few points from a move, sales whose tax
- * would eat what they bring. The adds the sales cannot pay for are listed
- * apart, as what new money would buy, never as cash the plan spends.
+ * would eat what they bring.
  *
- * Folded, the plan is its headline: one sentence of what to do ("sell 2,
- * trim 1 and add to 3"), the figures, then every name to sell, to add to and
- * to buy with new money, one dense line each — who, from which weight to
- * which (drawn as a bar on one scale for the whole plan), how much, and what
- * it costs in tax. The full read (why, details, and the moves drawn against
- * the S&P 500 over the tables' window) unfolds below.
- *
- * With a contribution set in the reader's plan, one line says where the next
- * one goes: the first of what new money would buy, then the next ones.
+ * Both cards share one focus and one fold, so the plan stays one component.
  */
 
-import { Suspense, lazy, useState } from "react";
+import { type ReactNode, Suspense, lazy, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
+import { Icon } from "../../shell/Icon";
 import { Link } from "../../shell/router";
 import { TickerCell } from "../../shell/tickers";
 import { Help } from "../../ui/Kpi";
@@ -48,7 +45,19 @@ import { money, percent } from "../../shell/format";
 // The chart and its code wait for the full read: folded, the plan is figures.
 const PlanChart = lazy(() => import("./PlanChart"));
 
-export function Plan({ data, filtered = false }: { data: Review; filtered?: boolean }) {
+export function Plan({
+  data,
+  filtered = false,
+  between,
+  beside,
+}: {
+  data: Review;
+  filtered?: boolean;
+  /** Drawn between the answer and the moves: the verdict split. */
+  between?: ReactNode;
+  /** Drawn beside the moves: the names close to a move. */
+  beside?: ReactNode;
+}) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
@@ -56,155 +65,188 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
   const { out, into } = planMoves(data);
   const moves = [...out, ...into];
   const waiting = waitingMoves(data);
-  const net = plan.buys - plan.sells;
-  const scale = Math.max(plan.sells, plan.buys, 1);
+  // Under one unit is no gap: sales and adds that match to the cent would
+  // otherwise print "0 € with nowhere to go".
+  const gap = plan.buys - plan.sells;
+  const net = Math.abs(gap) < 1 ? 0 : gap;
   // Every weight bar in the plan on one scale, so a long bar is a big name.
   const span = weightSpan([...moves, ...waiting], data.total);
   const [open, setOpen] = useState(false);
-  const brief = !open;
   const returns = useReturns();
   const focus = useListFocus(
     "plan",
     moves.map((row) => row.ticker),
   );
 
-  return (
-    <section className="ag-rev-card ag-rev-plan" aria-labelledby="ag-rev-plan-h">
-      <h2 className="ag-rev-h2" id="ag-rev-plan-h">
-        {t("review.plan_title")}
-      </h2>
-      {moves.length === 0 && filtered ? (
-        <p className="ag-rev-caption">{t("review.moves_none")}</p>
-      ) : moves.length === 0 ? (
-        <>
+  const answer = (
+    <section className="ag-rev-card ag-rev-answer" aria-labelledby="ag-rev-plan-h">
+      <div className="ag-rev-answer-main">
+        <h2 className="ag-rev-eyebrow" id="ag-rev-plan-h">
+          {t("review.plan_title")} · {jurisdictionLabel(data.jurisdiction, t)}
+        </h2>
+        {moves.length === 0 && filtered ? (
+          <p className="ag-rev-answer-say">{t("review.moves_none")}</p>
+        ) : moves.length === 0 ? (
           <Stay data={data} />
-          <Next rows={waiting} upcoming={data.investor_plan} base={data.base} />
-        </>
-      ) : (
-        <>
+        ) : (
           <Headline data={data} out={out} into={into} />
-          <Next rows={waiting} upcoming={data.investor_plan} base={data.base} />
-          <div className="ag-rev-plan-sum">
-            <div className="ag-rev-plan-fig">
-              <span className="ag-rev-plan-label">
-                {t(
-                  net > 0
-                    ? "review.plan_need"
-                    : net < 0
-                      ? "review.plan_free"
-                      : "review.plan_even",
-                )}
-                <Help text={t("review.plan_net_help")} />
-              </span>
-              <b className="ag-rev-plan-value">
-                {money(Math.abs(net), { currency: data.base, lang }) ?? na}
-              </b>
-              <span className="ag-rev-plan-tax">
-                {t("review.plan_tax")}
-                {plan.tax_currency && plan.tax_currency !== data.base
-                  ? ` (${t("review.tax_in", { currency: plan.tax_currency })})`
-                  : null}{" "}
-                <b>{money(plan.tax, { currency: plan.tax_currency, lang }) ?? na}</b>
-                <Help text={t("review.plan_tax_help", { code: data.jurisdiction })} />
-              </span>
-            </div>
-            <dl className="ag-rev-flow">
-              <Flow
-                label={t("review.plan_sells")}
-                help={t("review.plan_sells_help")}
-                amount={plan.sells}
-                other={plan.buys}
-                scale={scale}
-                tone="down"
-                base={data.base}
-              />
-              <Flow
-                label={t("review.plan_buys")}
-                help={t("review.plan_buys_help")}
-                amount={plan.buys}
-                other={plan.sells}
-                scale={scale}
-                tone="up"
-                base={data.base}
-              />
-            </dl>
-          </div>
-          {net < 0 ? (
-            <p className="ag-rev-caption ag-rev-plan-note">
-              {t("review.plan_unplaced", {
-                amount: money(-net, { currency: data.base, lang }) ?? na,
-              })}
-            </p>
-          ) : null}
-          {data.tax_status && data.tax_status !== "chosen" ? (
-            <p className="ag-rev-caption ag-rev-plan-note">
-              {t("review.tax_assumed", {
-                label: jurisdictionLabel(data.jurisdiction, t),
-              })}{" "}
-              <Link page="profile">{t("review.tax_assumed_link")}</Link>
-            </p>
-          ) : null}
-          <div
-            className={`ag-rev-plan-cols${brief ? " ag-rev-plan-brief" : ""}${focus.fading ? " ag-rev-fading" : ""}`}
-          >
-            <MoveList
-              title={t("review.out_title")}
-              rows={out}
-              brief={brief}
-              total={-plan.sells}
-              base={data.base}
-              taxCurrency={plan.tax_currency}
-              focus={focus}
-              span={span}
-            />
-            <MoveList
-              title={t("review.in_title")}
-              rows={into}
-              brief={brief}
-              total={plan.buys}
-              base={data.base}
-              taxCurrency={plan.tax_currency}
-              focus={focus}
-              span={span}
-            />
-            {brief && waiting.length > 0 ? (
-              <Waiting
-                rows={waiting}
-                total={plan.new_money ?? 0}
-                book={data.total}
-                base={data.base}
-                span={span}
-                brief
-              />
-            ) : null}
-          </div>
-          {open && returns ? (
-            <Suspense fallback={null}>
-              <PlanChart out={out} into={into} base={data.base} span={returns.span} />
-            </Suspense>
-          ) : null}
-        </>
-      )}
-      {waiting.length > 0 && (open || moves.length === 0) ? (
-        <Waiting
-          rows={waiting}
-          total={plan.new_money ?? 0}
-          book={data.total}
-          base={data.base}
-          span={span}
-        />
-      ) : null}
+        )}
+        <Next rows={waiting} upcoming={data.investor_plan} base={data.base} />
+        {net > 0 && moves.length > 0 ? (
+          <p className="ag-rev-caption ag-rev-plan-note">
+            {t("review.plan_need")}:{" "}
+            <b>{money(net, { currency: data.base, lang }) ?? na}</b>
+            <Help text={t("review.plan_net_help")} />
+          </p>
+        ) : null}
+        {net < 0 ? (
+          <p className="ag-rev-caption ag-rev-plan-note">
+            {t("review.plan_unplaced", {
+              amount: money(-net, { currency: data.base, lang }) ?? na,
+            })}
+          </p>
+        ) : null}
+        {data.tax_status && data.tax_status !== "chosen" ? (
+          <p className="ag-rev-caption ag-rev-plan-note">
+            {t("review.tax_assumed", {
+              label: jurisdictionLabel(data.jurisdiction, t),
+            })}{" "}
+            <Link page="profile">{t("review.tax_assumed_link")}</Link>
+          </p>
+        ) : null}
+      </div>
       {moves.length > 0 ? (
-        <button
-          type="button"
-          className="ag-rev-plan-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          {t(open ? "review.plan_less" : "review.plan_more")}
-        </button>
+        <div className="ag-rev-kpis-box">
+          <dl className="ag-rev-kpis">
+            <Figure
+              label={t("review.plan_sells")}
+              help={t("review.plan_sells_help")}
+              value={money(plan.sells ? -plan.sells : 0, {
+                currency: data.base,
+                lang,
+                signed: true,
+              })}
+              tone={plan.sells ? "down" : undefined}
+              sub={t("review.kpi_names", { count: out.length })}
+            />
+            <Figure
+              label={t("review.plan_buys")}
+              help={t("review.plan_buys_help")}
+              value={money(plan.buys, { currency: data.base, lang, signed: true })}
+              tone={plan.buys ? "up" : undefined}
+              sub={t("review.kpi_names", { count: into.length })}
+            />
+            <Figure
+              label={t("review.plan_tax")}
+              help={t("review.plan_tax_help", { code: data.jurisdiction })}
+              value={money(plan.tax, { currency: plan.tax_currency, lang })}
+              sub={
+                plan.tax_currency && plan.tax_currency !== data.base
+                  ? t("review.tax_in", { currency: plan.tax_currency })
+                  : undefined
+              }
+            />
+          </dl>
+        </div>
       ) : null}
     </section>
+  );
+
+  // The moves the sales pay for, then what new money would buy. With
+  // neither, the card goes and the names near a move take the whole row.
+  const list =
+    moves.length > 0 || waiting.length > 0 ? (
+      <section className="ag-rev-card ag-rev-moves" aria-labelledby="ag-rev-moves-h">
+        <h2 className="ag-rev-h2" id="ag-rev-moves-h">
+          {t("review.moves_title")}
+        </h2>
+        <div className={`ag-rev-plan-cols${focus.fading ? " ag-rev-fading" : ""}`}>
+          <MoveList
+            title={t("review.out_title")}
+            mark="sell"
+            rows={out}
+            total={-plan.sells}
+            base={data.base}
+            taxCurrency={plan.tax_currency}
+            focus={focus}
+            span={span}
+          />
+          <MoveList
+            title={t("review.in_title")}
+            mark="add"
+            rows={into}
+            total={plan.buys}
+            base={data.base}
+            taxCurrency={plan.tax_currency}
+            focus={focus}
+            span={span}
+          />
+          {waiting.length > 0 ? (
+            <Waiting
+              rows={waiting}
+              total={plan.new_money ?? 0}
+              book={data.total}
+              base={data.base}
+              span={span}
+            />
+          ) : null}
+        </div>
+        {open && returns ? (
+          <Suspense fallback={null}>
+            <PlanChart out={out} into={into} base={data.base} span={returns.span} />
+          </Suspense>
+        ) : null}
+        {moves.length > 0 && returns ? (
+          <button
+            type="button"
+            className="ag-rev-plan-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {t(open ? "review.plan_chart_hide" : "review.plan_chart_show")}
+          </button>
+        ) : null}
+      </section>
+    ) : null;
+
+  return (
+    <>
+      {answer}
+      {between}
+      <div className="ag-rev-pair">
+        {list}
+        {beside}
+      </div>
+    </>
+  );
+}
+
+/** One of the answer's figures: what it is, the amount, and a line under. */
+function Figure({
+  label,
+  help,
+  value,
+  tone,
+  sub,
+}: {
+  label: string;
+  help: string;
+  value: string | null;
+  tone?: "up" | "down";
+  sub?: string;
+}) {
+  const t = useT();
+  return (
+    <div className="ag-rev-kpi">
+      <dt>
+        {label}
+        <Help text={help} />
+      </dt>
+      <dd className={`ag-rev-kpi-value${tone ? ` ag-rev-tone-${tone}` : ""}`}>
+        {value ?? t("review.na")}
+      </dd>
+      {sub ? <dd className="ag-rev-kpi-sub">{sub}</dd> : null}
+    </div>
   );
 }
 
@@ -239,7 +281,7 @@ function Headline({
   const close = rest.filter((row) => row.reasons.includes("close_call")).length;
   return (
     <div className="ag-rev-plan-head">
-      <p className="ag-rev-plan-say">
+      <p className="ag-rev-answer-say">
         {said.charAt(0).toLocaleUpperCase(lang) + said.slice(1)}
       </p>
       {rest.length > 0 ? (
@@ -273,18 +315,23 @@ function Next({
   if (!day || !amount || !first) return null;
   const then = rows.slice(1, 3).map((row) => row.symbol || row.ticker);
   return (
-    <p className="ag-rev-plan-next">
-      {t("review.next_contribution", {
-        amount: money(amount, { currency: base, lang }) ?? t("review.na"),
-        date: longDay(day, lang),
-        first: first.symbol || first.ticker,
-      })}
-      {then.length
-        ? ` ${t("review.next_then", {
-            names: new Intl.ListFormat(lang, { type: "conjunction" }).format(then),
-          })}`
-        : null}
-    </p>
+    <div className="ag-rev-plan-next">
+      <span className="ag-rev-plan-next-ico" aria-hidden="true">
+        <Icon name="calendar_month" size={16} />
+      </span>
+      <p>
+        {t("review.next_contribution", {
+          amount: money(amount, { currency: base, lang }) ?? t("review.na"),
+          date: longDay(day, lang),
+          first: first.symbol || first.ticker,
+        })}
+        {then.length
+          ? ` ${t("review.next_then", {
+              names: new Intl.ListFormat(lang, { type: "conjunction" }).format(then),
+            })}`
+          : null}
+      </p>
+    </div>
   );
 }
 
@@ -342,7 +389,7 @@ function Stay({ data }: { data: Review }) {
   const costly = data.held.filter(has("sale_costly")).length;
   return (
     <div className="ag-rev-plan-stay">
-      <p className="ag-rev-plan-stay-title">{t("review.stay_title")}</p>
+      <p className="ag-rev-answer-say">{t("review.stay_title")}</p>
       <p className="ag-rev-caption">{t("review.stay_body")}</p>
       {close || costly ? (
         <ul className="ag-rev-plan-stay-why">
@@ -364,22 +411,20 @@ function Waiting({
   book,
   base,
   span,
-  brief = false,
 }: {
   rows: ReviewRow[];
   total: number;
   book: number | null;
   base: string;
   span: number;
-  brief?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
   return (
-    <div className={`ag-rev-mvs${brief ? "" : " ag-rev-wait"}`}>
+    <div className="ag-rev-mvs">
       <h3 className="ag-rev-mvs-head">
-        <span>
+        <span className="ag-rev-mvs-title ag-rev-mark-buy">
           {t("review.wait_title")} <span className="ag-rev-mvs-n">{rows.length}</span>
           <Help text={t("review.wait_help")} />
         </span>
@@ -408,19 +453,15 @@ function Waiting({
                 {money(row.new_money ?? null, { currency: base, lang, signed: true }) ??
                   na}
               </b>
-              {brief ? null : (
-                <>
-                  <div className="ag-rev-mv-why">
-                    <Reasons
-                      reasons={row.reasons.filter((code) => code !== "needs_new_money")}
-                      limit={2}
-                    />
-                  </div>
-                  <span className="ag-rev-mv-more">
-                    <DetailsButton row={row} variant="icon" />
-                  </span>
-                </>
-              )}
+              <div className="ag-rev-mv-why">
+                <Reasons
+                  reasons={row.reasons.filter((code) => code !== "needs_new_money")}
+                  limit={2}
+                />
+              </div>
+              <span className="ag-rev-mv-more">
+                <DetailsButton row={row} variant="icon" />
+              </span>
             </li>
           );
         })}
@@ -429,57 +470,10 @@ function Waiting({
   );
 }
 
-/**
- * One side of the plan as a bar on the scale both share. On the shorter side
- * the dashed rest of the bar is the gap the other side leaves: new cash when
- * the adds outrun the sales, cash left over when the sales outrun the adds.
- */
-function Flow({
-  label,
-  help,
-  amount,
-  other,
-  scale,
-  tone,
-  base,
-}: {
-  label: string;
-  help: string;
-  amount: number;
-  other: number;
-  scale: number;
-  tone: "up" | "down";
-  base: string;
-}) {
-  const lang = useLang();
-  const fill = (amount / scale) * 100;
-  const gap = other > amount ? ((other - amount) / scale) * 100 : 0;
-  return (
-    <div className="ag-rev-flow-row">
-      <dt>
-        {label}
-        <Help text={help} />
-      </dt>
-      <dd className="ag-rev-flow-track" aria-hidden="true">
-        <span
-          className={`ag-rev-flow-fill ag-rev-flow-${tone}`}
-          style={{ width: `${fill}%` }}
-        />
-        {gap > 0 ? (
-          <span className="ag-rev-flow-gap" style={{ width: `${gap}%` }} />
-        ) : null}
-      </dd>
-      <dd className="ag-rev-flow-amount">
-        {money(amount, { currency: base, lang }) ?? "—"}
-      </dd>
-    </div>
-  );
-}
-
 function MoveList({
   title,
+  mark,
   rows,
-  brief,
   total,
   base,
   taxCurrency,
@@ -487,8 +481,8 @@ function MoveList({
   span,
 }: {
   title: string;
+  mark: "sell" | "add";
   rows: ReviewRow[];
-  brief: boolean;
   total: number;
   base: string;
   taxCurrency: string;
@@ -501,7 +495,7 @@ function MoveList({
   return (
     <div className="ag-rev-mvs">
       <h3 className="ag-rev-mvs-head">
-        <span>
+        <span className={`ag-rev-mvs-title ag-rev-mark-${mark}`}>
           {title} <span className="ag-rev-mvs-n">{rows.length}</span>
         </span>
         <span className={`ag-rev-tone-${tone}`}>
@@ -513,7 +507,6 @@ function MoveList({
           <Move
             key={row.ticker}
             row={row}
-            brief={brief}
             base={base}
             taxCurrency={taxCurrency}
             on={focus.on(row.ticker)}
@@ -528,7 +521,6 @@ function MoveList({
 
 function Move({
   row,
-  brief,
   base,
   taxCurrency,
   on,
@@ -536,7 +528,6 @@ function Move({
   span,
 }: {
   row: ReviewRow;
-  brief: boolean;
   base: string;
   taxCurrency: string;
   on: boolean;
@@ -594,17 +585,13 @@ function Move({
       </b>
       {/* What the move costs is part of the decision: shown folded too. */}
       {note ? <span className="ag-rev-mv-note">{note}</span> : null}
-      {brief ? null : (
-        <>
-          <div className="ag-rev-mv-why">
-            <Reasons reasons={row.reasons} limit={3} />
-            <EntryBreaks lines={row.entry} />
-          </div>
-          <span className="ag-rev-mv-more">
-            <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
-          </span>
-        </>
-      )}
+      <div className="ag-rev-mv-why">
+        <Reasons reasons={row.reasons} limit={3} />
+        <EntryBreaks lines={row.entry} />
+      </div>
+      <span className="ag-rev-mv-more">
+        <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
+      </span>
     </li>
   );
 }

@@ -423,6 +423,8 @@ export type MarketTile = {
   /** The VIX's place in its own year, 0–100. */
   percentile: number | null;
   linkable: boolean;
+  /** The last sessions' levels, oldest first, for the tile's minichart. */
+  spark?: number[];
   as_of: string | null;
 };
 

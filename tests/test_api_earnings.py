@@ -67,6 +67,16 @@ def _no_dividends(monkeypatch):
     patch_loaders(monkeypatch, "dividend_histories", lambda tickers: {})
 
 
+@pytest.fixture(autouse=True)
+def _no_prices(monkeypatch):
+    """No priced book, unless a test says otherwise — offline."""
+    import pandas as pd
+
+    patch_loaders(
+        monkeypatch, "positions_table", lambda db, mtime, base="EUR": pd.DataFrame()
+    )
+
+
 # A dollar is 0.90 euro on every past day and 0.80 today, so a test can tell
 # which rate an amount was converted at.
 USD_PAST, USD_TODAY = 0.90, 0.80
@@ -652,3 +662,37 @@ def test_only_the_exchanges_the_calendar_trades_on_close(client, account, calend
     assert {"date": "2026-12-25", "kind": "closed"}.items() <= next(
         h for h in payload["market_holidays"] if h["date"] == "2026-12-25"
     ).items()
+
+
+def test_each_held_name_carries_its_share_of_the_book(
+    client, account, calendar, monkeypatch
+):
+    """The strip over the grid says how much of the book a print weighs; an
+    unpriced name keeps its cost in the denominator rather than handing its
+    share to the rest."""
+    import pandas as pd
+
+    table = pd.DataFrame(
+        {"cost": [600.0, 400.0], "value": [750.0, float("nan")]},
+        index=["MSFT", "NVDA"],
+    )
+    patch_loaders(monkeypatch, "positions_table", lambda db, mtime, base="EUR": table)
+    body = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    # 750 / (750 + 400 at cost); the unpriced NVDA has no entry of its own.
+    assert body["weights"] == {"MSFT": pytest.approx(750 / 1150)}
+
+
+def test_a_book_prices_cannot_be_had_for_has_no_weights_and_still_a_calendar(
+    client, account, calendar, monkeypatch
+):
+    def boom(db, mtime, base="EUR"):
+        raise RuntimeError("yahoo is throttling")
+
+    patch_loaders(monkeypatch, "positions_table", boom)
+    response = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 200
+    assert response.json()["weights"] == {}

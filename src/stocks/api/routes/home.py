@@ -76,6 +76,12 @@ MARKET_RATE = ("us10y", "DGS10", "rates", -1)
 MARKET_HORIZONS = {"day": 1, "week": 5, "month": 21}
 # Enough of the composite's path for the week and month deltas the card quotes.
 MARKET_HISTORY = 30
+# Sessions of a tile's own level drawn as its minichart.
+MARKET_SPARK = 30
+
+
+def _spark(series: pd.Series) -> list[float]:
+    return [float(v) for v in series.tail(MARKET_SPARK)]
 # Indices above their 200-session average — the Pulse's own breadth window.
 MARKET_BREADTH_WINDOW = 200
 
@@ -95,6 +101,7 @@ def _price_tile(key: str, symbol: str, group: str, welcome: int, series) -> Mark
         changes={k: float(v) for k, v in sm.pct_changes(clean, MARKET_HORIZONS).items()},
         welcome=welcome,
         state=sm.trend_state(clean),
+        spark=_spark(clean),
         as_of=_as_of(clean),
     )
     if group == "risk":
@@ -121,6 +128,7 @@ def _rate_tile(series) -> MarketTile | None:
         },
         welcome=welcome,
         state=sm.trend_state(clean),
+        spark=_spark(clean),
         linkable=False,
         as_of=_as_of(clean),
     )

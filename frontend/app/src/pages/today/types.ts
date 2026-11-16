@@ -64,6 +64,9 @@ export type TodayBenchmark = {
   /** Since the book's first day: the book's own money for `@BOOK`, that
    *  same money bought into the index for the rest. Absent on older cards. */
   all?: number | null;
+  /** `all` in money, in the section's currency: what that same money
+   *  gained (the book's own gain for `@BOOK`). Absent on older cards. */
+  all_gain?: number | null;
 };
 
 export type MarketLine = {

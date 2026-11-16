@@ -24,6 +24,15 @@ import type { Column, FactItem } from "./ui";
 import { moneyIn, percent, shares as formatShares } from "../../shell/format";
 import { TickerCell } from "../../shell/tickers";
 
+/** Next twelve months' dividends over what the position cost, or null unknown. */
+export function yieldOnCost(
+  row: { ticker: string; gross_base: number | null },
+  costs: Record<string, number>,
+): number | null {
+  const cost = costs[row.ticker];
+  return row.gross_base === null || !cost ? null : row.gross_base / cost;
+}
+
 export default function Dividends() {
   const t = useT();
   const lang = useLang();
@@ -82,7 +91,10 @@ export default function Dividends() {
 
   // The bar beside each payer is its share of the biggest one, so how much of
   // the income rides on a single name shows before any digit is read.
-  const forwardColumns = (topPayer: number): Column<ForwardHolding>[] => [
+  const forwardColumns = (
+    topPayer: number,
+    costs: Record<string, number>,
+  ): Column<ForwardHolding>[] => [
     {
       key: "ticker",
       label: t("portfolio.col_position"),
@@ -125,6 +137,14 @@ export default function Dividends() {
         >
           <Figure value={money(row.gross_base)} />
         </ShareBar>
+      ),
+    },
+    {
+      key: "yoc",
+      label: t("portfolio.col_yield_on_cost"),
+      sort: (row) => yieldOnCost(row, costs),
+      cell: (row) => (
+        <Figure value={percent(yieldOnCost(row, costs), { lang, digits: 1 })} />
       ),
     },
   ];
@@ -259,7 +279,12 @@ export default function Dividends() {
               {dividends.forward.length ? (
                 <Card title={t("portfolio.div_forward_by_holding")}>
                   <Table
-                    columns={forwardColumns(topPayer)}
+                    columns={forwardColumns(
+                      topPayer,
+                      Object.fromEntries(
+                        positions.positions.map((row) => [row.ticker, row.cost]),
+                      ),
+                    )}
                     rows={dividends.forward}
                     rowKey={(row) => row.ticker}
                     initial={{ key: "annual", desc: true }}

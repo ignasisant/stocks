@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from stocks import loaders, obs
@@ -182,6 +182,36 @@ def commitchange_view(account: Writer, body: EditCommit) -> Change:
         raise refusal(exc) from exc
     obs.event("ledger.edited", rows=len(done.changes), via="api")
     return change_view(done)
+
+
+@router.post(
+    "/positions/{symbol}/removal",
+    response_model=EditPlan,
+    summary="Preview removing a holding",
+)
+def plan_removal(
+    account: Writer,
+    symbol: Annotated[str, Path(min_length=1, max_length=32)],
+) -> EditPlan:
+    """The edit that deletes every row of one holding, planned. Nothing is written.
+
+    For a position imported by mistake: the ticker page offers it, shows what
+    the plan does (rows, realized gain per year) and commits it through
+    `POST /changes` with the token, so it is journalled and one undo from back.
+    The rows are the ones the page shows the holding with — its own label or
+    the one a broker transfer unifies it under (`edits.position_ids`). 404 when
+    the book has no row under that name.
+    """
+    ids = edits.position_ids(all_transactions(account.db), symbol)
+    if not ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"the book has no rows for {symbol.strip().upper()}",
+        )
+    try:
+        return plan_view(edits.plan([{"op": "delete", "ids": ids}], account.db))
+    except edits.EditError as exc:
+        raise refusal(exc) from exc
 
 
 @router.get("/changes", response_model=Changes, summary="Edit history")

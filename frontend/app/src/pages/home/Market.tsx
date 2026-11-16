@@ -175,40 +175,66 @@ function Regime({ data }: { data: MarketGlance }) {
   const run = data.run ? t("sentiment.regime_run", { n: data.run }) : null;
   return (
     <span className={`hm-regime ${REGIME_TONES[band] ?? "hm-regime-flat"}`}>
-      <span className="hm-regime-label">{t("home.market_regime_label")}</span>
-      <strong>{Math.round(data.score)}</strong>
-      <span>{t(`sentiment.regime_${band}`)}</span>
-      {week !== null ? (
-        <span className="hm-regime-delta">
-          {t("home.market_regime_delta", {
-            delta: decimal(week, { lang, digits: 0, signed: "always" }) ?? "",
-          })}
-        </span>
-      ) : null}
-      <MiniSpark values={data.history} />
-      <Help text={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")} />
+      <Gauge value={data.score} />
+      <span className="hm-regime-body">
+        <strong>{Math.round(data.score)}</strong>
+        <span className="hm-regime-label">{t("home.market_regime_label")}</span>
+        <span>{t(`sentiment.regime_${band}`)}</span>
+        {week !== null ? (
+          <span className="hm-regime-delta">
+            {t("home.market_regime_delta", {
+              delta: decimal(week, { lang, digits: 0, signed: "always" }) ?? "",
+            })}
+          </span>
+        ) : null}
+        <Help text={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")} />
+      </span>
     </span>
   );
 }
 
-/** Thirty sessions of the composite on its fixed 0–100 scale. */
-function MiniSpark({ values }: { values: number[] }) {
+/** The composite on its fixed 0-100 scale as a half dial: track, arc to the score, a dot at its end. */
+function Gauge({ value }: { value: number }) {
+  const share = Math.max(0, Math.min(100, value)) / 100;
+  const angle = Math.PI * (1 - share);
+  const x = 42 + 34 * Math.cos(angle);
+  const y = 44 - 34 * Math.sin(angle);
+  return (
+    <svg
+      className="hm-gauge"
+      viewBox="0 0 84 48"
+      width={84}
+      height={48}
+      aria-hidden="true"
+    >
+      <path className="hm-gauge-track" d="M8 44a34 34 0 0 1 68 0" />
+      {share > 0 ? (
+        <path
+          className="hm-gauge-arc"
+          d={`M8 44A34 34 0 0 1 ${x.toFixed(1)} ${y.toFixed(1)}`}
+        />
+      ) : null}
+      <circle className="hm-gauge-dot" cx={x.toFixed(1)} cy={y.toFixed(1)} r={4.5} />
+    </svg>
+  );
+}
+
+/** A tile's recent levels as a line, scaled to its own range; null when too short to read. */
+function TileSpark({ values, tone }: { values: number[]; tone: Tone }) {
   if (values.length < 2) return null;
-  const width = 44;
-  const height = 14;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
   const points = values
-    .map((value, i) => {
-      const x = (i / (values.length - 1)) * width;
-      const y = height - (Math.max(0, Math.min(100, value)) / 100) * height;
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * 44;
+      const y = 16 - ((v - lo) / (hi - lo || 1)) * 14;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
   return (
     <svg
-      className="hm-regime-spark"
-      viewBox={`0 0 ${width} ${height}`}
-      width={width}
-      height={height}
+      className={`hm-mtile-spark hm-tone-${tone}`}
+      viewBox="0 0 44 18"
       preserveAspectRatio="none"
       aria-hidden="true"
     >
@@ -253,6 +279,7 @@ function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
     <>
       <span className="hm-mtile-label">{t(LABELS[tile.key] ?? tile.key)}</span>
       <span className="hm-mtile-value">{level(tile, lang) ?? na}</span>
+      <TileSpark values={tile.spark ?? []} tone={moveTone(change, tile.welcome)} />
       <span className="hm-mtile-move">
         <span className={`hm-mtile-change hm-tone-${moveTone(change, tile.welcome)}`}>
           {moved ?? na}

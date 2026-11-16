@@ -21,6 +21,21 @@ from stocks.notify import webpush
 router = APIRouter(prefix="/push", tags=["notify"])
 
 
+class Sent(BaseModel):
+    """One notification this account's devices were sent (`webpush.log`)."""
+
+    at: int = Field(description="When it went out, epoch seconds.")
+    topic: str = Field(description="What it was: alert, briefing, test…")
+    title: str
+    body: str
+    url: str = Field(description="The app path it opens; may be empty.")
+    devices: int = Field(description="Devices it was sent to.")
+    took: int = Field(description="Devices whose push service accepted it.")
+
+
+HISTORY_SHOWN = 20
+
+
 class Push(BaseModel):
     configured: bool = Field(
         description="Whether this deployment can push at all. False is not an error."
@@ -36,6 +51,10 @@ class Push(BaseModel):
         default=0,
         description="Devices this account has subscribed, this one included: "
         "where the briefing, the alerts and the reminders arrive.",
+    )
+    recent: list[Sent] = Field(
+        default_factory=list,
+        description="What this account was last sent, newest first.",
     )
 
 
@@ -69,6 +88,18 @@ def _subject(request: Request) -> str:
     return origin if origin.startswith("https://") else "mailto:push@topstocks.invalid"
 
 
+def _sent(row: dict) -> Sent:
+    return Sent(
+        at=int(float(row.get("at") or 0)),
+        topic=str(row.get("topic") or ""),
+        title=str(row.get("title") or ""),
+        body=str(row.get("body") or ""),
+        url=str(row.get("url") or ""),
+        devices=int(row.get("devices") or 0),
+        took=int(row.get("took") or 0),
+    )
+
+
 @router.get("", response_model=Push)
 def state(paths: Account, endpoint: str = "") -> Push:
     key = webpush.public_key()
@@ -77,6 +108,7 @@ def state(paths: Account, endpoint: str = "") -> Push:
         key=key,
         subscribed=bool(endpoint) and webpush.subscribed(paths.push, endpoint),
         devices=webpush.devices(paths.push),
+        recent=[_sent(r) for r in webpush.history(paths.push)[:HISTORY_SHOWN]],
     )
 
 

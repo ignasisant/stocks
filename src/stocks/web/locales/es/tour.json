@@ -182,7 +182,9 @@
   "tour.news_2026_11_3_ticker_title": "Un ticker, de un vistazo",
   "tour.news_2026_11_3_ticker_body": "La ficha de una empresa abre con **la lectura**: seis señales, cada una salta a su sección.",
   "tour.news_2026_11_3_review_title": "Vender o reforzar, por orden",
-  "tour.news_2026_11_3_review_body": "**Vender o reforzar** abre con el plan: primero los movimientos, lo que se mantiene plegado y lo que roza un cambio.",
+  "tour.news_2026_11_3_review_body": "**Vender o reforzar** abre con la respuesta y sus cifras; debajo, los veredictos, qué mover y lo que roza un cambio.",
   "tour.news_2026_11_3_sector_title": "Sectores, con tus valores dentro",
-  "tour.news_2026_11_3_sector_body": "**Sectores** muestra en qué puesto quedan tus valores y lleva los que marques a Vender o reforzar."
+  "tour.news_2026_11_3_sector_body": "**Sectores** muestra en qué puesto quedan tus valores y lleva los que marques a Vender o reforzar.",
+  "tour.news_2026_11_4_today_title": "Hoy, con el mercado primero",
+  "tour.news_2026_11_4_today_body": "**Hoy** pone primero el mercado, con sus cotizaciones, y tu cartera frente al índice desde su primer día."
 }

@@ -18,15 +18,6 @@
   margin: 0 0 0.5rem;
 }
 
-.earn-warn {
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.85rem;
-  border: 1px solid var(--ag-warn-edge);
-  border-radius: var(--ag-radius-sm);
-  background: var(--ag-warn-fill);
-  color: var(--ag-text-primary);
-}
-
 .earn-skipped {
   margin: 1.25rem 0 0;
   font-size: var(--ag-fs-xs);
@@ -483,71 +474,13 @@
   color: var(--ag-text-muted);
 }
 
-/* ---------------------------------------------------------------- the dialog */
-
-/* Above the chat launcher and the parked guide strip (60), which would
-   otherwise float over the scrim on a phone; below the open drawer (70), so
-   the chat beside it stays usable. */
-.earn-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 65;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
-    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-  background: var(--ag-surface-page-veil);
-}
-
-/* Wide enough for the GAAP line-item table and three tiles abreast, and tall
-   only up to the viewport: the breakdown scrolls inside the card, so the scrim
-   and the Close button stay where the reader left them. */
-.earn-modal-card {
-  width: 100%;
-  max-width: 46rem;
-  max-height: 90dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 1.1rem 1.25rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-overlay);
-}
-
-.earn-modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
+/* ------------------------------------------------------- the panel, header */
 
 .earn-modal-date {
   margin-top: 2px;
   font-size: var(--ag-fs-sm);
   color: var(--ag-text-muted);
 }
-
-.earn-close {
-  padding: 0.25rem 0.7rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  cursor: pointer;
-}
-
-@media (pointer: coarse) {
-  .earn-close {
-    min-height: 44px;
-  }
-}
-
-/* ------------------------------------------------------- the dialog, header */
 
 .earn-modal-id {
   display: flex;
@@ -860,13 +793,11 @@
    chip: a faint amber wash under a bar along the top, so a run of days reads
    as one band rather than as many dates. Tinted, not filled — the chips on
    those days still have to read over it. The Home card's cells share it. */
-.earn-day.rebuy-block,
 .hm-cal td.rebuy-block {
   background: color-mix(in srgb, var(--ag-warn) 7%, transparent);
   box-shadow: inset 0 3px 0 var(--ag-warn-edge);
 }
 
-.earn-day.dim.rebuy-block,
 .hm-cal td.hm-dim.rebuy-block {
   background: color-mix(in srgb, var(--ag-warn) 7%, var(--ag-surface-sunken));
 }
@@ -997,12 +928,6 @@
 }
 
 /* ------------------------------------------------------- the event dialog */
-
-/* A date and a figure, not a breakdown: narrow enough to read as a note over
-   the grid rather than a page laid on top of it. */
-.earn-modal-card.earn-ev {
-  max-width: 30rem;
-}
 
 .earn-ev-title {
   color: var(--ag-text-primary);
@@ -1182,4 +1107,373 @@
 .earn-ev-venue {
   color: var(--ag-text-primary);
   font-weight: 600;
+}
+
+/* ------------------------------------------------------- the next 7 days */
+
+.earn-strip {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.earn-strip-h {
+  margin: 0 0 0.25rem;
+  font-size: var(--ag-fs-md);
+}
+
+.earn-strip-sum {
+  margin: 0 0 0.6rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.earn-strip-sum b {
+  color: var(--ag-text-primary);
+}
+
+.earn-strip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.earn-strip-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.earn-strip-day {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  width: 2.4rem;
+  line-height: 1.15;
+}
+
+.earn-strip-day small {
+  font-size: var(--ag-fs-xs);
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
+}
+
+.earn-strip-day b {
+  font-size: var(--ag-fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-strip-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.earn-strip-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.earn-strip-tick .ag-tick-logo {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+@media (hover: hover) {
+  .earn-strip-tick:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+.earn-strip-plain {
+  font-size: var(--ag-fs-sm);
+}
+
+.earn-strip-what {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.earn-strip-what b {
+  color: var(--ag-text-secondary);
+}
+
+@media (hover: hover) {
+  .earn-strip-what:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+.earn-strip-what:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .earn-strip-what {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------ the legend filters */
+
+/* Portfolio and Favorites on the left; the kinds, each in its chips' colour,
+   pushed to the far side while the page has the room. */
+@container ag-main (min-width: 38rem) {
+  .earn-kinds {
+    margin-left: auto;
+  }
+}
+
+.earn-count {
+  margin-left: 4px;
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-muted);
+}
+
+.earn-swatch.trades,
+.earn-swatch.markets {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- past days */
+
+/* What already happened steps back: the number and the chips go quiet, the
+   verdict colours of a past print stay readable. */
+.earn-day.past:not(.dim) {
+  background: var(--ag-surface-sunken);
+}
+
+.earn-day.past .earn-daynum {
+  opacity: 0.7;
+}
+
+.earn-day.past .earn-chip:not(.past) {
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------- the buy-back window band */
+
+.earn-day {
+  position: relative;
+}
+
+/* One bar along the top of every day the window runs, reaching across the gap
+   to the next cell so the run reads as a single stripe. */
+.earn-band {
+  position: absolute;
+  top: 0;
+  left: -1px;
+  right: -5px;
+  display: flex;
+  align-items: center;
+  height: 4px;
+  background: var(--ag-warn-edge);
+  pointer-events: none;
+}
+
+.earn-band.start {
+  left: 0;
+  border-top-left-radius: var(--ag-radius-xs);
+  border-bottom-left-radius: var(--ag-radius-xs);
+}
+
+.earn-band.end {
+  right: 0;
+  border-top-right-radius: var(--ag-radius-xs);
+  border-bottom-right-radius: var(--ag-radius-xs);
+}
+
+.earn-day:nth-child(7n) .earn-band {
+  right: -1px;
+}
+
+.earn-band span {
+  display: none;
+}
+
+/* The shaded cell: a wash under the bar, quiet enough for the chips to read. */
+.earn-day.rebuy-block {
+  background: color-mix(in srgb, var(--ag-warn) 6%, transparent);
+}
+
+.earn-day.dim.rebuy-block {
+  background: color-mix(in srgb, var(--ag-warn) 6%, var(--ag-surface-sunken));
+}
+
+/* ----------------------------------------------------------- phone: dots */
+
+.earn-dots,
+.earn-dayplan {
+  display: none;
+}
+
+.earn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-purple-400);
+}
+
+.earn-dot.soon,
+.earn-dot.miss {
+  background: var(--ag-down);
+}
+
+.earn-dot.beat {
+  background: var(--ag-up);
+}
+
+.earn-dot.tax,
+.earn-dot.rebuy {
+  background: var(--ag-warn);
+}
+
+.earn-dot.div,
+.earn-dot.pay {
+  background: var(--ag-info);
+}
+
+.earn-dot.cb {
+  background: var(--ag-text-muted);
+}
+
+.earn-dot.trade {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ag-text-muted);
+}
+
+/* The grid fits the page at any width now: a day is its dots, and the day's
+   chips open in a list under the month. By the page's room, not the window's,
+   so a desktop squeezed by the chat drawer gets the same grid. */
+@container ag-main (max-width: 40rem) {
+  .earn-cal {
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .earn-day {
+    min-height: 3.25rem;
+    padding: 0.2rem;
+  }
+
+  .earn-day-chips,
+  .earn-holiday {
+    display: none;
+  }
+
+  .earn-dots {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 3px;
+    width: 100%;
+    min-height: 1.5rem;
+    padding: 2px;
+    border: none;
+    border-radius: var(--ag-radius-xs);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .earn-day.selected {
+    border-color: var(--ag-text-secondary);
+  }
+
+  .earn-dayplan {
+    display: block;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius-md);
+    background: var(--ag-surface-card);
+  }
+}
+
+@media (pointer: coarse) {
+  .earn-dots {
+    min-height: 44px;
+  }
+}
+
+.earn-dots:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+.earn-dayplan-h {
+  margin: 0 0 0.5rem;
+  font-size: var(--ag-fs-md);
+}
+
+.earn-dayplan-none {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+
+/* The day's list is the page's chips at full width, so each is a real row. */
+.earn-dayplan-list .earn-chip,
+.earn-dayplan-list .earn-holiday {
+  display: flex;
+  min-height: 36px;
+}
+
+/* ------------------------------------------------- the panel: assistant, lesson */
+
+.earn-ev-learn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+.earn-ev-lesson {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .earn-ev-lesson:hover {
+    text-decoration: underline;
+  }
+}
+
+@media (pointer: coarse) {
+  .earn-ev-lesson {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .earn-band,
+  .earn-dots {
+    transition: none;
+  }
 }

@@ -21,7 +21,7 @@
   "sector.rank_by": "Ordina per",
   "sector.ascending": "Crescente",
   "sector.columns": "Colonne",
-  "sector.filters_caption": "Filtri (le metriche percentuali sono frazioni: 0,15 = 15%)",
+  "sector.filters_caption": "Filtri (percentuali in %: 15 = 15%)",
   "sector.pass_caption": "{n} società su {total} li superano — riordina in **Ordine, colonne e soglie**.",
   "sector.download_csv": "Scarica i numeri grezzi (CSV)",
   "sector.metrics_help": "Cosa significano queste metriche?",

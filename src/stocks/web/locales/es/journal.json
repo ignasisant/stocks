@@ -144,5 +144,15 @@
   "journal.entry_empty": "Ninguna aún. Decide ya a qué precio o con qué cifras comprarías.",
   "journal.entry_propose": "Escríbelas con el asistente",
   "journal.entry_edit": "Cámbialas con el asistente",
-  "journal.entry_prompt": "Ayúdame a escribir reglas de compra para {ticker}: el precio, la caída o las cifras con las que compraría o reforzaría."
+  "journal.entry_prompt": "Ayúdame a escribir reglas de compra para {ticker}: el precio, la caída o las cifras con las que compraría o reforzaría.",
+  "journal.kpi_proposed": "Propuestas",
+  "journal.kpi_followed": "Seguidas",
+  "journal.kpi_declined": "Rechazadas",
+  "journal.kpi_lapsed": "Caducadas",
+  "journal.kpi_open": "Abiertas",
+  "journal.kpi_its_way": "Acertadas a un mes",
+  "journal.record_note": "Una venta o una compra en tu cartera cuenta como seguirla; no se pregunta nada. Son cuentas, no un veredicto de si salió bien.",
+  "journal.show_stay": "Mostrar «Mantener la cartera» ({n})",
+  "journal.rules_head": "Tus reglas · {n}",
+  "journal.proposals_head": "Propuestas · {n}"
 }

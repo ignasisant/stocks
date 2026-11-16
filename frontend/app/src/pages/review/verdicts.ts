@@ -162,3 +162,64 @@ export function closeCalls(rows: ReviewRow[]): CloseCall[] {
     .filter((call): call is CloseCall => call !== null)
     .sort((a, b) => (a.points ?? Infinity) - (b.points ?? Infinity));
 }
+
+/**
+ * The colour a name reads in on the quality–price map, finer than
+ * `verdictTone`: a hold the server marked `close_call` stands out from the
+ * holds with nothing to do, and the outside-the-book verdicts (a buy, a
+ * watch, a bet) each get their own, so the map can be read without the table.
+ */
+export type MapMark =
+  "sell" | "trim" | "add" | "near" | "bet" | "buy" | "watch" | "still";
+
+export function mapMark(row: ReviewRow): MapMark {
+  const mark = verdictMark(row.verdict);
+  return (mark === "watch" || mark === "still") && row.reasons.includes("close_call")
+    ? "near"
+    : mark;
+}
+
+/**
+ * A verdict's own colour, the one its chip, its bar segment and its table
+ * group wear: the map's marks without the "near" a single row can earn.
+ */
+export function verdictMark(verdict: Verdict): MapMark {
+  switch (verdict) {
+    case "sell":
+    case "pass":
+      return "sell";
+    case "trim":
+      return "trim";
+    case "add":
+      return "add";
+    case "buy":
+      return "buy";
+    case "bet":
+      return "bet";
+    case "watch":
+      return "watch";
+    default:
+      return "still";
+  }
+}
+
+/** The legend's order: what to act on first, the quiet holds left out. */
+const MAP_MARKS: MapMark[] = ["sell", "trim", "add", "near", "buy", "bet", "watch"];
+
+/**
+ * The map's colour keys: each mark worn by `rows`, with the verdicts wearing
+ * it in reading order, so a key can name them. The quiet holds get none.
+ */
+export function mapKeys(rows: ReviewRow[]): { mark: MapMark; verdicts: Verdict[] }[] {
+  const worn = new Map<MapMark, Set<Verdict>>();
+  for (const row of rows) {
+    const mark = mapMark(row);
+    worn.set(mark, (worn.get(mark) ?? new Set<Verdict>()).add(row.verdict));
+  }
+  return MAP_MARKS.flatMap((mark) => {
+    const verdicts = worn.get(mark);
+    return verdicts
+      ? [{ mark, verdicts: VERDICT_ORDER.filter((verdict) => verdicts.has(verdict)) }]
+      : [];
+  });
+}

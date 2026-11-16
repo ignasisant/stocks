@@ -46,6 +46,7 @@ import { SignIn, SignedInOnly } from "../../shell/guest";
 import { AnalystsSection } from "./Analysts";
 import { FinancialsChart, ValuationChart } from "./Charts";
 import { DcfSection } from "./Dcf";
+import { PeerBars, WorthSection } from "./Worth";
 import {
   getAnalysts,
   getOptions,
@@ -361,11 +362,11 @@ export default function Page() {
   const reads = wanted("reading") && bars.state !== "loading";
   const wantsMetrics = wanted("fundamentals") || wanted("valuation") || reads;
   const wantsFinancials = wanted("results");
-  const wantsDcf = wanted("dcf");
+  const wantsDcf = wanted("dcf") || wanted("worth");
   const wantsMoat = wanted("moat") || reads;
   const wantsInsiders = wanted("insiders") || reads;
   const wantsShorts = wanted("shorts");
-  const wantsAnalysts = wanted("analysts") || reads;
+  const wantsAnalysts = wanted("analysts") || wanted("worth") || reads;
   const wantsCycle = wanted("cycle");
   const wantsPositioning = wanted("positioning");
 
@@ -481,7 +482,7 @@ export default function Page() {
   // has not picked their own: an empty table asks a question the page can
   // answer. Three, so the one request stays a short one.
   const fillsPeers = Boolean(
-    ticker && company && wanted("comparables") && !peersPicked,
+    ticker && company && (wanted("comparables") || wanted("worth")) && !peersPicked,
   );
   useEffect(() => {
     if (!ticker || !fillsPeers) return;
@@ -613,6 +614,8 @@ export default function Page() {
                   ticker={ticker}
                   name={drawn?.name ?? ""}
                   held={!!held?.held}
+                  inBook={!!held && (held.held || held.trades.length > 0)}
+                  onBookChanged={position.state === "loaded" ? position.reload : noop}
                   entry={entry}
                   onEntry={onEntry}
                   onMine={setMine}
@@ -755,6 +758,20 @@ export default function Page() {
               {/* What it is worth: the multiple against its own history, then
                   the cash it should make. */}
               <Section at="valuation" label={t("ticker.tab_valuation")}>
+                {/* The three ways to value it on one axis, then its multiples
+                    against the rivals': the cards below hold the detail. */}
+                <Watch id="worth" onSeen={onSeen}>
+                  {() => (
+                    <>
+                      <WorthSection
+                        dcf={dcf.state === "loaded" ? dcf.data : null}
+                        analysts={analysts.state === "loaded" ? analysts.data : null}
+                        comps={comps.state === "loaded" ? comps.data : null}
+                      />
+                      <PeerBars comps={comps.state === "loaded" ? comps.data : null} />
+                    </>
+                  )}
+                </Watch>
                 {/* Its figures are the price card's too, so they are already
                     here; the slot waits for the grid's P/E it is checked
                     against. */}
@@ -994,6 +1011,7 @@ function Watch({
 /** The sections below the price that wait to be seen; each is its card's fold id. */
 type SlotId =
   | "reading"
+  | "worth"
   | "comparables"
   | "results"
   | "fundamentals"

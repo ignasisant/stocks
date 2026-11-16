@@ -26,7 +26,8 @@ import { ConnectorCard } from "./ConnectorCard";
 import { Sessions } from "./Sessions";
 import { SharedLinks } from "./SharedLinks";
 import { DeleteAccount } from "./DeleteAccount";
-import { InstallCard } from "./InstallCard";
+import { residenceClash } from "./residence";
+import { InstallRow } from "./InstallCard";
 import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
 import { TourCard } from "./TourCard";
@@ -182,6 +183,12 @@ export function Preferences({
           month: active.year_start[0],
         });
   const matchLabel = active ? t(`profile.tax_match_${active.matching}`) : "";
+  // The investor profile may say another country than the one declared here.
+  const profileQ = useApi(() => get<{ constraints: string[] }>("/profile"), []);
+  const clash =
+    profileQ.state === "loaded"
+      ? residenceClash(prefs.tax_residence, profileQ.data.constraints)
+      : null;
   const fail = (field: string) => (failure?.field === field ? failure.message : null);
 
   return (
@@ -235,9 +242,9 @@ export function Preferences({
             {rest.length > 0 && <span className="pr-morehint">{rest.join(" · ")}</span>}
             <Failure message={fail("currency")} />
           </Row>
+          <InstallRow />
         </Card>
 
-        <InstallCard />
         <Card title={t("profile.tax_section")} note={t("profile.tax_legal_note")}>
           <Row
             label={t("profile.tax_residence")}
@@ -255,6 +262,13 @@ export function Preferences({
               }}
             />
             <Failure message={fail("tax_residence")} />
+            {clash && (
+              <p className="pl-sum pl-sum-off" role="status">
+                {t("profile.tax_profile_clash", {
+                  constraint: t(`profile.iv_constraints_${clash.constraint}`),
+                })}
+              </p>
+            )}
             {active ? (
               <div className="pr-rules">
                 <div className="pr-rule">
@@ -413,19 +427,40 @@ export function Preferences({
               {t("profile.export_all_button")}
             </a>
           </Row>
-          {/* Which browsers are signed in, each endable; draws nothing until
-              the list answers. */}
-          <Sessions />
-          {/* The answers out by link, each one stoppable; nothing until there
-              is one. */}
-          <SharedLinks />
-          {/* The other half of the promise the privacy policy makes: the data
-              can be taken out, and it can be erased. Never offered to the
-              owner: that "account" is the repo-root files the CLI shares, and
-              `DELETE /account` refuses it — a button that can only fail is not
-              a control. */}
-          {owner === false && <DeleteAccount />}
+          {/* The assistant's answers, sampled for an automated quality check
+              (chat/review.py): scores only, as the privacy policy says. */}
+          <Row
+            label={t("profile.review_answers")}
+            help={t("profile.review_answers_help")}
+            middle
+          >
+            <Toggle
+              label={t("profile.review_answers")}
+              checked={prefs.review_answers ?? true}
+              disabled={saving === "review_answers"}
+              onToggle={(on) => save("review_answers", on)}
+            />
+            <Failure message={fail("review_answers")} />
+          </Row>
         </Card>
+        {/* Who has a way in: the signed-in browsers and the links out. Each
+            draws nothing until it has something, so the card is only there
+            when it holds a row. */}
+        <Card title={t("profile.access_section")} sub={t("profile.access_sub")}>
+          <Sessions />
+          <SharedLinks />
+        </Card>
+        {/* The other half of the promise the privacy policy makes: the data
+            can be taken out, and it can be erased. Never offered to the
+            owner: that "account" is the repo-root files the CLI shares, and
+            `DELETE /account` refuses it — a button that can only fail is not
+            a control. Alone at the end, so exporting and erasing never share
+            a card. */}
+        {owner === false && (
+          <Card>
+            <DeleteAccount />
+          </Card>
+        )}
         {/* The connector has its own tab where it is served. Where it is not,
             an app connected before keeps a place to be revoked; the card
             draws nothing when nothing is connected. */}

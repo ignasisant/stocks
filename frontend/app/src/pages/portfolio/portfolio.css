@@ -18,9 +18,8 @@
 .pf-card {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg, 16px);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-card);
-  padding: 1rem 1.1rem 1.1rem;
+  background: var(--ag-surface-raised);
+  padding: 18px;
   margin: 0 0 1rem;
 }
 
@@ -323,6 +322,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: 1rem;
+}
+
+/* Kept mounted for the bars/donuts toggle; `display: grid` would beat the
+   attribute otherwise. */
+.pf-donuts[hidden] {
+  display: none;
 }
 
 /* A narrow page would stack four full-width rings, each over its own legend,
@@ -827,6 +832,7 @@
 }
 
 .pf-zoom-reset {
+  min-height: 0;
   font-size: var(--ag-fs-2xs, 0.6875rem);
   padding: 0.2rem 0.6rem;
 }
@@ -1239,9 +1245,8 @@
   gap: 1rem;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg, 16px);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-card);
-  padding: 1rem;
+  background: var(--ag-surface-raised);
+  padding: 18px;
 }
 
 .pf-proj-group {
@@ -1949,4 +1954,201 @@
 
 .pf-heat-all {
   margin-bottom: 0.75rem;
+}
+
+/* Sticky tab strip with a figure per tab, and the unpriced notice under it. */
+.pf-tabbar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  background: color-mix(in oklab, var(--ag-surface-page) 80%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  overflow-x: auto;
+}
+.pf-tab-badge {
+  margin-inline-start: 6px;
+  font-size: 11px;
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pf-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: 12px;
+  background: var(--ag-surface-raised, var(--ag-surface-page));
+  font-size: 13px;
+}
+.pf-notice button {
+  min-height: 32px;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pf-answer-h {
+  margin: 0 0 4px;
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 600;
+}
+.pf-rets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.pf-rets > div {
+  display: grid;
+  gap: 2px;
+}
+.pf-rets small,
+.pf-rets span {
+  font-size: 12px;
+  color: var(--ag-text-muted);
+}
+.pf-rets b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.pf-go {
+  font-size: 12px;
+  color: var(--ag-text-muted);
+}
+@media (pointer: coarse) {
+  .pf-go {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .pf-notice button {
+    min-height: 44px;
+  }
+}
+
+.pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 8px;
+}
+
+.pf-answer-line {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+.pf-stack {
+  display: flex;
+  block-size: 14px;
+  margin-block: 10px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  overflow: hidden;
+  background: var(--ag-surface-sunken);
+}
+.pf-stack > i {
+  min-inline-size: 2px;
+}
+.pf-alloc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.pf-alloc-list li {
+  display: grid;
+  grid-template-columns: 12px 1fr auto 4rem;
+  align-items: center;
+  gap: 10px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: 14px;
+}
+.pf-alloc-list b,
+.pf-alloc-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.pf-alloc-val {
+  color: var(--ag-text-muted);
+}
+.pf-idx {
+  inline-size: 100%;
+  margin-block: 12px;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.pf-idx th,
+.pf-idx td {
+  padding: 8px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--ag-border);
+}
+.pf-idx th:first-child {
+  text-align: left;
+}
+.pf-idx thead th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.pf-harvest {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.pf-harvest li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) auto auto minmax(8rem, 1.5fr);
+  align-items: center;
+  gap: 10px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: 14px;
+}
+@container ag-main (max-width: 520px) {
+  .pf-harvest li {
+    grid-template-columns: 1fr auto;
+  }
+}
+
+.pf-feebars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.pf-feebars li {
+  display: grid;
+  grid-template-columns: minmax(5rem, 9rem) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.pf-feebars .pf-stack {
+  margin: 0;
+  background: none;
+}
+.pf-stack-in {
+  display: flex;
+  block-size: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.pf-fee-commission {
+  background: var(--ag-brand-accent);
+}
+.pf-fee-other {
+  background: var(--ag-text-muted);
+}
+.pf-fee-spread {
+  background: var(--ag-down);
 }

@@ -18,7 +18,7 @@ def test_no_key_never_makes_a_request(monkeypatch):
     called = []
     monkeypatch.setattr(fmp, "get_json", lambda url: called.append(url) or [])
     df = fmp.diluted_eps_facts("AAPL")
-    assert df.empty and list(df.columns) == ["end", "filed", "eps", "kind"]
+    assert df.empty and list(df.columns) == ["end", "filed", "eps", "kind", "currency"]
     assert called == []
 
 
@@ -55,7 +55,7 @@ def test_a_row_is_shaped_end_filed_eps_kind_from_the_stable_fields(monkeypatch):
         ],
     )
     df = fmp.diluted_eps_facts("AAPL")
-    assert list(df.columns) == ["end", "filed", "eps", "kind"]
+    assert list(df.columns) == ["end", "filed", "eps", "kind", "currency"]
     row = df.iloc[0]
     # Diluted first — same figure `edgar.diluted_eps_facts` reports, and the
     # one the P/E reconstruction is meant to divide the price by.

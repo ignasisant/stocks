@@ -49,6 +49,7 @@ import type {
 import { HolidayMark, PaymentChip, TradeChip } from "./Book";
 import { CentralBankChip } from "./CentralBanks";
 import { DividendChip } from "./Dividends";
+import { longDate } from "./format";
 import type { T } from "./format";
 import { blockedTitle, RepurchaseChip } from "./Repurchase";
 import { TaxChip } from "./Tax";
@@ -170,7 +171,7 @@ export type DayItems = {
  * shows one fewer than the limit, so a cell never draws a button that hides a
  * single chip it had room for.
  */
-export function DayChips({
+function DayChips({
   events,
   results,
   deadlines,
@@ -243,34 +244,117 @@ export function DayChips({
   );
 }
 
+/** The chip class each thing on a day is drawn in: the dots reuse the key's colours. */
+export function dotKinds(items: DayItems): string[] {
+  const kinds: string[] = [];
+  const add = (kind: string) => {
+    if (!kinds.includes(kind)) kinds.push(kind);
+  };
+  if (items.deadlines.length > 0) add("tax");
+  if (items.windows.length > 0) add("rebuy");
+  if (items.banks.length > 0) add("cb");
+  for (const result of items.results)
+    add(result.beat === null ? "print" : result.beat ? "beat" : "miss");
+  for (const event of items.events) add(isSoon(event) ? "soon" : "print");
+  if ((items.trades ?? []).length > 0) add("trade");
+  if (items.dividends.length > 0) add("div");
+  if ((items.payments ?? []).length > 0) add("pay");
+  return kinds;
+}
+
+/** The ISO day after `iso`. */
+function nextDay(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function isMonday(iso: string): boolean {
+  return new Date(`${iso}T00:00:00Z`).getUTCDay() === 1;
+}
+
+/**
+ * The buy-back window as one bar along the top of every day it runs, joined
+ * across the gaps between cells: it starts on the sale, ends the day before
+ * the chip that frees it, and names the stock where it starts and at the head
+ * of each week it carries on into.
+ */
+function Band({
+  day,
+  blocked,
+  windows,
+}: {
+  day: Day;
+  blocked: RepurchaseWindow[];
+  windows: RepurchaseWindow[];
+}) {
+  const starts = blocked.filter((w) => w.sell_date === day.iso);
+  const ends = windows.some((w) => w.date === nextDay(day.iso));
+  const label = starts.length > 0 || isMonday(day.iso);
+  const classes = ["earn-band"];
+  if (starts.length > 0) classes.push("start");
+  if (ends) classes.push("end");
+  return (
+    <div className={classes.join(" ")} aria-hidden="true">
+      {label && <span>{blocked.map((w) => w.ticker).join(" · ")}</span>}
+    </div>
+  );
+}
+
 function Cell({
   day,
   blocked,
+  running,
   holidays,
+  selected,
+  onSelect,
   onPick,
   ...items
 }: DayItems & {
   day: Day;
   blocked: RepurchaseWindow[];
+  /** Every window the grid draws, so a band knows where it ends. */
+  running: RepurchaseWindow[];
   holidays: MarketHoliday[];
+  selected: boolean;
+  onSelect: (iso: string) => void;
   onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
   const classes = ["earn-day"];
   if (!day.inMonth) classes.push("dim");
   if (day.today) classes.push("today");
+  else if (day.past) classes.push("past");
+  if (selected) classes.push("selected");
   const shaded = blocked.length > 0;
   if (shaded) classes.push("rebuy-block");
+  const dots = dotKinds(items);
   return (
     <div
       className={classes.join(" ")}
       title={shaded ? blockedTitle(blocked, t) : undefined}
     >
+      {shaded && <Band day={day} blocked={blocked} windows={running} />}
       <div className="earn-dayhead">
         <div className="earn-daynum">{day.day}</div>
         <HolidayMark holidays={holidays} onPick={onPick} />
       </div>
-      <DayChips {...items} onPick={onPick} />
+      <div className="earn-day-chips">
+        <DayChips {...items} onPick={onPick} />
+      </div>
+      {/* On a phone the day is its dots; the day's own list opens under the
+          grid. A button, so the whole cell's worth is one 44px target. */}
+      <button
+        type="button"
+        className="earn-dots"
+        aria-pressed={selected}
+        aria-label={`${day.day}`}
+        onClick={() => onSelect(day.iso)}
+      >
+        {dots.map((kind) => (
+          <i key={kind} className={`earn-dot ${kind}`} />
+        ))}
+      </button>
     </div>
   );
 }
@@ -305,6 +389,7 @@ export default function MonthGrid({
   onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
+  const [chosen, setChosen] = useState<string | null>(null);
   const upcoming = byDate(events);
   const reported = byDate(results);
   const due = byDate(deadlines);
@@ -314,34 +399,74 @@ export default function MonthGrid({
   const filled = byDate(trades);
   const paid = byDate(payments);
   const shut = byDate(holidays);
+  const weeks = monthWeeks(year, month, now);
+  const days = weeks.flat();
+  // The day the phone's panel lists: the one tapped, else today when it is on
+  // this page, else nothing yet.
+  const open =
+    days.find((day) => day.inMonth && day.iso === chosen)?.iso ??
+    days.find((day) => day.inMonth && day.today)?.iso ??
+    null;
+  const itemsOn = (iso: string): DayItems => ({
+    events: upcoming.get(iso) ?? [],
+    results: reported.get(iso) ?? [],
+    deadlines: due.get(iso) ?? [],
+    windows: freed.get(iso) ?? [],
+    banks: decided.get(iso) ?? [],
+    dividends: exDates.get(iso) ?? [],
+    trades: filled.get(iso) ?? [],
+    payments: paid.get(iso) ?? [],
+  });
+  const plan = open === null ? null : itemsOn(open);
+  const planned =
+    plan === null
+      ? 0
+      : plan.events.length +
+        plan.results.length +
+        plan.deadlines.length +
+        plan.windows.length +
+        plan.banks.length +
+        plan.dividends.length +
+        (plan.trades?.length ?? 0) +
+        (plan.payments?.length ?? 0) +
+        (shut.get(open as string)?.length ?? 0);
   return (
-    <div className="earn-cal-scroll">
-      <div className="earn-cal">
-        {WEEKDAYS.map((key) => (
-          <div className="earn-wd" key={key}>
-            {t(key)}
-          </div>
-        ))}
-        {monthWeeks(year, month, now).map((week) =>
-          week.map((day) => (
+    <>
+      <div className="earn-cal-scroll">
+        <div className="earn-cal">
+          {WEEKDAYS.map((key) => (
+            <div className="earn-wd" key={key}>
+              {t(key)}
+            </div>
+          ))}
+          {days.map((day) => (
             <Cell
               key={day.iso}
               day={day}
-              events={upcoming.get(day.iso) ?? []}
-              results={reported.get(day.iso) ?? []}
-              deadlines={due.get(day.iso) ?? []}
-              windows={freed.get(day.iso) ?? []}
+              {...itemsOn(day.iso)}
               blocked={blocking(windows, day.iso)}
-              banks={decided.get(day.iso) ?? []}
-              dividends={exDates.get(day.iso) ?? []}
-              trades={filled.get(day.iso) ?? []}
-              payments={paid.get(day.iso) ?? []}
+              running={windows}
               holidays={shut.get(day.iso) ?? []}
+              selected={day.iso === open}
+              onSelect={setChosen}
               onPick={onPick}
             />
-          )),
-        )}
+          ))}
+        </div>
       </div>
-    </div>
+      {open !== null && plan !== null && (
+        <section className="earn-dayplan" aria-label={open}>
+          <h3 className="earn-dayplan-h">{longDate(open, t)}</h3>
+          {planned === 0 ? (
+            <p className="earn-dayplan-none">{t("earnings.day_none")}</p>
+          ) : (
+            <div className="earn-dayplan-list">
+              <HolidayMark holidays={shut.get(open) ?? []} onPick={onPick} />
+              <DayChips {...plan} onPick={onPick} limit={Infinity} />
+            </div>
+          )}
+        </section>
+      )}
+    </>
   );
 }

@@ -25,10 +25,11 @@ import { useT } from "../../shell/i18n";
 import { useAccount } from "../../shell/session";
 import { Status } from "../../ui/Status";
 import { MAX_BYTES, commit, written } from "./api";
-import type { Platform, Preview, Refusal, Result, Staged } from "./api";
+import type { Platform, Preview, Refusal, Result, Row, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { names } from "./repairs";
 import { Rich } from "./Rich";
+import { newPositions } from "./tally";
 import { useVocabulary } from "./text";
 import type { WipeChoice } from "./Wipe";
 
@@ -60,6 +61,8 @@ export function CommitPanel({
   preview,
   wipe,
   keep,
+  before,
+  held,
   onCommitted,
 }: {
   platforms: Platform[];
@@ -69,7 +72,12 @@ export function CommitPanel({
   wipe: WipeChoice;
   /** Write the rows the book already holds too. */
   keep: boolean;
-  onCommitted: (result: Result) => void;
+  /** Rows the book holds now (the sample's aside), null until it is read. */
+  before?: number | null;
+  /** Tickers held now, null until read: what separates a new position. */
+  held?: ReadonlySet<string> | null;
+  /** The commit's answer, and the rows that were sent to it. */
+  onCommitted: (result: Result, sent: Row[]) => void;
 }) {
   const t = useT();
   const vocab = useVocabulary();
@@ -107,7 +115,7 @@ export function CommitPanel({
     setRefusal(null);
     try {
       const outcome = await commit(preview, staged, origin, wipe, keep);
-      if (outcome.ok) onCommitted(outcome.value);
+      if (outcome.ok) onCommitted(outcome.value, written(preview, keep));
       else setRefusal(outcome.refusal);
     } catch {
       // Not a refusal the API spelled out — the ledger is untouched either way.
@@ -130,6 +138,20 @@ export function CommitPanel({
         : skipped > 0
           ? t("import.confirm_left_skipped", { n: vocab.num(skipped, 0) })
           : "";
+  // What the book becomes: its count after, and the names it has not held.
+  const fresh = held ? newPositions(written(preview, keep), held).length : 0;
+  const change =
+    before == null
+      ? ""
+      : [
+          t("import.confirm_change", {
+            before: vocab.num(before, 0),
+            after: vocab.num(wipe.on ? rows : before + rows, 0),
+          }),
+          fresh > 0 ? vocab.tn("import.confirm_new", fresh) : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
   const twice = dupes > 0 ? vocab.tn("import.confirm_left_duplicates", dupes) : "";
 
   return (
@@ -185,12 +207,14 @@ export function CommitPanel({
               <>
                 <span className="im-confirm-long">
                   <Rich text={vocab.tn("import.confirm_rows", rows)} /> {left} {twice}
+                  {change && <span className="im-confirm-change">{change}</span>}
                 </span>
                 <span className="im-confirm-short">
                   <strong>{vocab.tn("import.rows_count", rows)}</strong>
                   {rejected > 0 && (
                     <small>{vocab.tn("import.rejected_left", rejected)}</small>
                   )}
+                  {change && <small>{change}</small>}
                 </span>
               </>
             )}

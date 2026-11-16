@@ -21,7 +21,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-10-14"
+LAST_UPDATED = "2026-11-16"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -102,6 +102,18 @@ _PRIVACY = {
                 "the portfolio context needed to answer) is sent to the "
                 "configured model provider for that reply. If you bring your "
                 "own API key it is stored encrypted.",
+                "To find the assistant's mistakes, its answers are checked "
+                "automatically: whether their figures appear in what the "
+                "assistant was given, and whether your next message says an "
+                "answer was wrong. Some answers of the built-in assistant "
+                "(never one written with your own API key) are also scored "
+                "1 to 5 by a model of the same providers that answer it. Only "
+                "the counts and scores are logged, with a reference to the "
+                "answer, never its words. When they point to a mistake, we may "
+                "read that question and answer in your stored conversations "
+                "(kept 30 days) to fix the assistant. You can switch all of "
+                "this off in Profile → Data and account → Review the "
+                "assistant's answers.",
                 "If you turn on notifications, each device's push subscription "
                 "(its browser push address and keys) is stored so the "
                 "notifications you enabled can be sent to it; switching them "
@@ -199,6 +211,19 @@ _PRIVACY = {
                 "contexto de cartera necesario para responder) se envía al "
                 "proveedor de modelo configurado para esa respuesta. Si "
                 "aportas tu propia clave de API, se guarda cifrada.",
+                "Para encontrar los errores del asistente, sus respuestas se "
+                "revisan automáticamente: si sus cifras aparecen en lo que el "
+                "asistente recibió y si tu siguiente mensaje dice que una "
+                "respuesta estaba mal. Algunas respuestas del asistente "
+                "integrado (nunca las escritas con tu propia clave de API) "
+                "las puntúa además del 1 al 5 un modelo de los mismos "
+                "proveedores que las responden. Solo se registran los "
+                "recuentos y las notas, con una referencia a la respuesta, "
+                "nunca su texto. Cuando apuntan a un error, podemos leer esa "
+                "pregunta y esa respuesta en tus conversaciones guardadas "
+                "(30 días) para corregir el asistente. Puedes desactivarlo "
+                "todo en Perfil → Datos y cuenta → Revisar las respuestas del "
+                "asistente.",
                 "Si activas las notificaciones, se guarda la suscripción push de "
                 "cada dispositivo (su dirección push del navegador y sus "
                 "claves) para poder enviarte las notificaciones que actives; "
@@ -305,6 +330,19 @@ _PRIVACY = {
                 "inviato al fornitore del modello configurato per quella "
                 "risposta. Se usi una tua chiave API, questa viene conservata "
                 "cifrata.",
+                "Per trovare gli errori dell'assistente, le sue risposte "
+                "vengono controllate automaticamente: se le cifre compaiono in "
+                "ciò che l'assistente ha ricevuto e se il tuo messaggio "
+                "successivo dice che una risposta era sbagliata. Alcune "
+                "risposte dell'assistente integrato (mai quelle scritte con la "
+                "tua chiave API) ricevono inoltre un voto da 1 a 5 da un "
+                "modello degli stessi fornitori che le scrivono. Si "
+                "registrano solo i conteggi e i voti, con un riferimento alla "
+                "risposta, mai il testo. Quando indicano un errore, possiamo "
+                "leggere quella domanda e quella risposta nelle tue "
+                "conversazioni salvate (30 giorni) per correggere "
+                "l'assistente. Puoi disattivare tutto in Profilo → Dati e "
+                "account → Revisione delle risposte dell'assistente.",
                 "Se attivi le notifiche, la sottoscrizione push di ciascun "
                 "dispositivo (il suo indirizzo push del browser e le chiavi) "
                 "viene conservata affinché le notifiche che hai abilitato "

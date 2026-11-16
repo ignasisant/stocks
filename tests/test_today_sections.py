@@ -713,6 +713,11 @@ def test_every_comparison_also_runs_from_the_books_first_day():
         money_change(hist, days)[1] * 100, abs=0.1)
     assert marks["SPY"]["all"] == pytest.approx(
         index_change(hist, closes["SPY"], days)[1] * 100, abs=0.1)
+    # The same money in euros, so "you vs the index" is a difference of two.
+    assert marks[today_sections.BOOK]["all_gain"] == pytest.approx(
+        money_change(hist, days)[0], abs=0.01)
+    assert marks["SPY"]["all_gain"] == pytest.approx(
+        index_change(hist, closes["SPY"], days)[0], abs=0.01)
     # The top-up bought the index late, on its own day: not the price move.
     spy_price = (closes["SPY"].iloc[-1] / closes["SPY"].iloc[0] - 1) * 100
     assert marks["SPY"]["all"] != pytest.approx(spy_price, abs=0.5)
@@ -743,7 +748,8 @@ def test_without_a_history_there_is_no_since_inception():
                   sources=_sources(closes=_closes))
     compare = _compare(out)
     assert "since" not in compare
-    assert all(b["all"] is None for b in compare["benchmarks"])
+    assert all(b["all"] is None and b["all_gain"] is None
+               for b in compare["benchmarks"])
     assert "all" not in compare["rows"][0]["data"]
 
 

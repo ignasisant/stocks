@@ -10,6 +10,7 @@
 import { useT } from "../../shell/i18n";
 import { DownBody } from "./Down";
 import { NA } from "./format";
+import { fromMiddle } from "./logic";
 import type { Pulse } from "./types";
 
 /**
@@ -35,13 +36,6 @@ const ORDER = [
  */
 const FLOOR = 4;
 
-/** Red at the fear end, green at the appetite end, neutral through the middle. */
-function scoreClass(score: number): string {
-  if (score < 40) return "sn-fill-bad";
-  if (score < 60) return "sn-fill-flat";
-  return "sn-fill-good";
-}
-
 export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
   const head = (
@@ -49,7 +43,21 @@ export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) 
       <h2 className="sn-sec-t" id="ag-why">
         {t("sentiment.why_title")}
       </h2>
-      <span className="sn-mono">{t("sentiment.why_hint")}</span>
+      <span className="sn-spacer" />
+      <span className="sn-mono sn-comp-key">
+        <span>
+          <i className="sn-key-te" />
+          {t("sentiment.why_key_stress")}
+        </span>
+        <span>
+          <i className="sn-key-ap" />
+          {t("sentiment.why_key_appetite")}
+        </span>
+        <span>
+          <i className="sn-key-mk" />
+          {t("sentiment.why_key_month")}
+        </span>
+      </span>
     </div>
   );
   // Nothing was built, so there are no rows to dim: eight "n/a" bars would
@@ -96,10 +104,30 @@ export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) 
                   <span className="sn-comp-none">{t("sentiment.comp_none")}</span>
                 </span>
               ) : (
-                <span className="sn-comp-track">
+                <span
+                  className="sn-comp-track"
+                  role="img"
+                  aria-label={
+                    then === null
+                      ? t("sentiment.comp_aria_plain", {
+                          name: t(`sentiment.comp_${key}`),
+                          score: Math.round(score),
+                        })
+                      : t("sentiment.comp_aria", {
+                          name: t(`sentiment.comp_${key}`),
+                          score: Math.round(score),
+                          then: Math.round(then),
+                        })
+                  }
+                >
+                  {/* From the 50 line outwards: appetite to the right,
+                      tension to the left, so the side says the direction and
+                      the length says how far. A bar filled from the left
+                      made a 31 and a 69 differ by length alone. */}
+                  <span className="sn-comp-axis" />
                   <span
-                    className={`sn-comp-fill ${scoreClass(score)}`}
-                    style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
+                    className={`sn-comp-fill sn-fill-${fromMiddle(score).side}`}
+                    style={{ width: `${fromMiddle(score).width}%` }}
                   />
                   {then !== null && (
                     <span

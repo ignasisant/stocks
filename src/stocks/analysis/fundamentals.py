@@ -1440,7 +1440,7 @@ def comparables_table(metrics: list[dict]) -> pd.DataFrame:
 
 # Comps ranking direction per KPI. Size (market cap, EV), price and raw FCF
 # say nothing about who screens better, so they stay out of the score.
-_RANK_LOWER_BETTER = frozenset(
+RANK_LOWER_BETTER = frozenset(
     {
         "pe_ttm",
         "pe_fwd",
@@ -1556,7 +1556,7 @@ def comp_scores(metrics: list[dict]) -> dict[str, float]:
     """
     return ranking.percentile_rank_scores(
         [_rankable(row) for row in metrics],
-        _RANK_LOWER_BETTER,
+        RANK_LOWER_BETTER,
         _RANK_HIGHER_BETTER,
         _RANK_MIN_METRICS,
     )
@@ -1570,7 +1570,7 @@ def comp_medals(metrics: list[dict]) -> dict[str, str]:
 
 # The peer band is read on ratios and rates only: market cap, EV, price and
 # raw FCF have no "normal" across companies of different size.
-_BAND_KEYS = _RANK_LOWER_BETTER | _RANK_HIGHER_BETTER
+_BAND_KEYS = RANK_LOWER_BETTER | _RANK_HIGHER_BETTER
 # ...and the lens KPIs, which a company grid reads but the comps table has no
 # row for (`_LENS_ONLY`).
 GRID_BAND_KEYS = _BAND_KEYS | _LENS_ONLY

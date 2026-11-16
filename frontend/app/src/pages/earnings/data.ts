@@ -198,6 +198,12 @@ export type EarningsCalendar = {
   payments: CalendarPayment[];
   /** Closures of the exchanges the watchlist trades on, oldest first. */
   market_holidays: MarketHoliday[];
+  /**
+   * Each open position's share of the book, as a fraction. Absent on a payload
+   * cached before it shipped, and empty when prices were not to be had: the
+   * page then says nothing about weight rather than guessing.
+   */
+  weights?: Record<string, number>;
 };
 
 /**
@@ -295,6 +301,8 @@ export type Day = {
   /** False for the spill from the previous or next month — drawn dimmed. */
   inMonth: boolean;
   today: boolean;
+  /** Before today: the grid dims what has already happened. */
+  past: boolean;
 };
 
 function isoDay(year: number, month: number, day: number): string {
@@ -332,6 +340,7 @@ export function monthWeeks(year: number, month: number, now: string): Day[][] {
         day: cursor.getDate(),
         inMonth: cursor.getMonth() + 1 === month && cursor.getFullYear() === year,
         today: key === now,
+        past: key < now,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -390,4 +399,73 @@ export function only<T extends { ticker: string }>(
   names: Set<string> | null,
 ): T[] {
   return names === null ? items : items.filter((item) => names.has(item.ticker));
+}
+
+/** How many days ahead the strip over the calendar looks, the last included. */
+const STRIP_DAYS = 7;
+
+/** "2026-12" as [2026, 12]; null for anything that is not a month. */
+export function parseMonth(value: string | null | undefined): [number, number] | null {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value ?? "");
+  return match ? [Number(match[1]), Number(match[2])] : null;
+}
+
+export function monthKey(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** Months from the one `now` falls in to (year, month): negative is behind. */
+export function monthsFrom(now: string, year: number, month: number): number {
+  return year * 12 + month - (Number(now.slice(0, 4)) * 12 + Number(now.slice(5, 7)));
+}
+
+/** The book's share of a name, or null when it is not held or not priced. */
+export function weightOf(
+  weights: Record<string, number> | undefined,
+  ticker: string,
+): number | null {
+  const weight = weights?.[ticker];
+  return weight === undefined || !Number.isFinite(weight) ? null : weight;
+}
+
+/** What the strip covers: due today up to `STRIP_DAYS` from now. */
+export function within(daysUntil: number | null): boolean {
+  return daysUntil !== null && daysUntil >= 0 && daysUntil <= STRIP_DAYS;
+}
+
+/** The sum of the book's weights over the prints due, null when none is known. */
+export function weighed(
+  events: CalendarEvent[],
+  weights: Record<string, number> | undefined,
+): number | null {
+  const known = events
+    .map((event) => weightOf(weights, event.ticker))
+    .filter((weight): weight is number => weight !== null);
+  return known.length === 0 ? null : known.reduce((sum, weight) => sum + weight, 0);
+}
+
+/** The kinds the calendar's legend filters by, in the order a cell stacks them. */
+export type Kind = "tax" | "banks" | "earnings" | "trades" | "dividends" | "markets";
+
+/**
+ * How many dates of each kind the account has, for the legend's counts.
+ *
+ * The names a group filter allows cut the name-bound kinds; deadlines, buy-back
+ * windows, rate decisions and holidays are the reader's or the market's, and
+ * count whatever is picked. A payout is the cash an ex-date promised, so both
+ * share the dividends pill.
+ */
+export function kindCounts(
+  data: EarningsCalendar,
+  names: Set<string> | null,
+): Record<Kind, number> {
+  const count = (items: { ticker: string }[]) => only(items, names).length;
+  return {
+    tax: data.tax_deadlines.length + data.repurchase_windows.length,
+    banks: data.central_banks.length,
+    earnings: count(data.upcoming) + count(data.results),
+    trades: count(data.trades ?? []),
+    dividends: count(data.dividends) + count(data.payments ?? []),
+    markets: (data.market_holidays ?? []).length,
+  };
 }

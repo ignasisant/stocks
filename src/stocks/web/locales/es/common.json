@@ -77,5 +77,6 @@
   "activity.expected": "Suele tardar ~{s} s",
   "activity.hint_slow": "Va lento, pero sigue en marcha.",
   "activity.hint_long": "Las cargas grandes pueden tardar hasta un minuto.",
-  "activity.hint_very_long": "Sigue trabajando. Si no acaba, recarga la página."
+  "activity.hint_very_long": "Sigue trabajando. Si no acaba, recarga la página.",
+  "common.close": "Cerrar"
 }

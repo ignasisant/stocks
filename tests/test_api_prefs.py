@@ -244,6 +244,18 @@ def test_the_friday_email_reads_on_until_switched_off(client, account, signed_in
     assert json.loads(account.prefs.read_text())["notify_weekly_email"] is False
 
 
+def test_answer_review_reads_on_until_switched_off(client, account, signed_in):
+    """The Profile toggle the privacy policy names (`chat/review.py`)."""
+    from stocks.chat import review
+
+    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
+        review.PREF
+    ] is True
+    signed_in.patch("/v1/prefs", json={review.PREF: False})
+    stored = json.loads(account.prefs.read_text())
+    assert review.wanted(stored) is False
+
+
 def test_every_delivery_the_profile_page_writes_is_writable_here(
     client, account, signed_in
 ):

@@ -3,7 +3,8 @@
  *
  * The book is computed: each window's own move as the figure and the index's
  * under it, a move the index could not report printed as "n/a" rather than a
- * zero, and the month drawn with the drawer's chart. A brief section draws the chart its
+ * zero, and the chart opening on the whole book (from its first day), with
+ * the last day in money under it. A brief section draws the chart its
  * figures came with, and nothing when they came with none. A list of wire
  * rows under All shows its first few and counts the rest.
  *
@@ -15,7 +16,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BookChart, BookKpis, INDEXES, IndexKpis, RANGES, SectionChart } from "./Book";
+import {
+  BookChart,
+  BookKpis,
+  INDEXES,
+  IndexKpis,
+  RANGES,
+  SameMoney,
+  SectionChart,
+} from "./Book";
+import type { Line } from "../../chat/chart";
 import { Rows } from "./Section";
 import type { DailyBook, DailySection } from "../home/types";
 import type { TodayRow } from "./types";
@@ -90,20 +100,70 @@ describe("the index tiles, for a guest", () => {
 });
 
 describe("the book chart", () => {
-  it("draws the month with the drawer's chart", () => {
-    expect(renderToStaticMarkup(<BookChart book={book} />)).toContain("ag-a2ui-chart");
+  it("opens on the whole book: holds the room until it lands, never the month", () => {
+    const html = renderToStaticMarkup(<BookChart book={book} />);
+    expect(html).toContain("td-chart-wait");
+    expect(html).not.toContain("ag-a2ui-chart");
   });
 
   it("draws no chart when there is none", () => {
     expect(renderToStaticMarkup(<BookChart book={{ ...book, chart: [] }} />)).toBe("");
   });
 
-  it("offers the windows and the indexes, the card's month against the S&P on", () => {
+  it("offers the windows and the indexes, from the first day against the S&P on", () => {
     const html = renderToStaticMarkup(<BookChart book={book} />);
     for (const range of RANGES) expect(html).toContain(`today.book_range_${range}`);
     for (const index of INDEXES) expect(html).toContain(`value="${index.id}"`);
-    expect(html).toMatch(/aria-pressed="true"[^>]*>today\.book_range_1m</);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>today\.book_range_max</);
     expect(html).toMatch(/<option value="SPY" selected="">/);
+  });
+});
+
+describe("the chart's last day in money", () => {
+  const own: Line = {
+    ...line,
+    dates: ["2026-01-05", "2026-09-29"],
+    values: [1000, 1500],
+    money: true,
+    injected: [1000, 1200],
+  };
+  const spy: Line = {
+    symbol: "SPY",
+    currency: "EUR",
+    dates: own.dates,
+    values: [1000, 1400],
+    label: "S&P 500",
+    money: true,
+  };
+
+  it("sets the book, the index on the same deposits and the gap", () => {
+    const html = renderToStaticMarkup(
+      <SameMoney lines={[own, spy]} index="S&P 500" currency="EUR" />,
+    );
+    expect(html).toContain("today.same_book");
+    expect(html).toContain("today.same_index");
+    expect(html).toContain("today.same_put");
+    expect(html).toMatch(/td-same-up/);
+    expect(html).toContain("today.same_ahead");
+    expect(html).toMatch(/\+€100\b/);
+  });
+
+  it("says the book is behind when the index is ahead", () => {
+    const html = renderToStaticMarkup(
+      <SameMoney
+        lines={[own, { ...spy, values: [1000, 1700] }]}
+        index="S&P 500"
+        currency="EUR"
+      />,
+    );
+    expect(html).toMatch(/td-same-down/);
+    expect(html).toContain("today.same_behind");
+  });
+
+  it("draws nothing for growth-from-100 lines, which say nothing about money", () => {
+    expect(
+      renderToStaticMarkup(<SameMoney lines={[line]} index="S&P 500" currency="EUR" />),
+    ).toBe("");
   });
 });
 

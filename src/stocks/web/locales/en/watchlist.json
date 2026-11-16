@@ -45,7 +45,7 @@
   "watchlist.col_actions_help": "Open the ticker page, or drop it from the watchlist.",
   "watchlist.act_open": "Open",
   "watchlist.act_remove": "Remove",
-  "watchlist.removed": "{ticker} removed from the watchlist.",
+  "watchlist.removed": "Removed {ticker}",
   "watchlist.row_more": "Groups, position and remove",
   "watchlist.fav_on": "{ticker} starred.",
   "watchlist.fav_off": "{ticker} unstarred.",
@@ -67,5 +67,6 @@
   "watchlist.share_make": "Create link",
   "watchlist.share_name": "Name",
   "watchlist.share_note": "Only the symbols and the name go out: no amounts, notes or other groups.",
-  "watchlist.share_note_cut": "Only the first {n} symbols and the name go out: no amounts, notes or other groups."
+  "watchlist.share_note_cut": "Only the first {n} symbols and the name go out: no amounts, notes or other groups.",
+  "watchlist.undo": "Undo"
 }

@@ -41,6 +41,7 @@ import type { GlyphName } from "./Glyph";
 import { fixesOf, keepFixes } from "./kept";
 import { SkippedGroups } from "./Skipped";
 import { RowTable } from "./Tables";
+import { barSegments } from "./tally";
 import { useVocabulary } from "./text";
 import { Doubted, Wrong } from "./Tickers";
 import { Unlisted } from "./Venues";
@@ -128,6 +129,22 @@ export function Tiers({
     { id: "im-skipped", tone: "skip", label: t("import.tier_skipped"), n: skipped },
   ];
   const tiers = all.filter((tier) => tier.n > 0);
+  const segments = barSegments(
+    {
+      importable: going.length,
+      warned: warned.length,
+      rejected,
+      duplicates: dupes.length,
+      skipped,
+    },
+    {
+      importable: t("import.tier_importable"),
+      warned: t("import.tier_warned"),
+      rejected: t("import.tier_rejected"),
+      duplicates: t("import.tier_duplicates"),
+      skipped: t("import.tier_skipped"),
+    },
+  );
 
   const go = (id: string) => {
     if (id === "im-skipped") setSkippedOpen(true);
@@ -181,6 +198,21 @@ export function Tiers({
             </button>
           </p>
         ))}
+        {segments.length > 1 && (
+          <div aria-hidden="true" className="im-bar">
+            {segments.map((seg) => (
+              <button
+                className={`im-bar-seg im-bar-${seg.tone}`}
+                key={seg.id}
+                onClick={() => go(seg.id)}
+                style={{ flexGrow: seg.n }}
+                tabIndex={-1}
+                title={`${seg.label}: ${vocab.num(seg.n, 0)}`}
+                type="button"
+              />
+            ))}
+          </div>
+        )}
         {tiers.length > 1 && (
           <nav aria-label={t("import.tiers_label")} className="im-jumps">
             {tiers.map((tier) => (

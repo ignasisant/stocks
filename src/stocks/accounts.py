@@ -471,6 +471,9 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # that imported a book, off by its one-click unsubscribe or the Profile
     # toggle. Needs no device, unlike the push toggles.
     "notify_weekly_email": True,
+    # The assistant's answers read by an automated reviewer (chat/review.py),
+    # scores only; off by the Profile toggle. The privacy policy says so.
+    "review_answers": True,
     # Push notifications: the toggles only take effect once a device has
     # subscribed (push.json). The cron (notify/fanout.py) reads them headless
     # straight from prefs.json.

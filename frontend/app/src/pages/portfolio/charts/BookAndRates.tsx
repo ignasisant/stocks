@@ -68,10 +68,17 @@ export type RateBars = {
   format?: (value: number) => string;
 };
 
+/** An index bought with the book's own deposits on the same days, in the
+    book's currency: a level on the money floor, one value per point. */
+export type IndexLine = {
+  label: string;
+  points: (number | null)[];
+};
+
 /** The box `BookAndRates` shows for one point: the money, then the bars'
     figure for that point, then each rate. */
 export function bookRatesTip(
-  index: number,
+  at: number,
   point: { value: number; invested: number },
   {
     labels,
@@ -79,16 +86,18 @@ export function bookRatesTip(
     format,
     series,
     bars,
+    index,
   }: {
     labels: { invested: string; profit: string; loss: string; gain: string };
     money: (value: number, signed?: boolean) => string;
     format: (value: number) => string;
     series: (ReturnSeries & { color: string })[];
     bars?: RateBars;
+    index?: IndexLine;
   },
 ): TipRow[] {
   const up = point.value >= point.invested;
-  const bar = bars?.points[index];
+  const bar = bars?.points[at];
   return [
     {
       label: up ? labels.profit : labels.loss,
@@ -101,6 +110,15 @@ export function bookRatesTip(
       color: token("text-muted"),
     },
     { label: labels.gain, value: money(point.value - point.invested, true) },
+    ...(index && index.points[at] != null
+      ? [
+          {
+            label: index.label,
+            value: money(index.points[at]!),
+            color: token("series-4"),
+          },
+        ]
+      : []),
     ...(bars
       ? [
           {
@@ -117,13 +135,13 @@ export function bookRatesTip(
         ]
       : []),
     ...series.map((one) => {
-      const value = one.points[index];
+      const value = one.points[at];
       return {
         label: one.label,
         value:
           value === null || value === undefined
             ? "—"
-            : withNote(format(value), one.tipNote?.(index, value)),
+            : withNote(format(value), one.tipNote?.(at, value)),
         color: one.color,
       };
     }),
@@ -152,6 +170,8 @@ type BookAndRatesProps = {
   points: BookRatePoint[];
   series: ReturnSeries[];
   bars?: RateBars;
+  /** The index with the book's own money, drawn over the value line. */
+  index?: IndexLine;
   labels: {
     invested: string;
     /** The value line on its own, for the change between two points. */
@@ -184,6 +204,7 @@ function BookAndRatesPlot({
   book,
   series,
   bars,
+  index: indexLine,
   labels,
   money,
   axisMoney,
@@ -228,7 +249,11 @@ function BookAndRatesPlot({
   const bottom = ratesTop + ratesH;
   const x = (index: number) => left + (index / (book.length - 1)) * plotW;
 
-  const levels = book.flatMap((point) => [point.value, point.invested]);
+  const shadow = indexLine?.points.some((v) => v !== null) ? indexLine : undefined;
+  const levels = [
+    ...book.flatMap((point) => [point.value, point.invested]),
+    ...(shadow?.points ?? []).filter((v): v is number => v !== null),
+  ];
   const rawLow = Math.min(...levels);
   const rawHigh = Math.max(...levels);
   const pad = (rawHigh - rawLow) * 0.04 || Math.abs(rawHigh) * 0.04 || 1;
@@ -320,6 +345,7 @@ function BookAndRatesPlot({
       format,
       series: colored,
       bars: barred,
+      index: shadow,
     });
   // A bar per point, centred on its date, thin enough that the first and the
   // last stay clear of the gutters' labels.
@@ -373,6 +399,12 @@ function BookAndRatesPlot({
             <span>{labels.loss}</span>
           </li>
         ) : null}
+        {shadow ? (
+          <li className="pf-legend-row">
+            <span className="pf-swatch" style={{ background: token("series-4") }} />
+            <span>{shadow.label}</span>
+          </li>
+        ) : null}
         {barred ? (
           <li className="pf-legend-row">
             <span
@@ -397,7 +429,7 @@ function BookAndRatesPlot({
       <div
         className="pf-plot pf-scrub"
         ref={frame}
-        style={stripLines(3 + (barred ? 1 : 0) + colored.length)}
+        style={stripLines(3 + (shadow ? 1 : 0) + (barred ? 1 : 0) + colored.length)}
       >
         <svg
           ref={svg}
@@ -471,6 +503,16 @@ function BookAndRatesPlot({
                 strokeWidth={LINE.primary}
               />
             ))}
+            {shadow ? (
+              <polyline
+                points={shadow.points
+                  .flatMap((v, i) => (v === null ? [] : [`${x(i)},${yMoney(v)}`]))
+                  .join(" ")}
+                fill="none"
+                stroke={token("series-4")}
+                strokeWidth={LINE.primary}
+              />
+            ) : null}
 
             {/* The seam: where money's floor ends and the rates' begins. */}
             <line

@@ -16,6 +16,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { BrokerCost, Fees as FeesData } from "./api";
 import { brokerName } from "./format";
+import { feeParts, perThousand } from "./feeParts";
 import { Caption, Card, Empty, Figure, Hero, ShareBar, Signed, Table } from "./ui";
 import type { Column } from "./ui";
 import { decimal, moneyIn, percent } from "../../shell/format";
@@ -196,7 +197,51 @@ export default function Fees() {
                   { label: t("portfolio.col_trades"), value: String(trades) },
                 ]}
               />
+              {measured && perThousand(fees.cost_pct) !== null ? (
+                <p className="pf-answer-line">
+                  {t("portfolio.fees_per_thousand", {
+                    value: money(perThousand(fees.cost_pct), { digits: 2 }) ?? "",
+                  })}
+                </p>
+              ) : null}
             </Card>
+            {fees.brokers.length > 1 ? (
+              <Card title={t("portfolio.fees_compare")}>
+                <ul className="pf-feebars">
+                  {(() => {
+                    const parts = feeParts(fees.brokers);
+                    const top = Math.max(0.0001, ...parts.map((p) => p.total));
+                    return parts.map((p) => (
+                      <li key={p.broker}>
+                        <span>{brokerName(p.broker, t)}</span>
+                        <span
+                          className="pf-stack"
+                          role="img"
+                          aria-label={money(p.total) ?? ""}
+                        >
+                          <span
+                            className="pf-stack-in"
+                            style={{ inlineSize: `${(p.total / top) * 100}%` }}
+                          >
+                            <i
+                              className="pf-fee-commission"
+                              style={{ flexGrow: p.commission }}
+                            />
+                            <i className="pf-fee-other" style={{ flexGrow: p.other }} />
+                            <i
+                              className="pf-fee-spread"
+                              style={{ flexGrow: p.spread }}
+                            />
+                          </span>
+                        </span>
+                        <b>{money(p.total, { digits: 2 })}</b>
+                      </li>
+                    ));
+                  })()}
+                </ul>
+                <Caption>{t("portfolio.fees_compare_key")}</Caption>
+              </Card>
+            ) : null}
             <Card title={t("portfolio.fees_title")}>
               <Table
                 columns={columns}

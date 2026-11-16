@@ -287,6 +287,8 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
               />
             </Row>
             <p className={drafting ? "pl-sum pl-sum-off" : "pl-sum"} aria-live="polite">
+              {/* The total, always: the mix has to come to 100. */}
+              <b>{t("profile.plan_mix_total", { sum: num(sum, 0) })}</b>{" "}
               {drafting
                 ? t("profile.plan_mix_off", {
                     sum: num(sum, 0),
@@ -396,6 +398,11 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
                 }
               />
             </Row>
+            {!plan.contribution && (
+              <p className="pl-sum" aria-live="polite">
+                {t("profile.plan_contribution_off")}
+              </p>
+            )}
             {plan.contribution && (
               <Leads
                 amount={plan.contribution.amount}
@@ -482,6 +489,11 @@ export function PlanForm({ stored }: { stored: InvestorPlan }) {
                 onCommit={cash("rate_pct")}
               />
             </Row>
+            {!plan.cash && (
+              <p className="pl-sum" aria-live="polite">
+                {t("profile.plan_rate_off")}
+              </p>
+            )}
             {plan.cash?.as_of && (
               <p
                 className={plan.cash_stale_days ? "pl-sum pl-sum-off" : "pl-sum"}

@@ -31,6 +31,7 @@ type Writable = {
   notify_briefing: boolean;
   notify_weekly_email: boolean;
   notify_alerts: boolean;
+  review_answers: boolean;
   chat_panel_open: boolean;
   setup_card_dismissed: boolean;
 };

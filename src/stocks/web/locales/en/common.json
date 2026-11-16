@@ -77,5 +77,6 @@
   "activity.expected": "Usually takes ~{s} s",
   "activity.hint_slow": "Slow, but still going.",
   "activity.hint_long": "Big loads can take up to a minute.",
-  "activity.hint_very_long": "Still working. If it does not finish, reload the page."
+  "activity.hint_very_long": "Still working. If it does not finish, reload the page.",
+  "common.close": "Close"
 }

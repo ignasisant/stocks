@@ -7,7 +7,11 @@
  * already carries for the drawer. Only the reading width is set here.
  */
 
+import { useState } from "react";
+import { calendarDay } from "../../shell/dates";
+
 import { ApiError, get } from "../../shell/api";
+import { askAssistant } from "../../shell/assistant";
 import { Icon } from "../../shell/Icon";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
@@ -15,9 +19,10 @@ import { canonical, pageFor } from "../../shell/pages";
 import { Link } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Markdown } from "../../chat/markdown";
+import { SidePanel } from "../../ui/SidePanel";
 import { appTarget, pathKey, type Place } from "./logic";
 import type { Progress } from "./useProgress";
-import type { Lesson, LessonRef } from "./types";
+import type { Lesson, LessonRef, Quiz as QuizData, TermRef } from "./types";
 
 /** The path whose lessons are about Spanish tax law, which changes yearly. */
 const TAX_PATH = "tax-es";
@@ -37,6 +42,58 @@ function Step({ to, dir }: { to: LessonRef | null; dir: "prev" | "next" }) {
   );
 }
 
+/** One question with its answer explained. Pressing an option settles it: the
+    right one is marked whatever was pressed, and the why appears below. */
+export function Quiz({ quiz }: { quiz: QuizData }) {
+  const t = useT();
+  const [pick, setPick] = useState<number | null>(null);
+  const right = pick === quiz.answer;
+  return (
+    <section className="lr-quiz" aria-labelledby="lr-quiz-h">
+      <h2 className="lr-h2" id="lr-quiz-h">
+        {t("learn.quiz_title")}
+      </h2>
+      <p className="lr-quiz-q">{quiz.question}</p>
+      <div className="lr-opts">
+        {quiz.options.map((option, at) => {
+          const state =
+            pick === null
+              ? ""
+              : at === quiz.answer
+                ? " lr-opt-ok"
+                : at === pick
+                  ? " lr-opt-ko"
+                  : "";
+          return (
+            <button
+              key={option}
+              type="button"
+              className={`lr-opt${state}`}
+              aria-pressed={pick === at}
+              disabled={pick !== null}
+              onClick={() => setPick(at)}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+      <div role="status" aria-live="polite">
+        {pick !== null && (
+          <p className={right ? "lr-fb lr-fb-ok" : "lr-fb lr-fb-ko"}>
+            <b>
+              {right
+                ? t("learn.quiz_right")
+                : t("learn.quiz_wrong", { answer: quiz.options[quiz.answer] ?? "" })}
+            </b>{" "}
+            {quiz.why}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function LessonBody({
   lesson,
   progress,
@@ -47,6 +104,7 @@ export function LessonBody({
   place?: Place | null;
 }) {
   const t = useT();
+  const [term, setTerm] = useState<TermRef | null>(null);
   const read = progress.done ? progress.done.has(lesson.id) : lesson.done;
   const target = appTarget(lesson.app);
   const where = target ? pageFor(canonical(target.page)) : null;
@@ -78,23 +136,36 @@ export function LessonBody({
             {t("learn.in_app")} · {t(where.label)}
           </Link>
         )}
+        <button
+          type="button"
+          className="ag-btn lr-ask"
+          onClick={() =>
+            askAssistant(t("learn.ask_lesson", { title: lesson.title }), {
+              fresh: true,
+            })
+          }
+        >
+          <Icon name="auto_awesome" size={16} />
+          {t("learn.ask")}
+        </button>
       </div>
+      {lesson.quiz && <Quiz key={lesson.id} quiz={lesson.quiz} />}
       {lesson.terms.length > 0 && (
         <section className="lr-terms" aria-labelledby="lr-terms-h">
           <h2 className="lr-h2" id="lr-terms-h">
             {t("learn.terms")}
           </h2>
           <ul className="lr-chips">
-            {lesson.terms.map((term) => (
-              <li key={term.id}>
-                <Link
+            {lesson.terms.map((entry) => (
+              <li key={entry.id}>
+                <button
+                  type="button"
                   className="lr-chip"
-                  page="learn"
-                  params={{ tab: "glossary", term: term.id }}
-                  title={term.desc}
+                  aria-haspopup="dialog"
+                  onClick={() => setTerm(entry)}
                 >
-                  {term.label}
-                </Link>
+                  {entry.label}
+                </button>
               </li>
             ))}
           </ul>
@@ -105,9 +176,23 @@ export function LessonBody({
         <Step to={lesson.after} dir="next" />
       </nav>
       <p className="lr-foot">
-        {t("learn.as_of", { date: lesson.as_of })}
+        {t("learn.as_of", { date: calendarDay(lesson.as_of) })}
         {lesson.path === TAX_PATH && <> · {t("learn.disclaimer")}</>}
       </p>
+      {term && (
+        <SidePanel label={term.label} onClose={() => setTerm(null)}>
+          <div className="lr-define">
+            <p className="lr-define-desc">{term.desc}</p>
+            <Link
+              className="lr-term-lesson"
+              page="learn"
+              params={{ tab: "glossary", term: term.id }}
+            >
+              {t("learn.term_open")}
+            </Link>
+          </div>
+        </SidePanel>
+      )}
     </article>
   );
 }
@@ -157,7 +242,12 @@ export default function LessonPage({
       <Loaded query={query} skeleton={<Skeleton rows={10} />}>
         {(lesson) =>
           lesson ? (
-            <LessonBody lesson={lesson} progress={progress} place={place} />
+            <LessonBody
+              key={lesson.id}
+              lesson={lesson}
+              progress={progress}
+              place={place}
+            />
           ) : (
             <Missing />
           )

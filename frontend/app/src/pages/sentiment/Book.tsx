@@ -13,7 +13,7 @@ import { DownBody } from "./Down";
 import { driftChip } from "./Hero";
 import { Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { fixed, maybe, signedPercent, sectorKey, share, signed } from "./format";
-import { topSectors } from "./logic";
+import { splitTilt, topSectors } from "./logic";
 import type { PulseBook, TrendBlock, TrendRow } from "./types";
 import { Badge } from "../../ui/Badge";
 import { Fold } from "../../ui/Fold";
@@ -77,7 +77,8 @@ export function Book({
   }
 
   const drag = book.fx_drag;
-  const tilts = Object.entries(book.sector_tilt).sort((a, b) => b[1] - a[1]);
+  const { rows: tilts, unsectored } = splitTilt(book.sector_tilt);
+  const reach = Math.max(0.0001, ...tilts.map(([, w]) => Math.abs(w)));
   const notes: string[] = [];
   if (book.bond_correlation !== null) {
     notes.push(
@@ -163,14 +164,28 @@ export function Book({
             <div className="sn-tilt-rows">
               {tilts.map(([name, weight]) => (
                 <span className="sn-tilt-row" key={name}>
-                  <span>{maybe(t, `sentiment.sector_${sectorKey(name)}`) ?? name}</span>
-                  {/* Uncoloured: an active weight is a position, not a verdict —
-                    an underweight in the sector that led is a cost and an
-                    underweight in the one that fell is not. */}
+                  <span className="sn-tilt-name">
+                    {maybe(t, `sentiment.sector_${sectorKey(name)}`) ?? name}
+                  </span>
+                  {/* Neutral ink: an active weight is a position, not a
+                    verdict — an underweight in the sector that led is a cost
+                    and an underweight in the one that fell is not. The bar
+                    only says which side of the index and how far. */}
+                  <span className="sn-tilt-bar" aria-hidden="true">
+                    <i
+                      className={weight < 0 ? "sn-tilt-neg" : "sn-tilt-pos"}
+                      style={{ width: `${(Math.abs(weight) / reach) * 50}%` }}
+                    />
+                  </span>
                   <b>{signed(weight * 100, 1, "pp")}</b>
                 </span>
               ))}
             </div>
+            {unsectored !== null && (
+              <span className="sn-help">
+                {t("sentiment.tilt_none", { value: share(unsectored) })}
+              </span>
+            )}
           </div>
         )}
 

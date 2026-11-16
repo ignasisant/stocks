@@ -81,6 +81,9 @@ class Prefs(BaseModel):
     # book, device or not, until the reader turns it off.
     notify_weekly_email: bool = True
     notify_alerts: bool = True
+    # The assistant's answers sampled for an automated quality check
+    # (`chat/review.py`) until the reader turns it off.
+    review_answers: bool = True
     # The Home first-run card, dismissed. An account setting rather than a
     # browser one: a reader who put the checklist away has put it away, and
     # meeting it again on their phone is the app forgetting a decision.

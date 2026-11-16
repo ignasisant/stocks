@@ -42,12 +42,13 @@ def has_key() -> bool:
 def diluted_eps_facts(ticker: str) -> pd.DataFrame:
     """Per-quarter diluted EPS (as reported) from FMP, oldest-first.
 
-    Same columns as edgar.diluted_eps_facts (end/filed/eps/kind) so the P/E
-    pipeline is source-agnostic. FMP reports discrete quarters, so kind is
-    always 'Q' — no Q4 reconstruction needed. Empty frame when no key is set
-    or the request fails.
+    Same columns as edgar.diluted_eps_facts (end/filed/eps/kind/currency) so
+    the P/E pipeline is source-agnostic. FMP reports discrete quarters, so kind
+    is always 'Q' — no Q4 reconstruction needed. `currency` is FMP's
+    `reportedCurrency` (Alibaba's CNY under a dollar ADR), None when it does
+    not say. Empty frame when no key is set or the request fails.
     """
-    cols = ["end", "filed", "eps", "kind"]
+    cols = ["end", "filed", "eps", "kind", "currency"]
     key = api_key()
     if key is None:
         return pd.DataFrame(columns=cols)
@@ -70,5 +71,7 @@ def diluted_eps_facts(ticker: str) -> pd.DataFrame:
         filed = d.get("fillingDate") or d.get("filingDate") or end
         if eps is None or end is None:
             continue
-        rows.append((pd.to_datetime(end).date(), filed, float(eps), "Q"))
+        currency = d.get("reportedCurrency")
+        rows.append((pd.to_datetime(end).date(), filed, float(eps), "Q",
+                     str(currency).upper() if currency else None))
     return pd.DataFrame(sorted(rows), columns=cols)

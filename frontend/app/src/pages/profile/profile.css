@@ -152,10 +152,9 @@
 
 /* ---------------------------------------------------------------- cards */
 .pr-card {
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-raised);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
-  box-shadow: var(--ag-shadow-card);
   overflow: hidden;
 }
 .pr-cardhead {
@@ -1099,7 +1098,7 @@
   overscroll-behavior: contain;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-raised);
   box-shadow: var(--ag-shadow-overlay);
 }
 .pr-modal-t {
@@ -1195,4 +1194,111 @@
   .pr-wsym {
     flex: 1 1 calc(100% - 3rem);
   }
+}
+
+/* ------------------------------------- the tab strip, pinned under the top */
+/* Transparent at rest so the page's backdrop runs behind it; frosted once it
+   sticks. It runs over `.ag-main`'s gutter so the glass has no gaps, and the
+   gutter is put back as padding. */
+.pr-tabsbar {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+  margin: 20px -1.5rem 16px;
+  padding-inline: 1.5rem;
+  background: transparent;
+}
+.pr-tabsbar .pr-tabs {
+  margin: 0;
+}
+.pr-tabsbar[data-stuck] {
+  background: color-mix(in oklab, var(--ag-surface-page) 80%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 1px 0 var(--ag-border);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pr-tabsbar[data-stuck] {
+    background: var(--ag-surface-page);
+  }
+}
+@media (max-width: 640px) {
+  .pr-tabsbar {
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+  }
+}
+
+/* What is left to set up, under the address. */
+.pr-ident-setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+.pr-ident-next {
+  color: var(--ag-purple-400);
+  font-weight: 600;
+  text-decoration: none;
+}
+@media (pointer: coarse) {
+  .pr-ident-next {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+@media (hover: hover) {
+  .pr-ident-next:hover {
+    text-decoration: underline;
+  }
+}
+
+/* Asking before ending every other session, in the card. */
+.pr-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+/* The journal: a toggle for the quiet entries and the two lists' headings. */
+.pr-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+.pr-check input {
+  accent-color: var(--ag-purple-400);
+}
+@media (pointer: coarse) {
+  .pr-check {
+    min-height: 44px;
+  }
+}
+.pr-subhead {
+  margin: 16px 0 4px;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+/* "Removed X · Undo", under the list. */
+.pr-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 24px 0;
+  padding: 8px 12px;
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-sunken, var(--ag-surface-page));
+  border: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
 }

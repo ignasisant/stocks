@@ -115,6 +115,38 @@ def test_a_lesson_without_frontmatter_is_refused_by_name():
         learn.parse_lesson("no frontmatter here", "broken.md")
 
 
+_HEAD = "---\nid: a\npath: start\ntitle: A\nminutes: 1\nas_of: 2026-01-01\n"
+
+
+def test_a_lessons_quiz_is_optional_and_parsed():
+    plain = learn.parse_lesson(_HEAD + "---\nBody", "a.md")
+    assert plain.quiz is None
+    text = (_HEAD + "quiz_q: Q?\nquiz_options: x | y | z\nquiz_answer: 2\n"
+            "quiz_why: Because.\n---\nBody")
+    quiz = learn.parse_lesson(text, "a.md").quiz
+    assert quiz == learn.Quiz("Q?", ("x", "y", "z"), 1, "Because.")
+
+
+@pytest.mark.parametrize("extra", [
+    "quiz_q: Q?\n",
+    "quiz_q: Q?\nquiz_options: x\nquiz_answer: 1\nquiz_why: w\n",
+    "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: 3\nquiz_why: w\n",
+    "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: b\nquiz_why: w\n",
+])
+def test_a_broken_quiz_is_refused_by_file_name(extra):
+    with pytest.raises(ValueError, match="a.md"):
+        learn.parse_lesson(_HEAD + extra + "---\nBody", "a.md")
+
+
+@pytest.mark.parametrize("lang", learn.LANGS)
+def test_a_quiz_has_the_same_shape_in_every_language(lang):
+    for lesson_id, en in learn.lessons("en").items():
+        a, b = en.quiz, learn.lesson(lesson_id, lang).quiz
+        assert (a is None) == (b is None), (lang, lesson_id)
+        if a and b:
+            assert (len(a.options), a.answer) == (len(b.options), b.answer)
+
+
 def test_an_unknown_language_reads_as_english():
     some = next(iter(_ids("en")))
     assert learn.lesson(some, "fr") == learn.lesson(some, "en")

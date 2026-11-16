@@ -17,6 +17,8 @@ import { get, send } from "../../shell/api";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useApi } from "../../shell/useApi";
+import { useSession } from "../../shell/session";
+import { residenceClash } from "./residence";
 import { describe } from "./errors";
 import { Card, Failure, MultiChips, Row, Select } from "./ui";
 
@@ -44,6 +46,9 @@ type Options = {
   focus: string[];
   constraints: string[];
 };
+
+/** The longest note the server stores (`api/routes/prefs._MAX_NOTES`). */
+const NOTES_MAX = 2000;
 
 type Loadedbits = { options: Options; profile: InvestorProfile };
 
@@ -95,6 +100,8 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
 
   const label = (group: string) => (option: string) =>
     t(`profile.iv_${group}_${option}`);
+  // Said here and on Preferences; neither side is changed for the reader.
+  const clash = residenceClash(useSession().prefs.tax_residence, profile.constraints);
 
   return (
     <div className="pr-body">
@@ -168,12 +175,21 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
                 )
               }
             />
+            {clash && (
+              <p className="pl-sum pl-sum-off" role="status">
+                {t("profile.iv_residence_clash", {
+                  residence: clash.residence,
+                  constraint: t(`profile.iv_constraints_${clash.constraint}`),
+                })}
+              </p>
+            )}
           </Row>
         </Card>
 
         <Card title={t("profile.iv_notes_title")} sub={t("profile.iv_caption")}>
           <Row label={t("profile.iv_notes")} help={t("profile.iv_notes_help")}>
             <Notes
+              examples={[1, 2, 3].map((n) => t(`profile.iv_notes_ex${n}`))}
               value={profile.notes}
               placeholder={t("profile.iv_notes_ph")}
               label={t("profile.iv_notes")}
@@ -221,11 +237,11 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
               <details>, as the watchlist groups use: no popover in this shell
               to hang it on, and none needed. */}
           {profile.persona ? (
-            <details className="pr-persona">
-              <summary>{t("profile.iv_persona_open")}</summary>
+            <div className="pr-persona">
+              <span className="pr-sum-t">{t("profile.iv_persona_open")}</span>
               <p className="pr-sum-note">{t("profile.iv_persona_help")}</p>
               <code className="pr-persona-text">{profile.persona}</code>
-            </details>
+            </div>
           ) : null}
         </Card>
       </aside>
@@ -258,8 +274,11 @@ export function Notes({
   label,
   placeholder,
   disabled,
+  examples = [],
   onCommit,
 }: {
+  /** Sentences that append to the note with a touch. */
+  examples?: string[];
   value: string;
   label: string;
   placeholder: string;
@@ -270,16 +289,43 @@ export function Notes({
   // A save that came back normalised (or another tab's edit) has to win over a
   // draft nobody is typing into any more.
   useEffect(() => setDraft(value), [value]);
+  const add = (text: string) => {
+    const next = draft.trim() ? `${draft.trim()} ${text}` : text;
+    if (next.length > NOTES_MAX) return;
+    setDraft(next);
+    onCommit(next);
+  };
   return (
-    <textarea
-      className="pr-notes"
-      rows={4}
-      value={draft}
-      aria-label={label}
-      placeholder={placeholder}
-      disabled={disabled}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => onCommit(draft.trim())}
-    />
+    <>
+      <textarea
+        className="pr-notes"
+        rows={4}
+        value={draft}
+        maxLength={NOTES_MAX}
+        aria-label={label}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => onCommit(draft.trim())}
+      />
+      <span className="pr-hint pr-notes-n">
+        {draft.length} / {NOTES_MAX}
+      </span>
+      {examples.length > 0 && (
+        <div className="pr-chips">
+          {examples.map((text) => (
+            <button
+              key={text}
+              type="button"
+              className="pr-btn"
+              disabled={disabled}
+              onClick={() => add(text)}
+            >
+              + {text}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

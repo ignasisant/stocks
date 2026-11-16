@@ -14,6 +14,10 @@ import { POLL_MS } from "../../shell/poll";
 
 import {
   activeTab,
+  gapInMoney,
+  newsTickers,
+  sinceInception,
+  splitTickers,
   badgeKey,
   compareOrder,
   leadersLaggards,
@@ -514,5 +518,87 @@ describe("safeUrl", () => {
     expect(safeUrl("https://www.sec.gov/x")).toBe("https://www.sec.gov/x");
     expect(safeUrl("javascript:alert(1)")).toBeNull();
     expect(safeUrl("not a url")).toBeNull();
+  });
+});
+
+describe("the redesign's pure pieces", () => {
+  const marks = [
+    {
+      symbol: "@BOOK",
+      name: "",
+      currency: "EUR",
+      m1: 1,
+      m6: 2,
+      y1: 3,
+      all: 20,
+      all_gain: 2000,
+    },
+    {
+      symbol: "SPY",
+      name: "S&P 500",
+      currency: "EUR",
+      m1: 1,
+      m6: 2,
+      y1: 3,
+      all: 15,
+      all_gain: 1500,
+    },
+    {
+      symbol: "QQQ",
+      name: "Nasdaq 100",
+      currency: "EUR",
+      m1: 1,
+      m6: 2,
+      y1: 3,
+      all: 25,
+      all_gain: null,
+    },
+  ];
+
+  it("reads the book against the S&P 500 on the same money", () => {
+    const got = sinceInception({
+      benchmarks: marks,
+      since: "2024-01-02",
+      currency: "EUR",
+    });
+    expect(got).toMatchObject({
+      gain: 2000,
+      indexGain: 1500,
+      gap: 500,
+      index: "S&P 500",
+    });
+  });
+
+  it("has no since-inception figure without the money of both sides", () => {
+    expect(
+      sinceInception({ benchmarks: marks, since: "", currency: "EUR" }),
+    ).toBeNull();
+    expect(
+      sinceInception({ benchmarks: [marks[0]!], since: "2024-01-02", currency: "EUR" }),
+    ).toBeNull();
+  });
+
+  it("measures the gap to each index in money, none where it has no money", () => {
+    expect(gapInMoney(marks, marks[1]!)).toBe(500);
+    expect(gapInMoney(marks, marks[2]!)).toBeNull();
+    expect(gapInMoney(marks, marks[0]!)).toBeNull();
+  });
+
+  it("cuts a line where it names its tickers, whole words only", () => {
+    expect(splitTickers("BABA cae; BABAX no, y GOOG sube", ["BABA", "GOOG"])).toEqual([
+      { ticker: "BABA" },
+      { text: " cae; BABAX no, y " },
+      { ticker: "GOOG" },
+      { text: " sube" },
+    ]);
+    expect(splitTickers("sin nada", [])).toEqual([{ text: "sin nada" }]);
+  });
+
+  it("counts the news per holding, busiest first", () => {
+    const row = (tickers: string[]) => ({ key: tickers.join(), tickers }) as TodayRow;
+    expect(newsTickers([row(["A"]), row(["B"]), row(["B", "A"]), row(["B"])])).toEqual([
+      { ticker: "B", count: 3 },
+      { ticker: "A", count: 2 },
+    ]);
   });
 });

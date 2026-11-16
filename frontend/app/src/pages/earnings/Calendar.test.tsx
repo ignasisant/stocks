@@ -157,6 +157,6 @@ describe("a busy day", () => {
   });
 
   it("marks today on the day number, not by filling the cell", () => {
-    expect(busy([])).toContain('class="earn-day today"');
+    expect(busy([])).toContain('class="earn-day today');
   });
 });

@@ -78,10 +78,10 @@ describe("book card", () => {
     expect(html.match(/sentiment\.drift_pill/g)?.length).toBe(4);
   });
 
-  it("quotes the rolling beta's own move in the help, not a fixed example", () => {
+  it("shows three figures as links down to the book card", () => {
     const side = renderToStaticMarkup(<Side book={book} regime="unknown" />);
-    expect(side).toContain("sentiment.side_help<");
-    expect(side).not.toContain("sentiment.side_help_plain");
+    expect(side.match(/class="sn-chip-fig"/g)?.length).toBe(3);
+    expect(side).toContain('href="#ag-book"');
   });
 });
 
@@ -136,8 +136,6 @@ describe("a throttled book", () => {
     const side = renderToStaticMarkup(<Side book={partial} regime="unknown" />);
     expect(side).toContain("70%");
     expect(side).toContain("sentiment.down_stamp");
-    // No rolling beta, so the help cannot quote a move it does not have.
-    expect(side).toContain("sentiment.side_help_plain");
   });
 
   // A replay nobody could price is not an empty ledger: inviting an import

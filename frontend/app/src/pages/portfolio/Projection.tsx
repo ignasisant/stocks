@@ -359,6 +359,15 @@ export default function Projection() {
                 ) : null}
               </dl>
             </div>
+            {median !== null && low !== null ? (
+              <p className="pf-answer-line">
+                {t("portfolio.projection_answer", {
+                  years: data.years,
+                  median: compact(median) ?? "",
+                  low: compact(low) ?? "",
+                })}
+              </p>
+            ) : null}
             {/* The road so far, then the fan: past month ends carry the
                 book's real value and the money put in, the future carries
                 the spread. The two meet at "today". */}

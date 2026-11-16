@@ -22,7 +22,9 @@ import { get } from "../../shell/api";
 import { useApi, type Query } from "../../shell/useApi";
 import { Loaded, Refreshable, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
-import { useCurrency } from "../../shell/session";
+import { token } from "../../shell/theme";
+import { Link } from "../../shell/router";
+import { useBank, useCurrency } from "../../shell/session";
 import { Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
 import {
   MONTHLY_WINDOWS,
@@ -30,6 +32,7 @@ import {
   type Fees,
   type Monthly,
   type MonthlyWindow,
+  type Summary,
   type TaxReport,
 } from "./api";
 import { BookAndRates } from "./charts";
@@ -65,8 +68,23 @@ export default function Overview() {
       ? performance.data.value / performance.data.injected - 1
       : null;
 
+  const summary = useApi(() => get<Summary>("/portfolio/summary", { base }), [base]);
+  const bank = useBank();
+  const to = (tab: string, label: string) => (
+    <Link page="portfolio" params={{ tab }} className="pf-go">
+      {label} →
+    </Link>
+  );
+
   return (
     <>
+      <Answer
+        performance={performance}
+        summary={summary}
+        gain={gain}
+        money={money}
+        pct={pct}
+      />
       <Card title={t("portfolio.overview_title", { ccy: base })}>
         <Kpis
           items={[
@@ -109,21 +127,137 @@ export default function Overview() {
                 return moneyIn(lang, data.currency)(row ? row.estimated_tax : 0);
               }),
               help: t("portfolio.overview_tax_help"),
+              note: to("tax", t("portfolio.tab_realized_tax")),
             },
             {
               label: t("portfolio.overview_dividends", { year }),
               value: read(dividends, (data) => money(data.booked_ytd)),
+              note: to("dividends", t("portfolio.tab_dividends")),
             },
             {
               label: t("portfolio.overview_fees", { year }),
               value: read(fees, (data) => money(data.explicit)),
               help: t("portfolio.overview_fees_help"),
+              note: to("fees", t("portfolio.tab_fees")),
             },
           ]}
         />
       </Card>
       <MonthlyCard />
+      {/* Where the book's cash sits is not in the ledger; the bank is the one
+          place that knows it, so the card is a door to it, for those who have
+          one. */}
+      {bank ? (
+        <Card title={t("portfolio.cash_title")}>
+          <p className="pf-caption">{t("portfolio.cash_body")}</p>
+          <Link page="bank" className="ag-btn">
+            {t("portfolio.cash_connect")}
+          </Link>
+        </Card>
+      ) : null}
     </>
+  );
+}
+
+/**
+ * The answer first: what the book is worth and what it has made on what was
+ * put in, then the two returns side by side, each saying what it measures.
+ * The six tiles below stay as they were.
+ */
+function Answer({
+  performance,
+  summary,
+  gain,
+  money,
+  pct,
+}: {
+  performance: Query<{
+    value: number | null;
+    injected: number | null;
+    irr: number | null;
+    irr_annualised: boolean;
+    twr_annualised: number | null;
+    twr_cumulative: number | null;
+    twr_is_annual: boolean;
+    start: string | null;
+  }>;
+  summary: Query<Summary>;
+  gain: number | null;
+  money: ReturnType<typeof moneyIn>;
+  pct: (value: number | null, signed?: boolean) => string | null;
+}) {
+  const t = useT();
+  const lang = useLang();
+  if (performance.state !== "loaded" || performance.data.value === null) return null;
+  const data = performance.data;
+  const earned = data.injected ? data.value! - data.injected : null;
+  const twr = data.twr_is_annual ? data.twr_annualised : data.twr_cumulative;
+  // The two rates differ by what the dates of the deposits did, but only
+  // where both are yearly: a young book's IRR is a run, its TWR another.
+  const timing =
+    data.irr_annualised && data.twr_is_annual && data.irr !== null && twr !== null
+      ? data.irr - twr
+      : null;
+  const sold = summary.state === "loaded" ? summary.data.realized : null;
+  const open = summary.state === "loaded" ? summary.data.pnl : null;
+  const since = data.start
+    ? new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" }).format(
+        new Date(`${data.start}T00:00:00`),
+      )
+    : null;
+  return (
+    <section className="pf-card pf-answer">
+      <h2 className="pf-answer-h">
+        {earned === null
+          ? t("portfolio.answer_value", { value: money(data.value) ?? "" })
+          : t("portfolio.answer_gain", {
+              value: money(data.value) ?? "",
+              gain: money(earned, { signed: true }) ?? "",
+            })}
+      </h2>
+      {data.injected && gain !== null ? (
+        <p className="pf-caption">
+          {t("portfolio.answer_sub", {
+            injected: money(data.injected) ?? "",
+            since: since ?? "—",
+          })}
+          {sold !== null && open !== null
+            ? ` ${t("portfolio.answer_split", {
+                sold: money(sold, { signed: true }) ?? "",
+                open: money(open, { signed: true }) ?? "",
+              })}`
+            : ""}
+        </p>
+      ) : null}
+      <div className="pf-rets">
+        <div>
+          <small>{t("portfolio.ret_money")}</small>
+          <b className={data.irr !== null && data.irr < 0 ? "pf-down" : "pf-up"}>
+            {pct(data.irr) ?? t("portfolio.na")}
+          </b>
+          <span>
+            {t(
+              data.irr_annualised ? "portfolio.ret_irr_year" : "portfolio.ret_irr_run",
+            )}
+          </span>
+        </div>
+        <div>
+          <small>{t("portfolio.ret_picks")}</small>
+          <b className={twr !== null && twr < 0 ? "pf-down" : "pf-up"}>
+            {pct(twr) ?? t("portfolio.na")}
+          </b>
+          <span>
+            {t(data.twr_is_annual ? "portfolio.ret_twr_year" : "portfolio.ret_twr_run")}
+          </span>
+        </div>
+      </div>
+      {timing !== null ? (
+        <p className="pf-caption">
+          {t("portfolio.ret_gap", { pts: pct(timing) ?? "" })}{" "}
+          {t(timing < 0 ? "portfolio.ret_gap_dear" : "portfolio.ret_gap_cheap")}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -139,6 +273,25 @@ export default function Overview() {
  * figures). The window crops the chart and never rebases it: picking last
  * year zooms into the full chart rather than opening a book that day.
  */
+type IndexHistory = { points: { date: string; in_index?: number | null }[] };
+
+/** The index's level at each month-end the chart draws, carried forward over
+    a gap and empty before the series opens. */
+function indexAt(history: IndexHistory | null, dates: string[]): (number | null)[] {
+  if (!history) return dates.map(() => null);
+  const level = new Map<string, number>();
+  for (const point of history.points) {
+    if (point.in_index != null) level.set(point.date, point.in_index);
+  }
+  const days = [...level.keys()].sort();
+  let at = 0;
+  let last: number | null = null;
+  return dates.map((date) => {
+    while (at < days.length && days[at]! <= date) last = level.get(days[at++]!)!;
+    return last;
+  });
+}
+
 function MonthlyCard() {
   const t = useT();
   const lang = useLang();
@@ -146,6 +299,16 @@ function MonthlyCard() {
   const money = moneyIn(lang, base);
   const axisMoney = compactMoneyIn(lang, base);
   const [span, setSpan] = useState<MonthlyWindow>("inception");
+  // The index with the book's own money, on until the reader takes it off.
+  const [indexOn, setIndexOn] = useState(true);
+  // From the book's first day whatever the window: a window that opens later
+  // would forgive what the picks lost before it. Best-effort, and one call
+  // for every window, so choosing one never re-fetches it.
+  const shadow = useApi(
+    () =>
+      get<IndexHistory>("/portfolio/history", { base, window: "all", index: "true" }),
+    [base],
+  );
 
   // A window picked keeps the last chart up, dimmed, until the new one lands.
   const monthly = useApi(
@@ -303,8 +466,37 @@ function MonthlyCard() {
                   help={t("portfolio.overview_timing_help")}
                 />
               </KpiGrid>
+              {shadow.state === "loaded" &&
+              indexAt(
+                shadow.data,
+                data.months.map((row) => row.date),
+              ).some((v) => v !== null) ? (
+                <button
+                  type="button"
+                  className="pf-legend-key pf-chart-toggle"
+                  aria-pressed={indexOn}
+                  onClick={() => setIndexOn((on) => !on)}
+                >
+                  <span
+                    className="pf-swatch"
+                    style={{ background: token("series-4") }}
+                  />
+                  <span>{t("portfolio.overview_index_toggle")}</span>
+                </button>
+              ) : null}
               <BookAndRates
                 points={data.months}
+                index={
+                  indexOn && shadow.state === "loaded"
+                    ? {
+                        label: t("portfolio.overview_index_toggle"),
+                        points: indexAt(
+                          shadow.data,
+                          data.months.map((row) => row.date),
+                        ),
+                      }
+                    : undefined
+                }
                 series={[
                   {
                     label: moneyLabel,
@@ -335,6 +527,9 @@ function MonthlyCard() {
                 format={(value) => percent(value, { lang, digits: 1 }) ?? ""}
                 formatDate={formatMonth}
               />
+              {indexOn && shadow.state === "loaded" ? (
+                <Caption>{t("portfolio.overview_index_note")}</Caption>
+              ) : null}
               {yearOne ? <Caption>{yearOne}</Caption> : null}
               <Caption>
                 {t("portfolio.overview_monthly_note")} {t("portfolio.span_hint")}

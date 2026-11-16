@@ -137,6 +137,24 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
     assert "without them: 23.4x" in got
 
 
+def test_an_annual_line_that_stopped_has_no_today(monkeypatch):
+    # Sony, 2026-11-15: the June 20-F is not in SEC's XBRL yet, so the line
+    # ends in July and its last point is not today's multiple.
+    from stocks.api.routes import ticker as routes
+    from stocks.schemas import Valuation, ValuationWindow
+
+    monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
+        ticker=code, source="SEC EDGAR", basis="annual", current=None,
+        dates=["2026-07-23", "2026-07-24", "2026-11-13"], pe=[19.0, 19.2, None],
+        windows=[ValuationWindow(window="10y", days=3650, median=23.9)]))
+    monkeypatch.setattr(toolbox, "_earnings_quality", lambda code, trailing: [])
+    got = toolbox._page_valuation("SONY", Context())
+    assert "last fiscal year's filed EPS" in got
+    assert "stops on 2026-07-24 at 19.2x" in got
+    assert "- 10y: median 23.9x" in got
+    assert "percentile" not in got
+
+
 # ------------------------------------------------------------- search / read
 
 

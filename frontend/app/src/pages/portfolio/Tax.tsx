@@ -23,6 +23,7 @@ import { useTaxWords } from "./taxWords";
 import { TickerCell, TickerCell as Cell } from "../../shell/tickers";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
 import { jurisdictionLabel } from "./format";
+import Harvest from "./Harvest";
 import { PeriodBars, type TipRow } from "./charts";
 import {
   Caption,
@@ -331,6 +332,10 @@ function Report({ report }: { report: TaxReport }) {
 
   return (
     <>
+      <p className="pf-answer-line pf-tax-ctx">
+        {jurisdictionLabel(report.jurisdiction, t)} · {report.matching.toUpperCase()}
+      </p>
+      <Harvest />
       {report.years.length > 1 || report.months.length > 1 ? (
         <Card>
           <Segmented

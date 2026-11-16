@@ -11,13 +11,13 @@
  * watchlist editor stays a link into the watchlist editor.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Icon } from "../../shell/Icon";
 import { Tabs } from "../../ui/Tabs";
 import { signOut } from "../../shell/keep";
-import { useRoute } from "../../shell/router";
+import { Link, useRoute } from "../../shell/router";
 import { useAccount, useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import { SignInWall } from "../../shell/guest";
@@ -32,6 +32,8 @@ import { Watchlist } from "./Watchlist";
 import { ConnectorCard } from "./ConnectorCard";
 import type { Listing } from "./Watchlist";
 import { Card } from "./ui";
+import { nextSetup } from "./setup";
+import { progress } from "./TourCard";
 
 /**
  * `GET /me`, the fields the identity card reads. The shell's session reads the
@@ -111,6 +113,36 @@ function Settings() {
       ? wanted
       : "prefs";
   const email = me.email ?? "";
+  const onboarding = useApi(
+    () => get<{ setup: Record<string, boolean> }>("/onboarding"),
+    [],
+  );
+  const counted =
+    onboarding.state === "loaded" ? progress(onboarding.data.setup) : null;
+  const pending =
+    onboarding.state === "loaded" ? nextSetup(onboarding.data.setup) : null;
+  const bar = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
+  // Transparent at rest, frosted once pinned under the top edge (the ticker's
+  // section strip does the same).
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const box = bar.current?.getBoundingClientRect();
+      const pin = bar.current ? parseFloat(getComputedStyle(bar.current).top) || 0 : 0;
+      setStuck(!!box && box.top <= pin + 1 && scrollY > 0);
+    };
+    const queue = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    addEventListener("scroll", queue, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener("scroll", queue);
+    };
+  }, []);
 
   return (
     <>
@@ -139,6 +171,22 @@ function Settings() {
           <div className="pr-ident-t">
             {name && name !== email && <span className="pr-ident-n">{name}</span>}
             <span className="pr-ident-e">{email}</span>
+            {/* What is left to set up, with the way to the next step. Before
+                this it lived only on the tutorial card in the rail. */}
+            {counted && (
+              <span className="pr-ident-setup">
+                {t("profile.setup_chip", { done: counted[0], total: counted[1] })}
+                {pending && (
+                  <Link
+                    page={pending.page}
+                    params={pending.params}
+                    className="pr-ident-next"
+                  >
+                    {t(`profile.setup_next_${pending.key}`)}
+                  </Link>
+                )}
+              </span>
+            )}
           </div>
           {/* What this account's scope means. The data folder it lives in is
               server plumbing, not something a user can act on, so it stays
@@ -167,25 +215,27 @@ function Settings() {
       </Card>
 
       {/* A tab switch is not a navigation the back button should walk through. */}
-      <Tabs
-        className="pr-tabs"
-        label={t("nav.profile")}
-        items={tabs.map((entry) => ({
-          id: entry.id,
-          label:
-            entry.id === "mcp" ? (
-              <>
-                <Icon name="power" size={16} />
-                {t(entry.label)}
-              </>
-            ) : (
-              t(entry.label)
-            ),
-          count: entry.id === "watch" ? count : null,
-        }))}
-        active={tab}
-        onPick={(id) => setParams({ tab: id })}
-      />
+      <div ref={bar} className="pr-tabsbar" data-stuck={stuck ? "" : undefined}>
+        <Tabs
+          className="pr-tabs"
+          label={t("nav.profile")}
+          items={tabs.map((entry) => ({
+            id: entry.id,
+            label:
+              entry.id === "mcp" ? (
+                <>
+                  <Icon name="power" size={16} />
+                  {t(entry.label)}
+                </>
+              ) : (
+                t(entry.label)
+              ),
+            count: entry.id === "watch" ? count : null,
+          }))}
+          active={tab}
+          onPick={(id) => setParams({ tab: id })}
+        />
+      </div>
 
       {tab === "prefs" && (
         <Preferences

@@ -25,6 +25,7 @@ import {
   setAssistantUnread,
   setAssistantWorking,
   useAssistantAsks,
+  useAssistantAttach,
   useAssistantThreads,
 } from "../shell/assistant";
 import { useSession } from "../shell/session";
@@ -210,6 +211,24 @@ export function Drawer() {
     setQueued(null);
     void ask(queued.text, false, false, false, queued.brief);
   }, [queued, open, state, busy, ask, create]);
+
+  // A page handed over a statement (Import's "Import with the assistant"):
+  // read once the drawer is open and free, as the paperclip would. Queued for
+  // the same reason as a question: the press can land while `useChat` loads.
+  const [statement, setStatement] = useState<File | null>(null);
+  const onStatement = useCallback(
+    (file: File) => {
+      setStatement(file);
+      show(true);
+    },
+    [show],
+  );
+  useAssistantAttach(onStatement);
+  useEffect(() => {
+    if (!statement || !open || !state || busy || chat.reading) return;
+    setStatement(null);
+    void chat.attach(statement);
+  }, [statement, open, state, busy, chat]);
 
   // The walkthrough opens itself, in the drawer — once per tab, and only for
   // an account the server says is still owed an automatic open (the guide is

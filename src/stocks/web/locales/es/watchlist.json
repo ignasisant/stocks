@@ -45,7 +45,7 @@
   "watchlist.col_actions_help": "Abre la página del valor, o quítalo de la lista.",
   "watchlist.act_open": "Abrir",
   "watchlist.act_remove": "Quitar",
-  "watchlist.removed": "{ticker} eliminado de la lista de seguimiento.",
+  "watchlist.removed": "Quitado {ticker}",
   "watchlist.row_more": "Grupos, posición y quitar",
   "watchlist.fav_on": "{ticker} marcado como favorito.",
   "watchlist.fav_off": "{ticker} ya no es favorito.",
@@ -67,5 +67,6 @@
   "watchlist.share_make": "Crear enlace",
   "watchlist.share_name": "Nombre",
   "watchlist.share_note": "Solo salen los símbolos y el nombre: ni importes, ni notas, ni otros grupos.",
-  "watchlist.share_note_cut": "Solo salen los primeros {n} símbolos y el nombre: ni importes, ni notas, ni otros grupos."
+  "watchlist.share_note_cut": "Solo salen los primeros {n} símbolos y el nombre: ni importes, ni notas, ni otros grupos.",
+  "watchlist.undo": "Deshacer"
 }

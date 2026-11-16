@@ -24,22 +24,26 @@ no Tailwind.
 
 ## Depth & surfaces
 
-- Section cards = DS `RADIUS_LG` + `SHADOW_CARD`: `1px solid var(--ag-border)`,
-  `border-radius: var(--ag-radius-lg)` (16px), `box-shadow: var(--ag-shadow-card)`
-  (0 2px 4px rgba(0,0,0,.35)) — `.tk-card`, `.pf-card`, `.pf-proj-panel`,
-  `.hm-card`, `.bk-card`, `.sn-card`, profile `.pf-card` (`styles.ts`) — the
-  Perfil and Pulso canvases also draw 16px section cards. Overlays/dialogs
-  use `--ag-shadow-overlay`.
-- Page `--ag-surface-page` → card `--ag-surface-card` → inset/input
-  `--ag-surface-sunken` (the KPI tile sits on `--ag-surface-page`) (inputs are darker than their card).
-- Radius scale: inputs/segmented `--ag-radius-sm` (8px), KPI tiles and nested
+- Section cards wear one face (prototype DS, 2026-11-13): `--ag-surface-raised`,
+  `1px solid var(--ag-border)` hairline, `border-radius: var(--ag-radius-lg)`
+  (16px), **no shadow**, padding 18px (14px and `--ag-radius-md` when
+  `@container ag-main` ≤38rem). Set in each page's base rule — `.tk-card`,
+  `.td-sec`, `.pf-card`, `.pf-proj-panel`, `.ag-rev-card`, `.ag-sec-card`,
+  `.sn-card`, `.bk-card`, `.im-card`, `.lr-path`, `.pr-card` — so page
+  modifiers still win; only `.hm-card` is overridden from `styles.css`.
+  Floating things keep a shadow: overlays/dialogs `--ag-shadow-overlay`, the
+  sticky `.ag-sec-picked` bar `--ag-shadow-card`.
+- Page `--ag-surface-page` → card `--ag-surface-raised` → tile/button
+  `--ag-surface-card` (KPI tiles, buttons sit on the card fill) → hover
+  `--ag-surface-hover`; inputs `--ag-surface-sunken` or raised.
+- Radius scale: segmented thumb/options and rail pill `--ag-radius-nav` (6px), buttons/inputs/segmented track `--ag-radius-sm` (8px), KPI tiles and nested
   containers `--ag-radius-md` (12px), section cards/panels `--ag-radius-lg`
   (16px), chips `--ag-radius-pill`.
 
 ## Spacing & density
 
 - Rem-based, ~4px grid: 0.25 / 0.35 / 0.5 / 0.75 / 1 / 1.25rem.
-- Card padding `1rem 1.1rem`; gap between cards/columns `1rem`; between
+- Card padding 18px (14px narrow); gap between cards/columns `1rem`; between
   groups inside a panel `1rem` with a border-top divider.
 
 ## Type & hierarchy
@@ -68,10 +72,11 @@ no Tailwind.
   `--ag-track-3xl` (-0.02em) on headings and figures at that size — big type
   tightens, body text keeps 0. Supporting
   facts drop to `--ag-fs-base` 600 with a muted label above.
-- KPI tile: `Kpi` / `KpiGrid` in `src/ui/Kpi.tsx`, the only one — the DS
-  tile `tables.kpi_grid_html` draws: `--ag-surface-page` inside the card,
-  `--ag-radius-md`, sentence-case `--ag-fs-sm` 500 secondary label, Epilogue
-  `--ag-fs-xl` 700 value, optional `Chip` beside it (`chipFor`, tones
+- KPI tile: `Kpi` / `KpiGrid` in `src/ui/Kpi.tsx`, the only one: a
+  `--ag-surface-card` tile inside the raised card (no visible border),
+  `--ag-radius-md`, padding 12px 14px (10px 12px narrow), sentence-case
+  `--ag-fs-sm` 500 secondary label, Epilogue `--ag-fs-2xl` 600 value
+  (`--ag-track-2xl`, steps to `--ag-fs-xl` under an 11rem tile), optional `Chip` beside it (`chipFor`, tones
   up/down/warn/flat; `off` = neutral; null draws nothing). The tile is a
   size container: the value steps down to `--ag-fs-lg` / `--ag-fs-md` when the
   tile narrows, and wraps only between words, never mid-figure. Guarded by
@@ -137,10 +142,30 @@ fixed meaning — they are not a series palette.
 
 ## Component patterns
 
-- **Segmented** (`ui/Segmented.tsx`, the only one): one `--ag-surface-page`
-  track, `aria-pressed` buttons in a labelled `role="group"`, one
-  `.ag-seg-thumb` (`--ag-surface-hover` + card shadow) that slides to the
-  pressed option. `className` places the track, never restyles it. Inside a
+- **Button** (`.ag-btn`): 36px min-height (44px coarse), padding 0 14px,
+  `--ag-radius-sm`, 1px `--ag-border-focus` edge on `--ag-surface-card`,
+  `--ag-fs-md` 600; hover (hover-capable only) turns the edge
+  `--ag-brand-accent`. **CTA** (`.ag-btn-cta`): `--ag-purple-700` fill with a
+  `0 0 18px var(--ag-cta-halo)` glow, white ink (~7.6:1), hover
+  `--ag-brand-cta`. Every bespoke primary (`.ag-tour-cta`, `.ag-locked-go`,
+  `.ag-fb-send`, `.ag-chat-send`, `.tk-add`, `.sn-cta`, `.im-btn-primary`,
+  `.ag-search-analyze`) follows the same rest/hover pair; the chat launcher
+  keeps its `.ag-ai` rim.
+- **Badge** (`.ag-badge`): 22px pill, `--ag-fs-sm`, a 6px `currentColor` dot
+  before the word — the tone is in the ink, never the dot alone.
+- **Tabs** (`.ag-tab`): muted ink, the open one `--ag-brand-accent` with its
+  underline. Ticker's `.tk-tab` links take the same ink.
+- **Rail** (`.ag-nav`): `--ag-surface-page`, mono section labels (+0.05em),
+  36px items, secondary ink with muted icons, hover `--ag-surface-card`; the
+  open page is a `--ag-purple-900` pill with `--ag-purple-300` ink and no
+  ring. Phone tab bar: the open tab keeps its 3px top bar, ink purple-300.
+- **Search field** (`.ag-search-field`): 40px, `--ag-radius-sm`,
+  `--ag-surface-raised`.
+- **Segmented** (`ui/Segmented.tsx`, the only one): one `--ag-surface-raised`
+  track, `aria-pressed` buttons in a labelled
+  `role="group"`, one `.ag-seg-thumb` (`--ag-purple-900` fill, 1px inset
+  `--ag-purple-800` ring, `--ag-radius-nav`) that slides to the pressed
+  option; pressed ink `--ag-purple-300` (10.9:1), others secondary. `className` places the track, never restyles it. Inside a
   side panel, label stacks over control and options wrap. Any one-of-a-few
   choice is this, popovers included (chat's research/lens mode); pills or
   chips only where several can be on at once. One exception: a one-of-many
@@ -288,7 +313,7 @@ fixed meaning — they are not a series palette.
   the top-bar search dropdown (results + recents) instead of a bare input;
   picked tickers become removable chips (`TickerCell name={false}` + ×).
 - **Table search** (`pages/review/Tables.tsx`): a long table (≥6 rows) gets
-  its own `ag-search-field` box over it (sunken, ≤22rem, 44px coarse),
+  its own `ag-search-field` box over it (raised, radius 8, ≤22rem, 44px coarse),
   matching symbol, cached name, sector and verdict words, case and accents
   folded; narrows only that table, with a "3 of 44" / "nothing matches"
   caption while typed in.

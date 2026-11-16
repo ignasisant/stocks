@@ -135,6 +135,20 @@ Browser reviews from Claude in Chrome are not feedback: they are the
   user rejected what the AI proposed), `chat.failed`,
   `chat.engine.completion_timeout`, `llm.free.exhausted`, `stt.failed`. Read the
   thread around them with `--user <slug>`.
+- **Unvoted reviews** (`chat.review`, from `chat/review.py`): `stocks logs stats
+  --since 7d --event chat.review --by kind`, then `--by provider` / `--by
+  model` / `--by skills`, set against `chat.answered` for the rate. `figures`
+  = an answer with 2+ figures nothing in its prompt states (counts only; a
+  sum the model worked out also counts, so it is a lead, not a verdict);
+  `complaint` = the next message said the answer was wrong; `rephrase` = the
+  same question asked again; `judged` = the free chain's sampled/flagged
+  answers scored 1-5 (`answer_quality`, `grounded`, `tone`; `reason`
+  figures|sample, `tools` = steps the judge saw only as summaries) — only
+  while `[review] judge = "on"`. `answer` is the answer's id: `stocks
+  review-answer <slug> <answer>` prints it with its question (refused for an
+  account that switched review off; gone after 30 idle days). Read only what
+  a lead points at. A provider, model or skill well above the rest is a
+  task; a single line is not.
 
 To reproduce an answer, re-ask the rated question locally against the same
 provider (`uv run stocks dashboard --reload`, chat drawer) or through

@@ -1259,8 +1259,12 @@ def valuation(symbol: Symbol) -> Valuation:
     # company's own history cannot answer "is this expensive for this company",
     # and the app offers 1y/3y/5y/10y for exactly that reason. Recomputed here
     # rather than re-fetched — it is a pandas pass over a series already held.
+    # Counted back from the last close, not the series' last point: a 20-F
+    # filer's line can stop months before today, and a "1y" ending there is
+    # not the last year.
+    as_of = result.get("as_of")
     stats = (
-        window_stats(series, windows=DISPLAY_WINDOWS)
+        window_stats(series, windows=DISPLAY_WINDOWS, end=as_of)
         if series is not None and not series.empty
         else result.get("stats")
     )
@@ -1283,16 +1287,29 @@ def valuation(symbol: Symbol) -> Valuation:
     # Banded here, like every other verdict: a client picking its own P/E
     # thresholds is a second place for "expensive" to mean something else.
     banded = verdict("pe_ttm", current)
+    dates: list[str] = []
+    pe: list[float | None] = []
+    if series is not None and not series.empty:
+        dates = [str(pd.Timestamp(ts).date()) for ts in series.index]
+        pe = [_num(v) for v in series]
+        # A line that stops before the last close runs on blank to it, so a
+        # client trimming to "the last N days" counts them from today and the
+        # gap reads as no figure, not as a chart that ends today.
+        if as_of is not None and pd.Timestamp(as_of) > series.index.max():
+            tail = pd.bdate_range(
+                series.index.max() + pd.Timedelta(days=1), pd.Timestamp(as_of)
+            )
+            dates += [str(ts.date()) for ts in tail]
+            pe += [None] * len(tail)
     return Valuation(
         ticker=ticker,
         source=result.get("source"),
+        basis=result.get("basis"),
         current=current,
         current_verdict=banded[0] if banded else None,
         current_tone=banded[1] if banded else None,
-        dates=[str(pd.Timestamp(ts).date()) for ts in series.index]
-        if series is not None and not series.empty
-        else [],
-        pe=[_num(v) for v in series] if series is not None and not series.empty else [],
+        dates=dates,
+        pe=pe,
         windows=windows,
     )
 

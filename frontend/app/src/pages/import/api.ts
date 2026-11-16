@@ -287,6 +287,15 @@ export const book = async (): Promise<Book> => {
   };
 };
 
+/** The tickers the book holds now, from the ledger alone: no price is read. */
+export const heldTickers = async (): Promise<string[]> => {
+  const page = await get<{ positions: { ticker: string; shares: number }[] }>(
+    "/portfolio/positions",
+    { priced: "false" },
+  );
+  return page.positions.filter((position) => position.shares > 0).map((p) => p.ticker);
+};
+
 /**
  * Where the book stands, for the tiles above the importer.
  *

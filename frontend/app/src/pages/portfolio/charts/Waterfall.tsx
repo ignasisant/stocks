@@ -52,14 +52,23 @@ export function Waterfall({
   money,
   axisMoney,
   summary,
+  rows,
 }: {
   bars: WaterfallBar[];
   money: (value: number, signed?: boolean) => string;
   axisMoney?: (value: number) => string;
   summary: string;
+  /** Always rows (amount and bar per step), whatever the width. */
+  rows?: boolean;
 }) {
   return bars.length ? (
-    <WaterfallPlot bars={bars} money={money} axisMoney={axisMoney} summary={summary} />
+    <WaterfallPlot
+      bars={bars}
+      money={money}
+      axisMoney={axisMoney}
+      summary={summary}
+      rows={rows}
+    />
   ) : null;
 }
 
@@ -68,11 +77,13 @@ function WaterfallPlot({
   money,
   axisMoney,
   summary,
+  rows,
 }: {
   bars: WaterfallBar[];
   money: (value: number, signed?: boolean) => string;
   axisMoney?: (value: number) => string;
   summary: string;
+  rows?: boolean;
 }) {
   const gutter = axisMoney ?? ((v: number) => money(v));
   const [hover, setHover] = useState<number | null>(null);
@@ -138,7 +149,7 @@ function WaterfallPlot({
   const at = hover === null ? null : bars[hover];
   const spoken = at ? `${at.label} ${money(at.amount, at.kind === "step")}` : "";
 
-  if (narrow && bars.length > LIE_DOWN_FROM) {
+  if (rows || (narrow && bars.length > LIE_DOWN_FROM)) {
     const share = (value: number) => `${((value - low) / range) * 100}%`;
     return (
       <div className="pf-chart pf-waterfall" ref={frame}>

@@ -52,6 +52,16 @@ class LearnPath:
 
 
 @dataclass(frozen=True)
+class Quiz:
+    """One question to check the lesson landed, with its answer explained."""
+
+    question: str
+    options: tuple[str, ...]
+    answer: int  # 0-based index into options
+    why: str
+
+
+@dataclass(frozen=True)
 class Lesson:
     id: str
     path: str
@@ -68,6 +78,7 @@ class Lesson:
     slug: str = ""
     # The search-result line; "" lets the page fall back to the opening one.
     description: str = ""
+    quiz: Quiz | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +107,27 @@ def _list(raw: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _quiz(meta: dict[str, str], name: str) -> Quiz | None:
+    """The optional `quiz_*` frontmatter: `quiz_q`, `quiz_options` (separated
+    by ` | `), `quiz_answer` (1-based) and `quiz_why`. All four or none."""
+    keys = ("quiz_q", "quiz_options", "quiz_answer", "quiz_why")
+    if not any(meta.get(k) for k in keys):
+        return None
+    missing = [k for k in keys if not meta.get(k)]
+    if missing:
+        raise ValueError(f"{name}: quiz needs {missing[0]!r}")
+    options = tuple(o.strip() for o in meta["quiz_options"].split("|") if o.strip())
+    if len(options) < 2:
+        raise ValueError(f"{name}: quiz needs at least two options")
+    try:
+        answer = int(meta["quiz_answer"])
+    except ValueError:
+        raise ValueError(f"{name}: quiz_answer must be a whole number") from None
+    if not 1 <= answer <= len(options):
+        raise ValueError(f"{name}: quiz_answer is outside the options")
+    return Quiz(meta["quiz_q"], options, answer - 1, meta["quiz_why"])
+
+
 def parse_lesson(text: str, name: str = "") -> Lesson:
     """One lesson file. Raises ValueError naming the file and what is wrong."""
     m = _FRONTMATTER.match(text)
@@ -116,6 +148,7 @@ def parse_lesson(text: str, name: str = "") -> Lesson:
     body = m.group(2).strip()
     if not body:
         raise ValueError(f"{name}: empty body")
+    quiz = _quiz(meta, name)
     return Lesson(
         id=meta["id"],
         path=meta["path"],
@@ -127,6 +160,7 @@ def parse_lesson(text: str, name: str = "") -> Lesson:
         body=body,
         slug=meta.get("slug") or meta["id"],
         description=meta.get("description", ""),
+        quiz=quiz,
     )
 
 

@@ -155,7 +155,6 @@
   "sentiment.pulse_stamp": "Datos a {date} · cierres Yahoo Finance + FRED · {live} de {total} componentes vivos",
   "sentiment.pulse_complete": "Los {total} componentes están vivos hoy: la puntuación no se apoya en un promedio más corto de lo que parece.",
   "sentiment.why_title": "Por qué · los ocho componentes",
-  "sentiment.why_hint": "barra = hoy · marca = hace 21 sesiones",
   "sentiment.comp_none": "no se incluye hoy",
   "sentiment.comp_momentum_sub": "S&P sobre su media de 125 sesiones",
   "sentiment.comp_breadth_sub": "RSP/SPY 20d · ¿suben todos o solo los gigantes?",
@@ -177,8 +176,6 @@
   "sentiment.stance_cushion": "lo amortigua",
   "sentiment.stance_track": "lo sigue de cerca",
   "sentiment.side_corr": "Correlación con el bono largo",
-  "sentiment.side_help": "La píldora es la deriva a tres meses del propio nivel, no el cambio de precio. Una beta de {then} a {now} es el régimen moviéndose bajo ti.",
-  "sentiment.side_help_plain": "La píldora es la deriva a tres meses del propio nivel, no el cambio de precio.",
   "sentiment.side_more": "Ver las cinco betas y las frases del mes ↓",
   "sentiment.drift_pill": "60d {now} · 3m {value}",
   "sentiment.fx_pill": "mes {value}",
@@ -301,5 +298,13 @@
   "sentiment.mkt_eurusd": "Euro / dólar",
   "sentiment.mkt_bitcoin": "Bitcoin (CME)",
   "sentiment.mkt_gold": "Oro",
-  "sentiment.mkt_crude": "Petróleo (WTI)"
+  "sentiment.mkt_crude": "Petróleo (WTI)",
+  "sentiment.meter_label": "Pulso {score} de 100: {band}. Hace un mes, {then}.",
+  "sentiment.meter_label_plain": "Pulso {score} de 100: {band}.",
+  "sentiment.why_key_stress": "tensión",
+  "sentiment.why_key_appetite": "apetito",
+  "sentiment.why_key_month": "hace un mes",
+  "sentiment.comp_aria": "{name}: {score} de 100, hace un mes {then}.",
+  "sentiment.comp_aria_plain": "{name}: {score} de 100.",
+  "sentiment.tilt_none": "Sin sector: {value} de tu cartera (cripto, fondos, sin clasificar) no se compara con el índice."
 }

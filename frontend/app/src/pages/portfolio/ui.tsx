@@ -138,8 +138,8 @@ export type KpiItem = {
   value: string | null;
   help?: string;
   chip?: { text: string; value: number | null; off?: boolean } | null;
-  /** One muted line under the figure. */
-  note?: string;
+  /** One muted line under the figure — or a link out of it. */
+  note?: ReactNode;
 };
 
 export function Kpis({ items }: { items: KpiItem[] }) {

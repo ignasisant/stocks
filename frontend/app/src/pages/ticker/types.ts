@@ -449,8 +449,11 @@ type ValuationWindow = {
 
 export type Valuation = {
   ticker: string;
-  /** Which filing feed backed it; null when neither had the quarters. */
+  /** Which filing feed backed it; null when none yields a series. */
   source: string | null;
+  /** "ttm" (quarters) or "annual" (20-F filers: last fiscal year's EPS). */
+  basis: string | null;
+  /** Null when the line stops before the last close (newest year not filed). */
   current: number | null;
   /** Today's P/E on the grid's pe_ttm bands, and that band's tone. */
   current_verdict: string | null;
@@ -846,6 +849,10 @@ export type ClosedEnd = {
 export type Comparables = {
   tickers: string[];
   labels: string[];
+  /** The KPI keys behind `labels`; absent from an older server. */
+  keys?: string[];
+  /** Per row, whether a lower figure is the better one; absent from an older server. */
+  lower_better?: boolean[];
   rows: Record<string, string[]>;
   medals: Record<string, string>;
   /** The rivals' median per row (all but the first ticker); "" for none. */

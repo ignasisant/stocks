@@ -1,25 +1,38 @@
 /**
  * The switcher, the filters and the month the grid is parked on.
  *
- * All three are local state, and nothing about this screen is deep-linked —
- * there is no `?view=` or `?month=` on it — so nothing here writes to the
- * query string.
+ * The view and the month live in the address (`?view=list&m=2026-12`), so a
+ * month can be linked and survives a reload; they are written with
+ * `setParams`, which replaces the entry rather than adding one, so paging
+ * through months does not fill the back button. The filters stay local.
  *
  * Filtering is done on data already in hand: one `/earnings` call fetched the
  * whole watchlist, so toggling a pill or paging a month is a re-render, never a
  * request.
  *
- * Two rows of pills, both read the same way — nothing picked is everything,
- * and picking two widens rather than narrows. The group pills pick NAMES; the
- * kind pills pick what is drawn about them. Each kind pill carries the colour
- * of its chips, so the row is the grid's key too, and the paragraphs that
- * explain each colour fold away under it instead of trailing the month.
+ * The filters are the legend. The group pills (Portfolio, Favorites) sit on
+ * the left and pick NAMES; on the right, one pill per kind, each in the colour
+ * of its chips and with how many dates it holds, picks what is drawn, and
+ * "All" puts them all back. Nothing picked is everything, and picking two
+ * widens rather than narrows. The paragraphs that explain each colour fold
+ * away under the grid instead of trailing the month.
  */
 
 import { useState } from "react";
+import { useRoute } from "../../shell/router";
 import { useT } from "../../shell/i18n";
-import { addMonths, allowed, only, today } from "./data";
-import type { EarningsCalendar, EventPick } from "./data";
+import {
+  addMonths,
+  allowed,
+  kindCounts,
+  monthKey,
+  monthsFrom,
+  only,
+  parseMonth,
+  today,
+} from "./data";
+import type { EarningsCalendar, EventPick, Kind } from "./data";
+import { Strip } from "./Strip";
 import EventDetail from "./EventDetail";
 import { plain } from "./format";
 import MonthGrid from "./MonthGrid";
@@ -33,9 +46,6 @@ import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 import { Segmented } from "../../ui/Segmented";
 
 type View = "calendar" | "list";
-
-/** What the calendar draws, one pill each, in the order a cell stacks them. */
-type Kind = "tax" | "banks" | "earnings" | "trades" | "dividends" | "markets";
 
 const KIND_KEYS: Record<Kind, string> = {
   tax: "earnings.kind_tax",
@@ -65,10 +75,11 @@ function initialView(): View {
 
 export default function Views({ data }: { data: EarningsCalendar }) {
   const t = useT();
-  const [view, setView] = useState<View>(initialView);
+  const { params, setParams } = useRoute();
+  const asked = params.get("view");
+  const view: View = asked === "list" || asked === "calendar" ? asked : initialView();
   const [picked, setPicked] = useState<string[]>([]);
   const [kinds, setKinds] = useState<Kind[]>([]);
-  const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<EventPick | null>(null);
 
   // A payload cached before the book's own days shipped has none of them.
@@ -77,19 +88,19 @@ export default function Views({ data }: { data: EarningsCalendar }) {
   const allHolidays = data.market_holidays ?? [];
 
   // Only the kinds this account has anything of get a pill.
-  const present: Kind[] = (
-    [
-      ["tax", data.tax_deadlines.length + data.repurchase_windows.length],
-      ["banks", data.central_banks.length],
-      ["earnings", data.upcoming.length + data.results.length],
-      ["trades", allTrades.length],
-      // A payout is the cash an ex-date promised: one pill for both.
-      ["dividends", data.dividends.length + allPayments.length],
-      ["markets", allHolidays.length],
-    ] as [Kind, number][]
-  )
-    .filter(([, count]) => count > 0)
-    .map(([kind]) => kind);
+  const counts = kindCounts(data, allowed(data.groups, picked));
+  const present = (Object.keys(counts) as Kind[]).filter(
+    (kind) =>
+      (kind === "earnings" ? data.upcoming.length + data.results.length : 0) +
+        (kind === "tax"
+          ? data.tax_deadlines.length + data.repurchase_windows.length
+          : 0) +
+        (kind === "banks" ? data.central_banks.length : 0) +
+        (kind === "trades" ? allTrades.length : 0) +
+        (kind === "dividends" ? data.dividends.length + allPayments.length : 0) +
+        (kind === "markets" ? allHolidays.length : 0) >
+      0,
+  );
   const shows = (kind: Kind) => kinds.length === 0 || kinds.includes(kind);
 
   const names = allowed(data.groups, picked);
@@ -121,11 +132,17 @@ export default function Views({ data }: { data: EarningsCalendar }) {
     (!kinds.includes("markets") || holidays.length === 0);
 
   const now = today();
+  const asked_month = parseMonth(params.get("m"));
+  const offset = asked_month ? monthsFrom(now, asked_month[0], asked_month[1]) : 0;
   const [year, month] = addMonths(
     Number(now.slice(0, 4)),
     Number(now.slice(5, 7)),
     offset,
   );
+  const step = (to: number) => {
+    const [y, m] = addMonths(Number(now.slice(0, 4)), Number(now.slice(5, 7)), to);
+    setParams({ m: to === 0 ? undefined : monthKey(y, m) });
+  };
 
   const toggle = (key: string) =>
     setPicked((current) =>
@@ -138,6 +155,15 @@ export default function Views({ data }: { data: EarningsCalendar }) {
 
   return (
     <>
+      <Strip
+        events={data.upcoming}
+        dividends={data.dividends}
+        deadlines={data.tax_deadlines}
+        windows={data.repurchase_windows}
+        banks={data.central_banks}
+        weights={data.weights}
+        onPick={setDetail}
+      />
       <div className="earn-bar">
         <Segmented
           label={t("earnings.view_label")}
@@ -146,7 +172,7 @@ export default function Views({ data }: { data: EarningsCalendar }) {
             { id: "list", label: t("earnings.view_list") },
           ]}
           value={view}
-          onPick={setView}
+          onPick={(next) => setParams({ view: next })}
         />
         {Object.keys(data.groups).length > 0 && (
           <ToggleRow label={t("earnings.filter_label")}>
@@ -168,6 +194,9 @@ export default function Views({ data }: { data: EarningsCalendar }) {
         )}
         {present.length > 1 && (
           <ToggleRow label={t("earnings.kind_label")} className="earn-kinds">
+            <ToggleChip on={kinds.length === 0} onClick={() => setKinds([])}>
+              {t("earnings.kind_all")}
+            </ToggleChip>
             {present.map((kind) => (
               <ToggleChip
                 key={kind}
@@ -176,6 +205,7 @@ export default function Views({ data }: { data: EarningsCalendar }) {
               >
                 <span className={`earn-swatch ${kind}`} aria-hidden="true" />
                 {t(KIND_KEYS[kind])}
+                <span className="earn-count">{counts[kind]}</span>
               </ToggleChip>
             ))}
           </ToggleRow>
@@ -195,6 +225,7 @@ export default function Views({ data }: { data: EarningsCalendar }) {
           trades={trades}
           payments={payments}
           holidays={holidays}
+          weights={data.weights}
         />
       ) : (
         <>
@@ -208,21 +239,17 @@ export default function Views({ data }: { data: EarningsCalendar }) {
               <button
                 type="button"
                 aria-label={t("earnings.prev_month")}
-                onClick={() => setOffset(offset - 1)}
+                onClick={() => step(offset - 1)}
               >
                 ‹
               </button>
-              <button
-                type="button"
-                disabled={offset === 0}
-                onClick={() => setOffset(0)}
-              >
+              <button type="button" disabled={offset === 0} onClick={() => step(0)}>
                 {t("earnings.today_btn")}
               </button>
               <button
                 type="button"
                 aria-label={t("earnings.next_month")}
-                onClick={() => setOffset(offset + 1)}
+                onClick={() => step(offset + 1)}
               >
                 ›
               </button>
@@ -243,44 +270,44 @@ export default function Views({ data }: { data: EarningsCalendar }) {
             holidays={holidays}
             onPick={setDetail}
           />
-          <ul className="earn-chipkey" aria-label={t("earnings.key_summary")}>
-            {(
-              [
-                ...(events.length > 0 || results.length > 0
-                  ? [
-                      ["", "earnings.key_print"],
-                      ["soon", "earnings.key_soon"],
-                      ["beat", "earnings.key_beat"],
-                      ["miss", "earnings.key_miss"],
-                    ]
-                  : []),
-                ...(deadlines.length > 0 ? [["tax", "earnings.key_tax"]] : []),
-                ...(windows.length > 0 ? [["rebuy", "earnings.key_rebuy"]] : []),
-                ...(banks.length > 0 ? [["cb", "earnings.key_cb"]] : []),
-                ...(trades.length > 0 ? [["trade", "earnings.key_trade"]] : []),
-                ...(dividends.length > 0 ? [["div", "earnings.key_div"]] : []),
-                ...(payments.length > 0 ? [["pay", "earnings.key_pay"]] : []),
-              ] as [string, string][]
-            ).map(([tone, label]) => (
-              <li key={label}>
-                <span className={`earn-chip earn-chip-key ${tone}`}>
-                  <span>{t(label)}</span>
-                </span>
-              </li>
-            ))}
-            {holidays.length > 0 && (
-              <li>
-                <span className="earn-holiday earn-holiday-key">
-                  {t("earnings.key_holiday")}
-                </span>
-              </li>
-            )}
-          </ul>
           {/* The caveats behind each colour — statutory dates, estimated
               amounts — stay one click away rather than trailing the month as a
               wall of copy; every chip's dialog says its own. */}
           <details className="earn-key">
             <summary>{t("earnings.key_summary")}</summary>
+            <ul className="earn-chipkey" aria-label={t("earnings.key_summary")}>
+              {(
+                [
+                  ...(events.length > 0 || results.length > 0
+                    ? [
+                        ["", "earnings.key_print"],
+                        ["soon", "earnings.key_soon"],
+                        ["beat", "earnings.key_beat"],
+                        ["miss", "earnings.key_miss"],
+                      ]
+                    : []),
+                  ...(deadlines.length > 0 ? [["tax", "earnings.key_tax"]] : []),
+                  ...(windows.length > 0 ? [["rebuy", "earnings.key_rebuy"]] : []),
+                  ...(banks.length > 0 ? [["cb", "earnings.key_cb"]] : []),
+                  ...(trades.length > 0 ? [["trade", "earnings.key_trade"]] : []),
+                  ...(dividends.length > 0 ? [["div", "earnings.key_div"]] : []),
+                  ...(payments.length > 0 ? [["pay", "earnings.key_pay"]] : []),
+                ] as [string, string][]
+              ).map(([tone, label]) => (
+                <li key={label}>
+                  <span className={`earn-chip earn-chip-key ${tone}`}>
+                    <span>{t(label)}</span>
+                  </span>
+                </li>
+              ))}
+              {holidays.length > 0 && (
+                <li>
+                  <span className="earn-holiday earn-holiday-key">
+                    {t("earnings.key_holiday")}
+                  </span>
+                </li>
+              )}
+            </ul>
             {(events.length > 0 || results.length > 0) && (
               <p className="earn-legend">{plain(t("earnings.calendar_legend"))}</p>
             )}

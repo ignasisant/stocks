@@ -11,6 +11,7 @@
  * failure.
  */
 
+import type { Change, EditPlan } from "../../api.gen";
 import { get, send } from "../../shell/api";
 import { findTickers, forgetSearches } from "../../shell/findTickers";
 import type {
@@ -96,6 +97,18 @@ export const applySplits = (ticker: string, dates: string[]) =>
 /** Take back an edit by its journal id — what `applySplits` answered with. */
 export const undoChange = (changeId: number) =>
   send<unknown>("DELETE", `/portfolio/changes/${changeId}`);
+
+/** Every row of this holding as one deletion, planned: nothing is written. */
+export const planRemoval = (ticker: string) =>
+  send<EditPlan>("POST", `/portfolio/positions/${encodeURIComponent(ticker)}/removal`);
+
+/** Apply a plan the reader saw, under its token: journalled, one undo away. */
+export const commitPlan = (plan: EditPlan, summary: string) =>
+  send<Change>("POST", "/portfolio/changes", {
+    ops: plan.ops,
+    token: plan.token,
+    summary,
+  });
 
 /** …and here it buys one tile: the market cap restated in the reader's money. */
 export const getMetrics = (ticker: string, base: string) =>

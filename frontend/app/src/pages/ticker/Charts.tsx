@@ -983,7 +983,11 @@ export function ValuationChart({
         )}
       </div>
       {/* Which filing feed backed the reconstruction. Not a footnote. */}
-      <Note>{t("ticker.pe_caption", { source: data.source })}</Note>
+      <Note>
+        {t(data.basis === "annual" ? "ticker.pe_caption_annual" : "ticker.pe_caption", {
+          source: data.source,
+        })}
+      </Note>
     </Card>
   );
 }

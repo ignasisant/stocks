@@ -23,7 +23,7 @@ type PulseComponent = {
   then: number | null;
 };
 
-type PulsePoint = { date: string; score: number };
+export type PulsePoint = { date: string; score: number };
 
 /**
  * How many of a set are in an uptrend, and how many could be read at all.

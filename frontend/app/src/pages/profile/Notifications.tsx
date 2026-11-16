@@ -29,6 +29,7 @@ import { ScheduleEditor } from "../../chat/Scheduled";
 import { weekdayNames, whenLabel } from "../../chat/slots";
 import type { Settings } from "./prefs";
 import { PushCard } from "./pushCard";
+import { PushHistory } from "./PushHistory";
 import { Card, Failure, Prose, Row, Toggle } from "./ui";
 
 export function Notifications({ prefs, saving, failure, save }: Settings) {
@@ -161,6 +162,8 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
             </Row>
           </Card>
         )}
+
+        {push?.configured && <PushHistory />}
 
         {email && (
           <Card
