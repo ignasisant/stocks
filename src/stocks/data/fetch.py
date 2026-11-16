@@ -370,8 +370,14 @@ def unaskable(symbol: str) -> bool:
     unplaced fund answered every ticker route with a 500 (prod 2026-11-13,
     ten routes for one MyInvestor fund). It has no bars, profile or
     statements to give until `symbol_for_isin` maps it.
+
+    So the ISIN is placed here first: one search per ISIN per process, the
+    hit cached to disk for `resolve`. One it places is what yfinance's own
+    lookup finds too, and is asked like any symbol.
     """
-    return retired(symbol) or is_isin(symbol)
+    if retired(symbol):
+        return True
+    return is_isin(symbol) and symbol_for_isin(symbol) is None
 
 
 def relisted(ticker: str) -> None:

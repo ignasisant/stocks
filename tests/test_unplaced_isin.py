@@ -51,6 +51,8 @@ def no_isin_search(monkeypatch):
     # learned, no closed-end verdict from EDGAR.
     monkeypatch.setattr(funds, "quote_type", lambda t, fetch=True: None)
     patch_loaders(monkeypatch, "is_closed_end", lambda t, fetch=True: False)
+    # Yahoo's search has no line for it either.
+    monkeypatch.setattr(fetch, "symbol_for_isin", lambda isin: None)
     loaders._fund_kind.cache_clear()
     yield _IsinRefusingYahoo.asked
     loaders._fund_kind.cache_clear()
@@ -92,3 +94,13 @@ def test_the_ticker_page_answers_for_an_unplaced_isin(no_isin_search, monkeypatc
     assert reply.status_code < 500, reply.text[:300]
     assert reply.status_code != 404, "the route moved: this test asks nothing"
     assert no_isin_search == []
+
+
+def test_an_isin_the_search_can_place_is_still_asked(no_isin_search, monkeypatch):
+    """Only an ISIN with no line is refused: one the search places (a fund's
+    Morningstar line) is what yfinance's own lookup finds too, and its ticker
+    page draws before any book download has placed it."""
+    monkeypatch.setattr(fetch, "symbol_for_isin", lambda isin: "0P0000000000.F")
+    assert fetch.unaskable(ISIN) is False
+    monkeypatch.setattr(fetch, "symbol_for_isin", lambda isin: None)
+    assert fetch.unaskable(ISIN) is True
