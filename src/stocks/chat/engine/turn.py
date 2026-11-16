@@ -77,6 +77,26 @@ def view_context(page: str = "", focus: str = "", tab: str = "",
     return ("Current view: " + " ".join(bits) + "\n\n") if bits else ""
 
 
+def topic_view(view: str, topic: str) -> str:
+    """`view` with the ticker the conversation is about (`topic_ticker`) as
+    what "this" means, for a turn with no ticker on screen.
+
+    "Quality against price this one" asked on the review page after an
+    answer on ADBE (rated down 2026-11-11) had no ticker in focus, so "this
+    one" pointed at nothing and the gather fetched QUAL for "Quality". The
+    caller passes it only when nothing is in focus: the screen wins.
+    """
+    if not topic:
+        return view
+    said = (f"No ticker is in focus; the conversation is about {topic}. It is"
+            ' what "this", "this one" and "it" mean; a question that names'
+            " other symbols, the user's own portfolio or a concept is not"
+            " about it.")
+    if not view:
+        return f"Current view: {said}\n\n"
+    return view.rstrip("\n") + " " + said + "\n\n"
+
+
 @dataclass
 class Turn:
     """A turn resolved up to the point where a model has to speak.

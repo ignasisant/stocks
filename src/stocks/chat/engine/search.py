@@ -76,7 +76,8 @@ def web_context(history: list[dict], context: str = "",
                 " follows up on them, not on the ticker in focus.")
         return ctx
     topic = topic_ticker(history[:-1])
-    if topic and "ticker in focus is" not in ctx:
+    if topic and not any(said in ctx for said in (
+            "ticker in focus is", "conversation is about")):
         ctx += f"\nThe conversation is about {topic}."
     return ctx
 
@@ -133,6 +134,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                     focus: str = "",
                     on_tool: Callable[[str, ToolCall, bool], None] | None = None,
                     profile: agent.Profile = agent.FAST,
+                    view: str = "",
                     model: str = "",
                     prefs_path: Path | None = None,
                     proposes: bool = False,
@@ -145,6 +147,8 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     replay the ledger under. `proposes` offers it `propose_action`: the
     caller shows a card the reader can press (`_proposed`). `on_plan` is
     told a deep gather's plan each time the model sets it (`agent.gather`).
+    `view` is the "Current view" sentence, for the gather to know what "this"
+    means.
 
     `checkpoint` is the run's progress on disk (`chat/checkpoint.py`): each
     lookup is filed there as it returns and the finished evidence once the
@@ -193,7 +197,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                           asked=_asked(msgs))
     evidence = agent.gather(
         provider, api_key, msgs, ctx, model=model, profile=profile,
-        timeout=timeout, on_tool=on_tool, on_plan=on_plan,
+        timeout=timeout, view=view, on_tool=on_tool, on_plan=on_plan,
         known=checkpoint.known() if checkpoint is not None else None,
         on_call=checkpoint.called if checkpoint is not None else None)
     if checkpoint is not None:

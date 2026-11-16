@@ -40,6 +40,8 @@
 #   lang      the drawer's language, es (default) or en
 #   before    messages asked first, on a thread of their own, so the question
 #             has an earlier conversation to be about (each one more turn)
+#   follows   messages asked first on the question's own thread: the talk a
+#             follow-up ("this one") is about
 #   recall    true: "use earlier conversations" switched on for this question
 #             (the eval account keeps it off)
 #   shot      the lines of a picture pasted with the question; a line with `|`
@@ -403,6 +405,49 @@
   message: "¿Cómo decide la app si reforzar o vender una acción?"
   goals:
     - Explains quality and price scores and the warning flags that block Add/Buy
+
+# Rated down 2026-11-11: "Quality against price this one" on the review page,
+# after an answer on a ticker. Nothing was in focus, so "this one" pointed at
+# nothing and the gather fetched QUAL for the word "Quality".
+- id: review-this-one-quality-price
+  area: review
+  kind: data
+  view: review
+  lang: en
+  follows: ["How is ADBE doing?"]
+  message: "Quality against price this one"
+  goals:
+    - Reads "this one" as ADBE, the ticker the conversation is about
+    - Weighs ADBE's business quality against its valuation
+  strays: [QUAL]
+  truth:
+    - {get: /ticker/ADBE/metrics, label: "ADBE metrics"}
+
+- id: review-this-one-cheap-es
+  area: review
+  kind: data
+  view: review
+  follows: ["¿Qué tal va MSFT?"]
+  message: "¿y esta está cara o barata?"
+  goals:
+    - Reads "esta" as MSFT, the ticker the conversation is about
+    - Judges MSFT's valuation from its multiples
+  truth:
+    - {get: /ticker/MSFT/metrics, label: "MSFT metrics"}
+
+- id: review-it-value-quality-en
+  area: review
+  kind: data
+  view: review
+  lang: en
+  follows: ["What do you think of NVDA?"]
+  message: "Value vs growth for it?"
+  goals:
+    - Reads "it" as NVDA, the ticker the conversation is about
+    - Weighs NVDA's valuation against its growth
+  strays: [VTV, VUG]
+  truth:
+    - {get: /ticker/NVDA/metrics, label: "NVDA metrics"}
 
 # ------------------------------------------------------------------- today
 
