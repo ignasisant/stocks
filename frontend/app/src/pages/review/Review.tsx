@@ -27,12 +27,14 @@
  * once, the plan's figures and the question for the assistant included, and
  * ride the URL with the rest. They filter what came back; they never refetch.
  *
- * The verdict chips over the map (`VerdictBar`, `?v=`) are a lighter cut: they
+ * The verdict chips under the plan (`VerdictBar`, `?v=`) are a lighter cut: they
  * light their names on the map and narrow the two tables, and leave the plan,
  * the notes and the question whole — the plan is about the whole read.
  *
- * Under the plan, the names a few points from a move (`Close.tsx`): what
- * would change the plan next, each with how far it has to go.
+ * Beside the moves, the names a few points from a move (`Close.tsx`): what
+ * would change the plan next, each with how far it has to go. The notes on
+ * the book as a whole ("your book as a whole") follow the map, before the
+ * tables.
  */
 
 import { useEffect, useState } from "react";
@@ -265,6 +267,21 @@ function Screen({
     );
   }
 
+  const split = onVerdicts ? (
+    <VerdictBar
+      held={data.held}
+      candidates={data.candidates}
+      picked={verdicts}
+      onPick={onVerdicts}
+    />
+  ) : null;
+  const close = (
+    <CloseCalls
+      rows={[...data.held, ...data.candidates]}
+      taxCurrency={plan.tax_currency}
+    />
+  );
+
   const page = (
     <LinesProvider lines={read.lines}>
       <FocusProvider>
@@ -295,26 +312,22 @@ function Screen({
           </div>
         ) : null}
 
-        {/* The answer first: the plan, then the book-wide notes that sit
-          beside it (concentration, currency), which a phone would otherwise
-          scroll past a screen of before reaching the plan. */}
-        {data.held.length > 0 && <Plan data={data} filtered={isFiltered(filter)} />}
-
-        <CloseCalls
-          rows={[...data.held, ...data.candidates]}
-          taxCurrency={plan.tax_currency}
-        />
-
-        <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
-
-        {onVerdicts ? (
-          <VerdictBar
-            held={data.held}
-            candidates={data.candidates}
-            picked={verdicts}
-            onPick={onVerdicts}
+        {/* The answer first; under it the read's split by verdict, then the
+          moves beside the names close to one. Without a book there is no
+          plan: the split and the close calls stand alone. */}
+        {data.held.length > 0 ? (
+          <Plan
+            data={data}
+            filtered={isFiltered(filter)}
+            between={split}
+            beside={close}
           />
-        ) : null}
+        ) : (
+          <>
+            {split}
+            {close}
+          </>
+        )}
 
         <QualityMap
           held={data.held}
@@ -323,6 +336,8 @@ function Screen({
           onAdd={onAdd}
           highlight={lit.size ? (row) => lit.has(row.verdict) : undefined}
         />
+
+        <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
 
         {data.held.length > 0 && (
           <section className="ag-rev-card">

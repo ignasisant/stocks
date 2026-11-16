@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Literal
@@ -18,7 +19,7 @@ from stocks.api import runs
 from stocks.api.deps import Account, ChatTurn, Writer
 from stocks.api.routes.chat.events import _events, _frame, _settled
 from stocks.api.routes.chat.preferences import _prefs, session_keys
-from stocks.chat import brief, document, engine, guide_ai, navigate, screenshot
+from stocks.chat import brief, document, engine, guide_ai, navigate, review, screenshot
 from stocks.chat import checkpoint as checkpoints
 from stocks.chat.checkpoint import Checkpoint
 from stocks.notify import webpush
@@ -614,5 +615,10 @@ async def hold(rid: str, x_run_hold: str = Header(default="")) -> Response:
     run = runs.holding(rid, x_run_hold)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    deadline = time.monotonic() + runs.HOLD_S
     await runs.wait_async(run)
+    # The stored answer may be out with the judge (chat/review.py), which
+    # outlasts the run: the same CPU until it is done.
+    while review.judging() and (left := deadline - time.monotonic()) > 0:
+        await asyncio.sleep(min(left, 1.0))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

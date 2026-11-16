@@ -10,7 +10,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { quadrant, topSectors } from "./logic";
+import {
+  BANDS,
+  bandSpan,
+  fromMiddle,
+  indexAt,
+  quadrant,
+  splitTilt,
+  topSectors,
+} from "./logic";
 import type { TrendBlock, TrendRow } from "./types";
 
 function row(over: Partial<TrendRow> & { key: string }): TrendRow {
@@ -142,5 +150,54 @@ describe("topSectors", () => {
     expect(result.leading).toEqual([]);
     expect(result.lagging).toEqual([]);
     expect(topSectors(null).leading).toEqual([]);
+  });
+});
+
+describe("meter bands", () => {
+  it("cover the whole scale, once", () => {
+    const spans = BANDS.map((_, i) => bandSpan(i));
+    expect(spans).toEqual([20, 20, 20, 20, 20]);
+    expect(spans.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+});
+
+describe("splitTilt", () => {
+  it("orders sectors by tilt and sets the non-sector buckets aside", () => {
+    const { rows, unsectored } = splitTilt({
+      Technology: 0.084,
+      Financial: -0.072,
+      Crypto: 0.01,
+      Unknown: 0.011,
+      Energy: -0.032,
+    });
+    expect(rows.map(([name]) => name)).toEqual(["Technology", "Energy", "Financial"]);
+    expect(unsectored).toBeCloseTo(0.021);
+  });
+
+  it("says nothing when the whole book has a sector", () => {
+    expect(splitTilt({ Technology: 0.1 }).unsectored).toBeNull();
+  });
+});
+
+describe("fromMiddle", () => {
+  it("grows right above 50 and left below", () => {
+    expect(fromMiddle(70)).toEqual({ side: "appetite", width: 20 });
+    expect(fromMiddle(31)).toEqual({ side: "tension", width: 19 });
+    expect(fromMiddle(50)).toEqual({ side: "appetite", width: 0 });
+  });
+
+  it("clamps a score outside the scale", () => {
+    expect(fromMiddle(130).width).toBe(50);
+    expect(fromMiddle(-5).width).toBe(50);
+  });
+});
+
+describe("indexAt", () => {
+  it("maps a pointer to the nearest session", () => {
+    expect(indexAt(0, 100, 11)).toBe(0);
+    expect(indexAt(100, 100, 11)).toBe(10);
+    expect(indexAt(52, 100, 11)).toBe(5);
+    expect(indexAt(500, 100, 11)).toBe(10);
+    expect(indexAt(5, 0, 11)).toBe(0);
   });
 });

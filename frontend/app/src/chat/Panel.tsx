@@ -21,6 +21,8 @@ import type {
 import { useStickToBottom } from "use-stick-to-bottom";
 import { useT } from "../shell/i18n";
 import { useWidth } from "../shell/useWidth";
+import { pageFor } from "../shell/pages";
+import { useRoute } from "../shell/router";
 import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
@@ -399,6 +401,7 @@ export default function Panel({
     !!asked.content;
   // Scrolled up from the end: the way back down, and the fade under it.
   const below = !isAtBottom && chat.turns.length > 0;
+  const route = useRoute();
   const named = (open?.title || "").trim();
   const state = chat.state;
   // The opening read paints the thread before the state lands (`useChat`):
@@ -535,6 +538,11 @@ export default function Panel({
               {quota}
             </span>
           )}
+          {/* The page the question is asked from: what the assistant is told
+              the reader is looking at. */}
+          <span className="ag-chat-ctx">
+            {t("chat.viewing", { page: t(pageFor(route.page).label) })}
+          </span>
         </div>
       )}
 
@@ -720,6 +728,9 @@ export default function Panel({
                   <Empty
                     onAsk={(question) => void chat.send(question)}
                     onLeave={onPark ?? onClose}
+                    threads={chat.threads ?? []}
+                    activeId={chat.activeId}
+                    onOpen={openThread}
                   />
                 )}
                 {/* Below the turns, not inside one: the note the server filed

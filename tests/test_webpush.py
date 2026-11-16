@@ -341,7 +341,7 @@ def test_the_routes_subscribe_report_and_unsubscribe(client, account, signed_in,
     state = signed_in.get("/v1/push", params={"endpoint": ENDPOINT}).json()
     assert state == {
         "configured": True, "key": webpush.public_key(),
-        "subscribed": False, "devices": 0,
+        "subscribed": False, "devices": 0, "recent": [],
     }
 
     kept = signed_in.post("/v1/push/subscription", json=browser.subscription("es"))
@@ -433,3 +433,23 @@ def test_a_done_hook_that_fails_does_not_break_the_run():
                       stopped="", failed=lambda f: False, done=boom)
     wait_for(lambda: not run_.live)
     assert not run_.failed
+
+
+def test_the_push_state_lists_what_was_last_sent(monkeypatch, tmp_path):
+    """`GET /push` carries the account's recent sends, newest first."""
+    from types import SimpleNamespace
+
+    from stocks.api.routes import push as push_routes
+
+    rows = [
+        {"id": "b", "at": 20.0, "topic": "alert", "title": "T", "body": "B",
+         "url": "/today", "devices": 2, "took": 1},
+        {"id": "a", "at": 10, "topic": "test"},
+    ]
+    monkeypatch.setattr(webpush, "history", lambda path: rows)
+    monkeypatch.setattr(webpush, "devices", lambda path: 2)
+    monkeypatch.setattr(webpush, "public_key", lambda: "k")
+    out = push_routes.state(SimpleNamespace(push=tmp_path / "push.json"))
+    assert [s.topic for s in out.recent] == ["alert", "test"]
+    assert out.recent[0].took == 1
+    assert out.recent[1].title == ""

@@ -164,11 +164,10 @@
 /* -------------------------------------------------------------------- cards */
 
 .tk-card {
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-raised);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
-  box-shadow: var(--ag-shadow-card);
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -190,9 +189,11 @@
 /* ---------------------------------------------------------- section tabs */
 
 /* The page's index (`SectionTabs.tsx`), pinned under the top edge once the
-   header has gone. It runs over `.ag-main`'s gutter so the page slides under
-   an opaque band, not past a strip with gaps at both ends; the gutter is put
-   back as padding. Once stuck it also carries the symbol and its price. */
+   header has gone. At rest it is see-through, so the page's own backdrop runs
+   behind it unbroken; once stuck it turns to frosted glass the page slides
+   under. It runs over `.ag-main`'s gutter so that glass has no gaps at both
+   ends; the gutter is put back as padding. Once stuck it also carries the
+   symbol and its price. */
 .tk-tabs {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
@@ -202,10 +203,19 @@
   gap: 12px;
   margin-inline: -1.5rem;
   padding-inline: 1.5rem;
-  background: var(--ag-surface-page);
+  background: transparent;
 }
 .tk-tabs[data-stuck] {
+  background: color-mix(in oklab, var(--ag-surface-page) 80%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
   box-shadow: 0 1px 0 var(--ag-border);
+}
+/* No blur to lean on: an opaque band rather than text over text. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tk-tabs[data-stuck] {
+    background: var(--ag-surface-page);
+  }
 }
 @media (max-width: 640px) {
   .tk-tabs {
@@ -222,9 +232,9 @@
   border-bottom-color: transparent;
 }
 
+/* A link that takes the strip's own ink (`.ag-tab`): muted, accent when open. */
 .tk-tab {
   text-decoration: none;
-  color: inherit;
 }
 
 .tk-tabs-mini {
@@ -855,6 +865,15 @@
   overflow-x: visible;
 }
 
+/* A mouse has no swipe to reach a hidden tail — and the tail is where the
+   next results date sits — so with a fine pointer the row wraps. */
+@media (pointer: fine) {
+  .tk-legend {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
 .tk-legend li {
   flex: none;
   white-space: nowrap;
@@ -955,6 +974,7 @@
 
 /* `.ag-btn`'s face, at the size of the line it sits in. */
 .tk-zoom-reset {
+  min-height: 0;
   padding: 4px 10px;
   font-size: var(--ag-fs-sm);
 }
@@ -1671,6 +1691,54 @@
   background: var(--ag-border);
 }
 
+/* The one row that deletes something, coloured like it. */
+.tk-more-danger {
+  color: var(--ag-critical-fill);
+}
+
+/* ------------------------------------------- removing a mistaken holding */
+.tk-remove-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
+}
+
+.tk-remove-body p {
+  margin: 0;
+}
+
+.tk-remove-shifts,
+.tk-remove-bad ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-remove-bad {
+  color: var(--ag-critical-fill);
+}
+
+.tk-remove-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.ag-btn.tk-btn-danger {
+  border-color: var(--ag-critical-fill);
+  background: var(--ag-loss-band);
+  color: var(--ag-critical-fill);
+}
+
+@media (hover: hover) {
+  .ag-btn.tk-btn-danger:not(:disabled):hover {
+    border-color: var(--ag-critical-fill);
+  }
+}
+
 .tk-more-head {
   display: flex;
   align-items: center;
@@ -1796,8 +1864,8 @@
 .tk-add {
   margin-top: 12px;
   width: 100%;
-  background: var(--ag-brand-cta);
-  border-color: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
+  border-color: var(--ag-purple-700);
   color: var(--ag-on-brand);
 }
 
@@ -1806,6 +1874,13 @@
   border-color: var(--ag-border);
   color: var(--ag-text-muted);
   cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .tk-add:not(:disabled):hover {
+    background: var(--ag-brand-cta);
+    border-color: var(--ag-brand-cta);
+  }
 }
 
 .tk-rules {
@@ -2570,4 +2645,176 @@
 .tk-fold-head {
   font-size: var(--ag-fs-sm);
   color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------------------- worth */
+
+/* Three valuations on one axis, the price at zero. Each row: its name, a
+   track with the distance from the price drawn as a reach and a dot, and the
+   figure. The tone is a direction, never a verdict. */
+.tk-worth {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+}
+
+.tk-worth-row,
+.tk-peerbar {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr) minmax(6rem, 9rem);
+  align-items: center;
+  gap: 12px;
+}
+
+.tk-worth-name,
+.tk-peerbar-label {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-worth-track,
+.tk-peerbar-track {
+  position: relative;
+  height: 22px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.tk-worth-zero {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--ag-text-secondary);
+  transform: translateX(-1px);
+}
+
+.tk-worth-reach,
+.tk-worth-range {
+  position: absolute;
+  top: 8px;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-worth-range {
+  top: 3px;
+  height: 16px;
+  border: 1px solid var(--ag-border);
+  background: var(--ag-surface-hover);
+}
+
+.tk-worth-dot {
+  position: absolute;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  border: 2px solid var(--ag-surface-card);
+}
+
+.tk-worth-up {
+  background: var(--ag-up);
+}
+
+.tk-worth-down {
+  background: var(--ag-down);
+}
+
+.tk-worth-warn {
+  background: var(--ag-warn);
+}
+
+.tk-worth-axis {
+  position: relative;
+  height: 16px;
+  margin-inline: calc(min(14rem, 30%) + 12px) calc(min(9rem, 24%) + 12px);
+}
+
+.tk-worth-price {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  white-space: nowrap;
+}
+
+.tk-worth-read,
+.tk-peerbar-read {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-worth-read small,
+.tk-peerbar-read small {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+/* The multiples against the rivals' median: a bar per row, the median as a
+   tick across its own track. */
+.tk-peerbars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tk-peerbar-track {
+  height: 10px;
+  overflow: visible;
+}
+
+.tk-peerbar-fill {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-peerbar-median,
+.tk-peerbar-tick {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--ag-text-secondary);
+  transform: translateX(-1px);
+}
+
+.tk-peerbar-tick {
+  position: static;
+  display: inline-block;
+  width: 2px;
+  height: 12px;
+  transform: none;
+}
+
+@container ag-main (max-width: 40rem) {
+  .tk-worth-row,
+  .tk-peerbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+
+  .tk-worth-track,
+  .tk-peerbar-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .tk-worth-axis {
+    margin-inline: 0;
+  }
+}
+
+/* Two cards sharing one watched slot (the valuation read and the rivals'
+   bars) keep the section's gap between them. */
+.tk-slot:has(> .tk-card + .tk-card) {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }

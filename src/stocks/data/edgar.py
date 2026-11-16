@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 
@@ -34,6 +35,10 @@ REVENUE_TAGS = [
 ]
 NET_INCOME_TAGS = ["NetIncomeLoss"]
 EPS_TAGS = ["EarningsPerShareDiluted", "EarningsPerShareBasic"]
+# A foreign private issuer files its 20-F under IFRS: Sony's EPS moved from
+# us-gaap to ifrs-full with fiscal 2021, so reading one namespace alone cut
+# its history off there.
+IFRS_EPS_TAGS = ["DilutedEarningsLossPerShare", "BasicEarningsLossPerShare"]
 
 
 def _user_agent() -> str:
@@ -207,30 +212,41 @@ def _duration_days(fact: dict) -> int | None:
 
 
 def diluted_eps_facts(ticker: str) -> pd.DataFrame:
-    """Raw diluted-EPS facts from XBRL: columns end/filed/eps/kind, oldest-first.
+    """Raw diluted-EPS facts from XBRL: columns end/filed/eps/kind/currency,
+    oldest-first.
 
     `kind` is 'Q' for a discrete ~3-month period or 'FY' for a full fiscal year
-    (10-Ks report the year, never a discrete Q4). Values are AS REPORTED — not
-    split-adjusted and not Q4-reconstructed; both happen in analysis.pe_history,
-    which must split-adjust to a common basis *before* deriving Q4 = FY − 3Q
-    (a split mid-year otherwise mixes per-share bases and corrupts the result).
+    (10-Ks report the year, never a discrete Q4; a 20-F filer reports only
+    years). Values are AS REPORTED — not split-adjusted and not
+    Q4-reconstructed; both happen in analysis.pe_history, which must
+    split-adjust to a common basis *before* deriving Q4 = FY − 3Q (a split
+    mid-year otherwise mixes per-share bases and corrupts the result).
+
+    us-gaap and ifrs-full are read together: a filer that switched standards
+    keeps both halves of its history, and where a period appears in both the
+    earliest filing wins like anywhere else. `currency` is the filing's
+    (``JPY`` off a ``JPY/shares`` unit); only the filer's dominant one is
+    kept, so a convenience translation cannot sit beside the real figure.
 
     `filed` is the earliest date each figure was public, so downstream TTM logic
     can avoid look-ahead bias. Empty for non-US filers (no CIK) or no EPS facts.
     """
+    cols = ["end", "filed", "eps", "kind", "currency"]
     facts = company_facts(ticker)
     if facts is None:
-        return pd.DataFrame(columns=["end", "filed", "eps", "kind"])
-    gaap = facts.get("facts", {}).get("us-gaap", {})
-    raw: list[dict] = []
-    for tag in EPS_TAGS:
-        for arr in gaap.get(tag, {}).get("units", {}).values():
-            raw += arr
-        if raw:
-            break
+        return pd.DataFrame(columns=cols)
+    raw: list[tuple[dict, str]] = []
+    for namespace, tags in (("us-gaap", EPS_TAGS), ("ifrs-full", IFRS_EPS_TAGS)):
+        found = facts.get("facts", {}).get(namespace, {})
+        for tag in tags:
+            units = found.get(tag, {}).get("units", {})
+            for unit, arr in units.items():
+                raw += [(f, unit.split("/")[0].upper()) for f in arr]
+            if units:
+                break
 
-    picked: dict[tuple[date, str], tuple[float, str]] = {}
-    for f in raw:
+    usable: list[tuple[date, str, float, str, str]] = []
+    for f, currency in raw:
         dur = _duration_days(f)
         if dur is None or "val" not in f:
             continue
@@ -240,13 +256,24 @@ def diluted_eps_facts(ticker: str) -> pd.DataFrame:
             kind = "FY"
         else:
             continue
-        end, filed, val = date.fromisoformat(f["end"]), f["filed"], float(f["val"])
+        usable.append((date.fromisoformat(f["end"]), f["filed"], float(f["val"]),
+                       kind, currency))
+    if not usable:
+        return pd.DataFrame(columns=cols)
+    main = Counter(row[4] for row in usable).most_common(1)[0][0]
+
+    picked: dict[tuple[date, str], tuple[float, str]] = {}
+    for end, filed, val, kind, currency in usable:
+        if currency != main:
+            continue
         key = (end, kind)
         if key not in picked or filed < picked[key][1]:  # earliest filing wins
             picked[key] = (val, filed)
 
-    rows = sorted((e, filed, val, kind) for (e, kind), (val, filed) in picked.items())
-    return pd.DataFrame(rows, columns=["end", "filed", "eps", "kind"])
+    rows = sorted(
+        (e, filed, val, kind, main) for (e, kind), (val, filed) in picked.items()
+    )
+    return pd.DataFrame(rows, columns=cols)
 
 
 # ------------------------------------------------------------ press releases

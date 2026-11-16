@@ -14,7 +14,7 @@
  * what is stored before anyone can overwrite it.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Query } from "../../shell/useApi";
 import { NotSignedIn, get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
@@ -67,6 +67,9 @@ export function parsed(text: string, before: number | null): number | undefined 
   if (!Number.isFinite(value) || value < 0) return undefined;
   return value === (before ?? 0) ? undefined : value;
 }
+
+/** How long "Removed X" offers its undo. */
+const UNDO_MS = 6000;
 
 type Mode = "tags" | "favorites" | "flat";
 const MODES: readonly Mode[] = ["tags", "favorites", "flat"];
@@ -368,6 +371,36 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
   const [needle, setNeedle] = useState("");
   const [keep, setKeep] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>("tags");
+  // The last name taken off, held for a few seconds so it can be put back.
+  const [removed, setRemoved] = useState<Entry | null>(null);
+  useEffect(() => {
+    if (!removed) return;
+    const timer = setTimeout(() => setRemoved(null), UNDO_MS);
+    return () => clearTimeout(timer);
+  }, [removed]);
+  const undoRemove = () => {
+    if (!removed) return;
+    const back = removed;
+    setRemoved(null);
+    // Put back exactly what the add route takes, then the hand-typed position
+    // the add does not carry.
+    write(
+      send("POST", "/watchlist", {
+        ticker: back.ticker,
+        name: back.name,
+        favorite: back.favorite,
+        tags: back.tags,
+      }).then(() =>
+        back.shares || back.cost
+          ? send("PATCH", `/watchlist/${encodeURIComponent(back.ticker)}`, {
+              shares: back.shares ?? 0,
+              cost: back.cost ?? 0,
+            })
+          : undefined,
+      ),
+      [...held, back],
+    );
+  };
 
   const write = (
     work: Promise<unknown>,
@@ -535,18 +568,27 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                           held.map((e) => (e.ticker === ticker ? patched(e, body) : e)),
                         )
                       }
-                      onRemove={(ticker) =>
+                      onRemove={(ticker) => {
+                        setRemoved(entry);
                         write(
                           send("DELETE", `/watchlist/${encodeURIComponent(ticker)}`),
                           held.filter((e) => e.ticker !== ticker),
-                        )
-                      }
+                        );
+                      }}
                     />
                   ))}
                 </div>
               ))
             )}
 
+            {removed && (
+              <div className="pr-undo" role="status">
+                <span>{t("watchlist.removed", { ticker: removed.ticker })}</span>
+                <button type="button" className="pr-btn" onClick={undoRemove}>
+                  {t("watchlist.undo")}
+                </button>
+              </div>
+            )}
             <div className="pr-foot">
               <span className="pr-hint">
                 {t("watchlist.count", { n: held.length })}

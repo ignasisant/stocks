@@ -253,7 +253,7 @@ body {
    gutter keeps a classic scrollbar's width, so nothing shifts sideways. */
 :root:has(
   .ag-rev-modal,
-  .earn-modal,
+  .ag-panel,
   .ag-tour-scrim,
   .ag-fb-scrim,
   .ag-jr-veil,
@@ -341,13 +341,21 @@ body {
   container: ag-main / inline-size;
 }
 
-/* Every page's section card pads by the same amount on a phone. The page
-   gutter, the card and the tiles inside it each pad the same edge, so the card
-   gives up a quarter of its desktop share; and one measure for all of them is
-   what keeps the page from shifting its inner edge as the reader moves from
-   Home to a ticker to Today. Scoped under `.ag-main` so it outranks the
-   page's own one-class rule, which loads after this sheet. `--card-pad`
-   is that measure, for a chart that bleeds to the card's edge. */
+/* Every section card wears one face (prototype DS): the raised step between
+   page and card fill, a hairline edge, no drop shadow, an 18px pad, so the
+   tiles inside it (card fill) read one step lighter again. Each page's own
+   card rule draws it; Home's is set here, scoped under `.ag-main` to outrank
+   its one-class rule. */
+.ag-main .hm-card {
+  background: var(--ag-surface-raised);
+  box-shadow: none;
+  padding: 18px;
+}
+
+/* On a phone the page gutter, the card and its tiles each pad the same edge,
+   so the card gives up a fifth of its desktop pad; one measure for every page
+   keeps the inner edge still from Home to a ticker to Today. `--card-pad` is
+   that measure, for a chart that bleeds to the card's edge. */
 @container ag-main (max-width: 38rem) {
   .ag-main
     :is(
@@ -363,8 +371,26 @@ body {
       .im-card,
       .lr-path
     ) {
-    --card-pad: 12px;
+    --card-pad: 14px;
     padding: var(--card-pad);
+  }
+
+  .ag-main
+    :is(
+      .hm-card,
+      .tk-card,
+      .td-sec,
+      .pf-card,
+      .pf-proj-panel,
+      .ag-rev-card,
+      .ag-sec-card,
+      .sn-card,
+      .bk-card,
+      .im-card,
+      .lr-path,
+      .pr-card
+    ) {
+    border-radius: var(--ag-radius-md);
   }
 }
 
@@ -376,7 +402,7 @@ body {
      notch at its left edge half the time. */
   padding: 1rem 0.6rem 1rem max(0.6rem, env(safe-area-inset-left));
   border-right: 1px solid var(--ag-border);
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-page);
   /* Pinned to the viewport: a grid child stretches to the page's height and
      scrolls away with it, so on a long screen the rail was gone by the second
      card. `align-self: start` keeps the sticky box viewport-sized instead of
@@ -442,10 +468,18 @@ body {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.5rem 0.7rem;
-  border-radius: var(--ag-radius-xs, 4px);
-  color: var(--ag-text-muted);
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--ag-radius-sm, 8px);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-base);
+  font-weight: 500;
   text-decoration: none;
+}
+
+.ag-nav-item .ag-icon {
+  color: var(--ag-text-muted);
 }
 
 /* Folded: glyphs only. The mark and the labels go, the fold control stays —
@@ -477,7 +511,7 @@ body {
 
 @media (hover: hover) {
   .ag-nav-item:hover {
-    background: var(--ag-surface-sunken);
+    background: var(--ag-surface-card);
     color: var(--ag-text-primary);
   }
 }
@@ -814,16 +848,40 @@ body {
   color: var(--ag-text-muted);
 }
 
+/* The outlined button: a 36px card-fill box on the hover border, the label
+   at 13px semibold. Hover brings the accent into the edge, never the fill. */
 .ag-btn {
-  display: inline-block;
-  padding: 0.45rem 0.9rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs, 4px);
-  background: var(--ag-surface-sunken);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-card);
   color: var(--ag-text-primary);
   font: inherit;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
   text-decoration: none;
+  transition:
+    border-color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (hover: hover) {
+  .ag-btn:not(:disabled):hover {
+    border-color: var(--ag-brand-accent);
+  }
+}
+
+.ag-btn:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
 }
 
 /* 37px drawn is short of a finger; the label stays centred in the taller box.
@@ -870,6 +928,7 @@ body {
       .ag-tour-quiet,
       .im-btn,
       .im-chip,
+      .im-way,
       .hm-chip,
       .hm-start-go,
       .ag-locked-go,
@@ -1091,14 +1150,16 @@ body {
    done, so there is never more than one of it in view. */
 .ag-btn-cta {
   border-color: transparent;
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
   font-weight: 600;
+  box-shadow: 0 0 18px var(--ag-cta-halo);
 }
 
 @media (hover: hover) {
-  .ag-btn-cta:hover {
-    background: var(--ag-purple-700);
+  .ag-btn-cta:not(:disabled):hover {
+    border-color: transparent;
+    background: var(--ag-brand-cta);
   }
 }
 
@@ -1480,10 +1541,12 @@ body {
 .ag-search-field {
   width: 100%;
   max-width: 420px;
+  min-height: 40px;
+  box-sizing: border-box;
   padding: 8px 12px;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-card);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-raised);
   color: var(--ag-text-primary);
   font: inherit;
   font-size: var(--ag-fs-base);
@@ -1625,7 +1688,7 @@ img.ag-search-logo {
   padding: 8px;
   border: 0;
   border-radius: var(--ag-radius-sm);
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
   font: inherit;
   cursor: pointer;
@@ -1876,8 +1939,14 @@ img.ag-search-logo {
    a side door off the dialog ("take me there") leads it on the left. */
 .ag-tour-cta {
   border-color: transparent;
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
+}
+
+@media (hover: hover) {
+  .ag-tour-cta:not(:disabled):hover {
+    background: var(--ag-brand-cta);
+  }
 }
 
 .ag-tour-quiet {
@@ -2153,7 +2222,7 @@ button.ag-welcome-row {
 }
 
 .ag-fb-send {
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
 }
 
@@ -2161,6 +2230,12 @@ button.ag-welcome-row {
   background: var(--ag-surface-hover);
   color: var(--ag-text-faint);
   cursor: default;
+}
+
+@media (hover: hover) {
+  .ag-fb-send:not(:disabled):hover {
+    background: var(--ag-brand-cta);
+  }
 }
 
 .ag-fb-quiet {

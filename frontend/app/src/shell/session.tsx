@@ -45,6 +45,8 @@ export type Prefs = {
   /** The Friday email, on for every imported book until switched off. */
   notify_weekly_email: boolean;
   notify_alerts: boolean;
+  /** The assistant's answers sampled for an automated quality check. */
+  review_answers: boolean;
   chat_panel_open: boolean;
   /** What is switched on, put away. */
   setup_card_dismissed: boolean;

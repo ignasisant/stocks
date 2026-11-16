@@ -776,5 +776,19 @@
   "chat.sched_mode_time": "At a time",
   "chat.sched_mode_close": "After the US close (~{time})",
   "chat.sched_close_at": "after the close (~{time})",
-  "chat.sched_close_hint": "Arrives as soon as the AI writes it after Wall Street closes, on that day's session. The days are session days."
+  "chat.sched_close_hint": "Arrives as soon as the AI writes it after Wall Street closes, on that day's session. The days are session days.",
+  "chat.viewing": "Viewing: {page}",
+  "chat.recent": "Pick up where you left off",
+  "chat.starter_today_1": "Explain in 3 lines how my book is doing today",
+  "chat.starter_today_2": "Is any alert close to firing?",
+  "chat.starter_portfolio_1": "Am I too concentrated in one sector?",
+  "chat.starter_portfolio_2": "How much cash should I keep on the side?",
+  "chat.starter_review_1": "Why do you suggest adding to or selling those positions?",
+  "chat.starter_review_2": "Which sale saves me the most tax?",
+  "chat.starter_ticker_1": "Summarise the latest results of {ticker}",
+  "chat.starter_ticker_2": "Is {ticker} expensive next to its rivals?",
+  "chat.starter_sector_1": "Which company in this sector is the cheapest?",
+  "chat.starter_sector_2": "Why is this sector lagging its index?",
+  "chat.starter_earnings_1": "Who reports results this week?",
+  "chat.starter_earnings_2": "What does the consensus expect from my holdings?"
 }

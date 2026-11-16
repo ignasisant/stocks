@@ -44,7 +44,14 @@ function Written({ lines }: { lines: MarketLine[] }) {
 }
 
 /** Rates, central banks and inflation. */
-export function Macro({ market }: { market: MarketCard }) {
+export function Macro({
+  market,
+  written = true,
+}: {
+  market: MarketCard;
+  /** False where the market card above already lists the model's lines. */
+  written?: boolean;
+}) {
   const t = useT();
   const lang = useLang();
   const { macro } = marketSplit(market);
@@ -106,12 +113,25 @@ export function Macro({ market }: { market: MarketCard }) {
   return (
     <>
       {tiles.length ? <KpiGrid>{tiles}</KpiGrid> : null}
-      <Written lines={macro} />
+      {written ? <Written lines={macro} /> : null}
+      {tiles.length ? <p className="hm-note">{t("today.rates_note")}</p> : null}
+      <Link page="sentiment" className="td-more">
+        {t("today.open_pulse_rates")}
+      </Link>
     </>
   );
 }
 
-function SectorList({ title, sectors }: { title: string; sectors: MarketSector[] }) {
+function SectorList({
+  title,
+  sectors,
+  reach,
+}: {
+  title: string;
+  sectors: MarketSector[];
+  /** The largest gap on either list: the bars share one scale. */
+  reach: number;
+}) {
   const t = useT();
   const lang = useLang();
   if (!sectors.length) return null;
@@ -127,6 +147,14 @@ function SectorList({ title, sectors }: { title: string; sectors: MarketSector[]
               <span className="td-sector-name">
                 {t(`sentiment.sector_${sector.name.toLowerCase().replace(/ /g, "_")}`)}
               </span>
+              <span className="td-sector-bar" aria-hidden="true">
+                <i
+                  className={month < 0 ? "td-bar-down" : "td-bar-up"}
+                  style={{
+                    width: `${Math.min(100, (Math.abs(month) / reach) * 100)}%`,
+                  }}
+                />
+              </span>
               <span className={`hm-num ${month < 0 ? "td-down" : "td-up"}`}>
                 {t("today.pp", {
                   value: decimal(month, { lang, digits: 1, signed: "always" }) ?? "",
@@ -141,12 +169,23 @@ function SectorList({ title, sectors }: { title: string; sectors: MarketSector[]
 }
 
 /** The regime, breadth, sector rotation and crypto. */
-export function Trends({ market }: { market: MarketCard }) {
+export function Trends({
+  market,
+  written = true,
+}: {
+  market: MarketCard;
+  /** False where the market card above already lists the model's lines. */
+  written?: boolean;
+}) {
   const t = useT();
   const lang = useLang();
   const { trends } = marketSplit(market);
   const { leaders, laggards } = leadersLaggards(market.sectors);
   const { regime, breadth, crypto } = market;
+  const reach = Math.max(
+    1,
+    ...[...leaders, ...laggards].map((sector) => Math.abs(sector.month ?? 0)),
+  );
 
   const tiles: ReactNode[] = [];
   if (regime)
@@ -198,11 +237,11 @@ export function Trends({ market }: { market: MarketCard }) {
       {tiles.length ? <KpiGrid>{tiles}</KpiGrid> : null}
       {leaders.length ? (
         <div className="td-rotation">
-          <SectorList title={t("today.leaders")} sectors={leaders} />
-          <SectorList title={t("today.laggards")} sectors={laggards} />
+          <SectorList title={t("today.leaders")} sectors={leaders} reach={reach} />
+          <SectorList title={t("today.laggards")} sectors={laggards} reach={reach} />
         </div>
       ) : null}
-      <Written lines={trends} />
+      {written ? <Written lines={trends} /> : null}
       <Link page="sentiment" className="td-more">
         {t("today.open_pulse")}
       </Link>

@@ -163,3 +163,10 @@ def test_a_token_may_not_mark_progress(client, account):
 def test_a_guest_may_not_mark_progress(client, guest):
     answer = client.post("/v1/learn/progress", json={"lesson": FIRST})
     assert answer.status_code == 401
+
+
+def test_a_lesson_carries_its_quiz_and_a_path_its_review_date(client, account, signed_in):
+    lesson = signed_in.get("/v1/learn/lessons/order-types", params={"lang": "es"}).json()
+    assert lesson["quiz"]["answer"] == 1 and len(lesson["quiz"]["options"]) == 3
+    paths = signed_in.get("/v1/learn").json()["paths"]
+    assert all(p["as_of"] for p in paths)

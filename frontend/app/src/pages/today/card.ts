@@ -476,3 +476,94 @@ export function safeUrl(url: string): string | null {
     return null;
   }
 }
+
+/* ---------------------------------------------- pure pieces of the redesign */
+
+/** The book against the S&P 500 on the same money since its first day, in
+ *  the reader's currency: what the book made, what the index would have
+ *  made with the same deposits on the same days, and the gap. */
+export type Since = {
+  gain: number;
+  indexGain: number;
+  gap: number;
+  index: string;
+  date: string;
+  currency: string;
+};
+
+/** Null unless the card carries the book's money and the index's, both in
+ *  the section's currency (a rate that failed leaves the index without). */
+export function sinceInception(
+  section: Pick<TodaySection, "benchmarks" | "since" | "currency"> | null,
+): Since | null {
+  if (!section?.since || !section.currency) return null;
+  const marks = section.benchmarks ?? [];
+  const book = marks.find((mark) => mark.symbol === BOOK)?.all_gain;
+  const spx = marks.find((mark) => mark.symbol === DEFAULT_INDEX);
+  const idx = spx?.all_gain;
+  if (typeof book !== "number" || typeof idx !== "number" || !spx) return null;
+  return {
+    gain: book,
+    indexGain: idx,
+    gap: book - idx,
+    index: spx.name,
+    date: section.since,
+    currency: section.currency,
+  };
+}
+
+/** What the book made beyond `mark` on the same money since its first day,
+ *  in money; null when either side has no figure. */
+export function gapInMoney(
+  marks: TodayBenchmark[],
+  mark: TodayBenchmark,
+): number | null {
+  const book = marks.find((m) => m.symbol === BOOK)?.all_gain;
+  if (mark.symbol === BOOK || typeof book !== "number") return null;
+  return typeof mark.all_gain === "number" ? book - mark.all_gain : null;
+}
+
+/** A line cut where it names one of its own tickers: text and tickers in
+ *  order, so each value is a logo and link where it is said. */
+export type Piece = { text: string } | { ticker: string };
+
+export function splitTickers(line: string, tickers: string[]): Piece[] {
+  const names = [...new Set(tickers)]
+    .filter((ticker) => /^[A-Za-z0-9.^=-]+$/.test(ticker))
+    .sort((a, b) => b.length - a.length);
+  if (!names.length) return [{ text: line }];
+  const escaped = names.map((name) => name.replace(/[.^=-]/g, "\\$&"));
+  const found = new RegExp(
+    `(?<![A-Za-z0-9.])(${escaped.join("|")})(?![A-Za-z0-9])`,
+    "g",
+  );
+  const out: Piece[] = [];
+  let last = 0;
+  for (const hit of line.matchAll(found)) {
+    const at = hit.index ?? 0;
+    if (at > last) out.push({ text: line.slice(last, at) });
+    const ticker = names.find((name) => name === hit[1]) ?? hit[1] ?? "";
+    out.push({ ticker });
+    last = at + hit[0].length;
+  }
+  if (last < line.length) out.push({ text: line.slice(last) });
+  return out;
+}
+
+/** How many of the model's routines open on the front page. */
+export const ROUTINES_OPEN = 4;
+
+/** The tickers the news rows are about, with how many rows each has, the
+ *  busiest first (ties in the order they first appear). */
+export function newsTickers(rows: TodayRow[]): { ticker: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows)
+    for (const ticker of new Set(row.tickers))
+      counts.set(ticker, (counts.get(ticker) ?? 0) + 1);
+  return [...counts]
+    .map(([ticker, count]) => ({ ticker, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** Positions the comparison shows before "see all". */
+export const POSITIONS_SHOWN = 8;

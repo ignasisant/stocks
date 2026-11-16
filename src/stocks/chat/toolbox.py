@@ -182,15 +182,28 @@ def _page_valuation(code: str, ctx: Context) -> str:
     from stocks.api.routes import ticker as routes
 
     v = routes.valuation(code)
+    drawn = [(day, pe) for day, pe in zip(v.dates, v.pe, strict=False) if pe is not None]
+    if not drawn and v.current is None:
+        return "No P/E history (no usable EPS in the filings)."
+    on = "the last fiscal year's" if v.basis == "annual" else "trailing twelve months'"
     if v.current is None:
-        return "No P/E history (no quarterly EPS in the filings)."
-    verdict = f" ({v.current_verdict})" if v.current_verdict else ""
-    lines = [f"Trailing P/E on filed EPS ({v.source or 'source unknown'}): "
-             f"{v.current:.1f}x{verdict}"]
+        # An annual filer whose newest year is not in the feed yet: the line
+        # stops, and its last point is not today's multiple.
+        day, last = drawn[-1]
+        lines = [f"P/E on {on} filed EPS ({v.source or 'source unknown'}): "
+                 f"no current figure; the series stops on {day} at {last:.1f}x "
+                 "(the next annual filing is not in the feed yet)."]
+    else:
+        verdict = f" ({v.current_verdict})" if v.current_verdict else ""
+        lines = [f"P/E on {on} filed EPS ({v.source or 'source unknown'}): "
+                 f"{v.current:.1f}x{verdict}"]
     for w in v.windows:
         if w.median is None:
             continue
         # Already 0-100 (`analysis/pe_history.window_stats`).
+        if w.percentile is None:
+            lines.append(f"- {w.window}: median {w.median:.1f}x")
+            continue
         lines.append(f"- {w.window}: median {w.median:.1f}x, today in the "
                      f"{_figure(w.percentile, 0)}th "
                      f"percentile, {_pct(w.premium, signed=True)} vs the mean")

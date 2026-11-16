@@ -108,8 +108,8 @@
   font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
-/* The movers' up/down count over the whole book, shown when the tables cut:
-   a line of figures and a two-segment bar the width of the card. */
+/* The movers' up/down count over the whole book: a line of figures and a
+   two-segment bar the width of the card. */
 .hm-tally {
   display: flex;
   flex-direction: column;
@@ -151,7 +151,7 @@
   background: var(--ag-down);
 }
 
-/* The movers card's "show all": a link's look on a button, since it unfolds
+/* "Show trend" under the glance: a link's look on a button, since it unfolds
    the card in place rather than going anywhere. */
 .hm-more {
   align-self: flex-start;
@@ -354,12 +354,27 @@
   overflow-x: auto;
 }
 
-/* Two five-column tables side by side only while each half fits all five:
+/* Two six-column tables side by side only while each half fits all six:
    the sideways scroll above has no visible bar on a Mac, so a half narrower
    than its table read as Weight and Value cut off. Below that the tables
    stack, each the card's full width. */
 .hm-split-tables {
-  grid-template-columns: repeat(auto-fit, minmax(min(25rem, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(28rem, 100%), 1fr));
+}
+
+/* The movers' side and sort pickers: one row under the tally, wrapping on a
+   phone rather than crowding the range picker in the card's head. */
+.hm-mv-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+/* One side picked: its table alone, the card's full width. */
+.hm-mv-one {
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .hm-table {
@@ -1396,11 +1411,103 @@ a.hm-step {
   opacity: 0.85;
 }
 
-.hm-regime-spark polyline {
+.hm-regime {
+  gap: 0 10px;
+  padding: 4px 10px 4px 6px;
+}
+
+.hm-regime-body {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.hm-regime-body strong {
+  font-size: var(--ag-fs-lg, 1rem);
+}
+
+/* The half dial: a track, an arc to the score in the band's own colour, a dot
+   at its end. Fixed size, so the chip does not move when the score lands. */
+.hm-gauge {
+  flex: none;
+  width: 84px;
+  height: 48px;
+}
+
+.hm-gauge path {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.hm-gauge-track {
+  stroke: var(--ag-surface-sunken);
+}
+
+.hm-gauge-arc {
+  stroke: currentColor;
+}
+
+.hm-gauge-dot {
+  fill: var(--ag-text-primary);
+  stroke: var(--ag-surface-raised, var(--ag-surface-hover));
+  stroke-width: 2;
+}
+
+/* Each tile's own recent levels; the colour is the move's meaning, as the
+   figure's. */
+.hm-mtile-spark {
+  width: 44px;
+  height: 18px;
+}
+
+.hm-mtile-spark polyline {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
+  stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+}
+
+.hm-mtile-spark.hm-tone-flat {
+  color: var(--ag-text-muted);
+}
+
+/* The day tile's breadth under its figure: the tally's own bar, in the tile's
+   width. */
+.ag-kpi-note .hm-tally {
+  display: flex;
+  min-width: 6rem;
+}
+
+/* Reserved room per card while its figures are on the way: the grid below
+   does not drop when they land. A loaded card replaces the skeleton, so these
+   only hold the waiting state. */
+.hm-slot[data-card="glance"]:has(.ag-skeleton) {
+  min-height: 26rem;
+}
+
+.hm-slot[data-card="market"]:has(.ag-skeleton) {
+  min-height: 15rem;
+}
+
+.hm-slot[data-card="daily"]:has(.ag-skeleton) {
+  min-height: 14rem;
+}
+
+.hm-slot[data-card="movers"]:has(.ag-skeleton) {
+  min-height: 30rem;
+}
+
+.hm-slot[data-card="earnings"]:has(.ag-skeleton) {
+  min-height: 14rem;
+}
+
+/* The briefing while its sentence is written: the card keeps the room its
+   lines will take. */
+.hm-daily {
+  min-height: 12rem;
 }
 
 /* One row on a desktop page; a narrow one scrolls the strip sideways rather
@@ -1793,4 +1900,13 @@ a.hm-mtile:focus-visible {
 .hm-regime-label {
   font-size: var(--ag-fs-xs, 0.6875rem);
   opacity: 0.85;
+}
+
+/* The agenda is the Calendar's own strip, drawn inside Home's card: the card
+   is the box, so the strip gives up its own. */
+.hm-agenda .earn-strip {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
 }

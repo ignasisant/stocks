@@ -259,11 +259,24 @@ class Valuation(BaseModel):
         default=None,
         description=(
             "Which filing feed backed the reconstruction — SEC EDGAR, FMP, or "
-            "null when neither yields quarterly EPS. Print it: a multiple with "
+            "null when neither yields a series. Print it: a multiple with "
             "no provenance is a number somebody will act on."
         ),
     )
-    current: float | None = None
+    basis: str | None = Field(
+        default=None,
+        description=(
+            "`ttm` (the trailing four quarters) or `annual` (the last fiscal "
+            "year, for a filer that reports no quarters, e.g. a 20-F)."
+        ),
+    )
+    current: float | None = Field(
+        default=None,
+        description=(
+            "Today's multiple; null when the series stops before the last "
+            "close (an annual filer's newest year not yet in the feed)."
+        ),
+    )
     current_verdict: str | None = Field(
         default=None,
         description=(

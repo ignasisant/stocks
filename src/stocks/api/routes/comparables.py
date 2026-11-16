@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from stocks import loaders
 from stocks.analysis.fundamentals import (
     METRIC_ORDER,
+    RANK_LOWER_BETTER,
     comp_medals,
     comp_outliers,
     comparables_table,
@@ -67,6 +68,8 @@ def comparables(
     return Comparables(
         tickers=wanted,
         labels=[str(label) for label in table.index],
+        keys=list(METRIC_ORDER),
+        lower_better=[key in RANK_LOWER_BETTER for key in METRIC_ORDER],
         rows={str(col): [str(v) for v in table[col]] for col in table.columns},
         medals=comp_medals(rows),
         peer_median=[

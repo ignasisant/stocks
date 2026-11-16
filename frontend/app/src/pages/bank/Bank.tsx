@@ -30,10 +30,11 @@ import { ApiError, get, send } from "../../shell/api";
 import { SignInWall } from "../../shell/guest";
 import { useLang, useT } from "../../shell/i18n";
 import { Loaded } from "../../shell/Layout";
-import { useRoute } from "../../shell/router";
+import { Link, useRoute } from "../../shell/router";
 import { useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
+import { cashTotals, daysLeft, RENEW_WINDOW, renewable, usedPercent } from "./consent";
 import "./bank.css";
 import { Badge } from "../../ui/Badge";
 import { toast } from "../../ui/toast";
@@ -114,12 +115,16 @@ function Balance({
   amount,
   currency,
   lang,
+  stale = false,
 }: {
   amount: number | null;
   currency: string;
   lang: string;
+  /** A consent that ended: the figure is the last one read, dimmed. */
+  stale?: boolean;
 }) {
-  if (amount === null) return <span className="bk-balance">—</span>;
+  const cls = stale ? "bk-balance bk-stale" : "bk-balance";
+  if (amount === null) return <span className={cls}>—</span>;
   const text = (() => {
     try {
       return formatter(lang, {
@@ -134,22 +139,47 @@ function Balance({
       return `${amount.toFixed(2)} ${currency}`.trim();
     }
   })();
-  return <span className="bk-balance">{text}</span>;
+  return <span className={cls}>{text}</span>;
+}
+
+/** Cash at the connected banks, on top. Its sum with the book needs a server
+    total that /bank does not carry yet, so this is the banks' side only. */
+function CashTotal({ connections }: { connections: BankConnection[] }) {
+  const t = useT();
+  const lang = useLang();
+  const totals = cashTotals(connections);
+  if (totals.length === 0) return null;
+  return (
+    <div className="bk-total">
+      <span className="bk-note">{t("bank.cash_total")}</span>
+      {totals.map((total) => (
+        <Balance
+          key={total.currency}
+          amount={total.amount}
+          currency={total.currency}
+          lang={lang}
+        />
+      ))}
+    </div>
+  );
 }
 
 function Connection({
   connection,
   onChanged,
   onNotice,
+  onRenew,
 }: {
   connection: BankConnection;
   onChanged: () => void;
   onNotice: (notice: Notice | null) => void;
+  onRenew: () => void;
 }) {
   const t = useT();
   const lang = useLang();
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const left = daysLeft(connection.valid_until);
 
   const act = (verb: "refresh" | "disconnect") => {
     setBusy(true);
@@ -191,6 +221,28 @@ function Connection({
         )}
       </div>
 
+      {connection.expired ? (
+        <p className="bk-note">{t("bank.expired_note")}</p>
+      ) : (
+        left !== null && (
+          <div className="bk-consent">
+            <span className={left <= RENEW_WINDOW ? "bk-warn" : "bk-note"}>
+              {t(left === 1 ? "bank.days_left_one" : "bank.days_left", { days: left })}
+            </span>
+            <div
+              className="bk-meter"
+              role="meter"
+              aria-valuemin={0}
+              aria-valuemax={90}
+              aria-valuenow={90 - Math.min(90, left)}
+              aria-label={t("bank.consent_used")}
+            >
+              <i style={{ width: `${usedPercent(left)}%` }} />
+            </div>
+          </div>
+        )
+      )}
+
       {connection.accounts.map((account) => (
         <div className="bk-account" key={account.uid}>
           <div className="bk-account-row">
@@ -202,10 +254,12 @@ function Connection({
               amount={account.balance}
               currency={account.balance_currency || account.currency}
               lang={lang}
+              stale={connection.expired}
             />
           </div>
           {account.fetched_at && (
             <span className="bk-note">
+              {connection.expired ? `${t("bank.last_known")} · ` : ""}
               {t("bank.fetched_at", { when: account.fetched_at.replace("T", " ") })}
             </span>
           )}
@@ -213,14 +267,25 @@ function Connection({
       ))}
 
       <div className="bk-actions">
-        <button
-          type="button"
-          className="ag-btn"
-          disabled={busy || connection.expired}
-          onClick={() => act("refresh")}
-        >
-          {t("bank.refresh")}
-        </button>
+        {connection.expired ? (
+          <button type="button" className="ag-btn bk-primary" onClick={onRenew}>
+            {t("bank.renew")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ag-btn"
+            disabled={busy}
+            onClick={() => act("refresh")}
+          >
+            {t("bank.refresh")}
+          </button>
+        )}
+        {!connection.expired && renewable(connection) && (
+          <button type="button" className="ag-btn" onClick={onRenew}>
+            {t("bank.renew_now")}
+          </button>
+        )}
         {confirming ? (
           <span className="bk-confirm">
             {/* The confirmation copy, inline: the emphasis markers in
@@ -257,17 +322,22 @@ function Connection({
 
 function AddBank({
   redirect,
+  renew,
   onConnected,
   onNotice,
+  onCancel,
 }: {
   redirect: string;
+  /** Renewing is connecting again with the bank already chosen. */
+  renew: { country: string; name: string } | null;
   onConnected: () => void;
   onNotice: (notice: Notice | null) => void;
+  onCancel: (() => void) | null;
 }) {
   const t = useT();
   const lang = useLang();
-  const [country, setCountry] = useState(COUNTRIES[0]!);
-  const [chosen, setChosen] = useState("");
+  const [country, setCountry] = useState(renew?.country || COUNTRIES[0]!);
+  const [chosen, setChosen] = useState(renew?.name ?? "");
   const [needle, setNeedle] = useState("");
   const [auth, setAuth] = useState<BankAuth | null>(null);
   const [busy, setBusy] = useState(false);
@@ -275,10 +345,11 @@ function AddBank({
 
   // The list is per country, so the bank picked in one is not a bank in the
   // next: cleared here rather than left pointing at something that is gone.
-  useEffect(() => {
+  const pickCountry = (code: string) => {
+    setCountry(code);
     setChosen("");
     setNeedle("");
-  }, [country]);
+  };
 
   const start = () => {
     setBusy(true);
@@ -289,95 +360,151 @@ function AddBank({
       .finally(() => setBusy(false));
   };
 
+  const matches =
+    banks.state === "loaded"
+      ? [...banks.data]
+          .filter((bank) =>
+            bankName(bank.name).toLowerCase().includes(needle.trim().toLowerCase()),
+          )
+          .sort((a, b) => a.name.localeCompare(b.name))
+      : [];
+
   return (
-    <section className="bk-card">
-      <h2 className="bk-h2">{t("bank.add_title")}</h2>
+    <section className="bk-card" aria-labelledby="bk-add-h">
+      <div className="bk-card-head">
+        <h2 className="bk-h2" id="bk-add-h">
+          {renew
+            ? t("bank.renew_title", { bank: bankName(renew.name) })
+            : t("bank.add_title")}
+        </h2>
+        {onCancel && (
+          <button type="button" className="ag-btn" onClick={onCancel}>
+            {t("bank.cancel")}
+          </button>
+        )}
+      </div>
 
-      <label className="bk-field">
-        <span className="bk-note">{t("bank.country")}</span>
-        <select
-          className="bk-select"
-          value={country}
-          onChange={(event) => setCountry(event.target.value)}
-        >
-          {COUNTRIES.map((code) => (
-            <option key={code} value={code}>
-              {countryName(code, lang)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ul className="bk-promise">
+        {["bank.promise_read", "bank.promise_pay", "bank.promise_90"].map((key) => (
+          <li key={key}>{t(key)}</li>
+        ))}
+      </ul>
 
-      {/* Not the shell's generic failure: a bank list that will not load is
-          the one thing standing between the reader and a consent, and the
-          catalog has the sentence that says so, with the reason from the
-          API. */}
-      {banks.state === "failed" ? (
-        <p className="bk-warn">
-          {t("bank.aspsps_failed", {
-            detail: banks.error instanceof ApiError ? banks.error.detail : "—",
-          })}
-        </p>
-      ) : (
-        <label className="bk-field">
-          <span className="bk-note">{t("bank.bank")}</span>
-          {banks.state === "loaded" && banks.data.length > 12 && (
-            <input
-              type="search"
+      <ol className="bk-steps">
+        <li className="bk-step">
+          <span className="bk-n">1</span>
+          <label className="bk-step-b">
+            <span className="bk-step-l">{t("bank.country")}</span>
+            <select
               className="bk-select"
-              aria-label={t("bank.filter")}
-              placeholder={t("bank.filter")}
-              value={needle}
-              onChange={(event) => setNeedle(event.target.value)}
-            />
-          )}
-          <select
-            className="bk-select"
-            value={chosen}
-            disabled={banks.state !== "loaded"}
-            onChange={(event) => setChosen(event.target.value)}
-          >
-            <option value="">—</option>
-            {(banks.state === "loaded" ? [...banks.data] : [])
-              .filter(
-                (bank) =>
-                  bank.name === chosen ||
-                  bankName(bank.name)
-                    .toLowerCase()
-                    .includes(needle.trim().toLowerCase()),
-              )
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .map((bank) => (
-                <option key={bank.name} value={bank.name}>
-                  {bankName(bank.name)}
+              value={country}
+              disabled={renew !== null}
+              onChange={(event) => pickCountry(event.target.value)}
+            >
+              {COUNTRIES.map((code) => (
+                <option key={code} value={code}>
+                  {countryName(code, lang)}
                 </option>
               ))}
-          </select>
-        </label>
-      )}
+            </select>
+          </label>
+        </li>
 
-      {!redirect && <p className="bk-warn">{t("bank.no_redirect")}</p>}
+        <li className="bk-step">
+          <span className="bk-n">2</span>
+          <div className="bk-step-b">
+            <span className="bk-step-l">{t("bank.bank")}</span>
+            {chosen ? (
+              <div className="bk-chosen">
+                <strong>{bankName(chosen)}</strong>
+                {!renew && (
+                  <button
+                    type="button"
+                    className="ag-btn"
+                    onClick={() => setChosen("")}
+                  >
+                    {t("bank.change")}
+                  </button>
+                )}
+              </div>
+            ) : banks.state === "failed" ? (
+              // Not the shell's generic failure: a bank list that will not
+              // load is the one thing between the reader and a consent.
+              <p className="bk-warn">
+                {t("bank.aspsps_failed", {
+                  detail: banks.error instanceof ApiError ? banks.error.detail : "—",
+                })}
+              </p>
+            ) : (
+              <>
+                <input
+                  type="search"
+                  className="bk-select"
+                  aria-label={t("bank.filter")}
+                  placeholder={t("bank.filter")}
+                  value={needle}
+                  autoComplete="off"
+                  disabled={banks.state !== "loaded"}
+                  onChange={(event) => setNeedle(event.target.value)}
+                />
+                <ul className="bk-list" aria-label={t("bank.bank")}>
+                  {matches.length === 0 && banks.state === "loaded" ? (
+                    <li className="bk-note bk-nores">
+                      {t("bank.no_match", { q: needle.trim() })}
+                    </li>
+                  ) : (
+                    matches.map((bank) => (
+                      <li key={bank.name}>
+                        <button type="button" onClick={() => setChosen(bank.name)}>
+                          {bankName(bank.name)}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </>
+            )}
+          </div>
+        </li>
 
-      <button
-        type="button"
-        className="ag-btn bk-primary"
-        disabled={busy || !chosen || !redirect}
-        onClick={start}
-      >
-        {t("bank.connect")}
-      </button>
-
-      {auth && (
-        <div className="bk-handoff">
-          {/* A real link, not a redirect this app performs: the reader is
-              leaving for their bank and should be able to see where to. */}
-          <a className="ag-btn bk-primary" href={auth.url} onClick={onConnected}>
-            {t("bank.continue_to_bank", { bank: auth.bank })}
-          </a>
-          <span className="bk-note">{t("bank.continue_caption")}</span>
-        </div>
-      )}
+        <li className="bk-step">
+          <span className="bk-n">3</span>
+          <div className="bk-step-b">
+            <span className="bk-step-l">{t("bank.authorise")}</span>
+            {!redirect && <p className="bk-warn">{t("bank.no_redirect")}</p>}
+            {auth ? (
+              <div className="bk-handoff">
+                {/* A real link, not a redirect this app performs: the reader
+                    is leaving for their bank and should see where to. */}
+                <a className="ag-btn bk-primary" href={auth.url} onClick={onConnected}>
+                  {t("bank.continue_to_bank", { bank: auth.bank })}
+                </a>
+                <span className="bk-note">{t("bank.continue_caption")}</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="ag-btn bk-primary"
+                disabled={busy || !chosen || !redirect}
+                onClick={start}
+              >
+                {renew ? t("bank.renew_go") : t("bank.connect")}
+              </button>
+            )}
+          </div>
+        </li>
+      </ol>
     </section>
+  );
+}
+
+/** This screen is not in the menu: it is reached from Asignación, and goes back there. */
+function BackLink() {
+  const t = useT();
+  return (
+    <Link page="portfolio" className="bk-back">
+      {`← ${t("bank.back")}`}
+    </Link>
   );
 }
 
@@ -388,6 +515,7 @@ export default function Page() {
   if (useGuest()) {
     return (
       <div className="bk-page">
+        <BackLink />
         <h1 className="bk-title">{t("bank.title")}</h1>
         <SignInWall text="common.sign_in" />
       </div>
@@ -400,6 +528,8 @@ function Bank() {
   const t = useT();
   const { params, setParams } = useRoute();
   const [nonce, setNonce] = useState(0);
+  // `null`: not connecting; `"new"`: adding another bank; a connection: renewing it.
+  const [flow, setFlow] = useState<null | "new" | BankConnection>(null);
   const state = useApi(() => get<BankState>("/bank"), [nonce]);
   // The redirect's code is single use, and StrictMode mounts twice. A ref
   // survives that; state would not.
@@ -442,6 +572,7 @@ function Bank() {
 
   return (
     <div className="bk-page">
+      <BackLink />
       <h1 className="bk-title">{t("bank.title")}</h1>
 
       <Loaded query={state}>
@@ -452,24 +583,55 @@ function Bank() {
             <>
               <p className="bk-note">{t("bank.intro_caption")}</p>
 
-              {data.connections.length === 0 ? (
-                <p className="bk-note">{t("bank.none_connected")}</p>
-              ) : (
-                data.connections.map((connection) => (
-                  <Connection
-                    key={connection.session_id}
-                    connection={connection}
-                    onChanged={reload}
-                    onNotice={notify}
-                  />
-                ))
-              )}
+              <CashTotal connections={data.connections} />
 
-              <AddBank
-                redirect={data.redirect_url}
-                onConnected={reload}
-                onNotice={notify}
-              />
+              <div className="bk-layout">
+                <div className="bk-col">
+                  {data.connections.length === 0 ? (
+                    <p className="bk-note">{t("bank.none_connected")}</p>
+                  ) : (
+                    data.connections.map((connection) => (
+                      <Connection
+                        key={connection.session_id}
+                        connection={connection}
+                        onChanged={reload}
+                        onNotice={notify}
+                        onRenew={() => setFlow(connection)}
+                      />
+                    ))
+                  )}
+                </div>
+                <div className="bk-col">
+                  {data.connections.length > 0 && flow === null ? (
+                    <section className="bk-card">
+                      <h2 className="bk-h2">{t("bank.connect_another")}</h2>
+                      <p className="bk-note">{t("bank.connect_another_caption")}</p>
+                      <button
+                        type="button"
+                        className="ag-btn"
+                        onClick={() => setFlow("new")}
+                      >
+                        {t("bank.add_title")}
+                      </button>
+                    </section>
+                  ) : (
+                    <AddBank
+                      // A fresh form per flow: renewing one bank then another
+                      // must not carry the first one's pick.
+                      key={flow === null || flow === "new" ? "new" : flow.session_id}
+                      redirect={data.redirect_url}
+                      renew={
+                        flow !== null && flow !== "new"
+                          ? { country: flow.country, name: flow.name }
+                          : null
+                      }
+                      onConnected={reload}
+                      onNotice={notify}
+                      onCancel={flow === null ? null : () => setFlow(null)}
+                    />
+                  )}
+                </div>
+              </div>
 
               <p className="bk-note">{t("bank.privacy_caption")}</p>
             </>

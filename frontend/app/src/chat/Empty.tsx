@@ -25,6 +25,7 @@ import { useApi } from "../shell/useApi";
 import { phone } from "./GuideCard";
 import { CAP_PATHS, CapGlyph } from "./icons";
 import { Inline } from "./markdown";
+import type { Conversation } from "./types";
 
 /**
  * Both sets open on how to get the most out of the app, answered from the
@@ -50,6 +51,33 @@ const BOOK = [
   "chat.starter_harvest",
   "chat.starter_rebalance",
 ];
+/**
+ * What the page the reader came from adds in front of the general set: two
+ * questions about the thing on screen. Pages not listed add none.
+ */
+const PAGE: Record<string, string[]> = Object.fromEntries(
+  ["today", "portfolio", "review", "ticker", "sector", "earnings"].map((page) => [
+    page,
+    [`chat.starter_${page}_1`, `chat.starter_${page}_2`],
+  ]),
+);
+/** How many suggestions the screen offers at most, whatever the page. */
+const MAX_STARTERS = 5;
+
+/** The suggestions for a page, its own first, then the general ones. */
+export function startersFor(page: string, general: string[]): string[] {
+  const own = PAGE[page] ?? [];
+  return [...own, ...general.filter((k) => !own.includes(k))].slice(0, MAX_STARTERS);
+}
+
+/** The conversations "pick up where you left off" offers: the latest two with something in them. */
+export function recentThreads(threads: Conversation[], activeId: string | null) {
+  return threads
+    .filter((c) => c.id !== activeId && c.messages > 0 && !c.scheduled && !c.daily)
+    .sort((a, b) => b.updated.localeCompare(a.updated))
+    .slice(0, 2);
+}
+
 const FRESH = ["chat.starter_howto", "chat.starter_movers", "chat.starter_earnings"];
 
 /** Analyse · research · import · alert. */
@@ -85,13 +113,20 @@ export function heaviest(positions: Book["positions"]): { top: string; n: number
 export function Empty({
   onAsk,
   onLeave,
+  threads = [],
+  activeId = null,
+  onOpen,
 }: {
   onAsk: (question: string) => void;
+  /** The listing, for "pick up where you left off". */
+  threads?: Conversation[];
+  activeId?: string | null;
+  onOpen?: (cid: string) => void;
   /** Step aside for the page a row sends the reader to (a phone only). */
   onLeave: () => void;
 }) {
   const t = useT();
-  const { go } = useRoute();
+  const { go, page, params } = useRoute();
   const account = useApi(async () => {
     const [book, watch] = await Promise.all([
       get("/portfolio/positions"),
@@ -116,7 +151,11 @@ export function Empty({
       : held
         ? t("chat.empty_body", { n: held })
         : t("chat.empty_body_new", { n: loaded?.entries.length ?? 0 });
-  const starters = held ? BOOK : FRESH;
+  const ticker = (params.get("ticker") ?? "").trim().toUpperCase();
+  // A ticker page's questions name its ticker; without one they say nothing.
+  const from = page === "ticker" && !ticker ? "" : page;
+  const shown = startersFor(from, held ? BOOK : FRESH);
+  const recent = onOpen ? recentThreads(threads, activeId) : [];
   // No import of the reader's own — none at all, or only the example book:
   // the chat works either way, but what it is best at is the reader's book,
   // so the first row asks for it. A failed read asks for nothing.
@@ -161,8 +200,8 @@ export function Empty({
             ))}
           </div>
         ) : (
-          starters.map((key) => {
-            const prompt = t(key, { top, n });
+          shown.map((key) => {
+            const prompt = t(key, { top, n, ticker });
             return (
               <button
                 type="button"
@@ -176,6 +215,21 @@ export function Empty({
           })
         )}
       </div>
+      {recent.length > 0 && onOpen ? (
+        <div className="ag-chat-starters ag-chat-recent">
+          <div className="ag-chat-group">{t("chat.recent")}</div>
+          {recent.map((c) => (
+            <button
+              type="button"
+              className="ag-chat-starter"
+              key={c.id}
+              onClick={() => onOpen(c.id)}
+            >
+              {(c.title || "").trim() || t("chat.untitled")}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

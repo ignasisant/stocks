@@ -37,6 +37,17 @@ export function ago(seen: number, lang: string, now = Date.now() / 1000): string
   return fmt.format(-Math.round(secs / 86400), "day");
 }
 
+/** This device first, then the most recently active others; the rest fold. */
+const SESSIONS_SHOWN = 3;
+export function visibleSessions(rows: SessionRow[]): SessionRow[] {
+  const mine = rows.filter((r) => r.current);
+  const others = rows
+    .filter((r) => !r.current)
+    .sort((a, b) => b.seen - a.seen)
+    .slice(0, SESSIONS_SHOWN);
+  return [...mine, ...others];
+}
+
 /** What the block draws for one answer — no fetch, so a test can draw it. */
 export function SessionList({
   rows,
@@ -54,10 +65,14 @@ export function SessionList({
   const t = useT();
   const lang = useLang();
   const others = rows.filter((r) => !r.current);
+  const [all, setAll] = useState(false);
+  // Asking first lives in the card itself, and says how many devices go.
+  const [confirming, setConfirming] = useState(false);
+  const shown = all ? rows : visibleSessions(rows);
   return (
     <Row label={t("profile.sessions_title")} help={t("profile.sessions_help")}>
       <ul className="pr-conns">
-        {rows.map((row) => (
+        {shown.map((row) => (
           <li className="pr-conn" key={row.id}>
             <div className="pr-conn-l">
               <span className="pr-conn-name">
@@ -81,15 +96,41 @@ export function SessionList({
           </li>
         ))}
       </ul>
-      {others.length > 0 && (
+      {rows.length > shown.length && (
+        <button type="button" className="pr-btn" onClick={() => setAll(true)}>
+          {t("profile.sessions_more", { n: rows.length - shown.length })}
+        </button>
+      )}
+      {others.length > 0 && !confirming && (
         <button
           type="button"
           className="pr-btn"
           disabled={busy !== null}
-          onClick={onEndOthers}
+          onClick={() => setConfirming(true)}
         >
           {t("profile.sessions_end_others")}
         </button>
+      )}
+      {others.length > 0 && confirming && (
+        <div className="pr-confirm" role="group">
+          <span className="pr-hint">
+            {t("profile.sessions_end_others_ask", { n: others.length })}
+          </span>
+          <button
+            type="button"
+            className="pr-btn pr-btn-danger"
+            disabled={busy !== null}
+            onClick={() => {
+              setConfirming(false);
+              onEndOthers();
+            }}
+          >
+            {t("profile.sessions_end_others_yes", { n: others.length })}
+          </button>
+          <button type="button" className="pr-btn" onClick={() => setConfirming(false)}>
+            {t("common.cancel")}
+          </button>
+        </div>
       )}
       <Failure message={failure} />
     </Row>

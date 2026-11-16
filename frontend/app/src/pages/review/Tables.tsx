@@ -44,7 +44,7 @@ import {
   useReturns,
 } from "./returns";
 import type { ReviewRow, Verdict } from "./types";
-import { groupByVerdict, hasMoves } from "./verdicts";
+import { groupByVerdict, hasMoves, verdictMark } from "./verdicts";
 
 /** One share's price as its own market quotes it, not in the page's money. */
 function sharePrice(row: ReviewRow, lang: string): string | null {
@@ -161,7 +161,7 @@ function GroupToggle({
       onClick={onToggle}
     >
       <span
-        className={`ag-rev-vbar-dot ag-rev-vbar-${verdictTone(verdict)}`}
+        className={`ag-rev-vbar-dot ag-rev-mark-${verdictMark(verdict)}`}
         aria-hidden="true"
       />
       {t(`review.verdict_${verdict}`)}

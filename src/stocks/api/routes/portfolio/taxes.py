@@ -20,6 +20,27 @@ from stocks.schemas import TaxPeriod as TaxPeriodOut
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 
+@router.get("/tax/harvest", summary="Losses worth realising before the year closes")
+def tax_harvest(account: Account) -> dict | None:
+    """The chat's tax-loss harvest, as the tax tab's own section.
+
+    Its own route, not a field on `/tax`: it needs today's prices for every open
+    position, which the realized report never does, so the tab asks for it
+    after it has drawn. `null` when nothing is held or no year figures exist.
+    """
+    from dataclasses import asdict
+
+    from stocks.chat import engine, harvest, whatif
+
+    book = whatif.replay(db=account.db, prefs_path=account.prefs)
+    found = harvest.build(
+        book, engine.enriched_frame(account.db, book.currency) if book else None
+    )
+    if found is None:
+        return None
+    return {**asdict(found), "saving": found.saving}
+
+
 @router.get("/tax", response_model=TaxReport, summary="Realized result and tax")
 def tax_(account: Account) -> TaxReport:
     """The book's realized result under the account's own jurisdiction.

@@ -15,8 +15,9 @@
   margin: 0.9rem 0 0.2rem;
   padding: 0 0.7rem;
   color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
   font-size: var(--ag-fs-2xs);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -247,9 +248,29 @@
   box-shadow: inset 3px 0 0 var(--ag-brand-accent);
 }
 
+/* On the rail the page you are on is a brand pill (DS: purple-900 is the
+   active nav row) in purple-300 ink, glyph included. The phone bar keeps its
+   top bar and takes the same ink. */
+@media (min-width: 641px) {
+  .ag-nav .ag-nav-on {
+    border-radius: var(--ag-radius-sm, 8px);
+    background: var(--ag-purple-900);
+    color: var(--ag-purple-300);
+    box-shadow: none;
+  }
+}
+
+.ag-nav .ag-nav-on .ag-icon {
+  color: inherit;
+}
+
 @media (max-width: 640px) {
   .ag-nav .ag-nav-on {
     box-shadow: inset 0 3px 0 var(--ag-brand-accent);
+    color: var(--ag-purple-300);
+  }
+  .ag-nav .ag-nav-on .ag-icon {
+    color: var(--ag-brand-accent);
   }
   /* The sheet's rows are a column again, so the bar is on their edge. */
   .ag-nav-sheet .ag-nav-on {
@@ -381,7 +402,7 @@
   margin-top: 6px;
   padding: 0.5rem 1rem;
   border-radius: var(--ag-radius-sm, 8px);
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
   font-weight: 600;
   text-decoration: none;
@@ -389,7 +410,7 @@
 
 @media (hover: hover) {
   .ag-locked-go:hover {
-    background: var(--ag-purple-700);
+    background: var(--ag-brand-cta);
   }
 }
 

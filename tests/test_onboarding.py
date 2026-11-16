@@ -443,6 +443,55 @@ def test_unseen_news_drops_a_feature_this_deploy_does_not_carry(monkeypatch):
     assert got == ["here", "stepless"]
 
 
+def _many_releases(monkeypatch) -> None:
+    releases = tuple(
+        onboarding.Release(
+            version=f"1.{n}", date=f"2026-{n + 1:02d}",
+            items=tuple(onboarding.News(slug=f"r{n}{x}", icon="x")
+                        for x in "ab"),
+        )
+        for n in range(5)
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+
+
+def test_unseen_news_deals_a_long_absence_only_the_newest_few(monkeypatch):
+    """Back after ten features shipped: the newest NEWS_MAX, not ten cards
+    between the reader and their portfolio."""
+    _many_releases(monkeypatch)
+    got = [c.item.slug for c in onboarding.unseen_news({})]
+    assert onboarding.NEWS_MAX == 3
+    assert got == ["r4a", "r4b", "r3a"]
+    assert len(onboarding.unseen_news({}, limit=None)) == 10
+
+
+def test_closing_the_capped_modal_drops_the_older_cards(monkeypatch):
+    """The stamp is the newest release, so what the cap left out is never
+    dealt on a later visit either."""
+    _many_releases(monkeypatch)
+    prefs = {onboarding.PREF_SEEN_VERSION: onboarding.RELEASES[-1].version}
+    assert onboarding.unseen_news(prefs) == ()
+
+
+def test_the_cap_counts_only_cards_this_deploy_announces(monkeypatch):
+    releases = (
+        onboarding.Release(
+            version="1.0", date="2026-01",
+            items=(
+                onboarding.News(slug="absent", icon="x", step="import"),
+                onboarding.News(slug="a", icon="x"),
+                onboarding.News(slug="b", icon="x"),
+                onboarding.News(slug="c", icon="x"),
+            ),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    monkeypatch.setattr(
+        onboarding, "visible_steps", lambda: (onboarding.by_id("welcome"),)
+    )
+    assert [c.item.slug for c in onboarding.unseen_news({})] == ["a", "b", "c"]
+
+
 @pytest.mark.parametrize(("configured", "shown"), [(False, False), (True, True)])
 def test_the_email_card_waits_for_a_deploy_that_can_send(
     monkeypatch, configured, shown
@@ -450,7 +499,7 @@ def test_the_email_card_waits_for_a_deploy_that_can_send(
     """The Friday email's page ships everywhere; without Resend keys no mail
     goes out, and a card announcing it would promise mail that never comes."""
     monkeypatch.setattr(onboarding.mail, "configured", lambda: configured)
-    got = [c.item.slug for c in onboarding.unseen_news({})]
+    got = [c.item.slug for c in onboarding.unseen_news({}, limit=None)]
     assert ("email" in got) is shown
 
 
@@ -465,7 +514,8 @@ def test_the_claude_card_needs_the_public_url(monkeypatch, origin, shown):
 
     monkeypatch.setattr(server, "public_origin", lambda: origin)
     assert ("claude" in {s.id for s in onboarding.visible_steps()}) is shown
-    slugs = {(c.version, c.item.slug) for c in onboarding.unseen_news({})}
+    slugs = {(c.version, c.item.slug)
+             for c in onboarding.unseen_news({}, limit=None)}
     assert (("2026.10", "claude") in slugs) is shown
 
 

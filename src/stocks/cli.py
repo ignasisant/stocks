@@ -1217,6 +1217,54 @@ def cmd_feedback(args: argparse.Namespace) -> None:
         print(f"app rating: {sum(scores) / len(scores):.1f}★ from {len(scores)}")
 
 
+def cmd_review_answer(args: argparse.Namespace) -> None:
+    """Print one answer a `chat.review` log line names, with its question —
+    from the bucket when one is configured, else the local files. Both files
+    come from the same place: a stale local prefs.json must not stand in for
+    an opt-out the bucket holds."""
+    import tempfile
+
+    from stocks import accounts, storage
+    from stocks.chat import conversations, review
+    from stocks.config import DATA_DIR
+
+    paths = accounts.paths_in(DATA_DIR / "users" / args.user)
+    remote = storage.enabled()
+
+    def current(path: Path) -> bytes | None:
+        if remote:
+            return storage.read(path)
+        return path.read_bytes() if path.exists() else None
+
+    stored = current(paths.prefs)
+    if stored is None:
+        raise SystemExit(f"no prefs.json for {args.user}: cannot tell whether "
+                         "answer review is on, so nothing is read")
+    prefs = json.loads(stored)
+    if not review.wanted(prefs):
+        raise SystemExit(f"{args.user} switched answer review off in Profile: "
+                         "its conversations are not read")
+    raw = current(paths.chat)
+    if raw is None:
+        raise SystemExit(f"no chat.json for {args.user}")
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "chat.json"
+        copy.write_bytes(raw)
+        found = review.find(conversations.load_book(copy), args.answer)
+    if found is None:
+        raise SystemExit(f"no answer {args.answer} in {args.user}'s chat "
+                         f"(threads idle {conversations.KEEP_DAYS} days are gone)")
+    question, answer = found
+    print(f"via {answer.get('provider') or '?'}  skills "
+          f"{', '.join(answer.get('skills') or []) or '-'}")
+    print(f"Q: {question}\n")
+    print(f"A: {answer.get('content', '')}")
+    for st in answer.get("steps") or []:
+        print(f"  · {st.get('tool', '')} {st.get('arg', '')}".rstrip())
+    for url in answer.get("web") or []:
+        print(f"  ↳ {url}")
+
+
 def cmd_feedback_reply(args: argparse.Namespace) -> None:
     """Answer one submission: shown once in the writer's app, and pushed to
     their devices when this machine holds the push key."""
@@ -1832,6 +1880,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_fr.add_argument("--page", default="",
                       help="where the push opens (e.g. import_transactions); home")
     p_fr.set_defaults(func=cmd_feedback_reply)
+
+    p_ra = sub.add_parser(
+        "review-answer",
+        help="print the answer a chat.review log line names, with its question",
+    )
+    p_ra.add_argument("user", help="the account slug (the line's `user`)")
+    p_ra.add_argument("answer", help="the answer id (the line's `answer`)")
+    p_ra.set_defaults(func=cmd_review_answer)
 
     p_users = sub.add_parser(
         "users", help="account roster: signup + last-seen dates per account")

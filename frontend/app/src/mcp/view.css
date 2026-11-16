@@ -83,6 +83,7 @@ body {
   container: ag-main / inline-size;
   --ag-border: var(--v-border);
   --ag-surface-page: var(--v-tile);
+  --ag-surface-card: var(--v-tile);
   --ag-surface-sunken: var(--v-sunken);
   --ag-text-primary: var(--v-text);
   --ag-text-secondary: var(--v-muted);

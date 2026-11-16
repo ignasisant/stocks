@@ -144,5 +144,15 @@
   "journal.entry_empty": "None yet. Decide now the price or figures that would make you buy.",
   "journal.entry_propose": "Write them with the assistant",
   "journal.entry_edit": "Change them with the assistant",
-  "journal.entry_prompt": "Help me write buy rules for {ticker}: the price, fall or figures at which I would buy or add."
+  "journal.entry_prompt": "Help me write buy rules for {ticker}: the price, fall or figures at which I would buy or add.",
+  "journal.kpi_proposed": "Proposed",
+  "journal.kpi_followed": "Followed",
+  "journal.kpi_declined": "Declined",
+  "journal.kpi_lapsed": "Lapsed",
+  "journal.kpi_open": "Open",
+  "journal.kpi_its_way": "Right after a month",
+  "journal.record_note": "A sale or a purchase in your book counts as following it; nothing is asked. These are counts, not a verdict on whether it paid.",
+  "journal.show_stay": "Show “Keep the book” ({n})",
+  "journal.rules_head": "Your rules · {n}",
+  "journal.proposals_head": "Proposals · {n}"
 }

@@ -637,14 +637,30 @@ RELEASES: tuple[Release, ...] = (
             # in, Compare from the book's first day) is a sentence in the
             # market step's knowledge, no card of its own.
             News(slug="ticker", icon="query_stats", step="market"),
-            # Sell or add rebuilt: the plan says the moves in one line, the
-            # table groups by verdict with the holds folded, a chip per
-            # verdict picks names out, and the near misses get a card.
+            # Sell or add rebuilt: the answer opens the page (the moves in
+            # one line beside what they free, take and cost in tax), the
+            # verdict split under it, then what to move beside the near
+            # misses; the table groups by verdict with the holds folded.
             News(slug="review", icon="swap_vert", step="review"),
             # Sectors rebuilt: chips with each scan's age and the reader's
             # weight replace the select, the reader's own names are placed
             # in the ranking, and ticked rows go to Sell or add together.
             News(slug="sector", icon="donut_small", step="sector"),
+        ),
+    ),
+    Release(
+        version="2026.11.4",
+        date="2026-11",
+        items=(
+            # Today rebuilt: the market's read opens the page (a line per
+            # topic, the regime dial, a strip of quotes), the book against
+            # the index now opens from the book's first day on the same
+            # money, and the sections sit in pairs under pill tabs.
+            # The rest of the app-wide restyle (Home, Allocation, Import,
+            # Profile, Calendar) changed shape, not where things are, and gets
+            # no card. Neither does the tax tab's loss-harvest list: the chat
+            # already did it, and the section hides when nothing qualifies.
+            News(slug="today", icon="wb_sunny", step="today"),
         ),
     ),
 )
@@ -884,6 +900,11 @@ def by_id(step_id: str) -> Step | None:
     return next((s for s in STEPS if s.id == step_id), None)
 
 
+# The most "what's new" cards one visit deals, however long the account was
+# away: the modal stands between the reader and their portfolio.
+NEWS_MAX = 3
+
+
 def unseen_releases(prefs: dict) -> tuple[Release, ...]:
     """Releases newer than the version this account was last shown.
 
@@ -898,22 +919,28 @@ def unseen_releases(prefs: dict) -> tuple[Release, ...]:
     return RELEASES[versions.index(seen) + 1 :]
 
 
-def unseen_news(prefs: dict) -> tuple[NewsCard, ...]:
-    """Every feature shipped since this account's stamp, newest first.
+def unseen_news(prefs: dict, *, limit: int | None = NEWS_MAX
+                ) -> tuple[NewsCard, ...]:
+    """The features shipped since this account's stamp, newest first, at most
+    `limit` of them (`NEWS_MAX`; None for every one).
 
-    The modal pages through these one card at a time, so how much a returning
-    account reads is simply how much shipped while it was away — one card for
-    one feature, nine for three releases missed — instead of one wall of
-    bullets that grows silently with every version.
+    The modal pages through these one card at a time. Without a cap, how much
+    a returning account read was how much shipped while it was away, and an
+    account back after months opened the app on twenty cards before its own
+    portfolio. So it gets the newest few; closing the modal stamps it current
+    (`/onboarding/seen`), and the older ones are never dealt. What they
+    announced is still in the tour, on the step each one pointed at.
 
-    A card whose step is not in `visible_steps()` is dropped: a deploy that
-    does not carry the feature must not announce it. A card with no step at
-    all (something with no tour stop of its own) is always shown.
+    A card whose step is not in `visible_steps()` is dropped before the cap: a
+    deploy that does not carry the feature must not announce it, nor spend a
+    place on it. A card with no step at all (something with no tour stop of
+    its own) is always shown.
     """
     shown = {s.id for s in visible_steps()}
-    return tuple(
+    cards = tuple(
         NewsCard(version=rel.version, date=rel.date, item=item)
         for rel in reversed(unseen_releases(prefs))
         for item in rel.items
         if item.announced(shown)
     )
+    return cards if limit is None else cards[:limit]

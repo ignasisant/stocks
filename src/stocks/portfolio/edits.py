@@ -660,6 +660,31 @@ def select(
     return out
 
 
+def position_ids(rows: list[Transaction], ticker: str) -> list[int]:
+    """Every row of one holding, oldest first: what "remove this position"
+    takes.
+
+    Exact where `select` is generous. The rows answer to the label the page
+    shows the holding under — their own, or the one a broker transfer unifies
+    them under (an ISIN row answering to its symbol) — and to nothing looser:
+    a one-press removal from a ticker page must not reach `ASML` from
+    `ASML.AS`, a separate holding on another venue. Every action goes —
+    buys, sells, dividends, splits, transfers — since a sale or a split left
+    behind without its buys is a book that no longer replays.
+    """
+    want = ticker.strip().upper()
+    if not want:
+        return []
+    shown = transfers.relabel(rows)
+    picked = [
+        tx
+        for tx, label in zip(rows, shown, strict=True)
+        if tx.id is not None and want in (tx.ticker.upper(), label.ticker.upper())
+    ]
+    picked.sort(key=lambda tx: (tx.date, tx.id or 0))
+    return [tx.id for tx in picked if tx.id is not None]
+
+
 def _names(
     want: str, tx: Transaction, label: str, resolve: transfers.Resolver | None,
     *, pairs: bool = False,

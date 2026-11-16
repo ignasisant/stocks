@@ -246,7 +246,7 @@ function Nav() {
           aria-label={label}
           aria-expanded={!folded}
         >
-          <Icon name="menu" />
+          <Icon name="side_panel" />
         </button>
       </div>
       {groups.map((group) => (
@@ -303,7 +303,7 @@ function Nav() {
         aria-busy={working || undefined}
         onClick={() => openAssistant()}
       >
-        <Icon name="spark" />
+        <Icon name="chat_bubble" />
         {unread ? <span className="ag-nav-ask-dot" aria-hidden="true" /> : null}
         <span className="ag-nav-label">{t("chat.title")}</span>
         {working ? <span className="ag-sr">{t("chat.tab_working")}</span> : null}
@@ -322,7 +322,7 @@ function Nav() {
         aria-controls="ag-nav-sheet"
         aria-label={t("nav.more")}
       >
-        <Icon name="menu" />
+        <Icon name="more_horiz" />
         <span className="ag-nav-label">{t("nav.more")}</span>
       </button>
       {morePresence.mounted ? (

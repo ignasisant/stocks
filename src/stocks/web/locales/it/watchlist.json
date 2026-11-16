@@ -45,7 +45,7 @@
   "watchlist.col_actions_help": "Apri la pagina del ticker o toglilo dalla watchlist.",
   "watchlist.act_open": "Apri",
   "watchlist.act_remove": "Rimuovi",
-  "watchlist.removed": "{ticker} rimosso dalla watchlist.",
+  "watchlist.removed": "Rimosso {ticker}",
   "watchlist.row_more": "Gruppi, posizione e rimozione",
   "watchlist.fav_on": "{ticker} con la stella.",
   "watchlist.fav_off": "{ticker} senza stella.",
@@ -67,5 +67,6 @@
   "watchlist.share_make": "Crea link",
   "watchlist.share_name": "Nome",
   "watchlist.share_note": "Escono solo i simboli e il nome: niente importi, note o altri gruppi.",
-  "watchlist.share_note_cut": "Escono solo i primi {n} simboli e il nome: niente importi, note o altri gruppi."
+  "watchlist.share_note_cut": "Escono solo i primi {n} simboli e il nome: niente importi, note o altri gruppi.",
+  "watchlist.undo": "Annulla"
 }

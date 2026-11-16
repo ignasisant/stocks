@@ -16,6 +16,13 @@ export function days(value: number | null): string {
   return value === null ? DASH : String(value);
 }
 
+/** "3 días", "1 día", "Hoy": how far off a dated row is. */
+export function daysOut(value: number | null, t: T): string {
+  if (value === null) return DASH;
+  if (value === 0) return t("earnings.ev_today");
+  return `${value} ${t(value === 1 ? "earnings.list_col_day_out" : "earnings.list_col_days_out")}`;
+}
+
 /** The green/red/neutral class a signed figure gets, neutral when unknown. */
 export function tone(value: number | null | undefined): string {
   if (value === null || value === undefined) return "earn-flat";
@@ -54,4 +61,16 @@ export function plain(value: string): string {
 export function quarterLabel(iso: string, t: T): string {
   const [year, month] = parts(iso);
   return `${t(`earnings.mon_${month}`)} ${String(year % 100).padStart(2, "0")}`;
+}
+
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+/** The weekday's short name and the day of the month of an ISO day. */
+export function shortDay(iso: string, t: T): { weekday: string; day: number } {
+  const [year, month, day] = parts(iso);
+  const at = new Date(Date.UTC(year, (month ?? 1) - 1, day ?? 1));
+  return {
+    weekday: t(`earnings.wd_${WEEKDAYS[at.getUTCDay()]}`),
+    day: day ?? 1,
+  };
 }

@@ -155,7 +155,6 @@
   "sentiment.pulse_stamp": "Dati al {date} · chiusure Yahoo Finance + FRED · {live} componenti su {total} attivi",
   "sentiment.pulse_complete": "Tutti i {total} componenti sono attivi oggi: il punteggio non si appoggia a una media più corta di quel che sembra.",
   "sentiment.why_title": "Perché · gli otto componenti",
-  "sentiment.why_hint": "barra = oggi · tacca = 21 sedute fa",
   "sentiment.comp_none": "non incluso oggi",
   "sentiment.comp_momentum_sub": "S&P rispetto alla propria media di 125 sedute",
   "sentiment.comp_breadth_sub": "RSP/SPY 20g · il titolo medio tiene il passo?",
@@ -177,8 +176,6 @@
   "sentiment.stance_cushion": "lo attutisce",
   "sentiment.stance_track": "lo segue da vicino",
   "sentiment.side_corr": "Correlazione con il bond lungo",
-  "sentiment.side_help": "La pillola è la deriva a tre mesi del livello, non una variazione di prezzo. Un beta che passa da {then} a {now} è il regime che si muove sotto di te.",
-  "sentiment.side_help_plain": "La pillola è la deriva a tre mesi del livello, non una variazione di prezzo.",
   "sentiment.side_more": "Vedi tutti e cinque i beta e le note del mese ↓",
   "sentiment.drift_pill": "60g {now} · 3m {value}",
   "sentiment.fx_pill": "mese {value}",
@@ -301,5 +298,13 @@
   "sentiment.mkt_eurusd": "Euro / dollaro",
   "sentiment.mkt_bitcoin": "Bitcoin (CME)",
   "sentiment.mkt_gold": "Oro",
-  "sentiment.mkt_crude": "Greggio (WTI)"
+  "sentiment.mkt_crude": "Greggio (WTI)",
+  "sentiment.meter_label": "Polso {score} su 100: {band}. Un mese fa, {then}.",
+  "sentiment.meter_label_plain": "Polso {score} su 100: {band}.",
+  "sentiment.why_key_stress": "tensione",
+  "sentiment.why_key_appetite": "appetito",
+  "sentiment.why_key_month": "un mese fa",
+  "sentiment.comp_aria": "{name}: {score} su 100, un mese fa {then}.",
+  "sentiment.comp_aria_plain": "{name}: {score} su 100.",
+  "sentiment.tilt_none": "Senza settore: {value} del tuo portafoglio (cripto, fondi, non classificato) non è confrontato con l'indice."
 }

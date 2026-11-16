@@ -67,7 +67,7 @@ import { MapFind } from "./MapFind";
 import { type ReturnWindow, type TrailStep, WINDOWS, useReturns } from "./returns";
 import { FIND_MIN, useRowWords } from "./Tables";
 import type { ReviewRow, ScorePoint } from "./types";
-import { CHEAP, GOOD } from "./verdicts";
+import { CHEAP, GOOD, mapKeys, mapMark } from "./verdicts";
 import { percent } from "../../shell/format";
 
 // The right pad leaves room for a ticker label on a dot at 100.
@@ -335,6 +335,14 @@ export function QualityMap({
   const placed = rows.filter((row) => row.quality !== null && row.cheapness !== null);
   const missing = rows.length - placed.length;
   if (placed.length === 0) return null;
+  // One key per colour on the map, named by the verdicts that wear it here.
+  const marks = mapKeys(placed).map(({ mark, verdicts }) => ({
+    mark,
+    label:
+      mark === "near"
+        ? t("review.close_near")
+        : verdicts.map((verdict) => t(`review.verdict_${verdict}`)).join(" · "),
+  }));
 
   // Wide, a landscape plane; phone-wide, near square — at 0.55 a 340px map is
   // 190px of plot and every name between 40 and 60 lands on one line.
@@ -429,12 +437,18 @@ export function QualityMap({
   // A match is drawn over the faded names, never under one.
   if (query || pointed || filtered || highlight)
     ordered.sort((a, b) => +lit(a) - +lit(b));
-  const quads: { text: string; x: number; y: number; end?: boolean }[] = [
+  const quads: {
+    text: string;
+    x: number;
+    y: number;
+    end?: boolean;
+    tone?: "up" | "down";
+  }[] = [
     // Inner corner: the outer one is where the best names crowd.
-    { text: t("review.quad_best"), x: x(CHEAP) + 6, y: y(100) + 14 },
+    { text: t("review.quad_best"), x: x(CHEAP) + 6, y: y(100) + 14, tone: "up" },
     { text: t("review.quad_dear"), x: x(0) + 6, y: y(100) + 14 },
     { text: t("review.quad_cheap"), x: x(100) - 6, y: y(0) - 8, end: true },
-    { text: t("review.quad_worst"), x: x(0) + 6, y: y(0) - 8 },
+    { text: t("review.quad_worst"), x: x(0) + 6, y: y(0) - 8, tone: "down" },
   ];
   // Caption text is lower-case and lighter than a ticker: ~6px a letter.
   const captions: Box[] = quads.map((q) => {
@@ -714,7 +728,7 @@ export function QualityMap({
           {quads.map((q) => (
             <text
               key={q.text}
-              className="ag-rev-map-quad"
+              className={`ag-rev-map-quad${q.tone ? ` ag-rev-map-quad-${q.tone}` : ""}`}
               x={q.x}
               y={q.y}
               textAnchor={q.end ? "end" : undefined}
@@ -744,7 +758,7 @@ export function QualityMap({
           {shown.map(({ row, steps, names, points }) => (
             <g
               key={`t-${key(row)}`}
-              className={`ag-rev-trail ag-rev-trail-${verdictTone(row.verdict)}${
+              className={`ag-rev-trail ag-rev-mark-${mapMark(row)}${
                 !lit(row) ? " ag-rev-trail-dim" : ""
               }${key(row) === soloKey ? " ag-rev-trail-on" : ""}`}
               aria-hidden="true"
@@ -827,6 +841,15 @@ export function QualityMap({
       {/* Each key keeps its swatch: wrapped loose, a ring ended one line and
           its words began the next. */}
       <ul className="ag-rev-caption ag-rev-legend">
+        {marks.map(({ mark, label }) => (
+          <li key={mark}>
+            <span
+              className={`ag-rev-key ag-rev-key-mark ag-rev-mark-${mark}`}
+              aria-hidden="true"
+            />
+            {label}
+          </li>
+        ))}
         <li>
           <span className="ag-rev-key ag-rev-key-held" aria-hidden="true" />
           {t("review.legend_held")}
@@ -903,7 +926,7 @@ function Dot({
   const base = useCurrency();
   const profile = useTickerProfile(row.ticker);
   const symbol = profile?.symbol || row.symbol || row.ticker;
-  const tone = verdictTone(row.verdict);
+  const mark = mapMark(row);
   const r = radius(row);
   const company = profile?.name || "";
   // The tooltip is drawn for the eye; a screen reader gets the same in words.
@@ -937,7 +960,7 @@ function Dot({
   };
   return (
     <g
-      className={`ag-rev-dot ag-rev-dot-${tone}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : ""}`}
+      className={`ag-rev-dot ag-rev-mark-${mark}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : ""}`}
       role="button"
       aria-haspopup="dialog"
       tabIndex={0}

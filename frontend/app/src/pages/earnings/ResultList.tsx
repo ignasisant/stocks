@@ -143,6 +143,7 @@ export default function ResultList({
   trades,
   payments,
   holidays,
+  weights,
 }: {
   events: CalendarEvent[];
   results: CalendarResult[];
@@ -153,6 +154,7 @@ export default function ResultList({
   trades: CalendarTrade[];
   payments: CalendarPayment[];
   holidays: MarketHoliday[];
+  weights?: Record<string, number>;
 }) {
   return (
     <>
@@ -163,6 +165,7 @@ export default function ResultList({
         banks={banks}
         dividends={dividends}
         holidays={holidays}
+        weights={weights}
       />
       <BookList trades={trades} payments={payments} />
       <DividendTable dividends={dividends.filter((d) => d.days_until < 0)} />

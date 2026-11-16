@@ -204,6 +204,17 @@ def brief(filename: str, surface: str, platform: str, parsed=None, checked=None,
     }
 
 
+def _tally(values) -> str:
+    """`EUR:3,USD:1` — how many rows carry each value, most first. A row's
+    currency or action says nothing about whose book it is, and it is what a
+    reader who abandons a model-read preview most often had to change."""
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value or "-"] = counts.get(value or "-", 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return ",".join(f"{k}:{n}" for k, n in ranked)
+
+
 def watch_preview(fp: dict, found, checked, rows: int, digest: str) -> None:
     """Log a finished preview and hand it to the owner's alert: watched until
     a commit when it has something to write, reported now when it has nothing
@@ -222,6 +233,8 @@ def watch_preview(fp: dict, found, checked, rows: int, digest: str) -> None:
         skipped=len(found.result.skipped),
         unavailable=found.unavailable,
         digest=digest[:16],
+        currencies=_tally(tx.currency for tx in checked.importable),
+        actions=_tally(tx.action for tx in checked.importable),
     )
     if rows or holdings:
         import_alert.previewed(fp, digest=digest, importable=rows or holdings,

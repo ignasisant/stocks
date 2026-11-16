@@ -15,6 +15,7 @@ from stocks.analysis.portfolio import (
     market_live,
     positions_frame,
     priced_totals,
+    ticker_changes,
     value_weights,
 )
 from stocks.api.deps import Account, Base, reporting_currency
@@ -77,6 +78,20 @@ def _day_moves(
                 else None
             )
             out[ticker] = (amount, float(pct))
+    return out
+
+
+def _span_moves(db: str, ccy: str) -> dict[int, dict[str, float]]:
+    """{days: {ticker: fraction}} over a week and a month, same basket frame.
+
+    Best effort like `_day_moves`: a frame that cannot be built leaves the
+    columns null.
+    """
+    out: dict[int, dict[str, float]] = {}
+    with obs.swallow("api.positions_span"):
+        frame = loaders.basket_values(db, loaders.db_mtime(db), ccy)
+        for days in (7, 30):
+            out[days] = {str(k): float(v) for k, v in ticker_changes(frame, days).items()}
     return out
 
 
@@ -144,10 +159,12 @@ def positions(
         else None
     )
     day = pool.submit(carried(_day_moves), db, ccy, table) if priced else None
+    span = pool.submit(carried(_span_moves), db, ccy) if priced else None
     pool.shutdown(wait=False)
     held = loaders.custody(db, loaders.db_mtime(db))
     rates = spots.result() if spots else {}
     moves = day.result() if day else {}
+    spans = span.result() if span else {}
     rows = [
         Position(
             ticker=str(ticker),
@@ -161,6 +178,8 @@ def positions(
             weight=_num(weights.get(ticker)),
             day=_num(moves.get(str(ticker), (None, None))[0]),
             day_pct=_num(moves.get(str(ticker), (None, None))[1]),
+            week_pct=_num(spans.get(7, {}).get(str(ticker))),
+            month_pct=_num(spans.get(30, {}).get(str(ticker))),
             market_active=market_active(str(ticker)),
             custody=_custodians(held.get(str(ticker), {})),
         )

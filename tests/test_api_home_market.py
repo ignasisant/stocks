@@ -98,6 +98,15 @@ def test_every_tile_reads_the_day_the_week_and_the_month(client, market):
     assert sp["linkable"] is True
 
 
+def test_every_tile_carries_its_recent_levels_for_the_minichart(client, market):
+    payload = client.get("/v1/home/market", headers=AUTH).json()
+    sp = tiles(payload)["sp500"]
+    series = market["^GSPC"]
+    assert len(sp["spark"]) == home.MARKET_SPARK
+    assert sp["spark"][-1] == pytest.approx(series.iloc[-1])
+    assert all(t["spark"] for t in payload["tiles"])
+
+
 def test_the_tiles_keep_the_strips_reading_order(client, market):
     keys = [t["key"] for t in client.get("/v1/home/market", headers=AUTH).json()["tiles"]]
     assert keys[:5] == ["sp500", "nasdaq", "stoxx50", "ibex", "em"]

@@ -11,6 +11,12 @@
  * `--ag-*` tokens and the markup holds geometry.
  */
 
+import { useState, type PointerEvent } from "react";
+
+import { useLang } from "../../shell/i18n";
+import { indexAt } from "./logic";
+import type { PulsePoint } from "./types";
+
 const PAD = 2;
 
 function path(values: number[], width: number, height: number, lo: number, hi: number) {
@@ -66,37 +72,96 @@ export function Spark({
   );
 }
 
+/** The y positions the axis names. 50 is the neutral line and is drawn stronger. */
+const LEVELS = [80, 50, 20];
+
+/** "13 nov" for a point's ISO day, in the reader's language. */
+function shortDay(iso: string, lang: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" }).format(
+    new Date(y, m - 1, d),
+  );
+}
+
 /**
- * The composite's own path, on the meter's fixed 0-100 scale.
+ * The composite's own path, on the meter's fixed 0-100 scale, readable by hand.
  *
  * Fixed range, not autoscaled: this line sits under a 0-100 meter and a reader
  * compares the two by eye, so an autoscaled version — where a 12-point wobble
- * fills the box — would contradict the pin it is drawn beside. The dashed
- * guides at 20 and 80 mark the outer bands.
+ * fills the box — would contradict the pin it is drawn beside. The 50 line is
+ * the neutral middle and is the one drawn firm; 20 and 80 are the outer bands'
+ * edges.
+ *
+ * Touching or hovering reads off the session under the pointer, in the
+ * readout above the plot; at rest the readout is the latest session, so the
+ * figure the page opens on is the one the headline says.
  */
-export function HeroSpark({
-  values,
-  width = 520,
-  height = 56,
-}: {
-  values: number[];
-  width?: number;
-  height?: number;
-}) {
-  if (values.length < 2) return null;
-  const y = (level: number) =>
-    PAD + (1 - Math.max(0, Math.min(100, level)) / 100) * (height - 2 * PAD);
+export function HeroSpark({ points }: { points: PulsePoint[] }) {
+  const lang = useLang();
+  const [at, setAt] = useState<number | null>(null);
+  if (points.length < 2) return null;
+  const values = points.map((point) => point.score);
+  const last = points.length - 1;
+  const shown = points[at ?? last];
+  const x = (index: number) => (index / last) * 100;
+  const y = (level: number) => 100 - Math.max(0, Math.min(100, level));
+
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    setAt(indexAt(event.clientX - box.left, box.width, points.length));
+  };
+
   return (
-    <svg
-      className="sn-hero-spark"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      {[20, 80].map((level) => (
-        <line key={level} x1={0} x2={width} y1={y(level)} y2={y(level)} />
-      ))}
-      <polyline points={path(values, width, height, 0, 100)} />
-    </svg>
+    <div className="sn-chart">
+      <div className="sn-chart-read" aria-live="off">
+        <span>{shown ? shortDay(shown.date, lang) : ""}</span>
+        <b>{shown ? Math.round(shown.score) : ""}</b>
+      </div>
+      <div
+        className="sn-chart-plot"
+        onPointerMove={move}
+        onPointerDown={move}
+        onPointerLeave={() => setAt(null)}
+        onPointerCancel={() => setAt(null)}
+      >
+        <svg
+          className="sn-hero-spark"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {LEVELS.map((level) => (
+            <line
+              key={level}
+              className={level === 50 ? "sn-hero-mid" : undefined}
+              x1={0}
+              x2={100}
+              y1={y(level)}
+              y2={y(level)}
+            />
+          ))}
+          <polyline
+            points={values
+              .map((value, i) => `${x(i).toFixed(2)},${y(value).toFixed(2)}`)
+              .join(" ")}
+          />
+        </svg>
+        {LEVELS.map((level) => (
+          <span className="sn-chart-y" key={level} style={{ top: `${y(level)}%` }}>
+            {level}
+          </span>
+        ))}
+        {at !== null && shown && (
+          <>
+            <span className="sn-chart-rule" style={{ left: `${x(at)}%` }} />
+            <span
+              className="sn-chart-dot"
+              style={{ left: `${x(at)}%`, top: `${y(shown.score)}%` }}
+            />
+          </>
+        )}
+      </div>
+    </div>
   );
 }

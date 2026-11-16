@@ -16,13 +16,19 @@ import type {
   RepurchaseWindow,
   TaxDeadline,
 } from "./data";
-import EventDetail, { relative } from "./EventDetail";
+import { askAbout, EventPane, lessonFor, paneHead, relative } from "./EventDetail";
 import type { T } from "./format";
 
 const close = () => {};
 
 function open(pick: EventPick, held: string[] = []) {
-  return renderToStaticMarkup(<EventDetail pick={pick} held={held} onClose={close} />);
+  if (pick.kind === "result") throw new Error("a result opens its own panel");
+  return renderToStaticMarkup(
+    <>
+      {paneHead(pick, (key) => key)}
+      <EventPane pick={pick} held={held} onAsk={close} />
+    </>,
+  );
 }
 
 const ahead: CalendarDividend = {
@@ -168,5 +174,42 @@ describe("how far away", () => {
     expect(relative(9, t)).toBe("earnings.ev_in_days:9");
     expect(relative(-3, t)).toBe("earnings.ev_days_ago:3");
     expect(relative(null, t)).toBe("—");
+  });
+});
+
+describe("the panel", () => {
+  const rule: RepurchaseWindow = {
+    ticker: "AAPL",
+    date: "2026-12-12",
+    days_until: 40,
+    sell_date: "2026-10-12",
+    loss: 120,
+    currency: "USD",
+    window: "2m",
+  };
+
+  it("offers the assistant on every kind", () => {
+    expect(open({ kind: "rebuy", item: rule })).toContain("earnings.ev_ask");
+  });
+
+  it("links the lesson that explains the tax rule, and only where one does", () => {
+    expect(lessonFor("rebuy")).toBe("two-month-rule");
+    expect(lessonFor("tax")).toBe("tax-calendar");
+    expect(lessonFor("dividend")).toBe("dividends-and-withholding");
+    expect(lessonFor("print")).toBeNull();
+    expect(open({ kind: "rebuy", item: rule })).toContain("lesson=two-month-rule");
+    expect(
+      open({
+        kind: "print",
+        item: { ticker: "AAPL", date: "2026-11-20", days_until: 4 } as CalendarEvent,
+      }),
+    ).not.toContain("earnings.ev_lesson");
+  });
+
+  it("hands the assistant the date in a few words", () => {
+    const key = (k: string) => k;
+    expect(askAbout({ kind: "rebuy", item: rule }, key)).toBe(
+      "AAPL earnings.ev_rebuy_kind 2026-12-12",
+    );
   });
 });

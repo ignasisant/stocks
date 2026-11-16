@@ -213,8 +213,11 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
   const lang = useLang();
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
+  // Cutting an app off says what it loses first; the call is the same one.
+  const [asking, setAsking] = useState(false);
 
   const revoke = () => {
+    setAsking(false);
     setBusy(true);
     setRefused(null);
     send<void>(
@@ -274,11 +277,42 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
             ? t("profile.connector_used", { date: used })
             : t("profile.connector_never_used")}
         </span>
+        {asking && (
+          <span className="pr-conn-meta">
+            {t(
+              connection.can_write
+                ? "profile.connector_revoke_ask_write"
+                : "profile.connector_revoke_ask",
+              { app: connection.client_name },
+            )}
+          </span>
+        )}
         <Failure message={refused} />
       </div>
-      <button type="button" className="pr-btn" disabled={busy} onClick={revoke}>
-        {t("profile.connector_revoke")}
-      </button>
+      {asking ? (
+        <div className="pr-confirm">
+          <button
+            type="button"
+            className="pr-btn pr-btn-danger"
+            disabled={busy}
+            onClick={revoke}
+          >
+            {t("profile.connector_revoke")}
+          </button>
+          <button type="button" className="pr-btn" onClick={() => setAsking(false)}>
+            {t("common.cancel")}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="pr-btn"
+          disabled={busy}
+          onClick={() => setAsking(true)}
+        >
+          {t("profile.connector_revoke")}
+        </button>
+      )}
     </li>
   );
 }

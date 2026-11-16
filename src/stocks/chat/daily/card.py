@@ -345,7 +345,8 @@ def _today(raw) -> list[dict]:
             "benchmarks": [
                 {"symbol": str(b["symbol"]), "name": str(b.get("name") or ""),
                  "currency": b.get("currency") or None,
-                 **{span: finite(b.get(span)) for span in ("m1", "m6", "y1", "all")}}
+                 **{span: finite(b.get(span))
+                    for span in ("m1", "m6", "y1", "all", "all_gain")}}
                 for b in (sec.get("benchmarks") or [])
                 if isinstance(b, dict) and b.get("symbol")
             ],

@@ -31,6 +31,7 @@ import { usePresence, useSwipeDismiss } from "../../shell/useSheet";
 import { useTickerJournal, type JournalEntry } from "../../ui/Journal";
 import { complete, draft, duplicateAt, payload, summary } from "./alerts";
 import { follow, getAlertTypes, getAlerts, getTags, setAlerts } from "./data";
+import { usePositionRemoval } from "./Removal";
 import { useTickerShare } from "./Share";
 import type { AlertForm, AlertRule, WatchlistEntry } from "./types";
 
@@ -261,7 +262,14 @@ function AlertEditor({
 type View = "menu" | "alerts" | "tags";
 
 /** One row of the "More" menu: what it opens, and how many it holds. */
-type Row = { id: string; label: string; count?: number; pick: () => void };
+type Row = {
+  id: string;
+  label: string;
+  count?: number;
+  pick: () => void;
+  /** Destroys something: set apart under its own rule, coloured like it. */
+  danger?: boolean;
+};
 
 /**
  * "More": the header's overflow, one level under the page. A popover hanging
@@ -365,8 +373,9 @@ function MoreMenu({
       <div role="menu" aria-label={t("ticker.more")} className="tk-more-list">
         {rows.map((row, n) => (
           <Fragment key={row.id}>
-            {/* Passing the page on is not an edit to the reader's own list. */}
-            {row.id === "share" ? (
+            {/* Passing the page on is not an edit to the reader's own list,
+                and deleting rows from the book is neither. */}
+            {row.id === "share" || row.danger ? (
               <div role="separator" className="tk-more-sep" />
             ) : null}
             <button
@@ -375,7 +384,7 @@ function MoreMenu({
               }}
               type="button"
               role="menuitem"
-              className="tk-more-item"
+              className={row.danger ? "tk-more-item tk-more-danger" : "tk-more-item"}
               onClick={() => {
                 from.current = n;
                 row.pick();
@@ -472,6 +481,8 @@ export function Actions({
   ticker,
   name,
   held,
+  inBook,
+  onBookChanged,
   entry,
   onEntry,
   onMine,
@@ -480,6 +491,10 @@ export function Actions({
   name: string;
   /** Whether the book holds it: the journal is offered to a holder even empty. */
   held: boolean;
+  /** Whether the book has any row under this name, held now or not. */
+  inBook: boolean;
+  /** The book changed here (a holding removed, or put back): re-ask for it. */
+  onBookChanged: () => void;
   /** This ticker's watchlist row, or null when it is not listed yet. */
   entry: WatchlistEntry | null;
   onEntry: (entry: WatchlistEntry) => void;
@@ -493,6 +508,7 @@ export function Actions({
   const [view, setView] = useState<View | null>(null);
   const journal = useTickerJournal(ticker, name, held);
   const sharing = useTickerShare(ticker, name);
+  const removal = usePositionRemoval(ticker, inBook, onBookChanged);
 
   const favorite = entry?.favorite ?? false;
   const tags = entry?.tags ?? [];
@@ -610,6 +626,16 @@ export function Actions({
       sharing.share();
     },
   });
+  if (removal.offered)
+    rows.push({
+      id: "remove",
+      label: removal.label,
+      danger: true,
+      pick: () => {
+        setView(null);
+        removal.open();
+      },
+    });
 
   const starLabel = t(favorite ? "widgets.remove_favorite" : "widgets.add_favorite");
   return (
@@ -644,6 +670,7 @@ export function Actions({
       />
       {journal.panel}
       {sharing.dialog}
+      {removal.panel}
     </>
   );
 }

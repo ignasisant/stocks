@@ -289,112 +289,140 @@ export function PriceSection({
     </div>
   );
 
-  return (
-    <Card>
-      {!drawable ? null : mobile ? (
-        <Hero
-          price={live}
-          dayPct={dayPct}
-          dim={dim}
-          sessionNote={sessionNote}
-          periodLine={periodLine}
-          periodUp={periodPct !== null && periodPct >= 0}
-          tiles={tiles}
-          cells={cells}
-          currency={unit}
-          approxLine={approxLine}
-          read={read}
-        />
-      ) : (
-        // The price, the kind's cells, then the holding's three: the holding
-        // sits in the price row, beside the price it is valued at, rather
-        // than in a card further down.
-        <>
-          <Metrics>
-            <Metric
-              // Extended hours are named in the label, the way the page names
-              // them: "Price · pre-market". A day move printed without that reads
-              // as today's session when it is not.
-              label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
-              value={
-                live === null
-                  ? DASH
-                  : `${money(live, { digits: 2 }) ?? DASH}${unit ? ` ${unit}` : ""}`
-              }
-              delta={dayPct}
-              dim={dim}
-              note={[periodLine, approxLine].filter(Boolean).join(" · ")}
-              noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
+  // On a desktop the holding is a block of its own, ahead of the market's:
+  // what the reader owns of it, with the marks they set on it, apart from the
+  // price they are read against. A phone keeps it folded into the hero.
+  const positionBlock =
+    drawable && held && !mobile && tiles.length > 0 ? (
+      <Card title={t("ticker.your_position")}>
+        <Metrics>
+          {tiles.map((one) => (
+            <Kpi
+              key={one.key}
+              label={one.label}
+              help={one.help}
+              value={one.value}
+              chip={one.chip}
+              note={one.note}
+              noteTone={one.noteTone}
             />
-            {cells.map((one) => (
-              <CellTile key={one.id} one={one} />
-            ))}
-            {tiles.map((one) => (
-              <Kpi
-                key={one.key}
-                label={one.label}
-                help={one.help}
-                value={one.value}
-                chip={one.chip}
-                note={one.note}
-                noteTone={one.noteTone}
+          ))}
+        </Metrics>
+        <LastBuy position={held} last={live} units={shape.units} t={t} />
+        {mine && ticker ? (
+          <Yours ticker={ticker} mine={mine} price={live} held entry />
+        ) : null}
+      </Card>
+    ) : null;
+
+  return (
+    <>
+      {positionBlock}
+      <Card>
+        {!drawable ? null : mobile ? (
+          <Hero
+            price={live}
+            dayPct={dayPct}
+            dim={dim}
+            sessionNote={sessionNote}
+            periodLine={periodLine}
+            periodUp={periodPct !== null && periodPct >= 0}
+            tiles={tiles}
+            cells={cells}
+            currency={unit}
+            approxLine={approxLine}
+            read={read}
+          />
+        ) : (
+          // The price, the kind's cells, then the holding's three: the holding
+          // sits in the price row, beside the price it is valued at, rather
+          // than in a card further down.
+          <>
+            <Metrics>
+              <Metric
+                // Extended hours are named in the label, the way the page names
+                // them: "Price · pre-market". A day move printed without that reads
+                // as today's session when it is not.
+                label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
+                value={
+                  live === null
+                    ? DASH
+                    : `${money(live, { digits: 2 }) ?? DASH}${unit ? ` ${unit}` : ""}`
+                }
+                delta={dayPct}
+                dim={dim}
+                note={[periodLine, approxLine].filter(Boolean).join(" · ")}
+                noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
               />
-            ))}
-          </Metrics>
-          {recent ? <ResultsLine event={recent} t={t} /> : null}
-        </>
-      )}
-      {drawable && mine && ticker ? (
-        <Yours ticker={ticker} mine={mine} price={live} held={!!held} entry={!mobile} />
-      ) : null}
+              {cells.map((one) => (
+                <CellTile key={one.id} one={one} />
+              ))}
+            </Metrics>
+            {recent ? <ResultsLine event={recent} t={t} /> : null}
+          </>
+        )}
+        {/* A holder's marks go with the position block; a name not held keeps
+          them under its price, where the levels they wait for are read. */}
+        {drawable && mine && ticker && !(held && !mobile) ? (
+          <Yours
+            ticker={ticker}
+            mine={mine}
+            price={live}
+            held={!!held}
+            entry={!mobile}
+          />
+        ) : null}
 
-      {query.state !== "loaded" ? (
-        // Loading, failed or signed out: the chart's slot says so, and the
-        // controls under it stay where they are.
-        <>
-          <Loaded query={query} skeleton={<PriceChartWait mobile={mobile} />}>
-            {() => null}
-          </Loaded>
-          {controls}
-        </>
-      ) : bars && bars.dates.length === 0 ? (
-        <>
-          <Empty>{t("ticker.history_empty")}</Empty>
-          {controls}
-        </>
-      ) : bars ? (
-        <PriceChart
-          bars={bars}
-          events={events}
-          cycle={cycle}
-          // A closed position still marks its fills: where somebody got in
-          // and out is the part of the chart that was theirs.
-          trades={shape.holdable ? (position?.trades ?? []) : []}
-          avgCost={held?.avg_cost_native ?? null}
-          candles={shape.candles && candles}
-          overlays={shape.overlays}
-          markers={shape.markers}
-          mobile={mobile}
-          onWindow={setZoomed}
-          onRead={mobile ? setRead : undefined}
-          controls={controls}
-          t={t}
-        />
-      ) : (
-        controls
-      )}
+        {query.state !== "loaded" ? (
+          // Loading, failed or signed out: the chart's slot says so, and the
+          // controls under it stay where they are.
+          <>
+            <Loaded query={query} skeleton={<PriceChartWait mobile={mobile} />}>
+              {() => null}
+            </Loaded>
+            {controls}
+          </>
+        ) : bars && bars.dates.length === 0 ? (
+          <>
+            <Empty>{t("ticker.history_empty")}</Empty>
+            {controls}
+          </>
+        ) : bars ? (
+          <PriceChart
+            bars={bars}
+            events={events}
+            cycle={cycle}
+            // A closed position still marks its fills: where somebody got in
+            // and out is the part of the chart that was theirs.
+            trades={shape.holdable ? (position?.trades ?? []) : []}
+            avgCost={held?.avg_cost_native ?? null}
+            candles={shape.candles && candles}
+            overlays={shape.overlays}
+            markers={shape.markers}
+            mobile={mobile}
+            onWindow={setZoomed}
+            onRead={mobile ? setRead : undefined}
+            controls={controls}
+            t={t}
+          />
+        ) : (
+          controls
+        )}
 
-      <LastBuy position={held} last={live} units={shape.units} t={t} />
-      {drawable && mobile ? (
-        <Figures
-          cells={cells}
-          held={tiles.length > 0}
-          recent={recent}
-          entry={ticker && mine ? <EntryFit ticker={ticker} /> : null}
-          t={t}
-        />
-      ) : null}
-    </Card>
+        {mobile ? (
+          <LastBuy position={held} last={live} units={shape.units} t={t} />
+        ) : null}
+        {drawable && mobile ? (
+          <Figures
+            cells={cells}
+            held={tiles.length > 0}
+            recent={recent}
+            entry={ticker && mine ? <EntryFit ticker={ticker} /> : null}
+            t={t}
+          />
+        ) : null}
+      </Card>
+    </>
   );
 }
 

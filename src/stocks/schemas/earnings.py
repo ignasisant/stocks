@@ -282,6 +282,16 @@ class EarningsCalendar(BaseModel):
             "the book trade on (`stocks.data.market_holidays`). Oldest first."
         ),
     )
+    weights: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Each open position's share of the book, as a fraction (0.12 is "
+            "12%), in the reporting currency: `value_weights` over the priced "
+            "positions table, so an unpriced name stands at its cost in the "
+            "denominator and has no entry of its own. Empty when prices are "
+            "unavailable; the calendar then says nothing about weight."
+        ),
+    )
 
 
 # ------------------------------------------------------------ one past print

@@ -82,6 +82,7 @@ class PrefsPatch(BaseModel):
     tax_subnational_rate: float | None = None
     notify_weekly_email: bool | None = None
     notify_alerts: bool | None = None
+    review_answers: bool | None = None
     notify_briefing: bool | None = None
     # Sent by the app itself (the browser's own zone), not a control: the
     # clock the scheduled runs keep. null goes back to the default zone.
@@ -189,6 +190,7 @@ def _view(stored: dict) -> Prefs:
         tax_church_rate=float(stored.get("tax_church_rate") or 0.0),
         tax_subnational_rate=float(stored.get("tax_subnational_rate") or 0.0),
         notify_weekly_email=bool(stored.get("notify_weekly_email", True)),
+        review_answers=bool(stored.get("review_answers", True)),
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),

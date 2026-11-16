@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { TermList } from "./Glossary";
-import { LessonBody } from "./Lesson";
+import { LessonBody, Quiz } from "./Lesson";
 import {
   appTarget,
   fold,
@@ -21,6 +21,10 @@ import {
   shownAliases,
   setGuestDone,
   standing,
+  highlight,
+  inPath,
+  lessonPaths,
+  nextUp,
   toggled,
 } from "./logic";
 import Paths from "./Paths";
@@ -160,10 +164,11 @@ describe("Paths", () => {
     const html = renderToStaticMarkup(
       <Paths curriculum={curriculum} done={new Set(["c"])} />,
     );
-    // "start" has unread lessons and nothing read; "tax-es" is read to the end.
+    // The hero is the one filled button; "tax-es" is read to the end.
     expect(html.match(/ag-btn-cta/g)).toHaveLength(1);
-    expect(html).toContain("learn.start");
+    expect(html).toContain("learn.hero_resume");
     expect(html).toContain("learn.review");
+    expect(html).toContain("learn.path_done");
   });
 
   it("scales the bar to the share read rather than sizing it", () => {
@@ -187,7 +192,8 @@ describe("LessonBody", () => {
     expect(html).toContain('aria-pressed="false"');
     expect(html).toContain("ag-btn-cta");
     expect(html).toContain("tab=risk");
-    expect(html).toContain("term=pe");
+    expect(html).toContain("PER</button>");
+    expect(html).toContain("learn.ask");
     expect(html).not.toContain("learn.disclaimer");
   });
 
@@ -214,5 +220,46 @@ describe("TermList", () => {
     expect(html).toMatch(/class="lr-term lr-term-on" id="lr-term-index"/);
     expect(html).toContain("lesson=a");
     expect(html).not.toContain("learn.clear");
+  });
+});
+
+describe("next up", () => {
+  it("opens the first unread lesson across the paths, with the minutes left", () => {
+    const up = nextUp(curriculum, new Set(["a"]))!;
+    expect(up.lesson.id).toBe("b");
+    expect([up.at, up.total, up.read, up.all]).toEqual([2, 2, 1, 3]);
+    expect([up.minutesLeft, up.minutesAll]).toEqual([9, 12]);
+    expect(nextUp(curriculum, new Set(["a", "b", "c"]))).toBeNull();
+  });
+
+  it("tells which path teaches a term", () => {
+    const paths = lessonPaths(curriculum);
+    expect(inPath(terms, "start", paths).map((t) => t.id)).toEqual(["index"]);
+    expect(inPath(terms, null, paths)).toHaveLength(2);
+  });
+});
+
+describe("highlight", () => {
+  it("marks what matches, whatever the accents and case", () => {
+    expect(highlight("Índice bursátil", "indice")).toEqual([
+      { text: "Índice", hit: true },
+      { text: " bursátil", hit: false },
+    ]);
+    expect(highlight("P/E ratio", "p/e")[0]).toEqual({ text: "P/E", hit: true });
+    expect(highlight("abc", "")).toEqual([{ text: "abc", hit: false }]);
+    expect(highlight("abc", "x")).toEqual([{ text: "abc", hit: false }]);
+  });
+});
+
+describe("Quiz", () => {
+  it("offers every option and explains nothing until one is pressed", () => {
+    const html = renderToStaticMarkup(
+      <Quiz
+        quiz={{ question: "Q?", options: ["x", "y"], answer: 1, why: "Because." }}
+      />,
+    );
+    expect(html).toContain("Q?");
+    expect(html.match(/class="lr-opt"/g)).toHaveLength(2);
+    expect(html).not.toContain("Because.");
   });
 });

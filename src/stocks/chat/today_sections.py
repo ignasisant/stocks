@@ -608,6 +608,9 @@ LINE_SPAN = "m6"
 #: money on the same days (`same_money`), each position from where the book
 #: began — a window that starts later forgives whatever came before it.
 INCEPTION = "all"
+#: Beside a benchmark's `INCEPTION` percent: what that same money gained, in
+#: the reader's currency (the book's own gain for `@BOOK`).
+GAIN = "all_gain"
 #: A series that opens this soon after the book's first day is read from it:
 #: a download's first bar lands a session or a week late.
 OPEN_SLACK_DAYS = 7
@@ -736,24 +739,26 @@ def _opens(series, start):
     return max(start, series.index[0])
 
 
-def _book_all(hist, start) -> float | None:
-    """The book's own money from its first day (`money_change`), in percent."""
+def _book_all(hist, start) -> tuple[float, float] | None:
+    """The book's own money from its first day (`money_change`): (percent,
+    gain in the book's currency)."""
     from stocks.analysis.portfolio import money_change
 
     days = _days_since(hist, start)
     moved = money_change(hist, days) if days else None
-    return None if moved is None else round(moved[1] * 100, 1)
+    return None if moved is None else (round(moved[1] * 100, 1), round(moved[0], 2))
 
 
-def _index_all(hist, start, series) -> float | None:
+def _index_all(hist, start, series) -> tuple[float, float] | None:
     """What the book's money made in an index bought with it on the same days
-    from the book's first day (`index_change`), in percent."""
+    from the book's first day (`index_change`): (percent, gain in the book's
+    currency)."""
     from stocks.analysis.portfolio import index_change
 
     days = _days_since(hist, start)
     reached = reaching(series, start)
     moved = index_change(hist, reached, days) if days and reached is not None else None
-    return None if moved is None else round(moved[1] * 100, 1)
+    return None if moved is None else (round(moved[1] * 100, 1), round(moved[0], 2))
 
 
 def _days_since(hist, start) -> int | None:
@@ -833,7 +838,9 @@ def benchmarks(weights: dict[str, float], kinds: dict[str, str], closes: dict,
     start = book_start(hist)
     out = []
     book = _book_move(weights, moves, base)
-    book[INCEPTION] = _book_all(hist, start) if start is not None else None
+    own = _book_all(hist, start) if start is not None else None
+    book[INCEPTION] = None if own is None else own[0]
+    book[GAIN] = None if own is None else own[1]
     if any(v is not None for v in book.values()):
         out.append({"symbol": BOOK, "name": "", "currency": base, **book})
     for symbol, name in _marks(weights, kinds, closes):
@@ -844,7 +851,8 @@ def benchmarks(weights: dict[str, float], kinds: dict[str, str], closes: dict,
                 if start is not None and unit == base else None)
         out.append({"symbol": symbol, "name": name, "currency": unit,
                     **{span: moved.get(key) for span, key in SPANS.items()},
-                    INCEPTION: same})
+                    INCEPTION: None if same is None else same[0],
+                    GAIN: None if same is None else same[1]})
     return out
 
 

@@ -90,9 +90,8 @@
 .ag-rev-card {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-card);
-  padding: 1rem 1.1rem;
+  background: var(--ag-surface-raised);
+  padding: 18px;
   margin: 1rem 0;
 }
 
@@ -405,132 +404,266 @@
   }
 }
 
-/* ----------------------------------------------------------------- moves */
-
 /* --------------------------------------------------------------- the plan */
-
-/* The page's one figure, then the two bars that make it: what the sales free
-   and what the adds spend, on one scale. Side by side once there is room. */
-.ag-rev-plan-sum {
-  display: grid;
-  gap: 1rem 2.5rem;
-  margin-top: 0.75rem;
-}
-
-@container ag-main (min-width: 52rem) {
-  .ag-rev-plan-sum {
-    grid-template-columns: minmax(15rem, auto) minmax(0, 1fr);
-    align-items: center;
-  }
-}
-
-.ag-rev-plan-fig {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.ag-rev-plan-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: var(--ag-fs-xs);
-  font-weight: 500;
-  color: var(--ag-text-muted);
-}
-
-.ag-rev-plan-value {
-  font-size: var(--ag-fs-3xl);
-  letter-spacing: var(--ag-track-3xl);
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.ag-rev-plan-tax {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  font-size: var(--ag-fs-sm);
-  color: var(--ag-text-secondary);
-}
-
-.ag-rev-plan-tax b {
-  font-weight: 600;
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
 
 .ag-rev-plan-note {
   max-width: 62ch;
   margin-top: 0.6rem;
 }
 
-/* Label | bar | amount, the columns shared by both rows so the bars start
-   and end on the same lines. */
-.ag-rev-flow {
+/* The answer: what to do, in one sentence, with the money it moves beside
+   it once there is room. The tint is the brand accent at its faintest, so
+   the card reads as the page's lead without a colour of its own. */
+.ag-rev-answer {
   display: grid;
-  grid-template-columns: max-content minmax(4rem, 1fr) max-content;
-  align-items: center;
-  gap: 0.6rem 0.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+  padding: 1.25rem 1.35rem;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--ag-brand-accent) 10%, transparent),
+      transparent 55%
+    ),
+    var(--ag-surface-card);
+}
+
+@container ag-main (min-width: 54rem) {
+  .ag-rev-answer {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 1.5rem 2rem;
+  }
+}
+
+/* Nothing to move: no figures, the sentence takes the card's width. */
+.ag-rev-answer-main:only-child {
+  grid-column: 1 / -1;
+}
+
+.ag-rev-answer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.ag-rev-answer-main > p,
+.ag-rev-answer-main .ag-rev-plan-head,
+.ag-rev-answer-main .ag-rev-plan-stay {
   margin: 0;
 }
 
-.ag-rev-flow-row {
-  display: contents;
+.ag-rev-eyebrow {
+  margin: 0;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
 }
 
-.ag-rev-flow dt {
-  display: inline-flex;
+.ag-rev-answer-say {
+  margin: 0.15rem 0 0.35rem;
+  max-width: 30ch;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
+  font-weight: 600;
+  line-height: 1.12;
+  color: var(--ag-text-primary);
+  text-wrap: balance;
+}
+
+@container ag-main (max-width: 34rem) {
+  .ag-rev-answer-say {
+    font-size: var(--ag-fs-2xl);
+    letter-spacing: var(--ag-track-2xl);
+  }
+}
+
+.ag-rev-plan-head .ag-rev-caption,
+.ag-rev-plan-stay .ag-rev-caption {
+  max-width: 60ch;
+}
+
+/* The next contribution, boxed: when it lands and what it goes to. */
+.ag-rev-plan-next {
+  display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-sunken);
   font-size: var(--ag-fs-sm);
   color: var(--ag-text-secondary);
 }
 
-.ag-rev-flow dd {
-  margin: 0;
+.ag-rev-plan-next-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--ag-radius-sm);
+  background: color-mix(in oklab, var(--ag-brand-accent) 14%, transparent);
+  color: var(--ag-brand-accent);
 }
 
-.ag-rev-flow-track {
-  display: flex;
-  height: 10px;
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-sunken);
+.ag-rev-plan-next p {
+  margin: 0;
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+/* Sales, adds, tax: three cells on one hairline grid. */
+.ag-rev-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-border);
   overflow: hidden;
 }
 
-.ag-rev-flow-fill {
-  height: 100%;
-  border-radius: var(--ag-radius-pill);
+.ag-rev-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.75rem 0.85rem;
+  background: var(--ag-surface-card);
 }
 
-.ag-rev-flow-down {
-  background: var(--ag-down);
+.ag-rev-kpi dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
 }
 
-.ag-rev-flow-up {
-  background: var(--ag-up);
+.ag-rev-kpi dd {
+  margin: 0;
 }
 
-/* What the other side leaves: the new cash to find, or the cash left over. */
-.ag-rev-flow-gap {
-  box-sizing: border-box;
-  height: 100%;
-  border: 1px dashed var(--ag-text-faint);
-  border-left: none;
-  border-radius: 0 var(--ag-radius-pill) var(--ag-radius-pill) 0;
+/* Label, figure and note share rows across the three cells, so a label
+   that wraps to two lines does not push its figure below the others. */
+@supports (grid-template-rows: subgrid) {
+  .ag-rev-kpis {
+    grid-template-rows: auto auto auto;
+  }
+
+  .ag-rev-kpi {
+    display: grid;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 0.25rem;
+    align-content: start;
+  }
 }
 
-.ag-rev-flow-amount {
-  text-align: right;
-  font-size: var(--ag-fs-md);
+.ag-rev-kpi-value {
+  white-space: nowrap;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-xl);
+  letter-spacing: var(--ag-track-xl);
   font-weight: 600;
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+}
+
+.ag-rev-kpi-sub {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+/* Three cells while each keeps room for a six-figure sum; narrower, one row
+   per figure, label left and amount right, so no amount is ever cut. */
+.ag-rev-kpis-box {
+  container: ag-rev-kpis / inline-size;
+  min-width: 0;
+}
+
+@container ag-rev-kpis (max-width: 27rem) {
+  .ag-rev-kpis {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .ag-rev-kpi {
+    display: grid;
+    grid-row: auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: none;
+    align-items: center;
+    column-gap: 0.75rem;
+  }
+
+  .ag-rev-kpi dt,
+  .ag-rev-kpi-sub {
+    grid-column: 1;
+  }
+
+  .ag-rev-kpi-value {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    text-align: right;
+  }
+}
+
+@container ag-main (max-width: 26rem) {
+  .ag-rev-kpi {
+    padding: 0.6rem;
+  }
+
+  .ag-rev-kpi-value {
+    font-size: var(--ag-fs-lg);
+  }
+}
+
+/* The moves beside the names close to one: two cards on a row while each
+   keeps ~26rem, stacked after that; a lone card takes the row. */
+.ag-rev-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  align-items: start;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.ag-rev-pair:empty {
+  display: none;
+}
+
+.ag-rev-pair > .ag-rev-card {
+  margin: 0;
+  min-width: 0;
+}
+
+/* A move list's head: the verdict as a pill in its map colour. */
+.ag-rev-mvs-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.5rem;
+  padding: 0 0.6rem;
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in oklab, var(--mark) 14%, transparent);
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-mvs-title::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mark);
 }
 
 /* The moves, by direction: one list beside the other while each still fits
@@ -539,7 +672,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: 1.25rem 2rem;
-  margin-top: 1.25rem;
+  margin-top: 0.75rem;
 }
 
 .ag-rev-mvs {
@@ -795,6 +928,14 @@
   font-weight: 600;
 }
 
+.ag-rev-map-quad-up {
+  fill: var(--ag-candle-up);
+}
+
+.ag-rev-map-quad-down {
+  fill: var(--ag-candle-down);
+}
+
 .ag-rev-dot circle {
   stroke-width: 1.5;
   fill-opacity: 0.75;
@@ -808,29 +949,53 @@
   stroke-width: 3px;
 }
 
-.ag-rev-dot-up circle {
-  fill: var(--ag-up);
-  stroke: var(--ag-up);
+/* One colour per move (verdicts.mapMark): the dot and its legend key read
+   it from --mark, so the two never drift. Marks take the chart steps
+   (candle-*), not the text ones, which are too pale to fill a dot. Quiet holds stay grey, so the
+   names with something to do are the ones that show. */
+.ag-rev-mark-sell {
+  --mark: var(--ag-candle-down);
 }
 
-.ag-rev-dot-down circle {
-  fill: var(--ag-down);
-  stroke: var(--ag-down);
+.ag-rev-mark-trim {
+  --mark: var(--ag-warn-orange);
 }
 
-.ag-rev-dot-warn circle {
-  fill: var(--ag-warn);
-  stroke: var(--ag-warn);
+.ag-rev-mark-add {
+  --mark: var(--ag-candle-up);
 }
 
-.ag-rev-dot-flat circle {
-  fill: var(--ag-text-muted);
-  stroke: var(--ag-text-muted);
+.ag-rev-mark-near {
+  --mark: var(--ag-warn);
 }
 
+.ag-rev-mark-buy {
+  --mark: var(--ag-brand-accent);
+}
+
+.ag-rev-mark-watch {
+  --mark: var(--ag-info);
+}
+
+.ag-rev-mark-bet {
+  --mark: var(--ag-series-4);
+}
+
+.ag-rev-mark-still {
+  --mark: var(--ag-text-muted);
+}
+
+.ag-rev-dot circle {
+  fill: var(--mark);
+  stroke: var(--mark);
+}
+
+/* Outside the book: a ring in the move's colour, never mistaken for a held
+   dot however small that one is. */
 .ag-rev-dot-out circle {
   fill: var(--ag-surface-card);
   fill-opacity: 1;
+  stroke-width: 2;
 }
 
 /* The map's title on the left, its search box in the top-right corner;
@@ -934,6 +1099,11 @@
   background: var(--ag-text-muted);
 }
 
+.ag-rev-key-mark {
+  background: var(--mark);
+  border-color: var(--mark);
+}
+
 /* A trail's swatch: a short line from a hollow end, as on the map. */
 .ag-rev-key-trail {
   width: 1.1rem;
@@ -960,24 +1130,9 @@
   stroke-opacity: 0.7;
 }
 
-.ag-rev-trail-up polyline,
-.ag-rev-trail-up circle {
-  stroke: var(--ag-up);
-}
-
-.ag-rev-trail-down polyline,
-.ag-rev-trail-down circle {
-  stroke: var(--ag-down);
-}
-
-.ag-rev-trail-warn polyline,
-.ag-rev-trail-warn circle {
-  stroke: var(--ag-warn);
-}
-
-.ag-rev-trail-flat polyline,
-.ag-rev-trail-flat circle {
-  stroke: var(--ag-text-muted);
+.ag-rev-trail polyline,
+.ag-rev-trail circle {
+  stroke: var(--mark);
 }
 
 .ag-rev-trail-on polyline {
@@ -1190,7 +1345,7 @@
   padding: 1.1rem 1.25rem;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-raised);
   box-shadow: var(--ag-shadow-overlay);
 }
 
@@ -1591,13 +1746,6 @@
   max-width: 62ch;
 }
 
-.ag-rev-plan-stay-title {
-  margin: 0 0 0.25rem;
-  font-size: var(--ag-fs-lg);
-  font-weight: 600;
-  color: var(--ag-text-primary);
-}
-
 .ag-rev-plan-stay-why {
   margin: 0.5rem 0 0;
   padding-left: 1.1rem;
@@ -1605,50 +1753,7 @@
   color: var(--ag-text-secondary);
 }
 
-/* What new money would buy, apart from the moves the sales pay for. */
-.ag-rev-wait {
-  margin-top: 1.25rem;
-}
-
-/* The folded plan: every list side by side, one line a name — who, from
-   which weight to which, how much. The why and the tax are the full read's. */
-.ag-rev-plan-brief {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: 1rem 1.75rem;
-}
-
-.ag-rev-plan-brief .ag-rev-mv {
-  grid-template-columns: minmax(0, 1fr) auto minmax(5rem, auto);
-  grid-template-areas: "who weights money";
-  gap: 0 0.6rem;
-  padding: 0.3rem 0.5rem;
-}
-
-.ag-rev-plan-brief .ag-rev-mv-who {
-  font-size: var(--ag-fs-sm);
-}
-
-.ag-rev-plan-brief .ag-rev-mv-weights {
-  font-size: var(--ag-fs-xs);
-}
-
-.ag-rev-plan-brief .ag-rev-mv-money {
-  font-size: var(--ag-fs-sm);
-}
-
-/* Too narrow for the weights beside the name: name and money only. */
-@container ag-rev-mvs (max-width: 20rem) {
-  .ag-rev-plan-brief .ag-rev-mv {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "who money";
-  }
-
-  .ag-rev-plan-brief .ag-rev-mv-weights {
-    display: none;
-  }
-}
-
-/* The moves drawn against the S&P 500, under the full read's lists. */
+/* The moves drawn against the S&P 500, under the lists. */
 .ag-rev-plan-chart {
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -1799,33 +1904,6 @@
   color: var(--ag-warn);
 }
 
-/* ------------------------------------------------ the plan's headline */
-
-/* The plan in one sentence before its figures: how many to sell, trim, add
-   to and buy, and what holds. */
-.ag-rev-plan-head {
-  margin: 0.25rem 0 0.75rem;
-}
-
-.ag-rev-plan-say {
-  margin: 0 0 0.2rem;
-  max-width: 62ch;
-  font-size: var(--ag-fs-lg);
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--ag-text-primary);
-  text-wrap: balance;
-}
-
-/* The next contribution and what it goes to, under the figures. */
-.ag-rev-plan-next {
-  margin: 0.75rem 0 0;
-  max-width: 70ch;
-  font-size: var(--ag-fs-sm);
-  color: var(--ag-text-secondary);
-  text-wrap: pretty;
-}
-
 /* A move's weights: the figures, then the bar that draws them on the plan's
    one scale, so a 2 % position going to 6 % looks three times bigger. */
 .ag-rev-mv-weights {
@@ -1876,22 +1954,6 @@
   background: var(--ag-text-primary);
 }
 
-/* Folded, the tax still shows: under the money, the weights keep their
-   place beside the name. */
-.ag-rev-plan-brief .ag-rev-mv {
-  grid-template-areas:
-    "who weights money"
-    ". . note";
-}
-
-@container ag-rev-mvs (max-width: 20rem) {
-  .ag-rev-plan-brief .ag-rev-mv {
-    grid-template-areas:
-      "who money"
-      ". note";
-  }
-}
-
 @container ag-rev-mvs (max-width: 26rem) {
   .ag-rev-mv-weights {
     align-items: flex-start;
@@ -1902,6 +1964,10 @@
 
 /* The names a few points from a move: who, which move and how far, and the
    score on its 0–100 scale with the line it has to cross. */
+.ag-rev-close {
+  container: ag-rev-close / inline-size;
+}
+
 .ag-rev-close-list {
   margin: 0.5rem 0 0;
   padding: 0;
@@ -2000,14 +2066,15 @@
   background: var(--ag-text-primary);
 }
 
-/* Narrow: name and details on one line, the sentence and gauge under. */
-@container ag-main (max-width: 40rem) {
+/* Narrow: name and details on one line, the gauge and the sentence under.
+   The card sits beside the moves, so it answers to its own width. */
+@container ag-rev-close (max-width: 40rem) {
   .ag-rev-close-row {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "who more"
-      "say say"
-      "gauge gauge";
+      "gauge gauge"
+      "say say";
   }
 
   .ag-rev-close-who {
@@ -2030,7 +2097,25 @@
 /* --------------------------------------------------- the verdict split */
 
 /* Book and outside names as one stacked bar each, then a chip per verdict
-   that picks its names out on the map and in the tables. */
+   that picks its names out on the map and in the tables. A band between the
+   answer and the moves, not a card of its own. */
+.ag-rev-vbar {
+  margin: 1.25rem 0;
+}
+
+.ag-rev-vbar-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.ag-rev-vbar-head .ag-rev-caption {
+  margin: 0;
+}
+
 .ag-rev-vbar-bars {
   display: grid;
   gap: 0.5rem;
@@ -2065,27 +2150,12 @@
 
 .ag-rev-vbar-seg {
   min-width: 4px;
+  background: var(--mark);
   transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-rev-vbar-seg[data-dim] {
   opacity: 0.2;
-}
-
-.ag-rev-vbar-down {
-  background: var(--ag-down);
-}
-
-.ag-rev-vbar-warn {
-  background: var(--ag-warn);
-}
-
-.ag-rev-vbar-up {
-  background: var(--ag-up);
-}
-
-.ag-rev-vbar-flat {
-  background: var(--ag-text-muted);
 }
 
 .ag-rev-vbar-chips {
@@ -2123,6 +2193,7 @@
 
 .ag-rev-vbar-dot {
   flex: none;
+  background: var(--mark);
   width: 8px;
   height: 8px;
   border-radius: 50%;

@@ -77,5 +77,6 @@
   "activity.expected": "Di solito ci vogliono ~{s} s",
   "activity.hint_slow": "Lento, ma ancora in corso.",
   "activity.hint_long": "I caricamenti grandi possono durare fino a un minuto.",
-  "activity.hint_very_long": "Ancora al lavoro. Se non finisce, ricarica la pagina."
+  "activity.hint_very_long": "Ancora al lavoro. Se non finisce, ricarica la pagina.",
+  "common.close": "Chiudi"
 }

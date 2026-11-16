@@ -143,3 +143,13 @@ describe("sectorWeight", () => {
     expect(sectorWeight(null, "Energy")).toBeNull();
   });
 });
+
+import { isPercent, toWire } from "./metrics";
+
+describe("threshold units", () => {
+  it("types percentages as percent and compares them as fractions", () => {
+    expect(isPercent("roic")).toBe(true);
+    expect(toWire("roic", 15)).toBeCloseTo(0.15);
+    expect(toWire("pe_ttm", 40)).toBe(40);
+  });
+});

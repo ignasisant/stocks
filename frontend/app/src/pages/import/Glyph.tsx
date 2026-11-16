@@ -40,6 +40,24 @@ const SHAPES = {
       <line x1="12" x2="12" y1="16" y2="16.2" />
     </>
   ),
+  /** The assistant: a statement handed to the chat. */
+  chat: <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z" />,
+  /** Pasted text: the paste box. */
+  paste: (
+    <>
+      <rect height="17" rx="1.5" width="12" x="6" y="4" />
+      <path d="M9 4V3h6v1" />
+      <line x1="9" x2="15" y1="11" y2="11" />
+      <line x1="9" x2="13" y1="15" y2="15" />
+    </>
+  ),
+  /** A side panel opening: the action leaves the page for the chat drawer. */
+  panel: (
+    <>
+      <rect height="16" rx="2" width="18" x="3" y="4" />
+      <line x1="15" x2="15" y1="4" y2="20" />
+    </>
+  ),
   right: <polyline points="9 18 15 12 9 6" />,
   down: <polyline points="6 9 12 15 18 9" />,
   file: (

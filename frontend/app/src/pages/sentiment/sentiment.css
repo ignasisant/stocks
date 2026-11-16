@@ -24,11 +24,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-raised);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg, 16px);
-  box-shadow: var(--ag-shadow-card);
-  padding: 1.1rem 1.2rem;
+  padding: 18px;
 }
 
 .sn-caption {
@@ -88,10 +87,17 @@
 }
 
 .sn-cta {
-  background: var(--ag-brand-cta);
-  border-color: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
+  border-color: var(--ag-purple-700);
   color: var(--ag-on-brand);
   font-weight: 600;
+}
+
+@media (hover: hover) {
+  .sn-cta:not(:disabled):hover {
+    background: var(--ag-brand-cta);
+    border-color: var(--ag-brand-cta);
+  }
 }
 
 /* ---------------------------------------------------------------- tone */
@@ -234,23 +240,29 @@
    in between, and lets the browser find the middle. */
 .sn-meter {
   position: relative;
+  display: flex;
+  gap: 2px;
   height: 16px;
-  border-radius: var(--ag-radius-pill, 9999px);
-  background: linear-gradient(
-    90deg,
-    var(--ag-down-fill) 0%,
-    var(--ag-down-fill) 14%,
-    var(--ag-warn-fill) 30%,
-    var(--ag-surface-hover) 44%,
-    var(--ag-surface-hover) 56%,
-    var(--ag-success-fill) 82%,
-    var(--ag-success-fill) 100%
-  );
+}
+
+/* Five named bands, each as wide as its share of the 0-100 scale. The colours
+   are the regime pill's own, so the bar and the word beside it agree. */
+.sn-band {
+  display: block;
+  min-width: 0;
+}
+
+.sn-band:first-child {
+  border-radius: var(--ag-radius-pill, 9999px) 0 0 var(--ag-radius-pill, 9999px);
+}
+
+.sn-band:last-of-type {
+  border-radius: 0 var(--ag-radius-pill, 9999px) var(--ag-radius-pill, 9999px) 0;
 }
 
 /* A score nobody could build parks its pin mid-scale, on a track with no
    verdict on it: at zero it would read as maximum fear. */
-.sn-meter-flat {
+.sn-meter-flat .sn-band {
   background: var(--ag-surface-hover);
 }
 
@@ -275,13 +287,25 @@
 
 .sn-meter-scale {
   display: flex;
-  gap: 0.5rem;
-  justify-content: space-between;
-  white-space: nowrap;
+  gap: 2px;
+  margin-top: 0.3rem;
   font-family: var(--ag-font-mono);
   font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   color: var(--ag-text-muted);
+}
+
+.sn-meter-scale > span {
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sn-meter-scale > .sn-on {
+  color: var(--ag-text-primary);
+  font-weight: 700;
 }
 
 .sn-sparkbox {
@@ -326,11 +350,72 @@
   color: var(--ag-text-muted);
 }
 
-.sn-hero-spark {
-  display: block;
+.sn-chart {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
-  height: 56px;
+  gap: 0.35rem;
+}
+
+.sn-chart-read {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: space-between;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+}
+
+.sn-chart-plot {
+  position: relative;
+  height: 8.5rem;
+  margin-left: 1.6rem;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.sn-hero-spark {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sn-chart-y {
+  position: absolute;
+  left: -1.6rem;
+  transform: translateY(-50%);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
+  color: var(--ag-text-muted);
+}
+
+.sn-chart-rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ag-text-muted);
+  pointer-events: none;
+}
+
+.sn-chart-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--ag-brand-accent);
+  box-shadow: 0 0 0 2px var(--ag-surface-card);
+  pointer-events: none;
+}
+
+.sn-hero-spark .sn-hero-mid {
+  stroke: var(--ag-text-muted);
+  stroke-dasharray: none;
 }
 
 .sn-hero-spark polyline {
@@ -472,20 +557,66 @@
 
 .sn-comp-fill {
   position: absolute;
-  inset: 0 auto 0 0;
+  top: 0;
+  bottom: 0;
   border-radius: var(--ag-radius-pill, 9999px);
 }
 
-.sn-fill-good {
+/* Grown from the 50 line: appetite to the right, tension to the left. */
+.sn-comp-axis {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 1px;
+  background: var(--ag-border-focus);
+}
+
+.sn-fill-appetite {
+  left: 50%;
+  background: var(--ag-candle-up);
+  border-radius: 0 var(--ag-radius-pill, 9999px) var(--ag-radius-pill, 9999px) 0;
+}
+
+.sn-fill-tension {
+  right: 50%;
+  left: auto;
+  background: var(--ag-candle-down);
+  border-radius: var(--ag-radius-pill, 9999px) 0 0 var(--ag-radius-pill, 9999px);
+}
+
+.sn-comp-key {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.sn-comp-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.sn-comp-key i {
+  display: inline-block;
+  width: 10px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.sn-key-te {
+  background: var(--ag-candle-down);
+}
+
+.sn-key-ap {
   background: var(--ag-candle-up);
 }
 
-.sn-fill-flat {
-  background: var(--ag-text-secondary);
-}
-
-.sn-fill-bad {
-  background: var(--ag-candle-down);
+.sn-key-mk {
+  width: 2px !important;
+  height: 10px !important;
+  border-radius: 0 !important;
+  background: var(--ag-text-primary);
 }
 
 .sn-comp-mark {
@@ -545,12 +676,15 @@
 .sn-tilt-rows {
   display: grid;
   gap: 0.2rem 1.2rem;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
 }
 
 .sn-tilt-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  /* The name keeps its own width (it wraps onto a second line, never under
+     the bar); the bar takes what is left. */
+  grid-template-columns: minmax(6.5rem, 1fr) minmax(2.5rem, 34%) auto;
+  align-items: center;
   gap: 0.6rem;
   font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--ag-text-secondary);
@@ -558,7 +692,47 @@
   padding: 0.15rem 0;
 }
 
+.sn-tilt-bar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ag-surface-hover);
+}
+
+.sn-tilt-bar::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: 1px;
+  background: var(--ag-border-focus);
+}
+
+.sn-tilt-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--ag-text-secondary);
+}
+
+.sn-tilt-pos {
+  left: 50%;
+  border-radius: 0 3px 3px 0;
+}
+
+.sn-tilt-neg {
+  right: 50%;
+  border-radius: 3px 0 0 3px;
+}
+
+.sn-tilt-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .sn-tilt-row b {
+  text-align: right;
   font-family: var(--ag-font-mono);
   font-weight: 500;
   font-size: var(--ag-fs-xs, 0.6875rem);
@@ -871,11 +1045,6 @@
    squeezed by the chat drawer. By the page's own width, not the viewport's —
    see `.ag-main` in styles.css. */
 @container ag-main (max-width: 620px) {
-  /* Five labels overlap at this width; the 20 and 80 ticks go first. */
-  .sn-meter-scale > :nth-child(2),
-  .sn-meter-scale > :nth-child(4) {
-    display: none;
-  }
   .sn-hero {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -949,5 +1118,117 @@
     font-size: var(--ag-fs-2xs, 0.6875rem);
     font-weight: 500;
     color: var(--ag-text-muted);
+  }
+}
+
+/* ------------------------------------------- chips, dots, tabs, jump strip */
+.sn-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.sn-chip-fig {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.sn-chip-fig small {
+  font-size: var(--ag-fs-2xs, 0.6875rem);
+  color: var(--ag-text-muted);
+}
+
+.sn-chip-fig b {
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-lg, 1rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .sn-chip-fig:hover {
+    border-color: var(--ag-border-focus);
+    background: var(--ag-surface-hover);
+  }
+}
+
+@media (pointer: coarse) {
+  .sn-chip-fig {
+    min-height: 44px;
+  }
+}
+
+.sn-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.sn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ag-surface-hover);
+  border: 1px solid var(--ag-border);
+}
+
+.sn-dot-on {
+  background: var(--ag-candle-up);
+  border-color: var(--ag-candle-up);
+}
+
+@container ag-main (min-width: 761px) {
+  /* Seven tabs wrap instead of scrolling: nothing hides past the edge. */
+  .ag-tabs.sn-tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+  .ag-tabs.sn-tabs .ag-tabs-ink {
+    display: none;
+  }
+  .ag-tabs.sn-tabs .ag-tab-on {
+    box-shadow: inset 0 -2px 0 var(--ag-text-primary);
+  }
+}
+
+@container ag-main (max-width: 760px) {
+  .sn-chips {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  }
+  /* The four quick jumps stay under the thumb while the page scrolls. */
+  .sn-jump {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 20;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: -1rem;
+    padding: 0.4rem 1rem;
+    background: color-mix(in oklab, var(--ag-surface-page) 80%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  #ag-pulse,
+  #ag-why,
+  #ag-book,
+  #ag-detail {
+    scroll-margin-top: 4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sn-chip-fig {
+    transition: none;
   }
 }

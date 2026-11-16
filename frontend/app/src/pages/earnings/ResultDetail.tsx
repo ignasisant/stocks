@@ -19,10 +19,8 @@
  * calendar: one dialog for both, so the two cannot drift.
  */
 
-import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { useDialog } from "../../shell/useDialog";
-import { useExitGhost } from "../../shell/useSheet";
+import { askAssistant } from "../../shell/assistant";
 import { get } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
@@ -31,6 +29,7 @@ import { useTickerProfile } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
 import { Kpi, KpiGrid, toneOf, type ChipSpec } from "../../ui/Kpi";
 import { Responsive, StackCards } from "../../ui/Rows";
+import { SidePanel } from "../../ui/SidePanel";
 import type {
   CalendarResult,
   ConsensusPeriod,
@@ -753,24 +752,12 @@ export function Breakdown({
 
 function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
   const t = useT();
-  const scrim = useRef<HTMLDivElement>(null);
-  const card = useRef<HTMLDivElement>(null);
-  useDialog(card);
-  useExitGhost(scrim);
   const profile = useTickerProfile(ticker);
   const query = useApi(
     () =>
       get<ResultDetailData>(`/earnings/${encodeURIComponent(ticker)}/result`, { date }),
     [ticker, date],
   );
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const data = query.state === "loaded" ? query.data : null;
   // The response is the authority once it lands; until then, the row the
@@ -783,99 +770,100 @@ function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
   const settled = query.state !== "loading";
 
   return (
-    <div
-      ref={scrim}
-      className="earn-modal"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={card}
-        tabIndex={-1}
-        className="earn-modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("earnings.dialog_title")}
-      >
-        <div className="earn-modal-head">
-          <div className="earn-modal-id">
-            {logo && (
-              <img className="earn-modal-logo" src={logo} alt="" loading="lazy" />
-            )}
-            <div>
-              <div className="earn-modal-name">
-                <Link className="earn-ticker" page="ticker" params={{ ticker }}>
-                  {ticker}
-                </Link>
-                {name && <span>{` — ${name}`}</span>}
-              </div>
-              <div className="earn-modal-date">
-                {plain(t("earnings.reported_on", { date: longDate(date, t) }))}
-              </div>
+    <SidePanel
+      label={t("earnings.dialog_title")}
+      head={
+        <div className="earn-modal-id">
+          {logo && <img className="earn-modal-logo" src={logo} alt="" loading="lazy" />}
+          <div>
+            <div className="earn-modal-name">
+              <Link className="earn-ticker" page="ticker" params={{ ticker }}>
+                {ticker}
+              </Link>
+              {name && <span>{` — ${name}`}</span>}
+            </div>
+            <div className="earn-modal-date">
+              {plain(t("earnings.reported_on", { date: longDate(date, t) }))}
             </div>
           </div>
-          <button type="button" className="earn-close" onClick={onClose}>
-            {t("earnings.close")}
-          </button>
         </div>
-
-        {printed === null ? (
-          settled ? (
-            <p className="ag-note">{t("earnings.no_figures")}</p>
-          ) : (
-            <Skeleton rows={4} />
-          )
+      }
+      onClose={onClose}
+    >
+      {printed === null ? (
+        settled ? (
+          <p className="ag-note">{t("earnings.no_figures")}</p>
         ) : (
-          <>
-            <Tiles
-              tiles={[
-                {
-                  label: t("earnings.reported_eps"),
-                  value: decimal(printed.reported_eps, { digits: 2 }) ?? DASH,
-                  chip:
-                    printed.surprise_pct === null
-                      ? null
-                      : chip(
-                          t("earnings.surprise_vs_est", {
-                            pct: decimal(printed.surprise_pct, { signed: "always" }),
-                          }),
-                          printed.surprise_pct,
-                        ),
-                },
-                {
-                  label: t("earnings.eps_estimate"),
-                  value: decimal(printed.eps_estimate, { digits: 2 }) ?? DASH,
-                },
-                {
-                  label: t("earnings.price_reaction"),
-                  value: data
-                    ? (percent(data.price_reaction, {
-                        digits: 2,
-                        signed: "always",
-                        points: true,
-                      }) ?? DASH)
-                    : "…",
-                  tip: t("earnings.price_reaction_caption"),
-                },
-              ]}
-            />
-            {query.state === "loading" ? (
-              <Skeleton rows={6} />
-            ) : query.state === "failed" ? (
-              <div className="ag-note">
-                <p>{t("common.data_unavailable")}</p>
-                <button type="button" className="ag-btn" onClick={query.retry}>
-                  {t("common.retry")}
-                </button>
-              </div>
-            ) : data ? (
-              <Breakdown data={data} printed={printed} />
-            ) : null}
-          </>
-        )}
+          <Skeleton rows={4} />
+        )
+      ) : (
+        <>
+          <Tiles
+            tiles={[
+              {
+                label: t("earnings.reported_eps"),
+                value: decimal(printed.reported_eps, { digits: 2 }) ?? DASH,
+                chip:
+                  printed.surprise_pct === null
+                    ? null
+                    : chip(
+                        t("earnings.surprise_vs_est", {
+                          pct: decimal(printed.surprise_pct, { signed: "always" }),
+                        }),
+                        printed.surprise_pct,
+                      ),
+              },
+              {
+                label: t("earnings.eps_estimate"),
+                value: decimal(printed.eps_estimate, { digits: 2 }) ?? DASH,
+              },
+              {
+                label: t("earnings.price_reaction"),
+                value: data
+                  ? (percent(data.price_reaction, {
+                      digits: 2,
+                      signed: "always",
+                      points: true,
+                    }) ?? DASH)
+                  : "…",
+                tip: t("earnings.price_reaction_caption"),
+              },
+            ]}
+          />
+          {query.state === "loading" ? (
+            <Skeleton rows={6} />
+          ) : query.state === "failed" ? (
+            <div className="ag-note">
+              <p>{t("common.data_unavailable")}</p>
+              <button type="button" className="ag-btn" onClick={query.retry}>
+                {t("common.retry")}
+              </button>
+            </div>
+          ) : data ? (
+            <Breakdown data={data} printed={printed} />
+          ) : null}
+        </>
+      )}
+      <div className="earn-ev-learn">
+        <Link className="ag-btn" page="ticker" params={{ ticker }}>
+          {t("earnings.ev_open", { name: ticker })}
+        </Link>
+        <button
+          type="button"
+          className="earn-ev-lesson"
+          onClick={() => {
+            askAssistant(
+              t("earnings.ev_ask_prompt", {
+                what: `${ticker} ${t("earnings.reported_on", { date: date })}`,
+              }),
+            );
+            onClose();
+          }}
+        >
+          {t("earnings.ev_ask")}
+        </button>
       </div>
-    </div>
+    </SidePanel>
   );
 }
 

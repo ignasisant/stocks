@@ -442,6 +442,14 @@ def last(account: Account) -> LastImport:
     )
 
 
+def _age_s(stamp: str) -> int | None:
+    """Seconds since an ISO stamp, or None when it does not parse."""
+    try:
+        return int((datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
 @router.delete("/last", response_model=LastImport, summary="Undo it")
 def undo(account: Writer) -> LastImport:
     """Delete exactly the rows the last commit inserted.
@@ -457,6 +465,10 @@ def undo(account: Writer) -> LastImport:
         )
     removed = delete_many(record.tx_ids, account.db)
     last_import.forget(account.last_import)
+    # The one write a reader makes to say an import was wrong: without it a
+    # commit followed by a second, different one reads as two imports.
+    obs.event("import.undone", platform=record.platform, n=removed,
+              wiped=record.wiped, age_s=_age_s(record.imported_at))
     return LastImport(
         filename=record.filename,
         imported_at=record.imported_at,

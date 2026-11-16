@@ -21,7 +21,7 @@
   "sector.rank_by": "Ordenar por",
   "sector.ascending": "Ascendente",
   "sector.columns": "Columnas",
-  "sector.filters_caption": "Filtros (las métricas en porcentaje son fracciones: 0.15 = 15%)",
+  "sector.filters_caption": "Filtros (porcentajes en %: 15 = 15 %)",
   "sector.pass_caption": "{n} de {total} empresas pasan — reordena en **Orden, columnas y umbrales**.",
   "sector.download_csv": "Descargar números en bruto (CSV)",
   "sector.metrics_help": "¿Qué significan estas métricas?",

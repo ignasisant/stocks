@@ -10,9 +10,8 @@
  */
 
 import { useLang, useT } from "../../shell/i18n";
-import { verdictTone } from "./format";
 import type { ReviewRow, Verdict } from "./types";
-import { verdictCounts } from "./verdicts";
+import { verdictCounts, verdictMark } from "./verdicts";
 
 export function VerdictBar({
   held,
@@ -34,7 +33,13 @@ export function VerdictBar({
       on.has(verdict) ? picked.filter((one) => one !== verdict) : [...picked, verdict],
     );
   return (
-    <section className="ag-rev-card ag-rev-vbar" aria-label={t("review.vbar_label")}>
+    <section className="ag-rev-vbar" aria-labelledby="ag-rev-vbar-h">
+      <div className="ag-rev-vbar-head">
+        <h2 className="ag-rev-eyebrow" id="ag-rev-vbar-h">
+          {t("review.vbar_title")}
+        </h2>
+        <span className="ag-rev-caption">{t("review.vbar_hint")}</span>
+      </div>
       <div className="ag-rev-vbar-bars">
         <Stack label={t("review.vbar_held")} rows={held} picked={on} />
         <Stack label={t("review.vbar_outside")} rows={candidates} picked={on} />
@@ -53,7 +58,7 @@ export function VerdictBar({
             onClick={() => toggle(verdict)}
           >
             <span
-              className={`ag-rev-vbar-dot ag-rev-vbar-${verdictTone(verdict)}`}
+              className={`ag-rev-vbar-dot ag-rev-mark-${verdictMark(verdict)}`}
               aria-hidden="true"
             />
             {t(`review.verdict_${verdict}`)}
@@ -100,7 +105,7 @@ function Stack({
         {counts.map(({ verdict, count }) => (
           <span
             key={verdict}
-            className={`ag-rev-vbar-seg ag-rev-vbar-${verdictTone(verdict)}`}
+            className={`ag-rev-vbar-seg ag-rev-mark-${verdictMark(verdict)}`}
             data-dim={picked.size > 0 && !picked.has(verdict) ? "" : undefined}
             style={{ flexGrow: count }}
             title={`${t(`review.verdict_${verdict}`)} · ${count}`}

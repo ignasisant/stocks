@@ -14,14 +14,56 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Pending, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import type { Custodian, MarketStatus, Movers, Position, Summary } from "./api";
+import type {
+  Custodian,
+  MarketStatus,
+  Movers,
+  Position as ApiPosition,
+  Summary,
+} from "./api";
+import { useState } from "react";
 import { priceDigits } from "../home/format";
 import { brokerName } from "./format";
-import { Caption, Card, Chip, Empty, Figure, Kpis, Signed, Table } from "./ui";
+import {
+  Caption,
+  Card,
+  Chip,
+  Empty,
+  Figure,
+  Kpis,
+  Segmented,
+  ShareBar,
+  Signed,
+  Table,
+} from "./ui";
 import type { Column } from "./ui";
 import History from "./History";
 import { moneyIn, percent, shares as formatShares } from "../../shell/format";
 import { TickerCell } from "../../shell/tickers";
+
+/** A row with the week and month moves the server now adds (null when unknown). */
+type Position = ApiPosition & {
+  week_pct?: number | null;
+  month_pct?: number | null;
+};
+
+type Span = (typeof WINDOWS)[number][1];
+
+/** The move a row shows over a span: the percentage, and its amount in money. */
+export function spanMove(
+  row: Position,
+  span: Span,
+): { pct: number | null; amount: number | null } {
+  if (span === "day") return { pct: row.day_pct, amount: row.day };
+  const pct = (span === "week" ? row.week_pct : row.month_pct) ?? null;
+  if (pct === null || row.value === null || pct === -1) return { pct, amount: null };
+  return { pct, amount: (row.value * pct) / (1 + pct) };
+}
+
+/** Rows held at `broker` (any custodian), or all of them for the empty string. */
+export function atBroker(rows: Position[], broker: string): Position[] {
+  return broker ? rows.filter((r) => r.custody.some((c) => c.broker === broker)) : rows;
+}
 
 /**
  * The three spans the book's own move is quoted over, and the label each one
@@ -91,6 +133,8 @@ function closedDay(rows: Position[], value: number) {
 }
 
 function Positions() {
+  const [span, setSpan] = useState<Span>("day");
+  const [broker, setBroker] = useState("");
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
@@ -131,6 +175,11 @@ function Positions() {
   const price = (row: Position) =>
     moneyIn(lang, row.currency)(row.price, { digits: priceDigits(row.price) });
 
+  const topWeight = Math.max(
+    0.0001,
+    ...(rows.state === "loaded" ? rows.data.positions : []).map((r) => r.weight ?? 0),
+  );
+
   const columns: Column<Position>[] = [
     {
       key: "ticker",
@@ -154,13 +203,6 @@ function Positions() {
       // In the currency the name trades in, as its own market quotes it: a
       // dollar share converted to euros is a price no screen anywhere shows.
       cell: (row) => priced(<Figure value={price(row)} />),
-    },
-    {
-      key: "currency",
-      label: t("portfolio.col_currency"),
-      left: true,
-      sort: (row) => row.currency,
-      cell: (row) => <span className="pf-muted">{row.currency}</span>,
     },
     {
       key: "broker",
@@ -187,28 +229,36 @@ function Positions() {
       key: "weight",
       label: t("portfolio.col_weight"),
       sort: (row) => row.weight,
-      cell: (row) => priced(<Figure value={percent(row.weight, { lang })} />),
+      cell: (row) =>
+        priced(
+          <ShareBar share={row.weight === null ? null : row.weight / topWeight}>
+            <Figure value={percent(row.weight, { lang })} />
+          </ShareBar>,
+        ),
     },
     {
       key: "day",
-      label: t("portfolio.today"),
-      sort: (row) => row.day,
-      // Amount and percentage of today's move in one cell. A name with no
+      label: t(WINDOWS.find(([, w]) => w === span)![0]),
+      sort: (row) => spanMove(row, span).pct,
+      // Amount and percentage of the span's move in one cell. A name with no
       // live quote (its exchange is shut and it is not in a US extended
       // window) keeps its figures but greys them: that is the last session's
       // move, not today's.
-      cell: (row) =>
-        priced(
-          <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
-            <Signed value={row.day} text={money(row.day, { signed: true })} />
-            {row.day_pct === null ? null : (
-              <Chip
-                value={row.day_pct}
-                text={percent(row.day_pct, { lang, signed: true })}
-              />
+      cell: (row) => {
+        const move = spanMove(row, span);
+        return priced(
+          <span
+            className={
+              span !== "day" || row.market_active ? "pf-pair" : "pf-pair pf-dim"
+            }
+          >
+            <Signed value={move.amount} text={money(move.amount, { signed: true })} />
+            {move.pct === null ? null : (
+              <Chip value={move.pct} text={percent(move.pct, { lang, signed: true })} />
             )}
           </span>,
-        ),
+        );
+      },
     },
     {
       key: "pnl",
@@ -244,7 +294,7 @@ function Positions() {
         {
           key: "day_pct",
           label: t("portfolio.sort_day_pct"),
-          sort: (row) => row.day_pct,
+          sort: (row) => spanMove(row, span).pct,
           column: "day",
         },
         {
@@ -273,12 +323,14 @@ function Positions() {
           priced(
             <span className={row.market_active ? undefined : "pf-dim"}>
               <Signed
-                value={row.day_pct}
+                value={spanMove(row, span).pct}
                 text={
-                  row.day_pct === null
+                  spanMove(row, span).pct === null
                     ? null
                     : t("portfolio.chip_day", {
-                        pct: percent(row.day_pct, { lang, signed: true }) ?? "",
+                        pct:
+                          percent(spanMove(row, span).pct, { lang, signed: true }) ??
+                          "",
                       })
                 }
               />
@@ -434,13 +486,43 @@ function Positions() {
                 {t("portfolio.unlisted_note", { tickers: summary.unlisted.join(", ") })}
               </Caption>
             ) : null}
-            {table(positions.positions)}
+            {brokersOf(positions.positions as Position[]).length > 1 ? (
+              <div
+                className="pf-chips"
+                role="group"
+                aria-label={t("portfolio.col_broker")}
+              >
+                {["", ...brokersOf(positions.positions as Position[])].map((b) => (
+                  <button
+                    key={b || "all"}
+                    type="button"
+                    className="pf-legend-key"
+                    aria-pressed={broker === b}
+                    onClick={() => setBroker(b)}
+                  >
+                    {b ? brokerName(b, t) : t("portfolio.broker_all")}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <Segmented
+              label={t("portfolio.change_over")}
+              options={WINDOWS.map(([, w]) => w)}
+              value={span}
+              onChange={setSpan}
+              format={(w) => t(WINDOWS.find(([, x]) => x === w)![0])}
+            />
+            {table(atBroker(positions.positions as Position[], broker))}
             <Caption>{t("portfolio.positions_caption")}</Caption>
           </Card>
         );
       }}
     </Loaded>
   );
+}
+
+function brokersOf(rows: Position[]): string[] {
+  return [...new Set(rows.flatMap((r) => r.custody.map((c) => c.broker)))].sort();
 }
 
 /**

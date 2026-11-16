@@ -8,7 +8,7 @@
  * that found no name at an edge (`home.no_extremes`).
  *
  * The rows come in two runs, highs then lows, each under its own heading the
- * way the movers card beside it splits gains from losses. The heading says
+ * way the movers card splits gains from losses. The heading says
  * which edge, so a row only says how far: `distance: null` is at or beyond
  * the extreme, which is a different fact from being 0% away from it — a word
  * (`home.at_high`) against a signed percentage.
@@ -40,28 +40,15 @@ const RUNS = [
 ] as const;
 
 /**
- * The scan, read by the page rather than by the card: the movers card beside
- * it draws as many rows as this one does (`moverRows`). `enabled` false — the
- * card put away — answers null without a request.
+ * The scan, read by the page rather than by the card, so a refresh's nonce
+ * reaches it. `enabled` false — the card put away — answers null without a
+ * request.
  */
 export function useExtremes(nonce: number, enabled: boolean): Query<Extremes | null> {
   return useApi<Extremes | null>(
     () => (enabled ? get<Extremes>("/extremes") : Promise.resolve(null)),
     [nonce, enabled],
   );
-}
-
-/** Fewest and most rows a movers side draws, whatever the scan found. */
-const MOVER_ROWS = { min: 3, max: 7 } as const;
-
-/**
- * How many rows each movers side draws: the extremes card's own count, so the
- * two halves of the row end level, held between 3 and 7. A scan still in
- * flight, failed, hidden or empty leaves the floor.
- */
-export function moverRows(query: Query<Extremes | null>): number {
-  const count = query.state === "loaded" && query.data ? query.data.extremes.length : 0;
-  return Math.min(MOVER_ROWS.max, Math.max(MOVER_ROWS.min, count));
 }
 
 /** The scan's rows split by edge, in `RUNS` order, empty runs left out. */

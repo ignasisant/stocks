@@ -1492,6 +1492,38 @@ def test_an_undo_removes_that_batch_and_only_that_batch(client, account, signed_
     assert [t.ticker for t in all_transactions(account.db)] == ["OLD"]
 
 
+def test_an_undo_is_logged_with_what_it_took_back(
+    client, account, signed_in, monkeypatch
+):
+    """The one write that says an import was wrong. Without it a commit and a
+    second, different one read in the logs as two imports."""
+    from stocks import obs
+
+    signed_in.post("/v1/import/commit", json=body())
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **f: seen.append((name, f)))
+    signed_in.delete("/v1/import/last")
+    undone = [f for name, f in seen if name == "import.undone"]
+    assert len(undone) == 1
+    assert undone[0]["n"] == 2 and undone[0]["wiped"] is False
+    assert undone[0]["age_s"] is not None and undone[0]["age_s"] >= 0
+
+
+def test_a_preview_logs_the_currencies_and_actions_it_read(
+    client, account, signed_in, monkeypatch
+):
+    """Counts per currency and per action — nothing that names a holding —
+    so an abandoned model-read preview says what it got wrong, if not why."""
+    from stocks import obs
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **f: seen.append((name, f)))
+    signed_in.post("/v1/import/preview", json=body())
+    preview = next(f for name, f in seen if name == "import.preview")
+    assert preview["currencies"] == "EUR:2"
+    assert preview["actions"] == "buy:2"
+
+
 def test_undoing_twice_is_a_404_rather_than_a_second_deletion(
     client, account, signed_in
 ):

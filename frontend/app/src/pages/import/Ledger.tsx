@@ -25,6 +25,7 @@ import { useAccount, useCurrency } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import type { Query } from "../../shell/useApi";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
+import { SidePanel } from "../../ui/SidePanel";
 import { Status } from "../../ui/Status";
 import { paid as paidOf, standing as standingOf, wipeLedger } from "./api";
 import type { Book } from "./api";
@@ -131,18 +132,27 @@ export function Ledger({
                 ) : null}
               </div>
             )}
+            {/* Its own panel, apart from the rail: a deletion this large is
+                read on its own, with the address typed back as before. */}
             {clearing && me.email && held.total > 0 ? (
-              <ClearAll
-                email={me.email}
-                hasLast={hasLast}
-                onCancel={() => setClearing(false)}
-                onWiped={() => {
-                  setClearing(false);
-                  toast.ok(t("import.toast_cleared"));
-                  onWiped();
-                }}
-                total={held.total}
-              />
+              <SidePanel
+                label={t("import.clear_all_panel")}
+                onClose={() => setClearing(false)}
+              >
+                <div className="im-clear-panel">
+                  <ClearAll
+                    email={me.email}
+                    hasLast={hasLast}
+                    onCancel={() => setClearing(false)}
+                    onWiped={() => {
+                      setClearing(false);
+                      toast.ok(t("import.toast_cleared"));
+                      onWiped();
+                    }}
+                    total={held.total}
+                  />
+                </div>
+              </SidePanel>
             ) : null}
           </Refreshable>
         )}

@@ -18,6 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Path, Query
 
 from stocks import loaders, obs
+from stocks.analysis.portfolio import value_weights
 from stocks.api.deps import Account, reporting_currency
 from stocks.cache import ttl_cache
 from stocks.config import currency_symbol, load_watchlist
@@ -167,7 +168,28 @@ def earnings(account: Account) -> EarningsCalendar:
         market_holidays=_market_holidays(
             [h.ticker for h in holdings] + list(held), today
         ),
+        weights=_weights(account),
     )
+
+
+def _weights(account: Account) -> dict[str, float]:
+    """Each open position's share of the book, for the "how much does this
+    print weigh" line. Prices come off the same table the Positions tab reads,
+    so the figure agrees with it. Any failure leaves it empty: a calendar
+    without weights is still a calendar."""
+    db = str(account.db)
+    with obs.swallow("api.calendar_weights"):
+        table = loaders.positions_table(
+            db, loaders.db_mtime(db), reporting_currency(account)
+        )
+        if table.empty:
+            return {}
+        return {
+            str(ticker): float(weight)
+            for ticker, weight in value_weights(table).items()
+            if weight == weight and weight > 0
+        }
+    return {}
 
 
 # How far back the past ex-dates reach: about as far as the past prints do

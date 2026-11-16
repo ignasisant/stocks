@@ -237,6 +237,11 @@ class TodayBenchmark(BaseModel):
         description="Since the book's first day: the book's own money for `@BOOK`, "
         "that same money bought into the index on the same days for the rest.",
     )
+    all_gain: float | None = Field(
+        default=None,
+        description="`all` in money: what that same money gained, in the "
+        "section's currency, the book's own gain for `@BOOK`.",
+    )
 
 
 class TodaySection(BaseModel):

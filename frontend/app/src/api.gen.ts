@@ -607,6 +607,8 @@ export type Committed = {
 export type Comparables = {
   "tickers": string[];
   "labels": string[];
+  "keys": string[];
+  "lower_better": boolean[];
   "rows": {
     [key: string]: string[];
   };
@@ -1032,6 +1034,9 @@ export type EarningsCalendar = {
   "trades": CalendarTrade[];
   "payments": CalendarPayment[];
   "market_holidays": MarketHoliday[];
+  "weights": {
+    [key: string]: number;
+  };
 };
 
 export type EarningsEvent = {
@@ -1769,6 +1774,7 @@ export type LessonOut = {
   "before": LessonRef | null;
   "after": LessonRef | null;
   "done": boolean;
+  "quiz": QuizOut | null;
 };
 
 export type LessonRef = {
@@ -1911,6 +1917,7 @@ export type MarketTile = {
   "welcome": number;
   "state": string | null;
   "percentile": number | null;
+  "spark": number[];
   "linkable": boolean;
   "as_of": string | null;
 };
@@ -2148,6 +2155,7 @@ export type OptionsView = {
 export type PathOut = {
   "id": string;
   "icon": string;
+  "as_of": string;
   "lessons": LessonRef[];
 };
 
@@ -2254,6 +2262,8 @@ export type Position = {
   "weight": number | null;
   "day": number | null;
   "day_pct": number | null;
+  "week_pct": number | null;
+  "month_pct": number | null;
   "market_active": boolean;
   "custody": Custodian[];
 };
@@ -2276,6 +2286,7 @@ export type Prefs = {
   "tax_subnational_rate": number;
   "notify_weekly_email": boolean;
   "notify_alerts": boolean;
+  "review_answers": boolean;
   "setup_card_dismissed": boolean;
   "onboarding_dismissed": boolean;
   "profile_prompt_off": boolean;
@@ -2300,6 +2311,7 @@ export type PrefsPatch = {
   "tax_subnational_rate"?: number | null;
   "notify_weekly_email"?: boolean | null;
   "notify_alerts"?: boolean | null;
+  "review_answers"?: boolean | null;
   "notify_briefing"?: boolean | null;
   "timezone"?: string | null;
   "chat_panel_open"?: boolean | null;
@@ -2551,6 +2563,7 @@ export type Push = {
   "key": string | null;
   "subscribed": boolean;
   "devices": number;
+  "recent": Stocks__api__routes__push__Sent[];
 };
 
 export type QuarterBreakdown = {
@@ -2581,6 +2594,13 @@ export type QuarterFigures = {
   "tax_rate": number | null;
   "revenue_yoy": number | null;
   "revenue_qoq": number | null;
+};
+
+export type QuizOut = {
+  "question": string;
+  "options": string[];
+  "answer": number;
+  "why": string;
 };
 
 export type Quote = {
@@ -2994,10 +3014,6 @@ export type Seen = {
   "done"?: boolean | null;
 };
 
-export type Sent = {
-  "ok"?: boolean;
-};
-
 export type SessionList = {
   "sessions": SessionRow[];
 };
@@ -3239,6 +3255,20 @@ export type Stocks__api__routes__chat_memory__Suggestion = {
   "reason": string;
   "text": string;
   "note": string;
+};
+
+export type Stocks__api__routes__feedback__Sent = {
+  "ok"?: boolean;
+};
+
+export type Stocks__api__routes__push__Sent = {
+  "at": number;
+  "topic": string;
+  "title": string;
+  "body": string;
+  "url": string;
+  "devices": number;
+  "took": number;
 };
 
 export type Stocks__api__routes__watchlist_edit__Suggestion = {
@@ -3507,6 +3537,7 @@ export type TodayBenchmark = {
   "m6": number | null;
   "y1": number | null;
   "all": number | null;
+  "all_gain": number | null;
 };
 
 export type TodayCard = {
@@ -3767,6 +3798,7 @@ export type ValidationError = {
 export type Valuation = {
   "ticker": string;
   "source": string | null;
+  "basis": string | null;
   "current": number | null;
   "current_verdict": string | null;
   "current_tone": string | null;
@@ -3934,6 +3966,9 @@ export interface Responses {
   "/portfolio/risk": Risk;
   "/portfolio/summary": Summary;
   "/portfolio/tax": TaxReport;
+  "/portfolio/tax/harvest": {
+    [key: string]: unknown;
+  } | null;
   "/portfolio/transactions": Transactions;
   "/prefs": Prefs;
   "/profile": InvestorProfile;

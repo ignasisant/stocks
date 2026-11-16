@@ -12,7 +12,23 @@ import { describe, expect, it } from "vitest";
 import Agenda from "./Agenda";
 import { BookList, HolidayMark } from "./Book";
 import type { CalendarPayment, CalendarTrade, MarketHoliday } from "./data";
-import EventDetail from "./EventDetail";
+import { EventPane, paneHead } from "./EventDetail";
+import type { EventPick } from "./data";
+
+/** The panel's head and body, as the page draws them inside its portal. */
+function EventDetail({
+  pick,
+}: {
+  pick: Exclude<EventPick, { kind: "result" }>;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      {paneHead(pick, (key) => key)}
+      <EventPane pick={pick} />
+    </>
+  );
+}
 import MonthGrid from "./MonthGrid";
 
 const sell: CalendarTrade = {

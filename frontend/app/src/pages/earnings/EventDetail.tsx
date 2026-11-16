@@ -26,14 +26,13 @@
  * explain a date the same way.
  */
 
-import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
-import { useDialog } from "../../shell/useDialog";
-import { useExitGhost } from "../../shell/useSheet";
+import { askAssistant } from "../../shell/assistant";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
+import { SidePanel } from "../../ui/SidePanel";
 import { tone } from "../portfolio/format";
 import type {
   CalendarDividend,
@@ -68,60 +67,6 @@ export function relative(daysUntil: number | null, t: T): string {
 }
 
 // ------------------------------------------------------------------- shell
-
-function Dialog({
-  head,
-  children,
-  onClose,
-}: {
-  head: ReactNode;
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  const t = useT();
-  const close = useRef<HTMLButtonElement>(null);
-  const scrim = useRef<HTMLDivElement>(null);
-  useExitGhost(scrim);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // Focus moves into the dialog and goes back to the chip it came from, so a
-  // keyboard reader paging through a month does not restart from the top.
-  const card = useRef<HTMLDivElement>(null);
-  useDialog(card, { initial: close });
-
-  return (
-    <div
-      ref={scrim}
-      className="earn-modal"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        ref={card}
-        className="earn-modal-card earn-ev"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("earnings.ev_dialog")}
-      >
-        <div className="earn-modal-head">
-          {head}
-          <button ref={close} type="button" className="earn-close" onClick={onClose}>
-            {t("earnings.close")}
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /** Logo, symbol (linked) and name over a line saying what kind of date it is. */
 function TickerHead({ ticker, sub }: { ticker: string; sub: string }) {
@@ -531,7 +476,178 @@ function HolidayCard({ holidays }: { holidays: MarketHoliday[] }) {
   );
 }
 
-// ------------------------------------------------------------------ dialog
+// ------------------------------------------------------------------- panel
+
+/** What the panel's head says: the name the date belongs to, and what it is. */
+export function paneHead(
+  pick: Exclude<EventPick, { kind: "result" }>,
+  t: T,
+): ReactNode {
+  switch (pick.kind) {
+    case "print":
+      return <TickerHead ticker={pick.item.ticker} sub={t("earnings.ev_print_kind")} />;
+    case "dividend": {
+      const mark = pick.item.projected ? t("earnings.tax_approx_mark") : "";
+      return (
+        <TickerHead
+          ticker={pick.item.ticker}
+          sub={`${t("earnings.ev_div_kind")} · ${t("earnings.ev_div_ex_on", {
+            date: `${mark}${longDate(pick.item.date, t)}`,
+          })}`}
+        />
+      );
+    }
+    case "tax":
+      return (
+        <PlainHead title={taxTitle(pick.item, t)} sub={t("earnings.ev_tax_kind")} />
+      );
+    case "rebuy":
+      return <TickerHead ticker={pick.item.ticker} sub={t("earnings.ev_rebuy_kind")} />;
+    case "bank":
+      return (
+        <PlainHead
+          title={t(`earnings.ev_bank_${pick.item.bank}`)}
+          sub={t("earnings.ev_bank_kind")}
+        />
+      );
+    case "trade":
+      return (
+        <TickerHead
+          ticker={pick.item.ticker}
+          sub={t(`earnings.trade_${pick.item.side}`)}
+        />
+      );
+    case "payment":
+      return (
+        <TickerHead
+          ticker={pick.item.ticker}
+          sub={`${t(pick.item.capital ? "earnings.pay_capital" : "earnings.pay_kind")} · ${longDate(pick.item.date, t)}`}
+        />
+      );
+    case "holiday":
+      return (
+        <PlainHead
+          title={t(
+            pick.item.some((h) => h.kind === "closed")
+              ? "earnings.ev_holiday_title"
+              : "earnings.ev_holiday_title_early",
+          )}
+          sub={t("earnings.ev_holiday_kind")}
+        />
+      );
+  }
+}
+
+/** The learn lesson that explains the rule behind a date, where one does. */
+export function lessonFor(kind: EventPick["kind"]): string | null {
+  switch (kind) {
+    case "rebuy":
+      return "two-month-rule";
+    case "tax":
+      return "tax-calendar";
+    case "dividend":
+    case "payment":
+      return "dividends-and-withholding";
+    default:
+      return null;
+  }
+}
+
+/** The date in a few words, for the question the assistant is handed. */
+export function askAbout(pick: Exclude<EventPick, { kind: "result" }>, t: T): string {
+  const kind = (key: string) => t(key);
+  switch (pick.kind) {
+    case "print":
+      return `${pick.item.ticker} ${kind("earnings.ev_print_kind")} ${pick.item.date ?? ""}`;
+    case "dividend":
+      return `${pick.item.ticker} ${kind("earnings.ev_div_kind")} ${pick.item.date}`;
+    case "tax":
+      return `${taxTitle(pick.item, t)} ${pick.item.date}`;
+    case "rebuy":
+      return `${pick.item.ticker} ${kind("earnings.ev_rebuy_kind")} ${pick.item.date}`;
+    case "bank":
+      return `${t(`earnings.ev_bank_${pick.item.bank}`)} ${pick.item.date}`;
+    case "trade":
+      return `${pick.item.ticker} ${t(`earnings.trade_${pick.item.side}`)} ${pick.item.date}`;
+    case "payment":
+      return `${pick.item.ticker} ${kind("earnings.pay_kind")} ${pick.item.date}`;
+    case "holiday":
+      return kind("earnings.ev_holiday_kind");
+  }
+}
+
+/** Ask the assistant about this date, and read the lesson behind its rule. */
+function Learn({
+  pick,
+  onAsk,
+}: {
+  pick: Exclude<EventPick, { kind: "result" }>;
+  onAsk: () => void;
+}) {
+  const t = useT();
+  const lesson = lessonFor(pick.kind);
+  return (
+    <div className="earn-ev-learn">
+      <button type="button" className="ag-btn" onClick={onAsk}>
+        {t("earnings.ev_ask")}
+      </button>
+      {lesson && (
+        <Link className="earn-ev-lesson" page="learn" params={{ lesson }}>
+          {t("earnings.ev_lesson")}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The body of the panel: one card per kind, then the way on to the assistant
+ * and the lesson. Pure of the panel itself, so a test can render it where a
+ * portal cannot be drawn.
+ */
+export function EventPane({
+  pick,
+  held = [],
+  onAsk = () => {},
+}: {
+  pick: Exclude<EventPick, { kind: "result" }>;
+  held?: string[];
+  onAsk?: () => void;
+}) {
+  return (
+    <>
+      <Card pick={pick} held={held} />
+      <Learn pick={pick} onAsk={onAsk} />
+    </>
+  );
+}
+
+function Card({
+  pick,
+  held,
+}: {
+  pick: Exclude<EventPick, { kind: "result" }>;
+  held: string[];
+}) {
+  switch (pick.kind) {
+    case "print":
+      return <PrintCard event={pick.item} held={held.includes(pick.item.ticker)} />;
+    case "dividend":
+      return <DividendCard dividend={pick.item} />;
+    case "tax":
+      return <TaxCard deadline={pick.item} />;
+    case "rebuy":
+      return <RebuyCard window={pick.item} />;
+    case "bank":
+      return <BankCard decision={pick.item} />;
+    case "trade":
+      return <TradeCard trade={pick.item} />;
+    case "payment":
+      return <PaymentCard payment={pick.item} />;
+    case "holiday":
+      return <HolidayCard holidays={pick.item} />;
+  }
+}
 
 export default function EventDetail({
   pick,
@@ -544,126 +660,30 @@ export default function EventDetail({
   onClose: () => void;
 }) {
   const t = useT();
-  switch (pick.kind) {
-    case "result":
-      return (
-        <ResultDetail
-          ticker={pick.item.ticker}
-          date={pick.item.date}
-          result={pick.item}
-          onClose={onClose}
-        />
-      );
-    case "print":
-      return (
-        <Dialog
-          head={
-            <TickerHead ticker={pick.item.ticker} sub={t("earnings.ev_print_kind")} />
-          }
-          onClose={onClose}
-        >
-          <PrintCard event={pick.item} held={held.includes(pick.item.ticker)} />
-        </Dialog>
-      );
-    case "dividend": {
-      const mark = pick.item.projected ? t("earnings.tax_approx_mark") : "";
-      return (
-        <Dialog
-          head={
-            <TickerHead
-              ticker={pick.item.ticker}
-              sub={`${t("earnings.ev_div_kind")} · ${t("earnings.ev_div_ex_on", {
-                date: `${mark}${longDate(pick.item.date, t)}`,
-              })}`}
-            />
-          }
-          onClose={onClose}
-        >
-          <DividendCard dividend={pick.item} />
-        </Dialog>
-      );
-    }
-    case "tax":
-      return (
-        <Dialog
-          head={
-            <PlainHead title={taxTitle(pick.item, t)} sub={t("earnings.ev_tax_kind")} />
-          }
-          onClose={onClose}
-        >
-          <TaxCard deadline={pick.item} />
-        </Dialog>
-      );
-    case "rebuy":
-      return (
-        <Dialog
-          head={
-            <TickerHead ticker={pick.item.ticker} sub={t("earnings.ev_rebuy_kind")} />
-          }
-          onClose={onClose}
-        >
-          <RebuyCard window={pick.item} />
-        </Dialog>
-      );
-    case "bank":
-      return (
-        <Dialog
-          head={
-            <PlainHead
-              title={t(`earnings.ev_bank_${pick.item.bank}`)}
-              sub={t("earnings.ev_bank_kind")}
-            />
-          }
-          onClose={onClose}
-        >
-          <BankCard decision={pick.item} />
-        </Dialog>
-      );
-    case "trade":
-      return (
-        <Dialog
-          head={
-            <TickerHead
-              ticker={pick.item.ticker}
-              sub={t(`earnings.trade_${pick.item.side}`)}
-            />
-          }
-          onClose={onClose}
-        >
-          <TradeCard trade={pick.item} />
-        </Dialog>
-      );
-    case "payment":
-      return (
-        <Dialog
-          head={
-            <TickerHead
-              ticker={pick.item.ticker}
-              sub={`${t(pick.item.capital ? "earnings.pay_capital" : "earnings.pay_kind")} · ${longDate(pick.item.date, t)}`}
-            />
-          }
-          onClose={onClose}
-        >
-          <PaymentCard payment={pick.item} />
-        </Dialog>
-      );
-    case "holiday":
-      return (
-        <Dialog
-          head={
-            <PlainHead
-              title={t(
-                pick.item.some((h) => h.kind === "closed")
-                  ? "earnings.ev_holiday_title"
-                  : "earnings.ev_holiday_title_early",
-              )}
-              sub={t("earnings.ev_holiday_kind")}
-            />
-          }
-          onClose={onClose}
-        >
-          <HolidayCard holidays={pick.item} />
-        </Dialog>
-      );
-  }
+  if (pick.kind === "result")
+    return (
+      <ResultDetail
+        ticker={pick.item.ticker}
+        date={pick.item.date}
+        result={pick.item}
+        onClose={onClose}
+      />
+    );
+  return (
+    <SidePanel
+      label={t("earnings.ev_dialog")}
+      head={paneHead(pick, t)}
+      onClose={onClose}
+      className="earn-ev"
+    >
+      <EventPane
+        pick={pick}
+        held={held}
+        onAsk={() => {
+          askAssistant(t("earnings.ev_ask_prompt", { what: askAbout(pick, t) }));
+          onClose();
+        }}
+      />
+    </SidePanel>
+  );
 }

@@ -29,6 +29,7 @@ import { Status } from "../../ui/Status";
 import { applyMoves, scanMoves } from "./api";
 import type { Move } from "./api";
 import { moveKey, useSelection } from "./repairs";
+import { byImpact } from "./tally";
 import { useVocabulary } from "./text";
 
 /** A figure the scan could not put a number on. Never rendered as a zero. */
@@ -114,6 +115,7 @@ function Found({
   const t = useT();
   const vocab = useVocabulary();
   const { on, picked, toggle } = useSelection(moves.map(moveKey));
+  const ordered = byImpact(moves);
   const [busy, setBusy] = useState(false);
 
   const chosen = moves.filter((move) => picked.includes(moveKey(move)));
@@ -155,7 +157,7 @@ function Found({
     <>
       <p className="im-fine">{t("import.moves_note")}</p>
       <div className="im-picks">
-        {moves.map((move) => {
+        {ordered.map((move) => {
           const key = moveKey(move);
           return (
             <label className={on(key) ? "im-pick im-pick-on" : "im-pick"} key={key}>

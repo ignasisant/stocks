@@ -146,3 +146,16 @@ export function passes(row: CohortRow, screens: readonly Screen[]): boolean {
 export function tinted(key: string): boolean {
   return UNITS[key] !== "money";
 }
+
+/**
+ * Whether a metric is a fraction on the wire and a percentage on screen, so
+ * its threshold is typed as "15" and compared as 0.15.
+ */
+export function isPercent(key: string): boolean {
+  return UNITS[key] === "pct";
+}
+
+/** A threshold as typed, in the unit the reader sees, to the row's own unit. */
+export function toWire(key: string, typed: number): number {
+  return isPercent(key) ? typed / 100 : typed;
+}

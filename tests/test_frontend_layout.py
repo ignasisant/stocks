@@ -103,7 +103,8 @@ _TOUCH_TARGETS = [
     ("chat/chat.css", ".ag-chat-back", r"min-height\s*:\s*44px"),
     ("styles.css", ".ag-nav-fold", r"min-height\s*:\s*44px"),
     ("pages/portfolio/portfolio.css", ".pf-donut-detail-close", r"min-height\s*:\s*44px"),
-    ("pages/earnings/earnings.css", ".earn-close", r"min-height\s*:\s*44px"),
+    ("ui/ui.css", ".ag-panel-close", r"min-height\s*:\s*44px"),
+    ("pages/earnings/earnings.css", ".earn-dots", r"min-height\s*:\s*44px"),
 ]
 
 
@@ -297,7 +298,7 @@ def test_focus_is_always_visible():
 # lock rule in styles.css, or a swipe on it scrolls the page underneath.
 _SCRIMS = [
     ".ag-rev-modal",
-    ".earn-modal",
+    ".ag-panel",
     ".ag-tour-scrim",
     ".ag-fb-scrim",
     ".ag-jr-veil",

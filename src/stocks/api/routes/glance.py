@@ -185,8 +185,8 @@ def movers(
     session that was, and `unpriced` how much of the book is missing from all
     of it.
 
-    Each side is cut to its `SHOWN` strongest unless `all` is set: the card
-    draws the cut and unfolds to the rest on "show all".
+    Each side is cut to its `SHOWN` strongest unless `all` is set, which is
+    what Home's card asks for: it draws every name that moved.
     """
     if window not in WINDOWS:
         raise HTTPException(

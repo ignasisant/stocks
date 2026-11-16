@@ -20,7 +20,7 @@ import { Go } from "../home/Go";
 import { monthDay } from "../home/format";
 import type { DailyItem } from "../home/types";
 import { AnalysisPanel, type Panel } from "./Analysis";
-import { missingKeys, opens, safeUrl, sourceKey } from "./card";
+import { missingKeys, opens, safeUrl, sourceKey, splitTickers } from "./card";
 import type { TodayRow } from "./types";
 import { TickerCell } from "../../shell/tickers";
 
@@ -64,6 +64,33 @@ export function Block({
   );
 }
 
+/** A line's text with every ticker it names as logo and link where it is
+ * said; the ones it never names (the server tagged them from the trigger)
+ * follow at its end, so no value is cited without its logo. */
+function Sentence({ line, tickers }: { line: string; tickers: string[] }) {
+  const pieces = splitTickers(line, tickers);
+  const said = new Set(
+    pieces.flatMap((piece) => ("ticker" in piece ? [piece.ticker] : [])),
+  );
+  return (
+    <>
+      {pieces.map((piece, n) =>
+        "ticker" in piece ? (
+          <TickerCell
+            className="hm-ticker td-inline-tk"
+            key={n}
+            ticker={piece.ticker}
+            name={false}
+          />
+        ) : (
+          piece.text
+        ),
+      )}
+      <Tickers tickers={tickers.filter((ticker) => !said.has(ticker))} />
+    </>
+  );
+}
+
 /** A line's tickers, at its end: logo and link, no chip row of their own. */
 function Tickers({ tickers }: { tickers: string[] }) {
   if (!tickers.length) return null;
@@ -100,8 +127,7 @@ export function Lines({
         const id = `${ids}-an-${item.key}`;
         return (
           <li key={item.key}>
-            {item.line}
-            <Tickers tickers={item.tickers} />
+            <Sentence line={item.line} tickers={item.tickers} />
             {item.go ? (
               <>
                 {" "}

@@ -21,7 +21,7 @@
   "sector.rank_by": "Rank by",
   "sector.ascending": "Ascending",
   "sector.columns": "Columns",
-  "sector.filters_caption": "Filters (percent metrics are fractions: 0.15 = 15%)",
+  "sector.filters_caption": "Filters (percentages in %: 15 = 15%)",
   "sector.pass_caption": "{n} of {total} companies pass — re-sort in **Sort, columns & thresholds**.",
   "sector.download_csv": "Download raw numbers (CSV)",
   "sector.metrics_help": "What do these metrics mean?",

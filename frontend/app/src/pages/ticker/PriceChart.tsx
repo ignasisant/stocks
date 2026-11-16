@@ -446,7 +446,16 @@ export function PriceChart({
   // Every buy and sell dated inside the range, on the bar it belongs to, so an
   // entry older than the window is off its left edge rather than stacked onto
   // the first candle.
-  const fills = useMemo<Fill[]>(() => placeFills(trades, days), [trades, days]);
+  const placed = useMemo<Fill[]>(() => placeFills(trades, days), [trades, days]);
+  // The legend switches the reader's own buys and sells on and off like any
+  // other layer; a hidden side leaves the plot, the readout and the y range.
+  const fills = useMemo(
+    () =>
+      placed.filter(
+        (fill) => !hidden.has(fill.trade.action === "buy" ? "buys" : "sells"),
+      ),
+    [placed, hidden],
+  );
 
   const long =
     (Date.parse(days[to] ?? "") - Date.parse(days[from] ?? "")) / 86_400_000 >
@@ -493,6 +502,21 @@ export function PriceChart({
     }
     return { lines, kinds, tags };
   }, [bars.dividends, days, close, events, cycle, markers, daily, intraday, long, t]);
+
+  // The report still to come: past the last bar there is no bar to hang a
+  // vertical on, so the plot's right edge carries it, dated, while the window
+  // runs to the latest bar.
+  const upcomingResults =
+    markers.includes("results") && to === n - 1
+      ? (events
+          .filter(
+            (event) =>
+              event.reported_eps === null && event.date > (days[n - 1] ?? "9999"),
+          )
+          .map((event) => event.date)
+          .sort()[0] ?? null)
+      : null;
+  const nextResults = hidden.has("results") ? null : upcomingResults;
 
   /** A bar's marker kind, unless the reader switched that kind off. */
   const kindAt = (index: number) => {
@@ -755,12 +779,20 @@ export function PriceChart({
   const legend = [
     { label: t("ticker.price"), color: candles ? colors.candleUp : lineColor },
     ...present.map(([key, color, name]) => ({ key, label: name, color })),
-    ...(fills.some((fill) => fill.trade.action === "buy")
-      ? [{ label: t("ticker.my_buys"), color: colors.candleUp, mark: "up" as const }]
-      : []),
-    ...(fills.some((fill) => fill.trade.action === "sell")
+    ...(placed.some((fill) => fill.trade.action === "buy")
       ? [
           {
+            key: "buys",
+            label: t("ticker.my_buys"),
+            color: colors.candleUp,
+            mark: "up" as const,
+          },
+        ]
+      : []),
+    ...(placed.some((fill) => fill.trade.action === "sell")
+      ? [
+          {
+            key: "sells",
             label: t("ticker.my_sells"),
             color: colors.candleDown,
             mark: "down" as const,
@@ -780,11 +812,17 @@ export function PriceChart({
           },
         ]
       : []),
-    ...([...marks.kinds.values()].includes("results")
+    // The date of the report still to come rides on this entry rather than on
+    // the plot: at the edge it would sit on the last report's marker.
+    ...([...marks.kinds.values()].includes("results") || upcomingResults
       ? [
           {
             key: "results",
-            label: t("ticker.ev_results"),
+            label: upcomingResults
+              ? t("ticker.next_results_edge", {
+                  date: labeller(lang, false, false)(upcomingResults),
+                })
+              : t("ticker.ev_results"),
             color: markColor("results"),
             mark: "diamond" as const,
           },
@@ -1221,6 +1259,32 @@ export function PriceChart({
             y1={box.top}
             y2={box.height - box.bottom}
           />
+        ) : null}
+
+        {nextResults ? (
+          <g className="tk-next-results" aria-hidden="true">
+            <title>{t("ticker.next_results_edge", { date: nextResults })}</title>
+            <g fill={markColor("results")}>
+              <rect
+                x={box.width - box.right - 8.5}
+                y={box.top - 6}
+                width={2.5}
+                height={5}
+              />
+              <rect
+                x={box.width - box.right - 5.25}
+                y={box.top - 10}
+                width={2.5}
+                height={9}
+              />
+              <rect
+                x={box.width - box.right - 2}
+                y={box.top - 8}
+                width={2.5}
+                height={7}
+              />
+            </g>
+          </g>
         ) : null}
 
         {/* Three labels on a phone, where more of them smear together. */}

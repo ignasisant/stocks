@@ -106,6 +106,7 @@ export default function AttributionCard({ period }: { period: RiskPeriod }) {
           return (
             <>
               <Waterfall
+                rows
                 bars={bars}
                 money={fmt}
                 axisMoney={(value) => axisMoney(value) ?? ""}

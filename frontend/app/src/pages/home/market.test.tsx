@@ -90,6 +90,20 @@ describe("the Market card", () => {
     expect(html).toContain("home.market_regime_delta");
   });
 
+  it("draws the composite as a dial and each tile's own minichart", () => {
+    const html = renderToStaticMarkup(
+      <Market
+        data={{
+          ...glance,
+          tiles: [tile({ spark: [10, 11, 12, 11, 13] }), tile({ key: "nasdaq" })],
+        }}
+      />,
+    );
+    expect(html).toContain("hm-gauge-arc");
+    // Only the tile that carries levels gets a line.
+    expect(html.match(/hm-mtile-spark/g)).toHaveLength(1);
+  });
+
   it("colours a move by what it means for a holder", () => {
     // The S&P up is good, the VIX up is bad, gold up is neither.
     const sp = html.slice(html.indexOf("home.market_tile_sp500"));

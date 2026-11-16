@@ -156,7 +156,8 @@
 /* The page's own dialogs sit under the open drawer (65 < 70) so the chat
    beside them stays usable — so they end where it starts, or their card
    centres behind it. */
-:root[data-chat="open"] :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal) {
+:root[data-chat="open"]
+  :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal, .ag-panel) {
   right: min(var(--chat-w, 420px), 100vw);
 }
 
@@ -317,6 +318,15 @@
   padding: 6px 12px;
   border-bottom: 1px solid var(--ag-rule-soft);
   font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-ctx {
+  overflow: hidden;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--ag-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ag-chat-provider {
@@ -1850,7 +1860,7 @@
   flex: none;
   border: 0;
   border-radius: var(--ag-radius-pill);
-  background: var(--ag-brand-cta);
+  background: var(--ag-purple-700);
   color: var(--ag-on-brand);
   cursor: pointer;
   place-items: center;
@@ -1861,6 +1871,12 @@
   background: var(--ag-surface-hover);
   color: var(--ag-text-faint);
   cursor: default;
+}
+
+@media (hover: hover) {
+  .ag-chat-send:not(.ag-chat-stop):not(:disabled):hover {
+    background: var(--ag-brand-cta);
+  }
 }
 
 .ag-chat-hint {
@@ -3303,10 +3319,16 @@ a.ag-chat-btn {
   /* The assistant is the tab that is on while it is open, not the page under
      it. */
   :root[data-chat] .ag-nav .ag-nav-group .ag-nav-on {
+    background: none;
     box-shadow: none;
+    color: var(--ag-text-secondary);
+  }
+  :root[data-chat] .ag-nav .ag-nav-group .ag-nav-on .ag-icon {
+    color: var(--ag-text-muted);
   }
   :root[data-chat] .ag-nav .ag-nav-ask {
     box-shadow: inset 0 3px 0 var(--ag-brand-accent);
+    color: var(--ag-purple-300);
   }
   .ag-chat-grip {
     /* Nothing to drag when the panel is already the viewport. */
@@ -3317,7 +3339,8 @@ a.ag-chat-btn {
        room on — padding would only squeeze what is already hidden. */
     padding-right: 0;
   }
-  :root[data-chat="open"] :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal) {
+  :root[data-chat="open"]
+    :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal, .ag-panel) {
     /* The panel covers them anyway; a dialog with no width is worse. */
     right: 0;
   }

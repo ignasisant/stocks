@@ -23,6 +23,7 @@ import { useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { Responsive } from "../../ui/Rows";
 import type { Issue, Row } from "./api";
+import { culprits } from "./tally";
 import { useVocabulary } from "./text";
 
 /** Every field a parsed row carries. */
@@ -143,11 +144,21 @@ export function RowTable({
           <tbody>
             {rows.map((row, index) => (
               <tr key={`${row.date}-${row.ticker}-${index}`}>
-                {fields.map((field) => (
-                  <td className={numeric(field) ? "im-num" : CELL[field]} key={field}>
-                    {cell(row, field)}
-                  </td>
-                ))}
+                {fields.map((field) => {
+                  const bad = issues
+                    ? culprits(row.issues, issues === "errors" ? "error" : "warning")
+                    : null;
+                  const classes = [numeric(field) ? "im-num" : CELL[field]];
+                  if (bad?.has(field)) classes.push("im-culprit");
+                  return (
+                    <td
+                      className={classes.filter(Boolean).join(" ") || undefined}
+                      key={field}
+                    >
+                      {cell(row, field)}
+                    </td>
+                  );
+                })}
                 {issues && <td className="im-issues">{vocab.issues(wanted(row))}</td>}
               </tr>
             ))}

@@ -143,6 +143,7 @@ const events: EarningsEvent[] = [
 const valuation: Valuation = {
   ticker: "ORCL",
   source: "edgar",
+  basis: "ttm",
   current: 31.4,
   current_verdict: "expensive",
   current_tone: "orange",

@@ -114,8 +114,9 @@ add a `News` item to the newest entry if it has not shipped yet.
 ```
 
 One `News` is one card: the modal pages through the unseen ones a feature at
-a time, newest release first, so how much a returning account reads is how
-much shipped while it was away. Two things that both cleared Step 1 are two
+a time, newest release first, and deals at most `NEWS_MAX` (3) per visit:
+closing it stamps the account current, so a card past the newest three is
+never seen by anyone who was away that long. Two things that both cleared Step 1 are two
 items — but a release is a handful of cards, not a list of the month's work.
 If you are writing the fifth, re-read Step 1: several of them are almost
 certainly `_body` edits on steps that already exist.

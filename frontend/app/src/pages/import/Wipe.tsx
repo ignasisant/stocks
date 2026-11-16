@@ -47,32 +47,38 @@ export function Wipe({
   // none): the server would refuse the request, so the page does not offer it.
   if (total === 0 || !email) return null;
 
+  // Folded away: a clean re-import is the exception, and a destructive tick
+  // belongs one press from sight. Ticked, it stays open with its warning and
+  // the typed address, as before.
   return (
-    <div className="im-zone" role="group" aria-label={t("import.danger_zone")}>
-      <p className="im-zone-title">{t("import.danger_zone")}</p>
-      <label className="im-check">
-        <input
-          checked={value.on}
-          onChange={(event) => onChange({ on: event.target.checked, confirm: "" })}
-          type="checkbox"
-        />
-        <span>
-          {t("import.wipe_short")}{" "}
-          <span className="im-faint">· {t("import.wipe_short_note")}</span>
-        </span>
-      </label>
+    <details className="im-adv" open={value.on || undefined}>
+      <summary>{t("import.adv_title")}</summary>
+      <div className="im-zone" role="group" aria-label={t("import.danger_zone")}>
+        <p className="im-zone-title">{t("import.danger_zone")}</p>
+        <label className="im-check">
+          <input
+            checked={value.on}
+            onChange={(event) => onChange({ on: event.target.checked, confirm: "" })}
+            type="checkbox"
+          />
+          <span>
+            {t("import.wipe_short")}{" "}
+            <span className="im-faint">· {t("import.wipe_short_note")}</span>
+          </span>
+        </label>
 
-      {value.on && (
-        <Danger
-          email={email}
-          id="im-wipe-confirm"
-          onChange={(typed) => onChange({ on: true, confirm: typed })}
-          prompt={t("import.wipe_type_commit", { email })}
-          safer={hasLast}
-          total={total}
-          value={value.confirm}
-        />
-      )}
-    </div>
+        {value.on && (
+          <Danger
+            email={email}
+            id="im-wipe-confirm"
+            onChange={(typed) => onChange({ on: true, confirm: typed })}
+            prompt={t("import.wipe_type_commit", { email })}
+            safer={hasLast}
+            total={total}
+            value={value.confirm}
+          />
+        )}
+      </div>
+    </details>
   );
 }

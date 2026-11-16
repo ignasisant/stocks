@@ -3,9 +3,10 @@
  *
  * They share a card because they are one decision — a statement means nothing
  * until the parser that reads it is chosen, and changing the platform reads a
- * staged file again under the new one. What rides along sits on the card's
- * last line: the paste box for a browser that will not hand over a file, and
- * the wipe, which has to be decided before the preview is read, not after.
+ * staged file again under the new one. Under the drop zone, the other ways in
+ * (the paste box for a browser that will not hand over a file, the assistant
+ * for a statement no parser here reads), then apart from them the wipe, which
+ * has to be decided before the preview is read, not after.
  *
  * The handlers are the page's (`Import.tsx`), because the staged file is the
  * preview's identity; this only draws them.
@@ -19,6 +20,7 @@ import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { Glyph } from "./Glyph";
 import { platformHint } from "./text";
+import { Way } from "./Way";
 
 export function Source({
   platforms,
@@ -34,7 +36,9 @@ export function Source({
   file,
   errors,
   hint,
+  remembered,
   wipe,
+  assistant,
 }: {
   platforms: Platform[];
   /** Every extension a statement can arrive as — not only this platform's. */
@@ -53,8 +57,12 @@ export function Source({
   errors: string[];
   /** Say where this platform's statement is found. */
   hint: boolean;
+  /** The platform on show is the one the last import used, not a default. */
+  remembered?: boolean;
   /** The wipe's tick and, once ticked, its confirmation. */
   wipe: ReactNode;
+  /** The same statement, read in the assistant instead (`ToAssistant`). */
+  assistant?: ReactNode;
 }) {
   const t = useT();
   const [pasting, setPasting] = useState(false);
@@ -106,6 +114,11 @@ export function Source({
             </button>
           ))}
         </div>
+        {remembered && (
+          <p className="im-fine im-remembered">
+            {t("import.remembered", { platform: platform.label })}
+          </p>
+        )}
       </div>
 
       <hr className="im-rule" />
@@ -158,7 +171,7 @@ export function Source({
                   <span className="im-drop-size">· {sizeLabel(chosen.bytes)}</span>
                 </>
               ) : (
-                t("import.drop_title")
+                <span className="im-drop-dnd">{t("import.drop_title")}</span>
               )}
             </span>
             <span className="im-drop-cap" id="im-file-cap">
@@ -166,7 +179,8 @@ export function Source({
             </span>
           </span>
           <span aria-hidden="true" className="im-btn im-btn-outline im-drop-btn">
-            {t("import.drop_browse")}
+            <span className="im-drop-browse">{t("import.drop_browse")}</span>
+            <span className="im-drop-pick">{t("import.drop_pick")}</span>
           </span>
         </label>
 
@@ -178,24 +192,28 @@ export function Source({
           </ul>
         )}
 
-        {hint && <p className="im-fine">{platformHint(t, platform)}</p>}
+        {hint && <Guide platform={platform} />}
 
-        <div className="im-source-foot">
+        <p className="im-eyebrow im-ways-label" id="im-ways-label">
+          {t("import.ways")}
+        </p>
+        <div aria-labelledby="im-ways-label" className="im-ways" role="group">
           {/* The second door into the same pipeline, for a reader whose browser
               will not hand over a file at all: a managed device can switch
               file dialogs off outright, and that reaches the app as "no file". */}
-          <button
+          <Way
             aria-controls="im-paste-body"
             aria-expanded={pasting}
-            className="im-disclose"
+            icon="paste"
             onClick={() => setPasting((open) => !open)}
-            type="button"
-          >
-            <Glyph name="right" />
-            {t("import.paste_expander")}
-          </button>
-          {wipe}
-          {/* Hidden rather than unmounted, so closing it keeps what was pasted. */}
+            sub={t("import.paste_sub")}
+            title={t("import.paste_expander")}
+            trail="down"
+          />
+          {assistant}
+          {/* Hidden rather than unmounted, so closing it keeps what was pasted.
+              Below both tiles on a wide card, right under its own on a narrow
+              one (the CSS orders it). */}
           <div className="im-paste-body" hidden={!pasting} id="im-paste-body">
             <p className="im-fine">{t("import.paste_caption")}</p>
             <label className="im-label" htmlFor="im-paste">
@@ -212,8 +230,32 @@ export function Source({
             />
           </div>
         </div>
+        {wipe}
       </div>
     </section>
+  );
+}
+
+/**
+ * Where the statement is found, in numbered steps beside the file. A platform
+ * with no steps written falls back to its one-line hint.
+ */
+function Guide({ platform }: { platform: Platform }) {
+  const t = useT();
+  const key = `import.guide_${platform.key}`;
+  const text = t(key);
+  if (text === key) return <p className="im-fine">{platformHint(t, platform)}</p>;
+  return (
+    <div className="im-guide">
+      <p className="im-guide-title">
+        {t("import.guide_title", { platform: platform.label })}
+      </p>
+      <ol className="im-guide-steps">
+        {text.split("|").map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+    </div>
   );
 }
 

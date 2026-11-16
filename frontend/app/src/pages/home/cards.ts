@@ -46,7 +46,7 @@ export type Slot = { id: string; hidden: boolean };
 export const HOME_CARDS: readonly CardSpec[] = [
   { id: "market", span: "full", optional: false, signedIn: false },
   { id: "daily", span: "full", optional: false, signedIn: true },
-  { id: "movers", span: "half", optional: false, signedIn: true },
+  { id: "movers", span: "full", optional: false, signedIn: true },
   { id: "extremes", span: "half", optional: false, signedIn: false },
   { id: "glance", span: "full", optional: false, signedIn: true },
   { id: "earnings", span: "full", optional: false, signedIn: false },

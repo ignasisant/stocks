@@ -5,7 +5,7 @@
 The app tells its own users what changed. `src/stocks/web/onboarding.py`
 carries the release registry, and the "what's new" modal pages a returning
 account through the cards that shipped while it was away — one card each,
-read once.
+read once, the newest three at most (`NEWS_MAX`).
 
 That modal interrupts someone who came to look at their portfolio, so the bar
 is high: **a card has to be somewhere new to go.** A new section, page or tab;

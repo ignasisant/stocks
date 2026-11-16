@@ -82,17 +82,3 @@ export function shortDate(iso: string, lang: string): string {
   if (!date) return iso;
   return calendarDay(iso, lang);
 }
-
-/** Monday of the week `date` falls in, as a new date. */
-export function mondayOf(date: Date): Date {
-  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  // getDay() is Sunday-first; the grid is Monday-first.
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  return monday;
-}
-
-export function addDays(date: Date, days: number): Date {
-  const moved = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  moved.setDate(moved.getDate() + days);
-  return moved;
-}

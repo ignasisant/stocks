@@ -1095,6 +1095,33 @@ def test_a_throttled_basket_leaves_todays_move_null_not_the_table(
     assert row["value"] == pytest.approx(1100.0)
 
 
+def test_positions_carry_week_and_month_moves(client, book, monkeypatch):
+    book(trades())
+    table = pd.DataFrame(
+        {
+            "shares": [10.0],
+            "ccy": ["EUR"],
+            "cost": [1000.0],
+            "value": [1200.0],
+            "pnl": [200.0],
+            "pnl_pct": [0.2],
+        },
+        index=pd.Index(["AAPL"], name="ticker"),
+    )
+    frame = pd.DataFrame(
+        {"AAPL": [1000.0, 1100.0, 1200.0]},
+        index=pd.to_datetime(["2023-12-01", "2023-12-24", "2024-01-01"]),
+    )
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
+    patch_loaders(monkeypatch, "basket_values", lambda *a, **k: frame)
+    row = client.get(
+        "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
+    ).json()["positions"][0]
+    assert row["week_pct"] == pytest.approx(1200 / 1100 - 1)
+    assert row["month_pct"] == pytest.approx(0.2)
+
+
 def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     """Today's value, the stock sleeve's own volatility, the default 8% median
     growth unless told otherwise, the contribution asked for, and the share of
@@ -1468,3 +1495,28 @@ def test_an_attribution_window_nobody_defined_is_refused(client, book):
         headers=AUTH,
     )
     assert response.status_code == 422
+
+
+def test_tax_harvest_serves_the_chats_harvest(client, book, monkeypatch):
+    """The Fiscal tab's "before 31 Dec" section reads the same engine as the
+    chat's harvest skill, behind its own lazy route."""
+    from types import SimpleNamespace
+
+    from stocks.chat import engine, harvest, whatif
+
+    book(trades())
+    found = harvest.Harvest(
+        candidates=(harvest.Candidate("AAPL", 3.0, -500.0, 95.0, 0.0, True),),
+        gains=1000.0, losses=0.0, tax=190.0, tax_all=95.0, carry=0.0, offset=0.0,
+        carry_years=None, currency="EUR", jurisdiction="es", year="2024",
+        window="2m", clear="2025-01-01",
+    )
+    monkeypatch.setattr(whatif, "replay", lambda **k: SimpleNamespace(currency="EUR"))
+    monkeypatch.setattr(engine, "enriched_frame", lambda db, ccy: None)
+    monkeypatch.setattr(harvest, "build", lambda b, t: found)
+    body = client.get(
+        "/v1/portfolio/tax/harvest", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["saving"] == pytest.approx(95.0)
+    assert body["candidates"][0]["ticker"] == "AAPL"
+    assert body["clear"] == "2025-01-01"

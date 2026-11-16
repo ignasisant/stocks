@@ -776,5 +776,19 @@
   "chat.sched_mode_time": "A un orario",
   "chat.sched_mode_close": "Dopo la chiusura USA (~{time})",
   "chat.sched_close_at": "dopo la chiusura (~{time})",
-  "chat.sched_close_hint": "Arriva appena l'IA lo scrive dopo la chiusura di Wall Street, sulla seduta di quel giorno. I giorni sono quelli di seduta."
+  "chat.sched_close_hint": "Arriva appena l'IA lo scrive dopo la chiusura di Wall Street, sulla seduta di quel giorno. I giorni sono quelli di seduta.",
+  "chat.viewing": "Stai guardando: {page}",
+  "chat.recent": "Riprendi da dove eri rimasto",
+  "chat.starter_today_1": "Spiegami in 3 righe come va oggi il portafoglio",
+  "chat.starter_today_2": "Qualche avviso sta per scattare?",
+  "chat.starter_portfolio_1": "Sono troppo concentrato in un settore?",
+  "chat.starter_portfolio_2": "Quanta liquidità dovrei tenere?",
+  "chat.starter_review_1": "Perché suggerisci di rafforzare o vendere quelle posizioni?",
+  "chat.starter_review_2": "Quale vendita mi fa risparmiare più tasse?",
+  "chat.starter_ticker_1": "Riassumi gli ultimi risultati di {ticker}",
+  "chat.starter_ticker_2": "{ticker} è cara rispetto ai concorrenti?",
+  "chat.starter_sector_1": "Quale azienda di questo settore è la più economica?",
+  "chat.starter_sector_2": "Perché questo settore va peggio dell'indice?",
+  "chat.starter_earnings_1": "Chi pubblica i risultati questa settimana?",
+  "chat.starter_earnings_2": "Cosa si aspetta il consenso dai miei titoli?"
 }

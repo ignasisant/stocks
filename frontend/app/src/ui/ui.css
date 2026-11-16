@@ -3,9 +3,9 @@
  * these: a tile that looks different on one screen is the drift this file
  * exists to end. Every colour is an `--ag-*` token.
  *
- * The look is Home's glance row — the page ground inside a card, a sentence-
- * case label, a bold figure, a tinted pill — because it is the one a reader
- * sees first and every other screen should read the same way.
+ * The look is the prototype DS tile — the card fill inside a raised card, a
+ * sentence-case label, a display figure, a tinted pill — so every screen's
+ * figures read the same way.
  */
 
 /* ----------------------------------------------------------------- the grid */
@@ -89,12 +89,19 @@
   flex-direction: column;
   gap: 0.2rem;
   min-width: 0;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--ag-border);
+  padding: 12px 14px;
+  border: 1px solid transparent;
   border-radius: var(--ag-radius-md, 12px);
-  background: var(--ag-surface-page);
+  background: var(--ag-surface-card);
   /* The figure steps down a size in a narrow tile (below). */
   container-type: inline-size;
+}
+
+/* On a phone the card around a tile has already given up some of its pad. */
+@container ag-main (max-width: 38rem) {
+  .ag-kpi {
+    padding: 10px 12px;
+  }
 }
 
 /* Inline flow, not flex: a label that wraps keeps its "?" after the last word.
@@ -134,15 +141,22 @@
 /* Epilogue, as the DS tile (`tables.kpi_grid_html`) draws its figure. */
 .ag-kpi-value {
   font-family: var(--ag-font-display);
-  font-size: var(--ag-fs-xl, 1.125rem);
-  letter-spacing: var(--ag-track-xl);
-  font-weight: 700;
+  font-size: var(--ag-fs-2xl, 1.375rem);
+  letter-spacing: var(--ag-track-2xl);
+  font-weight: 600;
   line-height: 1.1;
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
   /* A figure reads whole: a narrow tile takes a smaller size first, and only
      a figure wider than the tile at that size breaks, as a last resort. */
   overflow-wrap: break-word;
+}
+
+@container (max-width: 11rem) {
+  .ag-kpi-value {
+    font-size: var(--ag-fs-xl);
+    letter-spacing: var(--ag-track-xl);
+  }
 }
 
 @container (max-width: 8.5rem) {
@@ -379,12 +393,25 @@
   display: inline-flex;
   align-items: center;
   align-self: center;
-  padding: 1px 7px;
+  gap: 5px;
+  min-height: 22px;
+  box-sizing: border-box;
+  padding: 0 8px;
   border-radius: var(--ag-radius-pill, 9999px);
-  font-size: var(--ag-fs-2xs, 0.6875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.2;
   white-space: nowrap;
+}
+
+/* The status dot, in the badge's own ink. */
+.ag-badge::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .ag-badge-neutral {
@@ -742,7 +769,7 @@
 /* Colour and the underline mark the open tab, not weight: a bolder label
    would widen it and shift every tab after it along the row. */
 .ag-tab-on {
-  color: var(--ag-text-primary);
+  color: var(--ag-brand-accent);
 }
 @media (hover: hover) {
   .ag-tab:hover {
@@ -816,7 +843,7 @@
   padding: 2px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm);
-  background: var(--ag-surface-page);
+  background: var(--ag-surface-raised);
 }
 
 .ag-seg-thumb {
@@ -826,9 +853,9 @@
   z-index: -1;
   width: var(--seg-w, 0);
   height: var(--seg-h, 0);
-  border-radius: var(--ag-radius-xs);
-  background: var(--ag-surface-hover);
-  box-shadow: var(--ag-shadow-card);
+  border-radius: var(--ag-radius-nav);
+  background: var(--ag-purple-900);
+  box-shadow: inset 0 0 0 1px var(--ag-purple-800);
   transform: translate(var(--seg-x, 0), var(--seg-y, 0));
   opacity: 0;
   pointer-events: none;
@@ -849,13 +876,14 @@
   appearance: none;
   flex: none;
   min-height: 28px;
-  padding: 0.25rem 0.75rem;
+  padding: 5px 10px;
   border: 0;
-  border-radius: var(--ag-radius-xs);
+  border-radius: var(--ag-radius-nav);
   background: none;
   color: var(--ag-text-secondary);
   font: inherit;
-  font-size: var(--ag-fs-sm);
+  font-size: var(--ag-fs-md);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
@@ -868,11 +896,11 @@
 /* Colour and the thumb mark the open option, not weight: a bolder label
    would widen it and move the thumb's target mid-slide. */
 .ag-seg-opt[aria-pressed="true"] {
-  color: var(--ag-text-primary);
+  color: var(--ag-purple-300);
 }
 
 @media (hover: hover) {
-  .ag-seg-opt:hover {
+  .ag-seg-opt:not([aria-pressed="true"]):hover {
     color: var(--ag-text-primary);
   }
 }
@@ -1019,4 +1047,131 @@
   font-size: var(--ag-fs-xs);
   color: var(--ag-text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------- the side panel */
+
+/* `SidePanel`: a detail column at the right edge, full height, the list it
+   came from still in sight; a sheet from the bottom on a phone. Portalled to
+   the body, so the viewport is the room it has. Same shell as Vender o
+   reforzar's details (`.ag-rev-modal`). */
+.ag-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  background: var(--ag-surface-page-veil);
+}
+
+.ag-panel-card {
+  width: 100%;
+  max-width: 30rem;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(1.1rem, env(safe-area-inset-top))
+    max(1.25rem, env(safe-area-inset-right)) max(1.1rem, env(safe-area-inset-bottom))
+    1.25rem;
+  border-left: 1px solid var(--ag-border);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-overlay);
+  animation: ag-panel-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: translate var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-panel[data-leaving] > .ag-panel-card {
+  translate: 100% 0;
+}
+
+.ag-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ag-panel-title {
+  min-width: 0;
+}
+
+.ag-panel-title h2 {
+  margin: 0;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.ag-panel-close {
+  flex: none;
+  min-height: 2rem;
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+.ag-panel-close:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-panel-close:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-panel-close {
+    min-height: 44px;
+  }
+}
+
+@keyframes ag-panel-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+@keyframes ag-panel-sheet-in {
+  from {
+    translate: 0 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .ag-panel {
+    align-items: flex-end;
+    justify-content: stretch;
+  }
+
+  .ag-panel-card {
+    max-width: none;
+    height: auto;
+    max-height: 88dvh;
+    padding: 1.1rem max(1rem, env(safe-area-inset-right))
+      max(1.1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    border-left: none;
+    border-top: 1px solid var(--ag-border);
+    border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
+    animation-name: ag-panel-sheet-in;
+  }
+
+  .ag-panel[data-leaving] > .ag-panel-card {
+    translate: 0 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-panel-card {
+    animation: none;
+    transition: none;
+  }
 }

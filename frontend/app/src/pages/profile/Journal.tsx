@@ -24,6 +24,7 @@ import {
   STATES,
   getJournal,
 } from "../../ui/Journal";
+import { Kpi, KpiGrid } from "../../ui/Kpi";
 import { Card, Chips, Inline, Row, Select } from "./ui";
 
 type StateFilter = "all" | JournalState;
@@ -91,29 +92,29 @@ export function Journal() {
 function Record({ record }: { record: JournalRecord }) {
   const t = useT();
   if (!record.proposed) return null;
+  const tiles: [string, number][] = [
+    ["journal.kpi_proposed", record.proposed],
+    ["journal.kpi_followed", record.followed],
+    ["journal.kpi_declined", record.declined],
+    ["journal.kpi_lapsed", record.lapsed],
+    ["journal.kpi_open", record.open],
+  ];
   return (
     <div className="pr-cardbody">
-      <p className="pr-hint">
-        <Inline
-          text={t("journal.record", {
-            n: record.proposed,
-            followed: record.followed,
-            declined: record.declined,
-            lapsed: record.lapsed,
-            open: record.open,
-          })}
-        />
+      <KpiGrid>
+        {tiles.map(([key, n]) => (
+          <Kpi key={key} label={t(key)} value={String(n)} />
+        ))}
         {record.marked ? (
-          <>
-            {" "}
-            <Inline
-              text={t("journal.record_marked", {
-                n: record.marked,
-                way: record.its_way ?? 0,
-              })}
-            />
-          </>
+          <Kpi
+            label={t("journal.kpi_its_way")}
+            value={`${record.its_way ?? 0}/${record.marked}`}
+          />
         ) : null}
+      </KpiGrid>
+      {/* Counts, not a verdict on whether taking them paid. */}
+      <p className="pr-hint">
+        <Inline text={t("journal.record_note")} />
       </p>
     </div>
   );
@@ -140,8 +141,16 @@ function Filtered({ entries }: { entries: JournalEntry[] }) {
     return out;
   }, [scope]);
 
-  const shown =
+  // "Keep the book as it is" asks for nothing, so it is out of the list until
+  // asked for; its count stays on the toggle.
+  const [quiet, setQuiet] = useState(false);
+  const stays = scope.filter((entry) => entry.action === "stay").length;
+  const inState =
     state === "all" ? scope : scope.filter((entry) => entry.state === state);
+  const shown = quiet ? inState : inState.filter((entry) => entry.action !== "stay");
+  // The reader's own rules sit apart from the proposals the app made.
+  const rules = shown.filter((entry) => entry.type === "criterion");
+  const proposals = shown.filter((entry) => entry.type !== "criterion");
   const stateOptions: StateFilter[] = ["all", ...STATES];
   const sourceOptions: SourceFilter[] = ["all", ...SOURCES];
 
@@ -204,7 +213,34 @@ function Filtered({ entries }: { entries: JournalEntry[] }) {
             {t("journal.clear_filters")}
           </button>
         )}
-        {shown.length ? <JournalList entries={shown} /> : null}
+        {stays > 0 && (
+          <label className="pr-check">
+            <input
+              type="checkbox"
+              checked={quiet}
+              onChange={(event) => setQuiet(event.target.checked)}
+            />
+            {t("journal.show_stay", { n: stays })}
+          </label>
+        )}
+        {rules.length ? (
+          <>
+            <h3 className="pr-subhead">
+              {t("journal.rules_head", { n: rules.length })}
+            </h3>
+            <JournalList entries={rules} />
+          </>
+        ) : null}
+        {proposals.length ? (
+          <>
+            {rules.length ? (
+              <h3 className="pr-subhead">
+                {t("journal.proposals_head", { n: proposals.length })}
+              </h3>
+            ) : null}
+            <JournalList entries={proposals} />
+          </>
+        ) : null}
       </div>
     </>
   );

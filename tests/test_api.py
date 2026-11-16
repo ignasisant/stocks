@@ -776,6 +776,10 @@ WRITES = {
     ("/v1/portfolio/changes/plan", "post"),
     ("/v1/portfolio/changes", "post"),
     ("/v1/portfolio/changes/{change_id}", "delete"),
+    # Removing a holding imported by mistake, from its ticker page: a plan
+    # like the one above, over every row the page shows it with. The commit
+    # and its undo go through the two routes above.
+    ("/v1/portfolio/positions/{symbol}/removal", "post"),
     # The assistant. A turn is a write twice over: it appends the completed
     # pair to chat.json, and it spends the account's free allowance on the
     # operator's shared keys — which is the one a leaked token would be worth

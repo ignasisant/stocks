@@ -100,12 +100,16 @@ def rubric_hash(goals: tuple[str, ...]) -> str:
     return hashlib.sha256(" ".join(rubric(goals).split()).encode()).hexdigest()[:16]
 
 
-def fenced(question: str, calls: list[ToolCall], answer: str) -> str:
+def fenced(question: str, calls: list[ToolCall], answer: str,
+           material: str = "") -> str:
+    """The case the judge reads. `material` stands in for `calls` when what
+    the model was shown is one block of text, not tool results — a served
+    answer's prompt (chat/review.py), already cut to size by the caller."""
     # The fence's own markers taken out, so nothing inside can close it.
     def safe(text: str) -> str:
         return str(text or "").replace("<<<", "‹‹‹").replace(">>>", "›››")
 
-    material = "\n\n".join(
+    material = safe(material) or "\n\n".join(
         f"### {c.name}({', '.join(f'{k}={v!r}' for k, v in sorted(c.args.items()))})\n"
         f"{safe(c.result)[:_MATERIAL]}" for c in calls) or "(nothing fetched)"
     return (f"<<<CONVERSATION>>>\nQuestion:\n{safe(question)}\n\n"
@@ -161,12 +165,14 @@ def read(goals: tuple[str, ...], said: Judged) -> Judgment:
 
 
 def judge(provider: Provider, key: str, goals: tuple[str, ...], question: str,
-          calls: list[ToolCall], answer: str, *, model: str = "") -> Judgment:
+          calls: list[ToolCall], answer: str, *, model: str = "",
+          material: str = "") -> Judgment:
     """`answer` judged on `provider`'s `model` (its default one when empty:
     the cheapest model is a poor judge). Raises what the provider raises, and
     OffContract when the reply is unusable twice."""
     said = structured.ask(provider, key, "JudgeAnswer", INSTRUCTIONS,
-                          rubric(goals) + "\n\n" + fenced(question, calls, answer),
+                          rubric(goals) + "\n\n"
+                          + fenced(question, calls, answer, material),
                           Judged, model=model or provider.default_model)
     return read(goals, said)
 

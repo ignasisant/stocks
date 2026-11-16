@@ -93,6 +93,17 @@ class Peers(BaseModel):
 class Comparables(BaseModel):
     tickers: list[str]
     labels: list[str] = Field(description="KPI row labels, in the app's order.")
+    keys: list[str] = Field(
+        default_factory=list,
+        description="The KPI keys behind `labels`, aligned to them.",
+    )
+    lower_better: list[bool] = Field(
+        default_factory=list,
+        description=(
+            "Per row, whether a lower figure is the better one (multiples, "
+            "leverage, dilution), aligned to `labels`; false for the rest."
+        ),
+    )
     rows: dict[str, list[str]] = Field(
         default_factory=dict,
         description="Ticker to its formatted column, aligned to `labels`.",

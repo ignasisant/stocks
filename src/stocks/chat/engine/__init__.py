@@ -48,6 +48,7 @@ from stocks.chat import (
     plan_builder,
     rebalance,
     reports,
+    review,
     stopping,
     whatif,
 )
@@ -482,6 +483,11 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                         chat_path=chat_path,
                                         watchlist=watchlist, lang=lang, db=db,
                                         source="chat")
+
+    # Past the card's "sí"/"no": what is left is a question, and it may say
+    # the answer above it was wrong, or ask it again (chat/review.py).
+    if review.wanted(prefs):
+        review.check_question(history)
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -1164,6 +1170,14 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         text = str(entry.get("content") or "")
     turn.history.append(entry)
     conversations.save_chat(turn.history, chat_path, turn.thread)
+    flagged = review.wanted(prefs) and review.check_answer(
+        text, system=turn.system, messages=turn.messages, provider=provider.id,
+        model=model, skills=turn.skills, route=turn.route, profile=turn.profile,
+        answer_id=entry["id"])
+    review.judge_answer(entry["id"], _asked(turn.history), text,
+                        system=turn.system, messages=turn.messages,
+                        steps=turn.steps, provider=provider.id,
+                        skills=turn.skills, prefs=prefs, flagged=flagged)
     autotitle(chat_path, provider, key, turn.history, turn.lang, turn.thread)
     _keep_byok(prefs, prefs_path)
     obs.event("chat.answered", provider=provider.id, model=model,
@@ -1175,6 +1189,15 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
                  debate=tuple(turn.debate), learned=tuple(turn.learned),
                  recalled=tuple(turn.recalled), turn_id=entry["id"],
                  proposal=dict(turn.proposal) if turn.proposal else None)
+
+
+def _asked(history: list[dict]) -> str:
+    """The reader's own words for the newest question (the stored turn, before
+    any evidence was stapled onto the copy the model got)."""
+    for m in reversed(history):
+        if m.get("role") == "user":
+            return review.text(m.get("content"))
+    return ""
 
 
 def _refused(text: str, history: list[dict], chat_path: Path,

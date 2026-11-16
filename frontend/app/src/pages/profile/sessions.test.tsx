@@ -85,3 +85,14 @@ describe("the buttons call the API", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("long session lists fold", () => {
+  it("keeps this device and the three most recent others", async () => {
+    const { visibleSessions } = await import("./Sessions");
+    const rows = [
+      row({ id: "me", current: true, seen: 1 }),
+      ...[10, 40, 30, 20, 50].map((seen) => row({ id: `s${seen}`, seen })),
+    ];
+    expect(visibleSessions(rows).map((r) => r.id)).toEqual(["me", "s50", "s40", "s30"]);
+  });
+});

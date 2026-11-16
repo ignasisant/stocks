@@ -31,6 +31,19 @@ import type { Pulse, TrendTables } from "./types";
 import { num } from "../../shell/numbers";
 import { Fold } from "../../ui/Fold";
 
+/** One dot per market, filled when it is in an uptrend: "7 of 10" at a glance. */
+function Dots({ hits, total }: { hits: number; total: number }) {
+  const n = Math.min(total, 30);
+  const lit = total > n ? Math.round((hits / total) * n) : hits;
+  return (
+    <span className="sn-dots" aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => (
+        <i key={i} className={i < lit ? "sn-dot sn-dot-on" : "sn-dot"} />
+      ))}
+    </span>
+  );
+}
+
 export function Snapshot({
   pulse,
   tables,
@@ -77,7 +90,9 @@ export function Snapshot({
         label={t(label)}
         value={`${breadth.hits}/${breadth.total}`}
         note={t(note, { n: breadth.window })}
-      />,
+      >
+        <Dots hits={breadth.hits} total={breadth.total} />
+      </Kpi>,
     );
   }
 

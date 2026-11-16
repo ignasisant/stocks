@@ -519,3 +519,21 @@ def test_a_reader_who_leaves_the_async_tail_frees_its_thread(monkeypatch):
         time.sleep(0.02)
     assert not [t for t in threading.enumerate() if t.name == "tail-r-left"]
     quiet.set()
+
+
+def test_a_hold_stays_open_while_the_answer_is_judged(
+    client, account, signed_in, served, monkeypatch
+):
+    from stocks.chat import review
+
+    served()
+    signed_in.post("/v1/chat/runs", json=run("hola"))
+    own = runs.find(str(account.chat), "run-1").token
+    # The judge (chat/review.py) still out once the run is over: the hold
+    # waits for it, so its call keeps the instance's CPU.
+    asked = iter([True, True, False])
+    monkeypatch.setattr(review, "judging", lambda: next(asked, False))
+    answered = client.post("/v1/chat/runs/run-1/hold",
+                           headers={"X-Run-Hold": own})
+    assert answered.status_code == 204
+    assert next(asked, "spent") == "spent"

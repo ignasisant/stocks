@@ -171,9 +171,8 @@
 .ag-sec-card {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-card);
-  padding: 1rem 1.1rem;
+  background: var(--ag-surface-raised);
+  padding: 18px;
   margin: 0 0 1rem;
 }
 
@@ -895,12 +894,6 @@
 .ag-sec-rescan {
   min-height: 2.25rem;
   transition: border-color var(--ag-dur-press) var(--ag-ease-out);
-}
-
-@media (hover: hover) {
-  .ag-sec-rescan:hover:not(:disabled) {
-    border-color: var(--ag-border-focus);
-  }
 }
 
 .ag-sec-rescan:disabled {

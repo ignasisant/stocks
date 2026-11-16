@@ -666,6 +666,7 @@ export function Detail({
       >
         {/* A tab is not a navigation the back button should walk through. */}
         <Tabs
+          className="sn-tabs"
           label={t("sentiment.detail_title")}
           items={SPECS.map((entry) => {
             // The badge is the block's configured size, known before any fetch: a

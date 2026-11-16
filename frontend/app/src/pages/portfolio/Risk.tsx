@@ -29,9 +29,19 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { RISK_PERIODS, type Risk as RiskData, type RiskPeriod } from "./api";
 import { brokerName } from "./format";
-import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
+import {
+  Donut,
+  ReturnLines,
+  type LineMoney,
+  type Slice,
+  type SliceDetail,
+} from "./charts";
+import { indexRows, largest } from "./riskLogic";
+import { SidePanel } from "../../ui/SidePanel";
 import AttributionCard from "./Attribution";
 import { CorrelationCard } from "./Correlation";
+import { AllocationBars } from "./Allocation";
+import { IndexTable } from "./IndexTable";
 import { Caption, Card, Chip, Empty, Hero, Lede, MissingPrices, Segmented } from "./ui";
 import { maybe, sectorKey } from "../sentiment/format";
 import { compactMoneyIn, decimal, moneyIn, percent } from "../../shell/format";
@@ -57,6 +67,8 @@ export default function Risk() {
   // what I hold now any good" — so their line waits to be asked for: shown
   // by default it was the one most often read as the account's own.
   const [basket, setBasket] = useState(false);
+  const [view, setView] = useState<"bars" | "donuts">("bars");
+  const [mapOpen, setMapOpen] = useState(false);
   // Same axis labels as the history chart next door, for the same reason: two
   // charts of the same book should not date themselves differently.
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
@@ -98,6 +110,24 @@ export default function Risk() {
     },
   };
   const palette = chart();
+
+  /** A split's slices in the reader's words (brokers, crypto, sectors). */
+  const named = (key: string, slices: Slice[]): Slice[] =>
+    key === "broker"
+      ? slices.map((slice) => ({ ...slice, label: brokerName(slice.label, t) }))
+      : key === "country"
+        ? slices.map((slice) =>
+            slice.label === "Crypto"
+              ? { ...slice, label: t("portfolio.alloc_crypto") }
+              : slice,
+          )
+        : key === "sector"
+          ? slices.map((slice) => ({
+              ...slice,
+              label:
+                maybe(t, `sentiment.sector_${sectorKey(slice.label)}`) ?? slice.label,
+            }))
+          : slices;
 
   /** An index by the name a reader knows it by, the ticker when unnamed. */
   const benchName = (bench: string) =>
@@ -296,6 +326,13 @@ export default function Risk() {
                     },
                   ]}
                 />
+                {data.twr_var_95 !== null && data.value !== null ? (
+                  <p className="pf-answer-line">
+                    {t("portfolio.var_sentence", {
+                      value: money(Math.abs(data.value * data.twr_var_95)) ?? "",
+                    })}
+                  </p>
+                ) : null}
                 <Caption>{t("portfolio.real_perf_note")}</Caption>
                 {data.dropped_days.length ? (
                   <Caption>
@@ -366,7 +403,35 @@ export default function Risk() {
               </Card>
 
               <Card title={t("portfolio.allocation")} sub={t("portfolio.alloc_sub")}>
-                <div className="pf-donuts">
+                <Segmented
+                  label={t("portfolio.alloc_view")}
+                  options={["bars", "donuts"] as const}
+                  value={view}
+                  onChange={setView}
+                  format={(v) => t(`portfolio.alloc_view_${v}`)}
+                />
+                {view === "bars" ? (
+                  <AllocationBars
+                    splits={SPLITS.filter(([key]) => data.allocation[key]?.length).map(
+                      ([key, labelKey]) => ({
+                        key,
+                        title: t(labelKey),
+                        slices: named(
+                          key,
+                          (data.allocation[key] ?? []).map((slice) =>
+                            key !== "broker" && slice.label === "Unknown"
+                              ? { ...slice, label: t("portfolio.alloc_unknown") }
+                              : slice,
+                          ),
+                        ),
+                      }),
+                    )}
+                    format={(fraction) => percent(fraction, { lang }) ?? ""}
+                    money={(value) => money(value) ?? ""}
+                    colors={seriesColors}
+                  />
+                ) : null}
+                <div className="pf-donuts" hidden={view !== "donuts"}>
                   {SPLITS.map(([key, labelKey]) => {
                     const title = t(labelKey);
                     // The API's "Unknown" bucket (a fund's unclassified
@@ -395,29 +460,7 @@ export default function Risk() {
                         otherLabel={t("portfolio.alloc_other")}
                         format={(fraction) => percent(fraction, { lang }) ?? ""}
                         detail={detail}
-                        slices={
-                          key === "broker"
-                            ? slices.map((slice) => ({
-                                ...slice,
-                                label: brokerName(slice.label, t),
-                              }))
-                            : key === "country"
-                              ? slices.map((slice) =>
-                                  slice.label === "Crypto"
-                                    ? { ...slice, label: t("portfolio.alloc_crypto") }
-                                    : slice,
-                                )
-                              : key === "sector"
-                                ? slices.map((slice) => ({
-                                    ...slice,
-                                    label:
-                                      maybe(
-                                        t,
-                                        `sentiment.sector_${sectorKey(slice.label)}`,
-                                      ) ?? slice.label,
-                                  }))
-                                : slices
-                        }
+                        slices={named(key, slices)}
                       />
                     );
                   })}
@@ -499,6 +542,19 @@ export default function Risk() {
                     />
                     <span>{t("portfolio.flow_show_basket")}</span>
                   </button>
+                  <IndexTable
+                    rows={indexRows(data.curves)}
+                    name={benchName}
+                    money={(value, signed) => money(value, { signed }) ?? ""}
+                    pct={(value) => percent(value, { lang, signed: true }) ?? ""}
+                    labels={{
+                      index: t("portfolio.idx_index"),
+                      gain: t("portfolio.idx_gain"),
+                      pct: t("portfolio.idx_pct"),
+                      versus: t("portfolio.idx_versus"),
+                      you: t("portfolio.idx_you"),
+                    }}
+                  />
                   <Caption>{t("portfolio.flow_matched_note")}</Caption>
                   <MissingPrices tickers={data.missing} />
                 </Card>
@@ -507,7 +563,23 @@ export default function Risk() {
               {/* A single name still gets the card, which says why there is
                   nothing to compare: it is where a reader looks for the answer. */}
               {Object.keys(data.correlation).length > 0 ? (
-                <CorrelationCard data={data} />
+                <Card title={t("portfolio.return_correlation")}>
+                  <button
+                    type="button"
+                    className="ag-btn"
+                    onClick={() => setMapOpen(true)}
+                  >
+                    {t("portfolio.corr_open")}
+                  </button>
+                  {mapOpen ? (
+                    <SidePanel
+                      label={t("portfolio.return_correlation")}
+                      onClose={() => setMapOpen(false)}
+                    >
+                      <CorrelationCard data={largest(data, 12)} />
+                    </SidePanel>
+                  ) : null}
+                </Card>
               ) : null}
             </>
           );

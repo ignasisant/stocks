@@ -13,6 +13,7 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import { useLang, useT } from "../../shell/i18n";
+import { percent } from "../../shell/format";
 import { DenseRow } from "../../ui/Rows";
 import type {
   CalendarDividend,
@@ -24,7 +25,8 @@ import type {
 } from "./data";
 import { venueName } from "./Book";
 import { cash } from "./Dividends";
-import { days, plain } from "./format";
+import { weightOf } from "./data";
+import { daysOut, plain } from "./format";
 import type { T } from "./format";
 import { loss } from "./Repurchase";
 import { taxTitle } from "./Tax";
@@ -97,13 +99,19 @@ function Plain({
         <div className="ag-dense-l1">
           {`${approximate ? t("earnings.tax_approx_mark") : ""}${shortDate(date, t)}`}
         </div>
-        <div className="ag-dense-l2">{`${days(until)} ${t("earnings.list_col_days_out")}`}</div>
+        <div className="ag-dense-l2">{daysOut(until, t)}</div>
       </div>
     </div>
   );
 }
 
-function PrintRow({ event }: { event: CalendarEvent }) {
+/** "pesa 4,2 %": what share of the book the name carries, when known. */
+function weighs(weight: number | null, t: T): string[] {
+  const text = weight === null ? null : percent(weight, { digits: 1 });
+  return text ? [t("earnings.strip_weighs", { pct: text })] : [];
+}
+
+function PrintRow({ event, weight }: { event: CalendarEvent; weight: number | null }) {
   const t = useT();
   return (
     <DenseRow
@@ -111,15 +119,21 @@ function PrintRow({ event }: { event: CalendarEvent }) {
       spec={{
         ticker: (e) => e.ticker,
         names: true,
-        sub: () => [t("earnings.kind_earnings")],
+        sub: () => [t("earnings.kind_earnings"), ...weighs(weight, t)],
         value: (e) => (e.date === null ? "" : shortDate(e.date, t)),
-        delta: (e) => `${days(e.days_until)} ${t("earnings.list_col_days_out")}`,
+        delta: (e) => daysOut(e.days_until, t),
       }}
     />
   );
 }
 
-function DividendRow({ dividend }: { dividend: CalendarDividend }) {
+function DividendRow({
+  dividend,
+  weight,
+}: {
+  dividend: CalendarDividend;
+  weight: number | null;
+}) {
   const t = useT();
   const lang = useLang();
   return (
@@ -130,6 +144,7 @@ function DividendRow({ dividend }: { dividend: CalendarDividend }) {
         names: true,
         sub: (d) => [
           `${d.projected ? t("earnings.tax_approx_mark") : ""}${t("earnings.div_ex")}`,
+          ...weighs(weight, t),
         ],
         value: (d) => cash(lang, d.amount, d.currency),
         delta: (d) => shortDate(d.date, t),
@@ -149,7 +164,7 @@ function RebuyRow({ window }: { window: RepurchaseWindow }) {
         names: true,
         sub: (w) => [`${plain(t("earnings.rebuy_windows"))} · ${loss(lang, w)}`],
         value: (w) => shortDate(w.date, t),
-        delta: (w) => `${days(w.days_until)} ${t("earnings.list_col_days_out")}`,
+        delta: (w) => daysOut(w.days_until, t),
       }}
     />
   );
@@ -162,6 +177,7 @@ export default function Agenda({
   banks,
   dividends,
   holidays = [],
+  weights,
 }: {
   events: CalendarEvent[];
   deadlines: TaxDeadline[];
@@ -169,6 +185,7 @@ export default function Agenda({
   banks: CentralBankDecision[];
   dividends: CalendarDividend[];
   holidays?: MarketHoliday[];
+  weights?: Record<string, number>;
 }) {
   const t = useT();
   const [shown, setShown] = useState(WEEKS);
@@ -176,14 +193,14 @@ export default function Agenda({
     ...events.map((e) => ({
       key: `print-${e.ticker}`,
       date: e.date,
-      node: <PrintRow event={e} />,
+      node: <PrintRow event={e} weight={weightOf(weights, e.ticker)} />,
     })),
     ...dividends
       .filter((d) => d.days_until >= 0)
       .map((d) => ({
         key: `div-${d.ticker}-${d.date}`,
         date: d.date,
-        node: <DividendRow dividend={d} />,
+        node: <DividendRow dividend={d} weight={weightOf(weights, d.ticker)} />,
       })),
     ...windows
       .filter((w) => w.days_until >= 0)

@@ -9,6 +9,8 @@
  * real navigation, so the back button returns to the paths.
  */
 
+import { useMemo } from "react";
+
 import "./learn.css";
 import { get } from "../../shell/api";
 import { Loaded, Skeleton } from "../../shell/Layout";
@@ -21,7 +23,7 @@ import Glossary from "./Glossary";
 import LessonPage from "./Lesson";
 import Paths from "./Paths";
 import type { Curriculum } from "./types";
-import { place } from "./logic";
+import { lessonPaths, place } from "./logic";
 import { useProgress } from "./useProgress";
 
 type Tab = "paths" | "glossary";
@@ -37,6 +39,16 @@ export default function Page() {
     guest,
   );
 
+  const paths = useMemo(
+    () =>
+      curriculum.state === "loaded"
+        ? {
+            ids: curriculum.data.paths.map((path) => path.id),
+            byLesson: lessonPaths(curriculum.data),
+          }
+        : { ids: [], byLesson: {} },
+    [curriculum],
+  );
   const lesson = (params.get("lesson") ?? "").trim();
   if (lesson) {
     const at = curriculum.state === "loaded" ? place(curriculum.data, lesson) : null;
@@ -61,7 +73,12 @@ export default function Page() {
       />
       <div className="lr-panel" role="tabpanel">
         {tab === "glossary" ? (
-          <Glossary lang={lang} focus={params.get("term")} />
+          <Glossary
+            lang={lang}
+            focus={params.get("term")}
+            pathIds={curriculum.state === "loaded" ? paths.ids : undefined}
+            paths={curriculum.state === "loaded" ? paths.byLesson : undefined}
+          />
         ) : (
           <Loaded query={curriculum} skeleton={<Skeleton rows={8} />}>
             {(data) => <Paths curriculum={data} done={progress.done ?? new Set()} />}
