@@ -575,7 +575,9 @@ def info(ticker: str) -> dict:
         if hit is not None and now - hit[0] < _INFO_TTL_S:
             return hit[1]
     fetched = yf.Ticker(key).info
-    blob = fetched if isinstance(fetched, dict) else {}
+    # A throttled Yahoo answers the quote without the company's profile: the
+    # industry it then lacks is the one an earlier answer gave.
+    blob = profiles.fill(key, fetched if isinstance(fetched, dict) else {})
     # The facts in it that never move (sector, country, currency, quoteType)
     # go to the on-disk profile memo, so the allocation splits stop paying a
     # quoteSummary per holding on every cold process (stocks.data.profiles).
