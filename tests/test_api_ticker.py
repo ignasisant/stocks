@@ -275,11 +275,11 @@ def test_the_quote_says_whether_the_market_is_open(client, monkeypatch):
     """The page overrides the last bar only off-session; inside it, the bars
     already track the live price."""
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {"price": 190.0, "pct": 0.012, "session": "post",
                    "as_of": "2024-03-05"},
     )
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: False)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: False)
     body = client.get("/v1/ticker/AAPL/quote", headers=AUTH).json()
     assert body["market_open"] is False
     assert body["session"] == "post" and body["pct"] == 0.012
@@ -289,9 +289,9 @@ def test_the_quote_carries_the_years_range_when_the_feed_has_one(client, monkeyp
     """The price card's range tile reads the year off the quote row already
     fetched — no second request — and a fallback row without one leaves it
     null rather than inventing a range."""
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: True)
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {"price": 190.0, "pct": 0.012, "session": None, "as_of": None,
                    "high_52w": 260.1, "low_52w": 164.08},
     )
@@ -299,7 +299,7 @@ def test_the_quote_carries_the_years_range_when_the_feed_has_one(client, monkeyp
     assert (body["high_52w"], body["low_52w"]) == (260.1, 164.08)
 
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {"price": 190.0, "pct": 0.012, "session": None, "as_of": None},
     )
     body = client.get("/v1/ticker/AAPL/quote", headers=AUTH).json()
@@ -307,8 +307,8 @@ def test_the_quote_carries_the_years_range_when_the_feed_has_one(client, monkeyp
 
 
 def test_an_unquotable_ticker_reads_null_not_zero(client, monkeypatch):
-    monkeypatch.setattr("stocks.api.routes.ticker.session_quote", lambda t: None)
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.session_quote", lambda t: None)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: True)
     body = client.get("/v1/ticker/NOSUCH/quote", headers=AUTH).json()
     assert body["price"] is None and body["pct"] is None
 
@@ -318,10 +318,10 @@ def test_a_native_price_is_restated_only_when_a_base_is_asked_for(client, monkey
     number that reads as the reader's own money. Same rule as `/metrics` — no
     account dependency, and no fundamentals pull, until `?base=` asks for it."""
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {"price": 285_500.0, "pct": 0.0325, "session": None, "as_of": None},
     )
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: True)
     fetched = []
     patch_loaders(
         monkeypatch, "fundamentals",
@@ -357,13 +357,13 @@ def test_a_quote_that_names_its_currency_needs_no_fundamentals(client, monkeypat
     """The quote row already says what money it is in; the fundamentals pull
     (seconds, cold) is only for a row that does not."""
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {
             "price": 285_500.0, "pct": 0.0325, "session": None, "as_of": None,
             "currency": "KRW",
         },
     )
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: True)
     fetched = []
     patch_loaders(
         monkeypatch, "fundamentals",
@@ -386,11 +386,11 @@ def test_a_coin_pair_is_never_sent_to_fundamentals_for_its_currency(
     quote route must not spend a fundamentals pull asking Yahoo what a coin's
     currency is."""
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.session_quote",
+        "stocks.views.ticker.session_quote",
         lambda t: {"price": 50_000.0, "pct": 0.01, "session": None, "as_of": None},
     )
-    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
-    monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.views.ticker.is_crypto", lambda t: True)
     fetched = []
     patch_loaders(
         monkeypatch, "fundamentals", lambda t: fetched.append(t) or object()
@@ -683,7 +683,7 @@ def test_the_grid_is_the_domain_s_nine_tiles_and_names_its_strings(
     from stocks.analysis.fundamentals import FUNDAMENTAL_TILES
 
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"currency": "USD", "pe_ttm": 30.0},
     )
     body = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()
@@ -701,7 +701,7 @@ def test_the_grid_is_read_at_the_price_the_caller_quotes(monkeypatch, no_fetch):
     from stocks.api.routes import ticker as routes
 
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"currency": "USD", "price": 100.0, "pe_ttm": 30.0,
                      "roe": 0.25},
     )
@@ -720,7 +720,7 @@ def test_a_dollar_market_cap_is_restated_only_when_a_base_is_asked_for(
     company. It is a query parameter and not an account dependency: every other
     number here is the company's, and a token-holding script names nobody."""
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"currency": "USD", "market_cap": 2_000_000_000.0},
     )
     monkeypatch.setattr("stocks.data.fx.spot", lambda a, b: (0.9, "2026-09-18"))
@@ -1165,7 +1165,7 @@ def test_a_bank_gets_the_bank_grid_with_its_rivals_middle(client, monkeypatch):
     ]
     scan = sectors.SectorScan("Financial Services", "2026-10-19",
                               tuple(r["ticker"] for r in rivals), tuple(rivals), {}, ())
-    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: bank)
+    monkeypatch.setattr("stocks.views.ticker.compute_metrics", lambda raw: bank)
     patch_loaders(monkeypatch, "sector_scans", lambda: {scan.sector: scan})
     patch_loaders(
         monkeypatch, "fundamentals",
@@ -1195,7 +1195,7 @@ def test_the_grid_carries_the_reviews_verdict_and_the_reported_pe(client, monkey
                 "industry": "Internet Content & Information", "pe_ttm": 31.6,
                 "pe_ttm_reported": 16.1, "pe_fwd": 20.8, "roic": 0.3,
                 "op_margin": 0.33, "fcf_yield": 0.02, "moat": 80.0}
-    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: alphabet)
+    monkeypatch.setattr("stocks.views.ticker.compute_metrics", lambda raw: alphabet)
     patch_loaders(monkeypatch, "sector_scans", lambda: {})
     patch_loaders(
         monkeypatch, "fundamentals",
@@ -1210,7 +1210,7 @@ def test_the_grid_carries_the_reviews_verdict_and_the_reported_pe(client, monkey
     assert body["reported_pe"] == pytest.approx(16.1)
 
     fund = {"currency": "USD", "quote_type": "ETF", "pe_ttm": 25.0}
-    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: fund)
+    monkeypatch.setattr("stocks.views.ticker.compute_metrics", lambda raw: fund)
     body = client.get("/v1/ticker/SPY/metrics", headers=AUTH).json()
     assert body["judged"] is None and body["reported_pe"] is None
 
