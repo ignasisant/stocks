@@ -3,11 +3,17 @@
  *
  * Both are one registry (`/onboarding`) and one modal in two modes — a step
  * explains a feature and offers to take you to it; a card announces one thing
- * that shipped and hands you to the step that explains it. The walkthrough is
- * the registry's few `core` stops; its last one offers the whole list (`walk`). Keeping them
+ * that shipped and hands you to the step that explains it. Keeping them
  * together is not tidiness: a card whose step this deploy does not carry is
  * dropped server-side, and a client that fetched the two separately could draw
  * an announcement pointing nowhere.
+ *
+ * The walkthrough a newcomer takes is the section guide: the registry's `core`
+ * stops, one per menu entry (`walk`). It is not a dialog. Each stop takes the
+ * reader to the section itself and says its two lines from a card in the
+ * corner (`Coach`), with the menu entry lit, so what is being described is on
+ * screen and still works. The whole list, every stop, stays a dialog for deep
+ * links (`?tour=<id>`, `?tour=all`).
  *
  * The tour wins when both are owed (`firstLoad`): an account that has never
  * taken the walkthrough is not the audience for "here is what changed" — it
@@ -22,26 +28,41 @@
  * or ends it — the rules are in `tourPark.ts`, where they can be tested.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { get, send } from "./api";
 
 /** A stamp changes what `/onboarding` answers, and nothing a page shows. */
 const SEEN = { touches: ["/onboarding"] };
-import { openAssistant } from "./assistant";
+/** The guide answered also withdraws Home's offer, which rides `/prefs`. */
+const WALKED = { touches: ["/onboarding", "/prefs"] };
+import { drawerWidth, openAssistant, roomBeside } from "./assistant";
 import { Icon } from "./Icon";
 import { useT } from "./i18n";
 import { onIdle } from "./idle";
 import { SignIn } from "./guest";
 import { canonical } from "./pages";
-import { useRoute } from "./router";
-import { useGuest } from "./session";
+import { pagePath, routeFor, useRoute } from "./router";
+import { useSession } from "./session";
+import { phoneNow } from "./useMobile";
 import { Welcome } from "./Welcome";
 import {
   after,
+  ASSISTANT,
   clamp,
   firstLoadInterrupted,
   readPark,
+  setGuideStop,
+  setTouring,
   writePark,
   type Action,
   type Mode,
@@ -134,9 +155,9 @@ function Rich({ text }: { text: string }) {
 type Guide = { surface: string; finished: boolean };
 
 /**
- * The stops a walkthrough pages through: the core few for "tour", every one
- * for "all". A registry with no core stop marked walks everything, so the
- * short tour can never be an empty one.
+ * The stops a walkthrough pages through: the section guide's for "tour",
+ * every one for "all". A registry with no core stop marked walks everything,
+ * so the guide can never be an empty one.
  */
 export function walk<S extends { core?: boolean }>(steps: S[], mode: Mode): S[] {
   if (mode === "all") return steps;
@@ -145,10 +166,10 @@ export function walk<S extends { core?: boolean }>(steps: S[], mode: Mode): S[] 
 }
 
 /**
- * Where `?tour=` opens: `1` is the short walk from the top, `all` the whole
- * list, and a step's id that step — in the short walk when it is one of its
+ * Where `?tour=` opens: `1` is the section guide from the top, `all` the whole
+ * list, and a step's id that step — in the guide when it is one of its
  * stops, in the whole list otherwise, so a deep link to any stop still lands
- * on it. An id nobody knows opens the short walk.
+ * on it. An id nobody knows opens the guide.
  */
 export function asking(steps: { id: string; core?: boolean }[], asked: string): Place {
   if (asked === "all") return { mode: "all", at: 0, open: true };
@@ -203,11 +224,10 @@ export function firstLoad(
     return { place: null, interrupted: true, forget };
   }
   // The card surface: a newcomer gets three rows in a pop-up (`Welcome`),
-  // not the long tour, and Home's start card carries on from there. Opening
-  // it retires the tour, stamping the current release, so "what's new" opens
-  // for what ships *after* this account arrived rather than never (it waits
-  // on `tour_done`) or for the whole backlog. The tour stays one press away
-  // by URL and from Profile.
+  // which offers the import and the section guide and opens neither. Opening
+  // it retires the automatic tour, so a reload does not bring the pop-up
+  // back; whether the account is still new, and so spared "what's new", is
+  // the server's to say (`onboarding.newcomer`), not this flag's.
   if (guide.surface === "card" && !state.tour_done) {
     return { place: null, interrupted: true, forget, welcome: true };
   }
@@ -222,9 +242,22 @@ export function firstLoad(
   return { place: null, interrupted: false, forget };
 }
 
+/** Where the address bar is, read now rather than from a render ago. */
+function standing(): { page: string; params: URLSearchParams } {
+  return routeFor(pagePath(window.location.pathname), window.location.search);
+}
+
+/**
+ * The section a guide stop points the menu at: its page's slug, or the
+ * assistant, which is a panel.
+ */
+function section(step: Step): string {
+  return step.path === null ? ASSISTANT : canonical(step.path);
+}
+
 export function Tour() {
   const t = useT();
-  const guest = useGuest();
+  const { guest, reload } = useSession();
   const { params, go, setParams } = useRoute();
   const [state, setState] = useState<State | null>(null);
   // Null: nothing running. `open: false`: parked in the strip above the page.
@@ -306,10 +339,62 @@ export function Tour() {
     };
   }, [asked, guest]);
 
-  // The strip's position is the tab's, so a reload finds it.
+  // The strip's position is the tab's, so a reload finds it. Not before the
+  // first load has read it: nothing is on screen yet at mount, and writing
+  // that down would erase the strip the reload came back for.
   useEffect(() => {
+    if (!booted.current) return;
     writePark(place && !place.open ? { mode: place.mode, at: place.at } : null);
   }, [place]);
+
+  // A page's first-visit tip waits while any of this is up (`PageTip`).
+  useEffect(() => {
+    setTouring(place !== null || welcome);
+  }, [place, welcome]);
+  useEffect(() => () => setTouring(false), []);
+
+  // The section guide goes to the section it is talking about: on opening and
+  // on every move, never on a render. The page under the card stays the
+  // reader's — a link followed from it must not be pulled back to the stop.
+  const guiding = place?.mode === "tour" && place.open ? place.at : null;
+  const ready = state !== null;
+  const latest = useRef({ state, guest, asked, go, setParams });
+  latest.current = { state, guest, asked, go, setParams };
+  useEffect(() => {
+    const now = latest.current;
+    if (guiding === null || !now.state) {
+      setGuideStop(null);
+      return;
+    }
+    const stops = walk(now.state.steps, "tour");
+    const stop = stops[clamp(guiding, stops.length)];
+    if (!stop) return;
+    setGuideStop(section(stop));
+    // `?tour=` has been answered. Dropped in place, before the move pushes a
+    // new entry: left behind, the back button would land on it and start the
+    // guide over.
+    if (now.asked) now.setParams({ tour: undefined });
+    // A guest's locked stop is a sign-in wall rather than a section; the card
+    // says so and offers the account instead.
+    if (stop.gated && now.guest) return;
+    if (stop.path === null) {
+      // The assistant is a panel. Where it fits beside the page it opens with
+      // the stop; where it would cover the page (a phone, a narrow window, a
+      // drawer dragged wide) it would cover the card too, so the card offers
+      // it instead.
+      const beside = !phoneNow() && roomBeside(drawerWidth());
+      if (stop.session?.chat_panel_open && beside) openAssistant();
+      return;
+    }
+    const slug = canonical(stop.path);
+    const query = arrive(stop, "tour");
+    const here = standing();
+    const there =
+      here.page === slug &&
+      Object.entries(query).every(([key, value]) => here.params.get(key) === value);
+    if (!there) now.go(slug, query);
+  }, [guiding, ready]);
+  useEffect(() => () => setGuideStop(null), []);
 
   const act = useCallback(
     (action: Action, current: Place) => {
@@ -318,15 +403,29 @@ export function Tour() {
       // write into the shared guest prefs would be one visitor deciding what
       // the next one has read.
       if (stamp && !guest) {
-        void send("POST", "/onboarding/seen", stamp, SEEN).catch(() => undefined);
+        void send("POST", "/onboarding/seen", stamp, stamp.walked ? WALKED : SEEN)
+          // Home's offer is a setting the session holds a copy of.
+          .then(() => (stamp.walked ? reload() : undefined))
+          .catch(() => undefined);
       }
       setPlace(next);
       if (asked) setParams({ tour: undefined });
     },
-    [guest, asked, setParams],
+    [guest, asked, setParams, reload],
   );
 
-  if (state && welcome) return <Welcome steps={state.steps} onClose={closeWelcome} />;
+  if (state && welcome) {
+    return (
+      <Welcome
+        steps={state.steps}
+        onClose={closeWelcome}
+        onTour={() => {
+          setWelcome(false);
+          setPlace({ mode: "tour", at: 0, open: true });
+        }}
+      />
+    );
+  }
   if (!state || !place) return null;
   const steps = place.mode === "news" ? state.steps : walk(state.steps, place.mode);
   const list = place.mode === "news" ? state.news : steps;
@@ -357,7 +456,7 @@ export function Tour() {
     }
     return null;
   };
-  const lead = (s: Step | undefined): React.ReactNode => {
+  const lead = (s: Step | undefined): ReactNode => {
     const label = leadLabel(s);
     if (!s || label === null) return null;
     if (s.gated && guest) {
@@ -438,9 +537,45 @@ export function Tour() {
   }
 
   const last = at === steps.length - 1;
-  // The short walk ends on a way into the long one, for the reader who wants
-  // every stop; the long one has nowhere further to go.
-  const more = last && place.mode === "tour" && steps.length < state.steps.length;
+
+  if (place.mode === "tour") {
+    const s = steps[at]!;
+    const locked = s.gated && guest;
+    // What the card cannot do for the reader by moving the page: an account
+    // for a guest, and the assistant on a phone, where it is the whole screen
+    // and would cover the card that opened it.
+    const way = locked ? (
+      <SignIn label="common.cta_sign_in" className="ag-tour-btn" wall="tour" />
+    ) : s.path === null && s.session?.chat_panel_open && !guest ? (
+      <button
+        type="button"
+        className="ag-tour-btn ag-coach-open"
+        onClick={openAssistant}
+      >
+        {s.cta_key ? t(s.cta_key) : t("tour.goto")}
+      </button>
+    ) : null;
+    return (
+      <Coach
+        at={at}
+        total={steps.length}
+        icon={s.icon}
+        heading={t(s.title_key)}
+        body={t(s.body_key)}
+        badge={s.done === true && !guest ? t("tour.active") : null}
+        note={locked ? t("tour.locked") : null}
+        way={way}
+        progress={t("tour.progress", { n: at + 1, total: steps.length })}
+        onBack={at > 0 ? () => move(at - 1) : null}
+        onNext={() => (last ? act("complete", place) : move(at + 1))}
+        // Skipping is an answer, like finishing; X and Escape only put the
+        // guide away, in the strip above the page.
+        onSkip={last ? null : () => act("finish", place)}
+        onPark={() => act("dismiss", place)}
+      />
+    );
+  }
+
   return (
     <Modal
       title={t("tour.launch")}
@@ -449,16 +584,11 @@ export function Tour() {
         icon: s.icon,
         heading: t(s.title_key),
         body: t(s.body_key),
-        // A capability the account has switched on, or has not. Null means
-        // the step is a place rather than a switch, and says nothing at all —
-        // and a guest has switched nothing on, so the tick would be about the
-        // demo.
-        badge:
-          s.done === null || guest
-            ? null
-            : s.done
-              ? t("tour.active")
-              : t("tour.pending"),
+        // A capability the account has switched on. One still off says
+        // nothing, as on the guide's card: "not set up yet" over an optional
+        // one read as a fault. A guest has switched nothing on, so the tick
+        // would be about the demo.
+        badge: s.done === true && !guest ? t("tour.active") : null,
         badgeOn: s.done === true,
         note: s.gated && guest ? t("tour.locked") : null,
         lead: leadLabel(s),
@@ -476,15 +606,6 @@ export function Tour() {
       actions={
         <>
           {back}
-          {more ? (
-            <button
-              type="button"
-              className="ag-tour-quiet"
-              onClick={() => setPlace({ mode: "all", at: 0, open: true })}
-            >
-              {t("tour.full_tour")}
-            </button>
-          ) : null}
           {/* Moving on is the tour's own action, so it is the filled one and
               sits last. */}
           <button
@@ -497,6 +618,244 @@ export function Tour() {
         </>
       }
     />
+  );
+}
+
+/** Whether something the reader opened over the page owns Escape right now. */
+function covered(): boolean {
+  return (
+    document.documentElement.dataset.chat !== undefined ||
+    document.querySelector('[aria-modal="true"], dialog[open], .ag-nav-sheet') !== null
+  );
+}
+
+/**
+ * Whether Escape belongs to what the reader is in the middle of on the page:
+ * a field they are typing in (the search box closes its panel on it), or
+ * something they popped open (a "?" note, a menu). Those have their own
+ * Escape, and it must not put the guide away as well.
+ */
+function claimed(at: Element | null): boolean {
+  if (!at) return false;
+  return (
+    at.matches(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [aria-expanded="true"]',
+    ) || at.closest('[role="menu"], [role="listbox"], [role="dialog"]') !== null
+  );
+}
+
+/**
+ * One stop of the section guide: a card in the corner of the section it is
+ * describing.
+ *
+ * Not a dialog, and no scrim: the reader was just taken to this page and the
+ * point is that they can see and use it. So focus is not trapped and the page
+ * is not inert; the card takes focus when it opens and is a landmark after
+ * that. It sits under anything opened on top of the page (the assistant, a
+ * dialog), which is why Escape is only its own when nothing else has a claim.
+ *
+ * Portalled out of the page column: `.ag-main` is a size container, and a
+ * container is the containing block of anything fixed inside it. Into the
+ * shell rather than the body, which is where the phone bar's height
+ * (`--dock`) is in scope.
+ */
+function Coach({
+  at,
+  total,
+  icon,
+  heading,
+  body,
+  badge,
+  note,
+  way,
+  progress,
+  onBack,
+  onNext,
+  onSkip,
+  onPark,
+}: {
+  at: number;
+  total: number;
+  icon: string;
+  heading: string;
+  body: string;
+  /** Already done by this account (the import), said beside the heading. */
+  badge: string | null;
+  note: string | null;
+  /** A way in the card has to offer, because moving the page could not. */
+  way: ReactNode;
+  progress: string;
+  onBack: (() => void) | null;
+  onNext: () => void;
+  /** Null on the last stop, whose own button is the way out. */
+  onSkip: (() => void) | null;
+  onPark: () => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const { page, params } = useRoute();
+  // What `App` takes for a move to another screen, and refocuses on.
+  const screen = `${page}?${params.get("ticker") ?? ""}`;
+  const card = useRef<HTMLElement>(null);
+  const next = useRef<HTMLButtonElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+
+  // The page keeps room under its last row for the card (`shell.css`), as
+  // much as the card is tall: two lines of copy in one language are three in
+  // another.
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = card.current;
+    root.dataset.guide = "";
+    const measure = () => {
+      if (el) root.style.setProperty("--coach", `${el.offsetHeight}px`);
+    };
+    measure();
+    const watch =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    if (el) watch?.observe(el);
+    return () => {
+      watch?.disconnect();
+      delete root.dataset.guide;
+      root.style.removeProperty("--coach");
+    };
+  }, []);
+
+  // Every way out is a button in the card, which leaves with it. Focus goes
+  // to the page column, where a navigation would have put it, rather than
+  // falling to the top of the document. A layout effect: its cleanup still
+  // finds the pressed button in the tree.
+  useLayoutEffect(() => {
+    const el = card.current;
+    return () => {
+      if (!el?.contains(document.activeElement)) return;
+      document.getElementById("ag-main")?.focus({ preventScroll: true });
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const at = document.activeElement;
+      if (!card.current?.contains(at) && (covered() || claimed(at))) return;
+      onPark();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onPark]);
+
+  // A move changes the page, and a page change sends focus to the page column
+  // (`App`): walking the guide from the keyboard would mean finding Next again
+  // after every stop. A press made from inside the card hands focus back to
+  // the same button once the stop, and then its page, have arrived — unless
+  // the reader has put it somewhere of their own since.
+  // Opening is such a press too: whatever asked for the guide (the welcome,
+  // Home's card, the strip) has just left the screen with focus on it.
+  const held = useRef<{ which: "next" | "back"; until: number } | null>({
+    which: "next",
+    until: Date.now() + 4000,
+  });
+  const hold = (which: "next" | "back", run: () => void) => () => {
+    held.current = card.current?.contains(document.activeElement)
+      ? { which, until: Date.now() + 4000 }
+      : null;
+    run();
+  };
+  useEffect(() => {
+    const kept = held.current;
+    if (!kept || Date.now() > kept.until) return;
+    const timer = window.setTimeout(() => {
+      const active = document.activeElement;
+      const free =
+        !active ||
+        active === document.body ||
+        active.id === "ag-main" ||
+        card.current?.contains(active);
+      if (!free) return;
+      const target =
+        kept.which === "back" ? (back.current ?? next.current) : next.current;
+      target?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [at, screen]);
+
+  const last = onSkip === null;
+  return createPortal(
+    <aside
+      ref={card}
+      className="ag-coach"
+      aria-labelledby={`${id}-t ${id}-h`}
+      style={{ "--coach-done": (at + 1) / total } as CSSProperties}
+    >
+      <header className="ag-coach-head">
+        <span className="ag-coach-step" id={`${id}-t`}>
+          {progress}
+        </span>
+        <button
+          type="button"
+          className="ag-x ag-coach-x"
+          aria-label={t("common.close")}
+          onClick={onPark}
+        >
+          <Icon name="close" size={16} />
+        </button>
+      </header>
+      <span className="ag-coach-bar" aria-hidden="true" />
+      {/* As in the dialog: the stop changes under a button that keeps focus,
+          so the region says where the reader now is. */}
+      <span className="ag-sr" aria-live="polite">
+        {`${progress}: ${heading}`}
+      </span>
+      <div key={at} className="ag-coach-stop ag-redraw">
+        <h2 className="ag-coach-h" id={`${id}-h`}>
+          <Icon name={icon} />
+          {heading}
+          {badge ? (
+            <span className="ag-tour-badge ag-tour-on ag-coach-badge">
+              <Icon name="check" size={12} />
+              {badge}
+            </span>
+          ) : null}
+        </h2>
+        <p className="ag-coach-body">
+          <Rich text={body} />
+        </p>
+        {note ? <p className="ag-coach-note">{note}</p> : null}
+        {way ? <div className="ag-coach-way">{way}</div> : null}
+      </div>
+      <footer className="ag-coach-foot">
+        {onSkip ? (
+          <button
+            type="button"
+            className="ag-tour-quiet ag-coach-skip"
+            onClick={onSkip}
+          >
+            {t("tour.skip")}
+          </button>
+        ) : null}
+        <span className="ag-coach-moves">
+          {onBack ? (
+            <button
+              ref={back}
+              type="button"
+              className="ag-tour-quiet"
+              onClick={hold("back", onBack)}
+            >
+              {t("tour.back")}
+            </button>
+          ) : null}
+          <button
+            ref={next}
+            type="button"
+            className="ag-tour-cta"
+            onClick={hold("next", onNext)}
+          >
+            {last ? t("tour.finish") : t("tour.next")}
+          </button>
+        </span>
+      </footer>
+    </aside>,
+    document.querySelector(".ag-shell") ?? document.body,
   );
 }
 
@@ -612,12 +971,12 @@ function Modal({
   pages: Page[];
   at: number;
   /** The current page's "take me there", live. */
-  lead: React.ReactNode;
+  lead: ReactNode;
   progress: string;
   /** A visible way out of the whole list, in the header. */
   /** Without `onSkip` (the last page) its room is kept, so nothing moves. */
   skip?: { label: string; onSkip: (() => void) | null } | null;
-  actions: React.ReactNode;
+  actions: ReactNode;
   onClose: () => void;
 }) {
   const id = useId();

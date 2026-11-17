@@ -17,7 +17,13 @@
  * from the registry the guided tour reads (`stocks.web.onboarding`'s
  * `setup_state` / `explore_state`), so the card and the tour cannot disagree
  * about whether this account has notifications on. Nothing here re-computes
- * any of it, and nothing here reads prefs. Everything done, the card is gone.
+ * any of it, and nothing here reads prefs. Two things only the browser knows
+ * are added: whether the app is installed, and a key held for this tab
+ * (`withSessionKey`). Everything done, the card is gone.
+ *
+ * The count is over the steps an account needs (sign in, import); the rest
+ * say "Optional" until they are on. Profile counts every capability instead
+ * and says so ("features on"), so the two numbers are not one number twice.
  */
 
 import { useState, type ReactNode } from "react";
@@ -26,14 +32,16 @@ import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Icon } from "../../shell/Icon";
 import { Skeleton } from "../../shell/Layout";
-import { askAssistant, openAssistant } from "../../shell/assistant";
+import { fillAssistant, openAssistant } from "../../shell/assistant";
 import { signInHref } from "../../shell/guest";
 import { install, useInstallWay } from "../../shell/install";
 import { isStandalone } from "../../shell/resume";
 import { useRoute } from "../../shell/router";
+import { focusSearch } from "../../shell/Search";
 import { useSession, useSignIn } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import { toast } from "../../ui/toast";
+import { useSessionKeyHeld, withSessionKey } from "../../chat/sessionKey";
 import { EXPLORE, setupLine, target, type Row } from "./checks";
 import type { Onboarding, TourStep } from "./types";
 import { Card } from "./ui";
@@ -68,7 +76,7 @@ function Door({
   children: ReactNode;
 }) {
   const t = useT();
-  const { go } = useRoute();
+  const { go, setParams } = useRoute();
   const signIn = signInHref(useSignIn());
   const way = useInstallWay();
   if (row.key === "login" && guest) {
@@ -124,10 +132,18 @@ function Door({
       aria-label={label}
       onClick={() =>
         to.kind === "page"
-          ? go(to.page, to.params)
+          ? // The search chip is the top bar's field; its page is the
+            // fallback where that field is not on screen.
+            (to.search && focusSearch()) || go(to.page, to.params)
           : to.ask
-            ? askAssistant(t(to.ask), { fresh: true })
-            : openAssistant()
+            ? // In the field, not sent: the press that spends a message is
+              // the reader's (`checks.ts`).
+              fillAssistant(t(to.ask))
+            : to.view
+              ? // The drawer reads the view off the URL, as it does for the
+                // profile's links (`chat/Drawer.tsx`).
+                setParams({ chat: to.view })
+              : openAssistant()
       }
     >
       {children}
@@ -143,6 +159,7 @@ export function SetupCard() {
   const { setParams } = useRoute();
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
   const way = useInstallWay();
+  const held = useSessionKeyHeld();
   // Shown or hidden first, saved after: the press is the decision, and a
   // failed write is worth one card coming back, not an error in front of
   // somebody tidying their screen.
@@ -178,7 +195,7 @@ export function SetupCard() {
   // sign-in from the real caller; the session is the fallback for a deploy
   // whose API predates the field.
   const guest = state.signed_in === undefined ? session.guest : !state.signed_in;
-  const setup: Entry[] = setupLine(state.setup, {
+  const setup: Entry[] = setupLine(withSessionKey(state.setup, held), {
     guest,
     way,
     installed: isStandalone(),
@@ -197,16 +214,24 @@ export function SetupCard() {
   const untried = explore.filter((e) => !e.on && !locked(e));
   // Nothing left to switch on or to try: the card has done its job.
   if (!next && !untried.length) return null;
+  // "Not set up yet" on a node the account can do without read as a fault:
+  // beside an assistant answering for free, the key's node said it was not.
   const word = (e: Entry) =>
     `${t(e.row.label)} — ${t(
-      e.on ? "tour.active" : locked(e) ? "home.start_locked" : "tour.pending",
+      e.on
+        ? "tour.active"
+        : locked(e)
+          ? "home.start_locked"
+          : e.row.optional
+            ? "home.start_optional"
+            : "tour.pending",
     )}`;
 
   return (
     <Card className="hm-start">
       <div className="hm-start-head">
         <span className="hm-start-title">{t("home.start_title")}</span>
-        {/* A guest can take one step of four, so a count that cannot move
+        {/* A guest can take one step (signing in), so a count that cannot move
             and a "don't show again" a guest has no prefs to keep are both
             left out: the banner above has the one close. */}
         {guest || done === required.length ? null : (
@@ -214,20 +239,26 @@ export function SetupCard() {
             {t("home.start_progress", { done, total: required.length })}
           </span>
         )}
-        {/* The tour opens itself once; after that this is the way back to
-            it from where the steps are, not only from Perfil. A modal over
-            the page, so no navigation for the back button to walk. */}
-        <button
-          type="button"
-          className="hm-quiet hm-start-tour"
-          onClick={() => setParams({ tour: "1" })}
-        >
-          {t("tour.launch")}
-        </button>
+        {/* The way back to the section guide from where the steps are, not
+            only from Perfil. Left out while Home's own card is offering it
+            (`TourOffer`): the same guide asked twice on one screen. */}
+        {prefs.tour_offer ? null : (
+          <button
+            type="button"
+            className="hm-quiet hm-start-tour"
+            onClick={() => setParams({ tour: "1" })}
+          >
+            {t("tour.launch")}
+          </button>
+        )}
         {guest ? null : (
           <button
             type="button"
-            className="hm-quiet hm-start-hide"
+            className={
+              prefs.tour_offer
+                ? "hm-quiet hm-start-hide hm-start-end"
+                : "hm-quiet hm-start-hide"
+            }
             onClick={() => keep(true)}
           >
             {t("home.setup_hide")}
