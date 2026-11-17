@@ -20,7 +20,37 @@ network, so every threshold below is testable with a dict.
   sustained sales growth per share (a PEG on the app's own growth, net of
   dilution, never the feed's PEG): thirty times earnings is dear for a
   company growing 5% and cheap for one growing 40%, and a slow grower is not
-  marked down for being slow.
+  marked down for being slow. The forward P/E is the owner's: the analysts'
+  estimate adds share-based pay back, so where staff are paid in shares
+  (`SHARE_PAY_MIN` of sales or more) the pay is charged to it
+  (`_after_share_pay`, shown as `pe_owner`). An estimate the last twelve
+  months cannot be squared with is a feed error, and the trailing P/E is
+  read instead (`_estimate_broken`). A dividend joins from
+  `DIVIDEND_LEG_MIN`, and only where it reads cheaper than the rest.
+
+**What the filings cannot see.** Both scores are the past. Two kinds of
+business are priced on a future that may not resemble it: one a new
+technology can copy (`AI_EXPOSED`: application software, IT services,
+agencies, staffing, education, publishing) and one whose customers are
+leaving for good (`DECLINING`). Their record is left alone, since the
+business is as good as it reads today; their price is asked for more:
+every price input is read at two thirds (`THREAT_HAIRCUT`), the row says
+why (`ai_risk`, `secular_decline`), and growth no longer excuses the
+multiple. A declining industry cheap enough to clear the bar anyway is
+still a buy: the decline is decades old and the market has paid for it.
+A business a model can copy is not (`ai_risk` is one of `_cautions`): how
+much it loses is not in any record yet, so the discount is a guess and the
+name waits at watch or hold however cheap it reads. The table is the feed's
+industry, so it is coarse; the names it files there that sell a ride or a
+hall of machines, which no model writes, are taken back out by ticker
+(`NOT_COPYABLE`).
+
+**A cycle is not a level.** In a `CYCLICAL` industry (chips, oil, metals,
+chemicals, machinery, shipping, cars, airlines) the margin is read against
+its own median over the filed years: well above it the P/E is put back on
+the normal margin and a buy waits (`peak_margin`); well below it the same
+is done the other way (`trough_margin`), so a machinery maker at the
+bottom of its cycle is not sold for the earnings of its worst year.
 
 A score needs two of its inputs or it is None: one KPI is an anecdote. A name
 that cannot be scored is `unrated`, never "hold by default" dressed up as an
@@ -77,11 +107,17 @@ given up on can trade at five times earnings and yield 30% in cash.
 numbers behind them are the kind that lie: a margin at a cyclical peak (well
 above its own median over the filed years, at a company whose sales have
 fallen in one of them, and without the fast growth that would make it
-operating leverage), sales falling now and over the years or a
-margin sliding for years (the value trap: cheap because it is shrinking),
+operating leverage; in a cyclical industry the gap alone; only ever at a
+company in profit, since a smaller loss is not a top), sales falling
+now and over the years, a margin sliding for years or profits falling 5% a
+year on a margin lower than it was (the value trap: cheap because it is
+shrinking),
 earnings the analysts expect to fall 10% or more next year (a forward P/E
 above the trailing one: the low multiple is on a profit about to shrink),
-net debt at three times EBITDA or more, or a price that is cheap only on
+net debt at three times EBITDA or more (`indebted`: a maker that lends to
+its buyers carries a loan book in that debt and in its capital, so it is
+told so, `lending_arm`, and flagged on thin equity instead; its scores are
+the same ones), or a price that is cheap only on
 its kindest reading (the mean clears the bar, the other inputs without the
 best one do not: a range, not a point, has to be cheap). Each holds the name
 at hold or watch and says why; none of them ever pushes a name into an add.
@@ -119,7 +155,11 @@ from stocks.analysis.kpis import business
 #: moves; `tests/test_kpis.py` pins a fingerprint of the scores, so a change
 #: that moves them fails until it is bumped. 2: 2026-11-12, quality stopped
 #: reading the FCF yield and Credit Services lenders took the financial lens.
-FORMULA = 2
+#: 3: 2026-11-16, the forward P/E pays for shares given to staff and is
+#: dropped where the estimate is a feed error, copyable and declining
+#: businesses are priced at two thirds, a cyclical's P/E is normalised at its
+#: bottom as at its peak, and a dividend joins only where it reads cheaper.
+FORMULA = 3
 SCALE = f"{kpis.VERSION}.{FORMULA}"
 
 # Held
@@ -235,6 +275,19 @@ PRE_REVENUE_PS = 40.0
 DEEP_BURN_MARGIN = -1.0
 # Sustained growth from which a mature name's quality counts the rule of 40.
 RULE_40_MIN = 0.20
+# Pay in shares from this share of sales is charged to the forward earnings
+# (`_after_share_pay`): under it the estimate is the filed kind anyway (a
+# brewer's, a drug maker's), and the charge would only be the feed's noise.
+# Past `PE_CEILING` the charged P/E says only "dear": the pay eats the
+# adjusted profit.
+SHARE_PAY_MIN = 0.02
+PE_CEILING = 100.0
+# Next year's estimated earnings over this many times the last twelve months'
+# EBITDA, a year of the sales' growth allowed, at a margin that is not under
+# its own median (no bad year to recover from): not a forecast, a feed that
+# missed a split or mixed two currencies (Tokyo Electron read 7x forward on
+# 49x trailing). The forward P/E is dropped and the trailing one read.
+FORWARD_EBITDA_MAX = 2.5
 # Forward P/E per point of sustained sales growth per share: 0.5x scores 100,
 # 2.5x scores 0, so 1x (the ticker page's "cheap" band) reads 75 and 1.5x sits
 # on the cheap bar. Growth past `PEG_GROWTH_CAP` is a cycle or a base effect,
@@ -255,10 +308,22 @@ PEG_CHEAP = 1.0
 HURDLE = 0.09
 PRICED_FLAT = 0.01
 PAST_GROWING = 0.05
+# What the filings cannot see: a business a new technology can copy, or one
+# whose customers are leaving for good. The record is the past of a company
+# the next ten years may not resemble, so its price is asked for more: three
+# points of return over `HURDLE`, which on a perpetuity growing the 3% an
+# economy does is two thirds of the value ((9 - 3) / (12 - 3)). Every price
+# input of a name in `AI_EXPOSED` or `DECLINING` is read at that. Flat, and
+# on the industry alone: tied to how afraid the market already is, a falling
+# price would have read dearer.
+THREAT_HAIRCUT = 1 / 3
 # An operating margin this many times its own median over the filed years,
 # and at least `PEAK_GAP` above it, is a peak at a company whose sales fell in
 # one of those years, unless they now grow `RULE_40_MIN`. Without a down year
-# a widening margin is a compounder's operating leverage, not a cycle.
+# a widening margin is a compounder's operating leverage, not a cycle. In a
+# `CYCLICAL` industry it is a cycle whatever the sales did: a memory maker
+# earns four times its normal margin in the year its sales double. The same
+# ratio under the median, there, is the cycle's bottom (`_at_trough`).
 PEAK_RATIO = 1.5
 PEAK_GAP = 0.05
 # A margin down this much since the first filed year, and by this share of
@@ -271,11 +336,27 @@ HIGH_DEBT = 3.0
 #: tariffs carry more of it than a cyclical's profits can.
 REIT_DEBT = 8.0
 REGULATED_DEBT = 5.0
+#: Yahoo's industry for the phone and cable networks.
+NETWORKS = frozenset({"Telecom Services"})
+#: The standard lens' price ruler, as (scores 0, scores 100): forward P/E,
+#: free cash flow yield, EV/EBITDA.
+PRICE_RULER = ((40.0, 8.0), (0.0, 0.10), (50.0, 8.0))
+#: A network's: about half its EBITDA goes back into the ground and the debt
+#: takes much of the rest, so the whole industry sits past the cheap end of a
+#: ruler cut for businesses that keep what they earn, and the map could not
+#: tell one network from another (2026-11-17: seven names, price 87 to 100).
+#: These are the band the listed networks themselves have changed hands in,
+#: about 4 to 10 times EBITDA and 6 to 18 times earnings: like the utility
+#: lens' ranges, where the industry trades and not a claim of what it is
+#: worth. Its quality is still read on the ruler every company gets.
+NETWORK_RULER = ((18.0, 6.0), (0.04, 0.16), (10.0, 4.0))
 #: A dividend counts toward the price from `DIVIDEND_LEG_MIN` (a landlord's
 #: and a utility's always), scored from `DIVIDEND_LO` to `DIVIDEND_HI`; the
 #: row names it from `DIVIDEND_HIGH`. The minimum is where the yield reads
 #: cheap: under it a payout says no more about the price than a buyback
 #: would, and counted it made a 2% payer dearer than a name paying nothing.
+#: Past it the yield joins only where it reads cheaper than the other price
+#: inputs (`_join_dividend`), or a falling price would step the score down.
 #: A payout over `PAYOUT_STRETCHED` of earnings is one the business may not
 #: keep paying. So is one over the owner's free cash flow across the filed
 #: years (`DIVIDEND_FCF_MAX`), but only where earnings back the doubt (a
@@ -297,6 +378,9 @@ COST_OF_EQUITY = 0.10
 BANK_GROWTH = 0.03
 HIGH_ROE = 0.15
 LOW_ROE = 0.08
+# Net income falling this much a year over the filed years is named; with a
+# margin lower than the first filed year's it also stops a buy.
+EARNINGS_SHRINK = 0.05
 # The analysts' next-year earnings this far under the last twelve months'
 # (a forward P/E that much above the trailing one): the low P/E is on a
 # profit already expected to shrink.
@@ -365,6 +449,7 @@ COSTLY_FLOOR = 25.0
 #: The metric keys a row carries back to the client, in display order.
 SHOWN = (
     "pe_fwd",
+    "pe_owner",
     "growth_pe",
     "fcf_yield",
     "owner_fcf_yield",
@@ -438,6 +523,35 @@ DEALER_EQUITY = 0.15
 LETTING = frozenset({"Real Estate Services", "Real Estate - Diversified"})
 LANDLORD_PROPERTY = 0.50
 
+#: Industries whose makers lend their buyers the price of the machine: a car,
+#: a tractor, a motorbike. One whose customers owe it `ARM_RECEIVABLES` of
+#: its assets or more (Deere 56 %, Ford 44 %, Toyota 41 %, Caterpillar 39 %,
+#: GM 37 %; Ferrari 22 %, Stellantis 16 %, Tesla 3 %, 2026-11-17) carries a
+#: bank inside the factory. Its capital and its debt are mostly the loan
+#: book, borrowed against the loans and not against the plant, so return on
+#: capital read Deere at 8 %, debt over EBITDA at 4.8 times, and both said
+#: more about how the arm is funded than about the tractors. What changes is
+#: what the maker is told, never its score (`lending_arm`, `indebted`): a low
+#: return on capital is not named, and its debt is heavy, and stops a buy, on
+#: thin equity, not on EBITDA. The legs stay in the score. Taking one out scores
+#: the maker on the mean of the others, which no figure backs: without the
+#: return on capital Caterpillar read buy, without the cash on the capital and
+#: the EV/EBITDA too it read pass, and what would settle it, a return with the
+#: loan book taken out, the feed does not give. Nor does it file the row for
+#: Volkswagen, BMW or Mercedes, who are read as before.
+LENDING_MAKERS = frozenset(
+    {
+        "Auto Manufacturers",
+        "Farm & Heavy Construction Machinery",
+        "Recreational Vehicles",
+    }
+)
+ARM_RECEIVABLES = 0.25
+#: Equity over assets from which such a maker is thinly funded, the one debt
+#: reading left for it: Ford 12 %; CNH 18 %, Caterpillar and GM 22 %, Deere
+#: 24 %, Toyota 38 %.
+ARM_EQUITY = 0.15
+
 #: Regulated networks: their return is the one the regulator allows, their
 #: capex is funded with debt on purpose, so ROIC, free cash flow and the moat
 #: read every one as a poor business. Renewables developers and merchant
@@ -501,6 +615,78 @@ PHARMA = frozenset(
     }
 )
 
+#: Industries (Yahoo's names) whose product is words, code or hours of desk
+#: work: what a language model writes too. The moat the filings show
+#: (margins, returns, switching costs) was dug before it could. Left out on
+#: purpose: infrastructure software, the platforms that own the models or the
+#: audience, and business services that are a mix of everything.
+AI_EXPOSED = frozenset(
+    {
+        "Software - Application",
+        "Information Technology Services",
+        "Advertising Agencies",
+        "Staffing & Employment Services",
+        "Education & Training Services",
+        "Publishing",
+    }
+)
+
+#: Listings the feed files in an `AI_EXPOSED` industry that sell what a model
+#: cannot write: a ride or a lorry's load matched by an app (Uber, Lyft, Grab,
+#: Full Truck Alliance, "Software - Application") and a hall of machines let
+#: by the megawatt (Applied Digital, Cipher, WhiteFiber, GDS, "Information
+#: Technology Services"). The feed has no finer industry to tell them by, so
+#: exact tickers, each read off the profile memo (2026-11-17), and nothing
+#: here says the business is a good one: only that this threat is not its.
+NOT_COPYABLE = frozenset(
+    {"UBER", "LYFT", "GRAB", "YMM", "APLD", "CIFR", "WYFI", "GDS"}
+)
+
+#: Industries (Yahoo's names) whose customers are leaving for good: fewer
+#: smokers, coal plants, viewers and shoppers every year, whatever the
+#: margin on the ones that remain.
+DECLINING = frozenset(
+    {
+        "Tobacco",
+        "Thermal Coal",
+        "Broadcasting",
+        "Department Stores",
+    }
+)
+
+#: Industries (Yahoo's names) whose margin is the price of what they sell: a
+#: commodity, a chip, a ship's day rate. One year's earnings are a point on
+#: a cycle, never the level.
+CYCLICAL = frozenset(
+    {
+        "Semiconductors",
+        "Semiconductor Equipment & Materials",
+        "Oil & Gas E&P",
+        "Oil & Gas Integrated",
+        "Oil & Gas Refining & Marketing",
+        "Oil & Gas Equipment & Services",
+        "Oil & Gas Drilling",
+        "Steel",
+        "Aluminum",
+        "Copper",
+        "Other Industrial Metals & Mining",
+        "Coking Coal",
+        "Thermal Coal",
+        "Gold",
+        "Silver",
+        "Other Precious Metals & Mining",
+        "Chemicals",
+        "Agricultural Inputs",
+        "Farm & Heavy Construction Machinery",
+        "Marine Shipping",
+        "Lumber & Wood Production",
+        "Paper & Paper Products",
+        "Residential Construction",
+        "Auto Manufacturers",
+        "Airlines",
+    }
+)
+
 # Reason codes. The client has a sentence for each (`review.reason_<code>`).
 R_QUALITY = "quality"  # quality score high
 R_LOW_QUALITY = "low_quality"
@@ -540,7 +726,10 @@ R_FCF_FLOAT = "fcf_float"
 R_SHARE_PAY = "share_pay"
 R_CHEAP_FOR_GROWTH = "cheap_for_growth"
 R_PRICED_FOR_DECLINE = "priced_for_decline"
+R_AI_RISK = "ai_risk"
+R_SECULAR_DECLINE = "secular_decline"
 R_PEAK_MARGIN = "peak_margin"
+R_TROUGH_MARGIN = "trough_margin"
 R_SALES_FALLING = "sales_falling"
 R_MARGIN_FALLING = "margin_falling"
 R_EARNINGS_FALLING = "earnings_falling"
@@ -548,6 +737,7 @@ R_HEAVY_DILUTION = "heavy_dilution"
 R_EARNINGS_NOT_CASH = "earnings_not_cash"
 R_GOODWILL_HEAVY = "goodwill_heavy"
 R_THIN_TRADING = "thin_trading"
+R_UNCLASSIFIED = "unclassified"
 R_INSIDERS_OWN = "insiders_own"
 R_ONE_READING = "cheap_on_one_reading"
 R_FEW_NAMES = "few_names"
@@ -559,6 +749,7 @@ R_BOOK_PRICED = "priced_on_book"
 R_FINANCIAL_LENS = "financial_lens"
 R_REIT_LENS = "reit_lens"
 R_UTILITY_LENS = "utility_lens"
+R_LENDING_ARM = "lending_arm"
 R_HIGH_ROE = "high_roe"
 R_LOW_ROE = "low_roe"
 R_DIVIDEND = "dividend"
@@ -674,8 +865,11 @@ class Scores:
     trailing_pe: bool = False
     #: Book value joined the price because the feed gave too little else.
     book_priced: bool = False
-    #: The P/E was read on the median margin: this one is a cycle's peak.
+    #: The P/E was read on the median margin: this one is a cycle's peak, or
+    #: its bottom.
     normal_pe: bool = False
+    #: Why every price input was read at a discount (`threat`), if it was.
+    threat: str | None = None
 
     @property
     def total(self) -> float | None:
@@ -748,24 +942,55 @@ def lens(metrics: Mapping) -> str:
     return STANDARD
 
 
+def lending_arm(metrics: Mapping) -> bool:
+    """A maker with a bank inside it (`LENDING_MAKERS`, `ARM_RECEIVABLES`). A
+    row without the figure is not one."""
+    owed = _num(metrics, "receivable_share") or 0
+    return metrics.get("industry") in LENDING_MAKERS and owed >= ARM_RECEIVABLES
+
+
+def indebted(metrics: Mapping) -> bool:
+    """The debt is heavy for what the business is: over its industry's line
+    of EBITDA (`debt_line`), or, where the debt is a loan book's, on equity
+    too thin to carry both (`ARM_EQUITY`)."""
+    if lending_arm(metrics):
+        equity = _num(metrics, "equity_share")
+        return equity is not None and equity <= ARM_EQUITY
+    debt = _num(metrics, "net_debt_ebitda")
+    return debt is not None and debt >= debt_line(metrics)
+
+
 def debt_line(metrics: Mapping) -> float:
     """Net debt over EBITDA from which the debt is heavy for this industry."""
     industry = metrics.get("industry") or ""
     if lens(metrics) == REAL_ESTATE:
         return REIT_DEBT
-    if industry.startswith("Utilities - ") or industry == "Telecom Services":
+    if industry.startswith("Utilities - ") or industry in NETWORKS:
         return REGULATED_DEBT
     return HIGH_DEBT
 
 
-def _dividend_leg(metrics: Mapping, always: bool = False) -> float | None:
+def _dividend_leg(
+    metrics: Mapping, always: bool = False, keep: float = 1.0
+) -> float | None:
     """The yield as a price input: only from `DIVIDEND_LEG_MIN`, so a token
     payout does not count against a name that reinvests instead (a bias
-    toward payers, accepted); a landlord's (`always`) counts whatever it is."""
+    toward payers, accepted); a landlord's (`always`) counts whatever it is.
+    `keep` is the share of it a threatened business is read at."""
     y = _num(metrics, "dividend_yield")
     if y is None or (not always and y < DIVIDEND_LEG_MIN):
         return None
-    return _lin(y, DIVIDEND_LO, DIVIDEND_HI)
+    return _lin(y * keep, DIVIDEND_LO, DIVIDEND_HI)
+
+
+def _join_dividend(cheap: list[float], paid: float | None) -> None:
+    """Add the yield (`_dividend_leg`) to the price inputs, only where it
+    reads cheaper than they do. A yield that crossed `DIVIDEND_LEG_MIN` as the
+    price fell joined at the bar and pulled a cheaper mean down: the name read
+    dearer for having got cheaper. A landlord's and a utility's is always in,
+    so theirs has no such step."""
+    if paid is not None and (not cheap or paid > sum(cheap) / len(cheap)):
+        cheap.append(paid)
 
 
 def _pe(metrics: Mapping) -> tuple[float | None, bool]:
@@ -774,32 +999,158 @@ def _pe(metrics: Mapping) -> tuple[float | None, bool]:
     European small caps have no estimates at all, and without a P/E they had
     one price input and no loss test."""
     forward = _num(metrics, "pe_fwd")
-    if forward is not None:
+    if forward is not None and not _estimate_broken(metrics, forward):
         return forward, False
     trailing = _num(metrics, "pe_ttm")
     return trailing, trailing is not None
 
 
-def _at_peak(metrics: Mapping) -> bool:
-    """The operating margin is a cycle's top (`PEAK_RATIO`), not a new normal."""
+def _estimate_broken(metrics: Mapping, forward: float) -> bool:
+    """The forward P/E stands on earnings the business cannot be about to
+    make (`FORWARD_EBITDA_MAX`). Both sides are the price over a multiple, so
+    the answer does not move with the share price. A margin under its median
+    is a bad year the estimate may be right to see the end of (RWE after a
+    write-down), so nothing is said there."""
+    cap = _num(metrics, "market_cap")
+    ev = _num(metrics, "ev")
+    multiple = _num(metrics, "ev_ebitda")
     margin = _num(metrics, "op_margin")
     median = _num(metrics, "op_margin_median")
+    if margin is None or median is None or margin < median:
+        return False
+    if (
+        forward <= 0
+        or cap is None
+        or cap <= 0
+        or ev is None
+        or ev <= 0
+        or multiple is None
+        or multiple <= 0
+        or lens(metrics) == FINANCIAL
+    ):
+        return False
+    growth = min(max(sustained_growth(metrics) or 0.0, 0.0), PEG_GROWTH_CAP)
+    return cap / forward > FORWARD_EBITDA_MAX * (ev / multiple) * (1 + growth)
+
+
+def _owner_pe(metrics: Mapping) -> tuple[float | None, bool]:
+    """`_pe` as the price legs read it: a forward one net of the pay in
+    shares (`_after_share_pay`). The raw one still says whether there is a
+    loss and whether a cash yield is believable."""
+    pe, trailing = _pe(metrics)
+    if pe is None or trailing:
+        return pe, trailing
+    return _after_share_pay(metrics, pe), False
+
+
+def owner_pe(metrics: Mapping) -> float | None:
+    """The forward P/E after the pay in shares, where that is not the forward
+    P/E the feed gives; None where nothing was charged."""
+    pe, trailing = _pe(metrics)
+    if pe is None or trailing:
+        return None
+    charged = _after_share_pay(metrics, pe)
+    return charged if charged > pe else None
+
+
+def _after_share_pay(metrics: Mapping, forward: float) -> float:
+    """The forward P/E with the pay in shares charged to the earnings.
+
+    Analysts' estimates are the company's adjusted earnings, which at a
+    software house leave the share pay out: Adobe read 9x forward against 14x
+    on the filed profit, Workday 15x against 40x, and the price leg scored a
+    cost the holders bear as if nobody paid it. The pay over the market cap
+    (`sbc_revenue` over `ps`) comes off the forward earnings yield.
+
+    Where the estimate is already the filed kind (Microsoft, Alphabet) that
+    would charge it twice, so the result never passes the trailing P/E, which
+    pays it, after a year of the sales' growth. A bank's, a landlord's and a
+    utility's estimates are the filed kind, and so is any company's that pays
+    under `SHARE_PAY_MIN` of its sales in shares: left as they are."""
+    pay = _num(metrics, "sbc_revenue")
+    sales_multiple = _num(metrics, "ps")
+    if (
+        forward <= 0
+        or pay is None
+        or pay < SHARE_PAY_MIN
+        or sales_multiple is None
+        or sales_multiple <= 0
+        or lens(metrics) != STANDARD
+    ):
+        return forward
+    left = 1 / forward - pay / sales_multiple
+    charged = 1 / left if left > 1 / PE_CEILING else PE_CEILING
+    trailing = _num(metrics, "pe_ttm")
+    if trailing is None or trailing <= 0:
+        # No filed profit to check against: a loss once the pay is counted.
+        return charged
+    growth = min(max(sustained_growth(metrics) or 0.0, 0.0), PEG_GROWTH_CAP)
+    return min(charged, max(forward, trailing / (1 + growth)))
+
+
+def threat(metrics: Mapping) -> str | None:
+    """The reason code of what the filings cannot see coming for this
+    business (`AI_EXPOSED`, `DECLINING`), or None. A bank, a landlord and a
+    utility are read on their own lens and carry none, and neither does a
+    name the feed misfiles (`NOT_COPYABLE`)."""
+    if lens(metrics) != STANDARD:
+        return None
+    industry = metrics.get("industry")
+    if industry in AI_EXPOSED:
+        return None if metrics.get("ticker") in NOT_COPYABLE else R_AI_RISK
+    if industry in DECLINING:
+        return R_SECULAR_DECLINE
+    return None
+
+
+def _at_peak(metrics: Mapping) -> bool:
+    """The operating margin is a cycle's top (`PEAK_RATIO`), not a new normal.
+    A top is of earnings: a margin at or under zero is a smaller loss than
+    the usual one (Boeing), and one above it with the last twelve months still
+    at a loss is a way out of them (Intel at 10 % on a record of nothing,
+    2026-11-17). Neither has a year's profit a cycle could take back."""
+    margin = _num(metrics, "op_margin")
+    median = _num(metrics, "op_margin_median")
+    trailing = _num(metrics, "pe_ttm")
+    if (
+        margin is None
+        or median is None
+        or margin <= 0
+        or (trailing is not None and trailing <= 0)
+        or margin - median < PEAK_GAP
+        or (median > 0 and margin < PEAK_RATIO * median)
+    ):
+        return False
+    if metrics.get("industry") in CYCLICAL:
+        return True
     growth = sustained_growth(metrics)
+    return (_num(metrics, "revenue_down_years") or 0) >= 1 and (
+        growth is None or growth < RULE_40_MIN
+    )
+
+
+def _at_trough(metrics: Mapping) -> bool:
+    """The operating margin is a cycle's bottom: as far under its median as a
+    peak is over it, still a profit, in a `CYCLICAL` industry. Anywhere else
+    a margin that low is a business losing its pricing (`R_MARGIN_FALLING`)."""
+    margin = _num(metrics, "op_margin")
+    median = _num(metrics, "op_margin_median")
     return (
-        margin is not None
+        metrics.get("industry") in CYCLICAL
+        and margin is not None
         and median is not None
-        and margin - median >= PEAK_GAP
-        and (median <= 0 or margin >= PEAK_RATIO * median)
-        and (_num(metrics, "revenue_down_years") or 0) >= 1
-        and (growth is None or growth < RULE_40_MIN)
+        and margin > 0
+        and median - margin >= PEAK_GAP
+        and margin * PEAK_RATIO <= median
     )
 
 
 def _normal_pe(metrics: Mapping, pe: float | None) -> float | None:
-    """The P/E on the median margin instead of the peak one: today's sales at
-    a normal year's margin. A cyclical at the top looks cheapest exactly when
-    its earnings are about to fall; a median at or under zero is a normal
-    year at a loss, the dear end."""
+    """The P/E on the median margin instead of the peak (or the trough) one:
+    today's sales at a normal year's margin. A cyclical at the top looks
+    cheapest exactly when its earnings are about to fall, and dearest at the
+    bottom, when they are about to come back; a median at or under zero is a
+    normal year at a loss, the dear end."""
     if pe is None or pe <= 0:
         return pe
     margin = _num(metrics, "op_margin")
@@ -821,14 +1172,37 @@ def peak_pe(metrics: Mapping) -> float | None:
 
 
 def growth_pe(metrics: Mapping, pe: float | None = None) -> float | None:
-    """P/E (`_pe`, or the one given) per point of sustained per-share sales
-    growth; None without a positive P/E or positive growth."""
+    """P/E (`_owner_pe`, or the one given) per point of sustained per-share
+    sales growth; None without a positive P/E or positive growth."""
     if pe is None:
-        pe, _ = _pe(metrics)
+        pe, _ = _owner_pe(metrics)
     growth = per_share_growth(metrics)
     if pe is None or pe <= 0 or growth is None or growth <= 0:
         return None
     return pe / (min(growth, PEG_GROWTH_CAP) * 100)
+
+
+def priced_growth_pe(metrics: Mapping) -> float | None:
+    """`growth_pe` as the price reads it, or None where it does not: the one
+    figure behind the price leg, the reason and the row's tooltip.
+
+    Read only by the standard lens of a mature business, on the P/E that leg
+    uses (a trough's is the normal year's). Not where the growth is the thing
+    in doubt: a business under a `threat`, whose record is what the fear is
+    about, and a cycle's peak, whose sales grew with the price of what it
+    sells (Micron, 2026-11-17: 20 times a normal year's earnings read as half
+    a turn per point of a memory upswing, and the leg scored 100)."""
+    if (
+        lens(metrics) != STANDARD
+        or stage(metrics) != MATURE
+        or threat(metrics)
+        or _at_peak(metrics)
+    ):
+        return None
+    pe, _ = _owner_pe(metrics)
+    if _at_trough(metrics):
+        pe = _normal_pe(metrics, pe)
+    return growth_pe(metrics, pe) if pe is not None and pe > 0 else None
 
 
 def implied_growth(metrics: Mapping) -> float | None:
@@ -986,36 +1360,45 @@ def score(metrics: Mapping) -> Scores:
         # the enterprise value or the cash flow the mixed currency corrupts.
         fcf = None
         ev_ebitda = None
+    # The price is read on what is left for the owner; the raw P/E above only
+    # had to say whether the cash yield is believable.
+    pe, trailing = _owner_pe(metrics)
+    feared = threat(metrics)
+    # The share of each price input a threatened business is read at.
+    keep = 1 - THREAT_HAIRCUT if feared else 1.0
 
     if phase == GROWTH:
         return replace(
-            _growth_scores(metrics, fcf, pe, suspect, floated), trailing_pe=trailing
+            _growth_scores(metrics, fcf, pe, suspect, floated, keep),
+            trailing_pe=trailing,
+            threat=feared,
         )
 
     quality = _standard_quality(business(metrics), floated)
     cheap: list[float] = []
-    peak = _at_peak(metrics)
-    if peak:
+    cycle = _at_peak(metrics) or _at_trough(metrics)
+    if cycle:
         pe = _normal_pe(metrics, pe)
+    network = metrics.get("industry") in NETWORKS
+    pe_band, fcf_band, ev_band = NETWORK_RULER if network else PRICE_RULER
     if pe is not None:
         # A forward loss has no multiple; it is the dear end, not a missing one.
-        pe_score = _lin(-pe, -40.0, -8.0) if pe > 0 else 0.0
-        peg = growth_pe(metrics, pe) if pe > 0 else None
+        pe_score = _lin(-pe / keep, -pe_band[0], -pe_band[1]) if pe > 0 else 0.0
+        peg = priced_growth_pe(metrics)
         if peg is not None:
             pe_score = max(pe_score, _lin(-peg, -PEG_HI, -PEG_LO))
         cheap.append(pe_score)
     if fcf is not None:
-        cheap.append(_lin(fcf, 0.0, 0.10))
+        cheap.append(_lin(fcf * keep if fcf > 0 else fcf, *fcf_band))
     if ev_ebitda is not None and ev_ebitda > 0:
-        cheap.append(_lin(-ev_ebitda, -50.0, -8.0))
-    if (paid := _dividend_leg(metrics)) is not None:
-        cheap.append(paid)
+        cheap.append(_lin(-ev_ebitda / keep, -ev_band[0], -ev_band[1]))
+    _join_dividend(cheap, _dividend_leg(metrics, keep=keep))
     pb = _num(metrics, "pb")
     # A lender is priced on its book once its cash flow says nothing; any
     # name is, when the feed gave fewer than two other prices for it.
     book = pb is not None and pb > 0 and (floated or len(cheap) < 2)
     if book:
-        cheap.append(_lin(-pb, -4.0, -1.0))
+        cheap.append(_lin(-pb / keep, -4.0, -1.0))
 
     return Scores(
         quality=_mean(quality),
@@ -1025,7 +1408,8 @@ def score(metrics: Mapping) -> Scores:
         cheap_reads=_cheap_reads(cheap),
         trailing_pe=trailing and pe is not None,
         book_priced=book and not floated,
-        normal_pe=peak and pe is not None,
+        normal_pe=cycle and pe is not None,
+        threat=feared,
     )
 
 
@@ -1115,8 +1499,7 @@ def _financial_scores(metrics: Mapping) -> Scores:
         cheap.append(_lin(-pb, -2.5, -0.7))
     if fair is not None:
         cheap.append(_lin(-fair, -1.6, -0.6))
-    if (paid := _dividend_leg(metrics)) is not None:
-        cheap.append(paid)
+    _join_dividend(cheap, _dividend_leg(metrics))
     return Scores(
         quality=_mean(quality),
         cheapness=_mean(cheap),
@@ -1253,9 +1636,16 @@ def _growth_quality(biz: Mapping, floated: bool) -> list[float]:
 
 
 def _growth_scores(
-    metrics: Mapping, fcf: float | None, pe: float | None, suspect: bool, floated: bool
+    metrics: Mapping,
+    fcf: float | None,
+    pe: float | None,
+    suspect: bool,
+    floated: bool,
+    keep: float = 1.0,
 ) -> Scores:
-    """The growth lens: how good the growth is, and what is paid per point."""
+    """The growth lens: how good the growth is, and what is paid per point.
+    `keep` is the share of each price input a threatened business is read at
+    (`THREAT_HAIRCUT`)."""
     growth = _growth_pace(metrics)
     ev_sales = None if suspect else _num(metrics, "ev_sales")
     quality = _growth_quality(business(metrics), floated)
@@ -1263,12 +1653,12 @@ def _growth_scores(
     cheap: list[float] = []
     if ev_sales is not None and ev_sales > 0 and growth > 0:
         # EV/sales per point of growth: 0.1x a point is cheap, 0.6x dear.
-        cheap.append(_lin(-ev_sales / (growth * 100), -0.6, -0.1))
+        cheap.append(_lin(-ev_sales / keep / (growth * 100), -0.6, -0.1))
     if fcf is not None:
         # What the burn costs against the price: -5% a year is the dear end.
-        cheap.append(_lin(fcf, -0.05, 0.05))
+        cheap.append(_lin(fcf * keep if fcf > 0 else fcf, -0.05, 0.05))
     if pe is not None and pe > 0:
-        cheap.append(_lin(-pe, -40.0, -8.0))
+        cheap.append(_lin(-pe / keep, -40.0, -8.0))
 
     return Scores(
         quality=_mean(quality),
@@ -1284,6 +1674,19 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     """Why two good scores still do not make an add or a buy (see the module
     docstring): the reasons the numbers behind them may not hold."""
     out: list[str] = []
+    if "industry" in metrics and not metrics["industry"]:
+        # The feed was asked what the company does and had no answer: the
+        # lens is a guess and nothing that threatens its industry is priced
+        # (Fiserv, 2026-11-16: Add at 100 on price, read as no industry at
+        # all). A row that never carried the field is a caller's own figures.
+        out.append(R_UNCLASSIFIED)
+    if s.threat == R_AI_RISK:
+        # Nobody has a figure yet for what a model takes from the business:
+        # the two thirds are a guess at its size, and a price that clears the
+        # bar on a guess is no ground to buy on (Adobe at nine times earnings,
+        # 2026-11-17). A decline in the open, tobacco's, has decades of record
+        # behind the discount and stays one.
+        out.append(R_AI_RISK)
     median = _num(metrics, "op_margin_median")
     change = _num(metrics, "op_margin_change")
     if s.stage == MATURE and s.lens == STANDARD:
@@ -1302,6 +1705,17 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
             # the years' median is a cycle coming off an older top (Marathon
             # Petroleum, Suncor), which the peak reads, not a sliding one.
             out.append(R_MARGIN_FALLING)
+        earnings = _num(metrics, "net_income_cagr")
+        if (
+            earnings is not None
+            and earnings <= -EARNINGS_SHRINK
+            and change is not None
+            and change < 0
+        ):
+            # Less profit on a thinner margin, year after year: the record a
+            # cheap price is cheap for. Falling earnings on a margin that
+            # held are a cycle or a one-off, and only named.
+            out.append(R_SHRINKING)
     if s.stage == MATURE and s.lens != FINANCIAL:
         # A bank's "sales" are its interest and fees, which follow rates.
         paces = [
@@ -1319,13 +1733,7 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
         and 0 < trailing <= forward * (1 - EARNINGS_DROP)
     ):
         out.append(R_EARNINGS_FALLING)
-    debt = _num(metrics, "net_debt_ebitda")
-    if (
-        debt is not None
-        and debt >= debt_line(metrics)
-        and not s.fcf_float
-        and s.lens != FINANCIAL
-    ):
+    if indebted(metrics) and not s.fcf_float and s.lens != FINANCIAL:
         out.append(R_DEBT)
     # A landlord paying out its earnings is the law, and its free cash flow
     # is net of the buildings it buys (Landsec's dividend read twice it); a
@@ -1388,7 +1796,6 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     fcf = None if s.suspect else _num(metrics, "fcf_yield")
     pe, _ = _pe(metrics)
     dilution = _num(metrics, "share_dilution")
-    debt = _num(metrics, "net_debt_ebitda")
     growth = sustained_growth(metrics)
     earnings = _num(metrics, "net_income_cagr")
 
@@ -1400,14 +1807,23 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     if s.cheapness is not None:
         if s.cheapness >= CHEAP:
             out.append(R_CHEAP)
-            # Said next to the price it explains, before the record's praise.
-            if s.stage == MATURE and not s.suspect and priced_for_decline(metrics):
-                out.append(R_PRICED_FOR_DECLINE)
         elif s.cheapness < 30:
             out.append(R_EXPENSIVE)
+        # Both said next to the price they explain, before the record's
+        # praise: what the price was marked down for, then what it assumes.
+        if s.threat:
+            out.append(s.threat)
+        if (
+            s.cheapness >= CHEAP
+            and s.stage == MATURE
+            and not s.suspect
+            and priced_for_decline(metrics)
+        ):
+            out.append(R_PRICED_FOR_DECLINE)
     if pe is not None and pe <= 0:
         out.append(R_LOSS)
-    if roic is not None:
+    arm = lending_arm(metrics)
+    if roic is not None and not arm:
         if roic >= 0.25:
             out.append(R_HIGH_ROIC)
         elif roic < 0.08:
@@ -1434,7 +1850,7 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
         pay_sales is not None and pay_sales >= SHARE_PAY_SALES
     ):
         out.append(R_SHARE_PAY)
-    if debt is not None and debt >= debt_line(metrics):
+    if indebted(metrics):
         out.append(R_DEBT)
     roe = _num(metrics, "roe")
     if s.lens in (FINANCIAL, UTILITY) and roe is not None:
@@ -1443,8 +1859,9 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
         elif roe < LOW_ROE:
             out.append(R_LOW_ROE)
     out.extend(r for r in _cautions(metrics, s) if r not in out)
-    if earnings is not None and earnings <= -0.05:
-        out.append(R_SHRINKING)
+    if earnings is not None and earnings <= -EARNINGS_SHRINK:
+        if R_SHRINKING not in out:
+            out.append(R_SHRINKING)
     elif growth is not None and growth >= 0.20:
         out.append(R_GROWTH)
     if s.suspect:
@@ -1464,12 +1881,11 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
         rule_40 = _rule_40(metrics, s.fcf_float)
         if rule_40 is not None and rule_40 >= 0.40:
             out.append(R_RULE_40)
-        pe, _ = _pe(metrics)
-        if s.normal_pe:
-            pe = _normal_pe(metrics, pe)
-        peg = growth_pe(metrics, pe) if pe is not None and pe > 0 else None
+        peg = priced_growth_pe(metrics)
         if peg is not None and peg <= PEG_CHEAP:
             out.append(R_CHEAP_FOR_GROWTH)
+        if s.lens == STANDARD and _at_trough(metrics):
+            out.append(R_TROUGH_MARGIN)
     # A long runway only matters to a company that needs one; a short one
     # matters to any company burning cash.
     out.extend(
@@ -1487,6 +1903,8 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     if hidden := _LENS_SUPPRESSED.get(s.lens):
         out = [r for r in out if r not in hidden]
         out.insert(0, _LENS_REASON[s.lens])
+    elif arm:
+        out.insert(0, R_LENDING_ARM)
     return out
 
 
@@ -1649,7 +2067,13 @@ _FINANCIAL_ONLY = frozenset({"ptbv", "rotce"})
 
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
     metrics = metrics or {}
-    derived = {"growth_pe": growth_pe(metrics), "implied_growth": implied_growth(metrics)}
+    derived = {
+        "pe_owner": owner_pe(metrics),
+        # The one the price read, so a row never shows a figure beside a
+        # verdict that left it out (Altria: 11x a point next to Buy).
+        "growth_pe": priced_growth_pe(metrics),
+        "implied_growth": implied_growth(metrics),
+    }
     bank = lens(metrics) == FINANCIAL
     return {
         key: None

@@ -705,6 +705,21 @@ def _loan_share(balance: pd.DataFrame, assets: float | None) -> float | None:
     return max(lent) / assets if lent else None
 
 
+#: Balance-sheet rows that hold what customers owe, within the year and past
+#: it. A maker's own invoices are a few points of its assets; one that lends
+#: its buyers the price files the loans here (Deere 56 %, Toyota 41 %,
+#: Caterpillar 39 %, against Tesla's 3 %, 2026-11-17).
+_RECEIVABLE_ROWS = ("Receivables", "Non Current Accounts Receivable")
+
+
+def _receivable_share(balance: pd.DataFrame, assets: float | None) -> float | None:
+    """What customers owe over the total assets; None where the feed files
+    neither row (Volkswagen, BMW and Mercedes: their loan books come without
+    a label, so nothing here says they have one)."""
+    owed = [v for label in _RECEIVABLE_ROWS if (v := _latest(balance, label)) is not None]
+    return _share(sum(owed), assets) if owed else None
+
+
 def _share(part: float | None, assets: float | None) -> float | None:
     """`part` over the total assets; None without either, or on a deficit."""
     if part is None or not assets or assets <= 0 or part <= 0:
@@ -1016,6 +1031,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     # balance-sheet business and a fee business alike (`review.lens`).
     m["equity_share"] = _share(_latest(raw.balance, "Stockholders Equity"), assets)
     m["property_share"] = _share(_latest(raw.balance, "Investment Properties"), assets)
+    m["receivable_share"] = _receivable_share(raw.balance, assets)
     # What an acquirer paid over book, against what it owns and what is the
     # owners': an impairment comes off both.
     equity_now = _latest(raw.balance, "Stockholders Equity")
@@ -1406,13 +1422,26 @@ def lens_verdict(
     and a utility borrow on purpose), and a landlord's new shares are how it
     grows, so they read as a fact rather than a warning. Its P/E carries the
     depreciation FFO adds back, so the generic bands would call every landlord
-    dear: the rivals' median is the only fair read of it.
+    dear: the rivals' median is the only fair read of it. A maker that lends to
+    its buyers (`review.lending_arm`) carries the loan book in its capital and
+    its debt: neither figure is graded, unless its equity is thin too.
     """
-    from stocks.analysis.review import REAL_ESTATE, debt_line, lens
+    from stocks.analysis.review import (
+        REAL_ESTATE,
+        debt_line,
+        indebted,
+        lending_arm,
+        lens,
+    )
 
     banded = verdict(key, value)
     if banded is None or isinstance(value, str) or value is None:
         return banded
+    if lending_arm(metrics):
+        if key == "roic":
+            return None
+        if key == "net_debt_ebitda" and value >= 1:
+            return ("high", "red") if indebted(metrics) else None
     if key == "net_debt_ebitda" and value >= 1:
         line = debt_line(metrics)
         return ("moderate", "orange") if value < line else ("high", "red")
