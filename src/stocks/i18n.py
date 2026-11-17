@@ -21,6 +21,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from stocks import obs
+
 _LOCALES = Path(__file__).parent / "web" / "locales"
 
 # code -> native language name (shown in the Profile selector). English is the
@@ -120,7 +122,8 @@ def translate(key: str, lang: str | None, /, **kwargs) -> str:
     """Translate a key into `lang` (any tag `supported` accepts).
 
     Falls back to the English catalog, then to the raw key, so a missing
-    translation degrades gracefully instead of raising. Pass format values as
+    translation degrades gracefully instead of raising — and the raw key is
+    logged as `i18n.missing` (`missing`). Pass format values as
     kwargs for placeholder strings, e.g. translate("ticker.loading", "es",
     ticker="AAPL") against a catalog value "Cargando {ticker}…". Only
     formatted when kwargs are given, so literal-brace strings without
@@ -129,8 +132,26 @@ def translate(key: str, lang: str | None, /, **kwargs) -> str:
     code = supported(lang) or DEFAULT_LANG
     s = _catalog(code).get(key)
     if s is None:
-        s = _catalog(DEFAULT_LANG).get(key, key)
+        s = _catalog(DEFAULT_LANG).get(key)
+    if s is None:
+        missing(key, code, source="server")
+        s = key
     return s.format(**kwargs) if kwargs else s
+
+
+def missing(key: str, lang: str, *, source: str, where: str = "") -> None:
+    """Log a key no catalog has — it reached a screen as its own dotted name.
+
+    An ERROR, because a raw key on screen is a bug a reader sees, and the
+    parity tests only catch the keys a test happens to render. Once per key per
+    window (`obs.first_sighting`) in each process: a missing label in a list
+    is asked for on every row of every render, and it is one fact.
+
+    A caller that only wants to know whether a key exists asks `has()`, which
+    logs nothing.
+    """
+    if obs.first_sighting("i18n.missing", key):
+        obs.error("i18n.missing", key=key, lang=lang, source=source, where=where)
 
 
 def has(key: str) -> bool:

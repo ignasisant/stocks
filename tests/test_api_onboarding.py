@@ -58,6 +58,16 @@ def account(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def booked(monkeypatch):
+    """The account has a book of its own, without writing one."""
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
+
+
+#: Welcomed two months ago, and releases have shipped since.
+STALE = {onboarding.PREF_SEEN_VERSION: "2026.09", onboarding.PREF_DONE: True}
+
+
+@pytest.fixture
 def signed_in(client, sign_in):
     """A browser session for EMAIL — what a write needs, since a token cannot."""
     return sign_in(client, EMAIL)
@@ -73,8 +83,8 @@ def test_the_steps_are_the_ones_the_modal_shows(client, account, signed_in):
     ]
 
 
-def test_the_short_walk_is_marked_on_the_steps(client, account, signed_in):
-    """The client draws the short tour from the same list as the full one, so
+def test_the_section_guide_is_marked_on_the_steps(client, account, signed_in):
+    """The client draws the guide from the same list as every other stop, so
     which stops are in it has to come with them."""
     body = signed_in.get("/v1/onboarding").json()
     assert [s["id"] for s in body["steps"] if s["core"]] == [
@@ -109,11 +119,44 @@ def test_the_step_carries_where_it_lands(client, account, signed_in):
     assert steps["welcome"]["path"] is None
 
 
-def test_a_new_account_is_owed_every_card(client, account, signed_in):
+def test_a_new_account_is_dealt_no_news(client, account, signed_in):
+    """Nothing is new to someone who has not seen what is old."""
     body = signed_in.get("/v1/onboarding").json()
     assert body["seen_version"] is None
-    assert len(body["news"]) == len(onboarding.unseen_news({}))
+    assert body["news"] == []
     assert body["version"] == onboarding.CURRENT_VERSION
+
+
+def test_an_account_with_no_book_is_dealt_no_news_on_a_later_day(
+    client, account, signed_in
+):
+    """The bug this guards: the welcome stamped the account on its first load,
+    and every release after that opened "what's new" on its next visit."""
+    account.prefs.write_text(json.dumps(STALE))
+    assert onboarding.unseen_news(STALE)
+    assert signed_in.get("/v1/onboarding").json()["news"] == []
+
+
+def test_an_account_that_knows_the_app_is_dealt_what_shipped(
+    client, account, signed_in, booked
+):
+    account.prefs.write_text(json.dumps(STALE))
+    body = signed_in.get("/v1/onboarding").json()
+    assert len(body["news"]) == len(onboarding.unseen_news(STALE))
+    assert body["news"]
+
+
+def test_an_account_from_before_the_guide_is_dealt_what_shipped(
+    client, account, signed_in, booked
+):
+    """Every account older than the guide: a book, an old stamp and none of
+    the newcomer's prefs. It is nobody's newcomer, and its news must not stop."""
+    old = {onboarding.PREF_SEEN_VERSION: "2026.09"}
+    account.prefs.write_text(json.dumps(old))
+    body = signed_in.get("/v1/onboarding").json()
+    assert len(body["news"]) == len(onboarding.unseen_news(old))
+    assert body["news"]
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is False
 
 
 def test_the_capabilities_are_read_for_this_account_not_a_session(
@@ -180,3 +223,106 @@ def test_a_token_cannot_mark_an_announcement_as_read(client, account):
     )
     assert response.status_code == 403
     assert onboarding.PREF_SEEN_VERSION not in json.loads(account.prefs.read_text())
+
+
+# ------------------------------------------------------------ first-visit tips
+
+
+def test_a_page_tip_names_its_lines_and_its_lesson(client, account, signed_in):
+    body = signed_in.get("/v1/onboarding/tips/portfolio", params={"lang": "es"}).json()
+    assert body["page"] == "portfolio"
+    assert body["lines"] == onboarding.TIPS["portfolio"].lines
+    assert body["lesson"]["id"] == onboarding.TIPS["portfolio"].lesson
+    assert body["lesson"]["title"] and body["lesson"]["minutes"] > 0
+
+
+def test_a_page_with_no_lesson_says_so(client, account, signed_in):
+    page = next(p for p, tip in onboarding.TIPS.items() if tip.lesson is None)
+    assert signed_in.get(f"/v1/onboarding/tips/{page}").json()["lesson"] is None
+
+
+def test_a_page_with_no_tip_is_not_found(client, account, signed_in):
+    assert signed_in.get("/v1/onboarding/tips/nowhere").status_code == 404
+    assert signed_in.post("/v1/onboarding/tips/nowhere", json={}).status_code == 404
+
+
+def test_reading_a_tip_strikes_only_that_page(client, account, signed_in):
+    onboarding.first_book(account.prefs)
+    body = signed_in.post("/v1/onboarding/tips/today", json={}).json()
+    assert body["page_tips"] == [p for p in onboarding.TIPS if p != "today"]
+    prefs = signed_in.get("/v1/prefs").json()
+    assert prefs["page_tips"] == body["page_tips"]
+    assert prefs["tour_offer"] is True
+
+
+def test_an_account_never_stamped_is_owed_nothing(client, account, signed_in):
+    prefs = signed_in.get("/v1/prefs").json()
+    assert prefs["tour_offer"] is False
+    assert prefs["page_tips"] == []
+
+
+def test_a_token_cannot_mark_a_tip_read(client, account):
+    onboarding.first_book(account.prefs)
+    response = client.post(
+        "/v1/onboarding/tips/today", params={"account": EMAIL}, headers=AUTH, json={}
+    )
+    assert response.status_code == 403
+    assert "today" in json.loads(account.prefs.read_text())[onboarding.PREF_TIPS]
+
+
+def test_answering_the_guide_withdraws_the_home_offer(client, account, signed_in):
+    """Finished, skipped or turned down. Reading a card and the welcome's own
+    first load are neither: the offer stands through both."""
+    onboarding.first_book(account.prefs)
+    signed_in.post("/v1/onboarding/seen", json={})
+    signed_in.post("/v1/onboarding/seen", json={"done": True})
+    assert json.loads(account.prefs.read_text())[onboarding.PREF_OFFER] is True
+    body = signed_in.post("/v1/onboarding/seen", json={"walked": True}).json()
+    assert body["tour_done"] is True
+    assert json.loads(account.prefs.read_text())[onboarding.PREF_OFFER] is False
+
+
+def test_only_a_guide_walked_to_its_end_strikes_page_tips(client, account, signed_in):
+    onboarding.first_book(account.prefs)
+    signed_in.post("/v1/onboarding/seen", json={"walked": True})
+    assert signed_in.get("/v1/prefs").json()["page_tips"] == list(onboarding.TIPS)
+    body = signed_in.post("/v1/onboarding/seen", json={"finished": True}).json()
+    assert body["tour_done"] is True
+    shown = onboarding.guided_pages()
+    assert signed_in.get("/v1/prefs").json()["page_tips"] == [
+        page for page in onboarding.TIPS if page not in shown
+    ]
+
+
+def test_the_offer_cannot_be_withdrawn_without_the_stamp(client, account, signed_in):
+    """It was a setting once, and "not now" left the account on its old stamp:
+    the next visit dealt it every card it had been spared."""
+    onboarding.first_book(account.prefs)
+    assert signed_in.patch("/v1/prefs", json={"tour_offer": False}).status_code == 422
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is True
+
+
+def _walks_then_imports(session, account):
+    session.post("/v1/onboarding/seen", json={"walked": True})
+    # Releases ship between the walk and the import.
+    accounts.update_prefs(account.prefs, {onboarding.PREF_SEEN_VERSION: "2026.09"})
+    onboarding.first_book(account.prefs)
+
+
+def _imports_then_answers(session, account):
+    onboarding.first_book(account.prefs)
+    session.post("/v1/onboarding/seen", json={"walked": True})
+
+
+@pytest.mark.parametrize("leave", [_walks_then_imports, _imports_then_answers])
+def test_no_way_out_of_being_new_leaves_a_backlog(
+    client, account, signed_in, booked, leave
+):
+    """Whichever way an account stops being a newcomer, it leaves caught up:
+    the cards it was spared while it was new do not fall on it afterwards."""
+    account.prefs.write_text(json.dumps(STALE))
+    leave(signed_in, account)
+    body = signed_in.get("/v1/onboarding").json()
+    assert body["news"] == []
+    assert body["seen_version"] == onboarding.CURRENT_VERSION
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is False

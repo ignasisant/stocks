@@ -426,9 +426,16 @@ def test_implied_growth_is_the_perpetuity_the_owner_yield_prices():
 
 def test_a_price_that_assumes_a_decline_the_record_does_not_show_is_said():
     v = review.judge_candidate(FEARED)
-    assert v.verdict == review.BUY  # a warning, not a caution
-    feared = v.reasons.index(review.R_PRICED_FOR_DECLINE)
-    assert feared == v.reasons.index(review.R_CHEAP) + 1
+    assert v.verdict == review.WATCH  # what AI can copy is a caution
+    # The price, what the filings cannot see, then what the price assumes.
+    said = v.reasons.index(review.R_CHEAP)
+    assert v.reasons[said : said + 3] == (
+        review.R_CHEAP, review.R_AI_RISK, review.R_PRICED_FOR_DECLINE
+    )
+    plain = review.judge_candidate({**FEARED, "industry": "Specialty Retail"})
+    assert plain.reasons[said : said + 2] == (
+        review.R_CHEAP, review.R_PRICED_FOR_DECLINE
+    )
     assert v.metrics["implied_growth"] == review.implied_growth(FEARED)
 
 
@@ -1095,6 +1102,19 @@ def test_a_bank_is_priced_on_its_tangible_book():
     assert review._pb_for_roe(BANK) == pytest.approx(0.9 / ((0.13 - 0.03) / 0.07))
 
 
+def test_a_company_the_feed_cannot_classify_is_not_added_to():
+    """Fiserv, 2026-11-16: Yahoo answered without an industry, and the row
+    read Add at 100 on price with no lens chosen and no threat priced."""
+    _blocked({**CHEAP_QUALITY, "industry": None}, review.R_UNCLASSIFIED)
+    _blocked({**CHEAP_QUALITY, "industry": ""}, review.R_UNCLASSIFIED)
+    named = {**CHEAP_QUALITY, "industry": "Semiconductors"}
+    assert review.R_UNCLASSIFIED not in review.judge_candidate(named).reasons
+    # A row that never carried the field is a caller's own figures.
+    assert review.R_UNCLASSIFIED not in review.judge_candidate(CHEAP_QUALITY).reasons
+    # Named on the ticker page too, beside the scores it shows.
+    assert review.R_UNCLASSIFIED in review.cautions({**CHEAP_QUALITY, "industry": None})
+
+
 def test_a_name_nobody_trades_is_not_added_to():
     _blocked({**CHEAP_QUALITY, "turnover_usd": 4e5}, review.R_THIN_TRADING)
     liquid = review.judge_held({**CHEAP_QUALITY, "turnover_usd": 5e7}, weight=0.02)
@@ -1458,6 +1478,30 @@ def test_a_dealer_is_judged_on_its_book_a_fee_house_is_not():
     # The same gearing elsewhere is not a dealer's.
     geared = {**dealer, "industry": "Software - Application"}
     assert review.lens(geared) == review.STANDARD
+
+
+def test_a_makers_loan_book_stops_a_buy_only_on_thin_equity():
+    """The one verdict a lending arm changes: heavy debt is a caution, and a
+    maker whose debt is its customers' loans is not cautioned on EBITDA."""
+    maker = {
+        **CHEAP_QUALITY,
+        "industry": "Farm & Heavy Construction Machinery",
+        "net_debt_ebitda": 4.0,
+        "equity_share": 0.22,
+    }
+    plain = review.judge_candidate(maker, kind="stock")
+    assert plain.verdict == review.WATCH and review.R_DEBT in plain.reasons
+    lending = review.judge_candidate({**maker, "receivable_share": 0.40}, kind="stock")
+    assert lending.verdict == review.BUY and review.R_DEBT not in lending.reasons
+    assert lending.reasons[0] == review.R_LENDING_ARM
+    assert (lending.quality, lending.cheapness) == (plain.quality, plain.cheapness)
+    thin = review.judge_candidate(
+        {**maker, "receivable_share": 0.40, "equity_share": 0.12}, kind="stock"
+    )
+    assert thin.verdict == review.WATCH and review.R_DEBT in thin.reasons
+    # Under the line it is a maker with customers who pay late, not a lender.
+    few = review.judge_candidate({**maker, "receivable_share": 0.22}, kind="stock")
+    assert few.verdict == review.WATCH and review.R_LENDING_ARM not in few.reasons
 
 
 def test_a_landlord_filed_as_real_estate_services_is_judged_as_one():

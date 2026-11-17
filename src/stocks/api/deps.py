@@ -279,7 +279,7 @@ def _burst(scope: str):
     runs after body validation, and a turn is a streaming response whose status
     is fixed the moment it starts. This answers 429 before either.
     """
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     def spend(paths: Writer) -> UserPaths:
         key = f"{scope}::{paths.root}"

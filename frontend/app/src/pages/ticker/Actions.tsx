@@ -24,7 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { useT } from "../../shell/i18n";
 import { useMobile } from "../../shell/useMobile";
 import { usePresence, useSwipeDismiss } from "../../shell/useSheet";

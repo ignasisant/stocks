@@ -26,6 +26,7 @@ from stocks.schemas import (
     RowChange,
     Transaction,
 )
+from stocks.web import onboarding
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -174,6 +175,7 @@ def commitchange_view(account: Writer, body: EditCommit) -> Change:
     plan again and show that. 422 when the edit is malformed or would leave a
     sale without the shares it sells.
     """
+    empty_before = not demo.has_real(account.db)
     try:
         done = edits.commit(
             body.ops, body.token, source="api", summary=body.summary, path=account.db
@@ -181,6 +183,8 @@ def commitchange_view(account: Writer, body: EditCommit) -> Change:
     except edits.EditError as exc:
         raise refusal(exc) from exc
     obs.event("ledger.edited", rows=len(done.changes), via="api")
+    # A book started by typing its first row is a first book like an imported one.
+    onboarding.first_rows(account, empty_before=empty_before)
     return change_view(done)
 
 

@@ -143,8 +143,8 @@
   }
 }
 
-/* Unless that would leave the page too narrow to read (`PAGE_MIN` in
-   `Drawer.tsx`): then the root is marked "overlay" instead, no rule here
+/* Unless that would leave the page too narrow to read (`roomBeside`,
+   asked by `Drawer.tsx`): then the root is marked "overlay" instead, no rule here
    matches it, and the drawer covers the page as it does on a phone. */
 
 /* The one fixed thing the page has left: the toasts. They would otherwise
@@ -156,8 +156,7 @@
 /* The page's own dialogs sit under the open drawer (65 < 70) so the chat
    beside them stays usable — so they end where it starts, or their card
    centres behind it. */
-:root[data-chat="open"]
-  :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal, .ag-panel) {
+:root[data-chat="open"] :is(.ag-jr-veil, .pr-modal, .ag-panel) {
   right: min(var(--chat-w, 420px), 100vw);
 }
 
@@ -1377,10 +1376,6 @@
   .ag-chat-stack .ag-chat-label::after {
     content: ": ";
   }
-}
-
-.ag-chat-glyph {
-  flex: none;
 }
 
 /* -------------------------------------------------------------- composer */
@@ -2842,7 +2837,7 @@ a.ag-chat-btn {
   color: var(--ag-brand-accent);
 }
 
-.ag-chat-mark .ag-chat-glyph {
+.ag-chat-mark .ag-glyph {
   width: 60%;
   height: 60%;
 }
@@ -2863,7 +2858,7 @@ a.ag-chat-btn {
   background: none;
 }
 
-.ag-chat-provider .ag-chat-mark-own .ag-chat-glyph {
+.ag-chat-provider .ag-chat-mark-own .ag-glyph {
   width: 12px;
   height: 12px;
 }
@@ -3339,8 +3334,7 @@ a.ag-chat-btn {
        room on — padding would only squeeze what is already hidden. */
     padding-right: 0;
   }
-  :root[data-chat="open"]
-    :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal, .ag-panel) {
+  :root[data-chat="open"] :is(.ag-jr-veil, .pr-modal, .ag-panel) {
     /* The panel covers them anyway; a dialog with no width is worse. */
     right: 0;
   }

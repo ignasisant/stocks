@@ -373,3 +373,13 @@ def test_a_recall_question_has_an_earlier_talk_to_be_about(catalog):
         assert q.before or not q.recall, q.id
     off = [q for q in recalls if not q.recall]
     assert off, "the switched-off answer is asked too"
+
+
+def test_a_follow_up_is_asked_after_the_talk_it_follows(catalog):
+    """"Quality against price this one" (rated down 2026-11-11) means
+    nothing alone: its subject is in the turns above it, on the same thread,
+    with nothing in focus."""
+    ups = [q for q in catalog if q.follows]
+    assert ups
+    for q in ups:
+        assert not q.focus and not q.before, q.id

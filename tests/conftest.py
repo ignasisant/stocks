@@ -826,8 +826,8 @@ def _own_connector_state(_scratch):
     fetched client metadata documents, and the per-IP and per-account budgets
     the connector spends from.
     """
+    from stocks import ratelimit
     from stocks.connector import clients, oauth, store
-    from stocks.web import ratelimit
 
     def reset() -> None:
         store._ledger = None
@@ -842,6 +842,19 @@ def _own_connector_state(_scratch):
     yield
     store.DIR = before
     reset()
+
+
+@pytest.fixture(autouse=True)
+def _own_push_owners(_scratch):
+    """Which account each device belongs to, in a per-test file:
+    `webpush.OWNERS` is the checkout's real `data/push_owners.json`, shared by
+    every account."""
+    from stocks.notify import webpush
+
+    before = webpush.OWNERS
+    webpush.OWNERS = _scratch / "push_owners.json"
+    yield
+    webpush.OWNERS = before
 
 
 @pytest.fixture(autouse=True)
@@ -895,7 +908,6 @@ def _own_today_market(_scratch):
     `briefing._market_start` back. Restored by hand for the reason
     `_own_free_llm_counter` gives.
     """
-    from stocks import loaders
     from stocks.chat import today_market
     from stocks.views import briefing
 
@@ -910,11 +922,11 @@ def _own_today_market(_scratch):
     briefing._market_start = inert
     briefing.market_builds = builds
     briefing._market_tried.clear()
-    loaders.today_market.cache_clear()
+    briefing.market_stored.cache_clear()
     yield
     today_market.FILE, briefing._market_start = before
     briefing._market_tried.clear()
-    loaders.today_market.cache_clear()
+    briefing.market_stored.cache_clear()
 
 
 @pytest.fixture(autouse=True)

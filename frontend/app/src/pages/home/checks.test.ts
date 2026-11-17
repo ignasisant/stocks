@@ -49,8 +49,22 @@ describe("target", () => {
     // The assistant is a drawer the shell owns, so its rows are not links —
     // but they are still controls, and a row that only reported its state was
     // the one thing on this checklist that could not be acted on.
-    expect(target(row("ai"), STEPS)).toEqual({ kind: "assistant" });
     expect(target(row("ask"), STEPS)).toEqual({ kind: "assistant" });
+  });
+
+  it("opens the drawer on its settings for the key, where it is entered", () => {
+    // Both rows sit on the `assistant` step; only the key asks for a view, so
+    // "Ask" still lands on the conversation.
+    expect(target(row("ai"), STEPS)).toEqual({ kind: "assistant", view: "settings" });
+    expect(target(row("ask"), STEPS)?.kind === "assistant").toBe(true);
+    expect(target(row("ask"), STEPS)).not.toHaveProperty("view", "settings");
+  });
+
+  it("sends search to the page that has a field, and says to focus it", () => {
+    // The top bar's field is on every screen, so the chip focuses it where
+    // it stands; the page is where it goes when there is no field to focus.
+    expect(target(row("search"), STEPS)).toMatchObject({ kind: "page", search: true });
+    expect(target(row("import"), STEPS)).not.toHaveProperty("search");
   });
 
   it("hands the plan to the chat's builder rather than the form", () => {

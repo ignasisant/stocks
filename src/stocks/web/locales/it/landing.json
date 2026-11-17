@@ -150,7 +150,7 @@
   "landing.t2_b": "Carichi un file di estratto conto. Nessuna credenziale, nessun aggregatore, nessun accesso in lettura al tuo conto.",
   "landing.t3_h": "Il tuo registro è solo tuo.",
   "landing.t3_b": "I dati sono legati alla tua email Google verificata e isolati per account. Anche i loghi arrivano dal nostro dominio, così nessun terzo vede i tuoi ticker.",
-  "landing.t4_h": "La tua chiave IA resta tua.",
+  "landing.t4_h": "La tua chiave API resta tua.",
   "landing.t4_b": "Porta la tua e paghi il tuo provider. Spunta Ricorda e viene cifrata e scade da sola novanta giorni dopo l'inserimento; altrimenti non lascia mai la sessione.",
   "landing.t5_h": "Niente pubblicità, niente vendita di dati, niente upsell.",
   "landing.t5_b": "È gratis perché è un progetto personale, non perché il prodotto sei tu.",

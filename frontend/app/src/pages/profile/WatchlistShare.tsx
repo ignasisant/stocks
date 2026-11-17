@@ -11,7 +11,7 @@
  */
 
 import { useState } from "react";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { shareList } from "../../chat/api";
 import { SharedList } from "../../chat/SharedPanel";
 import { useT } from "../../shell/i18n";

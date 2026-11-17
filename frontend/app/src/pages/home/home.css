@@ -932,10 +932,18 @@
   gap: 1rem;
 }
 
+/* Four short labels. On a phone they do not fit one line, and each breaking
+   in two inside its own column read as a table; the row wraps instead and
+   every label stays whole. */
 .hm-start-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.6rem;
+  gap: 0 0.6rem;
+}
+
+.hm-start-head > * {
+  white-space: nowrap;
 }
 
 .hm-start-title {
@@ -949,8 +957,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-.hm-start-tour {
+.hm-start-tour,
+.hm-start-end {
   margin-left: auto;
+}
+
+/* Wrapped onto a line of its own, the second quiet action stays under the
+   first, at the trailing edge, rather than starting a new column at the left. */
+@container ag-main (max-width: 430px) {
+  .hm-start-hide {
+    margin-left: auto;
+  }
 }
 
 /* An action that is not the thing the card is asking for: readable, and never
@@ -1909,4 +1926,47 @@ a.hm-mtile:focus-visible {
   padding: 0;
   border: 0;
   background: none;
+}
+
+/* "Your portfolio is in": once, after the first import (`TourOffer`). The
+   accent band of the first-visit tips, so the newcomer's guides read as one
+   family; the filled action trails the row. */
+.hm-offer {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 14px 16px;
+  border-color: var(--ag-purple-800);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-accent-band);
+  box-shadow: none;
+}
+
+.hm-offer-copy {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hm-offer-title {
+  margin: 0;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.hm-offer-caption {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.hm-offer-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
 }

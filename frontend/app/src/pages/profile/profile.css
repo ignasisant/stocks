@@ -1084,28 +1084,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ag-surface-page-veil);
+  background: var(--ag-scrim);
 }
+/* The app's one dialog shell (`.ag-tour` in styles.css). */
 .pr-modal-card {
-  width: 100%;
-  max-width: 30rem;
-  padding: 20px 22px;
+  width: min(400px, 100%);
+  padding: 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-lg);
   background: var(--ag-surface-raised);
-  box-shadow: var(--ag-shadow-overlay);
+  box-shadow: var(--ag-shadow-dialog);
 }
 .pr-modal-t {
   margin: 0;
-  font-size: var(--ag-fs-xl);
-  letter-spacing: var(--ag-track-xl);
-  font-weight: 600;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-2xl);
+  letter-spacing: -0.02em;
+  font-weight: 700;
 }
 .pr-modal-confirm {
   display: flex;
@@ -1115,8 +1116,22 @@
 .pr-modal-foot {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-top: 4px;
+}
+/* A dialog's buttons are the dialog's 40px, not the settings rows'. */
+.pr-modal-foot .pr-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--ag-radius-sm);
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+@media (pointer: coarse) {
+  .pr-modal-foot .pr-btn {
+    min-height: 44px;
+  }
 }
 
 /* Laid out by the room the page has, not the viewport's: `.ag-main` is the
@@ -1203,7 +1218,9 @@
 .pr-tabsbar {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
-  z-index: 20;
+  /* Under the phone's tab bar and its More sheet (`.ag-nav`, 20) and under a
+     popover hung from the page (20): pinned page bars sit on their own layer. */
+  z-index: 10;
   margin: 20px -1.5rem 16px;
   padding-inline: 1.5rem;
   background: transparent;
@@ -1256,11 +1273,19 @@
 }
 
 /* Asking before ending every other session, in the card. */
+/* An inline confirm that ends something (a connector, the other sessions):
+   the prototype's danger box — loss-red rule over a faint wash of it — so
+   the second press reads as the one that acts. */
 .pr-confirm {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--ag-down-fill);
+  border-radius: var(--ag-radius-sm);
+  background: color-mix(in srgb, var(--ag-down-fill) 14%, transparent);
 }
 
 /* The journal: a toggle for the quiet entries and the two lists' headings. */

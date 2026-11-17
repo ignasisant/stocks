@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts, loaders
+from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.chat import daily_book, today_market
 from stocks.views import briefing, daily_card
@@ -78,7 +78,7 @@ def _store(session: str, *, langs=("en", "es"), built_at: float | None = None):
              for lang in langs}
     today_market.save({"facts": facts, "cards": cards, "session": session,
                        "built_at": time.time() if built_at is None else built_at})
-    loaders.today_market.cache_clear()
+    briefing.market_stored.cache_clear()
 
 
 @pytest.fixture
@@ -305,7 +305,7 @@ def test_an_unreadable_market_file_drops_the_market_only(client, account, curren
     stored = today_market.load(restore=False)
     stored["cards"]["en"]["lines"] = [{"topic": "gossip", "line": "x"}]
     today_market.save(stored)
-    loaders.today_market.cache_clear()
+    briefing.market_stored.cache_clear()
     body = client.get("/v1/today", params=WHO, headers=AUTH).json()
     assert body["market"] is None and body["personal"] is not None
 

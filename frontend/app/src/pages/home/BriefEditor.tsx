@@ -26,7 +26,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, get, scoped, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Status } from "../../ui/Status";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import type { Translate } from "./format";
 import "./brief.css";
 import { TickerCell } from "../../shell/tickers";

@@ -216,6 +216,153 @@ def test_the_file_is_one_of_the_accounts_files():
     assert paths.push.name in accounts.USER_FILES
 
 
+# ------------------------------------------------ one device, one account
+
+MESSAGE = {"title": "Tu día", "body": "NVDA +3 %", "url": "/?thread=c_1",
+           "tag": "briefing"}
+
+
+def two_accounts(tmp_path):
+    return (tmp_path / "ann_example_com" / "push.json",
+            tmp_path / "bob_example_com" / "push.json")
+
+
+def test_a_device_two_accounts_subscribed_notifies_only_the_last(tmp_path, vapid, outbox):
+    """A browser has one subscription whoever is signed in. Ann switched push
+    on, then Bob signed in on the same phone and switched it on too: Ann's
+    briefing kept arriving there, and tapping it opened Bob's book, where
+    that thread does not exist."""
+    ann, bob = two_accounts(tmp_path)
+    browser = Browser()
+    assert keep(ann, browser) and keep(bob, browser)
+
+    assert webpush.send_all(ann, MESSAGE, topic="briefing") == 0
+    assert webpush.answer_ready(ann, "ann", thread="c_1", question="q") == 0
+    assert outbox == [] and webpush.history(ann) == []
+    assert webpush.send_all(bob, MESSAGE, topic="briefing") == 1
+    assert [endpoint for endpoint, _, _ in outbox] == [ENDPOINT]
+
+    assert (webpush.devices(ann), webpush.devices(bob)) == (0, 1)
+    assert not webpush.subscribed(ann, ENDPOINT) and webpush.subscribed(bob, ENDPOINT)
+    assert webpush.row(ann, ENDPOINT) is None and webpush.lang_of(ann) is None
+
+
+def test_another_device_of_the_same_account_is_untouched(tmp_path, vapid, outbox):
+    ann, bob = two_accounts(tmp_path)
+    phone, laptop = Browser(), Browser("https://web.push.apple.com/abc")
+    keep(ann, phone)
+    keep(ann, laptop)
+    keep(bob, phone)
+    assert webpush.send_all(ann, MESSAGE) == 1
+    assert [endpoint for endpoint, _, _ in outbox] == [laptop.endpoint]
+
+
+def test_opening_the_app_claims_the_device_for_who_is_signed_in(tmp_path, vapid, outbox):
+    """Subscriptions made before devices had an owner sit in both files with
+    nobody named: the account the app opens on takes the device, and the
+    other one's row sleeps — kept, so it wakes when that account is back."""
+    ann, bob = two_accounts(tmp_path)
+    browser = Browser()
+    keep(ann, browser)
+    keep(bob, browser)
+    webpush.OWNERS.unlink()
+    assert webpush.send_all(ann, MESSAGE) == 1 and webpush.send_all(bob, MESSAGE) == 1
+
+    assert webpush.claim(ann, ENDPOINT)
+    assert (webpush.devices(ann), webpush.devices(bob)) == (1, 0)
+    assert webpush._row_id(ENDPOINT) in webpush._read(bob)
+
+    assert webpush.claim(bob, ENDPOINT)
+    assert (webpush.devices(ann), webpush.devices(bob)) == (0, 1)
+
+
+def test_claiming_subscribes_nothing(tmp_path, vapid, outbox):
+    """Bob never switched push on: signing in on Ann's phone stops Ann's
+    notifications there, and sends him none."""
+    ann, bob = two_accounts(tmp_path)
+    keep(ann, Browser())
+    assert not webpush.claim(bob, ENDPOINT)
+    assert not bob.exists()
+    assert webpush.send_all(ann, MESSAGE) == 0 and webpush.send_all(bob, MESSAGE) == 0
+    assert not webpush.claim(bob, "https://localhost/x")
+
+
+def test_signing_out_silences_the_device_until_somebody_signs_in(tmp_path, vapid, outbox):
+    ann, bob = two_accounts(tmp_path)
+    keep(ann, Browser())
+    webpush.release(ann, ENDPOINT)
+    assert webpush.send_all(ann, MESSAGE) == 0 and outbox == []
+    assert webpush._row_id(ENDPOINT) in webpush._read(ann)
+
+    assert webpush.claim(ann, ENDPOINT)
+    assert webpush.send_all(ann, MESSAGE) == 1
+
+
+def test_signing_out_does_not_release_somebody_elses_device(tmp_path, vapid, outbox):
+    """A sign-out request that lands after the next account's sign-in."""
+    ann, bob = two_accounts(tmp_path)
+    browser = Browser()
+    keep(ann, browser)
+    keep(bob, browser)
+    webpush.release(ann, ENDPOINT)
+    assert webpush.send_all(bob, MESSAGE) == 1
+
+
+def test_a_device_changing_hands_is_logged_without_naming_anybody(tmp_path, caplog):
+    ann, bob = two_accounts(tmp_path)
+    browser = Browser()
+    with caplog.at_level("INFO"):
+        keep(ann, browser)
+        webpush.claim(ann, ENDPOINT)
+        assert "push.claimed" not in caplog.text
+        keep(bob, browser)
+    record, = [r for r in caplog.records if r.getMessage() == "push.claimed"]
+    assert "example" not in json.dumps(record.__dict__, default=str)
+
+
+def test_the_owners_come_back_from_the_bucket_once(tmp_path, monkeypatch):
+    """A cold instance and the crons start with no local file."""
+    seen = []
+    monkeypatch.setattr("stocks.storage.restore_once",
+                        lambda group, files: seen.append((group, files)))
+    webpush.devices(tmp_path / "ann_example_com" / "push.json")
+    keep(tmp_path / "ann_example_com" / "push.json", Browser())
+    webpush.devices(tmp_path / "ann_example_com" / "push.json")
+    assert seen and set(seen) == {(webpush.OWNERS, (webpush.OWNERS,))}
+
+
+def test_an_index_that_could_not_be_fetched_is_never_written_over(
+    tmp_path, vapid, outbox, monkeypatch
+):
+    """A cold instance whose bucket read fails knows no owners. Saving the one
+    it was just told would replace everybody's: the claim fails instead, and
+    sending goes on as it did before there was an index."""
+    ann, _ = two_accounts(tmp_path)
+    keep(ann, Browser())
+    webpush.OWNERS.unlink()
+
+    def down(group, files):
+        raise OSError("bucket unreachable")
+
+    monkeypatch.setattr("stocks.storage.restore_once", down)
+    with pytest.raises(OSError):
+        webpush.claim(ann, ENDPOINT)
+    assert not webpush.OWNERS.exists()
+    assert webpush.send_all(ann, MESSAGE) == 1
+
+
+def test_the_index_names_no_account(tmp_path):
+    """One file for everybody, kept after an account is deleted: the directory
+    name is the e-mail address, so it is never written there."""
+    ann, bob = two_accounts(tmp_path)
+    keep(ann, Browser())
+    keep(bob, Browser())
+    webpush.release(bob, ENDPOINT)
+    kept = webpush.OWNERS.read_text()
+    assert "ann_example_com" not in kept and "bob_example_com" not in kept
+    assert "example" not in kept
+
+
 # ----------------------------------------------------------------- sending
 
 
@@ -353,6 +500,38 @@ def test_the_routes_subscribe_report_and_unsubscribe(client, account, signed_in,
     assert signed_in.post("/v1/push/unsubscribe",
                           json={"endpoint": ENDPOINT}).status_code == 204
     assert not webpush.subscribed(account.push, ENDPOINT)
+
+
+def test_the_routes_claim_and_release_this_device(client, account, signed_in, vapid,
+                                                  tmp_path, outbox):
+    """What the app sends when it opens and when it signs out."""
+    other = tmp_path / "users" / "bob_example_com" / "push.json"
+    browser = Browser()
+    signed_in.post("/v1/push/subscription", json=browser.subscription())
+    keep(other, browser)
+    assert signed_in.get("/v1/push", params={"endpoint": ENDPOINT}).json() == {
+        "configured": True, "key": webpush.public_key(),
+        "subscribed": False, "devices": 0, "recent": [],
+    }
+
+    assert signed_in.post("/v1/push/claim",
+                          json={"endpoint": ENDPOINT}).status_code == 204
+    assert signed_in.get("/v1/push", params={"endpoint": ENDPOINT}).json()["subscribed"]
+    assert webpush.send_all(other, MESSAGE) == 0
+
+    assert signed_in.post("/v1/push/release",
+                          json={"endpoint": ENDPOINT}).status_code == 204
+    assert webpush.devices(account.push) == 0
+    assert webpush.send_all(other, MESSAGE) == 0
+
+
+def test_a_token_cannot_claim_a_device(client, account, vapid):
+    for route in ("claim", "release"):
+        response = client.post(
+            f"/v1/push/{route}", params={"account": EMAIL},
+            headers={"Authorization": "Bearer s3cret-token"}, json={"endpoint": ENDPOINT},
+        )
+        assert response.status_code == 403
 
 
 def test_a_route_refuses_a_subscription_it_cannot_use(client, account, signed_in, vapid):

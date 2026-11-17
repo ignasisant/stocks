@@ -31,6 +31,10 @@ const LINES: Record<string, string> = {
   school: "M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5",
   account_circle: "M8 8a4 4 0 1 0 8 0 4 4 0 1 0-8 0M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6",
   account_balance: "M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18",
+  // The start card's plan and notifications nodes: a name with no path draws
+  // nothing, and those two steps were empty circles.
+  flag: "M5 21V4M5 4h11l-2 4 2 4H5",
+  notifications: "M6 17v-6a6 6 0 0 1 12 0v6M4 17h16M10 20.5a2 2 0 0 0 4 0",
   menu: "M4 6h16M4 12h16M4 18h16",
   side_panel:
     "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16",
@@ -83,6 +87,8 @@ const PATHS: Record<string, string> = {
   star: "M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
   arrow_forward: "M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z",
   arrow_back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
+  close:
+    "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
   school: "M5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82zM12 3 1 9l11 6 9-4.91V17h2V9L12 3z",
   dashboard_customize:
     "M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm11-2h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z",

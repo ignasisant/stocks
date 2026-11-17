@@ -127,6 +127,28 @@ def repair_splits(db: str) -> None:
 
 
 
+def _bounded_close(symbol: str, day: str) -> float | None:
+    """A day's close for a heal's price proof; None while Yahoo cools off,
+    which leaves the question for the next warm rather than answering it."""
+    from stocks.data import fetch
+
+    if fetch.throttle_remaining() > 0:
+        return None
+    try:
+        return fetch.close_on(symbol, day)
+    except Exception:  # noqa: BLE001 — unknown, not a verdict
+        return None
+
+
+def _bounded_usd_rate(currency: str, day: str) -> float | None:
+    from stocks.data import fx
+
+    try:
+        return fx.rate_on(day, "USD", currency)
+    except Exception:  # noqa: BLE001 — unknown, not a verdict
+        return None
+
+
 def heal_book(db: str) -> None:
     """Write the app's own once-per-book repairs (`portfolio.heal`) before
     pricing, like the splits above. Best effort for the same reason."""
@@ -136,6 +158,11 @@ def heal_book(db: str) -> None:
         heal.fee_in_coins(db)
     except Exception as exc:  # noqa: BLE001 — see repair_splits
         obs.warn("api.warm_heal_failed", error_type=type(exc).__name__)
+    try:
+        heal.bare_coins(db, _bounded_close, _bounded_usd_rate)
+    except Exception as exc:  # noqa: BLE001 — see repair_splits
+        obs.warn("api.warm_heal_failed", kind=heal.BARE_COINS,
+                 error_type=type(exc).__name__)
     try:
         heal.net_dividends(
             db, lambda names: loaders.dividend_histories(tuple(names))
@@ -217,8 +244,10 @@ def warm_shared() -> None:
     """The memos every reader shares, once a run: Today's market read, the
     pulse's prices and rates behind Home's market card and Pulso, and the
     CFTC's weekly positioning (Friday's release lands here, not in a read)."""
+    from stocks.views import briefing
+
     for name, fill in (
-        ("today_market", loaders.today_market),
+        ("today_market", briefing.market_stored),
         ("pulse_closes", loaders.pulse_closes),
         ("pulse_rate_rows", loaders.pulse_rate_rows),
         ("market_pulse", loaders.market_pulse),

@@ -20,6 +20,7 @@ What is tested here:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -578,3 +579,106 @@ def test_the_briefing_files_the_card_the_evening_wrote(account, monkeypatch):
 
     day["d"] = date(2026, 11, 4)
     assert schedule._briefing(account, date(2026, 11, 4)) == "skipped: no card"
+
+
+def _card_threads(chat) -> list[dict]:
+    """The card threads the panel lists (beside the reader's own)."""
+    return [c for c in conversations.list_conversations(chat, cards=False)
+            if c.get("daily")]
+
+
+def _late_generation(account, monkeypatch, *, stored=None):
+    """A generation that outlasts the briefing's wait: its job is still out,
+    with the computed card Home shows meanwhile."""
+    from stocks.views import briefing, daily_card
+
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    stand_in = daily.DailyAction(
+        day="2026-11-16", headline="Book +0.4 % on Friday", bullets=["x"], lang="en",
+        as_of="2026-11-13", source="computed",
+        items=[{"key": "k", "kind": "", "line": "NVDA led", "tickers": []}])
+    job = briefing.Job(key=("k",), forced=False, computed=stand_in)
+    monkeypatch.setattr(daily_card, "request", lambda paths, lang, force: None)
+    monkeypatch.setattr(daily_card, "stored", lambda paths: stored)
+    monkeypatch.setattr(briefing, "running", lambda paths: job)
+    now = datetime(2026, 11, 16, 8, 30, tzinfo=MADRID)
+    monkeypatch.setattr(briefing, "now_day", lambda paths=None: (now, date(2026, 11, 16)))
+    monkeypatch.setattr(schedule, "BRIEFING_WAIT_S", 0.0)
+    monkeypatch.setattr(schedule.clock, "sleep", lambda s: None)
+    sent: list[dict] = []
+    monkeypatch.setattr(
+        schedule, "_push", lambda acc, message, job: sent.append(message) or 1
+    )
+    return stand_in, sent
+
+
+def test_a_late_card_briefing_files_and_pushes_the_stand_in(account, monkeypatch):
+    """A Monday at 08:30: no session closed the evening before, so every
+    account's card is written at once and the models outlast the wait. The
+    run ended "skipped: no card" and was marked run: no push that day, and
+    the card that landed minutes later sat in a thread the list never showed."""
+    stand_in, sent = _late_generation(account, monkeypatch)
+    chat = account.paths.chat
+
+    assert schedule._briefing(account, date(2026, 11, 16)) == "filed, pushed 1"
+    (message,) = sent
+    (thread,) = _card_threads(chat)
+    assert thread["scheduled"] == "briefing" and thread["daily"] == "2026-11-16"
+    assert message["url"] == f"/?thread={thread['id']}"
+    assert "Book +0.4 % on Friday" in message["body"]
+
+    # The model's card, when it lands, is the same thread's turn — the one
+    # the notification opens, still in the list.
+    written = daily.DailyAction(day="2026-11-16", headline="Trim NVDA into strength",
+                                bullets=["x"], lang="en", as_of="2026-11-13")
+    assert daily.filed(None, written, chat) == thread["id"]
+    (listed,) = _card_threads(chat)
+    assert listed["id"] == thread["id"] and listed["scheduled"] == "briefing"
+    (turn,) = conversations.load_chat(chat, thread["id"])
+    assert "Trim NVDA into strength" in turn["content"]
+
+
+def test_a_card_that_landed_while_the_stand_in_was_filed_is_the_one_pushed(
+    account, monkeypatch
+):
+    from stocks.views import daily_card
+
+    stand_in, sent = _late_generation(account, monkeypatch)
+    chat = account.paths.chat
+    written = daily.DailyAction(day="2026-11-16", headline="Trim NVDA into strength",
+                                bullets=["x"], lang="en", as_of="2026-11-13")
+    reads: list[int] = []
+
+    def stored(paths):
+        # Nothing stored when the wait ends; the generation's card by the
+        # time the stand-in has been filed.
+        reads.append(1)
+        if len(reads) == 1:
+            return None
+        return dataclasses.replace(written, thread=daily.record(chat, written))
+
+    monkeypatch.setattr(daily_card, "stored", stored)
+    assert schedule._briefing(account, date(2026, 11, 16)) == "filed, pushed 1"
+    (message,) = sent
+    assert "Trim NVDA into strength" in message["body"]
+    (thread,) = _card_threads(chat)
+    (turn,) = conversations.load_chat(chat, thread["id"])
+    assert "Trim NVDA into strength" in turn["content"]
+
+
+def test_the_evening_card_never_stores_a_stand_in_for_a_late_one(account, monkeypatch):
+    """The evening run pushes nothing: a generation still out is left to
+    finish, and what it says is that there is no card yet."""
+    _, sent = _late_generation(account, monkeypatch)
+    assert schedule._card(account, date(2026, 11, 13)) == "skipped: no card"
+    assert sent == [] and _card_threads(account.paths.chat) == []
+
+
+def test_a_stand_in_for_another_day_is_not_this_mornings(account, monkeypatch):
+    from stocks.views import briefing
+
+    _, sent = _late_generation(account, monkeypatch)
+    now = datetime(2026, 11, 17, 8, 30, tzinfo=MADRID)
+    monkeypatch.setattr(briefing, "now_day", lambda paths=None: (now, date(2026, 11, 17)))
+    assert schedule._briefing(account, date(2026, 11, 17)) == "skipped: no card"
+    assert sent == []

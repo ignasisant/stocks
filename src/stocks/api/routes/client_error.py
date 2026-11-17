@@ -29,9 +29,8 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from stocks import obs
+from stocks import obs, ratelimit
 from stocks.api.security import Who
-from stocks.web import ratelimit
 
 router = APIRouter(tags=["client"])
 
@@ -123,6 +122,51 @@ def client_error(
         ua=_browser(request.headers.get("user-agent", "")),
         stack_trace=stack or None,
     )
+
+
+# A catalog key: dotted words. Anything else is not one of ours and is not
+# written to the log, whatever the browser sent. Checked per key rather than
+# by the model: one odd key must not cost the batch it came in.
+_KEY = re.compile(r"[A-Za-z0-9_]+(\.[A-Za-z0-9_-]+)+")
+MAX_KEY = 120
+MAX_KEYS = 50
+
+
+class MissingStrings(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    lang: str = Field(default="en", max_length=8)
+    keys: list[Annotated[str, Field(max_length=500)]] = Field(
+        default_factory=list, max_length=MAX_KEYS
+    )
+    # The screen, as `/client-error` names it.
+    where: str = Field(default="", max_length=120)
+
+
+@router.post(
+    "/missing-strings",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Catalog keys the browser drew as their own dotted name",
+)
+def missing_strings(
+    body: MissingStrings,
+    logged: Annotated[bool, Depends(admitted)],
+) -> None:
+    """Log each key no catalog has as `i18n.missing`, an ERROR.
+
+    The shell (`shell/i18n.tsx`) sends the keys a render asked for and the
+    catalog it loaded did not have. A key the server's catalog does have is
+    dropped: a tab opened before the deploy that added it, not a gap.
+    Always 204, like `/client-error`.
+    """
+    from stocks.i18n import has, missing, supported
+
+    if not logged:
+        return
+    lang = supported(body.lang) or "en"
+    for key in dict.fromkeys(body.keys):
+        if len(key) <= MAX_KEY and _KEY.fullmatch(key) and not has(key):
+            missing(key, lang, source="browser", where=scrub(body.where))
 
 
 def _browser(ua: str) -> str:

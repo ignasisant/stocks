@@ -103,6 +103,23 @@ describe("the settings view", () => {
     expect(out).not.toContain("<progress");
   });
 
+  it("says who answers while the picked provider has no key", () => {
+    const out = draw(state({ preferred: "anthropic", answering: "free" }));
+    expect(out).toContain("chat.answers_until_key");
+  });
+
+  it("says nothing about a stand-in once the picked provider answers", () => {
+    expect(draw(state({}))).not.toContain("chat.answers_until_key");
+    const keyed = state({ preferred: "anthropic", answering: "anthropic" });
+    const out = draw({
+      ...keyed,
+      providers: keyed.providers.map((p) =>
+        p.id === "anthropic" ? { ...p, has_key: true } : p,
+      ),
+    });
+    expect(out).not.toContain("chat.answers_until_key");
+  });
+
   it("keeps a model picked from the catalogue as the select's value", () => {
     // Nothing to type: the model is picked from the list, never written.
     const custom = draw(

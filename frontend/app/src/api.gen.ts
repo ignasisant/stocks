@@ -495,6 +495,7 @@ export type Checkup = {
   "reupload": ReuploadHint[];
   "findings": BookFinding[];
   "healed": Healed[];
+  "prices": PriceMismatch[];
 };
 
 export type ClientError = {
@@ -1415,7 +1416,7 @@ export type HalvingPhase = {
 };
 
 export type Healed = {
-  "kind": "fee_in_coins" | "net_dividends";
+  "kind": "fee_in_coins" | "net_dividends" | "bare_coins";
   "change_id": number;
   "rows": number;
   "at": string;
@@ -1986,6 +1987,12 @@ export type Metrics = {
   "base": string | null;
 };
 
+export type MissingStrings = {
+  "lang"?: string;
+  "keys"?: string[];
+  "where"?: string;
+};
+
 export type Moat = {
   "ticker": string;
   "score": number | null;
@@ -2291,6 +2298,8 @@ export type Prefs = {
   "onboarding_dismissed": boolean;
   "profile_prompt_off": boolean;
   "rate_prompt_done": boolean;
+  "tour_offer": boolean;
+  "page_tips": string[];
   "home_layout": HomeSlot[] | null;
   "chat_panel_open": boolean;
   "notify_briefing": boolean;
@@ -2353,6 +2362,14 @@ export type PriceEvents = {
   "ticker": string;
   "earnings": EarningsEvent[];
   "cycle": CycleEvent[];
+};
+
+export type PriceMismatch = {
+  "ticker": string;
+  "date": string;
+  "price": number;
+  "currency": string;
+  "close": number;
 };
 
 export type Profile = {
@@ -3012,6 +3029,8 @@ export type Sectors = {
 
 export type Seen = {
   "done"?: boolean | null;
+  "walked"?: boolean | null;
+  "finished"?: boolean | null;
 };
 
 export type SessionList = {
@@ -3529,6 +3548,22 @@ export type TickerSplitsApplied = {
   "splits"?: TickerSplit[];
 };
 
+export type Tip = {
+  "page": string;
+  "lines": number;
+  "lesson": TipLesson | null;
+};
+
+export type TipLesson = {
+  "id": string;
+  "title": string;
+  "minutes": number;
+};
+
+export type TipsOwed = {
+  "page_tips": string[];
+};
+
 export type TodayBenchmark = {
   "symbol": string;
   "name": string;
@@ -3950,6 +3985,7 @@ export interface Responses {
   "/movers": Movers;
   "/nav": Navigation;
   "/onboarding": Onboarding;
+  "/onboarding/tips/{screen}": Tip;
   "/plan": InvestorPlan;
   "/plan/entry": EntryCriteria;
   "/portfolio/attribution": Attribution;

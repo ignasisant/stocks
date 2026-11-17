@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { keyBytes, workerTarget } from "./push";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { onSignOut, signOut } from "./keep";
+import { claimPush, keyBytes, releasePush, workerTarget } from "./push";
 
 describe("keyBytes", () => {
   it("reads base64url without padding, as the server sends the VAPID key", () => {
@@ -30,5 +31,123 @@ describe("workerTarget", () => {
     expect(workerTarget({ type: "other", url: "/today" })).toBeNull();
     expect(workerTarget({ type: "open" })).toBeNull();
     expect(workerTarget(null)).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------ whose device */
+
+const ENDPOINT = "https://push.example/send/abc";
+
+type Call = { url: string; method: string; body: unknown; keepalive: boolean };
+
+/** A browser holding `endpoint` as its subscription (none: null), and what it sent. */
+function device(endpoint: string | null) {
+  const calls: Call[] = [];
+  vi.stubGlobal("window", { PushManager: {}, Notification: {} });
+  vi.stubGlobal("navigator", {
+    serviceWorker: {
+      getRegistration: async () => ({
+        pushManager: {
+          getSubscription: async () => (endpoint ? { endpoint } : null),
+        },
+      }),
+    },
+  });
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+    calls.push({
+      url: String(url),
+      method: init.method ?? "GET",
+      body: init.body ? JSON.parse(String(init.body)) : undefined,
+      keepalive: init.keepalive === true,
+    });
+    return { ok: true, status: 204, headers: new Headers() } as unknown as Response;
+  });
+  return calls;
+}
+
+describe("whose device this is", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("claims the device's subscription for the account signed in", async () => {
+    const calls = device(ENDPOINT);
+    await claimPush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "POST", body: { endpoint: ENDPOINT } });
+    expect(calls[0]?.url).toMatch(/\/push\/claim$/);
+  });
+
+  it("releases it with a request that outlives the page", async () => {
+    const calls = device(ENDPOINT);
+    await releasePush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: "POST",
+      body: { endpoint: ENDPOINT },
+      keepalive: true,
+    });
+    expect(calls[0]?.url).toMatch(/\/push\/release$/);
+  });
+
+  it("says nothing for a device that never subscribed", async () => {
+    const calls = device(null);
+    await claimPush();
+    await releasePush();
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("signing out", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Sign out with `task` registered; the order things happened in. */
+  async function leave(task: (did: string[]) => Promise<unknown>) {
+    const did: string[] = [];
+    vi.stubGlobal("window", {
+      location: { assign: (to: string) => did.push(`go ${to}`) },
+    });
+    vi.stubGlobal("fetch", async (url: string) => {
+      did.push(`post ${url}`);
+      return { ok: true, status: 204 } as unknown as Response;
+    });
+    const off = onSignOut(() => task(did));
+    try {
+      await signOut();
+    } finally {
+      off();
+    }
+    return did;
+  }
+
+  it("runs what needs the session before the session ends", async () => {
+    const did = await leave(async (log) => {
+      await Promise.resolve();
+      log.push("release");
+    });
+    expect(did).toEqual(["release", "post /auth/logout", "go /"]);
+  });
+
+  it("still signs out when that fails", async () => {
+    const did = await leave(async () => {
+      throw new Error("offline");
+    });
+    expect(did).toEqual(["post /auth/logout", "go /"]);
+  });
+
+  it("does not wait for ever on it", async () => {
+    vi.useFakeTimers();
+    try {
+      const left = leave(() => new Promise(() => undefined));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await left).toEqual(["post /auth/logout", "go /"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("forgets a task that was taken back", async () => {
+    const ran: string[] = [];
+    onSignOut(async () => ran.push("release"))();
+    await leave(async () => undefined);
+    expect(ran).toEqual([]);
   });
 });

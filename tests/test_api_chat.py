@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
-from stocks.chat import engine
+from stocks.chat import conversations, engine
 from tests.minipdf import pdf
 from tests.patching import patch_engine, patch_loaders
 
@@ -1034,7 +1034,7 @@ def test_a_reading_spends_a_model_call_so_a_token_may_not(client, account):
 def test_a_screenshot_does_not_eat_the_turn_it_is_asked_with(
     client, account, signed_in, seeing
 ):
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     for _ in range(ratelimit.CHAT_MAX_TURNS):
         ratelimit.allow(f"chat::{account.root}")
@@ -1047,8 +1047,8 @@ def test_an_account_s_readings_in_a_day_are_bounded(
 ):
     """The burst budget bounds a loop; this one bounds the bill, own key or
     not — the keyless chain's vision quota is one pot for every account."""
+    from stocks import ratelimit
     from stocks.api.routes import chat_screenshot
-    from stocks.web import ratelimit
 
     seen = seeing()
     day = f"screenshot-day::{account.root}"
@@ -1164,8 +1164,8 @@ def test_a_token_has_no_composer_to_report_from(client, account):
 
 
 def test_a_flood_of_paste_events_is_dropped_quietly(client, signed_in, caplog):
+    from stocks import ratelimit
     from stocks.api.routes import chat_screenshot
-    from stocks.web import ratelimit
 
     # The limiter is the process's: what the tests above reported counts too.
     for key in [k for k in ratelimit._events if k.startswith("shot-event::")]:
@@ -1566,7 +1566,7 @@ def test_a_burst_of_turns_hits_the_same_wall_the_composer_does(
 ):
     """Keyed by account, not by window, so a reader with two windows open gets
     one budget and not two."""
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     served()
     key = f"chat::{account.root}"
@@ -1581,7 +1581,7 @@ def test_a_burst_of_turns_hits_the_same_wall_the_composer_does(
 def test_an_attachment_spends_the_same_budget_as_a_typed_turn(
     client, account, signed_in
 ):
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     key = f"chat::{account.root}"
     for _ in range(ratelimit.CHAT_MAX_TURNS):
@@ -1598,7 +1598,7 @@ def test_a_voice_note_does_not_eat_the_turn_it_becomes(
 ):
     """A spoken question is a note *and* a message. Counting both against one
     budget would halve the allowance of everyone who talks to it."""
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     for _ in range(ratelimit.CHAT_MAX_TURNS):
         ratelimit.allow(f"chat::{account.root}")
@@ -3435,6 +3435,34 @@ def test_a_comparison_gets_the_deep_gather_on_the_answering_model(
     assert deep["prefs_path"] == account.prefs
     assert deep["timeout"] >= engine.agent.DEEP.timeout
     assert quick["profile"] is engine.agent.FAST
+
+
+def test_with_no_ticker_on_screen_this_is_the_one_the_talk_is_about(
+    account, signed_in, served, monkeypatch
+):
+    """"Quality against price this one" on /review after an answer on ADBE
+    (rated down 2026-11-11): the gather and the answer are told the ticker the
+    conversation is about; one on screen, or a message naming another
+    company, keeps it out."""
+    seen = []
+    patch_engine(monkeypatch, "gather_evidence",
+                 lambda *a, **kw: seen.append(kw.get("view", "")) or None)
+    served(FakeProvider())
+    talk = [{"role": "user", "content": "¿qué tal Adobe?"},
+            {"role": "assistant", "content": "Adobe va bien.",
+             "nav": {"page": "ticker", "ticker": "ADBE"}}]
+    for asked, props in (("Quality against price this one", {"view": "Review"}),
+                         ("Quality against price this one",
+                          {"view": "Ticker", "focus": "NVDA"}),
+                         ("¿y Microsoft?", {"view": "Review"})):
+        conversations.save_chat(talk, account.chat)
+        finished(events(signed_in.post(
+            "/v1/chat/runs", json=run(asked, **props)).text))
+    about, on_screen, other = seen
+    assert "the conversation is about ADBE" in about
+    assert "on the Sell or add page" in about
+    assert "ADBE" not in on_screen and "NVDA" in on_screen
+    assert "ADBE" not in other
 
 
 def test_recall_switched_off_keeps_earlier_conversations_out_of_the_lookup(

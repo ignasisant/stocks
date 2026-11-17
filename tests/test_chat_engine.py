@@ -2018,3 +2018,18 @@ def test_a_cut_answer_is_not_kept(providers, enc, paths, monkeypatch):
                                           **paths)),
         paths)
     assert len(_answered_on(streamer)) == 2
+
+
+def test_with_nothing_in_focus_this_is_the_ticker_the_talk_is_about():
+    """"Quality against price this one" asked on /review after an answer on
+    ADBE (rated down 2026-11-11): no ticker on screen, so "this one" pointed
+    at nothing and the word "Quality" was read as a symbol."""
+    page = engine.view_context("Review", "")
+    said = engine.topic_view(page, "ADBE")
+    assert said.startswith("Current view: The user is currently on the Review"
+                           " page. No ticker is in focus; the conversation is"
+                           " about ADBE.")
+    assert '"this one"' in said and said.endswith("\n\n")
+    assert engine.topic_view("", "ADBE").startswith(
+        "Current view: No ticker is in focus; the conversation is about ADBE.")
+    assert engine.topic_view(page, "") == page

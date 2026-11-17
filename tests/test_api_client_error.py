@@ -13,7 +13,7 @@ from stocks.api.routes import client_error as route
 
 @pytest.fixture(autouse=True)
 def _fresh_limiter():
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     ratelimit._events.clear()
     yield

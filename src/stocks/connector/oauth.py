@@ -75,9 +75,8 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, request_response
 from starlette.types import ASGIApp
 
-from stocks import obs, session
+from stocks import obs, ratelimit, session
 from stocks.connector import clients, store
-from stocks.web import ratelimit
 
 MCP_PATH = "/mcp"
 CONSENT_PATH = "/oauth/consent"

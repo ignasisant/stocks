@@ -39,7 +39,7 @@ def _fresh_cache():
 def client(monkeypatch):
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
     # The sitemap test reads every guide in every language, more documents
     # than one client may fetch a minute.
     monkeypatch.setattr(server, "CLIENT_MAX_DOCS", 10_000)

@@ -56,6 +56,10 @@ export type Prefs = {
   profile_prompt_off: boolean;
   /** The one-time rating prompt was shown, answered or not (`RatePrompt`). */
   rate_prompt_done?: boolean;
+  /** Home offers the tour once, after the first real import (`TourOffer`). */
+  tour_offer?: boolean;
+  /** Pages still owed their first-visit tip (`PageTip`). */
+  page_tips?: string[];
   /** Home's cards in the reader's order; null is the default page. */
   home_layout: { id: string; hidden: boolean }[] | null;
   notify_briefing?: boolean;

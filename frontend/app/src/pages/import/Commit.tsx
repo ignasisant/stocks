@@ -22,7 +22,7 @@
 
 import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
-import { useAccount } from "../../shell/session";
+import { useAccount, useSession } from "../../shell/session";
 import { Status } from "../../ui/Status";
 import { MAX_BYTES, commit, written } from "./api";
 import type { Platform, Preview, Refusal, Result, Row, Staged } from "./api";
@@ -82,6 +82,7 @@ export function CommitPanel({
   const t = useT();
   const vocab = useVocabulary();
   const me = useAccount();
+  const { reload } = useSession();
   const options = useMemo(() => brands(platforms), [platforms]);
   const [pick, setPick] = useState("");
   const [typed, setTyped] = useState("");
@@ -115,8 +116,13 @@ export function CommitPanel({
     setRefusal(null);
     try {
       const outcome = await commit(preview, staged, origin, wipe, keep);
-      if (outcome.ok) onCommitted(outcome.value, written(preview, keep));
-      else setRefusal(outcome.refusal);
+      if (outcome.ok) {
+        onCommitted(outcome.value, written(preview, keep));
+        // A first import raises Home's tour offer and the pages' first-visit
+        // tips on the account (`onboarding.first_book`); the session's copy
+        // of the prefs has to hear about it without a reload of the app.
+        reload();
+      } else setRefusal(outcome.refusal);
     } catch {
       // Not a refusal the API spelled out — the ledger is untouched either way.
       setRefusal({ kind: "refused", detail: "" });

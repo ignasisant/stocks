@@ -32,10 +32,6 @@ router = APIRouter(prefix="/import", tags=["import"])
 # that come with their fix, and the repairs the app made by itself
 # (`portfolio.heal`), each with the way back.
 
-# Transfers have their own list (`/import/moves`) and an oversold position has
-# no fix but a missing statement, which `reupload` names when it can.
-_FIXABLE = ("two_labels", "duplicate", "fee_in_coins")
-
 
 class HeldSale(BaseModel):
     id: int = Field(description="Names it for `POST /import/held/apply`.")
@@ -55,7 +51,7 @@ class ReuploadHint(BaseModel):
     split_date: str = Field(description="The split written after that import.")
 
 
-HealKind = Literal["fee_in_coins", "net_dividends"]
+HealKind = Literal["fee_in_coins", "net_dividends", "bare_coins"]
 
 
 class Healed(BaseModel):
@@ -66,6 +62,14 @@ class Healed(BaseModel):
     rows: int = Field(description="Ledger rows it changed.")
     at: str
     summary: str
+
+
+class PriceMismatch(BaseModel):
+    ticker: str
+    date: str = Field(description="The latest fill the price disagrees with.")
+    price: float = Field(description="That fill's price, as booked.")
+    currency: str
+    close: float = Field(description="The close on or before that day, in `currency`.")
 
 
 class Checkup(BaseModel):
@@ -85,6 +89,14 @@ class Checkup(BaseModel):
     )
     healed: list[Healed] = Field(
         default_factory=list, description="Repairs the app wrote by itself."
+    )
+    prices: list[PriceMismatch] = Field(
+        default_factory=list,
+        description=(
+            "Open positions whose own fills say the price series is another "
+            "instrument, so they read at cost: the price booked or the ticker "
+            "is wrong."
+        ),
     )
 
 
@@ -132,7 +144,8 @@ def _finding(f: doctor.Finding) -> BookFinding:
 @router.get("/checkup", response_model=Checkup, summary="What the book can fix now")
 def checkup(account: Account) -> Checkup:
     """Everything the repairs card offers besides moves and splits. Reads the
-    ledger only; the one write is dropping held sales the book already has."""
+    ledger and the book's last kept prices, never a download; the one write is
+    dropping held sales the book already has."""
     rows = _real_rows(account)
     if not rows:
         return Checkup()
@@ -153,8 +166,7 @@ def checkup(account: Account) -> Checkup:
         ],
         findings=[
             _finding(f)
-            for f in doctor.scan(rows, resolve=loaders.display_symbol)
-            if f.kind in _FIXABLE and f.fix
+            for f in doctor.fixable(rows, resolve=loaders.display_symbol)
         ],
         healed=[
             Healed(
@@ -164,7 +176,20 @@ def checkup(account: Account) -> Checkup:
             for kind, c in heal.recent(account.db)
             if kind in get_args(HealKind)
         ],
+        prices=_prices(account.db),
     )
+
+
+def _prices(db) -> list[PriceMismatch]:
+    with obs.swallow("checkup.prices"):
+        return [
+            PriceMismatch(
+                ticker=m.ticker, date=m.date, price=m.price,
+                currency=m.currency, close=_num(m.close) or 0.0,
+            )
+            for m in loaders.price_mismatches(str(db))
+        ]
+    return []
 
 
 @router.post("/held/apply", response_model=HeldApplied, summary="Write held sales")
@@ -204,7 +229,7 @@ def fix(account: Writer, body: Annotated[FixPick, ...]) -> FixApplied:
     `DELETE /portfolio/changes/{id}` takes it back. 409 once it is gone."""
     rows = _real_rows(account)
     found = doctor.by_key(rows, body.key.strip(), resolve=loaders.display_symbol)
-    if found is None or found.kind not in _FIXABLE or not found.fix:
+    if found is None or found.kind not in doctor.FIXABLE or not found.fix:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="that finding is not on this book any more — check again",

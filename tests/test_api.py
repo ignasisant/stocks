@@ -818,6 +818,9 @@ WRITES = {
     # again, and a token that could set it would retire an announcement the
     # account never saw.
     ("/v1/onboarding/seen", "post"),
+    # A page's first-visit tip marked read: gone on every device, so a token
+    # that could set it would clear a newcomer's guide they never read.
+    ("/v1/onboarding/tips/{screen}", "post"),
     # This device's Web Push subscription, its test, and the on-screen beat
     # that holds a push back. A token has no device, and one that could
     # subscribe would read every finished answer's question.
@@ -825,6 +828,11 @@ WRITES = {
     ("/v1/push/unsubscribe", "post"),
     ("/v1/push/test", "post"),
     ("/v1/push/presence", "post"),
+    # Whose device this is: the account signed in on it claims it when the app
+    # opens and lets it go on sign-out. A token that could claim would silence
+    # the phone's real owner, or take over its notifications.
+    ("/v1/push/claim", "post"),
+    ("/v1/push/release", "post"),
     # Feedback. A write because it stores a file. The one a guest may make too —
     # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),
@@ -835,6 +843,7 @@ WRITES = {
     # A browser error, logged. A guest may report one too, and a token has no
     # browser to report from.
     ("/v1/client-error", "post"),
+    ("/v1/missing-strings", "post"),
     # A page's timings (LCP, INP, CLS…): the same shape as a client error, one
     # log line and nothing on disk — metered per address for the same reason.
     ("/v1/vitals", "post"),

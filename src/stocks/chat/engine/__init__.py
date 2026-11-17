@@ -224,6 +224,7 @@ from stocks.chat.engine.turn import (
     MARKDOWN_CONTEXT,
     Turn,
     clean_focus,
+    topic_view,
     view_context,
 )
 from stocks.llm import metering, tokens
@@ -341,6 +342,7 @@ __all__ = [
     "tax_rules",
     "title_for",
     "topic_ticker",
+    "topic_view",
     "trace",
     "undo_proposal",
     "used_by",
@@ -467,6 +469,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     history.append({"role": "user", "content": message,
                     **({"screenshots": list(screenshots)} if screenshots else {}),
                     **({"documents": list(documents)} if documents else {})})
+    if not focus:
+        # Nothing on screen: "this one" is what the talk is about.
+        view = topic_view(view, topic_ticker(history))
 
     # A proposal waiting on the turn above, answered in words: "sí" is the
     # button pressed, not a question for a model that would cheerfully reply
@@ -707,7 +712,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                          context=context + view)),
             lambda: None if nowhere else gather_evidence(
                 prefs, provider, key, msgs, watchlist, db, chat_path,
-                timeout=researched, focus=focus,
+                timeout=researched, focus=focus, view=view,
                 on_tool=watch if on_tool else None, profile=profile,
                 model=model, prefs_path=prefs_path, proposes=confirm_actions,
                 on_plan=on_plan, checkpoint=checkpoint),

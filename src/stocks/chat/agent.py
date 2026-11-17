@@ -51,14 +51,20 @@ GATHER_SYSTEM = (
     "search_web, even when you think you know — prices, news and the reasons "
     "behind a move change daily. Read the best page when the snippets do not "
     "say why.\n"
-    "- Questions about the app itself — how a page or feature works, where "
-    "something is, why an import fails, how a figure here is computed, which "
-    "tax rule it applies — get lookup_knowledge, not the web.\n"
+    "- Questions about the app itself (TopStocks, also written \"Top "
+    "Stocks\") — how a page or feature works, where something is, why an "
+    "import fails, how a figure here is computed, which tax rule it applies, "
+    "what it can do or how to get the most out of it — get lookup_knowledge, "
+    "not the web. Getting the most out of it also gets portfolio_snapshot: "
+    "what their own book is missing is part of the answer.\n"
     "- Prefer one good call over three speculative ones. Every call costs the "
     "user seconds of waiting. Give each its reason: they read it meanwhile.\n"
     "- The ticker in focus (Current view) is what \"this\" and \"it\" "
-    "mean. Fetch nothing about it for a question that does not point at it "
-    "(a concept, another company, the user's whole portfolio).\n"
+    "mean; with none in focus, the one the conversation is about. Fetch "
+    "nothing about it for a question that does not point at it (a concept, "
+    "another company, the user's whole portfolio). An ordinary word "
+    "(\"Quality\", \"Value\", \"Growth\") is not a ticker unless written "
+    "as one.\n"
     "- Whether the user holds something, or how much (\"¿tengo BKNG?\"), "
     "gets portfolio_snapshot, never an earlier conversation: those are "
     "older than the book.\n"
@@ -436,6 +442,7 @@ def gather(
     on_plan: Callable[[list[dict]], None] | None = None,
     known: dict[tuple[str, str], str] | None = None,
     on_call: Callable[[str, dict, str], None] | None = None,
+    view: str = "",
 ) -> Evidence:
     """Run the tool loop for the pending turn and return what it fetched.
 
@@ -467,11 +474,16 @@ def gather(
     (`chat/checkpoint.py`), by `_key`: asked again, a call is answered from it
     rather than fetched. `on_call(name, args, result)` is told about each one
     that was fetched, for the next attempt to know.
+
+    `view` is the "Current view" sentence (`engine.view_context`): the ticker
+    on screen, or the one the conversation is about, is what "this" means.
     """
     if not available(provider) or not messages:
         return Evidence(ok=False)
     system = GATHER_SYSTEM.format(today=clock.line()) + profile.brief.format(
         calls=profile.max_calls)
+    if view.strip():
+        system += "\n\n" + view.strip()
     picked = ((model or provider.default_model) if profile.main_model
               else provider.classifier_model or provider.default_model)
     tools = toolbox.specs(ctx, engines=profile.engines)

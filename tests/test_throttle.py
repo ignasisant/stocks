@@ -8,7 +8,8 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from stocks.web import ratelimit, server
+from stocks import ratelimit
+from stocks.web import server
 
 
 @pytest.fixture(autouse=True)

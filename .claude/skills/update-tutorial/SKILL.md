@@ -89,10 +89,14 @@ Rules that matter:
   step does. Do not ship a step that leads to a page that isn't in the nav.
 - If the capability is one of the four the Home setup card shows, wire it
   through `setup_state()` rather than computing it twice.
-- Leave `core` off. The tour started plainly walks only the `core=True` stops
-  (import, review, assistant, notify) and offers the full walk from the last
-  one; `CORE_STEPS_MAX` and a test cap that list. A new step is reached from
-  its "what's new" card, `?tour=<id>` and the full walk.
+- `core=True` is the section guide: what the tour walks when it is simply
+  started, one stop per entry of the menu (`navigation.DESTINATIONS`) plus
+  the assistant. Set it only on the stop of a **new menu section** — a test
+  fails when a section has no core stop, or two. A tab or a capability
+  inside a section leaves `core` off, sits after its section's stop in
+  `STEPS`, and is reached from its "what's new" card and `?tour=<id>`.
+- A newcomer (no book yet, or the guide still on offer) is dealt no "what's
+  new" cards at all (`onboarding.newcomer`); they get the guide instead.
 
 ## Step 3 — announce it in the release registry
 

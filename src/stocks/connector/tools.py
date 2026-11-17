@@ -37,12 +37,12 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, cache, obs
+from stocks import accounts, cache, obs, ratelimit
 from stocks.api import deps
+from stocks.config import public_origin
 from stocks.connector import store
 from stocks.portfolio.edits import EditError
 from stocks.schemas import AlertRule
-from stocks.web import ratelimit
 
 if TYPE_CHECKING:
     from stocks.accounts import UserPaths
@@ -331,8 +331,6 @@ def _thin(points: list, keep: int) -> list:
 
 
 def _origin() -> str | None:
-    from stocks.web.server import public_origin
-
     return public_origin()
 
 
@@ -1255,9 +1253,15 @@ def _edit(paths: UserPaths, ops: list[dict], plan_token: str | None,
             "This edit cannot be applied: see problems. Nothing was written."
         )
         return {"kind": "edit_plan", "applied": False, "summary": summary, **planned}
+    from stocks.portfolio import demo
+    from stocks.web import onboarding
+
+    empty_before = not demo.has_real(paths.db)
     done = edits.commit(ops, plan_token, source="mcp", summary=summary,
                         path=paths.db)
     obs.event("ledger.edited", rows=len(done.changes), via="mcp")
+    # A first row added from Claude or ChatGPT is a first book like any other.
+    onboarding.first_rows(paths, empty_before=empty_before)
     return {"kind": "edit_done", "applied": True, **_plain(change_view(done)),
             "next": f"Applied. undo_change with change_id {done.id} takes it back."}
 

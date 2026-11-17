@@ -10,6 +10,8 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from stocks.secrets_env import secret
+
 # libyaml-backed loader/dumper where the wheel ships it (it does on every
 # platform this deploys to) — the C parser is several times faster than the
 # pure-Python one on the same bytes, and every watchlist read and Profile-editor
@@ -291,3 +293,19 @@ def positions(path: Path = WATCHLIST_FILE) -> list[Holding]:
 
 def tickers(path: Path = WATCHLIST_FILE) -> list[str]:
     return [h.ticker for h in load_watchlist(path)]
+
+
+def public_origin() -> str | None:
+    """The one origin this site is meant to be reached at, if it is configured.
+
+    `[app] public_url` (or `APP_PUBLIC_URL`). Unset, every hostname the service
+    answers on is its own self-canonicalizing copy of the site — Cloud Run hands
+    out more than one by default, so this is not hypothetical. Set, it is both
+    the base for every absolute URL and the target every other hostname is
+    redirected to.
+
+    Read here and nowhere else: a link sent out of the app, a canonical URL in
+    a page head and the address the connector names itself by are the same
+    promise about where this app lives, and two readers would let them disagree.
+    """
+    return secret("APP_PUBLIC_URL", "app", "public_url").rstrip("/") or None

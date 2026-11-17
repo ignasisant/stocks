@@ -27,7 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks import accounts, i18n, navigation
+from stocks import accounts, i18n, learn, navigation
 from stocks.chat import conversations
 from stocks.web import onboarding
 
@@ -68,14 +68,23 @@ def test_home_is_the_root_path_and_a_pageless_step_says_so():
     assert onboarding.by_id("assistant").page is None
 
 
-def test_the_tour_walks_a_handful_of_stops_when_simply_started():
-    """Twenty-odd stops was a walk nobody finished. The short one starts with
-    the import everything derives from, and every stop of it ships on every
-    deploy — a core stop a deploy filters out would shorten it to nothing."""
-    core = [s.id for s in onboarding.STEPS if s.core]
-    assert 3 <= len(core) <= onboarding.CORE_STEPS_MAX
-    assert core[0] == "import"
-    assert "claude" not in core
+def test_the_guide_stops_once_at_every_section_of_the_menu():
+    """Started plainly, the tour shows a newcomer round the app: one stop per
+    entry of the menu and one for the assistant, which is a panel and not a
+    page. A section added to the menu without a stop is a place the guide
+    never mentions; two stops on one section is the long walk coming back."""
+    core = [s for s in onboarding.STEPS if s.core]
+    pages = [s.page for s in core if s.page is not None]
+    assert sorted(pages) == sorted(d.path for d in navigation.DESTINATIONS)
+    assert [s.id for s in core if s.page is None] == ["assistant"]
+    # The import everything derives from comes first.
+    assert core[0].id == "import"
+
+
+def test_every_stop_of_the_guide_ships_on_every_deploy():
+    """A stop a deploy filters out would leave the guide a section short."""
+    shown = {s.id for s in onboarding.visible_steps()}
+    assert all(s.id in shown for s in onboarding.STEPS if s.core)
 
 
 def test_releases_reference_real_steps():
@@ -583,3 +592,153 @@ def test_explore_state_is_kept_apart_from_the_setup_capabilities(account):
     assert explore == {"search", "ask", "watchlist"}
     assert setup == {"login", "import", "plan", "ai", "notify"}
     assert not explore & setup
+
+
+# ---------------------------------------------------------- first-visit tips
+
+
+@pytest.mark.parametrize("lang", sorted(i18n.LANGUAGES))
+def test_every_page_tip_has_its_lines_and_they_are_short(lang):
+    """A tip's line count is the registry's, so a missing line would draw a raw
+    key and a stray one is copy nobody reads; and each is one line of help."""
+    cat = _catalog(lang)
+    for page, tip in onboarding.TIPS.items():
+        for n in range(1, tip.lines + 1):
+            key = f"tour.tip_{page}_{n}"
+            assert key in cat, f"{lang}: {key} missing"
+            assert len(cat[key]) <= 150, f"{lang}: {key} is {len(cat[key])} chars"
+        assert f"tour.tip_{page}_{tip.lines + 1}" not in cat, f"{lang}: stray {page} line"
+    shared = {"eyebrow", "title", "lesson", "ok"}
+    stray = [
+        key
+        for key in cat
+        if key.startswith("tour.tip_")
+        and key.split("_")[1] not in onboarding.TIPS
+        and key.removeprefix("tour.tip_") not in shared
+    ]
+    assert not stray, f"{lang}: copy for a tip that is gone: {stray}"
+
+
+def test_every_page_tip_names_a_page_the_shell_serves():
+    assert set(onboarding.TIPS) <= set(navigation.SHELL_PATHS)
+
+
+@pytest.mark.parametrize("lang", learn.LANGS)
+def test_every_tip_lesson_exists_in_every_language(lang):
+    for page, tip in onboarding.TIPS.items():
+        if tip.lesson:
+            assert learn.lesson(tip.lesson, lang) is not None, f"{lang}: {page}"
+
+
+def test_the_first_book_stamps_a_newcomer_once(tmp_path):
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({"currency": "EUR"}))
+    assert onboarding.first_book(prefs) is True
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is True
+    assert stored[onboarding.PREF_TIPS] == list(onboarding.TIPS)
+    assert stored["currency"] == "EUR"
+    # Answered and read since: a later "first" import must not raise them again.
+    onboarding.tip_seen(prefs, "today")
+    accounts.update_prefs(prefs, {onboarding.PREF_OFFER: False})
+    assert onboarding.first_book(prefs) is False
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is False
+    assert "today" not in stored[onboarding.PREF_TIPS]
+
+
+def test_a_guide_answered_before_the_first_book_is_not_offered_again(tmp_path):
+    """Walked from the welcome, or skipped, while the account had no book: the
+    import that follows owes the page tips, not a second offer. And it catches
+    the account up, since nothing was announced to it while it had no book."""
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({onboarding.PREF_SEEN_VERSION: "2026.09"}))
+    onboarding.guide_answered(prefs)
+    accounts.update_prefs(prefs, {onboarding.PREF_SEEN_VERSION: "2026.09"})
+    assert onboarding.first_book(prefs) is True
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is False
+    assert stored[onboarding.PREF_TIPS] == list(onboarding.TIPS)
+    assert stored[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
+
+
+def test_a_guide_walked_to_its_end_strikes_the_tips_of_its_pages(tmp_path):
+    """The guide stood on each page and said what it is for; a tip there
+    afterwards is the same thing twice. A skip showed none of them."""
+    shown = onboarding.guided_pages()
+    assert shown & set(onboarding.TIPS), "the guide stops on no page with a tip"
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text("{}")
+    onboarding.first_book(prefs)
+    onboarding.guide_answered(prefs)
+    assert json.loads(prefs.read_text())[onboarding.PREF_TIPS] == list(onboarding.TIPS)
+    onboarding.guide_answered(prefs, finished=True)
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_TIPS] == [p for p in onboarding.TIPS if p not in shown]
+    assert stored[onboarding.PREF_OFFER] is False
+
+
+def test_a_guide_walked_before_the_first_book_owes_no_tip_for_its_pages(tmp_path):
+    """The other order: walked from the welcome, then the import. Skipped
+    there instead, every tip is owed (the test above this pair)."""
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text("{}")
+    onboarding.guide_answered(prefs, finished=True)
+    assert onboarding.PREF_TIPS not in json.loads(prefs.read_text())
+    assert onboarding.first_book(prefs) is True
+    stored = json.loads(prefs.read_text())
+    shown = onboarding.guided_pages()
+    assert stored[onboarding.PREF_TIPS] == [p for p in onboarding.TIPS if p not in shown]
+    assert stored[onboarding.PREF_OFFER] is False
+
+
+def test_answering_the_guide_leaves_nothing_owed(tmp_path):
+    prefs = tmp_path / "prefs.json"
+    prefs.write_text(json.dumps({
+        onboarding.PREF_OFFER: True, onboarding.PREF_SEEN_VERSION: "2026.09",
+    }))
+    onboarding.guide_answered(prefs)
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is False
+    assert stored[onboarding.PREF_DONE] is True
+    assert onboarding.unseen_news(stored) == ()
+
+
+# ---------------------------------------------------------------- newcomers
+OLD = {onboarding.PREF_SEEN_VERSION: "2026.09"}
+
+
+def test_an_account_with_no_book_is_dealt_no_news(tmp_path, monkeypatch):
+    """The welcome stamps an account on its first load, so by the stamp alone
+    it is a returning reader the day after: every release since then opened
+    "what's new" on someone who had not yet seen what was old."""
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: False)
+    assert onboarding.unseen_news(OLD)
+    assert onboarding.newcomer(OLD, _paths(tmp_path)) is True
+    assert onboarding.news_for(OLD, _paths(tmp_path)) == ()
+
+
+def test_an_account_still_offered_the_guide_is_dealt_no_news(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
+    prefs = {**OLD, onboarding.PREF_OFFER: True}
+    assert onboarding.news_for(prefs, _paths(tmp_path)) == ()
+
+
+@pytest.mark.parametrize("offer", [{}, {onboarding.PREF_OFFER: False}])
+def test_an_account_that_knows_the_app_is_dealt_what_shipped(
+    tmp_path, monkeypatch, offer
+):
+    """A book, and no guide on offer: never offered one (the book predates
+    it) or answered it. That is the reader "what's new" is for."""
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths: True)
+    prefs = {**OLD, **offer}
+    assert onboarding.newcomer(prefs, _paths(tmp_path)) is False
+    assert onboarding.news_for(prefs, _paths(tmp_path)) == onboarding.unseen_news(prefs)
+
+
+def test_an_account_that_was_never_stamped_owes_no_tips():
+    assert onboarding.owed_tips({}) == []
+    assert onboarding.owed_tips({onboarding.PREF_TIPS: "today"}) == []
+    assert onboarding.owed_tips({onboarding.PREF_TIPS: ["profile", "x", "today"]}) == [
+        "today", "profile",
+    ]

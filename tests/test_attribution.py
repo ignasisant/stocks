@@ -167,7 +167,7 @@ def client(monkeypatch, tmp_path) -> TestClient:
     server._app_document.cache_clear()
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
     routes = [r for r in server.routes if not isinstance(r, Mount)]
     app = Starlette(routes=routes, middleware=[Middleware(server.LandingGate)])
     # What a browser sends on every page load, so a Chrome User-Agent reads as

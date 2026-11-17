@@ -42,12 +42,12 @@ TOKEN = "s3cret-token"
 def _fresh_limiter():
     """Empty the process-wide burst limiter around every test here.
 
-    `web.ratelimit` keys an anonymous sender on its client address, and every
+    `stocks.ratelimit` keys an anonymous sender on its client address, and every
     test in this file is the same address ("unknown", there being no socket
     behind a TestClient). Without this the first file to send three
     submissions would 429 the rest of the suite, in test order.
     """
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     ratelimit._events.clear()
     yield

@@ -36,12 +36,12 @@ import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useT } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { Status } from "../ui/Status";
 import type { ImportRow, Preview } from "./types";
 import { calendarDay } from "../shell/dates";
 import { useDialog } from "../shell/useDialog";
-import { usePhone } from "./phone";
+import { usePhone } from "../shell/phone";
 import { borrowWidth } from "./width";
 
 /** Money and share counts, in the reader's own locale. */
@@ -89,8 +89,7 @@ function useVerb() {
   const t = useT();
   return (action: string) => {
     const key = `import.action_${action}`;
-    const label = t(key);
-    return label === key ? action : label;
+    return t.has(key) ? t(key) : action;
   };
 }
 

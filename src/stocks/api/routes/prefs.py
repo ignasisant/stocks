@@ -30,6 +30,7 @@ from stocks.config import CURRENCIES
 from stocks.notify.schedule import JOBS, PREFS_KEY, slots, valid_zone
 from stocks.portfolio import tax
 from stocks.schemas import HomeSlot, Prefs, ScheduleSlot
+from stocks.web import onboarding
 
 router = APIRouter(tags=["prefs"])
 
@@ -195,6 +196,8 @@ def _view(stored: dict) -> Prefs:
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
         profile_prompt_off=bool(stored.get("profile_prompt_off", False)),
         rate_prompt_done=bool(stored.get("rate_prompt_done", False)),
+        tour_offer=bool(stored.get(onboarding.PREF_OFFER, False)),
+        page_tips=onboarding.owed_tips(stored),
         notify_alerts=bool(stored.get("notify_alerts")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
         home_layout=_layout(stored.get("home_layout")),

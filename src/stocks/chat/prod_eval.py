@@ -155,6 +155,9 @@ class Question:
     # next.
     before: tuple[str, ...] = ()
     recall: bool = False
+    # Asked first on the question's own thread: a follow-up ("this one")
+    # whose subject only the turns above it name.
+    follows: tuple[str, ...] = ()
     # The picture pasted with the question, as the lines drawn in it; a line
     # with `|` in it is a table row. Read by the app before the question goes.
     shot: tuple[str, ...] = ()
@@ -219,6 +222,7 @@ def load(path: Path = CATALOG) -> list[Question]:
                 refs=tuple(str(r) for r in row.get("refs") or ()),
                 before=tuple(str(m) for m in row.get("before") or ()),
                 recall=bool(row.get("recall")),
+                follows=tuple(str(m) for m in row.get("follows") or ()),
                 shot=tuple(str(line) for line in row.get("shot") or ()),
             )
         )

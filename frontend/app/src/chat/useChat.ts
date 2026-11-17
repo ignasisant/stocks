@@ -51,6 +51,7 @@ import {
   type GuideState,
 } from "./guide";
 import { useLanded } from "./landed";
+import { openOrBack, type Opened } from "./opening";
 import { nameOf, reportUnreadable } from "../pages/import/api";
 import type { A2uiAction } from "./a2ui";
 import type {
@@ -1028,16 +1029,25 @@ export function useChat(live: boolean) {
   }, []);
 
   const open = useCallback(
-    async (cid: string) => {
+    async (cid: string): Promise<Opened> => {
       // Already on it, and an answer is being written into it: stay.
-      if (cid === activeRef.current && flight.current) return;
+      if (cid === activeRef.current && flight.current) return "opened";
+      const before = activeRef.current;
       detach();
-      setActiveId(cid);
-      setTurns([]);
       setOpening(true);
       try {
-        await editThread(cid, { active: true });
-        show(await readThread(cid));
+        // One this account does not hold (`chat/opening`) leaves the reader
+        // on the thread they were on, and the panel says why.
+        const opened = await openOrBack(cid, before, {
+          activate: (id) => editThread(id, { active: true }),
+          read: readThread,
+          select: (id) => {
+            setActiveId(id);
+            setTurns([]);
+          },
+          show,
+        });
+        if (opened !== "opened") return opened;
         // A daily card's thread is not listed until somebody opens it — Home's
         // "Ask" just did — so one the list does not know is read back from the
         // server, where it is the active thread now. The header names it.
@@ -1049,6 +1059,7 @@ export function useChat(live: boolean) {
         } else {
           setThreads(await readThreads());
         }
+        return "opened";
       } finally {
         setOpening(false);
       }

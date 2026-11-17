@@ -105,7 +105,7 @@ export function topFrame(stack: string): string {
 }
 
 /** The screen, named as feedback names it: `ticker?symbol=AAPL&tab=fees`. */
-function where(): string {
+export function where(): string {
   const { pathname, search } = window.location;
   return `${pathname.replace(/^\/+/, "") || "home"}${search}`.slice(0, 120);
 }

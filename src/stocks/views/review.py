@@ -34,7 +34,7 @@ from typing import TypedDict, cast
 
 import pandas as pd
 
-from stocks import accounts, loaders, obs
+from stocks import accounts, cpu_hold, loaders, obs
 from stocks.analysis import review as engine
 from stocks.analysis.compare import (
     TRAIL_STEPS,
@@ -46,7 +46,6 @@ from stocks.analysis.compare import (
 )
 from stocks.analysis.portfolio import risk_shares, value_weights
 from stocks.analysis.sentiment import SECTOR_ETFS
-from stocks.api import holds
 from stocks.cache import carried
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
@@ -191,7 +190,7 @@ def _gather(
     done, late = wait(futures, timeout=GATHER_BUDGET_S)
     # The late pulls finish under a CPU hold: between requests they crawl, and
     # the row they fill would read unrated for the next reader too.
-    holds.keep_until(late)
+    cpu_hold.keep_until(late)
     return {futures[f]: f.result() for f in done}, {futures[f] for f in late}
 
 
@@ -398,17 +397,23 @@ def _user() -> str:
 
 
 def _invariants(
-    held: list[ReviewRow], outside: list[ReviewRow], *, replayed: bool
+    held: list[ReviewRow],
+    outside: list[ReviewRow],
+    *,
+    replayed: bool,
+    priced: float = 1.0,
 ) -> list[str]:
     """Plans that cannot be right, each said once per account and window as
-    `review.invariant`: the weights do not add up, a target falls outside
+    `review.invariant`: the weights do not add up to `priced` (the book's
+    share at market value: an unpriced row weighs nothing and stands in the
+    total at its cost, `value_weights`), a target falls outside
     the book, a move goes against its verdict, or a sale went out without
     its tax. Targets may sum past 1: adds are sized on today's total and
     the plan's net buys are new money. Returns the kinds found, for the
     read's own line."""
     found: dict[str, dict] = {}
     current = [r.weight for r in held if r.weight is not None]
-    if current and abs(sum(current) - 1.0) > 0.005:
+    if current and abs(sum(current) - priced) > 0.005:
         found["weights_off"] = {"total": round(sum(current), 4)}
     rows = held + outside
     wild = [
@@ -521,7 +526,7 @@ def returns(account, ccy: str, names: str) -> ReviewReturns:
     }
     asked_for = [*closes.values(), quoted, *kpis.values(), *filings.values()]
     wait(asked_for, timeout=GATHER_BUDGET_S)
-    holds.keep_until(asked_for)
+    cpu_hold.keep_until(asked_for)
     currencies = quoted.result() if quoted.done() and not quoted.exception() else {}
     landed = {name: future.result() for name, future in closes.items() if future.done()}
     pending = {name for name in every if name not in landed}
@@ -841,10 +846,10 @@ def judge(
     weights = value_weights(table) if not table.empty else {}
     # The denominator `value_weights` divides by — priced rows at value, the
     # rest at cost — so a weight times this is the money it stands for.
-    total = 0.0
+    total = at_value = 0.0
     if not table.empty:
         priced = table["value"].notna()
-        total = float(table.loc[priced, "value"].sum())
+        total = at_value = float(table.loc[priced, "value"].sum())
         if "cost" in table:
             total += float(table.loc[~priced, "cost"].sum())
     book = _NOT_REPLAYED
@@ -1165,7 +1170,10 @@ def judge(
     scored = [m for r in shown if (m := metrics_of[r.symbol]) is not None]
     blank_added = [a for a in added if causes.get(_symbol(a)) == "no_metrics"]
     invariants = _invariants(
-        held_rows, outside_rows, replayed=book not in (None, _NOT_REPLAYED)
+        held_rows,
+        outside_rows,
+        replayed=book not in (None, _NOT_REPLAYED),
+        priced=at_value / total if total > 0 else 1.0,
     )
     _audit_names(shown, facts)
     verdicts = dict(Counter(r.verdict for r in shown))

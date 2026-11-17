@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from stocks.api.deps import Account, Writer
+from stocks.config import public_origin
 from stocks.notify import webpush
 
 router = APIRouter(prefix="/push", tags=["notify"])
@@ -82,8 +83,6 @@ class Presence(BaseModel):
 
 def _subject(request: Request) -> str:
     """Who sends: the VAPID `sub`, an https origin push services can reach."""
-    from stocks.web.server import public_origin
-
     origin = public_origin() or request.headers.get("origin", "")
     return origin if origin.startswith("https://") else "mailto:push@topstocks.invalid"
 
@@ -132,6 +131,22 @@ def subscribe(body: Subscription, paths: Writer, request: Request) -> Push:
 @router.post("/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)
 def unsubscribe(body: Endpoint, paths: Writer) -> None:
     webpush.unsubscribe(paths.push, body.endpoint)
+
+
+@router.post("/claim", status_code=status.HTTP_204_NO_CONTENT)
+def claim(body: Endpoint, paths: Writer) -> None:
+    """This device is signed in to this account: the app says so each time it
+    opens. A browser has one subscription whoever is signed in, so without
+    this the account that subscribed it last month keeps notifying a phone
+    that now opens somebody else's book."""
+    webpush.claim(paths.push, body.endpoint)
+
+
+@router.post("/release", status_code=status.HTTP_204_NO_CONTENT)
+def release(body: Endpoint, paths: Writer) -> None:
+    """This account is signing out on this device: nothing more is sent to it
+    until an account signs in there."""
+    webpush.release(paths.push, body.endpoint)
 
 
 @router.post("/test", status_code=status.HTTP_204_NO_CONTENT)

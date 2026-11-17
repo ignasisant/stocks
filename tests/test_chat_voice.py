@@ -47,16 +47,22 @@ class _Resp:
 _HEARD = _Resp()
 
 
-def _fake_openai(monkeypatch, *, resp=_HEARD, boom: Exception | None = None):
-    """Stand in for the groq endpoint; returns what the call was made with."""
+def _fake_openai(monkeypatch, *, resp=_HEARD, boom: Exception | None = None,
+                 then=None):
+    """Stand in for the groq endpoint; returns what the call was made with.
+
+    `seen` holds the last call's arguments, `seen["calls"]` every call's.
+    `then` is what a second call answers, for a clip asked again.
+    """
     seen: dict = {}
 
     class _Transcriptions:
         def create(self, **kw):
             seen.update(kw)
+            seen.setdefault("calls", []).append(kw)
             if boom is not None:
                 raise boom
-            return resp
+            return resp if len(seen["calls"]) == 1 or then is None else then
 
     class _Audio:
         transcriptions = _Transcriptions()
@@ -91,11 +97,47 @@ def test_clip_seconds_reads_a_wav_and_shrugs_at_anything_else():
 def test_the_spoken_text_is_what_comes_back(keyed, monkeypatch):
     seen = _fake_openai(monkeypatch)
     assert stt.transcribe(_wav(), language="es") == "cuánto peso tengo en NVDA"
-    # The locale rides along as Whisper's language hint, and the clip goes to
-    # groq's endpoint rather than to OpenAI's default base_url.
-    assert seen["language"] == "es"
+    # The clip goes to groq's endpoint rather than to OpenAI's default
+    # base_url, and Whisper is left to hear the language itself.
     assert seen["init"]["base_url"] == stt._BASE_URL
     assert seen["model"] == stt._DEFAULT_MODEL
+    assert len(seen["calls"]) == 1
+    assert "language" not in seen or seen["language"] is not None
+
+
+class _Heard:
+    def __init__(self, text: str, language: str) -> None:
+        self.text = text
+        self.language = language
+
+
+def test_spanish_spoken_to_an_english_app_stays_spanish(keyed, monkeypatch):
+    """The prod report: the app in English, the question asked in Spanish,
+    and Whisper — forced to "en" — handed back an English translation."""
+    from openai import omit
+
+    seen = _fake_openai(monkeypatch, resp=_Heard("cuánto peso tengo", "spanish"))
+    assert stt.transcribe(_wav(), language="en") == "cuánto peso tengo"
+    (call,) = seen["calls"]
+    assert call["language"] is omit
+    assert call["response_format"] == "verbose_json"
+
+
+def test_a_language_the_app_does_not_speak_is_asked_again_in_the_locale(
+        keyed, monkeypatch):
+    """A short clip of Spanish taken for Portuguese: asked again, forced to
+    the reader's locale (its region dropped — Whisper takes a bare code)."""
+    seen = _fake_openai(monkeypatch, resp=_Heard("quanto peso", "portuguese"),
+                        then=_Resp())
+    assert stt.transcribe(_wav(), language="es-ES") == "cuánto peso tengo en NVDA"
+    first, second = seen["calls"]
+    assert second["language"] == "es"
+
+
+def test_without_a_locale_what_whisper_heard_stands(keyed, monkeypatch):
+    seen = _fake_openai(monkeypatch, resp=_Heard("quanto peso", "portuguese"))
+    assert stt.transcribe(_wav()) == "quanto peso"
+    assert len(seen["calls"]) == 1
 
 
 def test_a_backend_that_answers_with_a_bare_string_is_accepted(keyed, monkeypatch):

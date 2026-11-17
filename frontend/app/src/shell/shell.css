@@ -133,10 +133,16 @@
   padding: 8px 12px;
   border: 1px solid var(--ag-border);
   border-left: 3px solid var(--ag-brand-accent);
-  border-radius: var(--ag-radius-xs, 4px);
+  border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-card);
   color: var(--ag-text-secondary);
   font-size: var(--ag-fs-sm);
+}
+
+@media (pointer: fine) {
+  .ag-tour-strip :is(.ag-tour-btn, .ag-tour-quiet) {
+    min-height: 36px;
+  }
 }
 
 .ag-tour-strip-text {
@@ -152,14 +158,207 @@
 /* Why the step's button is disabled — a guest on a step that reads somebody's
    own data. */
 .ag-tour-note {
-  margin: -8px 0 14px;
+  margin: 0;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-sm);
 }
 
-.ag-tour-cta:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+/* The section guide's card (`Tour`'s `Coach`): one stop, said from the corner
+   of the section it is about. Not a dialog — no scrim, and the page under it
+   works — so it sits at the foot of the page column, clear of the rail, and
+   under anything the reader opens over the page: the search panel aside, the
+   rail's peek (50) and the assistant (70) both cover it. */
+.ag-coach {
+  position: fixed;
+  z-index: 45;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: calc(var(--rail, 15rem) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Narrower rather than under the assistant's launcher, which holds the
+     opposite corner (48px, 20px in, and a gap). */
+  width: min(380px, calc(100vw - var(--rail, 15rem) - 108px));
+  box-sizing: border-box;
+  padding: 10px 14px 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  color: var(--ag-text-primary);
+}
+
+/* The page's last rows scroll clear of it (`--coach` is the card's measured
+   height). */
+:root[data-guide] .ag-main {
+  padding-bottom: calc(var(--coach, 12rem) + 2.75rem);
+}
+
+/* The assistant drawn over the page rather than beside it covers the card's
+   corner too; the card comes back with the page. */
+:root[data-chat="overlay"] .ag-coach {
+  visibility: hidden;
+}
+
+.ag-coach-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ag-coach-step {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* In a card this small the close mark is a glyph, not a second boxed button
+   beside the heading; it keeps the 36px (44px coarse) square to press. */
+.ag-coach-x {
+  margin: -4px -8px -4px 0;
+  border-color: transparent;
+  background: none;
+}
+
+/* How far along, as a rule under the head: twelve stops are easier to pace as
+   a length than as a count. */
+.ag-coach-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-coach-bar::after {
+  position: absolute;
+  inset: 0;
+  background: var(--ag-brand-accent);
+  content: "";
+  transform: scaleX(var(--coach-done, 0));
+  transform-origin: left;
+  transition: transform var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-coach-stop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ag-coach-h {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+}
+
+.ag-coach-h > .ag-icon {
+  color: var(--ag-brand-accent);
+}
+
+.ag-coach-badge {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  align-self: center;
+}
+
+.ag-coach-body,
+.ag-coach-note {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.45;
+}
+
+.ag-coach-note {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-coach-way {
+  display: flex;
+}
+
+/* Offered where the panel would cover the card; once it is open there is
+   nothing left to offer. */
+:root[data-chat] .ag-coach-open {
+  display: none;
+}
+
+.ag-coach-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.ag-coach-skip {
+  margin-left: -6px;
+  color: var(--ag-text-secondary);
+}
+
+.ag-coach-moves {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+@media (pointer: fine) {
+  .ag-coach :is(.ag-tour-btn, .ag-tour-cta, .ag-tour-quiet) {
+    min-height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ag-coach {
+    animation: ag-coach-in var(--ag-dur-move) var(--ag-ease-out);
+  }
+}
+
+@keyframes ag-coach-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-coach-bar::after {
+    transition: none;
+  }
+}
+
+/* The stop's entry in the menu, ringed: where the section lives, as well as
+   what it does. Inset, so the ring is not clipped by the rail's edge or the
+   phone bar's. */
+.ag-nav-guide {
+  box-shadow: inset 0 0 0 2px var(--ag-brand-accent);
+  color: var(--ag-text-primary);
+}
+
+.ag-nav-guide .ag-icon {
+  color: var(--ag-brand-accent);
+}
+
+/* Phones: the card spans the screen above the tab bar. */
+@media (max-width: 640px) {
+  .ag-coach {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(var(--dock, 0px) + 12px);
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+  }
+
+  :root[data-guide] .ag-main {
+    padding-bottom: calc(var(--dock) + var(--coach, 12rem) + 2rem);
+  }
 }
 
 /* The investor-profile nudge borrows the tour's dialog; these are the rows. */
@@ -167,7 +366,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: 12px 0 0;
+  margin: 0;
+}
+
+.ag-pp-field > .ag-seg {
+  align-self: flex-start;
 }
 
 .ag-pp-label {
@@ -178,20 +381,15 @@
   font-size: var(--ag-fs-sm);
 }
 
-.ag-pp .ag-tour-foot {
-  margin-top: 16px;
-}
-
 /* Feedback: the row of optional extras under the text box, and the preview. */
 .ag-fb-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
 }
 
 .ag-fb-hint {
-  margin: 6px 0 0;
+  margin: 0;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
 }
@@ -474,7 +672,7 @@
 .ag-rate-stars {
   display: flex;
   gap: 4px;
-  margin: 16px 0 4px;
+  margin: 0;
 }
 
 .ag-rate-star {
@@ -506,10 +704,103 @@
   stroke-linejoin: round;
 }
 
-.ag-rate-text {
-  margin-top: 12px;
+/* A page's first-visit tip (`PageTip`): the accent band the Home offer wears,
+   above the page, gone for good once read. Lands with the welcome's lift;
+   reduced motion keeps only the fade. */
+.ag-visit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--ag-purple-800);
+  border-radius: var(--ag-radius-lg, 16px);
+  background: var(--ag-accent-band);
+  animation: ag-visit-in var(--ag-dur-move) var(--ag-ease-out);
 }
 
-.ag-rate .ag-tour-foot {
-  margin-top: 16px;
+.ag-visit-eyebrow {
+  color: var(--ag-brand-accent);
+  font: 500 var(--ag-fs-2xs) / 1.3 var(--ag-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ag-visit-h {
+  margin: -6px 0 0;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.ag-visit-lines {
+  display: grid;
+  gap: 4px;
+  max-width: 70ch;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.5;
+}
+
+.ag-visit-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.ag-visit-lesson {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  text-wrap: pretty;
+}
+
+.ag-visit-lesson:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+  border-radius: var(--ag-radius-xs, 4px);
+}
+
+@media (hover: hover) {
+  .ag-visit-lesson:hover {
+    text-decoration: underline;
+  }
+}
+
+/* The one action trails the row, as on the tour's dialogs. */
+.ag-visit-ok {
+  margin-left: auto;
+}
+
+@media (pointer: coarse) {
+  .ag-visit-lesson {
+    min-height: 44px;
+  }
+}
+
+@keyframes ag-visit-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-visit {
+    animation-name: ag-visit-fade;
+  }
+
+  @keyframes ag-visit-fade {
+    from {
+      opacity: 0;
+    }
+  }
 }

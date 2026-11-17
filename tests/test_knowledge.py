@@ -172,7 +172,9 @@ GOLDEN = [
                                                    "tour:projection"}),
     ("how do I turn on notifications", {"tour:notify"}),
     ("¿cómo activo las notificaciones?", {"tour:notify"}),
-    ("how does the daily briefing work", {"tour:daily"}),
+    # The tour's `daily` stop is Home, the page; the card's own description is
+    # the "daily briefing" section of the features document.
+    ("how does the daily briefing work", {"tour:daily", "app-features"}),
     ("can I use my own OpenAI key in the chat", {"tour:assistant"}),
     ("cómo se calcula la TIR", {"returns-and-risk"}),
     ("why does the review page say trim", {"review-scoring"}),
@@ -183,6 +185,10 @@ GOLDEN = [
     ("how does my portfolio react to this regime", {"pulse-risk-appetite"}),
     ("how are sector peers chosen", {"sector-screen"}),
     ("¿cómo se elige la cohorte del sector?", {"sector-screen"}),
+    # Rated down 2026-11-10: the chat searched the web for investing tips.
+    ("como sacar el maximo rendimiento de top stocks", {"getting-the-most"}),
+    ("how do I get the most out of TopStocks?", {"getting-the-most"}),
+    ("¿qué me falta configurar en la app?", {"getting-the-most"}),
 ]
 
 

@@ -10,7 +10,16 @@
 import { describe, expect, it } from "vitest";
 
 import { asking, firstLoad, walk } from "./Tour";
-import { after, clamp, readPark, writePark, type Place } from "./tourPark";
+import {
+  after,
+  clamp,
+  guideStop,
+  onGuideStop,
+  readPark,
+  setGuideStop,
+  writePark,
+  type Place,
+} from "./tourPark";
 import { browserLang, pinnedLang } from "./i18n";
 import { bannerDismissed, dismissBanner } from "./guest";
 
@@ -56,8 +65,21 @@ describe("after", () => {
     expect(after(news, "news_done")).toEqual({ place: null, stamp: {} });
   });
 
-  it("retires the tour only when it is finished or ended", () => {
-    expect(after(tour, "finish")).toEqual({ place: null, stamp: { done: true } });
+  it("answers the guide when it is finished or skipped, not when it is put away", () => {
+    // `walked` is what withdraws Home's offer and stamps the release, so a
+    // guide left in its strip is still on offer the next day.
+    expect(after(tour, "finish")).toEqual({ place: null, stamp: { walked: true } });
+    expect(after(tour, "dismiss").stamp).toBeNull();
+  });
+
+  it("says so when the guide was walked to its last stop, never on a skip", () => {
+    // `finished` strikes the tips of the pages the guide stood on. A skip
+    // showed the reader none of them, so it must not carry it.
+    expect(after(tour, "complete")).toEqual({
+      place: null,
+      stamp: { walked: true, finished: true },
+    });
+    expect(after(tour, "finish").stamp).not.toHaveProperty("finished");
   });
 });
 
@@ -96,7 +118,7 @@ describe("the two lengths of the walkthrough", () => {
       place: { ...full, open: false },
       stamp: null,
     });
-    expect(after(full, "finish")).toEqual({ place: null, stamp: { done: true } });
+    expect(after(full, "finish")).toEqual({ place: null, stamp: { walked: true } });
     const store = memory();
     writePark({ mode: "all", at: 2 }, store);
     expect(readPark(store)).toEqual({ mode: "all", at: 2 });
@@ -233,5 +255,23 @@ describe("browserLang", () => {
     expect(browserLang(["en-GB", "es"])).toBe("en");
     expect(browserLang(["fr-FR", "de"])).toBe("en");
     expect(browserLang([])).toBe("en");
+  });
+});
+
+describe("the guide's stop, as the menu reads it", () => {
+  it("tells the menu once per move, and not for a stop it already has", () => {
+    let told = 0;
+    const off = onGuideStop(() => (told += 1));
+    setGuideStop("portfolio");
+    setGuideStop("portfolio");
+    expect(guideStop()).toBe("portfolio");
+    expect(told).toBe(1);
+    setGuideStop(null);
+    expect(guideStop()).toBeNull();
+    expect(told).toBe(2);
+    off();
+    setGuideStop("today");
+    expect(told).toBe(2);
+    setGuideStop(null);
   });
 });

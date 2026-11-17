@@ -35,7 +35,7 @@ def client(monkeypatch):
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
     server._landing_csp.cache_clear()
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
     app = Starlette(
         routes=server.routes,
         middleware=[Middleware(server.SecurityHeaders), Middleware(server.LandingGate)],

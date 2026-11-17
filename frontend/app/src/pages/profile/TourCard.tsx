@@ -11,12 +11,14 @@
  * the deep link a shared URL carries — so starting it is writing that
  * parameter and letting the shell notice.
  *
- * Under the button, how much of the app is switched on: the capabilities
- * `onboarding.setup_state` counts (the Home setup card's list), as a bar and a
- * "2/4", off the `/onboarding` read. A failed read draws no bar rather than a
- * wrong one.
+ * Under the button, how much of the app is switched on: every capability
+ * `onboarding.setup_state` reports, optional ones included, as a bar and a
+ * "2/5 features on", off the `/onboarding` read. Home's start card counts
+ * only the steps an account needs and words it "steps". A failed read draws
+ * no bar rather than a wrong one.
  */
 
+import { useSessionKeyHeld, withSessionKey } from "../../chat/sessionKey";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
@@ -37,8 +39,11 @@ export function TourCard() {
   const t = useT();
   const { setParams } = useRoute();
   const onboarding = useApi(() => get<Setup>("/onboarding"), []);
+  const held = useSessionKeyHeld();
   const counted =
-    onboarding.state === "loaded" ? progress(onboarding.data.setup) : null;
+    onboarding.state === "loaded"
+      ? progress(withSessionKey(onboarding.data.setup, held))
+      : null;
 
   const start = () => {
     // Not a navigation: the tour is a modal over this page, and the back

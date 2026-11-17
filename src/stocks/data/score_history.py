@@ -31,7 +31,7 @@ DIR = DATA_DIR / "scores"
 #: this layer cannot import; `tests/test_kpis.py` holds the two together): a
 #: point recorded under another formula would draw a move the business never
 #: made.
-NAME = "history-3.2.json"
+NAME = "history-4.3.json"
 
 DAILY_DAYS = 45
 KEEP_DAYS = 800

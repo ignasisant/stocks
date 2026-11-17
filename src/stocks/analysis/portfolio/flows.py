@@ -261,6 +261,57 @@ def plausible_closes(
     return out
 
 
+@dataclass(frozen=True)
+class Mismatch:
+    """A name `plausible_closes` drops, shown by its latest fill.
+
+    `price` is the fill as booked, `close` what the series printed on or
+    before that day, both in `currency`.
+    """
+
+    ticker: str
+    date: str
+    price: float
+    currency: str
+    close: float
+
+
+def mismatches(
+    closes: dict[str, pd.Series],
+    transactions,
+    units: dict[str, tuple[str, float]] | None = None,
+) -> list[Mismatch]:
+    """The names `plausible_closes` would drop, each with the fill that says so.
+
+    So the book checkup can tell the reader why a position reads at cost:
+    the price they booked, or the ticker it is priced under, is not the
+    instrument's.
+    """
+    ccy_of = {t.ticker: t.currency for t in transactions if t.action in ("buy", "sell")}
+    if units is None:
+        units = price_units(list(closes), ccy_of)
+    out: list[Mismatch] = []
+    for ticker, s in sorted(closes.items()):
+        ccy, scale = units.get(ticker) or (ccy_of.get(ticker) or "", 1.0)
+        ccy = ccy.upper()
+        px = s.copy()
+        px.index = naive_dates(px.index)
+        px = (px * scale).dropna()
+        fills = _fill_ratios(px, ticker, ccy, transactions)
+        if _plausible_ratio([off for _, off in fills]):
+            continue
+        last = max(
+            (t for t in transactions
+             if t.ticker == ticker and t.action in ("buy", "sell")
+             and t.currency.upper() == ccy and t.price > 0
+             and not px[px.index <= pd.Timestamp(t.date)].empty),
+            key=lambda t: t.date,
+        )
+        near = px[px.index <= pd.Timestamp(last.date)]
+        out.append(Mismatch(ticker, last.date, last.price, ccy, float(near.iloc[-1])))
+    return out
+
+
 def _audit_fills(px: pd.Series, ticker: str, fills, transactions) -> None:
     """Say what a kept series' fills contradict: their unit, their calendar.
 

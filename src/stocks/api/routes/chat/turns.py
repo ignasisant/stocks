@@ -12,9 +12,8 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from stocks import navigation, obs
+from stocks import cpu_hold, navigation, obs
 from stocks.accounts import UserPaths
-from stocks.api import holds as cpu_hold
 from stocks.api import runs
 from stocks.api.deps import Account, ChatTurn, Writer
 from stocks.api.routes.chat.events import _events, _frame, _settled
@@ -527,7 +526,7 @@ def _launch(paths: UserPaths, request: Request, *, rid: str, thread: str,
         if point is not None and resumed is None:
             point.close()
         raise
-    if runs.on_cloud_run():
+    if cpu_hold.on_cloud_run():
         url = str(request.url_for("hold", rid=run.id))
         runs.hold(run, cpu_hold.pinned(url))
     return run
