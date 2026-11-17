@@ -588,21 +588,21 @@ def _overlay_live(
     return closes
 
 
-_clear_adjusted = held_closes.cache_clear  # ty: ignore[unresolved-attribute]
+_clear_adjusted = held_closes.cache_clear  # ty: ignore[missing-attribute]
 
 
 def _clear_held(expire: bool = True) -> None:
     """Drop the download and both readings of it together — a refresh that
     cleared one would have the other re-derived from the frames it kept."""
-    _held_frames.cache_clear(expire)  # ty: ignore[unresolved-attribute]
-    _held_at.cache_clear(expire)  # ty: ignore[unresolved-attribute]
+    _held_frames.cache_clear(expire)  # ty: ignore[missing-attribute]
+    _held_at.cache_clear(expire)  # ty: ignore[missing-attribute]
     with _readings_lock:
         _READINGS.clear()
     _clear_adjusted(expire)
-    held_printed_closes.cache_clear(expire)  # ty: ignore[unresolved-attribute]
+    held_printed_closes.cache_clear(expire)  # ty: ignore[missing-attribute]
 
 
-held_closes.cache_clear = _clear_held  # ty: ignore[unresolved-attribute]
+held_closes.cache_clear = _clear_held  # ty: ignore[missing-attribute]
 
 
 def _on_download(fn):
@@ -646,7 +646,7 @@ def _on_download(fn):
         )
 
     clearable: object = wrapper
-    clearable.cache_clear = store.clear  # ty: ignore[unresolved-attribute]
+    clearable.cache_clear = store.clear  # ty: ignore[missing-attribute]
     return wrapper
 
 

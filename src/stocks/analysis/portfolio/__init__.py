@@ -435,7 +435,10 @@ def first_owned(transactions) -> dict[str, pd.Timestamp]:
     for tx in transfers.relabel(list(transactions)):
         if tx.action != "buy":
             continue
-        date = pd.Timestamp(tx.date).normalize()  # ty: ignore[unresolved-attribute]
+        stamp = pd.Timestamp(tx.date)
+        if not isinstance(stamp, pd.Timestamp):  # NaT: a buy with no date
+            continue
+        date = stamp.normalize()
         earliest = since.get(tx.ticker)
         if earliest is None or date < earliest:
             since[tx.ticker] = date

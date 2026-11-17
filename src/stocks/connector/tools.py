@@ -1884,7 +1884,7 @@ class Spec:
 
     @property
     def name(self) -> str:
-        return self.fn.__name__  # ty: ignore[unresolved-attribute]
+        return self.fn.__name__  # ty: ignore[missing-attribute]
 
     def kwargs(self) -> dict[str, Any]:
         if not self.write:

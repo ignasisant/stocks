@@ -61,7 +61,7 @@ def _ledger_state(db: str, mtime: float, base: str, matching: str) -> LedgerStat
     return LedgerState(txs, positions, realized)
 
 
-ledger_state.cache_clear = _ledger_state.cache_clear  # ty: ignore[unresolved-attribute]
+ledger_state.cache_clear = _ledger_state.cache_clear  # ty: ignore[missing-attribute]
 
 
 # How long the book's last prices answer at once while the next download runs
