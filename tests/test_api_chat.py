@@ -1034,7 +1034,7 @@ def test_a_reading_spends_a_model_call_so_a_token_may_not(client, account):
 def test_a_screenshot_does_not_eat_the_turn_it_is_asked_with(
     client, account, signed_in, seeing
 ):
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     for _ in range(ratelimit.CHAT_MAX_TURNS):
         ratelimit.allow(f"chat::{account.root}")
@@ -1047,8 +1047,8 @@ def test_an_account_s_readings_in_a_day_are_bounded(
 ):
     """The burst budget bounds a loop; this one bounds the bill, own key or
     not — the keyless chain's vision quota is one pot for every account."""
+    from stocks import ratelimit
     from stocks.api.routes import chat_screenshot
-    from stocks.web import ratelimit
 
     seen = seeing()
     day = f"screenshot-day::{account.root}"
@@ -1164,8 +1164,8 @@ def test_a_token_has_no_composer_to_report_from(client, account):
 
 
 def test_a_flood_of_paste_events_is_dropped_quietly(client, signed_in, caplog):
+    from stocks import ratelimit
     from stocks.api.routes import chat_screenshot
-    from stocks.web import ratelimit
 
     # The limiter is the process's: what the tests above reported counts too.
     for key in [k for k in ratelimit._events if k.startswith("shot-event::")]:
@@ -1566,7 +1566,7 @@ def test_a_burst_of_turns_hits_the_same_wall_the_composer_does(
 ):
     """Keyed by account, not by window, so a reader with two windows open gets
     one budget and not two."""
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     served()
     key = f"chat::{account.root}"
@@ -1581,7 +1581,7 @@ def test_a_burst_of_turns_hits_the_same_wall_the_composer_does(
 def test_an_attachment_spends_the_same_budget_as_a_typed_turn(
     client, account, signed_in
 ):
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     key = f"chat::{account.root}"
     for _ in range(ratelimit.CHAT_MAX_TURNS):
@@ -1598,7 +1598,7 @@ def test_a_voice_note_does_not_eat_the_turn_it_becomes(
 ):
     """A spoken question is a note *and* a message. Counting both against one
     budget would halve the allowance of everyone who talks to it."""
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     for _ in range(ratelimit.CHAT_MAX_TURNS):
         ratelimit.allow(f"chat::{account.root}")

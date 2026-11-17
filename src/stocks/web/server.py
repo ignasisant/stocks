@@ -68,12 +68,12 @@ from starlette.responses import (
 )
 from starlette.routing import Mount, Route
 
-from stocks import api, navigation, obs, session
+from stocks import api, navigation, obs, ratelimit, session
 from stocks.api import security as api_security
+from stocks.config import public_origin
 from stocks.connector import oauth as connector_oauth
 from stocks.connector.server import door as connector_door
 from stocks.i18n import LANGUAGES
-from stocks.secrets_env import secret
 from stocks.web import (
     attribution,
     csp,
@@ -83,7 +83,6 @@ from stocks.web import (
     legal,
     oidc,
     precompress,
-    ratelimit,
     seo,
     unsubscribe,
     upstream,
@@ -198,19 +197,6 @@ def _is_marketing_path(path: str) -> bool:
     treated as such — which is what marks the browser as a returning visitor.
     """
     return any(path.startswith(p) for p in _MARKETING_PREFIXES)
-
-
-def public_origin() -> str | None:
-    """The one origin this site is meant to be reached at, if it is configured.
-
-    `[app] public_url` (or `APP_PUBLIC_URL`). Unset, every hostname the service
-    answers on is its own self-canonicalizing copy of the site — Cloud Run hands
-    out more than one by default, so this is not hypothetical. Set, it is both
-    the base for every absolute URL and the target every other hostname is
-    redirected to.
-    """
-    override = secret("APP_PUBLIC_URL", "app", "public_url")
-    return override.rstrip("/") if override else None
 
 
 def connector_open() -> bool:
@@ -510,7 +496,7 @@ def _bucket(path: str) -> tuple[str, int]:
     return "http", CLIENT_MAX_DOCS
 
 
-# Both moved to `web/ratelimit.py`, beside the limiter they key, because the
+# Both moved to `stocks/ratelimit.py`, beside the limiter they key, because the
 # API needs the same answer for `POST /v1/feedback` from a guest and cannot
 # import this module — it is the one that mounts the API. Re-exported under the
 # names they have always had here: this is where a reader looks for them, and
@@ -534,7 +520,7 @@ class ClientThrottle(BaseHTTPMiddleware):
 
     The service runs at --max-instances 1, so one container answers everyone:
     a script hammering `/` does not just cost egress, it takes the app away
-    from real users. The app's own limiter (web/ratelimit.py) only starts
+    from real users. The app's own limiter (stocks/ratelimit.py) only starts
     after a Google sign-in, which leaves everything before the login unmetered
     — this is that half.
 

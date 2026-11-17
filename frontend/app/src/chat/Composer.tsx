@@ -37,9 +37,12 @@
  * question rather than in place of it: a screenshot of a broker's screen, a
  * chart, a table somebody posted. It is read into words on the way in
  * (`shots.ts`) — the chat is text from end to end — and waits above the field
- * as a thumbnail with a way to take it back, up to three. Send holds until
- * the reading is in, because a question sent ahead of its picture is a
- * question about nothing. The sent question shows the picture over it and
+ * as a thumbnail with a way to take it back, up to three. A question sent
+ * ahead of its picture is a question about nothing, so Send pressed while it
+ * is still being read queues the question instead: it goes by itself once
+ * the reading is in, and the line over the field says so. Typing on, adding or
+ * taking back an attachment, or a reading that fails unqueues it — what is sent has
+ * to be what was there when Send was pressed. The sent question shows the picture over it and
  * what was read under it (`Turn`), since a figure misread there is misread in
  * the answer. With the field left empty the picture is the question, and a
  * stock one is asked for it. Offered only where something can see
@@ -49,8 +52,8 @@
  *
  * A document is the third thing that can ride with a question (`docs.ts`): a
  * PDF's text, or words pasted in one piece too long to be a question. It
- * waits above the field as a chip with its name, and Send holds until it is
- * read, as for a picture. A PDF is also what a statement comes as, and
+ * waits above the field as a chip with its name, and Send pressed before it
+ * is read queues the question, as for a picture. A PDF is also what a statement comes as, and
  * nothing in the file says which it is — so one that arrives is asked about
  * first: "Ask about it" or "Import its trades". Asking is taken mid-answer,
  * as a picture is; the import waits its turn. Only the start of a long one
@@ -95,7 +98,7 @@
 import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { acceptOf } from "../pages/import/api";
 import { Box, Mic } from "../ui/Mic";
 import { Segmented } from "../ui/Segmented";
@@ -325,6 +328,9 @@ export function Composer({
   // The pictures still wanted: one taken back mid-reading must neither come
   // back when its reading lands nor apologise when it fails.
   const wanted = useRef(new Set<number>());
+  // Send was pressed while something riding with the question was still
+  // being read: the question goes by itself once it is in.
+  const [queued, setQueued] = useState(false);
   const shotId = useRef(0);
   // The documents for the next question, oldest first. No `text` yet is a
   // PDF still being read.
@@ -402,6 +408,8 @@ export function Composer({
     if (saying || busy || reading) return;
     setVoiceError(null);
     if (!taping) {
+      // A recording means the question is not finished yet.
+      setQueued(false);
       before.current = text;
       try {
         clip.current = await dictate(lang, (words) =>
@@ -488,6 +496,7 @@ export function Composer({
       return;
     }
     setShotError(null);
+    setQueued(false);
     const id = ++shotId.current;
     wanted.current.add(id);
     const fill = (more: { url?: string; text?: string }) =>
@@ -505,6 +514,8 @@ export function Composer({
     } catch (failure) {
       if (!wanted.current.delete(id)) return;
       setShots((list) => list.filter((shot) => shot.id !== id));
+      // Sent without the picture it was asked about, it would be about nothing.
+      setQueued(false);
       const { key, slots } = refused(failure);
       setShotError({ key, slots });
       noteShot("refused", { why: key, sent });
@@ -525,6 +536,7 @@ export function Composer({
   /** Read a PDF into the text the next question takes with it. */
   const study = async (file: File, via: Way) => {
     if (!room()) return;
+    setQueued(false);
     const id = ++docId.current;
     docsWanted.current.add(id);
     // Up before it is read, under the name it has on this device.
@@ -536,6 +548,7 @@ export function Composer({
     } catch (failure) {
       if (!docsWanted.current.delete(id)) return;
       setDocs((list) => list.filter((doc) => doc.id !== id));
+      setQueued(false);
       const { key, slots } = refusedDoc(failure);
       setDocError({ key, slots });
     }
@@ -582,12 +595,14 @@ export function Composer({
     });
     setShots((list) => list.filter((shot) => shot.id !== id));
     setShotError(null);
+    setQueued(false);
   };
 
   const dropDoc = (id: number) => {
     docsWanted.current.delete(id);
     setDocs((list) => list.filter((doc) => doc.id !== id));
     setDocError(null);
+    setQueued(false);
   };
 
   const read = shots.flatMap((shot) => (shot.text === undefined ? [] : [shot.text]));
@@ -612,13 +627,20 @@ export function Composer({
   ];
 
   const submit = () => {
+    if (busy || live) return;
+    // Pressed before the reading is in: held, and sent by the effect below.
+    if (waiting) {
+      if (text.trim() || shots.length || docs.length) setQueued(true);
+      return;
+    }
+    setQueued(false);
     // A picture or a document with nothing typed is the question: asked in a
     // stock sentence, because a turn is filed, titled and notified by its
     // words.
     const question =
       text.trim() ||
       (read.length ? t("chat.shot_ask") : studied.length ? t("chat.doc_ask") : "");
-    if (!question || busy || live || waiting) return;
+    if (!question) return;
     // The thread keeps the words; the picture over the sent question is this
     // device's copy.
     for (const shot of shots) {
@@ -641,6 +663,11 @@ export function Composer({
     spoken.current = false;
     if (!byok) setDeep(false);
   };
+
+  // The reading a queued question waited for is in: it goes now.
+  useEffect(() => {
+    if (queued && !waiting && !busy && !live) submit();
+  }, [queued, waiting, busy, live]);
 
   const pickDepth = (next: boolean) => {
     setDeep(next);
@@ -719,7 +746,11 @@ export function Composer({
       )}
       {/* A reading is a few seconds of a model looking; a dimmed thumbnail
           alone does not say what Send is waiting for. */}
-      {unread && <Status label={t("chat.work_reading_shot")} />}
+      {unread && (
+        <Status
+          label={t(queued ? "chat.work_reading_shot_queued" : "chat.work_reading_shot")}
+        />
+      )}
       {docError && (
         <p className="ag-chat-note" role="alert">
           {t(docError.key, docError.slots)}
@@ -789,7 +820,11 @@ export function Composer({
           {cut}
         </p>
       ))}
-      {unstudied && <Status label={t("chat.work_reading_doc")} />}
+      {unstudied && (
+        <Status
+          label={t(queued ? "chat.work_reading_doc_queued" : "chat.work_reading_doc")}
+        />
+      )}
       <form
         className="ag-chat-form"
         onSubmit={(event) => {
@@ -873,6 +908,8 @@ export function Composer({
             aria-label={hint}
             onChange={(event) => {
               setText(event.target.value);
+              // Still writing: what was queued is not the question any more.
+              setQueued(false);
               if (!event.target.value.trim()) spoken.current = false;
             }}
             onPaste={(event) => {
@@ -911,6 +948,7 @@ export function Composer({
               if (words.trim().length < PASTE_FROM) return;
               event.preventDefault();
               if (!room()) return;
+              setQueued(false);
               const id = ++docId.current;
               docsWanted.current.add(id);
               setDocs((list) => [...list, { id, ...pastedDoc(words) }]);
@@ -948,12 +986,7 @@ export function Composer({
           <button
             type="submit"
             className="ag-chat-send"
-            disabled={
-              busy ||
-              live ||
-              waiting ||
-              (!text.trim() && !read.length && !studied.length)
-            }
+            disabled={busy || live || (!text.trim() && !shots.length && !docs.length)}
             aria-label={t("chat.send")}
           >
             <Glyph name="send" size={18} />

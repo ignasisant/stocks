@@ -1,4 +1,4 @@
-"""`api.holds`: Cloud Run's CPU for a refresh no request is waiting on.
+"""`stocks.cpu_hold`: Cloud Run's CPU for a refresh no request is waiting on.
 
 Billed per request, an instance between requests runs at a sliver of a CPU,
 and the book's price download a stale memo left behind froze there until its
@@ -15,7 +15,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks.api import holds
+from stocks import cpu_hold as holds
 from stocks.api.app import app
 
 
@@ -230,8 +230,8 @@ def test_the_async_wait_lets_go_when_the_refresh_lands():
     with holds._lock:
         holds._pending.add(done)
     # Pending: a short wait runs out.
-    asyncio.run(holds._wait_async(timeout=0.05))
+    asyncio.run(holds.settled(timeout=0.05))
     assert holds._waiting()
     done.set()
-    asyncio.run(holds._wait_async(timeout=5))
+    asyncio.run(holds.settled(timeout=5))
     assert not holds._waiting()

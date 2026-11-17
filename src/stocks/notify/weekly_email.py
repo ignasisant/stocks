@@ -27,7 +27,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from stocks import obs
-from stocks.config import currency_symbol
+from stocks.config import currency_symbol, public_origin
 from stocks.formatting import DECIMAL_COMMA, fmt_num, fmt_pct
 from stocks.notify import links, mail
 from stocks.notify.render import date_line
@@ -247,7 +247,7 @@ def gather(label: str, paths, prefs: dict, day: date,
     if data.total is None or data.week is None:
         return "no book"
     lang = str(prefs.get("language") or "en")
-    view = _View(data, lang, base_url if base_url is not None else links.app_base())
+    view = _View(data, lang, base_url if base_url is not None else public_origin())
     view.activity = activity(data)
     with obs.swallow("email.rules"):
         view.fired = fired_rules(paths.journal, day)

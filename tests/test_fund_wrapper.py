@@ -214,7 +214,7 @@ def test_the_fund_card_carries_its_wrapper(client, account, monkeypatch):
 
 
 def test_an_em_fund_in_london_reads_against_emerging_markets(monkeypatch):
-    from stocks.api.routes.ticker import read_trend
+    from stocks.views.ticker import read_trend
 
     asked: list[str] = []
     em = replace(WORLD, ticker="EIMI.L",

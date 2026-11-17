@@ -47,7 +47,14 @@ self.addEventListener("notificationclick", (event) => {
       const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of open) {
         if (new URL(client.url).origin !== target.origin) continue;
-        await client.focus();
+        // A window the browser will not raise (the press's activation spent,
+        // an installed app waking from the background) can still be sent to
+        // the thread: it is there when the reader gets to it.
+        try {
+          await client.focus();
+        } catch (_) {
+          /* move it anyway */
+        }
         // The page reads ?thread= on navigation (chat/Drawer.tsx). `navigate`
         // is missing on some browsers and refuses a page this worker does not
         // control yet (one loaded before it registered): then the page moves

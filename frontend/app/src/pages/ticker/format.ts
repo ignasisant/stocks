@@ -11,6 +11,7 @@
  */
 
 import { DASH, UNITS, decimal, isNum, percent } from "../../shell/format";
+import { known } from "../../shell/i18n";
 import { formatter, num, numberLang } from "../../shell/numbers";
 import type { Bars } from "./types";
 
@@ -175,8 +176,7 @@ export function legend(label: string, values: (number | null)[], t: Translate): 
  * "ticker.kpi_ev".
  */
 export function orElse(t: Translate, key: string, alternative: string): string {
-  const value = t(key);
-  return value === key ? alternative : value;
+  return known(t, key) ? t(key) : alternative;
 }
 
 /**

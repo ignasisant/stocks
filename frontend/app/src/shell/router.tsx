@@ -189,8 +189,9 @@ export function useRoute(): Route & {
   }, []);
 
   const go = useCallback((page: string, params?: Record<string, string>) => {
-    const query = params ? `?${new URLSearchParams(params)}` : "";
-    navigate(`${BASE}/${page}${query}`);
+    // No bare "?" for a caller with nothing to say: an empty object is one.
+    const query = new URLSearchParams(params ?? {}).toString();
+    navigate(`${BASE}/${page}${query ? `?${query}` : ""}`);
   }, []);
 
   /**

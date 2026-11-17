@@ -244,8 +244,10 @@ def warm_shared() -> None:
     """The memos every reader shares, once a run: Today's market read, the
     pulse's prices and rates behind Home's market card and Pulso, and the
     CFTC's weekly positioning (Friday's release lands here, not in a read)."""
+    from stocks.views import briefing
+
     for name, fill in (
-        ("today_market", loaders.today_market),
+        ("today_market", briefing.market_stored),
         ("pulse_closes", loaders.pulse_closes),
         ("pulse_rate_rows", loaders.pulse_rate_rows),
         ("market_pulse", loaders.market_pulse),

@@ -284,18 +284,22 @@
   z-index: 65;
   display: flex;
   justify-content: flex-end;
-  background: var(--ag-surface-page-veil);
+  background: var(--ag-scrim);
 }
 
+/* The drawer every side panel wears (`SidePanel`): 420px, raised, the
+   stronger rule on its open edge. */
 .ag-jr-panel {
   display: flex;
   flex-direction: column;
-  width: min(28rem, 100vw);
+  gap: 16px;
+  width: min(420px, 100vw);
   height: 100dvh;
-  padding: 1rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
-  border-left: 1px solid var(--ag-border);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-overlay);
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom)) 18px;
+  border-left: 1px solid var(--ag-border-focus);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-dialog);
   animation: ag-jr-in var(--ag-dur-move) var(--ag-ease-out);
   /* Out the way it came in (`usePresence`), as a transition so re-opening
      mid-way turns it back; off the edge when a finger throws it. Vertical
@@ -421,31 +425,20 @@
 
 .ag-jr-panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  padding-top: env(safe-area-inset-top);
-  margin-bottom: 0.5rem;
+  gap: 10px;
 }
 
 .ag-jr-panel-title {
   margin: 0;
+  padding-top: 6px;
   text-wrap: balance;
-  font-size: var(--ag-fs-md);
-  font-weight: 600;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--ag-text-primary);
-}
-
-.ag-jr-close {
-  flex: none;
-  padding: 0.25rem 0.7rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  cursor: pointer;
 }
 
 .ag-jr-panel-foot {
@@ -462,7 +455,6 @@
 /* ------------------------------------------------------------ interaction */
 
 .ag-jr-fold:focus-visible,
-.ag-jr-close:focus-visible,
 .ag-jr-link:focus-visible,
 .ag-jr-all:focus-visible,
 .ag-jr-retire:focus-visible,
@@ -472,7 +464,6 @@
 }
 
 @media (hover: hover) {
-  .ag-jr-close:hover,
   .ag-jr-retire:not(:disabled, .ag-jr-retire-confirm):hover,
   .ag-jr-fold:hover {
     color: var(--ag-text-primary);
@@ -494,7 +485,6 @@
 }
 
 @media (pointer: coarse) {
-  .ag-jr-close,
   .ag-jr-link,
   .ag-jr-retire,
   .ag-jr-propose {

@@ -60,6 +60,44 @@ export function openAssistant(): void {
   for (const listener of listeners) listener(null);
 }
 
+/** Narrowest page the open drawer leaves before it covers it instead (px). */
+const PAGE_MIN = 560;
+
+/**
+ * Whether a drawer this wide leaves the page readable beside it, or covers it.
+ *
+ * The same sum as the padding rule in `chat/chat.css`: the menu, the drawer
+ * (which past 60% of the window overlaps rather than taking more off the
+ * page) and the gap between them. Here rather than in the drawer because the
+ * guide asks it too, before opening the panel at its assistant stop: a panel
+ * that would land on top of the guide's card is offered, not opened.
+ */
+export function roomBeside(drawerWidth: number): boolean {
+  const nav = document.querySelector<HTMLElement>(".ag-nav");
+  const drawer = Math.min(drawerWidth, window.innerWidth * 0.6);
+  const taken = (nav?.offsetWidth ?? 0) + drawer + 20;
+  return window.innerWidth - taken >= PAGE_MIN;
+}
+
+/**
+ * The width the drawer would open at, in px: `--chat-w` as the panel's own
+ * rule reads it (`min(var(--chat-w, 420px), 100vw)`). The drawer puts the
+ * remembered width on the document when it mounts, so this is right before
+ * the panel has ever been opened.
+ */
+export function drawerWidth(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--chat-w")
+    .trim();
+  const n = Number.parseFloat(raw);
+  const px = !Number.isFinite(n)
+    ? 420
+    : raw.endsWith("vw")
+      ? (window.innerWidth * n) / 100
+      : n;
+  return Math.min(px, window.innerWidth);
+}
+
 const fillListeners = new Set<() => void>();
 
 /**

@@ -36,7 +36,7 @@ import { Status } from "../ui/Status";
 import { continueShare, followShare, readShare, unshare } from "./api";
 import { Debate } from "./Debate";
 import { figuresIn, skillName } from "./format";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { Inline, Markdown } from "./markdown";
 import { Surfaces } from "./Surfaces";
 import { Sources } from "./Sources";

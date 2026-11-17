@@ -27,12 +27,12 @@
   width: 100%;
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid var(--ag-border);
+  border: 1px solid var(--ag-border-focus);
   border-radius: var(--ag-radius-md);
   background: var(--ag-surface-card);
   box-shadow: var(--ag-shadow-overlay);
   color: var(--ag-text-primary);
-  font-size: var(--ag-fs-sm);
+  font-size: var(--ag-fs-md);
   line-height: 1.4;
 }
 

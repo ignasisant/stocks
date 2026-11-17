@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import urllib.parse
 
-from stocks.secrets_env import secret
+from stocks.config import public_origin
 
 # Each page's path in `navigation.DESTINATIONS` (home is the default page and
 # answers at the root).
@@ -31,21 +31,9 @@ TICKER = "ticker"
 PROFILE = "profile"
 
 
-def app_base() -> str | None:
-    """The app's public origin, or None when this deploy has not declared one.
-
-    Deliberately the same secret `web.server.public_origin` reads: a link
-    sent out of the app and a canonical URL in a page head are the same
-    promise about where this app lives, and two settings would let them
-    disagree.
-    """
-    origin = secret("APP_PUBLIC_URL", "app", "public_url")
-    return origin.rstrip("/") or None
-
-
 def page_url(path: str, base: str | None = None, **query: str) -> str | None:
     """Absolute URL for an app page, or None without a configured origin."""
-    base = base if base is not None else app_base()
+    base = base if base is not None else public_origin()
     if not base:
         return None
     url = f"{base}/{path}" if path else f"{base}/"

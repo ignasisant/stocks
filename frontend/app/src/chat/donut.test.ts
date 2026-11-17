@@ -6,7 +6,9 @@ const strings: Record<string, string> = {
   "portfolio.alloc_crypto": "Cripto (sin país)",
   "sentiment.sector_technology": "Tecnología",
 };
-const t = (key: string) => strings[key] ?? key;
+const t = Object.assign((key: string) => strings[key] ?? key, {
+  has: (key: string) => key in strings,
+});
 
 describe("the chat donut's labels", () => {
   // Local review 2026-10-29: an English ring under a Spanish answer.

@@ -57,7 +57,7 @@ def test_every_kpi_carries_where_it_came_from(client, monkeypatch):
     that prints them alike is how consensus wears a filing's authority."""
     patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "currency": "USD", "pe_ttm": 28.4},
     )
     kpis = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()["kpis"]
@@ -71,7 +71,7 @@ def test_every_kpi_carries_where_it_came_from(client, monkeypatch):
 def test_a_missing_kpi_is_null_and_says_so_in_words(client, monkeypatch):
     patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "pe_ttm": None},
     )
     body = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()
@@ -84,7 +84,7 @@ def test_a_kpi_with_no_band_gets_no_verdict(client, monkeypatch):
     """Absent, not "fair" — a neutral default reads as a judgement nobody made."""
     patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "market_cap": 3.1e12},
     )
     body = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()
@@ -96,7 +96,7 @@ def test_a_label_kpi_survives_as_a_string(client, monkeypatch):
     """Not every KPI is a number; coercing a sector to a float would drop it."""
     patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "currency": "USD", "quote_type": "EQUITY"},
     )
     body = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()
@@ -825,7 +825,7 @@ def test_a_verdict_ships_the_tone_its_band_carries(client, monkeypatch):
     neutral, which is the one reading a verdict must never have."""
     patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics",
+        "stocks.views.ticker.compute_metrics",
         lambda raw: {"ticker": "AAPL", "pe_ttm": 9.0, "net_debt_ebitda": -0.4},
     )
     body = client.get("/v1/ticker/AAPL/metrics", headers=AUTH).json()

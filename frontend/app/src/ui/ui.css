@@ -246,15 +246,15 @@
   text-align: left;
   text-transform: none;
   letter-spacing: 0;
-  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-size: var(--ag-fs-sm);
   font-weight: 400;
   line-height: 1.5;
   color: var(--ag-text-secondary);
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border-focus);
-  border-radius: var(--ag-radius-sm, 8px);
+  border-radius: var(--ag-radius-md);
   box-shadow: var(--ag-shadow-overlay);
-  padding: 0.5rem 0.65rem;
+  padding: 10px 12px;
   /* From the mark it hangs under. */
   transform-origin: 0.85rem 0;
   animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
@@ -332,13 +332,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill, 9999px);
-  background: transparent;
+  background: var(--ag-surface-card);
   color: var(--ag-text-secondary);
   font: inherit;
-  font-size: var(--ag-fs-sm, 0.75rem);
+  font-size: var(--ag-fs-md);
+  font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
   touch-action: manipulation;
@@ -363,8 +366,8 @@
 
 .ag-toggle-on {
   border-color: var(--ag-brand-accent);
-  background: var(--ag-cta-tint);
-  color: var(--ag-text-primary);
+  background: var(--ag-purple-900);
+  color: var(--ag-purple-300);
 }
 
 /* On is also a shape, not only a colour: a check ahead of the label, which
@@ -846,6 +849,30 @@
   background: var(--ag-surface-raised);
 }
 
+/* Four long answers ("Menos de 1 año"…) do not fit one row on a phone:
+   two by two, each a half, rather than one orphan on a second line. The
+   dialog is portalled out of `ag-main`, so it reads the viewport; the page
+   reads its own room. */
+@media (max-width: 480px) {
+  .ag-seg.ag-seg-2up {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+}
+
+@container ag-main (max-width: 30rem) {
+  .ag-seg.ag-seg-2up {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+}
+
+.ag-seg-2up .ag-seg-opt {
+  text-align: center;
+}
+
 .ag-seg-thumb {
   position: absolute;
   top: 0;
@@ -1051,10 +1078,11 @@
 
 /* ------------------------------------------------------- the side panel */
 
-/* `SidePanel`: a detail column at the right edge, full height, the list it
-   came from still in sight; a sheet from the bottom on a phone. Portalled to
-   the body, so the viewport is the room it has. Same shell as Vender o
-   reforzar's details (`.ag-rev-modal`). */
+/* `SidePanel`: the prototype's `.drawer` — a 420px raised column at the
+   right edge, full height, the list it came from still in sight; a sheet from
+   the bottom on a phone. Its parts sit 16px apart, the head first: the title
+   and a square close mark (`.ag-x`). Portalled to the body, so the viewport
+   is the room it has. */
 .ag-panel {
   position: fixed;
   inset: 0;
@@ -1062,21 +1090,30 @@
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
-  background: var(--ag-surface-page-veil);
+  background: var(--ag-scrim);
+  animation: ag-fade-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-panel[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .ag-panel-card {
-  width: 100%;
-  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  width: min(420px, 100%);
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: max(1.1rem, env(safe-area-inset-top))
-    max(1.25rem, env(safe-area-inset-right)) max(1.1rem, env(safe-area-inset-bottom))
-    1.25rem;
-  border-left: 1px solid var(--ag-border);
+  padding: calc(18px + env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+    calc(18px + env(safe-area-inset-bottom)) 18px;
+  border-left: 1px solid var(--ag-border-focus);
   background: var(--ag-surface-raised);
-  box-shadow: var(--ag-shadow-overlay);
+  box-shadow: var(--ag-shadow-dialog);
   animation: ag-panel-in var(--ag-dur-move) var(--ag-ease-out);
   transition: translate var(--ag-dur-move) var(--ag-ease-out);
 }
@@ -1087,51 +1124,24 @@
 
 .ag-panel-head {
   display: flex;
-  align-items: center;
+  flex: none;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 10px;
 }
 
 .ag-panel-title {
   min-width: 0;
+  padding-top: 6px;
 }
 
 .ag-panel-title h2 {
   margin: 0;
-  font-size: var(--ag-fs-md);
-  font-weight: 600;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-xl);
+  font-weight: 700;
+  letter-spacing: var(--ag-track-xl);
   text-wrap: balance;
-}
-
-.ag-panel-close {
-  flex: none;
-  min-height: 2rem;
-  padding: 0.25rem 0.8rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  cursor: pointer;
-}
-
-.ag-panel-close:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 1px;
-}
-
-@media (hover: hover) {
-  .ag-panel-close:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
-@media (pointer: coarse) {
-  .ag-panel-close {
-    min-height: 44px;
-  }
 }
 
 @keyframes ag-panel-in {
@@ -1153,13 +1163,13 @@
   }
 
   .ag-panel-card {
-    max-width: none;
+    width: 100%;
     height: auto;
     max-height: 88dvh;
-    padding: 1.1rem max(1rem, env(safe-area-inset-right))
-      max(1.1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    padding: 18px max(16px, env(safe-area-inset-right))
+      calc(18px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     border-left: none;
-    border-top: 1px solid var(--ag-border);
+    border-top: 1px solid var(--ag-border-focus);
     border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
     animation-name: ag-panel-sheet-in;
   }
@@ -1170,8 +1180,77 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ag-panel,
   .ag-panel-card {
     animation: none;
     transition: none;
   }
+}
+
+/* A glyph (`Glyph.tsx`) keeps its size in a flex row. */
+.ag-glyph {
+  flex: none;
+}
+
+/* A choice whose options each need a line of their own (risk tolerance): a
+   grid of bordered cards, the label over its line — the prototype's
+   `.pf-opt`. One column on a phone, two once there is room. */
+.ag-opts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.ag-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    background-color var(--ag-dur-hover) var(--ag-ease-out),
+    border-color var(--ag-dur-hover) var(--ag-ease-out);
+}
+
+.ag-opt b {
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.ag-opt small {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-opt[aria-pressed="true"] {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-purple-900);
+  box-shadow: inset 0 0 0 1px var(--ag-brand-accent);
+}
+
+@media (hover: hover) {
+  .ag-opt:not([aria-pressed="true"], :disabled):hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+.ag-opt:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+.ag-opt:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

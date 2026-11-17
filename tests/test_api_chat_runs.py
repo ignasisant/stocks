@@ -25,7 +25,7 @@ import time
 
 import pytest
 
-from stocks import obs
+from stocks import cpu_hold, obs
 from stocks.api import runs
 from stocks.chat import conversations
 from tests.patching import patch_engine
@@ -344,7 +344,7 @@ def test_on_cloud_run_a_run_holds_the_instance(
 ):
     served()
     held = []
-    monkeypatch.setattr(runs, "on_cloud_run", lambda: True)
+    monkeypatch.setattr(cpu_hold, "on_cloud_run", lambda: True)
     monkeypatch.setattr(runs, "hold", lambda r, url: held.append((r.id, url)))
     signed_in.post("/v1/chat/runs", json=run("hola"))
     assert held == [("run-1", "http://testserver/v1/chat/runs/run-1/hold")]

@@ -112,7 +112,7 @@
 .ag-rev-added a.ag-tick,
 .ag-rev-coins a.ag-tick,
 .ag-rev-close a.ag-tick,
-.ag-rev-modal a.ag-tick {
+.ag-panel a.ag-tick.ag-rev-modal-who {
   color: var(--ag-text-primary);
   text-decoration: none;
 }
@@ -123,7 +123,7 @@
   .ag-rev-added a.ag-tick:hover .ag-tick-sym,
   .ag-rev-coins a.ag-tick:hover .ag-tick-sym,
   .ag-rev-close a.ag-tick:hover .ag-tick-sym,
-  .ag-rev-modal a.ag-tick:hover .ag-tick-sym {
+  .ag-panel a.ag-tick.ag-rev-modal-who:hover .ag-tick-sym {
     text-decoration: underline;
   }
 }
@@ -1320,70 +1320,13 @@
 
 /* ---------------------------------------------------------- the details */
 
-/* The dialog a "Details" press opens: the verdict's rule, then the reasons,
-   then the numbers — each group divided like the projection panel's. Same
-   shell as the calendar's event dialog (`.earn-modal`), which lives in the
-   Earnings chunk and so is not loaded here. */
-.ag-rev-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 65;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
-    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-  background: var(--ag-surface-page-veil);
-}
-
-.ag-rev-modal-card {
-  width: 100%;
-  max-width: 38rem;
-  max-height: 90dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 1.1rem 1.25rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-raised);
-  box-shadow: var(--ag-shadow-overlay);
-}
-
-.ag-rev-modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.ag-rev-modal-head .ag-tick {
+/* What a "Details" press opens, in the shared side panel (`SidePanel`): the
+   verdict's rule, then the reasons, then the numbers — each group divided
+   like the projection panel's. */
+.ag-rev-modal-who {
   min-width: 0;
   font-size: var(--ag-fs-md);
   font-weight: 600;
-}
-
-.ag-rev-modal-close {
-  flex: none;
-  padding: 0.25rem 0.7rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  cursor: pointer;
-}
-
-.ag-rev-modal-close:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 1px;
-}
-
-@media (hover: hover) {
-  .ag-rev-modal-close:hover {
-    color: var(--ag-text-primary);
-  }
 }
 
 .ag-rev-details-rule {
@@ -1531,8 +1474,7 @@
 
 @media (pointer: coarse) {
   .ag-rev-ask,
-  .ag-rev-more,
-  .ag-rev-modal-close {
+  .ag-rev-more {
     min-height: 44px;
   }
 
@@ -2311,75 +2253,7 @@
   }
 }
 
-/* ------------------------------------------------- the details panel */
-
-/* Wide, a row's details open as a panel at the right edge, full height, so
-   the table it came from stays in sight beside it; an open chat drawer moves
-   it left of itself (`chat.css`). A phone gets a sheet from the bottom. */
-:root .ag-rev-modal {
-  justify-content: flex-end;
-  align-items: stretch;
-  padding: 0;
-}
-
-:root .ag-rev-modal > .ag-rev-modal-card {
-  max-width: 30rem;
-  max-height: none;
-  height: 100%;
-  padding: max(1.1rem, env(safe-area-inset-top))
-    max(1.25rem, env(safe-area-inset-right)) max(1.1rem, env(safe-area-inset-bottom))
-    1.25rem;
-  border: none;
-  border-left: 1px solid var(--ag-border);
-  border-radius: 0;
-  animation: ag-rev-panel-in var(--ag-dur-move) var(--ag-ease-out);
-  transition: translate var(--ag-dur-move) var(--ag-ease-out);
-}
-
-:root .ag-rev-modal[data-leaving] > .ag-rev-modal-card {
-  scale: 1;
-  translate: 100% 0;
-}
-
-@keyframes ag-rev-panel-in {
-  from {
-    translate: 100% 0;
-  }
-}
-
-@keyframes ag-rev-sheet-in {
-  from {
-    translate: 0 100%;
-  }
-}
-
-/* The modal sits in a portal on the body, outside `ag-main`: the viewport
-   is the room it has. */
-@media (max-width: 640px) {
-  :root .ag-rev-modal {
-    align-items: flex-end;
-    justify-content: stretch;
-  }
-
-  :root .ag-rev-modal > .ag-rev-modal-card {
-    max-width: none;
-    height: auto;
-    max-height: 88dvh;
-    padding: 1.1rem max(1rem, env(safe-area-inset-right))
-      max(1.1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-    border-left: none;
-    border-top: 1px solid var(--ag-border);
-    border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
-    animation-name: ag-rev-sheet-in;
-  }
-
-  :root .ag-rev-modal[data-leaving] > .ag-rev-modal-card {
-    translate: 0 100%;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  :root .ag-rev-modal > .ag-rev-modal-card,
   .ag-rev-vbar-seg,
   .ag-rev-group-btn::after {
     animation: none;

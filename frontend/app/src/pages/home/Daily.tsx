@@ -40,7 +40,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { openAssistant, openThread } from "../../shell/assistant";
 import { POLL_MS } from "../../shell/poll";
 import { Link } from "../../shell/router";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { Badge } from "../../ui/Badge";
 import { Status } from "../../ui/Status";
 import { badgeKey, noteKey, stampOf, teaserOf } from "../today/card";

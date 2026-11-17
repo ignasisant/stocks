@@ -579,5 +579,9 @@ export type Done = {
   lost?: boolean;
 };
 
-/** A view the profile's links open the drawer on (`?chat=memory|scheduled`). */
-export type Jump = "memory" | "scheduled" | null;
+/**
+ * A view a page's link opens the drawer on (`?chat=memory|scheduled|settings`):
+ * the profile's two, and the Home start card's "AI key", which is entered in
+ * the settings.
+ */
+export type Jump = "memory" | "scheduled" | "settings" | null;

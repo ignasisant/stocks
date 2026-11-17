@@ -8,7 +8,7 @@ is bought comes in with new money, the way the app's weights never count
 cash — the trade `d` that takes value `v` of a book worth `T` to weight `w`
 solves (v + d) / (T + d) = w, so d = (wT - v) / (1 - w). The second is the
 what-if sale (`chat/whatif.py`): the shares to sell replayed through the tax
-engine at the same price. A purchase has no tax to show.
+engine (`portfolio/whatif.py`) at the same price. A purchase has no tax to show.
 
 Drawn with a slider over the target weight, whose every release asks the
 server for that weight again (`POST /chat/actions`), as the what-if slider
@@ -26,8 +26,9 @@ import pandas as pd
 
 from stocks import obs
 from stocks.chat import a2ui
-from stocks.chat.whatif import Replay, _money
+from stocks.chat.whatif import _money
 from stocks.formatting import bound
+from stocks.portfolio.whatif import Replay
 
 SURFACE_ID = "rebalance"
 ACTION = "reweigh"

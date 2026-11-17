@@ -34,6 +34,7 @@ import type { Listing } from "./Watchlist";
 import { Card } from "./ui";
 import { nextSetup } from "./setup";
 import { progress } from "./TourCard";
+import { useSessionKeyHeld, withSessionKey } from "../../chat/sessionKey";
 
 /**
  * `GET /me`, the fields the identity card reads. The shell's session reads the
@@ -117,10 +118,12 @@ function Settings() {
     () => get<{ setup: Record<string, boolean> }>("/onboarding"),
     [],
   );
-  const counted =
-    onboarding.state === "loaded" ? progress(onboarding.data.setup) : null;
-  const pending =
-    onboarding.state === "loaded" ? nextSetup(onboarding.data.setup) : null;
+  // A key held for this tab counts as a key, as on Home's start card.
+  const held = useSessionKeyHeld();
+  const setup =
+    onboarding.state === "loaded" ? withSessionKey(onboarding.data.setup, held) : null;
+  const counted = setup ? progress(setup) : null;
+  const pending = setup ? nextSetup(setup) : null;
   const bar = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
   // Transparent at rest, frosted once pinned under the top edge (the ticker's

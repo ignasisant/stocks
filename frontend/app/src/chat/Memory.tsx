@@ -31,7 +31,7 @@ import {
   settleSuggestion,
 } from "./api";
 import { stamp } from "./format";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import type { Memories, Memory as Saved, Suggestion } from "./types";
 
 /** `learnings.UNUSED_DAYS`: what an "idle" proposal means. */

@@ -27,13 +27,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, obs
+from stocks import accounts, obs, ratelimit
 from stocks.accounts import UserPaths
 from stocks.api.deps import Writer
 from stocks.api.security import Who
 from stocks.config import PROJECT_ROOT
 from stocks.web import feedback as store
-from stocks.web import ratelimit
 
 router = APIRouter(tags=["feedback"])
 

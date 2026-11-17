@@ -18,7 +18,7 @@ import { useLang, useT } from "../shell/i18n";
 import { type Prefs, type Schedule, useSession } from "../shell/session";
 import { browserZone } from "../shell/zone";
 import { ToggleChip } from "../ui/Toggle";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { closeTime, weekdayNames, whenLabel } from "./slots";
 import type { Conversation } from "./types";
 

@@ -23,10 +23,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from stocks import obs
+from stocks import obs, ratelimit
 from stocks.api.routes.client_error import _browser
 from stocks.api.security import Who
-from stocks.web import ratelimit
 
 router = APIRouter(tags=["client"])
 

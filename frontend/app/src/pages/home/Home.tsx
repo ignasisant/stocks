@@ -67,6 +67,7 @@ import { Icon } from "../../shell/Icon";
 import { useInView } from "../../shell/useInView";
 import { Daily } from "./Daily";
 import { SetupCard } from "./Setup";
+import { TourOffer } from "./TourOffer";
 import { Glance, MoversSlot, useBook } from "./Glance";
 import { MarketCard } from "./Market";
 import { EarningsCard } from "./Earnings";
@@ -293,6 +294,7 @@ export default function Page() {
           </Link>
         </GuestBanner>
       ) : null}
+      <TourOffer />
       <SetupCard />
       {editing ? (
         <Suspense fallback={<Skeleton rows={6} />}>

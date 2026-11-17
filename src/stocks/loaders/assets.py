@@ -208,9 +208,9 @@ def crypto_positioning(coin: str):
 
 @ttl_cache(_LEDGER_TTL, max_entries=16)
 def crypto_replay(db: str, mtime: float, prefs: str, prefs_mtime: float):
-    """The ledger replayed under the account's tax rules (`chat.whatif`), the
+    """The ledger replayed under the account's tax rules (`portfolio.whatif`), the
     yardstick a coin's harvest line is measured against. Keyed on both files'
     mtimes: a new trade or a changed residence each change the answer."""
-    from stocks.chat import whatif
+    from stocks.portfolio import whatif
 
     return whatif.replay(db=Path(db), prefs_path=Path(prefs))

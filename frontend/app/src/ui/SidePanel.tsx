@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { useDialog } from "../shell/useDialog";
 import { useT } from "../shell/i18n";
 import { useExitGhost } from "../shell/useSheet";
+import { Glyph } from "./Glyph";
 import "./ui.css";
 
 export function SidePanel({
@@ -69,8 +70,15 @@ export function SidePanel({
       >
         <div className="ag-panel-head">
           <div className="ag-panel-title">{head ?? <h2>{label}</h2>}</div>
-          <button ref={shut} type="button" className="ag-panel-close" onClick={onClose}>
-            {t("common.close")}
+          <button
+            ref={shut}
+            type="button"
+            className="ag-x"
+            aria-label={t("common.close")}
+            title={t("common.close")}
+            onClick={onClose}
+          >
+            <Glyph name="close" size={16} />
           </button>
         </div>
         {children}

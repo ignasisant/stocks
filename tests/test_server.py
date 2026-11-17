@@ -55,7 +55,7 @@ def client(monkeypatch):
     server._gzipped.cache_clear()
     # No secrets file in the test environment; make the override explicit so a
     # developer's own [app] public_url cannot change the expected URLs.
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
     app = served(server.SecurityHeaders, server.LandingGate)
     return TestClient(app, base_url="https://topstocks.example")
 
@@ -335,7 +335,7 @@ def pinned_client(monkeypatch):
     """The same app, with `[app] public_url` pinned to one origin."""
     landing_static.document.cache_clear()
     server._gzipped.cache_clear()
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "https://topstocks.example")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "https://topstocks.example")
     return TestClient(served(server.LandingGate), base_url="https://alias.run.app")
 
 
@@ -361,7 +361,7 @@ def test_the_health_probes_answer_on_any_host(pinned_client):
 
 
 def test_the_canonical_host_itself_is_served_not_redirected(monkeypatch):
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "https://topstocks.example")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "https://topstocks.example")
     client = TestClient(served(server.LandingGate), base_url="https://topstocks.example")
     assert client.get("/es/", follow_redirects=False).status_code == 200
 
@@ -562,7 +562,7 @@ def test_every_response_carries_the_baseline_headers(client):
 def test_hsts_is_set_on_tls_and_not_on_local_http(client, monkeypatch):
     assert "strict-transport-security" in client.get("/").headers
 
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
 
     async def stub(request):
         return PlainTextResponse(STUB, media_type="text/html")
@@ -634,7 +634,7 @@ def test_the_api_is_not_bounced_to_the_canonical_host(client, monkeypatch):
 @pytest.fixture
 def metered(monkeypatch):
     """The gate with the throttle in front of it, and small budgets."""
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     ratelimit._events.clear()
     monkeypatch.setattr(server, "CLIENT_MAX_DOCS", 3)
@@ -1008,7 +1008,7 @@ def test_a_throttled_connector_call_answers_in_json(metered, monkeypatch):
 def test_the_connector_opens_with_the_server_and_again_on_reboot(monkeypatch):
     """Built per lifespan entry: the SDK's session manager runs once per
     instance, and this suite boots the server more than once."""
-    monkeypatch.setattr(server, "secret", lambda *a, **k: "https://testserver")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "https://testserver")
     for _ in range(2):
         with TestClient(server.app, base_url="https://testserver") as c:
             r = c.get("/.well-known/oauth-authorization-server")

@@ -115,7 +115,6 @@ from stocks.loaders.market import (
     pulse_rates,
     sector_scans,
     stored_action,
-    today_market,
 )
 from stocks.loaders.names import (
     _LISTING_NAMES,
@@ -250,7 +249,6 @@ __all__ = [
     "sector_scans",
     "spot_rates",
     "stored_action",
-    "today_market",
     "trade_bars",
     "unbooked_dividends",
     "valuation",
