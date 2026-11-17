@@ -483,10 +483,10 @@ def _monthly_start(window: str) -> pd.Timestamp | None:
     `/performance` offset for the rest, None for the book's whole life."""
     today = date.today()
     if window == "ytd":
-        return pd.Timestamp(date(today.year - 1, 12, 31))  # ty: ignore[invalid-return-type]
+        return pd.Timestamp(date(today.year - 1, 12, 31))  # ty: ignore[invalid-explicit-return]
     if window in _PERFORMANCE_DAYS:
         days = pd.Timedelta(days=_PERFORMANCE_DAYS[window])
-        return pd.Timestamp(today) - days  # ty: ignore[invalid-return-type]
+        return pd.Timestamp(today) - days  # ty: ignore[invalid-explicit-return]
     return None
 
 

@@ -160,10 +160,10 @@ def allocation_weights(
 
 def _clear_positions() -> None:
     _priced_positions.cache_clear()
-    _self_priced_positions.cache_clear()  # ty: ignore[unresolved-attribute]
+    _self_priced_positions.cache_clear()  # ty: ignore[missing-attribute]
 
 
-positions_table.cache_clear = _clear_positions  # ty: ignore[unresolved-attribute]
+positions_table.cache_clear = _clear_positions  # ty: ignore[missing-attribute]
 
 
 @_on_download

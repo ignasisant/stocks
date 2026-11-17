@@ -32,7 +32,7 @@ def price_bars(ticker: str, label: str) -> pd.DataFrame:
     return shape(_bars_download(ticker, period, interval), label)
 
 
-price_bars.cache_clear = _bars_download.cache_clear  # ty: ignore[unresolved-attribute]
+price_bars.cache_clear = _bars_download.cache_clear  # ty: ignore[missing-attribute]
 
 
 def bar_closes(ticker: str, label: str) -> pd.Series:
