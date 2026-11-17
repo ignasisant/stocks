@@ -137,7 +137,7 @@ def test_route(monkeypatch):
     monkeypatch.setenv("API_TOKEN", "t")
     patch_loaders(monkeypatch, "fundamentals", lambda t: _raw())
     monkeypatch.setattr(
-        "stocks.api.routes.ticker.compute_metrics", lambda raw: _metrics()
+        "stocks.views.ticker.compute_metrics", lambda raw: _metrics()
     )
     res = TestClient(fastapi_app).get(
         "/v1/ticker/ACME/dcf", headers={"Authorization": "Bearer t"}

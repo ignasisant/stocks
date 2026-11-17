@@ -2037,3 +2037,30 @@ def test_a_buy_at_zero_is_still_a_free_share(client, account, signed_in):
         },
     ).json()
     assert payload["imported"] == 1
+
+
+def test_the_first_real_import_offers_the_newcomer_the_tour(
+    client, account, signed_in
+):
+    """`onboarding.first_book`: Home's tour offer and the pages' first-visit
+    tips, raised by the import that replaced the demo book and by no other."""
+    from stocks.portfolio import demo
+    from stocks.web import onboarding
+
+    demo.seed(account.db)
+    signed_in.post("/v1/import/commit", json=body())
+    prefs = signed_in.get("/v1/prefs").json()
+    assert prefs["tour_offer"] is True
+    assert prefs["page_tips"] == list(onboarding.TIPS)
+
+    signed_in.post("/v1/onboarding/seen", json={"walked": True})
+    longer = CLEAN + "2024-03-01,NVDA,buy,1,800.00,EUR,1.00,revolut Nvidia\n"
+    signed_in.post("/v1/import/commit", json=body(longer))
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is False
+
+
+def test_an_empty_book_s_first_import_offers_the_tour_too(client, account, signed_in):
+    """No demo book to replace — an account that never had one — is the
+    common newcomer, and their first commit raises the offer all the same."""
+    signed_in.post("/v1/import/commit", json=body())
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is True

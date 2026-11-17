@@ -21,7 +21,7 @@ import { useState, type ReactNode } from "react";
 import { calendarDay } from "../../shell/dates";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { Count } from "../../ui/Count";
 import { Fold } from "../../ui/Fold";
 import { Segmented as Seg } from "../../ui/Segmented";

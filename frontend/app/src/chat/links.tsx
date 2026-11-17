@@ -121,7 +121,7 @@ export function AppSource({
   const t = useT();
   const { go } = useRoute();
   const key = source.step ? `tour.${source.step}_title` : "";
-  const label = source.title || (key && t(key) !== key ? t(key) : t("chat.app_guide"));
+  const label = source.title || (key && t.has(key) ? t(key) : t("chat.app_guide"));
   if (!source.url.startsWith("/")) return <span>{label}</span>;
   const target = new URL(source.url, "http://app"); // only its path and query are read;
   return (

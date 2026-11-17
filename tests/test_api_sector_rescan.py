@@ -22,12 +22,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts, loaders
+from stocks import accounts, loaders, ratelimit
 from stocks.analysis import sectors
 from stocks.analysis.sectors import SectorScan
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import sector as route
-from stocks.web import ratelimit
 from tests.patching import patch_loaders
 
 TOKEN = "s3cret-token"

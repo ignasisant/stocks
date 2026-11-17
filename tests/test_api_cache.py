@@ -341,7 +341,7 @@ def test_an_answer_from_the_grace_window_tells_the_shell_to_ask_again(monkeypatc
 
 def test_a_background_refresh_is_announced_with_its_landing(monkeypatch):
     """`on_background` hears of every refresh that runs with no reader waiting
-    on it — what `api.holds` keeps the instance's CPU for on Cloud Run."""
+    on it — what `cpu_hold` keeps the instance's CPU for on Cloud Run."""
     clock = [0.0]
     monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
     heard: list[threading.Event] = []

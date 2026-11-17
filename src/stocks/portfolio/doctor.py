@@ -116,6 +116,20 @@ def by_key(rows: list[Transaction], key: str, resolve=None) -> Finding | None:
     return next((f for f in scan(rows, resolve) if f.key == key), None)
 
 
+# The kinds a reader can fix in one step. Transfers have their own list
+# (`/import/moves`) and an oversold position has no fix but a missing
+# statement, which `held.reuploads` names when it can.
+FIXABLE: tuple[Kind, ...] = ("two_labels", "duplicate", "fee_in_coins")
+
+
+def fixable(
+    rows: list[Transaction], resolve: transfers.Resolver | None = None
+) -> list[Finding]:
+    """The findings that come with their fix: what Import's repairs card
+    lists and what the account's "things to fix" count adds up."""
+    return [f for f in scan(rows, resolve) if f.kind in FIXABLE and f.fix]
+
+
 # ----------------------------------------------------------------- the kinds
 
 

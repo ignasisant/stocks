@@ -28,7 +28,7 @@
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { NumbersIn, useLang, useT } from "../shell/i18n";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
@@ -119,8 +119,7 @@ function Working({ phase }: { phase?: string }) {
   // falls back to the generic line rather than printing a raw key. Outside
   // the bubble's live region, so it is heard before the answer is written.
   const key = `chat.work_${phase ?? "thinking"}`;
-  const said = t(key);
-  return <Status label={said === key ? t("chat.work_thinking") : said} />;
+  return <Status label={t.has(key) ? t(key) : t("chat.work_thinking")} />;
 }
 
 /**

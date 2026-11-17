@@ -39,7 +39,7 @@ import { Skeleton } from "../../shell/Layout";
 import { useRoute } from "../../shell/router";
 import { useGuest } from "../../shell/session";
 import { Tabs } from "../../ui/Tabs";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { Badge } from "../../ui/Badge";
 import { Status } from "../../ui/Status";
 import { BriefEditor } from "../home/BriefEditor";

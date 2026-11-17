@@ -183,7 +183,9 @@ def test_the_guest_list_is_not_silently_growing():
     # line, nothing on disk, metered per address like `/vitals`.
     # 71: `GET /shares/{share_id}` — a chat answer somebody shared by link: a
     # copy cut before it was published, read by people with no account.
-    assert len(guest.OPEN) == 71
+    # 72: `POST /missing-strings` — catalog keys a guest's screen drew as their
+    # own dotted name: one log line per key, metered with `/client-error`.
+    assert len(guest.OPEN) == 72
 
 
 def test_every_route_a_guest_may_read_is_a_read():

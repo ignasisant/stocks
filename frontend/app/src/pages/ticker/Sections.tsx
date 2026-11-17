@@ -9,7 +9,7 @@
  */
 
 import { useId, useState, type ReactNode } from "react";
-import { useLang, useT } from "../../shell/i18n";
+import { known, useLang, useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { InsiderFlow, FundExposure } from "./Charts";
 import {
@@ -478,8 +478,7 @@ export function moatDetail(t: Translate, pillar: MoatPillar): string {
       MOAT_FACTS[name]?.(value) ?? String(value),
     ]),
   );
-  const worded = t(pillar.detail_key, values);
-  return worded === pillar.detail_key ? pillar.detail : worded;
+  return known(t, pillar.detail_key) ? t(pillar.detail_key, values) : pillar.detail;
 }
 
 // -------------------------------------------------------------------- shorts

@@ -34,7 +34,7 @@ from typing import TypedDict, cast
 
 import pandas as pd
 
-from stocks import accounts, loaders, obs
+from stocks import accounts, cpu_hold, loaders, obs
 from stocks.analysis import review as engine
 from stocks.analysis.compare import (
     TRAIL_STEPS,
@@ -46,7 +46,6 @@ from stocks.analysis.compare import (
 )
 from stocks.analysis.portfolio import risk_shares, value_weights
 from stocks.analysis.sentiment import SECTOR_ETFS
-from stocks.api import holds
 from stocks.cache import carried
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
@@ -191,7 +190,7 @@ def _gather(
     done, late = wait(futures, timeout=GATHER_BUDGET_S)
     # The late pulls finish under a CPU hold: between requests they crawl, and
     # the row they fill would read unrated for the next reader too.
-    holds.keep_until(late)
+    cpu_hold.keep_until(late)
     return {futures[f]: f.result() for f in done}, {futures[f] for f in late}
 
 
@@ -527,7 +526,7 @@ def returns(account, ccy: str, names: str) -> ReviewReturns:
     }
     asked_for = [*closes.values(), quoted, *kpis.values(), *filings.values()]
     wait(asked_for, timeout=GATHER_BUDGET_S)
-    holds.keep_until(asked_for)
+    cpu_hold.keep_until(asked_for)
     currencies = quoted.result() if quoted.done() and not quoted.exception() else {}
     landed = {name: future.result() for name, future in closes.items() if future.done()}
     pending = {name for name in every if name not in landed}

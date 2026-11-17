@@ -56,6 +56,7 @@ from stocks.schemas import (
     LastImport,
     Transaction,
 )
+from stocks.web import onboarding
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -360,6 +361,9 @@ def commit(
         # invented cost basis must never end up mixed into a real one.
         demo.clear(account.db)
     ids = add_many(platforms.stamp_broker(importable, origin), account.db)
+    if first and ids:
+        # A newcomer's own book is in: offer the tour, owe the page tips.
+        onboarding.first_book(account.prefs)
     if ids:
         _retag(account.db, checked.relabeled)
     # A sale refused only for want of shares is usually waiting on a split or a

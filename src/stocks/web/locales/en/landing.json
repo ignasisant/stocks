@@ -150,7 +150,7 @@
   "landing.t2_b": "You upload a statement file. No credentials, no aggregator, no read-access to your account.",
   "landing.t3_h": "Your ledger is yours alone.",
   "landing.t3_b": "Data is keyed to your verified Google email and isolated per account. Even logos are served from our own domain, so no third party sees your tickers.",
-  "landing.t4_h": "Your AI key stays yours.",
+  "landing.t4_h": "Your API key stays yours.",
   "landing.t4_b": "Bring your own and you pay your own provider bill. Tick Remember and it's encrypted and auto-expires ninety days after you enter it; otherwise it never leaves the session.",
   "landing.t5_h": "No ads, no data selling, no upsell.",
   "landing.t5_b": "It's free because it's a personal project, not because you're the product.",

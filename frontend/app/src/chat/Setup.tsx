@@ -13,7 +13,7 @@
  */
 
 import { useT } from "../shell/i18n";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import type { ChatState, SettingsPatch } from "./types";
 
 /** True when the account picked a provider that needs a key it has not given. */

@@ -134,6 +134,38 @@ def test_commit_then_undo_round_trips_the_book(account, signed_in):
     assert again.status_code == 409
 
 
+ROW = {"date": "2024-05-02", "ticker": "MSFT", "action": "buy", "quantity": 2,
+       "price": 300.0, "currency": "EUR", "fee": 0.0, "note": "revolut"}
+
+
+def _type_a_row(signed_in):
+    ops = [{"op": "add", "row": ROW}]
+    planned = signed_in.post("/v1/portfolio/changes/plan", json={"ops": ops}).json()
+    done = signed_in.post(
+        "/v1/portfolio/changes", json={"ops": ops, "token": planned["token"]}
+    )
+    assert done.status_code == 201, done.text
+
+
+def test_a_book_started_by_typing_a_row_is_a_first_book(account, signed_in):
+    """Not every book arrives as a statement. The first row typed in makes a
+    newcomer of the account like an import does: the guide on offer, the page
+    tips owed."""
+    from stocks.portfolio.ledger import clear
+    from stocks.web import onboarding
+
+    clear(account.db)
+    _type_a_row(signed_in)
+    prefs = signed_in.get("/v1/prefs").json()
+    assert prefs["tour_offer"] is True
+    assert prefs["page_tips"] == list(onboarding.TIPS)
+
+
+def test_a_row_typed_into_a_book_that_exists_offers_nothing(account, signed_in):
+    _type_a_row(signed_in)
+    assert signed_in.get("/v1/prefs").json()["tour_offer"] is False
+
+
 def test_a_book_that_moved_since_the_plan_is_a_409(account, signed_in):
     ops = repair(account)
     planned = signed_in.post("/v1/portfolio/changes/plan", json={"ops": ops}).json()

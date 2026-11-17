@@ -186,6 +186,22 @@ export function forgetKept(): void {
   s.reset({ owner: "", build: "" }).catch(() => undefined);
 }
 
+/** How long a sign-out waits for the shelf and the `onSignOut` tasks. */
+const LEAVE_MS = 600;
+const leaving = new Set<() => Promise<unknown>>();
+
+/**
+ * Something to do while the session still stands, before `signOut` ends it.
+ * Not waited on past `LEAVE_MS`: a task that must land sends a request that
+ * outlives the page. Returns the way to take it back.
+ */
+export function onSignOut(task: () => Promise<unknown>): () => void {
+  leaving.add(task);
+  return () => {
+    leaving.delete(task);
+  };
+}
+
 /**
  * Sign this device out: empty the shelf, end the session, land on the home
  * page as a guest.
@@ -199,16 +215,20 @@ export function forgetKept(): void {
  * any page on the web — so the app sends the POST itself and then navigates.
  * When the POST cannot be sent at all, the GET page is where the reader can
  * still confirm by hand.
+ *
+ * What only the signed-in account can say goes first too (`onSignOut`): this
+ * device stops being its to notify (`shell/push`). Under the same bound.
  */
 export async function signOut(to = "/auth/logout"): Promise<void> {
   const s = shelf;
   ready = null;
-  if (s) {
-    await Promise.race([
-      s.reset({ owner: "", build: "" }).catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, 600)),
-    ]);
-  }
+  await Promise.race([
+    Promise.all([
+      s?.reset({ owner: "", build: "" }).catch(() => undefined),
+      ...[...leaving].map((task) => task().catch(() => undefined)),
+    ]),
+    new Promise((resolve) => setTimeout(resolve, LEAVE_MS)),
+  ]);
   try {
     await fetch(to, {
       method: "POST",

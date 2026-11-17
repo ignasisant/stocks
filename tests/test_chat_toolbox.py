@@ -98,10 +98,10 @@ def test_ticker_data_needs_a_ticker_and_known_parts():
 
 
 def test_the_dcf_block_tells_margin_of_safety_from_upside(monkeypatch):
-    from stocks.api.routes import ticker as routes
     from stocks.schemas import Dcf
+    from stocks.views import ticker as reads
 
-    monkeypatch.setattr(routes, "dcf", lambda code: Dcf(
+    monkeypatch.setattr(reads, "dcf", lambda code: Dcf(
         ticker=code, currency="USD", price=150.0, value=200.0, upside=1 / 3,
         fcf=1e9, net_debt=0.0, shares=1e8, growth=0.1, growth_source="fcf_cagr",
         wacc=0.09, terminal=0.025, waccs=[0.09], terminals=[0.025], grid=[[200.0]]))
@@ -115,10 +115,10 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
     # holding an 8 B$ tax benefit, and a forward P/E left unexplained.
     import pandas as pd
 
-    from stocks.api.routes import ticker as routes
     from stocks.schemas import Valuation, ValuationWindow
+    from stocks.views import ticker as reads
 
-    monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
+    monkeypatch.setattr(reads, "valuation", lambda code: Valuation(
         ticker=code, source="SEC EDGAR", current=20.9, windows=[ValuationWindow(
             window="5y", days=1825, median=26.6, percentile=6.75, premium=-0.15)]))
     cols = pd.to_datetime(["2026-09-30", "2026-06-30", "2026-03-31",
@@ -140,10 +140,10 @@ def test_the_valuation_block_names_what_the_trailing_year_carries(monkeypatch):
 def test_an_annual_line_that_stopped_has_no_today(monkeypatch):
     # Sony, 2026-11-15: the June 20-F is not in SEC's XBRL yet, so the line
     # ends in July and its last point is not today's multiple.
-    from stocks.api.routes import ticker as routes
     from stocks.schemas import Valuation, ValuationWindow
+    from stocks.views import ticker as reads
 
-    monkeypatch.setattr(routes, "valuation", lambda code: Valuation(
+    monkeypatch.setattr(reads, "valuation", lambda code: Valuation(
         ticker=code, source="SEC EDGAR", basis="annual", current=None,
         dates=["2026-07-23", "2026-07-24", "2026-11-13"], pe=[19.0, 19.2, None],
         windows=[ValuationWindow(window="10y", days=3650, median=23.9)]))
@@ -686,7 +686,7 @@ def test_the_calendar_and_income_tools_read_the_engines(monkeypatch, tmp_path):
 
 def test_technicals_reads_the_trend_with_its_figures(monkeypatch):
     from stocks.analysis.trend import TrendRead
-    from stocks.api.routes import ticker
+    from stocks.views import ticker
 
     asked = []
 
@@ -710,7 +710,7 @@ def test_technicals_reads_the_trend_with_its_figures(monkeypatch):
 
 def test_technicals_says_when_history_is_short_or_absent(monkeypatch):
     from stocks.analysis.trend import TrendRead
-    from stocks.api.routes import ticker
+    from stocks.views import ticker
 
     monkeypatch.setattr(ticker, "read_trend",
                         lambda s: TrendRead(price=10.0, sessions=90, rsi14=55.0))

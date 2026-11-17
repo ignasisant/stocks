@@ -32,10 +32,6 @@ router = APIRouter(prefix="/import", tags=["import"])
 # that come with their fix, and the repairs the app made by itself
 # (`portfolio.heal`), each with the way back.
 
-# Transfers have their own list (`/import/moves`) and an oversold position has
-# no fix but a missing statement, which `reupload` names when it can.
-_FIXABLE = ("two_labels", "duplicate", "fee_in_coins")
-
 
 class HeldSale(BaseModel):
     id: int = Field(description="Names it for `POST /import/held/apply`.")
@@ -170,8 +166,7 @@ def checkup(account: Account) -> Checkup:
         ],
         findings=[
             _finding(f)
-            for f in doctor.scan(rows, resolve=loaders.display_symbol)
-            if f.kind in _FIXABLE and f.fix
+            for f in doctor.fixable(rows, resolve=loaders.display_symbol)
         ],
         healed=[
             Healed(
@@ -234,7 +229,7 @@ def fix(account: Writer, body: Annotated[FixPick, ...]) -> FixApplied:
     `DELETE /portfolio/changes/{id}` takes it back. 409 once it is gone."""
     rows = _real_rows(account)
     found = doctor.by_key(rows, body.key.strip(), resolve=loaders.display_symbol)
-    if found is None or found.kind not in _FIXABLE or not found.fix:
+    if found is None or found.kind not in doctor.FIXABLE or not found.fix:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="that finding is not on this book any more — check again",

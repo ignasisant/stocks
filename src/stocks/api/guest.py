@@ -37,6 +37,7 @@ OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("/v1/feedback", "POST"),
         ("/v1/client-error", "POST"),
+        ("/v1/missing-strings", "POST"),
         ("/v1/vitals", "POST"),
         ("/v1/launch", "POST"),
     }

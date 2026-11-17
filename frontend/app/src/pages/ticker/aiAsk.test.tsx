@@ -34,7 +34,7 @@ describe("AiAsk", () => {
 
   it("keeps its words beside the sparkle, so the press says what it does", () => {
     const out = html();
-    expect(out).toContain("ag-chat-glyph");
+    expect(out).toContain("ag-glyph");
     expect(out).toContain("<span>ticker.ai_analyze</span>");
     expect(out).not.toContain("✨");
   });

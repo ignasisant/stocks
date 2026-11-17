@@ -13,7 +13,7 @@ client secret is stored as its sha256, so a copy of the files (a backup, a
 bucket listing, a support paste) cannot be replayed. The tokens are 256 random
 bits, so an unsalted hash is not something anyone brute-forces back.
 
-Single container, like the rest of the storage model (`web/ratelimit.py`,
+Single container, like the rest of the storage model (`stocks/ratelimit.py`,
 `storage.py`): the process holds the indexes, the bucket is restored once on
 first touch, and every write lands on disk and is mirrored at once. A mirror
 that fails is a warning, not a refusal — the grant still works on this
