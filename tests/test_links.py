@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from stocks import config
 from stocks.notify import links
 
 
@@ -13,16 +14,16 @@ def origin(monkeypatch):
     return "https://topstocks.example"
 
 
-def test_app_base_strips_the_trailing_slash(origin):
-    assert links.app_base() == "https://topstocks.example"
+def test_the_origin_strips_the_trailing_slash(origin):
+    assert config.public_origin() == "https://topstocks.example"
 
 
 def test_everything_is_none_without_a_configured_origin(monkeypatch):
     """A deploy that has not said where it lives must not emit links to a
     hostname nobody can reach — the messages render exactly as before."""
     monkeypatch.setenv("APP_PUBLIC_URL", "")
-    monkeypatch.setattr(links, "secret", lambda *a, **k: "")
-    assert links.app_base() is None
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
+    assert config.public_origin() is None
     assert links.page_url(links.PORTFOLIO) is None
     assert links.ticker_url("NVDA") is None
 

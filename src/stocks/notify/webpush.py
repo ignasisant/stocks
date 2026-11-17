@@ -28,6 +28,15 @@ Subscriptions live in one JSON file per account (`UserPaths.push`, in
 push service answering 404/410 means the subscription is gone (app removed,
 permission revoked) and the row goes with it.
 
+A browser holds one subscription per site, whoever is signed in, so the same
+device can end up in two accounts' files: sign in as A, switch push on, sign
+in as B, switch it on again. Both accounts then notify the one phone, and a
+tap on A's briefing opens the app signed in as B, where that thread does not
+exist. `OWNERS` settles it: one device, one account — the one signed in on it
+(`claim`, sent by the app when it opens; `release` when it signs out). A row
+whose device another account holds is kept but not sent to, and comes back
+when its account signs in there again.
+
 What was sent is kept beside them, in its own file (`UserPaths.push_log`):
 the last `LOG_ROWS` messages an account was pushed, with how many devices
 took each, so the reader (and Claude, through the connector) can see what
@@ -64,9 +73,16 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from stocks import obs, storage, userstore
+from stocks.config import DATA_DIR
 from stocks.secrets_env import secret
 
 FILE = "push.json"
+# Which account each device belongs to: row id -> the account's directory
+# name, "" for a device signed out. One file for every account, written only
+# by the web service (the crons read it).
+OWNERS = DATA_DIR / "push_owners.json"
+MAX_OWNERS = 5000
+NOBODY = ""
 LOG_FILE = "push_log.json"
 # Messages kept in the log, newest last.
 LOG_ROWS = 50
@@ -213,6 +229,60 @@ def _write(path: Path, rows: dict[str, dict]) -> None:
     userstore.write(path, {"subscriptions": {k: rows[k] for k in newest}}, indent=1)
 
 
+def _account(path: Path) -> str:
+    """The account a push file belongs to, as `OWNERS` names it: a digest of
+    its directory, which is made of the e-mail address. The index is one file
+    for everybody and outlives a deleted account, so it names nobody."""
+    return hashlib.sha256(Path(path).resolve().parent.name.encode()).hexdigest()[:24]
+
+
+def _owners(*, to_write: bool = False) -> dict[str, str]:
+    """Who each device belongs to. A reader that cannot fetch the index goes
+    on without it (every row live, as before there was one). A writer may not:
+    the handful of rows it knows would be saved over everybody's, so
+    `to_write` lets the failure out."""
+    if to_write:
+        storage.restore_once(OWNERS, (OWNERS,))
+    else:
+        with obs.swallow("push.owners_restore"):
+            storage.restore_once(OWNERS, (OWNERS,))
+    rows = userstore.read(OWNERS).get("owners")
+    if not isinstance(rows, dict):
+        return {}
+    return {k: v for k, v in rows.items() if isinstance(v, str)}
+
+
+def _hand(endpoint: str, owner: str, *, only_from: str | None = None) -> str | None:
+    """Give the device at `endpoint` to `owner`; who held it before, None for
+    a device nobody had claimed. `only_from` leaves another holder's alone."""
+    key = _row_id(endpoint)
+    with userstore.lock(OWNERS):
+        owners = _owners(to_write=True)
+        before = owners.get(key)
+        if before == owner or (only_from is not None and before not in (None, only_from)):
+            return before
+        owners.pop(key, None)
+        owners[key] = owner
+        for old in list(owners)[:-MAX_OWNERS]:
+            del owners[old]
+        userstore.write(OWNERS, {"owners": owners}, indent=1)
+    if owner != NOBODY and before not in (None, NOBODY):
+        # A device changing hands: two accounts used on one phone.
+        obs.event("push.claimed")
+    return before
+
+
+def _live(path: Path) -> dict[str, dict]:
+    """The account's rows that are its to notify: not the devices another
+    account is signed in on, nor the ones signed out. A device nobody ever
+    claimed (subscribed before `OWNERS` existed) counts as its own."""
+    rows = _read(path)
+    if not rows:
+        return rows
+    owners, me = _owners(), _account(path)
+    return {k: v for k, v in rows.items() if owners.get(k, me) == me}
+
+
 def _valid_endpoint(endpoint: str) -> bool:
     # A push service is a public https origin; anything else would make this
     # server POST wherever a client pointed it.
@@ -245,7 +315,30 @@ def subscribe(path: Path, *, endpoint: str, p256dh: str, auth: str,
             "created": float((rows.get(key) or {}).get("created") or now),
         }
         _write(path, rows)
+    _hand(endpoint, _account(path))
     return True
+
+
+def claim(path: Path, endpoint: str) -> bool:
+    """The device at `endpoint` is signed in to this account now: it is this
+    account's to notify and nobody else's. Whether this account has it
+    switched on — claiming a device subscribes nothing.
+
+    Knowing an endpoint is what it takes, as for `unsubscribe`: it is the
+    push service's own secret URL, which only the device and the accounts it
+    subscribed to have seen."""
+    if not _valid_endpoint(endpoint):
+        return False
+    _hand(endpoint, _account(path))
+    return _row_id(endpoint) in _read(path)
+
+
+def release(path: Path, endpoint: str) -> None:
+    """This account signed out on the device at `endpoint`: nothing is sent
+    there until somebody signs in on it. The row stays, so signing back in
+    brings the notifications back without asking again."""
+    if _valid_endpoint(endpoint):
+        _hand(endpoint, NOBODY, only_from=_account(path))
 
 
 def unsubscribe(path: Path, endpoint: str) -> bool:
@@ -258,22 +351,22 @@ def unsubscribe(path: Path, endpoint: str) -> bool:
 
 
 def subscribed(path: Path, endpoint: str) -> bool:
-    return _row_id(endpoint) in _read(path)
+    return _row_id(endpoint) in _live(path)
 
 
 def row(path: Path, endpoint: str) -> dict | None:
-    return _read(path).get(_row_id(endpoint))
+    return _live(path).get(_row_id(endpoint))
 
 
 def devices(path: Path) -> int:
     """How many devices this account receives pushes on."""
-    return len(_read(path))
+    return len(_live(path))
 
 
 def lang_of(path: Path) -> str | None:
     """The language the newest device subscribed in, for a message written
     once for all of them; None with no device."""
-    rows = sorted(_read(path).values(), key=lambda r: float(r.get("created") or 0))
+    rows = sorted(_live(path).values(), key=lambda r: float(r.get("created") or 0))
     return next((r["lang"] for r in reversed(rows) if r.get("lang")), None)
 
 
@@ -398,7 +491,7 @@ def send_all(path: Path, message: dict, *, topic: str = "") -> int:
     if not configured():
         return 0
     took = 0
-    rows = list(_read(path).values())
+    rows = list(_live(path).values())
     for row in rows:
         with obs.swallow("push.send"):
             took += 200 <= send(path, row, message, topic=topic) < 300
@@ -415,7 +508,7 @@ def answer_ready(path: Path, owner: str, *, thread: str, question: str) -> int:
 
     took = 0
     message: dict = {}
-    rows = list(_read(path).values())
+    rows = list(_live(path).values())
     for row in rows:
         lang = row.get("lang") or "en"
         message = {
