@@ -25,6 +25,12 @@ PROFILE_CACHE = DATA_DIR / "profiles.json"
 # What is kept. Anything that moves (prices, market cap, margins) is
 # deliberately not on the list — this memo has no TTL.
 FIELDS = ("sector", "industry", "country", "currency", "quoteType", "name")
+# The ones a throttled Yahoo leaves out: it answers the quote alone, without
+# the company's profile, and the blob still looks whole (a price, a P/E, a
+# market cap). They decide how a company is valued (`analysis.review` picks
+# a bank's lens, or prices what AI can copy, by the industry), so a blob that
+# lacks them is given what an earlier, whole answer said (`fill`).
+CLASSIFIED = ("sector", "industry", "country")
 
 _lock = threading.Lock()
 _memo: dict[str, dict[str, str]] | None = None
@@ -64,8 +70,24 @@ def known(symbol: str) -> dict[str, str] | None:
     return dict(hit) if hit else None
 
 
+def fill(symbol: str, info: dict) -> dict:
+    """`info` with the `CLASSIFIED` facts it lacks taken from the memo.
+
+    The same dict when nothing is missing or nothing is known; a copy
+    otherwise, so the caller's blob is never edited under it."""
+    if not symbol or not info.get("quoteType"):
+        return info
+    stored = known(symbol) or {}
+    missing = {f: stored[f] for f in CLASSIFIED if not info.get(f) and stored.get(f)}
+    return {**info, **missing} if missing else info
+
+
 def remember(symbol: str, info: dict | None) -> None:
-    """Record the fixed fields of `info` for `symbol`; a no-op on a stub."""
+    """Record the fixed fields of `info` for `symbol`; a no-op on a stub.
+
+    A field the blob lacks keeps what was known: Yahoo's quote-only answer
+    carries a quoteType and no sector, and replacing the entry with it forgot
+    the industry until the next whole answer."""
     if not symbol or not isinstance(info, dict) or not info.get("quoteType"):
         return
     # Yahoo's own name for the listing: the one source that covers a non-US
@@ -75,6 +97,7 @@ def remember(symbol: str, info: dict | None) -> None:
     key = symbol.upper()
     with _lock:
         cache = _all()
+        entry = {**cache.get(key, {}), **entry}
         if cache.get(key) == entry:
             return
         cache[key] = entry

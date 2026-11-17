@@ -23,7 +23,9 @@ from typing import Literal
 
 #: 3: 2026-11-12 `cash_roc`, `loan_share`, `equity_share`, `property_share`,
 #: an ADR's and a pence line's forward P/E, a collapsing trailing P/E blanked.
-VERSION = 3
+#: 4: 2026-11-16 `peg` divides the forward P/E after share-based pay
+#: (`review.growth_pe`), the one the review scores; `receivable_share`.
+VERSION = 4
 
 Kind = Literal["identity", "price", "yield", "enterprise", "business"]
 Statement = Literal["income", "cashflow", "balance"]
@@ -99,6 +101,7 @@ KPIS: dict[str, Kpi] = {
     "op_margin_median": _B,
     "payout_ratio": _B,
     "property_share": _B,
+    "receivable_share": _B,
     "revenue": _B,
     "revenue_cagr": Kpi(statement="income", series=True),
     "revenue_down_years": _B,

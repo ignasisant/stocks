@@ -1671,6 +1671,17 @@
   margin-top: 2px;
 }
 
+/* From the sixth reason on, two to a row: a phone's plot is no taller than
+   five, and the box may not outgrow the plot that clips it. */
+.ag-rev-tip-why:has(> li:nth-child(6)) {
+  columns: 2;
+  column-gap: 12px;
+}
+
+.ag-rev-tip-why:has(> li:nth-child(6)) li {
+  break-inside: avoid;
+}
+
 /* The dot's finger-sized hit ring is invisible; the dot itself answers, and a
    press opens its details. */
 .ag-rev-dot {

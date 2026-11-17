@@ -16,8 +16,27 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 import yfinance as yf
+from yfinance.exceptions import YFRateLimitError
 
 from stocks.data import fetch
+
+#: What only the figures half of Yahoo's answer for a company carries. A
+#: throttled Yahoo answers the quote (price, market cap, forward P/E) and
+#: drops the rest, in more than one shape; none of these three survives any.
+_FIGURES_ONLY = ("enterpriseValue", "totalDebt", "operatingMargins")
+
+
+def quote_only(blob: dict) -> bool:
+    """Yahoo answered a company's quote without its figures.
+
+    Such a blob reads like a company with no debt and no margin: scored, it
+    stood on the map for hours as a valuation. Only a company Yahoo is known
+    to describe counts (`fetch.info` fills the industry it gave before): a
+    preferred share or a fresh listing has no figures on its best day, and
+    refusing those would leave their page without an answer for good."""
+    described = blob.get("industry") or blob.get("sector")
+    bare = not any(k in blob for k in _FIGURES_ONLY)
+    return blob.get("quoteType") == "EQUITY" and bool(described) and bare
 
 
 @dataclass
@@ -42,7 +61,9 @@ def fetch_fundamentals(ticker: str) -> RawFundamentals:
 
     Raises `YFRateLimitError` when the host is cooling off, without touching
     the network — callers already degrade on it (`analysis.screener` turns it
-    into an all-n/a row rather than aborting a whole screen).
+    into an all-n/a row rather than aborting a whole screen). A quote without
+    its figures (`quote_only`) is the same throttle answering by halves and
+    raises the same: the last whole answer in the memo stands in for it.
 
     `.info` comes from `fetch.info`, which memoizes it for 120s and records the
     facts that never move — sector, country, currency, quoteType — in the
@@ -53,6 +74,10 @@ def fetch_fundamentals(ticker: str) -> RawFundamentals:
     if fetch.unaskable(symbol):
         return RawFundamentals(ticker=ticker.upper())
     blob = fetch.retry(lambda: fetch.info(symbol))
+    if quote_only(blob or {}):
+        # Outside the ladder on purpose: the quote did answer, so this is no
+        # reason to open the cooldown for every other request.
+        raise YFRateLimitError()
     t = yf.Ticker(symbol)
 
     def statements():

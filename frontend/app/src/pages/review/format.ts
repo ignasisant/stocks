@@ -22,6 +22,7 @@ export function foreign(row: { currency: string | null }, base: string): string 
 /** The KPIs a row carries, in display order (`stocks.analysis.review.SHOWN`). */
 export const SHOWN = [
   "pe_fwd",
+  "pe_owner",
   "growth_pe",
   "fcf_yield",
   "owner_fcf_yield",
@@ -47,29 +48,47 @@ export const SHOWN = [
   "payout_ratio",
 ] as const;
 
-/** The few a map dot's tooltip carries: price, price for growth, cash, returns. */
-const TIP = [
-  "pe_fwd",
-  "growth_pe",
-  "fcf_yield",
-  "roic",
-  "op_margin",
-  "revenue_growth",
-] as const;
+/**
+ * The few a map dot's tooltip carries: price, price for growth, cash, returns.
+ * Each slot prints the figure the score read, not the plain one beside it: a
+ * tooltip showing 12x under a price marked on 22x, or "ROIC ≥ 25%" over a
+ * ROIC of 9%, explains nothing. `first` takes the first key the row has;
+ * `best` the larger, as the engine does with the return past goodwill.
+ */
+const TIP: readonly { keys: readonly string[]; take: "first" | "best" }[] = [
+  { keys: ["pe_owner", "pe_fwd"], take: "first" },
+  { keys: ["growth_pe"], take: "first" },
+  { keys: ["owner_fcf_yield", "fcf_yield"], take: "first" },
+  { keys: ["roic", "roic_ex_goodwill"], take: "best" },
+  { keys: ["op_margin"], take: "first" },
+  { keys: ["revenue_growth"], take: "first" },
+];
 
 /** The tooltip's figures, printed, the ones the feed lacked left out. */
 export function tipFigures(
   metrics: Record<string, number | null>,
   lang: string,
 ): { key: string; value: string }[] {
-  return TIP.flatMap((key) => {
-    const value = metric(key, metrics[key], lang);
-    return value === null ? [] : [{ key, value }];
+  return TIP.flatMap(({ keys, take }) => {
+    const have = keys.filter((one) => isNum(metrics[one]));
+    const key =
+      take === "best"
+        ? have.reduce<string | undefined>(
+            (top, one) =>
+              top === undefined || (metrics[one] ?? 0) > (metrics[top] ?? 0)
+                ? one
+                : top,
+            undefined,
+          )
+        : have[0];
+    const value = key ? metric(key, metrics[key], lang) : null;
+    return key && value !== null ? [{ key, value }] : [];
   });
 }
 
 /** The ones the KPI catalog lacks; their words are `review.metric_<key>`. */
 export const OWN_LABEL = new Set<string>([
+  "pe_owner",
   "growth_pe",
   "owner_fcf_yield",
   "implied_growth",
@@ -86,6 +105,7 @@ export const OWN_LABEL = new Set<string>([
 /** The KPIs a row carries, each in its own unit. */
 const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   pe_fwd: "x",
+  pe_owner: "x",
   pe_ttm: "x",
   pb: "x",
   ptbv: "x",
