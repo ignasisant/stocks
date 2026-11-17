@@ -53,6 +53,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from stocks import obs
 from stocks.notify import links
+from stocks.schemas.prefs import parse_time
 
 if TYPE_CHECKING:
     from stocks.accounts import UserPaths
@@ -104,15 +105,6 @@ def zone(prefs: dict) -> ZoneInfo:
     name = prefs.get(ZONE_KEY)
     ok = isinstance(name, str) and valid_zone(name)
     return ZoneInfo(name.strip() if ok and name else DEFAULT_ZONE)
-
-
-def parse_time(text: object) -> time | None:
-    """"HH:MM" as a time, None for anything else."""
-    try:
-        hours, minutes = str(text).split(":")
-        return time(int(hours), int(minutes))
-    except (ValueError, TypeError):
-        return None
 
 
 def clean_days(days: object) -> list[int]:
@@ -405,10 +397,16 @@ def _status(filed: str, took: int) -> str:
     return f"filed, pushed {took}" if took else "filed"
 
 
-def _current_card(account: Account):
+def _current_card(account: Account, *, stand_in: bool = False):
     """Home's daily card for the action day now, asked for as Home asks for it
     (`daily_card.request`: a card that already stands costs nothing) and
-    waited on; None when none was stored for that day."""
+    waited on; None when none was stored for that day.
+
+    With `stand_in`, a generation still out when the wait ends answers with
+    its computed card (`briefing.Job.computed`), which is what Home is showing
+    meanwhile. The morning every account's card is written at once (a Monday:
+    no session closed the evening before) the models take longer than the
+    wait, and a briefing that waited for nothing was never filed nor pushed."""
     from stocks.views import briefing, daily_card
 
     daily_card.request(account.paths, account.lang, force=False)
@@ -417,9 +415,21 @@ def _current_card(account: Account):
         if clock.monotonic() > deadline:
             break
         clock.sleep(1.0)
-    card = daily_card.stored(account.paths)
+    # Read before the stored card: a job that ends in between has stored it.
+    late = job.computed if stand_in and job is not None else None
     _, day = briefing.now_day(account.paths)
-    return card if card is not None and card.day == day.isoformat() else None
+    for card in (daily_card.stored(account.paths), late):
+        if card is not None and card.day == day.isoformat():
+            return card
+    return None
+
+
+def _written(account: Account, day: str):
+    """The card stored for `day` and filed in a thread, or None."""
+    from stocks.views import daily_card
+
+    card = daily_card.stored(account.paths)
+    return card if card is not None and card.day == day and card.thread else None
 
 
 def _card(account: Account, session: date) -> str:
@@ -435,10 +445,17 @@ def _briefing(account: Account, day: date) -> str:
     from stocks.i18n import translate
     from stocks.notify import render
 
-    card = _current_card(account)
+    card = _current_card(account, stand_in=True)
     if card is None:
         return "skipped: no card"
     cid = card.thread or daily.record(account.paths.chat, card)
+    if not card.thread:
+        # The stand-in was filed just now. A generation that landed while it
+        # was replaces it in the same thread (`save_card_thread`) — unless it
+        # landed first, and then its card is the one to file and to push.
+        written = _written(account, card.day)
+        if written is not None:
+            card, cid = written, daily.record(account.paths.chat, written) or cid
     if not cid or not conversations.mark_scheduled(
         cid, "briefing", card.day, account.paths.chat
     ):

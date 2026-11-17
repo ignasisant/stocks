@@ -20,6 +20,7 @@ import time
 import wave
 
 from stocks import llm, obs
+from stocks.i18n import LANGUAGES
 
 # Groq's turbo Whisper: the cheapest of the three it serves and the only one
 # that is multilingual *and* fast enough to keep a voice note inside the pause
@@ -44,6 +45,11 @@ MIN_SECONDS = 0.4  # a tap on the button, not a question
 SAMPLE_RATE = 16_000
 
 _TIMEOUT = 30.0
+
+# What Whisper's verbose answer names a language by: OpenAI writes the English
+# name ("spanish"), other backends a code or a capitalised name. Only the
+# app's own languages need a name here — anything else is "not ours".
+_NAMES = {"english": "en", "spanish": "es", "italian": "it", "castilian": "es"}
 
 
 class TranscriptionFailed(Exception):
@@ -92,9 +98,14 @@ def transcribe(audio: bytes, *, language: str | None = None,
                content_type: str = "audio/wav") -> str:
     """The spoken text of `audio`, or raise TranscriptionFailed.
 
-    `language` is an ISO-639-1 hint (the app's active locale): Whisper detects
-    the language by itself, but a two-second clip of Spanish is routinely
-    detected as Portuguese, and the hint costs nothing.
+    `language` is the app's active locale, and only a fallback. Whisper is
+    first left to hear the language itself: given `language=` it does not
+    detect, it writes that language — so a reader who keeps the app in English
+    and speaks Spanish got an English translation of their question, and the
+    answer in English with it. What it hears is kept when it is one of the
+    app's languages; anything else (a two-second clip of Spanish is routinely
+    taken for Portuguese) is asked again in the locale. Only a misheard clip
+    pays for the second call.
 
     `content_type` and `filename` travel together and default to WAV. A
     browser recording through `MediaRecorder` produces whatever its engine
@@ -121,17 +132,30 @@ def transcribe(audio: bytes, *, language: str | None = None,
     from openai import OpenAI, omit
 
     model = _model()
+    hint = (language or "").split("-")[0].strip().lower() or None
     t0 = time.perf_counter()
+    heard: str | None = None
+    retried = False
     try:
         client = OpenAI(api_key=key, base_url=_BASE_URL, timeout=_TIMEOUT)
-        resp = client.audio.transcriptions.create(
-            model=model,
-            file=(filename, audio, content_type),
-            # `omit`, not None: the field is optional, and the SDK sends None
-            # as a JSON null rather than leaving the key out — which is a
-            # different request, and one Whisper backends are free to reject.
-            language=language or omit,
-        )
+
+        def ask(forced: str | None):
+            return client.audio.transcriptions.create(
+                model=model,
+                file=(filename, audio, content_type),
+                # `omit`, not None: the field is optional, and the SDK sends
+                # None as a JSON null rather than leaving the key out — which
+                # is a different request, and one Whisper backends are free
+                # to reject. Unforced, the verbose answer names what it heard.
+                language=forced or omit,
+                response_format=omit if forced else "verbose_json",
+            )
+
+        resp = ask(None)
+        heard = _code(getattr(resp, "language", None))
+        if hint and heard and heard not in LANGUAGES:
+            resp = ask(hint)
+            retried = True
     except Exception as exc:
         obs.warn("stt.failed", backend=_BACKEND, model=model,
                  bytes=len(audio), seconds=round(seconds or 0.0, 1),
@@ -143,7 +167,16 @@ def transcribe(audio: bytes, *, language: str | None = None,
     text = " ".join(text.split())
     obs.event("stt.ok", backend=_BACKEND, model=model,
               seconds=round(seconds or 0.0, 1), chars=len(text),
+              heard=heard or "?", hint=hint or "-", retried=retried,
               took_ms=int((time.perf_counter() - t0) * 1000))
     if not text:
         raise TranscriptionFailed("chat.voice_silent")
     return text
+
+
+def _code(name) -> str | None:
+    """A language as Whisper named it, as a two-letter code (None if unnamed)."""
+    word = str(name or "").strip().lower()
+    if not word:
+        return None
+    return _NAMES.get(word, word)

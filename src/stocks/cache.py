@@ -121,7 +121,7 @@ _refused: dict[tuple[int, tuple], float] = {}
 SYNC: ContextVar[bool] = ContextVar("sync_refresh", default=False)
 
 # Told about every background refresh as it starts, with the event its landing
-# sets. The API wires it to `api.holds.keep`: on Cloud Run a thread no request
+# sets. The API wires it to `cpu_hold.keep`: on Cloud Run a thread no request
 # is waiting for runs on a throttled CPU, and stalls there.
 on_background: Callable[[threading.Event], None] | None = None
 

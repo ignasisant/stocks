@@ -1,21 +1,23 @@
 /**
- * The first-login welcome: three steps to a live portfolio, in a few words.
+ * The first-login welcome: how the app works, in three lines.
  *
- * Three rows — an icon, a short line, a shorter caption — each one a door into the
- * section that does it. The sections teach themselves (Import has its own
- * stepper), so the pop-up does not explain them: it gets the reader there.
- *
- * Import leads: the ledger is what Portfolio, risk and taxes are built from.
- * Then the portfolio it fills, then the assistant that reads both.
+ * Three rows — an icon, a short line, a shorter caption — that say what
+ * happens, in order: the statement goes in, the portfolio is worked out from
+ * it, the assistant reads both. They are text, not doors. The list of things
+ * to set up is Home's start card, and a second one here counted differently
+ * and sent a newcomer to pages their book had not filled yet.
  *
  * Shown once per account, on the first load the card surface decides
  * (`Tour.firstLoad`), and stamped the moment it opens — a welcome seen twice
  * is no longer one. Home's start card carries on from here.
+ *
+ * Two ways on, both in the footer, and it takes neither by itself: the
+ * import, which is the point, and the section guide first (`onTour`) for
+ * someone who wants to see what they are importing into.
  */
 
 import { useEffect, useRef } from "react";
 
-import { openAssistant } from "./assistant";
 import { Icon } from "./Icon";
 import { useT } from "./i18n";
 import { canonical } from "./pages";
@@ -31,15 +33,24 @@ type Target = {
   session: Record<string, string>;
 };
 
-/** Registry step id, icon, and the two catalog keys for its row. */
+/** Icon and the stem of the two catalog keys for each row. */
 const ROWS = [
-  // Import first: it is the step everything else on the app derives from.
-  { step: "import", icon: "upload_file", key: "import" },
-  { step: "positions", icon: "pie_chart", key: "portfolio" },
-  { step: "assistant", icon: "auto_awesome", key: "ai" },
+  // Import first: it is what everything else on the app derives from.
+  { icon: "upload_file", key: "import" },
+  { icon: "pie_chart", key: "portfolio" },
+  { icon: "auto_awesome", key: "ai" },
 ] as const;
 
-export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => void }) {
+export function Welcome({
+  steps,
+  onClose,
+  onTour,
+}: {
+  steps: Target[];
+  onClose: () => void;
+  /** "Look round": the section guide, from its first stop. */
+  onTour: () => void;
+}) {
   const t = useT();
   const scrim = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
@@ -55,26 +66,16 @@ export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => vo
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // The step a row lands on, from the registry: a deploy without it draws
-  // the row as text rather than as a button that goes nowhere.
-  const visit = (id: string) => {
-    const step = steps.find((s) => s.id === id);
-    if (!step) return null;
-    if (step.path === null) {
-      // The assistant is a drawer, not a page: the registry says so with a
-      // null path and asks for the panel open instead.
-      if (!step.session?.chat_panel_open) return null;
-      return () => {
-        onClose();
-        openAssistant();
-      };
-    }
-    return () => {
-      onClose();
-      go(canonical(step.path ?? ""), landing(step));
-    };
-  };
-  const importNow = visit("import");
+  // Where the import lives, from the registry: a deploy without the step
+  // draws no button rather than one that goes nowhere.
+  const target = steps.find((s) => s.id === "import");
+  const importNow =
+    target && target.path !== null
+      ? () => {
+          onClose();
+          go(canonical(target.path ?? ""), landing(target));
+        }
+      : null;
 
   return (
     <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onClose}>
@@ -92,43 +93,24 @@ export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => vo
         </header>
         <h2 className="ag-tour-h">{t("tour.hello_heading")}</h2>
         <ol className="ag-welcome-steps">
-          {ROWS.map((row, i) => {
-            const onClick = visit(row.step);
-            const body = (
-              <>
-                <span className="ag-welcome-dot" aria-hidden="true">
-                  <Icon name={row.icon} size={20} />
+          {ROWS.map((row, i) => (
+            <li key={row.key} className="ag-welcome-row">
+              <span className="ag-welcome-dot" aria-hidden="true">
+                <Icon name={row.icon} size={20} />
+              </span>
+              <span className="ag-welcome-text">
+                <span className="ag-welcome-line">
+                  <span className="ag-welcome-n">{i + 1}</span>
+                  {t(`tour.hello_${row.key}`)}
                 </span>
-                <span className="ag-welcome-text">
-                  <span className="ag-welcome-line">
-                    <span className="ag-welcome-n">{i + 1}</span>
-                    {t(`tour.hello_${row.key}`)}
-                  </span>
-                  <span className="ag-welcome-cap">
-                    {t(`tour.hello_${row.key}_cap`)}
-                  </span>
-                </span>
-              </>
-            );
-            return (
-              <li key={row.step}>
-                {onClick ? (
-                  <button type="button" className="ag-welcome-row" onClick={onClick}>
-                    {body}
-                    <span className="ag-welcome-go" aria-hidden="true">
-                      <Icon name="arrow_forward" size={16} />
-                    </span>
-                  </button>
-                ) : (
-                  <span className="ag-welcome-row">{body}</span>
-                )}
-              </li>
-            );
-          })}
+                <span className="ag-welcome-cap">{t(`tour.hello_${row.key}_cap`)}</span>
+              </span>
+            </li>
+          ))}
         </ol>
         <p className="ag-welcome-hint">{t("tour.hello_hint")}</p>
         <footer className="ag-tour-foot">
-          <button type="button" className="ag-tour-quiet" onClick={onClose}>
+          <button type="button" className="ag-tour-quiet" onClick={onTour}>
             {t("tour.hello_later")}
           </button>
           {importNow ? (

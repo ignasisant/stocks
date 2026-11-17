@@ -114,6 +114,16 @@
   must: [lookup_knowledge]
   must_not: [search_web, get_quotes]
 
+# Prod 2026-11-10 (rated down): "top stocks" read as the market's best
+# stocks and the gather searched the web for generic investing tips.
+- id: app-most-out-of
+  message: "como sacar el maximo rendimiento de top stocks"
+  goals:
+    - Talks about TopStocks' own features, not generic investing advice
+    - Points at what this account has not set up yet
+  must: [lookup_knowledge]
+  must_not: [search_web]
+
 - id: app-figure
   message: "¿cómo calcula la app la rentabilidad ponderada por tiempo?"
   must: [lookup_knowledge]

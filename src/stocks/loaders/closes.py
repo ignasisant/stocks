@@ -16,8 +16,10 @@ import pandas as pd
 from stocks import obs, progress
 from stocks.analysis.portfolio import (
     HELD_ACTIONS,
+    Mismatch,
     complete_download,
     load_closes,
+    mismatches,
     plausible_closes,
     session_quotes,
 )
@@ -41,7 +43,7 @@ from stocks.loaders.keys import (
 )
 from stocks.portfolio import consistency, fees, transfers
 from stocks.portfolio.ledger import all_transactions
-from stocks.portfolio.positions import build
+from stocks.portfolio.positions import build, open_lots
 
 
 def _currencies(txs) -> dict[str, str]:
@@ -349,6 +351,39 @@ def _stored_base(db: str) -> tuple | None:
             if entry is not None:
                 held = entry[1]
     return held
+
+
+def _as_traded(amount: float, currency: str, day: str) -> float:
+    return amount
+
+
+def price_mismatches(db: str) -> list[Mismatch]:
+    """The open names whose own fills say their kept prices are another
+    instrument: read at cost until the price booked, or the ticker, is fixed.
+
+    Off the book's last kept frames, never a download, so the checkup stays a
+    ledger read; a book whose prices were never fetched names nothing. Judged
+    in each fill's own currency first, and only the names that fail that are
+    asked for their listing's unit (pence against pounds), so a clean book
+    makes no lookup at all.
+    """
+    held = _stored_base(db)
+    if held is None:
+        return []
+    txs, _ = _held(db)
+    try:
+        names = {lot.ticker for lot in open_lots(txs, to_base=_as_traded)}
+    except ValueError:
+        return []
+    closes = {
+        t: s for t, s in _close_series(held[1], "Adj Close").items() if t in names
+    }
+    ccy_of = _currencies(txs)
+    plain = {t: (c.upper(), 1.0) for t, c in ccy_of.items()}
+    suspects = {m.ticker for m in mismatches(closes, txs, plain)}
+    if not suspects:
+        return []
+    return mismatches({t: closes[t] for t in sorted(suspects)}, txs)
 
 
 def _frames_base(db: str, since: str) -> tuple[dict[str, pd.DataFrame], float] | None:

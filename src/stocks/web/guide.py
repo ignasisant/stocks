@@ -47,11 +47,12 @@ MAX_AUTO_OPENS = 3
 def surface() -> str:
     """Which onboarding surface this deploy serves: "card", "chat" or "modal".
 
-    "card" (the default since 2026-10-10) interrupts nobody: no drawer popping
-    open, no modal. Home's start card is the whole onboarding — a few icons,
-    each one a door straight into the section that does the thing — and the
-    sections teach themselves (Import has its own stepper). Walkthrough copy
-    read before the reader has done anything was the part they skipped.
+    "card" (the default since 2026-10-10) opens no drawer and no tour by
+    itself. A new account gets one welcome with the way in, Home's start card
+    — a few icons, each one a door straight into the section that does the
+    thing — and, once its own book is in, an offer of the section guide and a
+    first-visit tip per page (`onboarding.first_book`). Walkthrough copy read
+    before the reader has done anything was the part they skipped.
 
     "chat" (this walkthrough in the drawer) and "modal" (the tour opening
     itself) are kept whole behind this flag as the rollback; both still answer

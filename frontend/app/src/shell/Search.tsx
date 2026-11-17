@@ -72,6 +72,22 @@ const MIN_WORLD_QUERY = 3;
  * tickers") gets the top bar's ranking without a second search to keep in
  * step with it.
  */
+/**
+ * The top bar's field, for a control elsewhere on the page that says "search"
+ * (Home's start card): pressing it should put the reader in the field it
+ * names. Null while no top bar is mounted.
+ */
+let topField: { current: HTMLInputElement | null } | null = null;
+
+/** Focus the top bar's search field; false when there is none to focus. */
+export function focusSearch(): boolean {
+  const el = topField?.current;
+  if (!el) return false;
+  el.focus();
+  el.select();
+  return true;
+}
+
 export function Search({
   onPick,
   placeholder,
@@ -117,7 +133,11 @@ export function Search({
       field.current?.select();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    topField = field;
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (topField === field) topField = null;
+    };
   }, [onPick]);
 
   // Clicking anywhere else closes the panel. Not blur: a click *on* a result

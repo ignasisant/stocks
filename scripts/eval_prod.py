@@ -201,6 +201,11 @@ class Prod:
                 if error:
                     return prod_eval.Answer(error=f"screenshot: {error}")
             threads.append(self.thread(f"eval {q.id}"))
+            for message in q.follows:
+                # The talk above a follow-up, on the question's own thread.
+                ans = self.run(replace(q, message=message), threads[-1], headers)
+                if ans.error:
+                    return prod_eval.Answer(error=f"follows: {ans.error}")
             ans = self.run(q, threads[-1], headers, [reading] if reading else [])
             ans.reading = reading
             return ans
@@ -420,6 +425,7 @@ def main() -> int:
             extra = [f"truth:{len(q.truth)}"] if q.truth else []
             extra += [f"opens:{q.opens}"] if q.opens else []
             extra += [f"before:{len(q.before)}"] if q.before else []
+            extra += [f"follows:{len(q.follows)}"] if q.follows else []
             extra += [f"shot:{len(q.shot)} lines"] if q.shot else []
             extra += ["recall"] if q.recall else []
             print(f"  {q.area:22} {q.kind:8} {q.id:28} {' '.join(extra)}")

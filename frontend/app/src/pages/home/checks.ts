@@ -36,11 +36,21 @@ export type Row = {
    */
   signedIn?: boolean;
   /**
-   * Catalog key of a request the row hands the assistant, in a fresh
-   * conversation, instead of opening its step's page: the plan is built
-   * faster by answering the chat's few questions than by filling the form.
+   * Catalog key of a request the row writes into the assistant's field,
+   * instead of opening its step's page: the plan is built faster by answering
+   * the chat's few questions than by filling the form. Written, never sent:
+   * no other node acts by itself, and an answer spends the day's allowance,
+   * which is the reader's press to make.
    */
   ask?: string;
+  /** The row is the top bar's search field: pressing it focuses that field. */
+  search?: boolean;
+  /**
+   * The drawer view this row opens instead of the conversation: the key is
+   * entered in the assistant's settings, and a drawer opened on a blank
+   * conversation leaves the reader to find the gear.
+   */
+  view?: "settings";
   /**
    * Worth having, not needed: the assistant answers without a key of the
    * reader's own, and notifications are a second place to read what Home says. Left
@@ -88,15 +98,16 @@ export const SETUP: Row[] = [
     signedIn: true,
     optional: true,
   },
-  // The key gate lives inside the assistant drawer, which is not a page: the
-  // registry says so with a null path, and `target()` leaves the row inert
-  // rather than sending the reader somewhere that is not it.
+  // The key is entered in the assistant drawer's settings, which are not a
+  // page: the registry says so with a null path, and the row asks for that
+  // view rather than for the conversation the step itself opens.
   {
     key: "ai",
     label: "home.start_ai",
     icon: "auto_awesome",
     cta: "home.start_go_ai",
     step: "assistant",
+    view: "settings",
     signedIn: true,
     optional: true,
   },
@@ -127,9 +138,16 @@ export const SETUP: Row[] = [
 ];
 
 export const EXPLORE: Row[] = [
-  // Search is in the top bar on every page, so this points at the page a
-  // looked-up ticker lands on rather than at a field it cannot focus from here.
-  { key: "search", label: "home.start_search", icon: "search", step: "market" },
+  // Search is the field in the top bar, on every page: the chip puts the
+  // reader in it. `step` is the page a looked-up ticker lands on, the
+  // fallback where no top bar is mounted.
+  {
+    key: "search",
+    label: "home.start_search",
+    icon: "search",
+    step: "market",
+    search: true,
+  },
   // Completable without the AI row above it ever going green: the assistant
   // answers on the keyless chain.
   {
@@ -186,8 +204,8 @@ export function setupLine(
 }
 
 export type Target =
-  | { kind: "page"; page: string; params?: Record<string, string> }
-  | { kind: "assistant"; ask?: string };
+  | { kind: "page"; page: string; params?: Record<string, string>; search?: boolean }
+  | { kind: "assistant"; ask?: string; view?: "settings" };
 
 /**
  * The row's destination, taken from the payload rather than decided here.
@@ -209,7 +227,7 @@ export function target(row: Row, steps: TourStep[]): Target | null {
     // No page, but the registry says what it wants open. The assistant is the
     // only one of those, and a row that merely stated its capability was the
     // one row on the checklist that could not be acted on.
-    return step.session?.chat_panel_open ? { kind: "assistant" } : null;
+    return step.session?.chat_panel_open ? { kind: "assistant", view: row.view } : null;
   }
   const params: Record<string, string> = { ...step.params };
   // The registry keeps a Profile tab in `Step.session` and the payload now
@@ -221,5 +239,6 @@ export function target(row: Row, steps: TourStep[]): Target | null {
     kind: "page",
     page: canonical(step.path),
     params: Object.keys(params).length ? params : undefined,
+    ...(row.search ? { search: true } : {}),
   };
 }

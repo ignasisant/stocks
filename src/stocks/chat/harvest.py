@@ -5,7 +5,7 @@ ledger knows: the gains already realised this tax year, the open positions
 under their cost, and which lots the jurisdiction says a sale would match.
 The daily card already raises one such line at a time (`chat/signals.py`'s
 harvest signal); this is the whole list, on request, each candidate replayed
-through the tax engine the way the what-if sale is (`chat/whatif.py`'s
+through the tax engine the way the what-if sale is (`portfolio/whatif.py`'s
 `Replay`): the ledger once as it is, then once with the whole holding sold
 today, and the bill's difference is the candidate's saving. Then all of them
 sold together, since the savings do not add up — once the year's gains are
@@ -34,8 +34,9 @@ import pandas as pd
 from stocks import obs
 from stocks.chat import a2ui
 from stocks.chat.signals import HARVEST_MIN, _window_end
-from stocks.chat.whatif import Replay, _money
+from stocks.chat.whatif import _money
 from stocks.formatting import bound
+from stocks.portfolio.whatif import Replay
 
 SURFACE_ID = "harvest"
 # Candidates replayed, largest loss first: each is a replay of the ledger.

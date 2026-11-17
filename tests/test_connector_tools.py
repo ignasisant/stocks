@@ -620,6 +620,28 @@ def test_rows_added_by_hand_carry_their_broker(site, editor, book):
     assert (added.ticker, added.note) == ("MSFT", "revolut app")
 
 
+def test_a_book_started_from_the_connector_is_a_first_book(site, editor, book):
+    """A first row added from Claude or ChatGPT makes a newcomer of the
+    account like an import does; one more row in a book that exists does not."""
+    from stocks.web import onboarding
+
+    row = {"date": "2024-05-02", "ticker": "msft", "action": "buy", "quantity": 2,
+           "price": 300.0, "currency": "EUR", "broker": "Revolut", "note": "app"}
+
+    def add():
+        plan = ok(call(site, editor, "add_transactions", rows=[row]))
+        ok(call(site, editor, "add_transactions", rows=[row],
+                plan_token=plan["plan_token"]))
+
+    add()
+    assert onboarding.PREF_OFFER not in json.loads(book.prefs.read_text())
+    ledger.clear(book.db)
+    add()
+    stored = json.loads(book.prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is True
+    assert stored[onboarding.PREF_TIPS] == list(onboarding.TIPS)
+
+
 GRIFOLS = [
     Transaction("2024-03-01", "ES0171996087", "buy", 100, 8.0, "EUR", 2.0,
                 "degiro GRIFOLS"),

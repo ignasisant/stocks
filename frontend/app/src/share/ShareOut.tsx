@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Glyph } from "../chat/icons";
+import { Glyph } from "../ui/Glyph";
 import { useT } from "../shell/i18n";
 import { destinations } from "./link";
 import "./share.css";

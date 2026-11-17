@@ -27,7 +27,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { askAssistant, type Brief } from "../../shell/assistant";
 import { useT } from "../../shell/i18n";
 

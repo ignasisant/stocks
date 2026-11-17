@@ -10,7 +10,7 @@
  */
 
 import { type ReactNode, useState } from "react";
-import { Glyph } from "../../chat/icons";
+import { Glyph } from "../../ui/Glyph";
 import { useT } from "../../shell/i18n";
 import { clip, nativeFirst, sharedLink } from "../../share/link";
 import { ShareDialog } from "../../share/ShareDialog";

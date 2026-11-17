@@ -17,12 +17,9 @@ from typing import Annotated, Literal, cast
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
-from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts, loaders, obs
 from stocks.analysis import crypto_market, review
-from stocks.analysis import dcf as dcf_model
-from stocks.analysis import trend as trend_model
 from stocks.analysis.compare import (
     INDICES,
     OFFERED_PEERS,
@@ -34,22 +31,13 @@ from stocks.analysis.compare import MAX_OTHERS as MAX_COMPARED
 from stocks.analysis.compare import RANGES as COMPARE_RANGES
 from stocks.analysis.compare import lines as compare_lines
 from stocks.analysis.fundamentals import (
-    KPI_SOURCES,
-    METRIC_ORDER,
     annual_financials,
-    compute_metrics,
-    format_value,
-    fundamental_tiles,
-    lens_verdict,
-    missing_reasons,
-    peer_band,
     quarterly_eps,
     verdict,
 )
 from stocks.analysis.history import PERIODS, bar_interval, listed, rangebreaks, ranges
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
-from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
-from stocks.analysis.portfolio import first_owned, market_live, session_quote
+from stocks.analysis.portfolio import first_owned
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.cache import carried
@@ -61,27 +49,19 @@ from stocks.data.cnmv import insider_transactions as cnmv_transactions
 from stocks.data.cnmv import spanish_listing
 from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
 from stocks.data.estimates import (
-    MIN_COVERAGE,
-    consensus,
-    eps_revisions,
     estimate_currency,
     projection,
-    rating_trend,
-    target_dispersion,
 )
 from stocks.data.funds import is_fund
 from stocks.data.insiders import CODE_LABELS, summarize
 from stocks.data.listing import listing_currencies
 from stocks.jsonsafe import num as _num
-from stocks.jsonsafe import scalar as _scalar
 from stocks.portfolio import platforms
 from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
 from stocks.portfolio.custody import mix as custody_mix
 from stocks.portfolio.restate import restate_position, restate_trades
 from stocks.schemas import (
-    AnalystMonth,
     Analysts,
-    AnalystTargets,
     AnnualRow,
     AssetStats,
     Bars,
@@ -96,7 +76,6 @@ from stocks.schemas import (
     EarningsEvent,
     EntryCheck,
     EntryFit,
-    EpsRevisionRow,
     EuShortPositions,
     Financials,
     Fund,
@@ -108,25 +87,20 @@ from stocks.schemas import (
     Insiders,
     InsiderSummary,
     InsiderTrade,
-    Kpi,
     Metrics,
-    MetricTile,
     Moat,
     MoatPillar,
     OptionsView,
     Peer,
     Peers,
-    PeerScope,
     PriceEvents,
     Profile,
     ProjectedRow,
     Quote,
-    RatingChange,
     ShortHolderRow,
     Shorts,
     SourceCheck,
     SourcedFigure,
-    TickerJudged,
     TickerPosition,
     TickerSplit,
     TickerSplitPick,
@@ -136,8 +110,8 @@ from stocks.schemas import (
     Trend,
     UsShortInterest,
     Valuation,
-    ValuationWindow,
 )
+from stocks.views import ticker as reads
 
 router = APIRouter(prefix="/ticker", tags=["ticker"])
 
@@ -231,47 +205,7 @@ def trend(symbol: Symbol) -> Trend:
     nothing there.
     """
     ticker = symbol.strip().upper()
-    return Trend(ticker=ticker, **asdict(read_trend(ticker)))
-
-
-def read_trend(ticker: str) -> trend_model.TrendRead:
-    """`trend`'s read, for the chat and the connector to share with the page."""
-    kind = loaders.asset_kind(ticker)
-    if kind in (MONEY_MARKET, BOND_FUND):
-        return trend_model.TrendRead()
-    bench = _fund_benchmark(ticker) if kind in FUND_KINDS else None
-    if bench is None:
-        # The company's country only matters on a German floor, where APC.DE
-        # is Apple and the DAX says nothing about it; elsewhere it is not asked.
-        country = (
-            loaders.listing_country(ticker)
-            if trend_model.on_german_floor(ticker)
-            else None
-        )
-        bench = trend_model.benchmark_for(ticker, country)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        bars = pool.submit(loaders.daily_bars, ticker)
-        index = pool.submit(loaders.daily_closes, bench.ticker, "2y") if bench else None
-        return trend_model.trend_read(
-            bars.result(), index.result() if index else None, bench
-        )
-
-
-def _fund_benchmark(ticker: str):
-    """The index of the market a fund's basket trades in, or None.
-
-    EIMI.L is an emerging-markets fund quoted in London: against the FTSE 100
-    it reads as a bet on Britain. Its name says where its stocks are
-    (`fund_wrapper`); the profile is the one the page's fund card asked for.
-    A fund that is its own exposure's index line (EEM) keeps the listing's.
-    """
-    from stocks.analysis import fund_wrapper
-
-    profile = loaders.fund_profile(ticker)
-    if profile is None:
-        return None
-    bench = fund_wrapper.read(ticker, profile.name, profile.category).benchmark
-    return bench if bench is not None and bench.ticker != ticker else None
+    return Trend(ticker=ticker, **asdict(reads.read_trend(ticker)))
 
 
 @router.get("/{symbol}/compare", response_model=Comparison, summary="Against the index")
@@ -487,60 +421,7 @@ def quote(symbol: Symbol, base: Base = None) -> Quote:
     has no reason to doubt. No account dependency, like `/metrics`: the rate
     applies only when `?base=` is asked for explicitly.
     """
-    ticker = symbol.strip().upper()
-    snapshot = session_quote(ticker) or {}
-    price = snapshot.get("price")
-    ccy = _base_currency(base)
-    currency = price_base = rate = as_of = None
-    # Only when `?base=` asks for the conversion. The quote row names its own
-    # currency; the fundamentals pull — seconds on a name the page has not
-    # loaded yet, and this header is the first thing it draws — is asked only
-    # when that row did not.
-    if ccy and not is_crypto(ticker):
-        currency = cast(str | None, snapshot.get("currency")) or cast(
-            str | None, loaders.fundamentals(ticker).info.get("currency")
-        )
-        if price is not None and currency:
-            price_base, rate, as_of = _price_in(ticker, price, currency, ccy)
-    return Quote(
-        ticker=ticker,
-        price=price,
-        pct=snapshot.get("pct"),
-        session=snapshot.get("session"),
-        as_of=snapshot.get("as_of"),
-        market_open=market_live(ticker),
-        currency=currency,
-        price_base=price_base,
-        fx_rate=rate,
-        fx_as_of=as_of,
-        base=ccy,
-        high_52w=snapshot.get("high_52w"),
-        low_52w=snapshot.get("low_52w"),
-    )
-
-
-def _price_in(
-    ticker: str, price: float, native: str, base: str
-) -> tuple[float | None, float | None, str | None]:
-    """`price` restated in `base`, minor units (GBp) resolved first.
-
-    Nothing when the two already agree, and nothing when the rate cannot be
-    fetched — the same refusal `_market_cap_in` makes, generalised past
-    dollars: a listing's own quote currency can be anything, not just USD.
-    """
-    from stocks.data.fx import spot
-    from stocks.data.listing import quote_unit
-
-    iso, scale = quote_unit(native)
-    if iso is None or iso == base:
-        return None, None, None
-    try:
-        rate, as_of = spot(iso, base)
-    except Exception as exc:
-        obs.warn("api.quote_fx_failed", ticker=ticker, native=iso, base=base,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
-        return None, None, None
-    return price * scale * rate, rate, as_of
+    return reads.quote(symbol, _base_currency(base))
 
 
 @router.get("/{symbol}/events", response_model=PriceEvents, summary="Chart events")
@@ -828,119 +709,8 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
 def metrics_at(
     symbol: str, base: str | None = None, price: float | None = None
 ) -> Metrics:
-    """`metrics`, with every price-bound KPI moved to `price` when one is given.
-
-    The fundamentals pull is cached for hours, so its price trails the quote a
-    caller drew beside it (prod 2026-11-09: NVDA quoted 178.25 over a grid
-    priced at 173.97). A caller holding the live quote passes it, and the
-    multiples are read at the price on the same screen; the business is the
-    one the filings describe either way (`review.at_price`).
-    """
-    ticker = symbol.strip().upper()
-    raw = loaders.fundamentals(ticker)
-    computed = compute_metrics(raw)
-    taken = _num(computed.get("price"))
-    if price and taken and price > 0 and taken > 0:
-        computed = review.at_price(computed, price / taken)
-        computed["price"] = price
-    # No account dependency: every figure here is the company's, not the
-    # reader's, and a route that demanded one would stop answering the scripts
-    # that hold a token and name nobody. The single per-reader line — the market
-    # cap in their own money — is asked for explicitly with `?base=`.
-    ccy = _base_currency(base)
-    cap, rate, as_of = _market_cap_in(computed, ccy) if ccy else (None, None, None)
-    equity = str(computed.get("quote_type") or "EQUITY").upper() == "EQUITY"
-    view = review.lens(computed)
-    tiles = fundamental_tiles(view) if equity else fundamental_tiles(review.STANDARD)
-    keys = list(dict.fromkeys([*METRIC_ORDER, *(tile.key for tile in tiles)]))
-    scope, band = (
-        _peer_band(ticker, computed, raw, [tile.key for tile in tiles])
-        if equity
-        else (None, {})
-    )
-    normal = review.peak_pe(computed) if equity else None
-    if equity:
-        _log_missing(ticker, raw, computed, view, [tile.key for tile in tiles])
-    return Metrics(
-        ticker=ticker,
-        currency=cast(str | None, computed.get("currency")),
-        quote_type=cast(str | None, computed.get("quote_type")),
-        kpis=[_kpi(key, computed.get(key), computed, band.get(key)) for key in keys],
-        grid=[
-            MetricTile(key=tile.key, label_key=tile.label, help_key=tile.help)
-            for tile in tiles
-        ],
-        lens=view,
-        peers=scope,
-        normal_pe=normal,
-        reported_pe=_num(computed.get("pe_ttm_reported")),
-        cautions=review.cautions(computed) if equity else [],
-        judged=_judged(computed) if equity else None,
-        market_cap_base=cap,
-        market_cap_base_formatted=(
-            format_value("market_cap", cap) if cap is not None else None
-        ),
-        fx_rate=rate,
-        fx_as_of=as_of,
-        base=ccy,
-    )
-
-
-def _judged(computed: dict) -> TickerJudged:
-    """`review.judge_candidate` on the grid's own metrics: no request of its
-    own, and the verdict the Review page gives the name as an outside row."""
-    verdict = review.judge_candidate(computed, kind="stock")
-    return TickerJudged(
-        verdict=verdict.verdict,
-        reasons=list(verdict.reasons),
-        quality=_num(verdict.quality),
-        cheapness=_num(verdict.cheapness),
-        implied_growth=_num(review.implied_growth(computed)),
-        past_growth=_num(review.past_growth(computed)),
-    )
-
-
-def _log_missing(ticker: str, raw, computed: dict, view: str, keys: list[str]) -> None:
-    """One `data.missing` line per blank tile, once a window per ticker.
-
-    `stocks logs stats --event data.missing --by reason` tells the gaps a
-    company has (a loss has no P/E per growth) from the ones the feed left
-    (no statements, a Yahoo field that never came), and `--by kpi` which tile
-    goes blank most. A log line never fails the grid.
-    """
-    with obs.swallow("data.missing_failed", ticker=ticker):
-        for key, reason in missing_reasons(raw, computed, keys).items():
-            if obs.first_sighting("data.missing", (ticker, key)):
-                obs.event("data.missing", ticker=ticker, kpi=key, reason=reason,
-                          lens=view)
-
-
-def _peer_band(
-    ticker: str, computed: dict, raw, keys: list[str]
-) -> tuple[PeerScope | None, dict[str, tuple[float, float, float]]]:
-    """The rivals' P25/median/P75 per KPI, off the nightly sector scan.
-
-    The scan, never a fetch: forty rivals' fundamentals would be the slowest
-    thing on the page, and a night-old middle is the same middle. Nothing on
-    any failure — a reference line must never be what fails the grid.
-    """
-    from stocks.analysis.sectors import peer_rows
-
-    try:
-        industry = cast(str | None, computed.get("industry"))
-        sector = raw.info.get("sector")
-        if not industry and not sector:
-            return None, {}
-        found = peer_rows(loaders.sector_scans(), ticker, industry, sector)
-    except Exception as exc:
-        obs.warn("api.peer_band_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
-        return None, {}
-    if found is None:
-        return None, {}
-    kind, name, rows = found
-    scope = PeerScope(kind=kind, name=name, count=len(rows))
-    return scope, peer_band([computed, *rows], keys)
+    """`metrics` at the price a caller drew beside it (`views.ticker.metrics`)."""
+    return reads.metrics(symbol, _base_currency(base), price)
 
 
 def _base_currency(asked: str | None) -> str | None:
@@ -954,59 +724,6 @@ def _base_currency(asked: str | None) -> str | None:
             detail=f"base must be one of {', '.join(CURRENCIES)}",
         )
     return code
-
-
-def _market_cap_in(
-    computed: dict, base: str
-) -> tuple[float | None, float | None, str | None]:
-    """Market cap restated in the reporting currency, when that says something.
-
-    Only for a company quoting in dollars, which is what the page converts: a
-    market cap is the one figure on this grid a reader compares against their
-    own book, and the book is in their currency. Nothing when the two already
-    agree, and nothing when the rate cannot be fetched — a page that cannot
-    price it says so rather than printing an unconverted number as converted.
-    """
-    cap = computed.get("market_cap")
-    if not cap or computed.get("currency") != "USD" or base == "USD":
-        return None, None, None
-    try:
-        from stocks.data.fx import spot
-
-        rate, as_of = spot("USD", base)
-    except Exception as exc:
-        obs.warn("api.market_cap_fx_failed", ticker=computed.get("ticker"),
-                 error_type=type(exc).__name__, error=str(exc)[:300])
-        return None, None, None
-    return float(cap) * rate, rate, as_of
-
-
-def _kpi(
-    key: str,
-    value,
-    metrics: dict,
-    band: tuple[float, float, float] | None = None,
-) -> Kpi:
-    """One KPI row, with its band's label AND the tone that band carries.
-
-    Both, because the labels are a growing set — "net cash", "buybacks",
-    "heavy dilution" — and a client colouring by label shows every band it has
-    not heard of as neutral. Banded on the company's own lens
-    (`lens_verdict`), and with its rivals' middle when the scan has one.
-    """
-    banded = lens_verdict(key, value, metrics)
-    return Kpi(
-        key=key,
-        label=KPI_SOURCES[key].label,
-        value=_scalar(value),
-        formatted=format_value(key, value),
-        unit=KPI_SOURCES[key].unit,
-        level=KPI_SOURCES[key].level,
-        verdict=banded[0] if banded else None,
-        verdict_tone=banded[1] if banded else None,
-        desc=KPI_SOURCES[key].desc,
-        peer_band=list(band) if band else None,
-    )
 
 
 @router.get("/{symbol}/financials", response_model=Financials, summary="Statements")
@@ -1252,66 +969,7 @@ def valuation(symbol: Symbol) -> Valuation:
     feed, and which feed it came from — or that neither had the quarters — is
     what stops the number being acted on as if it were quoted.
     """
-    ticker = symbol.strip().upper()
-    result = loaders.valuation(ticker)
-    series = result.get("pe")
-    # The page's four ranges, not the domain's default set: half a year of a
-    # company's own history cannot answer "is this expensive for this company",
-    # and the app offers 1y/3y/5y/10y for exactly that reason. Recomputed here
-    # rather than re-fetched — it is a pandas pass over a series already held.
-    # Counted back from the last close, not the series' last point: a 20-F
-    # filer's line can stop months before today, and a "1y" ending there is
-    # not the last year.
-    as_of = result.get("as_of")
-    stats = (
-        window_stats(series, windows=DISPLAY_WINDOWS, end=as_of)
-        if series is not None and not series.empty
-        else result.get("stats")
-    )
-
-    windows = [
-        ValuationWindow(
-            window=str(label),
-            days=DISPLAY_WINDOWS.get(str(label), 0),
-            mean=_num(row.get("mean")),
-            median=_num(row.get("median")),
-            low=_num(row.get("low")),
-            high=_num(row.get("high")),
-            percentile=_num(row.get("percentile")),
-            premium=_num(row.get("premium")),
-        )
-        for label, row in stats.iterrows()
-    ] if stats is not None and not stats.empty else []
-
-    current = _num(result.get("current"))
-    # Banded here, like every other verdict: a client picking its own P/E
-    # thresholds is a second place for "expensive" to mean something else.
-    banded = verdict("pe_ttm", current)
-    dates: list[str] = []
-    pe: list[float | None] = []
-    if series is not None and not series.empty:
-        dates = [str(pd.Timestamp(ts).date()) for ts in series.index]
-        pe = [_num(v) for v in series]
-        # A line that stops before the last close runs on blank to it, so a
-        # client trimming to "the last N days" counts them from today and the
-        # gap reads as no figure, not as a chart that ends today.
-        if as_of is not None and pd.Timestamp(as_of) > series.index.max():
-            tail = pd.bdate_range(
-                series.index.max() + pd.Timedelta(days=1), pd.Timestamp(as_of)
-            )
-            dates += [str(ts.date()) for ts in tail]
-            pe += [None] * len(tail)
-    return Valuation(
-        ticker=ticker,
-        source=result.get("source"),
-        basis=result.get("basis"),
-        current=current,
-        current_verdict=banded[0] if banded else None,
-        current_tone=banded[1] if banded else None,
-        dates=dates,
-        pe=pe,
-        windows=windows,
-    )
+    return reads.valuation(symbol)
 
 
 @router.get("/{symbol}/dcf", response_model=Dcf, summary="Discounted cash flow")
@@ -1323,27 +981,7 @@ def dcf(symbol: Symbol) -> Dcf:
     where FCF is not owner cash (banks, REITs, utilities), comes back with a
     `reason` and no number.
     """
-    ticker = symbol.strip().upper()
-    raw = loaders.fundamentals(ticker)
-    out = dcf_model.compute(raw, compute_metrics(raw))
-    return Dcf(
-        ticker=ticker,
-        reason=out.reason,
-        currency=out.currency,
-        price=_num(out.price),
-        fcf=_num(out.fcf),
-        net_debt=_num(out.net_debt),
-        shares=_num(out.shares),
-        growth=_num(out.growth),
-        growth_source=out.growth_source,
-        wacc=out.wacc,
-        terminal=out.terminal,
-        value=_num(out.value),
-        upside=_num(out.upside),
-        waccs=list(out.waccs),
-        terminals=list(out.terminals),
-        grid=[[_num(v) for v in row] for row in out.grid],
-    )
+    return reads.dcf(symbol)
 
 
 @router.get("/{symbol}/moat", response_model=Moat, summary="Moat evidence")
@@ -1401,86 +1039,7 @@ def analysts(symbol: Symbol) -> Analysts:
     here is fact, and below `MIN_COVERAGE` ratings `covered` is false so a
     page says "too few analysts" instead of drawing one opinion as a split.
     """
-    ticker = symbol.strip().upper()
-    # Side by side: the rating changes are their own Yahoo call, and queued
-    # behind the estimates they would add a second wait to a cold card.
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        moved = pool.submit(carried(_rating_changes_or_none), ticker)
-        raw = loaders.estimates(ticker)
-        changes = moved.result()
-    cons = consensus(raw)
-    months = rating_trend(raw, date.today())
-    latest = months[-1] if months else None
-    count = latest.total if latest else 0
-
-    targets = None
-    if cons.target_mean is not None:
-        price = cons.price
-
-        def _upside(target: float | None) -> float | None:
-            return _num(target / price - 1) if target is not None and price else None
-
-        targets = AnalystTargets(
-            low=_num(cons.target_low),
-            median=_num(cons.target_median),
-            mean=_num(cons.target_mean),
-            high=_num(cons.target_high),
-            upside_mean=_upside(cons.target_mean),
-            upside_median=_upside(cons.target_median),
-            dispersion=_num(target_dispersion(cons)),
-        )
-
-    return Analysts(
-        ticker=ticker,
-        currency=_quote_currency(ticker),
-        price=_num(cons.price),
-        analysts=count,
-        covered=count >= MIN_COVERAGE,
-        min_coverage=MIN_COVERAGE,
-        rating=cons.rating,
-        rating_mean=_num(cons.rating_mean),
-        months=[
-            AnalystMonth(
-                month=m.month,
-                strong_buy=m.counts.get("strongBuy", 0),
-                buy=m.counts.get("buy", 0),
-                hold=m.counts.get("hold", 0),
-                sell=m.counts.get("sell", 0),
-                strong_sell=m.counts.get("strongSell", 0),
-                total=m.total,
-                mean=_num(m.mean),
-            )
-            for m in months
-        ],
-        targets=targets,
-        revisions=[
-            EpsRevisionRow(
-                period=r.period,
-                current=_num(r.current),
-                change_7d=_num(r.change(7)),
-                change_30d=_num(r.change(30)),
-                change_90d=_num(r.change(90)),
-                up_7d=r.up_7d,
-                up_30d=r.up_30d,
-                down_7d=r.down_7d,
-                down_30d=r.down_30d,
-            )
-            for r in eps_revisions(raw)
-        ],
-        changes=[RatingChange(**c) for c in changes],
-    )
-
-
-def _rating_changes_or_none(ticker: str) -> list[dict]:
-    """The recent rating moves, or [] when Yahoo refuses: the card keeps the
-    consensus it has and just has no moves to list."""
-    try:
-        return loaders.rating_changes(ticker)
-    except Exception as exc:  # noqa: BLE001 — one missing block, not a 500
-        obs.warn(
-            "api.rating_changes_failed", ticker=ticker, error_type=type(exc).__name__
-        )
-        return []
+    return reads.analysts(symbol)
 
 
 @router.get("/{symbol}/options", response_model=OptionsView, summary="Options-implied")
@@ -1492,34 +1051,7 @@ def options(symbol: Symbol) -> OptionsView:
     throttled Yahoo is the app-wide 503, which the card reads as "nothing to
     show" without caching it as a verdict.
     """
-    ticker = symbol.strip().upper()
-    if is_crypto(ticker):
-        return OptionsView(ticker=ticker, listed=False)
-    try:
-        view = loaders.options_view(ticker)
-    except YFRateLimitError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        obs.warn("api.options_failed", ticker=ticker, error_type=type(exc).__name__)
-        return OptionsView(ticker=ticker, listed=False)
-    if view is None:
-        return OptionsView(ticker=ticker, listed=False)
-    return OptionsView(ticker=ticker, listed=True, **view)
-
-
-def _quote_currency(ticker: str) -> str | None:
-    """The currency the share quotes in, which its price targets are set in.
-
-    Off the fundamentals pull the KPI grid already made, so it costs a cache
-    read; None when that pull failed — a target then prints without a mark
-    rather than with a wrong one.
-    """
-    try:
-        info = loaders.fundamentals(ticker).info or {}
-    except Exception:  # noqa: BLE001 — a missing mark is not a failed section
-        return None
-    currency = info.get("currency")
-    return str(currency) if currency else None
+    return reads.options(symbol)
 
 
 @router.get("/{symbol}/insiders", response_model=Insiders, summary="Insider dealing")

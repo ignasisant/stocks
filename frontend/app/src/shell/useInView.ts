@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isPhone } from "../chat/phone";
+import { isPhone } from "./phone";
 
 /** How far outside the viewport counts as "in view": half a viewport below
  * and above, so a slot loads a scroll ahead of the reader. */

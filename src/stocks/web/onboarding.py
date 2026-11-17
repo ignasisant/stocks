@@ -4,14 +4,17 @@ The registry is data, and this module draws nothing: `api/routes/onboarding.py`
 and `api/routes/guide.py` serve it, and the React shell renders it as the tour,
 the "what's new" modal and the assistant-led walkthrough.
 
-* **Steps** walk a new account through the app one feature at a time, in the
-  order the work flows. Started plainly, the tour walks only the `core` ones
-  (`CORE_STEPS_MAX` at most); the rest are reached from its last stop, from a
-  "what's new" card or by `?tour=<id>`. For the connectable ones (ledger import, AI key,
-  notifications, tax residence) a `done` predicate says whether this account has it
-  switched on.
+* **Steps** walk a new account through the app, in the order the work flows.
+  Started plainly, the tour is the section guide: the `core` steps, one per
+  entry of the menu (`navigation.DESTINATIONS`) plus the assistant. The rest
+  are a tab or a capability inside one of those sections, reached from a
+  "what's new" card or by `?tour=<id>`. For the connectable ones (ledger
+  import, AI key, notifications, tax residence) a `done` predicate says whether
+  this account has it switched on.
 * **Releases** carry the changelog as data. Each item names the tour step it
   belongs to, so a new feature is announced and explained by the same copy.
+  A newcomer is dealt none of it (`newcomer`, `news_for`): "new" means new to
+  someone who knew the app, and they are still being shown round it.
 
 Every predicate takes the account it answers for. The caller proved who that is
 before reaching this module, so nothing here guesses.
@@ -21,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from stocks import accounts, userprefs
 from stocks.chat import conversations
@@ -34,6 +38,144 @@ from stocks.portfolio import demo
 # exited, which is what stops it auto-opening on later sessions.
 PREF_SEEN_VERSION = "tour_seen_version"
 PREF_DONE = "tour_done"
+
+# ------------------------------------------------------------- first steps
+# What a newcomer is shown once their own book is in, and nobody else is: an
+# offer of the section guide on Home (`tour_offer`) and a short "how this page
+# works" tip on each page's first visit (`page_tips`, the pages still owed
+# one). Both are stamped by the first *real* import (`first_book`), so an
+# account that had a book before this shipped, a guest and a demo book never
+# see either — the stamp is what makes someone a newcomer, not a date or a
+# counter.
+#
+# `tour_offer` has three states. Absent: never asked. True: Home is offering
+# the guide. False: answered — the guide was walked to its end, skipped or
+# turned down (`guide_answered`), before the first book or after it.
+#
+# `tour_walked` is the guide walked to its last stop, as opposed to skipped or
+# turned down. The guide stood on each of those pages and said what it is for,
+# so their tips would be the same thing said twice: they are struck when it
+# ends, and not owed by a first book that comes after it.
+PREF_FIRST_BOOK = "first_book_at"
+PREF_OFFER = "tour_offer"
+PREF_TIPS = "page_tips"
+PREF_WALKED = "tour_walked"
+
+
+@dataclass(frozen=True)
+class Tip:
+    """One page's first-visit tip: `lines` short lines of copy
+    (`tour.tip_<page>_1` … `_<lines>`) and the lesson that explains the page,
+    if one does. A page with no fitting lesson gets no link rather than a
+    loosely related one."""
+
+    lines: int
+    lesson: str | None = None
+
+
+#: The pages that teach themselves on a first visit, keyed by shell slug.
+#: Import teaches itself with its own stepper, Home has the start card and
+#: Learn *is* the explanation, so none of the three carries a tip.
+TIPS: dict[str, Tip] = {
+    "today": Tip(3, "beta-and-benchmarks"),
+    "portfolio": Tip(3, "total-return"),
+    "review": Tip(3, "offsetting-losses"),
+    "ticker": Tip(3, "what-is-a-stock"),
+    "sentiment": Tip(2, "volatility-and-drawdown"),
+    "sector": Tip(2),
+    "earnings": Tip(2, "market-hours"),
+    "profile": Tip(2),
+}
+
+
+def first_book(prefs_path) -> bool:
+    """Stamp a newcomer's first steps, once: the guide's offer and every page tip.
+
+    Called where a write puts the account's first real rows in. Set if absent,
+    never again: undoing that import and importing anew must not hand back an
+    offer the reader already turned down. Returns whether it stamped.
+
+    An account that answered the guide while it had no book (walked it from
+    the welcome, or skipped it) is not offered it a second time. It is caught
+    up with the releases instead: nothing was announced to it while it had no
+    book (`newcomer`), and what shipped meanwhile must not fall on it now.
+    One that walked it to the end is owed no tip for a page the guide stopped
+    on (`PREF_WALKED`); one that skipped it is owed them all.
+    """
+    with accounts.prefs_lock(prefs_path):
+        stored = accounts.stored_prefs(prefs_path)
+        if PREF_FIRST_BOOK in stored:
+            return False
+        shown = guided_pages() if stored.get(PREF_WALKED) else frozenset()
+        changes: dict = {
+            PREF_FIRST_BOOK: datetime.now(UTC).date().isoformat(),
+            PREF_TIPS: [page for page in TIPS if page not in shown],
+        }
+        if PREF_OFFER in stored:
+            changes[PREF_SEEN_VERSION] = CURRENT_VERSION
+        else:
+            changes[PREF_OFFER] = True
+        accounts.update_prefs(prefs_path, changes)
+    return True
+
+
+def first_rows(paths, *, empty_before: bool) -> bool:
+    """`first_book` for a ledger edit that may have been the account's first
+    real rows (a row typed into the ledger, one added through the connector):
+    `empty_before` is what `demo.has_real` said before the write."""
+    if not empty_before or not _has_ledger({}, paths):
+        return False
+    return first_book(paths.prefs)
+
+
+def guided_pages() -> frozenset[str]:
+    """The pages the section guide stops on, as shell slugs."""
+    return frozenset(step.page for step in visible_steps() if step.core and step.page)
+
+
+def guide_answered(prefs_path, *, finished: bool = False) -> None:
+    """The section guide was walked to its end, skipped or turned down.
+
+    The one door out of being a newcomer, so everything that has to happen on
+    the way out happens together: the Home offer is withdrawn, the tour stops
+    opening by itself, and the account is caught up with the releases, which
+    is what keeps the "what's new" it was spared from falling on it later.
+
+    `finished` is the first of the three: every stop was shown. The tips of
+    the pages it stopped on are struck with it (`PREF_WALKED`). Skipped or
+    turned down, the reader saw none of them and every tip stays owed.
+    """
+    changes: dict = {
+        PREF_OFFER: False,
+        PREF_DONE: True,
+        PREF_SEEN_VERSION: CURRENT_VERSION,
+    }
+    with accounts.prefs_lock(prefs_path):
+        if finished:
+            stored = accounts.stored_prefs(prefs_path)
+            changes[PREF_WALKED] = True
+            if isinstance(stored.get(PREF_TIPS), list):
+                shown = guided_pages()
+                changes[PREF_TIPS] = [p for p in owed_tips(stored) if p not in shown]
+        accounts.update_prefs(prefs_path, changes)
+
+
+def owed_tips(prefs: dict) -> list[str]:
+    """The pages whose tip this account is still owed, in registry order."""
+    stored = prefs.get(PREF_TIPS)
+    if not isinstance(stored, list):
+        return []
+    return [page for page in TIPS if page in stored]
+
+
+def tip_seen(prefs_path, page: str) -> list[str]:
+    """Strike one page off the owed list, under the prefs lock, and return the
+    rest. A removal rather than a client-sent list: a phone and a laptop each
+    dismissing a different page must not put the other one back."""
+    with accounts.prefs_lock(prefs_path):
+        owed = [p for p in owed_tips(accounts.stored_prefs(prefs_path)) if p != page]
+        accounts.update_prefs(prefs_path, {PREF_TIPS: owed})
+    return owed
 
 
 @dataclass(frozen=True)
@@ -65,11 +207,12 @@ class Step:
     # "has this account imported anything" is two answers to one question, and
     # the one on screen would be whichever surface the reader happened to open.
     done: Callable[[dict, object], bool] | None = None
-    # One of the few stops the tour walks when it is simply started. The whole
-    # registry was a twenty-stop walk nobody finished; these are the ones an
-    # account needs to get going and to come back. The rest stay stops — a
-    # "what's new" card lands on one, `?tour=<id>` opens one, and the last core
-    # stop offers the full walk.
+    # A stop of the section guide, which is what the tour is when it is simply
+    # started: one per entry of the menu, plus the assistant, so a newcomer is
+    # shown every place the app has and nothing twice. The rest are a tab or a
+    # capability inside one of those sections; they stay stops — a "what's new"
+    # card lands on one and `?tour=<id>` opens one — but the guide does not
+    # walk them. A test holds the two lists together.
     core: bool = False
 
 
@@ -115,8 +258,9 @@ def _has_push(_prefs: dict, paths=None) -> bool:
 
 
 # The tour, in order. Sequenced as the work actually flows — get the ledger in,
-# read what it derives, then the market tools, then the things that run without
-# you (assistant, notifications) — rather than following the nav.
+# read what it derives, then the market tools, then the assistant and the
+# account — rather than following the nav. The `core` ones are the section
+# guide; each is followed by the tabs and capabilities that live inside it.
 STEPS: tuple[Step, ...] = (
     Step(id="welcome", icon="waving_hand"),
     Step(
@@ -127,11 +271,17 @@ STEPS: tuple[Step, ...] = (
         done=_has_ledger,
         core=True,
     ),
+    # Home. The id is the daily card's, which is what the step explained when
+    # it was written and what the cards of five releases name; the stop is the
+    # page that card opens. Not gated: a guest's Home is a page too.
+    Step(id="daily", icon="home", page="", core=True),
+    # Allocation, landing on its first tab. The four after it are its tabs.
     Step(
         id="positions",
         icon="pie_chart",
         page="portfolio",
         query={"tab": "positions"},
+        core=True,
     ),
     Step(
         id="risk",
@@ -160,16 +310,32 @@ STEPS: tuple[Step, ...] = (
     ),
     Step(id="review", icon="swap_vert", page="review", core=True),
     Step(
-        id="daily",
-        icon="tips_and_updates",
-        page="",
-        gated=True,
-    ),
-    Step(
         id="today",
         icon="wb_sunny",
         page="today",
         gated=True,
+        core=True,
+    ),
+    Step(id="market", icon="query_stats", page="ticker", core=True),
+    Step(id="pulse", icon="speed", page="sentiment", core=True),
+    Step(id="sector", icon="donut_small", page="sector", core=True),
+    Step(id="earnings", icon="calendar_month", page="earnings", core=True),
+    Step(id="learn", icon="school", page="learn", core=True),
+    Step(
+        id="assistant",
+        icon="auto_awesome",
+        session={"chat_panel_open": True},
+        gated=True,
+        done=_has_ai_key,
+        core=True,
+    ),
+    # Profile, on whichever tab it opens. The six after it are its tabs.
+    Step(
+        id="profile",
+        icon="account_circle",
+        page="profile",
+        gated=True,
+        core=True,
     ),
     Step(
         id="watchlist",
@@ -178,18 +344,6 @@ STEPS: tuple[Step, ...] = (
         session={"profile_tab": "watch"},
         gated=True,
         done=_has_watchlist,
-    ),
-    Step(id="pulse", icon="speed", page="sentiment"),
-    Step(id="market", icon="query_stats", page="ticker"),
-    Step(id="sector", icon="donut_small", page="sector"),
-    Step(id="learn", icon="school", page="learn"),
-    Step(
-        id="assistant",
-        icon="auto_awesome",
-        session={"chat_panel_open": True},
-        gated=True,
-        done=_has_ai_key,
-        core=True,
     ),
     Step(
         id="journal",
@@ -205,7 +359,6 @@ STEPS: tuple[Step, ...] = (
         session={"profile_tab": "notify"},
         gated=True,
         done=_has_push,
-        core=True,
     ),
     # Its own Profile tab: asking about the book from inside Claude, ChatGPT
     # or any other MCP app is somewhere the app could not be reached from at
@@ -667,9 +820,6 @@ RELEASES: tuple[Release, ...] = (
 
 CURRENT_VERSION = RELEASES[-1].version
 
-#: The short walk stays short: a fifth core stop is the long tour coming back.
-CORE_STEPS_MAX = 4
-
 
 # --------------------------------------------------------------- shared state
 def _has_searched(prefs: dict) -> bool:
@@ -802,17 +952,13 @@ def account_gaps(
 
     def fixes() -> Gap | None:
         from stocks import loaders
-        from stocks.api.routes.import_statement.book_checkup import _FIXABLE
         from stocks.portfolio import doctor
         from stocks.portfolio import held as held_sales
 
         if not rows:
             return None
         n = len(held_sales.ready(paths.db)) + len(held_sales.reuploads(rows, paths.db))
-        n += sum(
-            1 for f in doctor.scan(rows, resolve=loaders.display_symbol)
-            if f.kind in _FIXABLE and f.fix
-        )
+        n += len(doctor.fixable(rows, resolve=loaders.display_symbol))
         return Gap("fixes", "import_transactions", args={"n": str(n)}) if n else None
 
     def prices() -> Gap | None:
@@ -944,3 +1090,22 @@ def unseen_news(prefs: dict, *, limit: int | None = NEWS_MAX
         if item.announced(shown)
     )
     return cards if limit is None else cards[:limit]
+
+
+def newcomer(prefs: dict, paths) -> bool:
+    """Whether this account is still being shown round the app.
+
+    No book of its own yet, or the section guide still on offer. Decided from
+    the account's state rather than from the stamp: the welcome stamps an
+    account on its first load, so by the stamp a newcomer was a returning
+    reader from its second day on, and every release since opened "what's new"
+    on someone who had not seen what was old.
+    """
+    return bool(prefs.get(PREF_OFFER)) or not _has_ledger(prefs, paths)
+
+
+def news_for(prefs: dict, paths) -> tuple[NewsCard, ...]:
+    """The "what's new" cards this account is dealt now: `unseen_news`, and
+    none at all for a newcomer. Leaving that state (`guide_answered`,
+    `first_book`) catches the account up, so what it was spared stays spared."""
+    return () if newcomer(prefs, paths) else unseen_news(prefs)

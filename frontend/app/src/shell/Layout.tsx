@@ -15,6 +15,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -31,9 +32,11 @@ import { openAssistant, useAssistantUnread, useAssistantWorking } from "./assist
 import { Search } from "./Search";
 import { FeedbackReply } from "./FeedbackReply";
 import { InstallNudge } from "./InstallNudge";
+import { PageTip } from "./PageTip";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { RatePrompt } from "./RatePrompt";
 import { Tour } from "./Tour";
+import { ASSISTANT, guideStop, onGuideStop } from "./tourPark";
 import { Link, depth, useRoute } from "./router";
 import { BOTTOM, PAGES, sections } from "./pages";
 import "./shell.css";
@@ -47,7 +50,7 @@ import { AmbientLight } from "./ambient";
 import { Toaster } from "../ui/Toaster";
 import { usePresence, useSwipeDismiss } from "./useSheet";
 import { PullRefresh } from "./PullRefresh";
-import { useWorkerOpen } from "./push";
+import { useDeviceClaim, useWorkerOpen } from "./push";
 import { useReloadOnReturn } from "./resume";
 import { useZoneSync } from "./zone";
 
@@ -101,6 +104,11 @@ function Nav() {
   const t = useT();
   const { page } = useRoute();
   const guest = useGuest();
+  // The section guide's current stop (`Tour`): its entry is ringed, so the
+  // reader learns where the section lives and not only what it does. On the
+  // phone bar an entry kept in the sheet rings "More" instead.
+  const guide = useSyncExternalStore(onGuideStop, guideStop);
+  const guideInSheet = guide !== null && guide !== ASSISTANT && !BOTTOM.includes(guide);
   const [folded, setFolded] = useState(storedFold);
   // The phone bar's "More" sheet. Closed by any move, so it never outlives the
   // page it was opened over.
@@ -265,6 +273,7 @@ function Nav() {
               className={[
                 "ag-nav-item",
                 entry.slug === page ? "ag-nav-on" : "",
+                entry.slug === guide ? "ag-nav-guide" : "",
                 BOTTOM.includes(entry.slug) ? "" : "ag-nav-extra",
               ]
                 .filter(Boolean)
@@ -298,7 +307,11 @@ function Nav() {
           `data-chat` mark, since the drawer is not this component's state. */}
       <button
         type="button"
-        className="ag-nav-item ag-nav-ask"
+        className={
+          guide === ASSISTANT
+            ? "ag-nav-item ag-nav-ask ag-nav-guide"
+            : "ag-nav-item ag-nav-ask"
+        }
         data-busy={working || undefined}
         aria-busy={working || undefined}
         onClick={() => openAssistant()}
@@ -313,9 +326,13 @@ function Nav() {
           — the drawer the DS spec keeps behind the bar. */}
       <button
         type="button"
-        className={
-          more ? "ag-nav-item ag-nav-more ag-nav-on" : "ag-nav-item ag-nav-more"
-        }
+        className={[
+          "ag-nav-item ag-nav-more",
+          more ? "ag-nav-on" : "",
+          guideInSheet ? "ag-nav-guide" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         ref={moreButton}
         onClick={() => setMore(!more)}
         aria-expanded={more}
@@ -351,9 +368,13 @@ function Nav() {
                       key={entry.slug}
                       page={entry.slug}
                       current={entry.slug === page}
-                      className={
-                        entry.slug === page ? "ag-nav-item ag-nav-on" : "ag-nav-item"
-                      }
+                      className={[
+                        "ag-nav-item",
+                        entry.slug === page ? "ag-nav-on" : "",
+                        entry.slug === guide ? "ag-nav-guide" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                     >
                       <Icon name={entry.icon} />
                       <span>{t(entry.label)}</span>
@@ -421,6 +442,7 @@ export function Layout({ children }: { children: ReactNode }) {
   // asks for today's figures, and so does its own pull (`shell/resume`).
   useReloadOnReturn();
   useWorkerOpen();
+  useDeviceClaim();
   useZoneSync();
   return (
     <div className="ag-shell">
@@ -451,6 +473,8 @@ export function Layout({ children }: { children: ReactNode }) {
             guests too — `?tour=1` opens it for them — but it never opens
             itself at somebody who has not arrived anywhere yet. */}
         {!guest || GUEST_CHROME.tour ? <Tour /> : null}
+        {/* A newcomer's first look at a page: how it is used, once. */}
+        {guest ? null : <PageTip />}
         <TopSlot.Provider value={slot}>{children}</TopSlot.Provider>
       </main>
       {/* What a guest does not get, read off one table rather than out of the

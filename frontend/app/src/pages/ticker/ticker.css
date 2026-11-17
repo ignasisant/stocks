@@ -197,7 +197,9 @@
 .tk-tabs {
   position: sticky;
   top: env(safe-area-inset-top, 0px);
-  z-index: 20;
+  /* Under the phone's tab bar and its More sheet (`.ag-nav`, 20) and under a
+     popover hung from the page (20): pinned page bars sit on their own layer. */
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 12px;

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import os
 import secrets
 import threading
 import time
@@ -304,11 +303,6 @@ async def wait_async(run: Run, timeout: float = HOLD_S) -> None:
     deadline = time.monotonic() + timeout
     while run.live and (left := deadline - time.monotonic()) > 0:
         await asyncio.sleep(min(left, 1.0))
-
-
-def on_cloud_run() -> bool:
-    """Cloud Run sets K_SERVICE in every instance; nothing else here does."""
-    return bool(os.environ.get("K_SERVICE"))
 
 
 def hold(run: Run, url: str) -> None:

@@ -7,17 +7,16 @@ import { useT } from "../../shell/i18n";
 /**
  * The jurisdiction's own wording, most specific first.
  *
- * A key the catalog is missing renders as the dotted key itself (the shell and
- * the Python side agree on that), which is what makes "does this string
- * exist?" answerable here without a second endpoint.
+ * Each spelling is asked with `t.has`, which reports nothing: a jurisdiction
+ * that does not override a line is expected, not a catalog gap.
  */
 export function useTaxWords(code: string) {
   const t = useT();
   const resolve = (name: string): string | null => {
     const specific = `portfolio.${code.toLowerCase()}_${name}`;
-    if (t(specific) !== specific) return specific;
+    if (t.has(specific)) return specific;
     const neutral = `portfolio.${name}`;
-    return t(neutral) !== neutral ? neutral : null;
+    return t.has(neutral) ? neutral : null;
   };
   return {
     has: (name: string) => resolve(name) !== null,

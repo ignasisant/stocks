@@ -87,6 +87,27 @@ export const getProfile = (ticker: string) => get<Profile>(`${at(ticker)}/profil
 export const getPosition = (ticker: string, base: string) =>
   get<TickerPosition>(`${at(ticker)}/position`, { base });
 
+/**
+ * The position as the page reads it: every list there, even when the answer
+ * that landed lost one. The route always sends them, yet a position without
+ * `trades` reached the split check on an iPhone (prod 2026-11-13) and
+ * `trades.some` blanked the whole page; no path that drops them was found,
+ * so the page reads one place that cannot.
+ */
+export function heldPosition(
+  data: TickerPosition | null | undefined,
+): TickerPosition | null {
+  if (!data) return null;
+  if (Array.isArray(data.trades) && Array.isArray(data.custody) && data.brokers)
+    return data;
+  return {
+    ...data,
+    trades: Array.isArray(data.trades) ? data.trades : [],
+    custody: Array.isArray(data.custody) ? data.custody : [],
+    brokers: data.brokers ?? {},
+  };
+}
+
 /** Forward splits the book lacks for this name. Writes nothing. */
 export const getSplits = (ticker: string) => get<TickerSplits>(`${at(ticker)}/splits`);
 

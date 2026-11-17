@@ -109,6 +109,7 @@ SURFACE_SUNKEN = "rgba(59,57,66,0.25)"   # BORDER @ 25% — out-of-range cells
 RULE_SOFT = "rgba(59,57,66,0.5)"         # BORDER @ 50% — dense row dividers
 SURFACE_PAGE_HAZE = "rgba(24,22,28,0.92)"  # SURFACE_PAGE @ 92% — sticky topbar
 SURFACE_PAGE_VEIL = "rgba(24,22,28,0.85)"  # SURFACE_PAGE @ 85% — touch chart readout
+SCRIM = "rgba(10,9,12,0.55)"             # under every dialog and drawer (`.scrim`)
 CTA_GLOW = "rgba(127,63,232,0.25)"       # BRAND_CTA @ 25% — launcher shadow
 CTA_HALO = "rgba(127,63,232,0.4)"        # BRAND_CTA @ 40% — avatar shadow
 CTA_TINT = "rgba(127,63,232,0.16)"       # BRAND_CTA @ 16% — user bubble fill
@@ -128,6 +129,8 @@ SHADOW_COLOR_STRONG = "rgba(0,0,0,0.5)"          # overlay-level tint
 SHADOW_CARD = f"0px 2px 4px {SHADOW_COLOR}"      # section cards
 SHADOW_HOVER = "0px 8px 15px rgba(0,0,0,0.45)"   # Plotly hover box — DS dialog step
 SHADOW_OVERLAY = "0px 8px 15px rgba(0,0,0,0.45)"  # dropdowns, popovers — DS dialog step
+# Dialogs over a scrim (prototype `.pt-dlg`).
+SHADOW_DIALOG = f"0px 24px 60px {SHADOW_COLOR_STRONG}"
 
 # Radius scale — 8px is the middle step.
 RADIUS_XS = "4px"       # logo chips, calendar chips, small badges
@@ -304,6 +307,7 @@ def tokens() -> dict[str, str]:
         "surface-sunken": SURFACE_SUNKEN, "rule-soft": RULE_SOFT,
         "surface-page-haze": SURFACE_PAGE_HAZE,
         "surface-page-veil": SURFACE_PAGE_VEIL,
+        "scrim": SCRIM,
         "cta-glow": CTA_GLOW, "cta-halo": CTA_HALO,
         "cta-tint": CTA_TINT, "cta-tint-edge": CTA_TINT_EDGE,
         "skeleton-base": SKELETON_BASE, "skeleton-hi": SKELETON_HI,
@@ -311,6 +315,7 @@ def tokens() -> dict[str, str]:
         # elevation
         "shadow-card": SHADOW_CARD, "shadow-hover": SHADOW_HOVER,
         "shadow-overlay": SHADOW_OVERLAY,
+        "shadow-dialog": SHADOW_DIALOG,
         "shadow-color": SHADOW_COLOR,
         "shadow-color-strong": SHADOW_COLOR_STRONG,
         # radius

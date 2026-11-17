@@ -22,6 +22,7 @@ import { useOnScreenBeat } from "../shell/push";
 import { useT } from "../shell/i18n";
 import {
   type Brief,
+  roomBeside,
   setAssistantUnread,
   setAssistantWorking,
   useAssistantAsks,
@@ -29,23 +30,21 @@ import {
   useAssistantThreads,
 } from "../shell/assistant";
 import { useSession } from "../shell/session";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { useRoute } from "../shell/router";
 import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
-import { isPhone, usePhone } from "./phone";
+import { isPhone, usePhone } from "../shell/phone";
 import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
 import { toast } from "../ui/toast";
 import { hasDraft } from "./draft";
+import { restoreWidth } from "./width";
 import type { ConnectAsk } from "./connect";
 import type { Jump } from "./types";
 import "./chat.css";
 
 const Panel = lazy(() => import("./Panel"));
-
-/** Narrowest page the open drawer leaves before it covers it instead (px). */
-const PAGE_MIN = 560;
 
 /**
  * The parked walkthrough: one line above the tab bar, on a phone.
@@ -163,6 +162,10 @@ export function Drawer() {
   // answered while they moved to another.
   const working = busy || !!chat.threads?.some((c) => c.answering);
   const unread = chat.unread.size > 0;
+  // The remembered width goes on the document with the drawer, not with the
+  // panel's first open: whoever asks whether the panel would fit beside the
+  // page (`shell/assistant.roomBeside`) asks before it has ever been opened.
+  useEffect(restoreWidth, []);
   // The phone tab bar's Assistant item shows both while the drawer is shut.
   useEffect(() => {
     setAssistantWorking(working && !open);
@@ -298,12 +301,13 @@ export function Drawer() {
   }, []);
 
   // `?chat=memory` and `?chat=scheduled` — the profile's links to what the
-  // assistant remembers and to when the scheduled runs go out. Read once and
-  // taken off the URL like `?guide=`; the drawer opens on that view.
+  // assistant remembers and to when the scheduled runs go out — and
+  // `?chat=settings`, the Home start card's "AI key". Read once and taken off
+  // the URL like `?guide=`; the drawer opens on that view.
   const view = params.get("chat");
   const [jump, setJump] = useState<Jump>(null);
   useEffect(() => {
-    if (view !== "memory" && view !== "scheduled") return;
+    if (view !== "memory" && view !== "scheduled" && view !== "settings") return;
     setParams({ chat: undefined });
     setJump(view);
     show(true);
@@ -360,7 +364,7 @@ export function Drawer() {
   // it is marked on the document because the rule that does it lives in CSS
   // (`chat.css`), next to the width the drawer is sized by: the panel is fixed,
   // so nothing in the layout could otherwise know it is there. Making room
-  // stops where the page would be left narrower than `PAGE_MIN`: past that a
+  // stops where the page would be left too narrow (`roomBeside`): past that a
   // KPI breaks mid-figure and a calendar loses its weekend, so the drawer
   // covers the page instead ("overlay"), as it always does on a phone.
   useEffect(() => {
@@ -372,11 +376,7 @@ export function Drawer() {
     const nav = document.querySelector<HTMLElement>(".ag-nav");
     const side = document.querySelector<HTMLElement>(".ag-chat-panel");
     const place = () => {
-      // The same sum as the padding rule in `chat.css`: the panel past 60%
-      // of the window overlaps rather than taking more off the page.
-      const drawer = Math.min(side?.offsetWidth ?? 0, window.innerWidth * 0.6);
-      const taken = (nav?.offsetWidth ?? 0) + drawer + 20;
-      root.dataset.chat = window.innerWidth - taken >= PAGE_MIN ? "open" : "overlay";
+      root.dataset.chat = roomBeside(side?.offsetWidth ?? 0) ? "open" : "overlay";
     };
     place();
     const watch =

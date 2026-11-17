@@ -18,10 +18,12 @@ saw, which is a small lie the account can never get back.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, i18n
+from stocks import accounts, i18n, learn
 from stocks.api.deps import Account, Writer
 from stocks.api.security import Who
 from stocks.web import onboarding
@@ -57,8 +59,9 @@ class TourStep(BaseModel):
     )
     core: bool = Field(
         description=(
-            "One of the few stops the tour walks when it is simply started; "
-            "the others are reached from its last stop, a card or a deep link."
+            "A stop of the section guide, which is what the tour walks when "
+            "it is simply started: one per menu entry, plus the assistant. "
+            "The others are reached from a card or a deep link."
         )
     )
     title_key: str
@@ -92,7 +95,8 @@ class Onboarding(BaseModel):
     news: list[NewsCard] = Field(
         description=(
             "Everything shipped since this account's stamp, newest first — one "
-            "card per feature. Empty for an account that is caught up."
+            "card per feature. Empty for an account that is caught up, and "
+            "for a newcomer: no book yet, or the section guide still on offer."
         )
     )
     signed_in: bool = Field(
@@ -104,7 +108,12 @@ class Onboarding(BaseModel):
         )
     )
     setup: dict[str, bool] = Field(
-        description="The four connectable capabilities, as the Home card reads them."
+        description=(
+            "What the account has switched on, by capability: `login`, "
+            "`import`, `plan`, `ai`, `notify`. Home's start card counts the "
+            "first two as its steps and marks the rest optional; Profile "
+            "counts them all."
+        )
     )
     explore: dict[str, bool] = Field(
         description="The three that need no setup: search, ask, watchlist."
@@ -117,6 +126,22 @@ class Seen(BaseModel):
     model_config = {"extra": "forbid"}
 
     done: bool | None = None
+    walked: bool | None = Field(
+        default=None,
+        description=(
+            "The section guide was answered: walked to its end, skipped, or "
+            "its Home offer turned down. Withdraws the offer and retires the "
+            "tour, whatever `done` says."
+        ),
+    )
+    finished: bool | None = Field(
+        default=None,
+        description=(
+            "The section guide was walked to its last stop, not skipped. "
+            "Answers it as `walked` does, and strikes the first-visit tips of "
+            "the pages it stopped on: the guide already said what they say."
+        ),
+    )
 
 
 def _step(step: onboarding.Step, prefs: dict, paths) -> TourStep:
@@ -165,7 +190,7 @@ def state(account: Account, caller: Who) -> Onboarding:
                 title_key=card.title_key,
                 body_key=card.body_key,
             )
-            for card in onboarding.unseen_news(prefs)
+            for card in onboarding.news_for(prefs, account)
         ],
         signed_in=signed_in,
         # Reported from the real caller. This route is guest-open, and it used
@@ -186,10 +211,77 @@ def seen(body: Seen, account: Writer, caller: Who) -> Onboarding:
     because the card was interrupting somebody who came to look at their
     portfolio, and showing it a second time is worse than not showing it at
     all. `done` additionally retires the guided tour, which is what stops it
-    auto-opening on later sessions.
+    auto-opening on later sessions; the welcome sends it on its first load.
+
+    `walked` is the section guide answered — finished, skipped, or its Home
+    offer turned down. It is a field of this route rather than a setting so
+    that the offer cannot be withdrawn without the stamp: an account that said
+    "not now" and was left on an old stamp would be dealt, on its next visit,
+    every card it had been spared while it was new. `finished` is the first
+    of those three, and the only one that also strikes page tips.
     """
+    if body.walked or body.finished:
+        onboarding.guide_answered(account.prefs, finished=bool(body.finished))
+        return state(account, caller)
     changes: dict = {onboarding.PREF_SEEN_VERSION: onboarding.CURRENT_VERSION}
     if body.done is not None:
         changes[onboarding.PREF_DONE] = body.done
     accounts.update_prefs(account.prefs, changes)
     return state(account, caller)
+
+
+# ------------------------------------------------------------ first-visit tips
+# A newcomer's "how this page works", one per page (`onboarding.TIPS`). Whether
+# a page still owes one rides `/prefs` (`page_tips`), so deciding costs no
+# request; only a tip actually drawn asks here, for its lesson's title.
+
+
+class TipLesson(BaseModel):
+    id: str
+    title: str
+    minutes: int
+
+
+class Tip(BaseModel):
+    page: str
+    lines: int = Field(description="Copy lines, `tour.tip_<page>_1` onwards.")
+    lesson: TipLesson | None = Field(
+        description="The lesson that explains the page; null when none does."
+    )
+
+
+class TipsOwed(BaseModel):
+    page_tips: list[str] = Field(description="Pages still owed their tip.")
+
+
+def _tip_page(screen: str) -> onboarding.Tip:
+    tip = onboarding.TIPS.get(screen)
+    if tip is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no tip for page {screen!r}")
+    return tip
+
+
+# The path names the page `screen`: `page` is a paging word every list route
+# reserves (`test_paging_is_limit_offset_everywhere`).
+
+
+@router.get("/tips/{screen}", response_model=Tip, summary="One page's first-visit tip")
+def tip(
+    screen: str, lang: Annotated[str, Query(min_length=2, max_length=8)] = "en"
+) -> Tip:
+    found = _tip_page(screen)
+    lesson = learn.lesson(found.lesson, lang) if found.lesson else None
+    return Tip(
+        page=screen,
+        lines=found.lines,
+        lesson=None if lesson is None else TipLesson(
+            id=lesson.id, title=lesson.title, minutes=lesson.minutes
+        ),
+    )
+
+
+@router.post("/tips/{screen}", response_model=TipsOwed, summary="Mark a page's tip read")
+def tip_read(screen: str, account: Writer) -> TipsOwed:
+    """"Got it": this page's tip is not shown again, on any device."""
+    _tip_page(screen)
+    return TipsOwed(page_tips=onboarding.tip_seen(account.prefs, screen))

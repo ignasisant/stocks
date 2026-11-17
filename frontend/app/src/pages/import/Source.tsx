@@ -243,8 +243,8 @@ export function Source({
 function Guide({ platform }: { platform: Platform }) {
   const t = useT();
   const key = `import.guide_${platform.key}`;
+  if (!t.has(key)) return <p className="im-fine">{platformHint(t, platform)}</p>;
   const text = t(key);
-  if (text === key) return <p className="im-fine">{platformHint(t, platform)}</p>;
   return (
     <div className="im-guide">
       <p className="im-guide-title">

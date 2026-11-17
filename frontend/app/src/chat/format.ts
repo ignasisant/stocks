@@ -6,6 +6,8 @@
  * built out of catalog strings — "14:32" and "8.4s" are readings, not copy.
  */
 
+import { known } from "../shell/i18n";
+
 type T = (key: string, slots?: Record<string, string | number>) => string;
 
 /** A turn's stamp as HH:MM in the reader's own zone, or "" when unstamped. */
@@ -76,8 +78,7 @@ export function host(url: string): string {
 /** A skill's name in the reader's language, falling back to the API's own. */
 export function skillName(t: T, id: string, fallback?: string): string {
   const key = `chat.skill.${id}`;
-  const label = t(key);
-  return label === key ? (fallback ?? id) : label;
+  return known(t, key) ? t(key) : (fallback ?? id);
 }
 
 /**

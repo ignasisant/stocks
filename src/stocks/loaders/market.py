@@ -27,19 +27,6 @@ def sector_scans() -> dict:
     return load_scan()
 
 
-@ttl_cache(900.0, max_entries=1, stale_s=0.0)
-def today_market() -> dict:
-    """The Today page's shared market read (`chat.today_market`), {} if none.
-
-    Written once a morning by cron for every account, so no account in the
-    key. A quarter of an hour, strict: the lazy rebuild clears it when it
-    writes a new file, and a cron write elsewhere shows up within that.
-    """
-    from stocks.chat import today_market
-
-    return today_market.load()
-
-
 # The market-wide and calendar memos below serve stale for as long as the
 # book's own prices do (`_HELD_STALE`), with the refresh in the background:
 # under the default grace (three ttls) every one of them was cold again

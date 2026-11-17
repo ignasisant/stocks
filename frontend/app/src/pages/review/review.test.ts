@@ -397,6 +397,29 @@ describe("map tooltip figures", () => {
     ]);
   });
 
+  it("prints the P/E after share pay in place of the estimate's", () => {
+    const figures = tipFigures({ pe_fwd: 12.4, pe_owner: 21.8, roic: 0.16 }, "en");
+    expect(figures).toEqual([
+      { key: "pe_owner", value: "21.8x" },
+      { key: "roic", value: "16.0%" },
+    ]);
+  });
+
+  it("prints the return and the cash yield the scores read", () => {
+    const figures = tipFigures(
+      { roic: 0.089, roic_ex_goodwill: 0.31, fcf_yield: 0.128, owner_fcf_yield: 0.11 },
+      "en",
+    );
+    expect(figures).toEqual([
+      { key: "owner_fcf_yield", value: "11.0%" },
+      { key: "roic_ex_goodwill", value: "31.0%" },
+    ]);
+    // The plain return where it is the larger: the engine takes the best.
+    expect(tipFigures({ roic: 0.4, roic_ex_goodwill: 0.3 }, "en")).toEqual([
+      { key: "roic", value: "40.0%" },
+    ]);
+  });
+
   it("is empty for a name with no fundamentals", () => {
     expect(tipFigures({}, "en")).toEqual([]);
   });

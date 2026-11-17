@@ -139,10 +139,10 @@ def _figure(value: float | None, digits: int = 2) -> str:
 
 
 def _page_overview(code: str, ctx: Context) -> str:
-    from stocks.api.routes import ticker as routes
     from stocks.chat import brief
+    from stocks.views import ticker as reads
 
-    quote, metrics = routes.quote(code), routes.metrics(code)
+    quote, metrics = reads.quote(code), reads.metrics(code)
     cur = quote.currency or metrics.currency or ""
     today = (f", today {_pct(quote.pct, signed=True)}"
              if quote.pct is not None else "")
@@ -179,9 +179,9 @@ def _page_overview(code: str, ctx: Context) -> str:
 
 
 def _page_valuation(code: str, ctx: Context) -> str:
-    from stocks.api.routes import ticker as routes
+    from stocks.views import ticker as reads
 
-    v = routes.valuation(code)
+    v = reads.valuation(code)
     drawn = [(day, pe) for day, pe in zip(v.dates, v.pe, strict=False) if pe is not None]
     if not drawn and v.current is None:
         return "No P/E history (no usable EPS in the filings)."
@@ -249,9 +249,9 @@ def _earnings_quality(code: str, trailing: float | None) -> list[str]:
 
 
 def _page_dcf(code: str, ctx: Context) -> str:
-    from stocks.api.routes import ticker as routes
+    from stocks.views import ticker as reads
 
-    d = routes.dcf(code)
+    d = reads.dcf(code)
     if d.value is None:
         return f"No DCF value ({d.reason or 'no_data'})."
     cur = d.currency or ""
@@ -274,9 +274,9 @@ def _page_dcf(code: str, ctx: Context) -> str:
 
 
 def _page_analysts(code: str, ctx: Context) -> str:
-    from stocks.api.routes import ticker as routes
+    from stocks.views import ticker as reads
 
-    a = routes.analysts(code)
+    a = reads.analysts(code)
     if not a.covered and not a.revisions and not a.changes:
         return f"Too few analysts cover it ({a.analysts})."
     lines = []
@@ -308,9 +308,9 @@ def _page_analysts(code: str, ctx: Context) -> str:
 
 
 def _page_options(code: str, ctx: Context) -> str:
-    from stocks.api.routes import ticker as routes
+    from stocks.views import ticker as reads
 
-    o = routes.options(code)
+    o = reads.options(code)
     if not o.listed:
         return "No listed options."
     iv = (f"at-the-money implied volatility {_pct(o.iv)} ({o.iv_days} days, "
@@ -380,7 +380,7 @@ def _market_positioning(args: dict, ctx: Context) -> str:
 
 def _technicals(args: dict, ctx: Context) -> str:
     from stocks.analysis.trend import describe
-    from stocks.api.routes.ticker import read_trend
+    from stocks.views.ticker import read_trend
 
     symbol = _held_symbol(args, ctx)
     if not symbol:

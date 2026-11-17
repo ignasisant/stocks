@@ -63,3 +63,23 @@ def test_the_second_typed_trade_is_not_a_first(tmp_path):
 
     assert event.call_args.kwargs["first"] is False
     assert {t.ticker for t in all_transactions(db)} == {"NVDA", "MSFT"}
+
+
+def test_the_first_typed_trade_offers_the_newcomer_the_tour(tmp_path):
+    """Typing positions is a newcomer's import too: Home's tour offer and the
+    pages' tips are raised in the prefs beside the book, once."""
+    import json
+
+    from stocks.web import onboarding
+
+    db = tmp_path / "portfolio.db"
+    prefs = tmp_path / "prefs.json"
+    _typed(db)
+    stored = json.loads(prefs.read_text())
+    assert stored[onboarding.PREF_OFFER] is True
+    assert stored[onboarding.PREF_TIPS] == list(onboarding.TIPS)
+
+    prefs.write_text(json.dumps({onboarding.PREF_FIRST_BOOK: "2026-01-01"}))
+    again = {"trade": "buy", "quantity": 2, "price": 400, "date": "2024-04-01"}
+    _typed(db, Action("add_transaction", "MSFT", again))
+    assert onboarding.PREF_OFFER not in json.loads(prefs.read_text())

@@ -66,6 +66,8 @@ wheels/
 /data/last_import.json
 # Previews awaiting commit (stocks.notify.import_alert) — runtime, per account.
 /data/import_watch.json
+# Which account each push device belongs to (stocks.notify.webpush) — runtime.
+/data/push_owners.json
 # Revoked session ids (stocks.web auth), written at runtime.
 /data/sessions/
 # Daily counter for the keyless assistant's global allowance (runtime state).

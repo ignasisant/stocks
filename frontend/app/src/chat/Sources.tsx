@@ -6,7 +6,7 @@
 import { useId, useState } from "react";
 import { useT } from "../shell/i18n";
 import { host } from "./format";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { AppSource, type Source } from "./links";
 import { href } from "./markdown";
 

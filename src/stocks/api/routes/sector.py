@@ -23,14 +23,13 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, loaders, userstore
+from stocks import accounts, cpu_hold, loaders, userstore
 from stocks.analysis import review as engine
 from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.analysis.technicals import TECH_METRIC_ORDER
-from stocks.api import holds
 from stocks.api.deps import Account, Writer
 from stocks.jsonsafe import num as _num
 from stocks.schemas import (
@@ -474,7 +473,7 @@ def _rescan(name: str) -> None:
 
 def _spawn(job) -> None:
     """Run `job` off the request thread. A seam, so a test can run it inline."""
-    holds.spawn("sector-rescan", job)
+    cpu_hold.spawn("sector-rescan", job)
 
 
 @router.get(
@@ -504,7 +503,7 @@ def rescan(sector: str, paths: Writer) -> RescanStatus:
     `Retry-After` past that — and a session only, like every write: a bearer
     token naming somebody could otherwise spend Yahoo's patience in their name.
     """
-    from stocks.web import ratelimit
+    from stocks import ratelimit
 
     name = _resolve(sector)
     with _jobs_lock:

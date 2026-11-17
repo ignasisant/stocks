@@ -33,6 +33,7 @@ import { useCurrency } from "../shell/session";
 import { TickerCell } from "../shell/tickers";
 import { useApi } from "../shell/useApi";
 import { usePresence, useSwipeDismiss } from "../shell/useSheet";
+import { Glyph } from "./Glyph";
 import { Chip, type Tone } from "./Kpi";
 import "./journal.css";
 import { formatter } from "../shell/numbers";
@@ -885,8 +886,15 @@ function JournalPanel({
       >
         <header className="ag-jr-panel-head">
           <h2 className="ag-jr-panel-title">{title}</h2>
-          <button ref={shut} type="button" className="ag-jr-close" onClick={onClose}>
-            {t("journal.close")}
+          <button
+            ref={shut}
+            type="button"
+            className="ag-x"
+            aria-label={t("journal.close")}
+            title={t("journal.close")}
+            onClick={onClose}
+          >
+            <Glyph name="close" size={16} />
           </button>
         </header>
         <div className="ag-jr-panel-body">

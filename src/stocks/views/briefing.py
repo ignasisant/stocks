@@ -41,14 +41,13 @@ from datetime import date, datetime
 
 import pandas as pd
 
-from stocks import accounts, loaders, obs, userstore
+from stocks import accounts, cpu_hold, loaders, obs, userstore
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import (
     index_change,
     money_change,
     us_market_open,
 )
-from stocks.api import holds
 from stocks.cache import ttl_cache
 from stocks.chat import (
     daily,
@@ -1300,7 +1299,7 @@ def start(
 
     # Under a CPU hold: the build outlives the grace this request waits for
     # it, and a thread no request is waiting on crawls between requests.
-    thread = holds.spawn("daily-action", work)
+    thread = cpu_hold.spawn("daily-action", work)
     thread.join(GRACE_S)
     return job
 
@@ -1514,6 +1513,20 @@ _market_lock = threading.Lock()
 _market_tried: dict[str, float] = {}
 
 
+@ttl_cache(900.0, max_entries=1, stale_s=0.0)
+def market_stored() -> dict:
+    """The shared market read as it is stored (`chat.today_market`), {} if
+    none.
+
+    Written once a morning by cron for every account, so no account in the
+    key. A quarter of an hour, strict: the lazy rebuild clears it when it
+    writes a new file, and a cron write elsewhere shows up within that.
+    """
+    from stocks.chat import today_market
+
+    return today_market.load()
+
+
 def _market_build(kind: str, lang: str) -> None:
     from stocks.chat import today_market
 
@@ -1524,7 +1537,7 @@ def _market_build(kind: str, lang: str) -> None:
         obs.warn("today.market_lazy_failed", kind=kind,
                  error_type=type(exc).__name__, error=str(exc)[:200])
     finally:
-        loaders.today_market.cache_clear()  # ty: ignore[unresolved-attribute]
+        market_stored.cache_clear()  # ty: ignore[unresolved-attribute]
         _market_lock.release()
 
 
@@ -1533,7 +1546,7 @@ def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, boo
     newer one is on its way). Never fetches or calls a model on the request."""
     from stocks.chat import today_market
 
-    stored = loaders.today_market()
+    stored = market_stored()
     now = time.time() if now is None else now
     behind = today_market.stale(stored, today_market.expected_session(), now)
     card = today_market.card(stored, lang) if stored else None
@@ -1556,4 +1569,4 @@ def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, boo
 def _market_start(kind: str, lang: str) -> None:
     """Start the build; it releases `_market_lock` when it ends. A seam: the
     test suite swaps it for one that fetches nothing."""
-    holds.spawn("today-market", lambda: _market_build(kind, lang))
+    cpu_hold.spawn("today-market", lambda: _market_build(kind, lang))

@@ -13,7 +13,7 @@
 
 import type { ReactNode } from "react";
 
-import { Glyph } from "../chat/icons";
+import { Glyph } from "./Glyph";
 import "./ui.css";
 
 export function Box({ children, tools }: { children: ReactNode; tools: ReactNode }) {

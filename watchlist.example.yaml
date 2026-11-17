@@ -39,6 +39,9 @@ aliases:
   DHER: DHER.DE # Delivery Hero (XETRA)
   NA9: NA9.DE # Nagarro (XETRA)
   AB9: AB9.DE # ABO Energy (XETRA)
+  # Renamed listings: Yahoo files the history under the new symbol and
+  # leaves the old one blank.
+  LC: HAPN # LendingClub -> Happen (NYSE LC -> Nasdaq HAPN, 2026-06-22, 1:1)
 
 # TradingView venues for `stocks tv` (technical consensus). Yahoo aliases above
 # don't work here — TradingView needs EXCHANGE:SYMBOL plus a regional @screener.

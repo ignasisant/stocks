@@ -22,7 +22,7 @@ from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.data import fetch, symbols
 from stocks.data.dividends import DividendHistory
-from stocks.portfolio import edits, heal, held, validate
+from stocks.portfolio import edits, heal, held, validate, venue
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from tests.patching import patch_import, patch_loaders
 
@@ -393,3 +393,123 @@ def test_the_chat_check_names_the_statement_to_upload_again(tmp_path):
     assert '"broker": "clicktrade"' in drafted.text
     assert drafted.book is None  # an upload, not an edit
     assert checked(db, "MSFT").text.startswith("chat.book_healthy")
+
+
+# ------------------------------------------------------------- bare coins
+# A Revolut statement printed Bitcoin as "BTC", and books imported before the
+# importer learned to price a bare coin as its pair (`venue.coin_pair`) hold
+# it under Yahoo's bare "BTC", a forty-dollar trust: unpriced, held at cost
+# (prod 2026-11-11). Proven by price like the import does, then moved once.
+BTC = [
+    Transaction("2025-03-03", "BTC", "buy", 0.01, 80000.0, "EUR", 1.0, "revolut"),
+    Transaction("2025-06-02", "BTC", "buy", 0.01, 92000.0, "EUR", 1.0, "revolut"),
+]
+PICK = venue.pick  # bound at import, before conftest's autouse stub
+TRUST_BTC = Transaction("2025-06-02", "BTC", "buy", 2.0, 41.0, "USD", 0.0, "ibkr")
+
+
+@pytest.fixture
+def real_pick(monkeypatch):
+    """The heal decides with the import's own `pick`, which conftest stubs."""
+    monkeypatch.setattr(venue, "pick", PICK)
+
+
+def closes(prices: dict[str, float]):
+    return lambda symbol, day: prices.get(symbol)
+
+
+def no_rate(currency, day):
+    return None
+
+
+def test_a_bare_coin_moves_to_its_pair_once(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many([*BTC, TRUST_BTC], db)
+    close = closes({"BTC-EUR": 88000.0, "BTC": 41.0})
+    done = heal.bare_coins(db, close, no_rate)
+    assert done is not None and done.source == "doctor"
+    labels = sorted((t.ticker, t.currency) for t in all_transactions(db))
+    # The dollar "BTC" is the trust the other broker bought: it stays.
+    assert labels == [("BTC", "USD"), ("BTC-EUR", "EUR"), ("BTC-EUR", "EUR")]
+    assert [(k, c.id) for k, c in heal.recent(db)] == [("bare_coins", done.id)]
+    assert heal.bare_coins(db, close, no_rate) is None
+
+
+def test_a_bare_coin_the_price_does_not_prove_stays(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many(BTC, db)
+    assert heal.bare_coins(db, closes({}), no_rate) is None  # Yahoo said nothing
+    assert heal.bare_coins(db, closes({"BTC-EUR": 20000.0}), no_rate) is None
+    assert {t.ticker for t in all_transactions(db)} == {"BTC"}
+    # Unproven is not refused: asked again on the next warm.
+    assert heal.bare_coins(db, closes({"BTC-EUR": 88000.0}), no_rate) is not None
+
+
+def test_an_undone_coin_move_is_never_written_again(tmp_path, real_pick):
+    db = tmp_path / "portfolio.db"
+    add_many(BTC, db)
+    close = closes({"BTC-EUR": 88000.0})
+    done = heal.bare_coins(db, close, no_rate)
+    edits.undo(done.id, path=db)
+    assert heal.bare_coins(db, close, no_rate) is None
+    assert {t.ticker for t in all_transactions(db)} == {"BTC"}
+
+
+# ------------------------------------------------- prices the fills disagree with
+def kept_frames(monkeypatch, **closes: float) -> None:
+    """The book's last kept frames: one flat close per name over 2024."""
+    import pandas as pd
+
+    from stocks.data import listing
+    from stocks.loaders import closes as loader
+
+    days = pd.bdate_range("2024-01-01", "2024-12-31")
+    frames = {
+        ticker: pd.DataFrame({"Close": close, "Adj Close": close}, index=days)
+        for ticker, close in closes.items()
+    }
+    monkeypatch.setattr(loader, "_stored_base", lambda db: ("2024-01-01", frames, 0.0))
+    monkeypatch.setattr(listing, "listing_currencies", lambda tickers, **_: {})
+
+
+def test_a_held_name_its_fills_say_is_another_instrument_is_named(
+    client, account, signed_in, monkeypatch
+):
+    # ERR-04: a fund imported at a price a hundred times its NAV line reads
+    # unpriced, carried at cost, and nothing on screen said why.
+    fund = Transaction("2024-06-03", "FUND", "buy", 3.0, 1050.0, "EUR", 0.0,
+                       "myinvestor Fund")
+    fine = Transaction("2024-03-01", "AMZN", "buy", 2.0, 180.0, "USD", 1.0,
+                       "revolut Amazon")
+    add_many([fund, fine], account.db)
+    kept_frames(monkeypatch, FUND=10.5, AMZN=185.0)
+
+    [off] = signed_in.get("/v1/import/checkup").json()["prices"]
+    assert (off["ticker"], off["date"], off["price"], off["currency"]) == (
+        "FUND", "2024-06-03", 1050.0, "EUR"
+    )
+    assert off["close"] == pytest.approx(10.5)
+
+
+def test_a_name_no_longer_held_or_never_priced_is_not_named(
+    client, account, signed_in, monkeypatch
+):
+    sold = [
+        Transaction("2024-06-03", "FUND", "buy", 3.0, 1050.0, "EUR", 0.0, "x Fund"),
+        Transaction("2024-09-02", "FUND", "sell", 3.0, 1080.0, "EUR", 0.0, "x Fund"),
+        Transaction("2024-03-01", "AMZN", "buy", 2.0, 180.0, "USD", 1.0, "x Amazon"),
+    ]
+    add_many(sold, account.db)
+    kept_frames(monkeypatch, FUND=10.5)
+
+    assert signed_in.get("/v1/import/checkup").json()["prices"] == []
+
+
+def test_a_book_whose_prices_were_never_kept_names_nothing(
+    client, account, signed_in, monkeypatch
+):
+    from stocks.loaders import closes as loader
+
+    add_many([BUY], account.db)
+    monkeypatch.setattr(loader, "_stored_base", lambda db: None)
+    assert signed_in.get("/v1/import/checkup").json()["prices"] == []

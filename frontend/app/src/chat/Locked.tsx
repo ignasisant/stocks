@@ -20,7 +20,7 @@ import { useT } from "../shell/i18n";
 import { useAssistantAsks } from "../shell/assistant";
 import { useRoute } from "../shell/router";
 import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { keepDraft } from "./draft";
 import "./chat.css";
 

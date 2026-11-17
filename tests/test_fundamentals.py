@@ -870,6 +870,38 @@ def test_the_lens_figures_are_shares_of_the_assets():
     assert compute_metrics(raw)["equity_share"] is None, "a deficit is no share"
 
 
+def test_what_customers_owe_is_both_rows_over_the_assets():
+    """Deere files what its buyers owe in two rows, due within the year and
+    after it; a company with neither has no figure, not a zero."""
+    raw = sample_raw()
+    cols = len(raw.balance.columns)
+    for label in ("Receivables", "Non Current Accounts Receivable"):
+        if label in raw.balance.index:
+            raw.balance = raw.balance.drop(index=label)
+    assert compute_metrics(raw)["receivable_share"] is None
+    raw.balance.loc["Total Assets"] = [500e9] * cols
+    raw.balance.loc["Receivables"] = [60e9] * cols
+    assert compute_metrics(raw)["receivable_share"] == pytest.approx(0.12)
+    raw.balance.loc["Non Current Accounts Receivable"] = [90e9] * cols
+    assert compute_metrics(raw)["receivable_share"] == pytest.approx(0.30)
+
+
+def test_a_makers_loan_book_is_not_graded_as_its_own_debt():
+    """Deere's page showed net debt 4.8x in red beside "lending arm"."""
+    maker = {"industry": "Farm & Heavy Construction Machinery", "equity_share": 0.24}
+    arm = {**maker, "receivable_share": 0.56}
+    assert lens_verdict("net_debt_ebitda", 4.8, maker) == ("high", "red")
+    assert lens_verdict("net_debt_ebitda", 4.8, arm) is None
+    assert lens_verdict("roic", 0.05, maker) is not None
+    assert lens_verdict("roic", 0.05, arm) is None
+    # Thin equity is the debt reading that is left; net cash is still said.
+    assert lens_verdict("net_debt_ebitda", 38.0, {**arm, "equity_share": 0.12}) == (
+        "high", "red",
+    )
+    assert lens_verdict("net_debt_ebitda", -0.5, arm) == ("net cash", "green")
+    assert lens_verdict("op_margin", 0.05, arm) == lens_verdict("op_margin", 0.05, maker)
+
+
 def test_cash_on_capital_adds_growth_capex_back_and_skips_the_cash():
     raw = sample_raw()
     raw.cashflow.loc["Operating Cash Flow"] = [120e9] * 5

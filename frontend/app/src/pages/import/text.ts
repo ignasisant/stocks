@@ -9,7 +9,7 @@
  * `action` parameter inside a validation issue.
  */
 
-import { useLang, useT } from "../../shell/i18n";
+import { known, useLang, useT } from "../../shell/i18n";
 import type { Issue } from "./api";
 import { formatter } from "../../shell/numbers";
 
@@ -20,15 +20,13 @@ export function useVocabulary() {
   /** "buy" -> "compra". An unknown verb passes through unchanged. */
   const action = (verb: string) => {
     const key = `import.action_${verb}`;
-    const label = t(key);
-    return label === key ? verb : label;
+    return t.has(key) ? t(key) : verb;
   };
 
   /** A column's header text, or its raw name when nobody has named it. */
   const column = (name: string) => {
     const key = `import.col_${name}`;
-    const label = t(key);
-    return label === key ? name : label;
+    return t.has(key) ? t(key) : name;
   };
 
   /**
@@ -115,6 +113,5 @@ export function platformHint(
   platform: { key: string; hint: string },
 ): string {
   const key = `import.hint_${platform.key}`;
-  const text = t(key);
-  return text === key ? platform.hint : text;
+  return known(t, key) ? t(key) : platform.hint;
 }

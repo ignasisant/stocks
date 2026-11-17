@@ -66,7 +66,7 @@ from stocks.portfolio import (
 )
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.portfolio.statement import ParseResult
-from stocks.web import tx_text
+from stocks.web import onboarding, tx_text
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -550,6 +550,9 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
     first = not demo.has_real(paths.db)  # activation; read before the write
     demo.clear(paths.db)
     ids = add_many(txs, paths.db)
+    if first and ids:
+        # A newcomer's own book is in: offer the tour, owe the page tips.
+        onboarding.first_book(paths.prefs)
     if ids:
         page._retag(paths.db, checked.relabeled)
     stamped = datetime.now(UTC).isoformat(timespec="seconds")

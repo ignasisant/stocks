@@ -16,6 +16,7 @@
 export const NA = "n/a";
 
 import { decimal, isNum, percent } from "../../shell/format";
+import { known } from "../../shell/i18n";
 import { formatter, num, numberLang } from "../../shell/numbers";
 
 const GROUPS = {
@@ -126,6 +127,5 @@ export function maybe(
   t: (key: string, slots?: Record<string, string | number>) => string,
   key: string,
 ): string | undefined {
-  const text = t(key);
-  return text === key ? undefined : text;
+  return known(t, key) ? t(key) : undefined;
 }

@@ -761,6 +761,26 @@ def test_a_sound_plan_raises_no_invariant(client, book, warned):
     assert not [f for name, f in warned if name == "review.invariant"]
 
 
+def test_a_position_left_unpriced_does_not_read_as_weights_off(
+    client, book, monkeypatch, warned
+):
+    """An unpriced row weighs nothing and stands in the total at its cost
+    (`value_weights`), so the priced weights add to the priced share, not to
+    1. Prod 2026-11-14: one held name Yahoo could not price, 3 % of the book
+    at cost, raised `weights_off` at 0.97 on every read."""
+    table = loaders.positions_table()
+    table.loc["ADBE", "value"] = float("nan")
+    patch_loaders(monkeypatch, "positions_table", lambda *a, **k: table)
+    _get(client)
+    assert not [f for name, f in warned if name == "review.invariant"]
+
+
+def test_priced_weights_short_of_the_priced_share_are_still_weights_off(warned):
+    held = [_row("hold", weight=0.5), _row("hold", weight=0.3), _row("hold")]
+    assert route._invariants(held, [], replayed=True, priced=0.9) == ["weights_off"]
+    assert route._invariants(held, [], replayed=True, priced=0.8) == []
+
+
 def _row(verdict, *, held=True, weight=None, target=None, delta=None, tax=None):
     return route.ReviewRow(
         ticker="X",

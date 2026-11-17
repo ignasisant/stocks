@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from stocks.api import warm
+from stocks.views import briefing
 from tests.patching import patch_loaders
 
 TODAY = date(2026, 9, 27)
@@ -297,7 +298,7 @@ def test_warm_today_skips_an_empty_book(monkeypatch):
 def test_warm_recent_reads_the_shared_market_once(monkeypatch):
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: [])
     reads: list[int] = []
-    patch_loaders(monkeypatch, "today_market", lambda: reads.append(1) or {})
+    monkeypatch.setattr(briefing, "market_stored", lambda: reads.append(1) or {})
     for memo in ("pulse_closes", "pulse_rate_rows", "market_pulse"):
         patch_loaders(monkeypatch, memo, lambda: {})
     warm.warm_recent(today=TODAY)
@@ -422,7 +423,7 @@ def test_a_book_nobody_opened_lately_still_gets_its_splits_swept(monkeypatch):
 
 def test_warm_shared_reads_the_market_memos_once_and_survives_one(monkeypatch):
     reads: list[str] = []
-    patch_loaders(monkeypatch, "today_market", lambda: reads.append("today") or {})
+    monkeypatch.setattr(briefing, "market_stored", lambda: reads.append("today") or {})
     patch_loaders(
         monkeypatch, "pulse_closes", lambda: (_ for _ in ()).throw(RuntimeError("yahoo"))
     )

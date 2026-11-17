@@ -4,7 +4,18 @@ the app's navigation.
 
 from __future__ import annotations
 
+from datetime import time
+
 from pydantic import BaseModel, Field, field_validator
+
+
+def parse_time(text: object) -> time | None:
+    """"HH:MM" as a time, None for anything else."""
+    try:
+        hours, minutes = str(text).split(":")
+        return time(int(hours), int(minutes))
+    except (ValueError, TypeError):
+        return None
 
 
 class HomeSlot(BaseModel):
@@ -42,8 +53,6 @@ class ScheduleSlot(BaseModel):
     @field_validator("time")
     @classmethod
     def _clock(cls, value: str) -> str:
-        from stocks.notify.schedule import parse_time
-
         at = parse_time(value)
         if at is None:
             raise ValueError('time is "HH:MM"')
@@ -99,6 +108,14 @@ class Prefs(BaseModel):
     # The one-time "rate TopStocks" prompt has been shown — answered or not.
     # Per account, so the phone does not ask what the laptop already asked.
     rate_prompt_done: bool = False
+    # A newcomer's first steps, stamped by their first real import
+    # (`web.onboarding.first_book`): the tour offered on Home until taken or
+    # turned down, and the pages whose first-visit tip is still owed.
+    tour_offer: bool = False
+    page_tips: list[str] = Field(
+        default_factory=list,
+        description="Pages still owed their first-visit tip; read-only here.",
+    )
     home_layout: list[HomeSlot] | None = Field(
         default=None,
         description=(

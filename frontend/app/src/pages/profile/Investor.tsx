@@ -20,7 +20,9 @@ import { useApi } from "../../shell/useApi";
 import { useSession } from "../../shell/session";
 import { residenceClash } from "./residence";
 import { describe } from "./errors";
-import { Card, Failure, MultiChips, Row, Select } from "./ui";
+import { Options } from "../../ui/Options";
+import { Segmented } from "../../ui/Segmented";
+import { Card, Failure, MultiChips, Row } from "./ui";
 
 /** `GET /profile` — `set` is false until the account has saved once. */
 type InvestorProfile = {
@@ -108,11 +110,16 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
       <div className="pr-main">
         <Card title={t("profile.iv_how_title")} sub={t("profile.iv_how_sub")}>
           <Row label={t("profile.iv_risk")} help={t("profile.iv_risk_help")}>
-            <Select
+            {/* Options with a line each, not a dropdown: "Balanced" alone
+                says nothing about how far down the reader signs up to sit. */}
+            <Options
               label={t("profile.iv_risk")}
-              value={profile.risk}
-              options={options.risk}
-              labelOf={label("risk")}
+              items={options.risk.map((o) => ({
+                id: o,
+                label: label("risk")(o),
+                line: t(`profile.iv_risk_${o}_line`),
+              }))}
+              value={profile.risk || null}
               disabled={saving === "risk"}
               onPick={(risk) =>
                 risk !== profile.risk && commit({ ...profile, risk }, "risk")
@@ -120,13 +127,16 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
             />
           </Row>
           <Row label={t("profile.iv_horizon")} help={t("profile.iv_horizon_help")}>
-            <Select
+            <Segmented
+              className="ag-seg-2up"
               label={t("profile.iv_horizon")}
-              value={profile.horizon}
-              options={options.horizon}
-              labelOf={label("horizon")}
-              disabled={saving === "horizon"}
+              items={options.horizon.map((o) => ({
+                id: o,
+                label: label("horizon")(o),
+              }))}
+              value={profile.horizon || null}
               onPick={(horizon) =>
+                saving !== "horizon" &&
                 horizon !== profile.horizon &&
                 commit({ ...profile, horizon }, "horizon")
               }

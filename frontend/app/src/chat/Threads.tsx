@@ -16,7 +16,7 @@
 import { useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { filed, group, stamp } from "./format";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { Markdown } from "./markdown";
 import { Scheduled } from "./Scheduled";
 import type { Conversation } from "./types";

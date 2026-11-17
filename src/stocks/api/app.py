@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, cache, loadtest, memstat, obs
+from stocks import accounts, cache, cpu_hold, loadtest, memstat, obs
 from stocks.api import (
     errors,
     guest,
@@ -180,9 +180,9 @@ def _iso(wall: float) -> str:
 async def _stale_since(request: Request, call_next):
     token = cache.STALE.set({})
     # Where a refresh this request leaves behind can reach this service to keep
-    # its CPU while it runs (`api/holds.py`).
-    hold = holds.BASE.set(
-        holds.pinned(holds.base_of(request.scope, str(request.base_url)))
+    # its CPU while it runs (`stocks.cpu_hold`).
+    hold = cpu_hold.BASE.set(
+        cpu_hold.pinned(cpu_hold.base_of(request.scope, str(request.base_url)))
     )
     try:
         response = await call_next(request)
@@ -195,11 +195,11 @@ async def _stale_since(request: Request, call_next):
             response.headers[REFRESHING_HEADER] = "1"
         return response
     finally:
-        holds.BASE.reset(hold)
+        cpu_hold.BASE.reset(hold)
         cache.STALE.reset(token)
 
 
-cache.on_background = holds.keep
+cache.on_background = cpu_hold.keep
 
 
 # ------------------------------------------------------ whose request this is

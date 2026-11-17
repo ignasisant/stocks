@@ -1,8 +1,8 @@
-"""The chat burst limiter (stocks.web.ratelimit)."""
+"""The chat burst limiter (stocks.ratelimit)."""
 
 from __future__ import annotations
 
-from stocks.web import ratelimit
+from stocks import ratelimit
 
 
 def _fresh(monkeypatch):

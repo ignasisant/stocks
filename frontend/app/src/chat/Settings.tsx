@@ -39,7 +39,8 @@ import { forgetKey, readModels, readState, revealKey, storeKey } from "./api";
 import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
 import { keyError, providerLabel, providerTag } from "./format";
 import { phone } from "./GuideCard";
-import { Glyph, ProviderMark } from "./icons";
+import { Glyph } from "../ui/Glyph";
+import { ProviderMark } from "./icons";
 import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
 
@@ -496,6 +497,13 @@ export function Settings({
 
   const picked =
     state.providers.find((p) => p.id === state.preferred) ?? state.providers[0];
+  // A provider picked without a key does not answer: the next in the chain
+  // does, and the header names that one. Said here, or the pressed tile and
+  // the header look like the choice was never saved.
+  const standIn =
+    picked?.needs_key && !picked.has_key && state.answering !== picked.id
+      ? state.providers.find((p) => p.id === state.answering)
+      : undefined;
   const cap = state.free_cap;
   const left = state.free_left;
 
@@ -527,6 +535,14 @@ export function Settings({
           </button>
         ))}
       </div>
+      {picked && standIn && (
+        <p className="ag-chat-hint">
+          {t("chat.answers_until_key", {
+            provider: picked.label,
+            answering: standIn.label,
+          })}
+        </p>
+      )}
 
       {picked && (
         <>

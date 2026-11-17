@@ -68,6 +68,7 @@ from stocks.loaders.closes import (
     _stored_base,
     held_closes,
     held_printed_closes,
+    price_mismatches,
     quotes,
     trade_bars,
     watchlist_closes,
@@ -114,7 +115,6 @@ from stocks.loaders.market import (
     pulse_rates,
     sector_scans,
     stored_action,
-    today_market,
 )
 from stocks.loaders.names import (
     _LISTING_NAMES,
@@ -234,6 +234,7 @@ __all__ = [
     "positioning",
     "positions_table",
     "price_bars",
+    "price_mismatches",
     "provider_logo",
     "pulse_closes",
     "pulse_rate_rows",
@@ -248,7 +249,6 @@ __all__ = [
     "sector_scans",
     "spot_rates",
     "stored_action",
-    "today_market",
     "trade_bars",
     "unbooked_dividends",
     "valuation",

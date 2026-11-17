@@ -498,7 +498,7 @@ def test_registration_is_throttled_per_address(site):
 
 def test_without_a_public_origin_the_connector_is_not_there(door, monkeypatch):
     monkeypatch.delenv("APP_PUBLIC_URL", raising=False)
-    monkeypatch.setattr("stocks.web.server.secret", lambda *a, **k: "")
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "")
     app = Starlette(
         routes=[Route(p, door) for p in oauth.PATHS],
         lifespan=lambda app: door.lifespan(),

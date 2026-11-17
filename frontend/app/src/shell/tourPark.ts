@@ -10,8 +10,10 @@
  * "skip the rest", the list's own X — because those are the reader saying they
  * are done, and a parked list abandoned half-read is still owed.
  *
- * The walkthrough comes in two lengths: "tour" is the few core stops, "all"
- * is every stop. Both park and both retire the same way; only "news" differs.
+ * The walkthrough comes in two lengths: "tour" is the section guide, one stop
+ * per menu entry, drawn as a card beside the page it is showing; "all" is
+ * every stop, in the dialog. Both park and both retire the same way; only
+ * "news" differs.
  *
  * The parked position lives in `sessionStorage`: one tab, gone when the tab
  * is, and it survives a reload.
@@ -22,16 +24,23 @@ export type Mode = "tour" | "all" | "news";
 /** A tour that is running: which list, which item, and whether the modal is up. */
 export type Place = { mode: Mode; at: number; open: boolean };
 
-/** What the component has to do after an action: stamp, and how. */
-export type Stamp = { done?: boolean } | null;
+/**
+ * What the component has to do after an action: stamp, and how. `walked` is
+ * the walkthrough answered (`/onboarding/seen`): it retires the tour, catches
+ * the account up and withdraws Home's offer in one write. `finished` adds that
+ * every stop was shown, which strikes the tips of the pages it stood on.
+ */
+export type Stamp = { done?: boolean; walked?: boolean; finished?: boolean } | null;
 
 export type Action =
   /** X, Escape, the scrim. */
   | "dismiss"
   /** A step's or card's "take me there". */
   | "goto"
-  /** Finish on the last step, or "end tour" on the strip. */
+  /** "Skip the tutorial", "end tour" on the strip, or the dialog's way out. */
   | "finish"
+  /** Next on the section guide's last stop: the reader was shown every page. */
+  | "complete"
   /** "Skip the rest" / "Done" on the news list, or its strip's close. */
   | "news_done";
 
@@ -59,8 +68,14 @@ export function after(
     case "finish":
       // Done with the walkthrough retires it, and stamps the release too: a
       // first-timer who has just seen everything has no "what's new" to catch
-      // up on (`_exit_tour`).
-      return { place: null, stamp: { done: true } };
+      // up on. Skipping is the same answer as finishing, so Home stops
+      // offering what was just turned down.
+      return { place: null, stamp: { walked: true } };
+    case "complete":
+      // The same answer, and one thing more: the guide stood on every page
+      // and said what it is for, so those pages owe no first-visit tip. A
+      // skip never earns this; the reader saw none of them.
+      return { place: null, stamp: { walked: true, finished: true } };
     case "news_done":
       return { place: null, stamp: {} };
   }
@@ -140,4 +155,53 @@ export function claimNudge(): boolean {
   if (nudged) return false;
   nudged = true;
   return true;
+}
+
+/**
+ * Whether the tour, the welcome or "what's new" is on screen, open or parked.
+ * A page's first-visit tip (`PageTip`) waits while it is: two guides talking
+ * at once is one too many, and the tour is the one the reader asked for.
+ */
+let touring = false;
+const touringListeners = new Set<() => void>();
+
+export function setTouring(on: boolean): void {
+  if (on === touring) return;
+  touring = on;
+  for (const listener of touringListeners) listener();
+}
+
+export function isTouring(): boolean {
+  return touring;
+}
+
+export function onTouring(listener: () => void): () => void {
+  touringListeners.add(listener);
+  return () => touringListeners.delete(listener);
+}
+
+/**
+ * The section the guide is standing on, for the menu to point at: a page's
+ * slug, `ASSISTANT` for the stop that is a panel, or null when no guide is up.
+ * The guide and the menu are siblings in the shell, so the stop travels here
+ * rather than through either one's props.
+ */
+export const ASSISTANT = "assistant";
+
+let stop: string | null = null;
+const stopListeners = new Set<() => void>();
+
+export function setGuideStop(next: string | null): void {
+  if (next === stop) return;
+  stop = next;
+  for (const listener of stopListeners) listener();
+}
+
+export function guideStop(): string | null {
+  return stop;
+}
+
+export function onGuideStop(listener: () => void): () => void {
+  stopListeners.add(listener);
+  return () => stopListeners.delete(listener);
 }

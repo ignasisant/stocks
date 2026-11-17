@@ -765,10 +765,22 @@ export type Finding = {
 
 /** A repair the app wrote by itself; undoing its change takes it back for good. */
 export type Healed = {
-  kind: "fee_in_coins" | "net_dividends";
+  kind: "fee_in_coins" | "net_dividends" | "bare_coins";
   change_id: number;
   rows: number;
   at: string;
+};
+
+/** An open position its own fills say is priced off another instrument: read at cost. */
+export type PriceMismatch = {
+  ticker: string;
+  /** The latest fill the price disagrees with. */
+  date: string;
+  /** That fill's price, as booked. */
+  price: number;
+  currency: string;
+  /** The close on or before that day, in `currency`. */
+  close: number;
 };
 
 export type Checkup = {
@@ -776,9 +788,10 @@ export type Checkup = {
   reupload: ReuploadHint[];
   findings: Finding[];
   healed: Healed[];
+  prices: PriceMismatch[];
 };
 
-/** Everything the repairs card offers besides moves and splits. Ledger reads only. */
+/** Everything the repairs card offers besides moves and splits. No download. */
 export const checkup = () => get<Checkup>("/import/checkup");
 
 /** Write the named held sales; a 409 when the book cannot carry them all now. */

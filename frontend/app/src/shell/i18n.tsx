@@ -20,36 +20,118 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { ApiError, get } from "./api";
+import { ApiError, BASE, get } from "./api";
 import { boot } from "./boot";
+import { where } from "./errors";
 import { setNumberLang } from "./numbers";
 import { useApi } from "./useApi";
 
 type Catalog = { lang: string; strings: Record<string, string> };
 
-/** `ready` is false until the catalog has arrived (true outside a provider). */
-const Strings = createContext<Catalog & { ready: boolean }>({
+/**
+ * `ready` is false until the catalog has arrived (true outside a provider);
+ * `loaded` only once a real one has, so a miss against it is a real gap and
+ * not a test rendering without a provider.
+ */
+const Strings = createContext<Catalog & { ready: boolean; loaded: boolean }>({
   lang: "en",
   strings: {},
   ready: true,
+  loaded: false,
 });
+
+/** Keys reported per page load, at most: a gap in a loop is still one gap. */
+const MAX_MISSING = 50;
+const CATALOG_KEY = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_-]+)+$/;
+/** How long a render's misses gather before they go as one request. */
+const MISSING_FLUSH_MS = 2000;
+const asked = new Set<string>();
+let pending: string[] = [];
+let pendingLang = "en";
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushMissing(): void {
+  flushTimer = null;
+  const keys = pending;
+  pending = [];
+  if (!keys.length || typeof fetch !== "function") return;
+  fetch(`${BASE}/missing-strings`, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lang: pendingLang, keys, where: where() }),
+  }).catch(() => undefined);
+}
+
+/**
+ * Send `key` to the server log as `i18n.missing` (an ERROR): it is about to be
+ * drawn as its own dotted name. Once per key per page load, batched.
+ */
+export function reportMissing(key: string, lang: string): void {
+  // Only what the server takes for a key (`routes/client_error.py`): a
+  // passthrough of plain text is not a catalog gap.
+  if (key.length > 120 || !CATALOG_KEY.test(key)) return;
+  if (asked.has(key) || asked.size >= MAX_MISSING) return;
+  asked.add(key);
+  pending.push(key);
+  pendingLang = lang;
+  flushTimer ??= setTimeout(flushMissing, MISSING_FLUSH_MS);
+}
+
+/** Tests only: forget what was reported and drop what is queued. */
+export function _resetMissing(): void {
+  asked.clear();
+  pending = [];
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = null;
+}
+
+export type Translate = ((
+  key: string,
+  slots?: Record<string, string | number>,
+) => string) & {
+  /** Whether the catalog has `key` — asks without reporting a miss. */
+  has: (key: string) => boolean;
+};
 
 /**
  * `t("portfolio.tab_positions")`, with `{placeholder}` slots filled in.
  *
  * A missing key renders as the key itself. That is deliberate and matches the
  * Python side: a blank is invisible in review, and a dotted key on screen is a
- * bug report that writes itself.
+ * bug report that writes itself — and it is also sent as one
+ * (`reportMissing`). Code that only wants to know whether a key exists, to
+ * fall back on purpose, asks `t.has(key)` (or `known(t, key)`) first.
  */
-export function useT() {
-  const { strings } = useContext(Strings);
-  return (key: string, slots?: Record<string, string | number>) => {
-    let value = strings[key] ?? key;
+export function useT(): Translate {
+  const { strings, lang, loaded } = useContext(Strings);
+  const t = (key: string, slots?: Record<string, string | number>) => {
+    let value = strings[key];
+    if (value === undefined) {
+      if (loaded) reportMissing(key, lang);
+      value = key;
+    }
     for (const [name, slot] of Object.entries(slots ?? {})) {
       value = value.replaceAll(`{${name}}`, String(slot));
     }
     return value;
   };
+  t.has = (key: string) => Object.hasOwn(strings, key);
+  return t;
+}
+
+/**
+ * Whether `t` has `key`, for helpers typed with a plain translate function. A
+ * `useT()` translator answers without reporting; any other (a test's stand-in)
+ * is asked the old way.
+ */
+export function known(
+  t: (key: string, slots?: Record<string, string | number>) => string,
+  key: string,
+): boolean {
+  const has = (t as Partial<Translate>).has;
+  return has ? has(key) : t(key) !== key;
 }
 
 /**
@@ -170,7 +252,10 @@ export function Translations({
   // CDN hiccup into a white screen.
   const loaded = catalog.state === "loaded" ? catalog.data : null;
   const value = useMemo(
-    () => (loaded ? { ...loaded, ready: true } : { lang, strings: {}, ready: false }),
+    () =>
+      loaded
+        ? { ...loaded, ready: true, loaded: true }
+        : { lang, strings: {}, ready: false, loaded: false },
     [loaded, lang],
   );
   // Published before any child renders, so number helpers without a `lang`

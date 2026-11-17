@@ -7,24 +7,24 @@
  * which already ships all eleven; this page adds no copy of its own for them.
  */
 
-import { useT } from "../../shell/i18n";
+import { type Translate, useT } from "../../shell/i18n";
 
 /** A miss renders as the dotted key, so ask first and fall back deliberately. */
-function orElse(value: string, key: string, fallback: string): string {
-  return value === key ? fallback : value;
+function orElse(t: Translate, key: string, fallback: string): string {
+  return t.has(key) ? t(key) : fallback;
 }
 
 export function useLabels() {
   const t = useT();
   return {
     /** A metric's name; the raw key if the catalog has never heard of it. */
-    metric: (key: string) => orElse(t(`kpi.${key}.label`), `kpi.${key}.label`, key),
+    metric: (key: string) => orElse(t, `kpi.${key}.label`, key),
     /** A metric's definition, or "" — an absent tooltip beats a dotted key. */
-    describe: (key: string) => orElse(t(`kpi.${key}.desc`), `kpi.${key}.desc`, ""),
+    describe: (key: string) => orElse(t, `kpi.${key}.desc`, ""),
     /** The sector in the reader's language, or its own English spelling. */
     sector: (name: string) => {
       const key = `sentiment.sector_${name.toLowerCase().replaceAll(" ", "_")}`;
-      return orElse(t(key), key, name);
+      return orElse(t, key, name);
     },
   };
 }

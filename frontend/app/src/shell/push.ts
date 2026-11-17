@@ -11,6 +11,13 @@
  * (iOS 16.4+): in a Safari tab `supported()` is false and the Profile says
  * how to get there instead.
  *
+ * A browser has one subscription whoever is signed in, so a device belongs
+ * to one account at a time: the one signed in on it. The app says so when it
+ * opens (`claimPush`) and when it signs out (`releasePush`). Without that, an
+ * account that switched notifications on here keeps sending them after
+ * somebody else has signed in, and pressing one opens a thread that is not
+ * in the book on screen.
+ *
  * The other half is the beat: while an answer is being written, an app on
  * screen says so every `BEAT_MS`, and the server skips the push while a beat
  * is fresh. Somebody watching the answer arrive needs no notification of it.
@@ -19,8 +26,10 @@
 import { useEffect } from "react";
 import { BASE, get, send } from "./api";
 import { appleMobile } from "./install";
+import { onSignOut } from "./keep";
 import { isStandalone } from "./resume";
 import { navigate } from "./router";
+import { useGuest } from "./session";
 
 /** `GET /push` — `routes.push.Push`. */
 export type PushState = {
@@ -113,6 +122,46 @@ export async function testPush(): Promise<void> {
   const sub = await current();
   if (!sub) return;
   await send("POST", "/push/test", { endpoint: sub.endpoint }, { touches: [] });
+}
+
+/* ------------------------------------------------------ whose device */
+
+/** This device is the signed-in account's to notify, and nobody else's. */
+export async function claimPush(): Promise<void> {
+  const sub = await current();
+  if (!sub) return;
+  await send("POST", "/push/claim", { endpoint: sub.endpoint }, TOUCHES);
+}
+
+/**
+ * The account is signing out here: nothing more is sent to this device until
+ * somebody signs in on it. `keepalive`, so it still goes out when the page
+ * leaves before it is answered.
+ */
+export async function releasePush(): Promise<void> {
+  const sub = await current();
+  if (!sub) return;
+  await fetch(`${BASE}/push/release`, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: sub.endpoint }),
+  });
+}
+
+/**
+ * Once per opening of the app, for a signed-in account: claim this device,
+ * and release it on the way out. A refusal changes nothing on screen, and the
+ * next opening says it again.
+ */
+export function useDeviceClaim(): void {
+  const guest = useGuest();
+  useEffect(() => {
+    if (guest) return;
+    claimPush().catch(() => undefined);
+    return onSignOut(releasePush);
+  }, [guest]);
 }
 
 /* ------------------------------------------------------------- the beat */

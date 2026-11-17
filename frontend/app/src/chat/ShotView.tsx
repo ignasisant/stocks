@@ -25,7 +25,7 @@ import {
 import { useT } from "../shell/i18n";
 import { useDialog } from "../shell/useDialog";
 import { useExitGhost } from "../shell/useSheet";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 
 /** The scrim's padding and the card's border, both sides (`chat.css`). */
 const FRAME = 34;

@@ -41,6 +41,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Router
 
 from stocks import obs
+from stocks.config import public_origin
 from stocks.connector import consent, oauth, store, tools, views
 
 if TYPE_CHECKING:
@@ -285,8 +286,6 @@ class Door:
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None]:
         """Open for the length of the site's lifespan, when it can be."""
-        from stocks.web.server import public_origin
-
         origin = public_origin()
         if not origin:
             obs.warn("mcp.no_public_url")

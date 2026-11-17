@@ -297,7 +297,7 @@ def judge_answer(answer_id: str, question: str, answer: str, *,
 
     future.add_done_callback(settle)
     # A plain request's answer: held while it is judged, like a background
-    # refresh (`api.holds.keep`). A detached run's is held by its own hold.
+    # refresh (`cpu_hold.keep`). A detached run's is held by its own hold.
     if cache.on_background is not None:
         cache.on_background(done)
     return future

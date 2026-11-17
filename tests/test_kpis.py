@@ -214,7 +214,7 @@ def _metrics_digest(monkeypatch, day: type[date] = _Day) -> str:
 
 #: Bump `kpis.VERSION` and pin the new digest when this fails: a memo or a
 #: recorded score under the old version is not the same figure any more.
-METRICS = (3, "9da4725fa160fb3f")
+METRICS = (4, "029995896b6c60b1")
 
 
 def test_metrics_change_only_with_their_version(monkeypatch):
@@ -235,7 +235,7 @@ def _scores_digest() -> str:
 
 #: Bump `review.FORMULA` and pin the new digest when this fails: the map's
 #: history under the old scale would draw a move nobody made.
-SCORES = ("3.2", "fc7620acc5f1257a")
+SCORES = ("4.3", "e2859039d81c21ce")
 
 
 def test_scores_change_only_with_their_scale():

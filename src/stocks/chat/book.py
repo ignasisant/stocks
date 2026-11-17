@@ -609,9 +609,15 @@ def _brought(db: Path, added: int, first: bool) -> None:
     The demo book was borrowed for looking: an invented cost basis must not
     stay mixed with a real one, so the first typed trade clears it (after the
     commit, which was planned against the book as it stood). The funnel counts
-    it as the import it is, `first` marking the account's first.
+    it as the import it is, `first` marking the account's first — which also
+    raises the newcomer's tour offer and page tips (`onboarding.first_book`),
+    in the prefs beside the book (`accounts.AccountPaths` keeps them siblings).
     """
     demo.clear(db)
+    if first:
+        from stocks.web import onboarding
+
+        onboarding.first_book(db.parent / "prefs.json")
     obs.event("import.committed", platform="chat", broker="manual", n=added,
               wiped=False, first=first, via="chat-book")
 

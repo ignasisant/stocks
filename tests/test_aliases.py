@@ -36,6 +36,15 @@ def test_reference_maps_fall_back_to_example(monkeypatch, tmp_path):
     assert config.ticker_aliases(tmp_path / "other.yaml") == {}
 
 
+def test_a_listing_that_moved_to_a_new_symbol_resolves_to_it():
+    """A rename Yahoo files under the new symbol, history and all, leaves the
+    old one blank: LendingClub's LC became Happen's HAPN (2026-06-22, one
+    share for one), and a book holding LC sat unpriced at cost in prod."""
+    from stocks import config
+
+    assert config.ticker_aliases(config.EXAMPLE_WATCHLIST_FILE)["LC"] == "HAPN"
+
+
 def test_ticker_aliases_missing_file_or_section(tmp_path):
     assert ticker_aliases(tmp_path / "nope.yaml") == {}
     f = tmp_path / "watchlist.yaml"

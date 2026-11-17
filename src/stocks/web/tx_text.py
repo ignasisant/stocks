@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from stocks.i18n import has
 from stocks.i18n import translate as _t
 from stocks.portfolio import degiro, trade_republic
 
@@ -23,8 +24,7 @@ from stocks.portfolio import degiro, trade_republic
 def action_label(action: str, lang: str | None = None) -> str:
     """"buy" -> "compra". Unknown verbs pass through unchanged."""
     key = f"import.action_{action}"
-    label = _t(key, lang)
-    return action if label == key else label
+    return _t(key, lang) if has(key) else action
 
 
 def issue_text(issue, lang: str | None = None) -> str:

@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from stocks.chat import websearch as chat_web
 from stocks.chat.websearch import Result, augment, parse_queries, plan, sources
 
@@ -147,6 +149,30 @@ def test_heuristics_stay_quiet_on_timeless_questions():
 
 def test_heuristics_fire_on_a_bare_ticker():
     assert chat_web.heuristic_queries("ASML?") == ["ASML"]
+
+
+@pytest.mark.parametrize("question", [
+    # Rated down 2026-11-10: searched the web for investing tips.
+    "como sacar el maximo rendimiento de top stocks",
+    "¿Cómo le saco partido a TopStocks?",
+    "how do I get the most out of TopStocks?",
+    "what can I use Top Stocks for",
+])
+def test_heuristics_stay_quiet_on_how_to_use_the_app(question):
+    """A question about using TopStocks itself is the app's documents and the
+    reader's own account, not the web: "rendimiento de top stocks" read as
+    the market's best stocks and searched for generic advice."""
+    ctx = "Today is 2026-11-16."
+    assert chat_web.heuristic_queries(question, ctx) == []
+
+
+@pytest.mark.parametrize("question", [
+    "what are the top stocks to buy",
+    "top stocks in AI",
+    "mejores top stocks para comprar este mes",
+])
+def test_heuristics_still_search_top_stocks_the_market_s(question):
+    assert chat_web.heuristic_queries(question, "Today is 2026-11-16.")
 
 
 # ------------------------------------------------------------------ search

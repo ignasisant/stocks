@@ -12,7 +12,7 @@
 
 import { useT } from "../shell/i18n";
 import { SignIn } from "../shell/guest";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import { Inline, Markdown } from "./markdown";
 import { SharedPanel } from "./SharedPanel";
 

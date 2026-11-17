@@ -15,20 +15,35 @@
  * (`whenFirstLoadDecided`), and if it did this waits for the next session
  * rather than stacking a second dialog on the first.
  *
+ * And behind the section guide altogether: while it is up, put away in its
+ * strip, or still on offer on Home, the account is being shown round, and five
+ * questions about how it invests would land in the middle of that. Nor on its
+ * heels: somebody who has just pressed "skip the tutorial" did not ask for a
+ * form instead, so a load that had the guide in it asks nothing, and the next
+ * session does.
+ *
  * Its own small form rather than the Profile page's: that page is a lazy chunk
  * with its own autosaving cards, and pulling it into the shell to draw a dialog
  * most sessions never show would make every reader pay for it.
  */
 
-import { useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { get, send } from "./api";
 import { useT } from "./i18n";
 import { useGuest, useSession } from "./session";
-import { claimNudge, whenFirstLoadDecided } from "./tourPark";
+import { claimNudge, isTouring, onTouring, whenFirstLoadDecided } from "./tourPark";
 import { useDialog } from "./useDialog";
 import { useExitGhost } from "./useSheet";
 import { Help } from "../ui/Kpi";
+import { Options } from "../ui/Options";
+import { Segmented } from "../ui/Segmented";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 type Options = {
@@ -70,21 +85,34 @@ function markSeen(): void {
 export function ProfilePrompt() {
   const { prefs } = useSession();
   const off = prefs.profile_prompt_off;
+  // The offer is the account's (it survives the tab); the guide on screen is
+  // this tab's, strip included.
+  const touring = useSyncExternalStore(onTouring, isTouring);
+  const guided = touring || prefs.tour_offer === true;
+  const wasGuided = useRef(false);
   const [loaded, setLoaded] = useState<{ options: Options; profile: Profile } | null>(
     null,
   );
 
+  // Declared first, so it has run by the time the one below reads it.
   useEffect(() => {
-    if (off || seen()) return;
+    if (guided) wasGuided.current = true;
+  }, [guided]);
+
+  useEffect(() => {
+    if (off || guided || wasGuided.current || seen()) return;
     let alive = true;
     whenFirstLoadDecided()
       .then(async (interrupted) => {
-        if (interrupted || !alive) return;
+        // A guide may have opened while this waited; the effect runs again
+        // when it ends.
+        if (interrupted || !alive || isTouring()) return;
         const [options, profile] = await Promise.all([
           get<Options>("/profile-options"),
           get<Profile>("/profile"),
         ]);
-        if (!alive || profile.set || !claimNudge()) return;
+        if (!alive || isTouring() || wasGuided.current) return;
+        if (profile.set || !claimNudge()) return;
         // Stamped when it is shown, not when it is answered: a reload with the
         // dialog open is a "skip", as closing the tab would be.
         markSeen();
@@ -96,7 +124,7 @@ export function ProfilePrompt() {
     return () => {
       alive = false;
     };
-  }, [off]);
+  }, [off, guided]);
 
   if (!loaded) return null;
   return (
@@ -171,7 +199,7 @@ function Dialog({
       <div
         ref={card}
         tabIndex={-1}
-        className="ag-tour ag-pp"
+        className="ag-tour ag-dlg-wide ag-pp"
         role="dialog"
         aria-modal="true"
         aria-label={t("profile.iv_dialog_title")}
@@ -179,22 +207,33 @@ function Dialog({
       >
         <h2 className="ag-tour-h">{t("profile.iv_dialog_title")}</h2>
         <p className="ag-tour-intro">{t("profile.iv_dialog_intro")}</p>
-        <Chips
-          label={t("profile.iv_risk")}
-          help={t("profile.iv_risk_help")}
-          options={options.risk}
-          labelOf={(o) => t(`profile.iv_risk_${o}`)}
-          on={(o) => profile.risk === o}
-          onPick={(risk) => setProfile({ ...profile, risk })}
-        />
-        <Chips
-          label={t("profile.iv_horizon")}
-          help={t("profile.iv_horizon_help")}
-          options={options.horizon}
-          labelOf={(o) => t(`profile.iv_horizon_${o}`)}
-          on={(o) => profile.horizon === o}
-          onPick={(horizon) => setProfile({ ...profile, horizon })}
-        />
+        {/* Tolerance as options with a line each, horizon as one track: the
+            prototype's Perfil de inversor. "Balanced" alone tells nobody how
+            far down they are signing up to sit. */}
+        <Field label={t("profile.iv_risk")} help={t("profile.iv_risk_help")}>
+          <Options
+            label={t("profile.iv_risk")}
+            items={options.risk.map((o) => ({
+              id: o,
+              label: t(`profile.iv_risk_${o}`),
+              line: t(`profile.iv_risk_${o}_line`),
+            }))}
+            value={profile.risk || null}
+            onPick={(risk) => setProfile({ ...profile, risk })}
+          />
+        </Field>
+        <Field label={t("profile.iv_horizon")} help={t("profile.iv_horizon_help")}>
+          <Segmented
+            className="ag-seg-2up"
+            label={t("profile.iv_horizon")}
+            items={options.horizon.map((o) => ({
+              id: o,
+              label: t(`profile.iv_horizon_${o}`),
+            }))}
+            value={profile.horizon || null}
+            onPick={(horizon) => setProfile({ ...profile, horizon })}
+          />
+        </Field>
         <Chips
           label={t("profile.iv_focus")}
           help={t("profile.iv_focus_help")}
@@ -250,6 +289,26 @@ function Dialog({
           </button>
         </footer>
       </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="ag-pp-field">
+      <span className="ag-pp-label">
+        {label}
+        <Help text={help} />
+      </span>
+      {children}
     </div>
   );
 }

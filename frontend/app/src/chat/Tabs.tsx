@@ -15,7 +15,7 @@
  */
 
 import { useT } from "../shell/i18n";
-import { Glyph } from "./icons";
+import { Glyph } from "../ui/Glyph";
 import type { Conversation } from "./types";
 
 export function Tabs({
