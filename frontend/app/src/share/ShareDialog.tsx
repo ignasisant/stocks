@@ -10,7 +10,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, type ReactNode } from "react";
-import { Glyph } from "../chat/icons";
+import { Glyph } from "../ui/Glyph";
 import { useT } from "../shell/i18n";
 import { useDialog } from "../shell/useDialog";
 import { useExitGhost } from "../shell/useSheet";
@@ -73,12 +73,12 @@ export function ShareDialog({
           <button
             ref={shut}
             type="button"
-            className="ag-chat-icon"
+            className="ag-x"
             title={t("chat.close")}
             aria-label={t("chat.close")}
             onClick={onClose}
           >
-            <Glyph name="close" size={18} />
+            <Glyph name="close" size={16} />
           </button>
         </div>
         {children}

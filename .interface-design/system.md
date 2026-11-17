@@ -631,8 +631,10 @@ fixed meaning — they are not a series palette.
 - **Popovers** grow from their trigger: `ag-pop-in` (fade + scale 0.96) with
   `transform-origin` at the trigger's corner (search panel top left, KPI help
   at its "?", ticker menu top right).
-- **Dialogs** (`.ag-rev-modal`, `.earn-modal`, `.ag-tour-scrim`): scrim
-  fades, card `ag-dialog-in` from scale 0.97; on close `useExitGhost`
+- **Dialogs** (`.ag-tour-scrim`, `.ag-fb-scrim`; side panels `.ag-panel`):
+  scrim (`--ag-scrim`) fades, card `ag-dialog-in` from 8px down at scale
+  0.98 and leaves along the same path (a panel slides back to its edge while
+  its scrim fades — Apple: exit the way you came); on close `useExitGhost`
   (`shell/useSheet.ts`) leaves an inert clone under `[data-leaving]` for
   `--ag-dur-move`, so React can unmount at once. A new modal takes
   `ref={scrim}` + `useExitGhost(scrim)`, and `useDialog(card)` for focus.

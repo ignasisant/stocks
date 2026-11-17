@@ -9,23 +9,24 @@
   justify-content: center;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
     max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
-  background: var(--ag-surface-page-veil);
+  background: var(--ag-scrim);
 }
 
+/* The app's one dialog shell (`.ag-tour` in styles.css): 400px, raised,
+   the stronger rule, 22px in. */
 .ag-share {
   display: flex;
-  width: 100%;
-  max-width: 34rem;
+  width: min(400px, 100%);
   max-height: 90dvh;
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-card);
-  box-shadow: var(--ag-shadow-overlay);
+  padding: 22px;
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-dialog);
 }
 
 .ag-share:focus {
@@ -34,15 +35,19 @@
 
 .ag-share-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 10px;
 }
 
 .ag-share-title {
   margin: 0;
-  font-size: var(--ag-fs-md);
-  font-weight: 600;
+  padding-top: 4px;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .ag-share-out {
@@ -98,9 +103,9 @@
   }
 
   .ag-share {
-    max-width: none;
+    width: 100%;
     max-height: 92dvh;
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-    border-radius: var(--ag-radius-md) var(--ag-radius-md) 0 0;
+    padding: 18px 18px max(18px, env(safe-area-inset-bottom));
+    border-radius: var(--ag-radius-lg) var(--ag-radius-lg) 0 0;
   }
 }

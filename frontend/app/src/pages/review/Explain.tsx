@@ -11,14 +11,12 @@
  * is missing.
  */
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { useDialog } from "../../shell/useDialog";
-import { useExitGhost } from "../../shell/useSheet";
+import { type ReactNode, useCallback, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { TickerCell } from "../../shell/tickers";
 import { Chip, Help } from "../../ui/Kpi";
+import { SidePanel } from "../../ui/SidePanel";
 import { countryName } from "./countries";
 import { useHelp } from "./lines";
 import {
@@ -289,9 +287,9 @@ export function DetailsButton({
 }
 
 /**
- * The dialog itself, portalled to the body: `.ag-main` is a size container,
- * and a container is the containing block of a `position: fixed` inside it.
- * Esc, the backdrop and Close all close; focus goes to Close and back to the
+ * The row's details in the side panel every page opens (`SidePanel`): a
+ * drawer at the right edge, a sheet on a phone — the list it came from stays
+ * in sight. Esc, the backdrop and Close all close; focus goes back to the
  * button (or map dot) that opened it.
  */
 export function DetailsDialog({
@@ -307,51 +305,13 @@ export function DetailsDialog({
   rule?: ReactNode;
   onClose: () => void;
 }) {
-  const t = useT();
-  const shut = useRef<HTMLButtonElement>(null);
-  const scrim = useRef<HTMLDivElement>(null);
-  useExitGhost(scrim);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const card = useRef<HTMLDivElement>(null);
-  useDialog(card, { initial: shut });
-
-  return createPortal(
-    <div
-      ref={scrim}
-      className="ag-rev-modal"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+  return (
+    <SidePanel
+      label={label}
+      head={<TickerCell ticker={row.ticker} className="ag-rev-modal-who" />}
+      onClose={onClose}
     >
-      <div
-        ref={card}
-        className="ag-rev-modal-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-      >
-        <div className="ag-rev-modal-head">
-          <TickerCell ticker={row.ticker} className="ag-rev-modal-who" />
-          <button
-            ref={shut}
-            type="button"
-            className="ag-rev-modal-close"
-            onClick={onClose}
-          >
-            {t("review.close")}
-          </button>
-        </div>
-        <Details row={row} taxCurrency={taxCurrency} rule={rule} />
-      </div>
-    </div>,
-    document.body,
+      <Details row={row} taxCurrency={taxCurrency} rule={rule} />
+    </SidePanel>
   );
 }

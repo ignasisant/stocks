@@ -103,7 +103,7 @@ _TOUCH_TARGETS = [
     ("chat/chat.css", ".ag-chat-back", r"min-height\s*:\s*44px"),
     ("styles.css", ".ag-nav-fold", r"min-height\s*:\s*44px"),
     ("pages/portfolio/portfolio.css", ".pf-donut-detail-close", r"min-height\s*:\s*44px"),
-    ("ui/ui.css", ".ag-panel-close", r"min-height\s*:\s*44px"),
+    ("styles.css", ".ag-x", r"height\s*:\s*44px"),
     ("pages/earnings/earnings.css", ".earn-dots", r"min-height\s*:\s*44px"),
 ]
 
@@ -297,7 +297,6 @@ def test_focus_is_always_visible():
 # Every scrim the app draws over the page. A new one goes here and into the
 # lock rule in styles.css, or a swipe on it scrolls the page underneath.
 _SCRIMS = [
-    ".ag-rev-modal",
     ".ag-panel",
     ".ag-tour-scrim",
     ".ag-fb-scrim",
@@ -383,3 +382,27 @@ def test_toasts_clear_the_tab_bar_and_hold_still_under_reduced_motion():
     assert re.search(r"transition: opacity var\(--ag-dur-press\) linear", reduced)
     # No raw durations or easings in the skin.
     assert not re.search(r"\d+ms|cubic-bezier", css)
+
+
+def _z(css: str, selector: str) -> int:
+    match = re.search(rf"(?m)^\s*{re.escape(selector)}\s*\{{[^}}]*?z-index:\s*(\d+)", css)
+    assert match, f"{selector} has no z-index"
+    return int(match.group(1))
+
+
+def test_pinned_page_bars_stay_under_menus():
+    """A page's sticky tab strip sits after the phone's tab bar and inside the
+    page, so at an equal z-index it painted over the bar's More sheet and over
+    any popover hung from the page's header (seen on the ticker page and on
+    the way to Profile). Pinned page bars keep a layer under both."""
+    nav = _z((APP / "styles.css").read_text(), ".ag-nav")
+    ticker = (APP / "pages/ticker/ticker.css").read_text()
+    menus = [_z(ticker, ".tk-ai-menu"), _z(ticker, ".tk-more-panel")]
+    for css_file in sorted((APP / "pages").rglob("*.css")):
+        css = re.sub(r"/\*.*?\*/", "", css_file.read_text(), flags=re.S)
+        for block in re.finditer(r"([^{}]+)\{([^{}]*position:\s*sticky[^{}]*)\}", css):
+            z = re.search(r"z-index:\s*(\d+)", block.group(2))
+            if z:
+                where = f"{css_file.name} {block.group(1).strip()}"
+                assert int(z.group(1)) < nav, f"{where} covers the phone tab bar"
+                assert int(z.group(1)) < min(menus), f"{where} covers header menus"
