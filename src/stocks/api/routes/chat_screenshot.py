@@ -53,13 +53,12 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, obs
+from stocks import accounts, obs, ratelimit
 from stocks.api.deps import Screenshot as ShotBudget
 from stocks.api.routes.chat import session_keys
 from stocks.api.routes.client_error import _browser
 from stocks.api.security import Who
 from stocks.chat import engine, screenshot
-from stocks.web import ratelimit
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

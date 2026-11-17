@@ -164,7 +164,9 @@ export function Empty({
   return (
     <div className="ag-chat-empty">
       <div className="ag-chat-empty-head">
-        <span className="ag-chat-empty-title">{t("chat.empty_title")}</span>
+        <span className="ag-chat-empty-title">
+          {t(bare ? "chat.empty_title_new" : "chat.empty_title")}
+        </span>
         {intro && <span className="ag-chat-empty-body">{intro}</span>}
       </div>
       {bare ? (

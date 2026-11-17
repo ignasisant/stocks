@@ -27,12 +27,13 @@ import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
 import { Attachment } from "./Attachment";
-import { usePhone } from "./phone";
+import { usePhone } from "../shell/phone";
 import { Composer } from "./Composer";
 import { isPdf } from "./docs";
 import { sorted } from "./pasted";
 import { Empty } from "./Empty";
-import { Glyph, ProviderMark } from "./icons";
+import { Glyph } from "../ui/Glyph";
+import { ProviderMark } from "./icons";
 import { MemoryView } from "./Memory";
 import { PushOffer } from "./PushOffer";
 import { Settings } from "./Settings";
@@ -41,6 +42,7 @@ import { Tabs } from "./Tabs";
 import { close as closeTab, fit, readTabs, same, saveTabs } from "./strip";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
+import { toast } from "../ui/toast";
 import { SharedPanel } from "./SharedPanel";
 import { ShareSheet } from "./ShareSheet";
 import { rates, Turn } from "./Turn";
@@ -242,8 +244,8 @@ export default function Panel({
   /** Back from a provider's sign-in: the settings view finishes it. */
   connect?: ConnectAsk | null;
   onConnectTaken?: () => void;
-  /** Sent here from the profile: the saved memories (`?chat=memory`) or the
-   *  scheduled runs (`?chat=scheduled`). */
+  /** Sent here from a page: the saved memories (`?chat=memory`), the
+   *  scheduled runs (`?chat=scheduled`) or the settings (`?chat=settings`). */
   jump?: Jump;
   onJumpTaken?: () => void;
   /** Sent here to one conversation (the daily card's "Ask"). */
@@ -266,7 +268,12 @@ export default function Panel({
   const t = useT();
   const [view, setView] = useState<
     "thread" | "threads" | "settings" | "memory" | "shared"
-  >(() => (share ? "shared" : "thread"));
+  >(() =>
+    // A drawer a page's link opens mounts on that view: mounted on the
+    // conversation first, the composer takes the focus and is then removed
+    // from under it.
+    jump ? (jump === "scheduled" ? "threads" : jump) : share ? "shared" : "thread",
+  );
   useEffect(() => {
     if (share) setView("shared");
   }, [share]);
@@ -277,18 +284,27 @@ export default function Panel({
   useEffect(() => {
     if (connect) setView("settings");
   }, [connect]);
-  const [scheduledOpen, setScheduledOpen] = useState(false);
+  const [scheduledOpen, setScheduledOpen] = useState(jump === "scheduled");
   useEffect(() => {
     if (!jump) return;
     if (jump === "scheduled") setScheduledOpen(true);
-    setView(jump === "memory" ? "memory" : "threads");
+    setView(jump === "scheduled" ? "threads" : jump);
     onJumpTaken?.();
   }, [jump]);
   // An earlier conversation named under an answer, or the one a memory was
   // said in: the thread view, on that thread.
   const openThread = (cid: string) => {
     setView("thread");
-    void chat.open(cid);
+    chat.open(cid).then(
+      (opened) => {
+        // Not in this account's conversations — a notification sent to this
+        // device by another account, a thread deleted elsewhere. The reader
+        // is back on their own thread and told why nothing opened.
+        if (opened === "gone") toast.warn(t("chat.thread_gone"));
+        else if (opened === "failed") toast.bad(t("chat.api_error"));
+      },
+      () => toast.bad(t("chat.api_error")),
+    );
   };
   // Not before the drawer's own opening read has landed: it would put the
   // active thread back on top of the one asked for.

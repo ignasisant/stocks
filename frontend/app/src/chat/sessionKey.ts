@@ -19,7 +19,18 @@
  * or the 90-day expiry the server applies to a stored one.
  */
 
+import { useSyncExternalStore } from "react";
+
 const SLOT = "ag_chat_session_key";
+
+/** Fired on this window when the tab starts or stops holding a key. The
+ * browser's own `storage` event only reaches other tabs, and no other tab
+ * shares this slot. */
+const CHANGED = "ag:session-key";
+
+function announce(): void {
+  window.dispatchEvent(new Event(CHANGED));
+}
 
 export type SessionKey = { provider: string; key: string };
 
@@ -47,6 +58,7 @@ export function readSessionKey(): SessionKey | null {
 export function holdSessionKey(held: SessionKey): boolean {
   try {
     window.sessionStorage.setItem(SLOT, JSON.stringify(held));
+    announce();
     return true;
   } catch {
     return false;
@@ -56,6 +68,7 @@ export function holdSessionKey(held: SessionKey): boolean {
 export function dropSessionKey(): void {
   try {
     window.sessionStorage.removeItem(SLOT);
+    announce();
   } catch {
     // Nothing was held, then.
   }
@@ -65,4 +78,35 @@ export function dropSessionKey(): void {
 export function keyHeaders(): Record<string, string> {
   const held = readSessionKey();
   return held ? { "X-Chat-Provider": held.provider, "X-Chat-Key": held.key } : {};
+}
+
+/**
+ * `/onboarding`'s `setup` with the key this tab holds counted as a key.
+ *
+ * The server only knows a stored key, so an account answering on a key kept
+ * for the session read "no key" on Home's start card and in Profile's count
+ * while the drawer beside them said otherwise. Merged here, once, for every
+ * screen that draws that state; the key itself never leaves the tab for it.
+ * `held` comes from `useSessionKeyHeld`, so a key typed in the drawer shows
+ * on the page behind it at once rather than on its next load.
+ */
+export function withSessionKey<S extends Record<string, boolean | undefined>>(
+  setup: S,
+  held: boolean,
+): S {
+  return setup.ai || !held ? setup : { ...setup, ai: true };
+}
+
+function subscribe(listener: () => void): () => void {
+  window.addEventListener(CHANGED, listener);
+  return () => window.removeEventListener(CHANGED, listener);
+}
+
+/** Whether this tab holds a key, re-rendering when that changes. */
+export function useSessionKeyHeld(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => readSessionKey() !== null,
+    () => false,
+  );
 }
