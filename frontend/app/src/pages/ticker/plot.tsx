@@ -276,7 +276,7 @@ function spreadLabels(
       i < out.length - 1 ? out[i + 1]! - gap : Infinity,
     );
   }
-  const placed: number[] = new Array(ys.length);
+  const placed = Array.from<number>({ length: ys.length });
   order.forEach((one, at) => (placed[one.index] = out[at]!));
   return placed;
 }

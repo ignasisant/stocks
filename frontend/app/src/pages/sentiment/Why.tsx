@@ -74,7 +74,7 @@ export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) 
   const extras = [...built.keys(), ...pulse.missing].filter(
     (key) => !ORDER.includes(key),
   );
-  const keys = [...ORDER.filter((k) => built.has(k) || pulse.missing.includes(k))];
+  const keys = ORDER.filter((k) => built.has(k) || pulse.missing.includes(k));
   // A key the server knows and this list does not still gets a row: the
   // registry lives in Python and a page that silently drops what it does not
   // recognise is a page that averages fewer things than it says it does.

@@ -32,6 +32,8 @@ export class Crash extends Component<
 
   componentDidUpdate(previous: { resetKey?: string }) {
     if (this.state.failed && previous.resetKey !== this.props.resetKey) {
+      // A new resetKey is the one way out of the fallback; the guard stops a loop.
+      // oxlint-disable-next-line react/no-did-update-set-state
       this.setState({ failed: false });
     }
   }

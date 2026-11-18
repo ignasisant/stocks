@@ -6,9 +6,10 @@
   "description": "The app shell and its pages, rebuilt off the HTTP API. See frontend/README.md.",
   "scripts": {
     "dev": "vite",
-    "build": "prettier --check src && tsc --noEmit && vitest run && vite build && vite build -c vite.mcp.config.ts",
+    "build": "prettier --check src && oxlint && tsc --noEmit && vitest run && vite build && vite build -c vite.mcp.config.ts",
     "preview": "vite preview",
     "format": "prettier --write src index.html",
+    "lint": "oxlint",
     "test": "vitest run",
     "knip": "knip",
     "gen:api": "cd ../.. && uv run python frontend/app/scripts/gen_api_types.py"
@@ -29,6 +30,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.3.0",
     "knip": "^6.45.1",
+    "oxlint": "^1.94.0",
     "preact": "^11.2.0",
     "prettier": "^3.10.1",
     "typescript": "^7.0.2",

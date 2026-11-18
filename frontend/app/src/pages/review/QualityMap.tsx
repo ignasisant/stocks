@@ -519,16 +519,14 @@ export function QualityMap({
       ...(narrow ? [{ x0: 0, y0: 0, x1: width, y1: pad.top - 8 }] : []),
     ],
     // The one path drawn: a label over it reads struck through.
-    [
-      ...(soloKey
-        ? avoidOf(solo as ReviewRow).map(([px, py]) => ({
-            x0: px - 1,
-            y0: py - 1,
-            x1: px + 1,
-            y1: py + 1,
-          }))
-        : []),
-    ],
+    soloKey
+      ? avoidOf(solo as ReviewRow).map(([px, py]) => ({
+          x0: px - 1,
+          y0: py - 1,
+          x1: px + 1,
+          y1: py + 1,
+        }))
+      : [],
   );
 
   const sources = new Set(trails.map(({ row }) => thenOf(row)?.source));
