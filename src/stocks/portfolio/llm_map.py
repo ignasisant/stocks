@@ -40,8 +40,9 @@ import csv
 import io
 import re
 import time
+import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from stocks import obs
@@ -169,26 +170,115 @@ def _cells(row) -> list[str]:
     return out
 
 
-def _read_csv(data: bytes) -> list[list[str]]:
+# Bytes that open a file in a format other than text. A bank's "Excel" export
+# is as often an HTML table or a tab-separated text file named .xls as it is
+# a workbook, so the format is read off the bytes, never off the name alone.
+_OLE2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # legacy .xls (BIFF)
+_HTML = re.compile(
+    rb"^\s*(<!doctype html|<html|<\?xml[^>]*>\s*<html|<table|<meta|<head|<body)",
+    re.I)
+
+
+def _decode(data: bytes) -> str:
+    """The text of a CSV, whatever its encoding.
+
+    Excel's "Unicode text" is UTF-16 with tabs; Spanish banks still write
+    Windows-1252, where latin-1 would turn "€" into a control character.
+    """
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="replace")
+    head = data[:400]
+    if head and head.count(b"\x00") > len(head) // 4:
+        # UTF-16 that lost its byte-order mark: every other byte is a zero.
+        odd = head[1::2].count(b"\x00") >= head[0::2].count(b"\x00")
+        return data.decode("utf-16-le" if odd else "utf-16-be", errors="replace")
     try:
-        text = data.decode("utf-8-sig")
+        return data.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = data.decode("latin-1", errors="replace")
-    # European exports are semicolon-delimited as often as comma-delimited;
-    # sniffing beats guessing, and a failed sniff falls back to comma.
-    try:
-        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
-    except csv.Error:
-        dialect = csv.excel
-    return [_cells(r) for r in csv.reader(io.StringIO(text), dialect)]
+        return data.decode("cp1252", errors="replace")
+
+
+def _delimiter(lines: list[str]) -> str:
+    """The separator that cuts the most lines into the same number of cells.
+
+    `csv.Sniffer` picks the most frequent character, which in a semicolon file
+    of European numbers is the comma inside "1.234,56", and a preamble above
+    the table throws it off altogether. A table is the run of lines that agree
+    on a width, so the delimiter is the one that makes the most of them agree.
+    """
+    best, best_score = ",", (0, 0)
+    for delimiter in ",;\t|":
+        widths: dict[int, int] = {}
+        for row in csv.reader(lines, delimiter=delimiter):
+            if len(row) > 1:
+                widths[len(row)] = widths.get(len(row), 0) + 1
+        if not widths:
+            continue
+        width = max(widths, key=lambda w: (widths[w], w))
+        score = (widths[width], width)
+        if score > best_score:
+            best, best_score = delimiter, score
+    return best
+
+
+def _read_csv(data: bytes) -> list[list[str]]:
+    text = _decode(data).replace("\x00", "")
+    lines = text.splitlines()
+    # Excel's own hint on the first line ("sep=;") names the delimiter.
+    hint = re.match(r"^\ufeff?\"?sep=(.)\"?\s*$", lines[0], re.I) if lines else None
+    if hint:
+        text = "\n".join(lines[1:])
+        delimiter = hint.group(1)
+    else:
+        delimiter = _delimiter([line for line in lines[:200] if line.strip()])
+    return [_cells(r) for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
+
+
+def _read_html(data: bytes) -> list[list[str]]:
+    """Every table row of an HTML page — the "Excel" many banks export."""
+    from lxml import html
+
+    head = data[:4096].lower()
+    if b"charset" not in head and b"encoding=" not in head:
+        # Undeclared, lxml reads bytes as latin-1 and "Títulos" stops naming
+        # the quantity; decode it as a CSV would be.
+        doc = html.fromstring(_decode(data))
+    else:
+        doc = html.fromstring(data)
+    return [_cells(" ".join(cell.text_content().split())
+                   for cell in row.xpath("./td|./th"))
+            for row in doc.iter("tr")]
+
+
+def _table_score(grid: list[list[str]]) -> tuple[int, int]:
+    """How much a sheet looks like the table to import: the most column names
+    one row carries, then how many rows it has."""
+    named = max((sum(1 for c in row if _header_field(c)) for row in grid[:_HEADER_SCAN]),
+                default=0)
+    return named, len(grid)
 
 
 def _read_excel(data: bytes) -> list[list[str]]:
+    """The workbook sheet that holds the table.
+
+    A broker's workbook often opens on a summary ("Resumen", "Overview") and
+    keeps the movements on the next sheet; reading only the first one found
+    nothing to import in a file that holds everything.
+    """
     import pandas as pd
 
     upload_guard.check(data)
-    frame = pd.read_excel(io.BytesIO(data), header=None, dtype=str)
-    return [_cells(r) for r in frame.itertuples(index=False, name=None)]
+    # openpyxl for .xlsx (pandas' default); calamine for what it cannot open:
+    # legacy BIFF .xls and OpenDocument .ods.
+    calamine = (data.startswith(_OLE2)
+                or b"application/vnd.oasis.opendocument" in data[:200])
+    engine = "calamine" if calamine else "openpyxl"
+    sheets = pd.read_excel(io.BytesIO(data), header=None, dtype=str,
+                           sheet_name=None, engine=engine)
+    grids = [[_cells(r) for r in frame.itertuples(index=False, name=None)]
+             for frame in sheets.values()]
+    grids = [[r for r in g if any(r)] for g in grids]
+    return max(grids, key=_table_score, default=[])
 
 
 def _words_grid(page, ytol: float = 3.0, xgap: float = 6.0) -> list[list[str]]:
@@ -262,8 +352,13 @@ def read_grid(filename: str, data: bytes) -> list[list[str]]:
     """
     name = filename.lower()
     try:
-        if name.endswith(".pdf"):
+        if data.startswith(b"%PDF") or (name.endswith(".pdf")
+                                         and not data.startswith(b"PK")):
             grid = _read_pdf(data)
+        elif data.startswith((b"PK\x03\x04", _OLE2)):
+            grid = _read_excel(data)
+        elif _HTML.match(data[:2048]):
+            grid = _read_html(data)
         elif name.endswith((".xlsx", ".xlsm")):
             grid = _read_excel(data)
         else:
@@ -358,7 +453,18 @@ def _mapping_from(data: dict, grid: list[list[str]]) -> dict | None:
     columns = {
         f: _index(data["columns"].get(f), width) for f in FIELDS
     }
-    if any(columns[f] is None for f in _REQUIRED):
+    debit = _index(data.get("debit"), width)
+    credit = _index(data.get("credit"), width)
+    sentence = bool(data.get("sentence"))
+    if columns["date"] is None or (columns["ticker"] is None and not sentence):
+        return None
+    # A file with no type column still says which way each row went — by the
+    # sign of its quantity or its money, or by which of a bank's debit and
+    # credit columns is filled — so the action column is required only when
+    # nothing else could stand in for it.
+    if columns["action"] is None and not (
+            columns["quantity"] is not None or columns["amount"] is not None
+            or debit is not None or credit is not None):
         return None
 
     actions = {}
@@ -379,6 +485,13 @@ def _mapping_from(data: dict, grid: list[list[str]]) -> dict | None:
         "thousands": "" if thousands == decimal else thousands,
         "action_map": actions,
         "asset_class": asset_class if asset_class in ("crypto", "securities") else "",
+        "debit": debit,
+        "credit": credit,
+        "dayfirst": (data.get("dayfirst")
+                     if isinstance(data.get("dayfirst"), bool) else None),
+        "pence": bool(data.get("pence")),
+        "sentence": sentence,
+        "isin": _index(data.get("isin"), width),
     }
 
 
@@ -394,28 +507,67 @@ def _mapping_from(data: dict, grid: list[list[str]]) -> dict | None:
 _HEADER_WORDS: dict[str, tuple[str, ...]] = {
     "date": ("date", "fecha", "data", "datum", "fecha valor", "trade date",
              "completed date", "settlement date", "timestamp", "fecha hora",
-             "dia", "day"),
+             "dia", "day", "run date", "date d", "data do negocio",
+             "buchungstag", "handelstag", "schlusstag", "valuta", "time",
+             "transaction date", "execution date", "booking date",
+             "value date", "operation date", "trade time", "order date"),
     "ticker": ("symbol", "simbolo", "ticker", "asset", "activo", "isin",
                "instrument", "instrumento", "valor", "producto", "product",
-               "security", "criptomoneda", "coin", "titulo"),
+               "security", "criptomoneda", "coin", "titulo", "titolo",
+               "wertpapier", "libelle", "epic", "codigo", "code", "pair",
+               "stock", "fondo", "fund", "emisora", "nome", "nom du titre",
+               "denominacion", "descripcion del valor", "wkn", "share"),
     "action": ("type", "tipo", "action", "accion", "operacion", "operation",
                "transaction type", "movimiento", "side", "sentido",
-               "concepto", "transaccion"),
+               "concepto", "transaccion", "transaktion", "sens", "segno",
+               "activity", "buy/sell", "buy sell", "b/s", "direction",
+               "operazione", "richtung", "art", "tipo de movimentacao",
+               "transaction"),
     "quantity": ("quantity", "cantidad", "qty", "shares", "titulos",
                  "participaciones", "unidades", "volumen", "volume", "units",
-                 "num titulos", "numero de titulos"),
+                 "num titulos", "numero de titulos", "stuck", "stueck",
+                 "anzahl", "quantite", "quantita", "quantidade", "nominal",
+                 "nominale", "aantal", "titres", "acciones", "executed",
+                 "filled", "menge", "pezzi"),
     "price": ("price", "precio", "price per share", "price per coin",
               "precio unitario", "cotizacion", "kurs", "prezzo", "cours",
-              "unit price"),
+              "unit price", "valor liquidativo", "nav", "net asset value",
+              "preco", "ausfuhrungskurs", "cambio", "prix", "koers"),
     "amount": ("value", "total", "importe", "total amount", "gross amount",
                "valor total", "importe total", "efectivo", "contravalor",
-               "montant", "betrag", "amount"),
+               "montant", "betrag", "amount", "controvalore", "consideration",
+               "net amount", "proceeds", "valor da operacao", "importo",
+               "bedrag", "kurswert"),
     "fee": ("fee", "fees", "comision", "comisiones", "commission",
-            "corretaje", "gastos", "costes", "gebuhr", "frais", "tarifa"),
-    "currency": ("currency", "divisa", "moneda", "ccy", "currency code"),
+            "corretaje", "gastos", "costes", "gebuhr", "frais", "tarifa",
+            "charges", "commissioni", "spese", "provision", "entgelt",
+            "kosten", "taxa", "corretagem"),
+    "currency": ("currency", "divisa", "moneda", "ccy", "currency code",
+                 "wahrung", "devise", "valuta", "moeda", "waehrung"),
+    # Columns that look like one of the above but are not: "Asset type" is
+    # not the asset, "Order type" not the side. Naming them keeps them out.
+    "_skip": ("asset type", "asset class", "security type", "tipo de activo",
+              "tipo de producto", "product type", "order type",
+              "tipo de orden", "account type", "mercado", "market", "bolsa",
+              "exchange", "venue", "order id", "reference", "referencia",
+              "status", "estado", "account", "cuenta"),
     "note": ("note", "notes", "nota", "descripcion", "description",
-             "detalle", "comentario"),
+             "detalle", "comentario", "bemerkung", "commento", "remarque"),
 }
+
+# Debit and credit columns: a bank's way of saying which way the money went,
+# and with it the direction of a row that has no type column at all.
+_DEBIT_WORDS = ("cargo", "cargos", "debe", "debit", "debito", "soll",
+                "addebito", "uscite", "salida", "withdrawal", "paid out",
+                "money out")
+_CREDIT_WORDS = ("abono", "abonos", "haber", "credit", "credito", "haben",
+                 "accredito", "entrate", "entrada", "deposit", "paid in",
+                 "money in")
+
+# Rows of the file searched for the header row: a bank's statement can open
+# with a page of account details and legal text before its table starts.
+_HEADER_SCAN = 60
+
 
 # European and US number shapes, told apart by which separator comes last.
 _EU_NUMBER = re.compile(r"^\d{1,3}(\.\d{3})*,\d+$")
@@ -429,18 +581,38 @@ _SYMBOLISH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-:_]{0,11}$")
 _SNIFF_ROWS = 40
 
 
+def _header_text(cell: str) -> str:
+    return " ".join(lexicon.plain(cell).replace(".", " ").replace("_", " ").split())
+
+
+def _word_at(text: str, word: str) -> int:
+    """Where `word` starts a word inside `text`, or -1."""
+    found = re.search(rf"(?<![a-z0-9]){re.escape(word)}", text)
+    return found.start() if found else -1
+
+
 def _header_field(cell: str) -> str | None:
-    """The field a header cell names, or None."""
-    text = " ".join(lexicon.plain(cell).replace(".", " ").split())
-    if not text:
+    """The field a header cell names, or None.
+
+    An exact name wins. Otherwise the word the header *opens* with does —
+    "Date d'opération" is a date, not an operation; "Valor liquidativo" a
+    price, not a security — and of words starting at the same place, the
+    longest. Words match at the start of a word only, so "data" never fires
+    inside "validated".
+    """
+    text = _header_text(cell)
+    if not text or len(text) > 60:
         return None
     for name, words in _HEADER_WORDS.items():
         if text in words:
             return name
+    best: tuple[int, int, str] | None = None
     for name, words in _HEADER_WORDS.items():
-        if any(word in text for word in words):
-            return name
-    return None
+        for word in words:
+            at = _word_at(text, word)
+            if at >= 0 and (best is None or (at, -len(word)) < best[:2]):
+                best = (at, -len(word), name)
+    return best[2] if best else None
 
 
 def _guess_header_row(grid: list[list[str]]) -> int:
@@ -453,8 +625,10 @@ def _guess_header_row(grid: list[list[str]]) -> int:
     mapping falls back on.
     """
     best, best_score = 0, 0
-    for index, row in enumerate(grid[:10]):
-        score = sum(1 for cell in row if _header_field(cell))
+    for index, row in enumerate(grid[:_HEADER_SCAN]):
+        if sum(1 for cell in row if cell.strip()) < 2:
+            continue  # a title line ("Mis operaciones") names no columns
+        score = len({_header_field(cell) for cell in row} - {None})
         if score > best_score:
             best, best_score = index, score
     return best
@@ -506,6 +680,127 @@ def _sniff_separators(
     return ".", ""
 
 
+# Headers that name a code rather than a name: a symbol column under one of
+# these is the ticker even when the file also prints the ISIN.
+_CODE_HEADERS = ("symbol", "simbolo", "ticker", "epic", "codigo", "code",
+                 "pair", "coin", "criptomoneda", "trading symbol")
+
+
+def _data_rows(grid: list[list[str]], header_row: int, limit: int | None = None
+               ) -> list[list[str]]:
+    """The rows under the header that can be a transaction: a title, a page
+    number or a repeat of the header itself (a PDF prints it on every page)
+    is not one."""
+    header = [c.strip().lower() for c in grid[header_row]] if grid else []
+    out = []
+    for row in grid[header_row + 1:]:
+        if sum(1 for c in row if c.strip()) < 2:
+            continue
+        if [c.strip().lower() for c in row] == header:
+            continue
+        out.append(row)
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+# A type column that writes one letter: A/V (acquisto/vendita), C/V (compra/
+# venta), K/V (Kauf/Verkauf), B/S. Read only when the whole column is letters,
+# so a stray "A" in some other column means nothing.
+_LETTER_ACTIONS = {"a": "buy", "b": "buy", "c": "buy", "k": "buy",
+                   "s": "sell", "v": "sell"}
+
+# What a spreadsheet stores a date as when the cell lost its date format:
+# days since 1899-12-30. The range is 1954–2119, so a share count or a price
+# is never mistaken for one — and serials are read only in a column whose
+# header already said "date".
+_SERIAL = re.compile(r"^\d{5}(\.0+)?$")
+
+
+def _excel_serial(text: str) -> str | None:
+    text = (text or "").strip()
+    if not _SERIAL.match(text):
+        return None
+    days = int(float(text))
+    if not 20_000 <= days <= 80_000:
+        return None
+    return (date(1899, 12, 30) + timedelta(days=days)).isoformat()
+
+
+_NUMERIC_DATE = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})\b")
+
+
+def _day_order(cells: list[str]) -> bool | None:
+    """True when the file writes day/month, False for month/day, None when
+    none of its dates says.
+
+    Decided once for the whole column: "01/02/2024" is ambiguous on its own,
+    but the same file's "12/20/2024" is not, and every row has to be read the
+    same way.
+    """
+    dayfirst = monthfirst = 0
+    for cell in cells:
+        m = _NUMERIC_DATE.match(cell or "")
+        if not m:
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        if a > 12 >= b:
+            dayfirst += 1
+        elif b > 12 >= a:
+            monthfirst += 1
+    if dayfirst == monthfirst:
+        return None
+    return dayfirst > monthfirst
+
+
+def _is_isin(text: str) -> bool:
+    return bool(_ISIN_CELL.match(text.strip().upper()))
+
+
+def _is_symbol(text: str) -> bool:
+    """A cell that reads as a ticker: one short word, not a number, a date,
+    an ISIN, a currency code or a verb."""
+    text = text.strip()
+    return (bool(_SYMBOLISH.match(text)) and not _is_isin(text)
+            and _number(text, ".", ",") is None
+            and lexicon.readable_date(text) is None
+            and lexicon.action_of(text) is None
+            and not (len(text) == 3 and lexicon.currency_of(text) == text.upper()))
+
+
+def _symbol_tier(rows: list[list[str]], index: int) -> int:
+    """How good a column is as the instrument: 3 tickers, 2 ISINs, 1 names,
+    0 not an instrument at all (numbers, dates, nothing)."""
+    values = [row[index].strip() for row in rows
+              if index < len(row) and row[index].strip()]
+    if not values:
+        return 0
+    need = 0.8 * len(values)
+    if sum(1 for v in values if _is_symbol(v)) >= need:
+        return 3
+    if sum(1 for v in values if _is_isin(v)) >= need:
+        return 2
+    if sum(1 for v in values if _number(v, ".", ",") is None
+           and lexicon.readable_date(v) is None) >= need:
+        return 1
+    return 0
+
+
+def _money_word_at(cell: str, words: tuple[str, ...]) -> bool:
+    text = _header_text(cell)
+    return any(text == w or _word_at(text, w) == 0 for w in words)
+
+
+# One sentence per row, as someone keeping their own list writes it: "Compré
+# 10 AAPL a 125,07 USD", "sold 5 MSFT @ 410". Verb, count, symbol, price.
+_SENTENCE = re.compile(
+    r"^\s*(?P<verb>[^\d]+?)\s+(?P<qty>\d[\d.,]*)\s+(?:(?:acciones|shares|titulos|"
+    r"participaciones|units|x)\s+(?:de\s+|of\s+)?)?(?P<symbol>[A-Za-z][A-Za-z0-9.\-]{0,11})"
+    r"\s+(?:a|at|@|à|zu|por|for|à)\s+(?P<price>\d[\d.,]*)\s*(?P<ccy>[A-Za-z]{3}|[$€£])?",
+    re.IGNORECASE,
+)
+
+
 def guess_mapping(grid: list[list[str]]) -> dict | None:
     """A mapping worked out from the file alone, or None.
 
@@ -514,58 +809,140 @@ def guess_mapping(grid: list[list[str]]) -> dict | None:
     words lexicon.py knows is the action column. That content check is what
     carries a file whose headers are in a language, or an abbreviation, the
     table above never listed.
+
+    A file with no type column at all is still read when something else says
+    which way each row went: a bank's debit and credit columns, or the sign
+    of its quantity or money. A file that writes each operation as one
+    sentence ("Compré 10 AAPL a 125 USD") is read from the sentence.
     """
     if len(grid) < 2:
         return None
     header_row = _guess_header_row(grid)
     width = max((len(row) for row in grid), default=0)
-    rows = [r for r in grid[header_row + 1:header_row + 1 + _SNIFF_ROWS] if any(r)]
+    rows = _data_rows(grid, header_row, _SNIFF_ROWS)
     if not rows or not width:
         return None
 
+    header = grid[header_row][:width]
+    fields = [_header_field(cell) for cell in header]
+    if sum(1 for cell in header if cell.strip()) < 2:
+        fields = [None] * len(header)  # a title, not a header: cells decide
     columns: dict[str, int | None] = {name: None for name in FIELDS}
-    for index, cell in enumerate(grid[header_row][:width]):
-        name = _header_field(cell)
-        if name and columns[name] is None:
+    named_tickers: list[int] = []
+    for index, name in enumerate(fields):
+        if name == "ticker":
+            named_tickers.append(index)
+        elif name in columns and columns[name] is None:
             columns[name] = index
 
-    taken = {i for i in columns.values() if i is not None}
+    # Of every column the header calls the instrument, the one that holds
+    # tickers beats ISINs beats names; one that holds money ("Valor") is the
+    # amount, if the file named no other.
+    tiers = {i: _symbol_tier(rows, i) for i in named_tickers}
+    if any(t == 2 for t in tiers.values()):
+        # Beside an ISIN, a column headed "Valor" or "Libellé" holds names,
+        # some of which happen to be one short word (LVMH, ENEL). The ISIN is
+        # the one that names the line exactly; only a column the header
+        # calls a code ("Symbol", "Ticker", "EPIC") outranks it.
+        for i in named_tickers:
+            if tiers[i] == 3 and not any(
+                    _word_at(_header_text(header[i]), w) == 0 for w in _CODE_HEADERS):
+                tiers[i] = 1
+    best = max(named_tickers, key=lambda i: (tiers[i], -i), default=None)
+    isin = next((i for i in named_tickers if tiers[i] == 2 and i != best), None)
+    if best is not None and tiers[best]:
+        columns["ticker"] = best
+    for i in named_tickers:
+        if i != best and columns["amount"] is None and sum(
+                1 for r in rows if i < len(r) and _number(r[i], ",", ".") is not None
+        ) >= max(1, len(rows) // 2):
+            columns["amount"] = i
 
-    def adopt(name: str, test) -> None:
+    debit = next((i for i, c in enumerate(header)
+                  if _money_word_at(c, _DEBIT_WORDS)), None)
+    credit = next((i for i, c in enumerate(header)
+                   if _money_word_at(c, _CREDIT_WORDS) and i != debit), None)
+
+    taken = {i for i in columns.values() if i is not None}
+    taken |= {i for i, f in enumerate(fields) if f is not None}
+    taken |= {i for i in (debit, credit) if i is not None}
+
+    def adopt(name: str, test, among: set[int] | None = None) -> None:
         index = columns[name]
         if index is not None:
             hits = _column_scores(rows, width, test)[index]
             if hits >= max(1, len(rows) // 2):
                 return  # the header was right about it
             taken.discard(index)
-        found = _best_column(rows, width, test, taken)
+        found = _best_column(rows, width, test, taken - (among or set()))
         if found is not None:
             columns[name] = found
             taken.add(found)
+        elif index is not None and not _column_scores(rows, width, test)[index]:
+            columns[name] = None  # the header named it; not one cell agreed
 
-    adopt("date", lambda cell: lexicon.readable_date(cell) is not None)
-    adopt("action", lambda cell: lexicon.action_of(cell) is not None)
+    date_format = ""
+    named_date = columns["date"]
+    if named_date is not None and sum(
+            1 for r in rows if named_date < len(r) and _excel_serial(r[named_date])
+    ) >= max(1, len(rows) // 2):
+        date_format = "excel"
+    else:
+        adopt("date", lambda cell: lexicon.readable_date(cell) is not None)
+
+    letters: dict[str, str] = {}
+    named_action = columns["action"]
+    if named_action is not None:
+        cells = {r[named_action].strip().lower() for r in rows
+                 if named_action < len(r) and r[named_action].strip()}
+        if cells and cells <= set(_LETTER_ACTIONS):
+            letters = {c: _LETTER_ACTIONS[c] for c in cells}
+    if not letters:
+        # A description column can carry the verb ("YOU BOUGHT …"), so it is
+        # searched even though its header called it a note.
+        note = {columns["note"]} if columns["note"] is not None else set()
+        adopt("action", lambda cell: lexicon.action_of(cell) is not None, note)
+        if columns["action"] is not None and columns["action"] == columns["note"]:
+            columns["note"] = None
+
+    sentence = False
     if columns["ticker"] is None:
-        columns["ticker"] = _best_column(
-            rows, width,
-            lambda cell: bool(_SYMBOLISH.match(cell.strip()))
-            and lexicon.readable_date(cell) is None
-            and _number(cell, ".", ",") is None,
-            taken,
-        )
-    if any(columns[name] is None for name in _REQUIRED):
+        columns["ticker"] = _best_column(rows, width, _is_symbol, taken)
+    if columns["ticker"] is None and columns["action"] is not None:
+        i = columns["action"]
+        said = sum(1 for r in rows if i < len(r) and _SENTENCE.match(r[i]))
+        if said >= max(1, len(rows) // 2):
+            sentence = True
+    if columns["ticker"] is None and named_tickers and not sentence:
+        columns["ticker"] = best
+    if columns["date"] is None or (columns["ticker"] is None and not sentence):
+        return None
+    if columns["action"] is None and not (
+            columns["quantity"] is not None or columns["amount"] is not None
+            or debit is not None or credit is not None):
         return None
 
     decimal, thousands = _sniff_separators(
-        rows, [columns[f] for f in ("price", "amount", "quantity", "fee")])
+        rows, [columns[f] for f in ("price", "amount", "quantity", "fee")]
+        + [debit, credit])
+    date_cells = [r[columns["date"]] for r in _data_rows(grid, header_row)
+                  if columns["date"] < len(r)]
+    price_head = header[columns["price"]] if columns["price"] is not None else ""
     return {
         "header_row": header_row,
         "columns": columns,
-        "date_format": "",  # lexicon reads the cells; no one format to declare
+        "date_format": date_format,  # lexicon reads the cells otherwise
         "decimal": decimal,
         "thousands": thousands,
-        "action_map": {},  # lexicon's vocabulary covers it
+        "action_map": letters,  # lexicon's vocabulary covers words
         "asset_class": "",  # decided from the symbols themselves
+        "debit": debit,
+        "credit": credit,
+        "dayfirst": _day_order(date_cells),
+        "pence": bool(re.search(r"\((p|pence|gbx|gbp?ence)\)|\bpence\b|\bgbx\b",
+                                price_head, re.IGNORECASE)),
+        "sentence": sentence,
+        "isin": isin if isin != columns["ticker"] else None,
     }
 
 
@@ -733,7 +1110,7 @@ def _number(text: str, decimal: str, thousands: str) -> float | None:
     return -value if negative else value
 
 
-def _date(text: str, fmt: str) -> str | None:
+def _date(text: str, fmt: str, dayfirst: bool | None = None) -> str | None:
     """An ISO date out of a cell: the mapped format, the usual ones, then prose.
 
     The cell is tried whole and again without its time half. Splitting on the
@@ -744,12 +1121,19 @@ def _date(text: str, fmt: str) -> str | None:
     text = (text or "").strip()
     if not text:
         return None
+    if fmt == "excel" and (serial := _excel_serial(text)):
+        return serial
+    if dayfirst is not None:
+        # The file's own dates settled which way round it writes them; that
+        # beats a declared format and the day-first fallbacks below alike.
+        if found := lexicon.readable_date(text, dayfirst):
+            return found
     candidates = [text]
     head = text.split("T")[0].strip()
     if head != text:
         candidates.append(head)
     for candidate in candidates:
-        for pattern in ([fmt] if fmt else []) + list(_DATE_FALLBACKS):
+        for pattern in ([fmt] if fmt and fmt != "excel" else []) + list(_DATE_FALLBACKS):
             try:
                 return datetime.strptime(candidate, pattern).date().isoformat()
             except (ValueError, TypeError):
@@ -810,6 +1194,23 @@ _COIN_RE = re.compile(r"^[A-Z0-9]{2,10}$")
 _CRYPTO_SHARE = 0.3
 
 
+_QUOTES = ("USDT", "USDC", "BUSD", "EUR", "USD", "GBP", "BTC", "ETH")
+
+
+def _coin_of(label: str) -> str:
+    """The coin a label names: BTC for "BTC", "BTC-EUR", "BTC/USDT" or an
+    exchange's glued "BTCEUR"."""
+    text = (label or "").upper().strip()
+    for sep in ("-", "/", "_", " "):
+        if sep in text:
+            return text.split(sep)[0]
+    for quote in _QUOTES:
+        head = text[: -len(quote)]
+        if text.endswith(quote) and head in crypto.CRYPTO_NAMES:
+            return head
+    return text
+
+
 def _is_crypto_file(labels: list[str], declared: str) -> bool:
     """Whether this export's symbols are coins, decided once for the file.
 
@@ -852,32 +1253,144 @@ def _sniff_currency(grid: list[list[str]], mapping: dict) -> str:
                 continue
             if found := lexicon.currency_of(row[index]):
                 return found
-    return "USD"
+    header = grid[mapping["header_row"]] if grid else []
+    for index in indexes:
+        if index is not None and index < len(header):
+            marks = re.findall(r"\(([^)]*)\)", header[index])
+            for mark in marks:
+                if found := lexicon.currency_of(mark):
+                    return found
+    return ""
+
+
+# ISIN country -> the currency its shares trade in at home. Fund domiciles
+# (IE, LU) are left out: their share classes come in every currency.
+_ISIN_CURRENCY = {
+    **dict.fromkeys(("ES", "DE", "FR", "IT", "NL", "BE", "PT", "AT", "FI",
+                     "GR", "SK", "SI", "EE", "LV", "LT"), "EUR"),
+    "US": "USD", "GB": "GBP", "CH": "CHF", "CA": "CAD", "JP": "JPY",
+    "SE": "SEK", "DK": "DKK", "NO": "NOK", "AU": "AUD", "HK": "HKD",
+    "BR": "BRL", "MX": "MXN",
+}
+
+# Minor units a price can be quoted in, and the currency they are cents of.
+_MINOR = {"GBX": "GBP", "GBP_PENCE": "GBP", "ZAC": "ZAR", "ILA": "ILS"}
+
+
+def _row_currency(text: str, default: str) -> tuple[str, bool]:
+    """(ISO currency, whether the row's money is in its minor unit)."""
+    raw = (text or "").strip()
+    if raw in ("GBp", "GBX", "gbx", "Gbx"):
+        return "GBP", True
+    code = raw.upper()
+    if code in _MINOR:
+        return _MINOR[code], True
+    if re.fullmatch(r"[A-Za-z]{3}", raw):
+        return code, False
+    return (lexicon.currency_of(raw) or default)[:3], False
+
+
+# A fee charged in the coin itself ("0.00005BTC"): the exchange kept part of
+# what was bought, so the holding is that much smaller and no cash was paid.
+_COIN_FEE = re.compile(r"^\s*[\d.,]+\s*([A-Za-z]{2,10})\s*$")
+
+
+def _sentence_parts(text: str, decimal: str, thousands: str
+                    ) -> tuple[str, float, float, str] | None:
+    """(symbol, quantity, price, currency) out of "Compré 10 AAPL a 125 USD"."""
+    m = _SENTENCE.match(text or "")
+    if not m:
+        return None
+    qty = _number(m.group("qty"), decimal, thousands)
+    price = _number(m.group("price"), decimal, thousands)
+    if qty is None or price is None:
+        return None
+    ccy = m.group("ccy") or ""
+    return (m.group("symbol").upper(), qty, price,
+            lexicon.currency_of(ccy) or (ccy.upper() if len(ccy) == 3 else ""))
 
 
 def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
     """Turn every data row into a Transaction using the mapping. No LLM here."""
     result = ParseResult()
     cols = mapping["columns"]
-    coins = _is_crypto_file(_symbol_column(grid, mapping),
-                            mapping.get("asset_class", ""))
-    default_currency = _sniff_currency(grid, mapping)
+    sentence = bool(mapping.get("sentence"))
+    coins = (not sentence) and _is_crypto_file(
+        [_coin_of(label) for label in _symbol_column(grid, mapping)],
+        mapping.get("asset_class", ""))
+    sniffed = _sniff_currency(grid, mapping)
+    default_currency = sniffed or "USD"
     actions = mapping["action_map"]
     phrases = _action_phrases(actions)
     decimal, thousands = mapping["decimal"], mapping["thousands"]
+    debit, credit = mapping.get("debit"), mapping.get("credit")
+    header = [c.strip().lower() for c in grid[mapping["header_row"]]] \
+        if mapping["header_row"] < len(grid) else []
+    dayfirst = mapping.get("dayfirst")
+    if dayfirst is None and cols.get("date") is not None:
+        i = cols["date"]
+        dayfirst = _day_order([r[i] for r in grid[mapping["header_row"] + 1:]
+                               if i < len(r)])
 
-    def cell(row: list[str], field: str) -> str:
-        i = cols.get(field)
+    def cell(row: list[str], field: str | int | None) -> str:
+        i = cols.get(field) if isinstance(field, str) else field
         return row[i] if i is not None and i < len(row) else ""
+
+    def money(row: list[str], field: str | int | None) -> float:
+        return _number(cell(row, field), decimal, thousands) or 0.0
 
     for lineno, row in enumerate(grid[mapping["header_row"] + 1:],
                                  start=mapping["header_row"] + 2):
+        # A title, a page footer, a blank line, the header printed again on
+        # the next page: nothing to import and nothing worth reporting.
+        if sum(1 for c in row if c.strip()) < 2:
+            continue
+        if [c.strip().lower() for c in row] == header:
+            continue
         raw_action = cell(row, "action").strip()
-        if not any(cell(row, f) for f in _REQUIRED):
+        if not any(cell(row, f) for f in _REQUIRED if cols.get(f) is not None):
             continue  # separator / totals line
-        action = actions.get(raw_action.lower()) or (
-            raw_action.lower() if raw_action.lower() in ACTIONS else ""
-        ) or _phrase_action(raw_action, phrases)
+
+        quantity = money(row, "quantity")
+        price = money(row, "price")
+        amount = money(row, "amount")
+        fee = money(row, "fee")
+        paid, received = abs(money(row, debit)), abs(money(row, credit))
+        ticker = " ".join(cell(row, "ticker").split())
+        currency, minor = _row_currency(cell(row, "currency"), default_currency)
+        if not sniffed and not cell(row, "currency").strip():
+            # Nothing in the file names a currency. An ISIN at least says
+            # where the line is listed, which beats assuming dollars for a
+            # Spanish bank's Telefónica. Any cell will do: a model may leave
+            # the ISIN column unmapped when it took the name as the symbol.
+            for code in (cell(row, mapping.get("isin")), ticker, *row):
+                found = (_ISIN_CURRENCY.get(code.strip().upper()[:2])
+                         if _is_isin(code) else None)
+                if found:
+                    currency = found
+                    break
+        if sentence:
+            parts = _sentence_parts(raw_action, decimal, thousands)
+            if parts is None:
+                result.skipped.append({"row": lineno, "type": raw_action[:40] or "?",
+                                       "reason": "action not recognised"})
+                continue
+            ticker, quantity, price, said = parts
+            currency = said or currency
+
+        if cols.get("action") is not None:
+            action = actions.get(raw_action.lower()) or (
+                raw_action.lower() if raw_action.lower() in ACTIONS else ""
+            ) or _phrase_action(raw_action, phrases)
+        elif paid or received:
+            # A bank's statement: which column the money sits in is the side.
+            action = "buy" if paid else "sell"
+        elif quantity:
+            action = "sell" if quantity < 0 else "buy"
+        elif amount:
+            action = "buy" if amount < 0 else "sell"
+        else:
+            action = "buy"
         if not action:
             result.skipped.append({
                 "row": lineno, "type": raw_action or "?",
@@ -885,7 +1398,7 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
             })
             continue
 
-        day = _date(cell(row, "date"), mapping["date_format"])
+        day = _date(cell(row, "date"), mapping["date_format"], dayfirst)
         if day is None:
             result.skipped.append({
                 "row": lineno, "type": raw_action,
@@ -896,18 +1409,27 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
         # Whatever the sheet used to name the instrument, verbatim: a company
         # name, an ISIN, a broker code. _resolve_symbols turns it into a
         # ticker once the whole file has been read.
-        ticker = " ".join(cell(row, "ticker").split())
         if not ticker:
             result.skipped.append({
                 "row": lineno, "type": raw_action, "reason": "no symbol",
             })
             continue
 
-        currency = (cell(row, "currency").strip().upper() or default_currency)[:3]
-        if coins and _COIN_RE.match(ticker.upper()):
-            # Coin plus the row's own fiat, the pair Yahoo prices and the form
-            # the rest of the app stores crypto in (stocks.data.crypto).
-            ticker = crypto.to_pair(ticker, currency)
+        if coins:
+            coin = _coin_of(ticker)
+            if _COIN_RE.match(coin):
+                # Coin plus the row's own fiat, the pair Yahoo prices and the
+                # form the rest of the app stores crypto in.
+                pair_fiat = ticker.upper()[len(coin):].strip("-/ ")
+                if (pair_fiat and currency == default_currency
+                        and cols.get("currency") is None):
+                    currency = pair_fiat[:3]
+                ticker = crypto.to_pair(coin, currency)
+                fee_cell = _COIN_FEE.match(cell(row, "fee"))
+                if fee_cell and fee_cell.group(1).upper() == coin:
+                    if action == "buy":
+                        quantity = abs(quantity) - abs(fee)
+                    fee = 0.0
         if ticker == currency:  # the currency column got mapped as the symbol
             result.skipped.append({
                 "row": lineno, "type": raw_action,
@@ -915,23 +1437,25 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
             })
             continue
 
-        quantity = _number(cell(row, "quantity"), decimal, thousands) or 0.0
-        price = _number(cell(row, "price"), decimal, thousands) or 0.0
-        amount = _number(cell(row, "amount"), decimal, thousands) or 0.0
-        fee = _number(cell(row, "fee"), decimal, thousands) or 0.0
-        if not price and amount:
-            # One column index has to serve every row, so a file with both a
-            # per-share price and a row total cannot have "price" mean the
-            # right thing for a buy *and* for a dividend: the dividend prints
-            # its value in the total column and leaves the per-share one at
-            # zero. The halves are reconciled here rather than by asking the
-            # model for a row-dependent mapping it cannot express.
-            #
+        if not amount and (paid or received):
+            amount = paid or received
+        if minor or (mapping.get("pence") and not sentence):
+            # Quoted in pence: 45.12 GBp is £0.4512 a share, and booking it
+            # as pounds makes the position a hundred times its size.
+            price /= 100
+            if minor:
+                amount /= 100
+                fee /= 100
+        if action in ("dividend", "fee", RETURN_OF_CAPITAL) and amount:
+            # A payout's value is the money that arrived. One column index
+            # has to serve every row, so the per-share column of a dividend
+            # row says the rate and only the total says what was paid.
+            price = amount
+        elif not price and amount:
             # For a trade this divides the total, which carries the fee with
             # it — a cent or two per share, and only ever when the export
             # gave no unit price at all.
-            price = amount if action in ("dividend", "fee", RETURN_OF_CAPITAL) else (
-                amount / quantity if quantity else 0.0)
+            price = amount / quantity if quantity else 0.0
         try:
             result.transactions.append(Transaction(
                 date=day, ticker=ticker, action=action,
@@ -1205,6 +1729,112 @@ def columns(grid: list[list[str]], header_row: int) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _is_pdf(filename: str, data: bytes) -> bool:
+    return data[:5] == b"%PDF-" or (filename.lower().endswith(".pdf")
+                                    and not data.startswith(b"PK\x03\x04"))
+
+
+# Why a file that read as nothing could not be read at all: a closed set, so
+# the chat can say what to do about it instead of "export a CSV".
+UNREADABLE = ("locked", "scanned", "odf", "numbers")
+_UNREADABLE_REASON = {
+    "locked": "the file is password-protected",
+    "scanned": "no text could be read from this PDF (a scan or a picture)",
+    "odf": "this OpenDocument file could not be opened: save it again as .xlsx or .csv",
+    "numbers": "Numbers files are not read: export it as .xlsx or .csv",
+}
+
+
+def unreadable(filename: str, data: bytes) -> str:
+    """One of UNREADABLE when the bytes say why nothing could be read, else ""."""
+    if data.startswith(_OLE2) and "EncryptedPackage".encode("utf-16-le") in data:
+        return "locked"  # an Office file saved with a password
+    if data.startswith(b"PK\x03\x04"):
+        if b"application/vnd.oasis.opendocument" in data[:200]:
+            return "odf"
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                names = archive.namelist()
+        except (zipfile.BadZipFile, ValueError, OSError):
+            return ""
+        return "numbers" if "Index/Document.iwa" in names else ""
+    if _is_pdf(filename, data):
+        try:
+            batches = _pdf_batches(data)
+        except Exception:  # noqa: BLE001 - an unreadable PDF has no text either
+            batches = []
+        if batches:
+            return ""  # bank statements often carry an owner password and read fine
+        return "locked" if b"/Encrypt" in data else "scanned"
+    return ""
+
+
+def unreadable_in(skipped: list[dict]) -> str:
+    """The UNREADABLE code a read already gave as its reason, else "".
+
+    Read off the result rather than the bytes again: a good .ods whose rows
+    were all rejected is not one that "could not be opened"."""
+    reasons = {reason: code for code, reason in _UNREADABLE_REASON.items()}
+    return next((reasons[entry.get("reason", "")] for entry in skipped
+                 if entry.get("type") == "file" and entry.get("reason") in reasons), "")
+
+
+def _safe_grid(filename: str, data: bytes) -> list[list[str]]:
+    """read_grid, or no rows when the bytes are not the table they claim."""
+    try:
+        return read_grid(filename, data)
+    except Exception as exc:  # noqa: BLE001 — a broken file is "no table", not a 500
+        obs.event("import.llm_map.unreadable", error=type(exc).__name__)
+        return []
+
+
+def _guessed(grid: list[list[str]]) -> tuple[ParseResult, dict | None]:
+    guess = guess_mapping(grid)
+    return (apply_mapping(grid, guess) if guess else ParseResult()), guess
+
+
+def _directed(mapping: dict) -> bool:
+    """Whether a mapping reads each row's direction from the cells."""
+    return (mapping["columns"].get("action") is not None
+            or mapping.get("debit") is not None or mapping.get("credit") is not None)
+
+
+def _with_guess(mapping: dict, guess: dict) -> dict:
+    """The model's mapping, with what only the cells can tell filled in.
+
+    The model names the columns; it is never asked whether the price is in
+    pence, whether 03/04 is the 3rd of April, which column is the ISIN, or
+    whether the totals sit in a debit and a credit column. Where the guess
+    read the same table those come from it, so a model that maps the file
+    cannot read it worse than no model would.
+    """
+    if mapping.get("header_row") != guess.get("header_row"):
+        return mapping
+    mine, theirs = mapping["columns"], guess["columns"]
+    merged = dict(mapping)
+    if mapping.get("dayfirst") is None and guess.get("dayfirst") is not None \
+            and mine.get("date") == theirs.get("date"):
+        merged["dayfirst"] = guess["dayfirst"]
+    if guess.get("date_format") == "excel" and mine.get("date") == theirs.get("date"):
+        merged["date_format"] = "excel"
+    if guess.get("pence") and mine.get("price") == theirs.get("price"):
+        merged["pence"] = True
+    taken = {i for i in mine.values() if i is not None}
+    for key in ("debit", "credit", "isin"):
+        if mapping.get(key) is None and guess.get(key) is not None \
+                and (guess[key] not in taken or guess[key] == mine.get("amount")):
+            merged[key] = guess[key]
+    if merged.get("debit") is not None and mine.get("amount") in (
+            merged.get("debit"), merged.get("credit")):
+        merged["columns"] = {**mine, "amount": None}
+    if mine.get("action") is None and theirs.get("action") is not None \
+            and (theirs["action"] not in taken or theirs["action"] == mine.get("note")):
+        merged["columns"] = {**merged["columns"], "action": theirs["action"]}
+        merged["action_map"] = {**guess.get("action_map", {}),
+                                **mapping.get("action_map", {})}
+    return merged
+
+
 def extract(filename: str, data: bytes, provider: Provider | None,
             api_key: str = "", mapping: dict | None = None,
             fiat: str = "") -> Extraction:
@@ -1215,29 +1845,58 @@ def extract(filename: str, data: bytes, provider: Provider | None,
     call at all, so a second read can only differ where the reader changed it.
     A crypto export is read as one first (`_crypto`); `fiat` is the account's
     currency, which a file traded only against stablecoins is booked in.
+
+    With no provider at all the file is still read, from its headers and
+    cells (`guess_mapping`) — a PDF's table included. The model is what reads
+    the files the guess cannot, never what the guess has to wait for.
     """
-    if mapping is not None and not filename.lower().endswith(".pdf"):
+    pdf = _is_pdf(filename, data)
+    if mapping is not None and not pdf:
         return _remap(filename, data, provider, api_key, mapping)
-    if not filename.lower().endswith(".pdf"):
-        grid = read_grid(filename, data)
+    grid = _safe_grid(filename, data)
+    if len(grid) >= 2:
         found = _crypto(grid, provider, api_key, fiat) or _holdings(grid)
         if found is not None:
             return found
-    if provider is None:
-        return Extraction(ParseResult(skipped=[{
-            "row": 0, "type": "file", "reason": "no parser recognised this file",
-        }]))
-    if filename.lower().endswith(".pdf"):
-        found = extract_pdf(data, provider, api_key)
-        _resolve_symbols(found.result, provider, api_key)
-        return found
 
-    grid = read_grid(filename, data)
+    model_pdf: Extraction | None = None
+    if pdf and provider is not None:
+        model_pdf = extract_pdf(data, provider, api_key)
+        if model_pdf.result.transactions or model_pdf.kind == KIND_POSITIONS:
+            _resolve_symbols(model_pdf.result, provider, api_key)
+            return model_pdf
+
     if len(grid) < 2:
+        why = unreadable(filename, data)
+        if model_pdf is not None and not why:
+            return model_pdf
         return Extraction(ParseResult(skipped=[{
             "row": 0, "type": "file",
-            "reason": "no table could be read from this file",
+            "reason": _UNREADABLE_REASON.get(
+                why, "no table could be read from this file"),
         }]))
+
+    if provider is None or pdf:
+        # No model to ask, or the model already read this PDF and found
+        # nothing: the table on its pages is the last word.
+        result, guess = _guessed(grid)
+        if result.transactions:
+            obs.event("import.llm_map.guessed", rows=len(result.transactions),
+                      pdf=pdf, model=provider is not None)
+            if provider is not None:
+                _resolve_symbols(result, provider, api_key)
+            return Extraction(result, KIND_TRADES, mapping=None if pdf else guess,
+                              columns=columns(grid, guess["header_row"]) if guess else ())
+        if model_pdf is not None:
+            return model_pdf
+        reason = ("no rows could be read: the columns could not be matched to "
+                  "date/symbol/action" if guess is None else
+                  "no rows could be read from this file")
+        return Extraction(
+            ParseResult(skipped=[{"row": 0, "type": "file", "reason": reason}]
+                        + result.skipped[:20]),
+            mapping=guess, columns=columns(grid, guess["header_row"]) if guess else (),
+        )
 
     # Worked out from the file itself, before anything is asked of anyone.
     # It is the answer when the model is unreachable, when it declines the
@@ -1251,6 +1910,14 @@ def extract(filename: str, data: bytes, provider: Provider | None,
     except ProviderUnavailable as exc:
         mapping, down = None, str(exc)
 
+    if mapping and guess:
+        mapping = _with_guess(mapping, guess)
+        if mapping["columns"].get("action") is None and _directed(guess):
+            # The model left the direction to the signs while the cells name
+            # it: one that filed "Kauf"/"Verkauf" under another column would
+            # book every sale as a buy. With no guess to take over, a mapping
+            # with no action column stands (a buys-only or signed file).
+            mapping = guess
     result = apply_mapping(grid, mapping) if mapping else ParseResult()
     used = mapping
     if not result.transactions and guess and guess != mapping:
@@ -1317,9 +1984,9 @@ def _crypto(grid: list[list[str]], provider: Provider | None, api_key: str,
 def preset_read(filename: str, data: bytes, fiat: str = "") -> Extraction | None:
     """A crypto export whose header we know, or a holdings snapshot, read
     with no model; else None."""
-    if filename.lower().endswith(".pdf"):
+    grid = _safe_grid(filename, data)
+    if len(grid) < 2:
         return None
-    grid = read_grid(filename, data)
     return _crypto(grid, None, "", fiat) or _holdings(grid)
 
 

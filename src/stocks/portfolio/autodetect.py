@@ -294,16 +294,21 @@ def forget() -> None:
 
 
 def _model_read(filename: str, data: bytes, provider: Provider | None,
-                api_key: str, scope: str, fiat: str = "") -> llm_map.Extraction | None:
+                api_key: str, scope: str, fiat: str = "",
+                guess: bool = False) -> llm_map.Extraction | None:
     """The model's reading of the file, or None when there is no model.
 
     A model read that raises is a model that could not read: it comes back
     `unavailable`, never as an exception, because the parsers can still read
     the file without it. With no model, a crypto export whose header is a
-    known one is still read (`llm_map.preset_read`): that needs none.
+    known one is still read (`llm_map.preset_read`): that needs none. With
+    `guess` too — no parser read the file at all — it is read from its own
+    headers and cells (`llm_map.extract` with no provider), so an export from
+    a broker no parser knows still imports. Never beside a parser's read: a
+    guess must not outvote the parser built for the file.
     """
     key = (scope, hashlib.sha256(data).hexdigest(), _extension(filename),
-           getattr(provider, "id", ""), fiat)
+           getattr(provider, "id", ""), fiat, guess)
     now = time.monotonic()
     if scope:
         with _model_lock:
@@ -312,7 +317,9 @@ def _model_read(filename: str, data: bytes, provider: Provider | None,
                 _model_memo.move_to_end(key)
                 return copy.deepcopy(hit[1])
     try:
-        if provider is None:
+        if provider is None and guess:
+            found = llm_map.extract(filename, data, None, fiat=fiat)
+        elif provider is None:
             found = llm_map.preset_read(filename, data, fiat)
         else:
             found = llm_map.extract(filename, data, provider, api_key, fiat=fiat)
@@ -409,7 +416,8 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
         if late:
             model_read = "late"
     else:
-        model = _model_read(filename, data, provider, api_key, scope, fiat)
+        model = _model_read(filename, data, provider, api_key, scope, fiat,
+                            guess=parsed is None)
     by_model = len(model.result.transactions) if model is not None else 0
     by_parser = len(parsed.result.transactions) if parsed is not None else 0
 
@@ -466,5 +474,7 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
 def supported_types() -> tuple[str, ...]:
     """Every extension any parser accepts — what the uploader should allow."""
     seen = {t for p in platforms.PLATFORMS for t in p.file_types}
-    seen.update({"xlsx", "pdf", "csv"})  # llm_map reads these even unrecognised
+    # llm_map reads these even unrecognised: a bank's ".xls" is as often an
+    # HTML table or a CSV under that name as a real workbook.
+    seen.update({"xlsx", "xls", "ods", "pdf", "csv", "tsv", "txt", "html", "htm"})
     return tuple(sorted(seen))

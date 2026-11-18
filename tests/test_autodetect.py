@@ -340,7 +340,7 @@ def test_a_file_no_parser_reads_waits_for_the_model(monkeypatch):
 
     rows = [Transaction("2025-01-02", "AAPL", "buy", 10, 180.5)]
 
-    def slow(*a):
+    def slow(*a, **k):
         import time
         time.sleep(0.2)
         return llm_map.Extraction(ParseResult(transactions=rows),

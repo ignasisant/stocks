@@ -428,6 +428,8 @@ const MIME_TYPES: Record<string, string[]> = {
   ],
   pdf: ["application/pdf"],
   xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  xls: ["application/vnd.ms-excel"],
+  ods: ["application/vnd.oasis.opendocument.spreadsheet"],
 };
 
 /** What the file input accepts: every extension, and the types it goes by. */

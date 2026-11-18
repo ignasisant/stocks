@@ -174,11 +174,21 @@ def readable_date(value: str | None, dayfirst: bool = True) -> str | None:
 # the norm outside the US, and the € in "1.000,00 €" is the only thing that
 # says the row is not dollars.
 CURRENCY_MARKS: tuple[tuple[str, str], ...] = (
-    ("us$", "USD"), ("usd", "USD"), ("$", "USD"),
+    ("us$", "USD"), ("r$", "BRL"), ("c$", "CAD"), ("ca$", "CAD"),
+    ("a$", "AUD"), ("au$", "AUD"), ("hk$", "HKD"), ("mx$", "MXN"),
+    ("s$", "SGD"),
+    ("usd", "USD"), ("$", "USD"),
     ("eur", "EUR"), ("\u20ac", "EUR"),
     ("gbp", "GBP"), ("\u00a3", "GBP"),
     ("chf", "CHF"),
     ("jpy", "JPY"), ("\u00a5", "JPY"),
+)
+
+
+# Codes matched as whole words only: "try" is in "entry", "cad" in "mercado".
+_CODES = re.compile(
+    r"(?<![a-z])(brl|cad|aud|hkd|sek|nok|dkk|pln|mxn|sgd|zar|inr|cny|krw|czk"
+    r"|huf|try|nzd|ils|twd|clp|cop|ars)(?![a-z])"
 )
 
 
@@ -190,6 +200,8 @@ def currency_of(text: str | None) -> str | None:
     for mark, code in CURRENCY_MARKS:
         if mark in low:
             return code
+    if found := _CODES.search(low):
+        return found.group(1).upper()
     return None
 
 
@@ -208,16 +220,23 @@ ACTION_WORDS: dict[str, tuple[str, ...]] = {
         "buy", "bought", "buys", "purchase", "purchased", "acquisition",
         "compra", "comprada", "comprado", "comprar", "compraventa",
         "achat", "acquisto", "acquistato", "kauf", "kaufen", "koop",
-        "aankoop", "compre",
+        "aankoop", "compre", "compro", "comprei",
+        # A fund's units are bought by subscribing and sold by redeeming.
+        "suscripcion", "subscription", "souscription", "sottoscrizione",
+        "zeichnung",
     ),
     "sell": (
         "sell", "sold", "sells", "sale", "disposal", "redemption",
         "venta", "vendida", "vendido", "vender", "venda", "vente", "vendita",
-        "verkauf", "verkoop", "cessione",
+        "verkauf", "verkoop", "cessione", "vendi", "vendo", "vendeu",
+        "verkocht", "reembolso", "rimborso", "rachat",
     ),
     "dividend": (
         "dividend", "dividends", "dividendo", "dividendos", "dividende",
         "dividenden", "dividendi", "dividend uitkering",
+        # A payout under another name: the French coupon, the Italian
+        # cedola, a fund's distribution (Ausschüttung).
+        "coupon", "cupon", "cedola", "distribution", "ausschuttung",
     ),
     "fee": (
         "fee", "fees", "commission", "comision", "comisiones", "comissao",

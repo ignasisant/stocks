@@ -212,6 +212,49 @@ def test_a_file_no_parser_owns_is_answered_rather_than_failed(
     assert payload["needs_broker"] is False, "nothing to file needs no origin"
 
 
+def test_a_bank_no_parser_knows_is_read_with_no_model_at_all(
+    client, account, signed_in, monkeypatch
+):
+    """No key, no free chain and a format no parser owns: the columns are
+    guessed from their headers and cells, and the trades still land."""
+
+    patch_import(monkeypatch, "_provider", _real_provider)
+    monkeypatch.setattr(
+        "stocks.chat.engine.attempts", lambda prefs, held=None: []
+    )
+    bank = ("Extracto de valores\n\n"
+            "Fecha;Concepto;Valor;Cantidad;Cargo;Abono;Divisa\n"
+            "02/01/2024;Compra acciones;SAN;100;380,00;;EUR\n"
+            "05/03/2024;Venta acciones;SAN;100;;420,00;EUR\n")
+    payload = signed_in.post(
+        "/v1/chat/attachments", json=attach(bank, filename="extracto.csv")
+    ).json()
+    assert [(r["date"], r["ticker"], r["action"], r["quantity"], r["price"])
+            for r in payload["fresh"]] == [
+        ("2024-01-02", "SAN", "buy", 100.0, 3.8),
+        ("2024-03-05", "SAN", "sell", 100.0, 4.2),
+    ]
+    landed = signed_in.post(
+        "/v1/chat/attachments/commit", json=committed(payload, broker="other")
+    )
+    assert landed.status_code == 200
+
+
+def test_a_locked_file_is_told_to_come_without_its_password(
+    client, account, signed_in, monkeypatch
+):
+    patch_import(monkeypatch, "_provider", _real_provider)
+    monkeypatch.setattr(
+        "stocks.chat.engine.attempts", lambda prefs, held=None: []
+    )
+    locked = (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 64
+              + "EncryptedPackage".encode("utf-16-le"))
+    response = signed_in.post("/v1/chat/attachments", json={
+        "filename": "cartera.xlsx", "content": base64.b64encode(locked).decode()})
+    assert response.status_code == 200
+    assert "password" in response.json()["note"]
+
+
 def test_a_preview_is_a_write_so_a_bearer_token_never_gets_one(client, account):
     response = client.post(
         "/v1/chat/attachments", params=WHO, headers=AUTH, json=attach()

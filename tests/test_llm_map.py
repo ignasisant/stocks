@@ -946,3 +946,234 @@ def test_a_dated_or_typed_column_is_never_a_holdings_snapshot():
         llm_map.read_grid("x.csv", undated_header.encode()))
     assert not llm_map.holdings_only(
         llm_map.read_grid("x.csv", UNREADABLE_CSV.encode()))
+
+
+# ------------------------------------------- an unknown export, no model at all
+# An account with no key and no free chain still has its file read: the column
+# guess stands in for the model, and every line is a trade or a stated reason.
+
+
+def guessed(text: str, encoding: str = "utf-8") -> list[tuple]:
+    found = llm_map.extract("banco.csv", text.encode(encoding), None)
+    return [(t.date, t.ticker, t.action, t.quantity, t.price, t.currency)
+            for t in found.result.transactions]
+
+
+def test_a_title_line_above_the_header_is_not_taken_for_it():
+    assert guessed(
+        "Mis operaciones\n\n"
+        "Fecha;Operación;Valor;Títulos;Precio\n"
+        "02/01/2024;Compra;AAPL;10;180,50\n"
+        "05/03/2024;Venta;AAPL;4;190,00\n"
+    ) == [("2024-01-02", "AAPL", "buy", 10.0, 180.5, "USD"),
+          ("2024-03-05", "AAPL", "sell", 4.0, 190.0, "USD")]
+
+
+def test_the_isin_outranks_a_name_column_and_says_the_currency():
+    # "LVMH" is a name that reads like a ticker; the ISIN names the line, and
+    # with no currency anywhere in the file its country is the best guess.
+    assert guessed(
+        "Fecha;Valor;ISIN;Titulos;Precio\n"
+        "02/01/2024;Telefonica;ES0178430E18;100;3,80\n"
+        "05/03/2024;LVMH;FR0000121014;2;800,00\n"
+    ) == [("2024-01-02", "ES0178430E18", "buy", 100.0, 3.8, "EUR"),
+          ("2024-03-05", "FR0000121014", "buy", 2.0, 800.0, "EUR")]
+
+
+def test_a_debit_and_a_credit_column_say_the_direction_and_the_total():
+    assert guessed(
+        "Fecha;Concepto;Valor;Cantidad;Cargo;Abono;Divisa\n"
+        "02/01/2024;Compra acciones;SAN;100;380,00;;EUR\n"
+        "05/03/2024;Venta acciones;SAN;100;;420,00;EUR\n"
+    ) == [("2024-01-02", "SAN", "buy", 100.0, 3.8, "EUR"),
+          ("2024-03-05", "SAN", "sell", 100.0, 4.2, "EUR")]
+
+
+def test_a_price_in_pence_is_booked_in_pounds():
+    assert guessed(
+        "Trade Date,EPIC,Buy/Sell,Quantity,Price (p),Currency\n"
+        "04/03/2024,LLOY,B,2000,45.12,GBX\n"
+        "27/09/2024,LLOY,S,2000,59.30,GBX\n"
+    ) == [("2024-03-04", "LLOY", "buy", 2000.0, 0.4512, "GBP"),
+          ("2024-09-27", "LLOY", "sell", 2000.0, 0.593, "GBP")]
+
+
+def test_with_no_action_column_the_sign_of_the_quantity_decides():
+    assert guessed(
+        "Date,Symbol,Quantity,Price,Currency\n"
+        "2024-01-02,AAPL,10,180.5,USD\n"
+        "2024-03-05,AAPL,-4,190,USD\n"
+    ) == [("2024-01-02", "AAPL", "buy", 10.0, 180.5, "USD"),
+          ("2024-03-05", "AAPL", "sell", 4.0, 190.0, "USD")]
+
+
+def test_a_spreadsheet_serial_is_read_as_its_day():
+    assert [row[0] for row in guessed(
+        "Fecha,Ticker,Operacion,Cantidad,Precio\n"
+        "45293,AAPL,compra,10,180.5\n"
+        "45356,MSFT,compra,4,400\n"
+    )] == ["2024-01-02", "2024-03-05"]
+
+
+def test_a_line_written_as_a_sentence_is_a_trade():
+    assert guessed(
+        "Fecha,Detalle\n"
+        "2024-01-02,Bought 10 AAPL @ 180.50 USD\n"
+        "2024-03-05,Sold 4 shares of MSFT at 400 USD\n"
+    ) == [("2024-01-02", "AAPL", "buy", 10.0, 180.5, "USD"),
+          ("2024-03-05", "MSFT", "sell", 4.0, 400.0, "USD")]
+
+
+def test_one_unambiguous_date_settles_the_order_of_the_others():
+    # 03/04 alone could be either; 25/04 cannot be month first.
+    assert [row[0] for row in guessed(
+        "Date,Ticker,Action,Qty,Price,Currency\n"
+        "03/04/2024,AAPL,Buy,10,170,USD\n"
+        "25/04/2024,AAPL,Sell,5,169,USD\n"
+    )] == ["2024-04-03", "2024-04-25"]
+
+
+def test_a_bank_page_saved_as_xls_is_read_as_the_table_it_is():
+    page = ("<html><body><table>"
+            "<tr><td>Fecha</td><td>Operación</td><td>Valor</td>"
+            "<td>Títulos</td><td>Precio</td><td>Divisa</td></tr>"
+            "<tr><td>02/01/2024</td><td>Compra</td><td>SAN</td>"
+            "<td>100</td><td>3,80</td><td>EUR</td></tr>"
+            "</table></body></html>")
+    found = llm_map.extract("movimientos.xls", page.encode(), None)
+    assert [(t.ticker, t.quantity, t.price, t.currency)
+            for t in found.result.transactions] == [("SAN", 100.0, 3.8, "EUR")]
+
+
+def test_bytes_that_are_no_table_are_answered_not_raised():
+    found = llm_map.extract("x.csv", b"\x00\x01\x02 nothing \xff", None)
+    assert found.result.transactions == []
+
+
+def test_a_models_mapping_gets_what_only_the_cells_tell(monkeypatch):
+    # The model maps the columns but is never asked about pence, debit and
+    # credit columns or a missing action: those come from the guess.
+    text = ("Fecha;Valor;Cantidad;Precio (p);Cargo;Abono\n"
+            "04/03/2024;LLOY;2000;45,12;902,40;\n"
+            "27/09/2024;LLOY;2000;59,30;;1186,00\n")
+    def model(provider, api_key, grid):
+        return llm_map._mapping_from({
+            "header_row": 0, "decimal": ",", "thousands": ".",
+            "date_format": "%d/%m/%Y", "action_map": {},
+            "columns": {"date": 0, "ticker": 1, "action": None, "quantity": 2,
+                        "price": 3, "amount": 4, "currency": None, "fee": None,
+                        "note": None},
+        }, grid)
+
+    monkeypatch.setattr(llm_map, "map_columns", model)
+    monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
+    found = llm_map.extract("x.csv", text.encode(), object())
+    assert [(t.action, t.price) for t in found.result.transactions] == [
+        ("buy", 0.4512), ("sell", 0.593)]
+
+
+@pytest.mark.parametrize("fixture", ["biff8_movimientos.xls", "ods_movimientos.ods"])
+def test_a_legacy_or_open_workbook_is_read_through_calamine(fixture):
+    # BIFF8 .xls (xlwt) is what older Spanish banks still send; .ods (odfpy)
+    # is LibreOffice's own. openpyxl opens neither.
+    from pathlib import Path
+
+    data = (Path(__file__).parent / "fixtures" / "imports" / fixture).read_bytes()
+    found = llm_map.extract(fixture, data, None)
+    assert [(t.date, t.ticker, t.action, t.quantity, t.price, t.currency)
+            for t in found.result.transactions] == [
+        ("2024-01-02", "SAN", "buy", 100.0, 3.8, "EUR"),
+        ("2024-03-05", "SAN", "sell", 40.0, 4.2, "EUR"),
+    ]
+
+
+def _zip(entries: dict[str, str]) -> bytes:
+    import zipfile
+
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        for name, text in entries.items():
+            archive.writestr(name, text)
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("name,data,why", [
+    ("x.xlsx", llm_map._OLE2 + b"\0" * 64 + "EncryptedPackage".encode("utf-16-le"),
+     "locked"),
+    ("x.pdf", b"%PDF-1.4\n/Encrypt 5 0 R\n%%EOF", "locked"),
+    ("x.pdf", b"%PDF-1.4\n%%EOF", "scanned"),
+    ("x.ods", _zip({"mimetype": "application/vnd.oasis.opendocument.spreadsheet",
+                    "content.xml": "<x/>"}), "odf"),  # broken: a real one reads
+    ("x.numbers", _zip({"Index/Document.iwa": ""}), "numbers"),
+    ("x.csv", b"Fecha;Valor\n", ""),
+])
+def test_a_file_that_cannot_be_read_says_why(name, data, why):
+    assert llm_map.unreadable(name, data) == why
+    found = llm_map.extract(name, data, None)
+    assert found.result.transactions == []
+    if why:
+        assert found.result.skipped[0]["reason"] == llm_map._UNREADABLE_REASON[why]
+
+
+def test_a_model_that_files_the_action_as_a_note_still_reads_the_sales(monkeypatch):
+    # "Transaktion" holds Kauf/Verkauf/Dividende; a model that calls it the
+    # note and maps no action must not book every line as a buy.
+    text = ("Datum;ISIN;Transaktion;Stück;Kurs;Währung\n"
+            "15.03.2024;DE0007164600;Kauf;12;178,50;EUR\n"
+            "03.12.2024;DE0007164600;Verkauf;5;230,05;EUR\n")
+
+    def model(provider, api_key, grid):
+        return llm_map._mapping_from({
+            "header_row": 0, "decimal": ",", "thousands": ".",
+            "date_format": "%d.%m.%Y", "action_map": {},
+            "columns": {"date": 0, "ticker": 1, "action": None, "quantity": 3,
+                        "price": 4, "amount": None, "currency": 5, "fee": None,
+                        "note": 2},
+        }, grid)
+
+    monkeypatch.setattr(llm_map, "map_columns", model)
+    monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
+    found = llm_map.extract("x.csv", text.encode(), object())
+    assert [t.action for t in found.result.transactions] == ["buy", "sell"]
+
+
+def test_a_buys_only_file_no_guess_reads_keeps_the_models_mapping(monkeypatch):
+    # Headers in no language the guess knows, no action column at all: the
+    # model's reply (action null) is the only reader, so it must stand.
+    text = ("Tarikh;Kod;Bilangan;Harga\n"
+            "15/03/2024;AAPL;10;170.50\n"
+            "02/05/2024;MSFT;4;402.10\n")
+    reply = json.dumps({
+        "header_row": 0, "decimal": ".", "thousands": "", "date_format": "%d/%m/%Y",
+        "action_map": {}, "columns": {"date": 0, "ticker": 1, "action": None,
+                                      "quantity": 2, "price": 3, "amount": None,
+                                      "currency": None, "fee": None, "note": None},
+    })
+    grid = llm_map.read_grid("x.csv", text.encode())
+    assert llm_map.guess_mapping(grid) is None
+    monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
+    found = llm_map.extract("x.csv", text.encode(), _StubProvider(reply), "k")
+    assert [(t.ticker, t.action, t.quantity) for t in found.result.transactions] == [
+        ("AAPL", "buy", 10), ("MSFT", "buy", 4)]
+
+
+def test_a_workbook_whose_rows_were_rejected_is_not_called_unopenable():
+    assert llm_map.unreadable_in([{"row": 2, "type": "trade", "reason": "x"}]) == ""
+    assert llm_map.unreadable_in([{"row": 0, "type": "file", "reason":
+                                   llm_map._UNREADABLE_REASON["locked"]}]) == "locked"
+
+
+def test_an_isin_the_mapping_left_out_still_names_the_currency():
+    # A model that took the name as the symbol and left "Code ISIN" unmapped:
+    # the file names no currency, and the ISIN in the row beats dollars.
+    text = ("Date\tLibellé\tCode ISIN\tSens\tQuantité\tCours\n"
+            "12/02/2024\tLVMH\tFR0000121014\tAchat\t2\t812,30\n")
+    grid = llm_map.read_grid("x.csv", text.encode())
+    mapping = llm_map._mapping_from({
+        "header_row": 0, "decimal": ",", "thousands": " ", "date_format": "%d/%m/%Y",
+        "action_map": {"Achat": "buy"},
+        "columns": {"date": 0, "ticker": 1, "action": 3, "quantity": 4, "price": 5,
+                    "amount": None, "currency": None, "fee": None, "note": None},
+    }, grid)
+    found = llm_map.apply_mapping(grid, mapping)
+    assert [(t.ticker, t.currency) for t in found.transactions] == [("LVMH", "EUR")]
