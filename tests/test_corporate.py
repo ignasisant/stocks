@@ -237,6 +237,41 @@ def test_a_volatile_day_is_not_a_price_off_its_market(lines):
     assert lines == []
 
 
+def test_a_split_the_ledger_holds_is_not_read_as_a_price_off_its_market(lines):
+    """BYND's meme day (prod, every sweep from 2026-11-16): a raw fill at 1.44x
+    the adjusted close over the 1:30 the book already carries reads 0.048 of
+    the close. That is the split plus a wild day's range, not another scale.
+    The broker booked the split a day after Yahoo's, so Yahoo's day still
+    asks for evidence and the ledger's row restates it."""
+    ledger = [
+        _buy("2025-10-22", 30.0, 5.16, ticker="BYND"),
+        _split_row("2026-08-15", 1 / 30, ticker="BYND"),
+    ]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2026-08-14", 1 / 30)]),
+        close_on=_closes({("BYND", "2025-10-22"): 107.4}),
+        source="sweep",
+    )
+    assert not found
+    assert lines == []
+
+
+def test_a_fill_off_its_market_past_the_ledgers_split_still_says_so(lines):
+    """The split row restates the fill; three times off after it still is."""
+    ledger = [
+        _buy("2025-10-22", 30.0, 10.74, ticker="BYND"),
+        _split_row("2026-08-15", 1 / 30, ticker="BYND"),
+    ]
+    missing_splits(
+        ledger,
+        splits=_splits([("2026-08-14", 1 / 30)]),
+        close_on=_closes({("BYND", "2025-10-22"): 107.4}),
+    )
+    [line] = lines
+    assert (line["kind"], line["off"]) == ("price_off_market", 3.0)
+
+
 def test_the_amazon_row_is_a_split_to_propose_not_a_price_off_its_market(lines):
     found = missing_splits(RAW_LEDGER, splits=_splits(AMZN_SPLITS), close_on=RAW_CLOSES)
     assert [m.tx.date for m in found] == ["2022-06-06"]
