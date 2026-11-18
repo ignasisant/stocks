@@ -371,10 +371,14 @@ def _note(lang: str, found: dict, filename: str) -> str:
             + "\n\n"
             + i18n.translate("chat.import_positions_help", lang)
         )
+    # A file the bytes say cannot be read (password, scan, OpenDocument)
+    # gets what to do about that, not advice to export a different CSV.
+    why = found.get("why", "")
     return (
         i18n.translate("chat.import_none", lang, filename=filename)
         + "\n\n"
-        + i18n.translate("chat.import_none_help", lang)
+        + i18n.translate(f"chat.import_why_{why}" if why else "chat.import_none_help",
+                         lang)
     )
 
 
@@ -450,6 +454,7 @@ def attach(
         "label": found.label or i18n.translate("chat.import_source_llm", lang),
         "unavailable": found.unavailable,
         "kind": found.kind,
+        "why": llm_map.unreadable_in(found.result.skipped),
     }
     note = _note(lang, summary, body.filename)
 
