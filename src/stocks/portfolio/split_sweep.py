@@ -82,6 +82,7 @@ def repair(
     *,
     splits: corporate.SplitLookup,
     close_on: corporate.CloseLookup,
+    range_on: corporate.RangeLookup | None = None,
     throttled=lambda: False,
     today: date | None = None,
 ) -> int:
@@ -110,7 +111,7 @@ def repair(
     gaps = []
     if any(t.action == "buy" for t in rows):
         gaps = corporate.missing_splits(
-            rows, splits=splits, close_on=close_on, source="sweep"
+            rows, splits=splits, close_on=close_on, range_on=range_on, source="sweep"
         )
         refused = declined(db) if gaps else set()
         gaps = [g for g in gaps if (g.ticker.upper(), g.tx.date) not in refused]

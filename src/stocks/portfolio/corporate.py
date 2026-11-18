@@ -33,6 +33,10 @@ cannot price. Nothing here writes; the caller decides.
 Sells are priced the same way as buys, and the latest trade before each
 split speaks for it; with several splits those trades are read together
 (`_fit`), because one alone cannot tell a 2:1 then 1:2 from neither.
+
+A fill far from its close on a wild day (BYND's meme day, a round trip at
+1.9x and 1.4x the close) still proves a split when the day's bar holds it
+under that reading and under no other: a real fill traded inside the bar.
 """
 
 from __future__ import annotations
@@ -50,6 +54,9 @@ from stocks.portfolio.positions import replay_order
 SplitLookup = Callable[[str], list[tuple[str, float]]]
 # close_on(ticker, YYYY-MM-DD) -> split-adjusted close, or None; see fetch.close_on.
 CloseLookup = Callable[[str, str], float | None]
+# range_on(ticker, YYYY-MM-DD) -> split-adjusted (low, high) of the bar close_on
+# read, or None; see fetch.range_on. Asked only after close_on for that day.
+RangeLookup = Callable[[str, str], tuple[float, float] | None]
 
 # How far the price quotient may sit from the factor it is claimed to be.
 # Generous on purpose: the gap being tested is 20x (or, at the tightest ratio
@@ -64,6 +71,10 @@ _MIN_RATIO = 1.5
 # How many trades before a split are asked for a close: the latest one Yahoo
 # can price, without a round trip for every fill in the book.
 _EVIDENCE_TRIES = 3
+
+# Slack on a day's bar: a fill booked at a rounded price, or a bar a provider
+# rounded, still sits inside it. Nowhere near a split's worth.
+_RANGE_SLACK = 0.02
 
 
 @dataclass
@@ -94,6 +105,7 @@ def missing_splits(
     *,
     splits: SplitLookup,
     close_on: CloseLookup,
+    range_on: RangeLookup | None = None,
     source: consistency.Source = "import",
 ) -> list[MissingSplit]:
     """Splits, forward or reverse, the ledger is missing, oldest first.
@@ -104,6 +116,8 @@ def missing_splits(
     history is priced off the split-adjusted close all the same. Tickers
     whose lookups fail are skipped, never guessed. Each one found is a
     `data.inconsistency` line, `source` saying which screen asked.
+    `range_on`, when given, lets a fill inside its day's bar count as
+    evidence where its close alone is too far.
     """
     by_ticker: dict[str, list[Transaction]] = {}
     for t in transactions:
@@ -112,7 +126,9 @@ def missing_splits(
 
     found: list[MissingSplit] = []
     for ticker, rows in sorted(by_ticker.items()):
-        found += _ticker_gaps(ticker, rows, splits, close_on, source=source)
+        found += _ticker_gaps(
+            ticker, rows, splits, close_on, range_on=range_on, source=source
+        )
     found.sort(key=lambda m: (m.tx.date, m.ticker))
     for gap in found:
         consistency.report(
@@ -133,6 +149,7 @@ def _ticker_gaps(
     splits: SplitLookup,
     close_on: CloseLookup,
     *,
+    range_on: RangeLookup | None = None,
     source: consistency.Source = "import",
 ) -> list[MissingSplit]:
     try:
@@ -156,7 +173,8 @@ def _ticker_gaps(
         ticker, trades, [d for d, _ in events if d not in have], close_on
     )
     fills = list({id(e[0]): e for e in evidence.values() if e}.values())
-    chosen, off = _fit(fills, events, have)
+    bars = {id(t): _range(range_on, ticker, t.date) for t, _ in fills}
+    chosen, off = _fit(fills, events, have, bars)
     for t, quotient in off:
         # No reading of the splits explains the row's scale. A split's worth
         # away from its day's close — pence booked as pounds, another name
@@ -254,6 +272,7 @@ def _fit(
     fills: list[tuple[Transaction, float]],
     events: list[tuple[str, float]],
     have: dict[str, float],
+    bars: dict[int, tuple[float, float] | None] | None = None,
 ) -> tuple[set[str], list[tuple[Transaction, float]]]:
     """The missing splits the ledger needs, and the fills no reading explains.
 
@@ -272,23 +291,43 @@ def _fit(
     all), and the best one wins; between equals, the shortest, which writes
     the fewest rows and, for a pair that cancels, none — the price path is
     right without it.
+
+    A fill outside the tolerance still counts for a suffix when its day's
+    bar (`bars`, split-adjusted low and high) holds it under that suffix's
+    product and under no other suffix's: a wild day's fill is evidence, and
+    one the bar holds both ways is evidence for neither. Its error is still
+    its distance from the close, so a fill on its close outranks it.
     """
     first = min((t.date for t, _ in fills), default=None)
     missing = [
         (d, r) for d, r in events if d not in have and first is not None and d > first
     ]
     restated = []
+    bars = bars or {}
+    suffixes = [missing[cut:] for cut in range(len(missing), -1, -1)]
+    in_bar: dict[int, set[float]] = {}
     for t, close in fills:
         on_ledger = math.prod(r for d, r in have.items() if d > t.date)
         restated.append((t, t.price / close / on_ledger))
+        if bar := bars.get(id(t)):
+            low, high = bar
+            products = {math.prod(r for d, r in s if d > t.date) for s in suffixes}
+            in_bar[id(t)] = {
+                p
+                for p in products
+                if low * (1 - _RANGE_SLACK)
+                <= t.price / on_ledger / p
+                <= high * (1 + _RANGE_SLACK)
+            }
     best: tuple[int, float, list[tuple[str, float]]] = (-1, 0.0, [])
     explained: set[int] = set()
-    for cut in range(len(missing), -1, -1):
-        suffix = missing[cut:]
+    for suffix in suffixes:
         hits, error = set(), 0.0
         for t, quotient in restated:
             product = math.prod(r for d, r in suffix if d > t.date)
-            if abs(quotient - product) <= _PRICE_TOLERANCE * product:
+            if abs(quotient - product) <= _PRICE_TOLERANCE * product or (
+                in_bar.get(id(t)) == {product}
+            ):
                 hits.add(id(t))
                 error += abs(math.log(quotient / product))
         explained |= hits
@@ -317,6 +356,22 @@ def _close(close_on: CloseLookup, ticker: str, day: str) -> float | None:
         return close_on(ticker, day)
     except Exception:
         return None
+
+
+def _range(
+    range_on: RangeLookup | None, ticker: str, day: str
+) -> tuple[float, float] | None:
+    """The day's split-adjusted (low, high), or None: no lookup, no answer."""
+    if range_on is None:
+        return None
+    try:
+        bar = range_on(ticker, day)
+    except Exception:
+        return None
+    if not bar:
+        return None
+    low, high = (float(x) for x in bar)
+    return (low, high) if 0 < low <= high else None
 
 
 def _held_at(

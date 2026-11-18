@@ -745,6 +745,9 @@ def splits(ticker: str) -> list[tuple[str, float]]:
 # same caller: the missing-split detector (stocks.portfolio.corporate) asks for
 # one day per candidate, and only for a ticker that already has a candidate.
 _close_memo: dict[tuple[str, str], float | None] = {}
+# The same bar's (low, high), kept beside its close: a wild day's fill can sit
+# far from the close and still inside the bar (stocks.portfolio.corporate).
+_range_memo: dict[tuple[str, str], tuple[float, float] | None] = {}
 _close_lock = threading.Lock()
 
 
@@ -785,15 +788,36 @@ def close_on(ticker: str, day: str) -> float | None:
             return None  # Yahoo has no such symbol; not a refusal
         obs.warn("yahoo.close_on_blank", ticker=key[0])
         return _close_fallback(ticker, key[0], day)  # not cached, as above
-    close = None
+    close, bar = None, None
     if "Close" in df:
         series = df["Close"].dropna()
         series = series[series.index.map(lambda ts: str(pd.Timestamp(ts).date()) <= day)]
         if not series.empty:
             close = float(series.iloc[-1])
+            bar = _bar_range(df, series.index[-1])
     with _close_lock:
         _close_memo[key] = close
+        _range_memo[key] = bar
     return close
+
+
+def _bar_range(df: pd.DataFrame, when) -> tuple[float, float] | None:
+    try:
+        low, high = float(df.at[when, "Low"]), float(df.at[when, "High"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (low, high) if 0 < low <= high else None
+
+
+def range_on(ticker: str, day: str) -> tuple[float, float] | None:
+    """The (low, high) of the bar `close_on` read for `day`, split-adjusted.
+
+    Never a request of its own: only what `close_on` already downloaded, so
+    ask it after `close_on` for the same day. None when that close came from
+    the fallback provider or was never asked.
+    """
+    with _close_lock:
+        return _range_memo.get((resolve(ticker), day))
 
 
 def _close_fallback(ticker: str, symbol: str, day: str) -> float | None:

@@ -118,6 +118,7 @@ def repair_splits(db: str) -> None:
             db,
             splits=fetch.splits,
             close_on=fetch.close_on,
+            range_on=fetch.range_on,
             throttled=lambda: (
                 fetch.throttle_remaining() > 0 or fetch.unanswered() > asked
             ),

@@ -588,7 +588,11 @@ def _split_gaps(db, ticker: str) -> list:
     if not any(tx.action == "buy" for tx in rows):
         return []
     return corporate.missing_splits(
-        rows, splits=fetch.splits, close_on=fetch.close_on, source="page"
+        rows,
+        splits=fetch.splits,
+        close_on=fetch.close_on,
+        range_on=fetch.range_on,
+        source="page",
     )
 
 

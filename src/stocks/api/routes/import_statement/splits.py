@@ -130,7 +130,7 @@ def _missing_splits(account) -> list[corporate.MissingSplit]:
     if not rows:
         return []
     return corporate.missing_splits(
-        rows, splits=fetch.splits, close_on=fetch.close_on
+        rows, splits=fetch.splits, close_on=fetch.close_on, range_on=fetch.range_on
     )
 
 
