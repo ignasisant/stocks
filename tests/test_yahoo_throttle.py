@@ -688,3 +688,31 @@ def test_an_unplaced_isin_is_not_sent_to_yahoo(blank_yahoo, monkeypatch):
     assert dividends.fetch_history("US9344231041").payments == ()
     assert blank_yahoo == []
     assert fetch.unanswered() == before
+
+
+def test_range_on_is_the_bar_close_on_read_and_never_a_request(monkeypatch):
+    """The split check judges a wild day's fill against the bar's low and
+    high (portfolio.corporate): the same download as the close, kept beside
+    it, and nothing when the close was never asked."""
+    asked: list[str] = []
+
+    class _Bars:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def history(self, **kwargs):
+            asked.append(self.symbol)
+            index = pd.DatetimeIndex(["2025-10-21", "2025-10-22"])
+            return pd.DataFrame(
+                {"Low": [40.0, 70.0], "High": [50.0, 220.0], "Close": [45.0, 100.0]},
+                index=index,
+            )
+
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch.yf, "Ticker", _Bars)
+    monkeypatch.setattr(fetch, "_close_memo", {})
+    monkeypatch.setattr(fetch, "_range_memo", {})
+    assert fetch.range_on("XYZ", "2025-10-22") is None
+    assert fetch.close_on("XYZ", "2025-10-22") == 100.0
+    assert fetch.range_on("XYZ", "2025-10-22") == (70.0, 220.0)
+    assert asked == ["XYZ"]

@@ -238,11 +238,10 @@ def test_a_volatile_day_is_not_a_price_off_its_market(lines):
 
 
 def test_a_split_the_ledger_holds_is_not_read_as_a_price_off_its_market(lines):
-    """BYND's meme day (prod, every sweep from 2026-11-16): a raw fill at 1.44x
-    the adjusted close over the 1:30 the book already carries reads 0.048 of
-    the close. That is the split plus a wild day's range, not another scale.
-    The broker booked the split a day after Yahoo's, so Yahoo's day still
-    asks for evidence and the ledger's row restates it."""
+    """A raw fill at 1.44x the adjusted close over a 1:30 the book already
+    carries reads 0.048 of the close: the split plus a wild day, not another
+    scale. A split row booked a day after Yahoo's leaves Yahoo's day asking
+    for evidence, and the ledger's row is what restates the fill."""
     ledger = [
         _buy("2025-10-22", 30.0, 5.16, ticker="BYND"),
         _split_row("2026-08-15", 1 / 30, ticker="BYND"),
@@ -270,6 +269,76 @@ def test_a_fill_off_its_market_past_the_ledgers_split_still_says_so(lines):
     )
     [line] = lines
     assert (line["kind"], line["off"]) == ("price_off_market", 3.0)
+
+
+def _ranges(table):
+    """range_on from a {(ticker, day): (low, high)} table, split-adjusted."""
+    return lambda ticker, day: table.get((ticker, day))
+
+
+# A meme day under a later 1:30: the adjusted bar runs 70-220 around a close
+# of 100, and the raw fills sit at 1.9x and 1.43x of close/30, inside the bar
+# once the split is read and nowhere near the close (prod BYND, 2026-11-18).
+WILD_SPLIT = [("2026-08-14", 1 / 30)]
+WILD_CLOSE = _closes({("XYZ", "2025-10-22"): 100.0})
+WILD_RANGE = _ranges({("XYZ", "2025-10-22"): (70.0, 220.0)})
+
+
+@pytest.mark.parametrize(
+    "fills",
+    [
+        [_buy("2025-10-22", 50.0, 6.33, ticker="XYZ"),
+         _sell("2025-10-22", 50.0, 4.77, ticker="XYZ")],
+        [_buy("2025-10-22", 50.0, 6.33, ticker="XYZ"),
+         _sell("2025-10-22", 50.0, 6.33, ticker="XYZ")],
+    ],
+    ids=["sell_last", "buy_price_last"],
+)
+def test_a_round_trip_on_a_wild_day_proves_the_split_by_the_days_range(lines, fills):
+    """Sold out the same day, long before the split: no fill is within 12 %
+    of the close, but each one sits inside the day's bar under the 1:30 and
+    under no other reading. That is the split, and no price off its market."""
+    found = missing_splits(
+        fills, splits=_splits(WILD_SPLIT), close_on=WILD_CLOSE,
+        range_on=WILD_RANGE, source="sweep",
+    )
+    assert [(m.tx.date, m.held_before) for m in found] == [("2026-08-14", 0.0)]
+    assert found[0].ratio == pytest.approx(1 / 30)
+    assert [line["kind"] for line in lines] == ["split_missing"]
+
+
+def test_without_the_days_range_a_wild_day_proves_nothing(lines):
+    fills = [_buy("2025-10-22", 50.0, 6.33, ticker="XYZ"),
+             _sell("2025-10-22", 50.0, 4.77, ticker="XYZ")]
+    assert not missing_splits(fills, splits=_splits(WILD_SPLIT), close_on=WILD_CLOSE)
+
+
+def test_a_fill_inside_the_bar_under_two_readings_proves_neither(lines):
+    """A broker-restated row on a wide day, a 2:1 pending: 1.7x the close is
+    inside the bar as it stands and, halved, inside it too. A held position
+    must not have its shares doubled on that."""
+    ledger = [_buy("2020-01-02", 10.0, 85.0, ticker="XYZ")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2021-01-04", 2.0)]),
+        close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
+        range_on=_ranges({("XYZ", "2020-01-02"): (30.0, 95.0)}),
+    )
+    assert not found
+
+
+def test_a_fill_inside_the_bar_only_as_restated_proposes_nothing(lines):
+    """The same fill on a day whose bar holds it only as it stands: the row
+    is already on today's scale, and nothing is off its market."""
+    ledger = [_buy("2020-01-02", 10.0, 85.0, ticker="XYZ")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2021-01-04", 2.0)]),
+        close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
+        range_on=_ranges({("XYZ", "2020-01-02"): (45.0, 90.0)}),
+    )
+    assert not found
+    assert lines == []
 
 
 def test_the_amazon_row_is_a_split_to_propose_not_a_price_off_its_market(lines):
