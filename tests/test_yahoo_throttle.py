@@ -212,8 +212,8 @@ def _bulk(yf_log, priced: list[str], failures: dict[str, list[str]]):
 
 
 def test_a_disowned_symbol_is_told_apart_from_a_refused_one(monkeypatch, yf_log):
-    # yfinance upper-cases the symbol it reports; the verdict is keyed by the
-    # ticker as the book spells it.
+    # yfinance upper-cases the symbol it reports; the verdict is on the symbol
+    # asked, and the caller reads it back under the code it holds.
     monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"BSD2": "bsd2.de"})
     monkeypatch.setattr(
         fetch.yf,
@@ -248,6 +248,33 @@ def test_a_name_that_prices_again_stops_being_unlisted(monkeypatch, yf_log):
     monkeypatch.setattr(fetch.yf, "download", _bulk(yf_log, ["AAPL", "SIE"], {}))
     fetch.fetch_many(["AAPL", "SIE"])
     assert fetch.unlisted(["SIE"]) == set()
+
+
+def test_a_verdict_on_a_code_does_not_follow_it_to_its_alias(monkeypatch, yf_log):
+    """LendingClub left NYSE LC for Nasdaq HAPN: Yahoo disowned LC, and the
+    week-long verdict was stored under the code. Once an alias maps LC to
+    HAPN the verdict is about a symbol nobody asks for any more; keyed by
+    the code it kept HAPN from being downloaded and LC read at cost (prod
+    2026-11-18, after the alias deployed)."""
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch.yf, "download", _bulk(yf_log, ["AAPL"], {DISOWNED: ["LC"]}))
+    fetch.fetch_many(["AAPL", "LC"])
+    assert fetch.unlisted(["LC"]) == {"LC"}
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"LC": "HAPN"})
+    assert fetch.unlisted(["LC"]) == set()
+    fetch._forget_unlisted_in_memory()  # and after a restart, read off the disk
+    assert fetch.unlisted(["LC"]) == set()
+
+
+def test_a_verdict_on_the_alias_target_holds_for_the_code(monkeypatch, yf_log):
+    """The other way round: what Yahoo disowned is the symbol asked, so a
+    code whose alias Yahoo has no line for stays disowned."""
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"LC": "HAPN"})
+    monkeypatch.setattr(
+        fetch.yf, "download", _bulk(yf_log, ["AAPL"], {DISOWNED: ["HAPN"]}))
+    fetch.fetch_many(["AAPL", "LC"])
+    assert fetch.unlisted(["LC"]) == {"LC"}
+    assert fetch.unlisted(["HAPN"]) == {"HAPN"}
 
 
 def test_the_summary_is_heard_only_by_the_download_that_logged_it(yf_log):

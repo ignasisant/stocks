@@ -278,8 +278,9 @@ class _DownloadFailures(logging.Filter):
 
 logging.getLogger("yfinance").addFilter(_DownloadFailures())
 
-# Tickers (as requested) that the last bulk download asking for them was told
-# Yahoo has no such symbol, with the wall time it said so. One verdict for the
+# Yahoo symbols (as asked, upper-cased: `_verdict_key`) that the last bulk
+# download asking for them was told Yahoo has no such symbol, with the wall
+# time it said so. One verdict for the
 # host, like the breaker: the answer is about the symbol, not about who asked.
 # Rewritten by every download that includes the name, so one that starts
 # pricing leaves on its own.
@@ -337,15 +338,29 @@ def _save_unlisted() -> None:
         storage.persist(UNLISTED_CACHE)
 
 
+def _verdict_key(ticker: str) -> str:
+    """Where the verdict on `ticker` is kept: the symbol it is asked under.
+
+    "No data found" is about the symbol Yahoo was asked, not the broker's
+    code. Keyed by the code, a verdict from before an alias (LC, disowned
+    once LendingClub moved to HAPN) kept the aliased line from being asked
+    for a week after the alias shipped (prod 2026-11-18).
+    """
+    return resolve(ticker).upper()
+
+
 def unlisted(tickers) -> set[str]:
     """Those of `tickers` Yahoo said, within the last week, it has no symbol
     for, plus the retired lines it is never asked about (`retired`)."""
-    tickers = set(tickers)
-    gone = {t for t in tickers if retired(resolve(t))}
+    keys = {t: resolve(t) for t in set(tickers)}
+    gone = {t for t, symbol in keys.items() if retired(symbol)}
     cutoff = time.time() - UNLISTED_TTL_S
     with _unlisted_lock:
         _load_unlisted()
-        return gone | {t for t in tickers if _unlisted.get(t, -1.0) > cutoff}
+        return gone | {
+            t for t, symbol in keys.items()
+            if _unlisted.get(symbol.upper(), -1.0) > cutoff
+        }
 
 
 def retired(symbol: str) -> bool:
@@ -385,7 +400,8 @@ def relisted(ticker: str) -> None:
     does list, and the next download asks that one."""
     with _unlisted_lock:
         _load_unlisted()
-        if _unlisted.pop(ticker, None) is not None:
+        dropped = [_unlisted.pop(k, None) for k in {ticker.upper(), _verdict_key(ticker)}]
+        if any(at is not None for at in dropped):
             _save_unlisted()
 
 
@@ -405,7 +421,7 @@ def mark_unlisted(*tickers: str) -> None:
     now = time.time()
     with _unlisted_lock:
         _load_unlisted()
-        _unlisted.update(dict.fromkeys(tickers, now))
+        _unlisted.update(dict.fromkeys(map(_verdict_key, tickers), now))
         _save_unlisted()
 
 
@@ -439,19 +455,20 @@ def _note_failures(
         _load_unlisted()
         changed = False
         for t in tickers:
-            why = failures.get(symbol_of[t].upper(), "")
+            key = symbol_of[t].upper()
+            why = failures.get(key, "")
             if _judged_on_usd(t):
                 continue
             if t not in priced and why.lower().startswith(UNLISTED_REASON):
-                said = _unlisted.get(t, -1.0)
+                said = _unlisted.get(key, -1.0)
                 if said <= now - UNLISTED_TTL_S:
                     newly.append(t)
                 # Re-stamped at most daily: the file is rewritten and uploaded
                 # when the verdict changes, not on every download repeating it.
                 if said <= now - 86400.0:
-                    _unlisted[t] = now
+                    _unlisted[key] = now
                     changed = True
-            elif _unlisted.pop(t, None) is not None:
+            elif _unlisted.pop(key, None) is not None:
                 changed = True
         if changed:
             _save_unlisted()
