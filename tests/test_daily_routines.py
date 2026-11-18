@@ -850,3 +850,25 @@ def test_the_card_prompt_forbids_relative_days():
     from stocks.chat.daily.instructions import _WHEN
 
     assert "'tomorrow'" in _WHEN and "weekday and date" in _WHEN
+
+
+def test_the_filed_thread_bolds_each_line_s_tickers_so_the_chat_links_them():
+    from stocks.chat.daily.card import DailyAction
+
+    card = DailyAction(
+        day=TODAY, headline="Book -1.39%", bullets=[], focus=[], as_of="",
+        source="computed", lang="en",
+        items=[
+            {"key": "a", "kind": "entry_hit", "tickers": ["FICO"],
+             "line": "FICO is in your buy zone: forward PER 15.00 or less."},
+            {"key": "b", "kind": "earnings", "tickers": ["BRK.B", "BRK"],
+             "line": "BRK.B reports in 2 days; BRK too. Not BRKX."},
+        ],
+        sections=[{"title": "", "asks": [], "chart": None, "lines": [
+            {"key": "c", "kind": "", "tickers": ["MNDY"],
+             "line": "MNDY is 1.5% from your exit rule (MNDY.)"}]}],
+    )
+    text = daily.thread_text(card)
+    assert "- **FICO** is in your buy zone: forward PER 15.00" in text
+    assert "- **BRK.B** reports in 2 days; **BRK** too. Not BRKX." in text
+    assert "- **MNDY** is 1.5% from your exit rule (**MNDY**.)" in text

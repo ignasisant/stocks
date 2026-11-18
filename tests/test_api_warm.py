@@ -413,8 +413,13 @@ def test_a_book_nobody_opened_lately_still_gets_its_splits_swept(monkeypatch):
     monkeypatch.setattr(warm, "warm_account", account)
     monkeypatch.setattr(warm, "warm_more", lambda db, w, b: order.append(f"more:{db}"))
     monkeypatch.setattr(warm, "repair_splits", lambda db: order.append(f"splits:{db}"))
+    # And the app's own repairs: a bare BTC on a dormant book stayed priced as
+    # a US share for as long as nobody counted as recent (prod 2026-11-17).
+    monkeypatch.setattr(warm, "heal_book", lambda db: order.append(f"heal:{db}"))
     assert warm.warm_recent(today=TODAY) == 1
-    assert order == ["home:today.db", "more:today.db", "splits:dormant.db"]
+    assert order == [
+        "home:today.db", "more:today.db", "splits:dormant.db", "heal:dormant.db"
+    ]
     order.clear()
     # Last in line: the readers' own pages come first.
     warm.warm_recent(today=TODAY, budget_s=40)

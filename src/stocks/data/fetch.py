@@ -396,6 +396,8 @@ def clear_unlisted() -> None:
         _unlisted.clear()
         _unlisted_loaded = True
         UNLISTED_CACHE.unlink(missing_ok=True)
+    with _probed_lock:
+        _probed.clear()
 
 
 def mark_unlisted(*tickers: str) -> None:
@@ -627,6 +629,44 @@ def unanswered() -> int:
         return _unanswered
 
 
+# When each symbol was last probed after a blank (`_disowned`): a Yahoo that
+# blanks every name at once is weather, and a second request per name per
+# tick would double what it is refusing.
+_probed: dict[str, float] = {}
+_probed_lock = threading.Lock()
+PROBE_EVERY_S = 86400.0
+
+
+def _disowned(ticker: str, symbol: str) -> bool:
+    """After a blank one-symbol lookup: whether Yahoo says it has no such
+    symbol at all, asked the way a bulk download asks (`_note_failures`
+    records the verdict in Yahoo's own words).
+
+    Only a price download ever stamped a name `unlisted`, and a name sold out
+    is in none: ORGN, TWTR and eight bare German codes were asked for their
+    splits on every warm tick for weeks (prod 2026-11-04 → 11-17), each blank
+    holding the sweep's stamp back, so the whole book was asked again too.
+    Once a day per symbol and process (a cold start may ask again; the
+    verdict itself is on disk for a week). A throttled moment does not use
+    the day's probe up; a refusal leaves it unanswered, as before.
+    """
+    if unlisted({ticker, symbol}):
+        return True
+    if throttle_remaining():
+        return False
+    now = time.time()
+    with _probed_lock:
+        if _probed.get(symbol, -1.0) > now - PROBE_EVERY_S:
+            return False
+        _probed[symbol] = now
+    try:
+        _errand([ticker], "5d", "1d", False, "blank_probe")
+    except Exception as exc:  # noqa: BLE001 — unknown, not a verdict
+        obs.warn("yahoo.blank_probe_failed", ticker=symbol, error_type=type(exc).__name__)
+        return False
+    return bool(unlisted({ticker, symbol}))
+
+
 def splits(ticker: str) -> list[tuple[str, float]]:
     """[(YYYY-MM-DD, ratio), …] for `ticker`, oldest first; [] when unknown.
 
@@ -667,6 +707,8 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         obs.warn("yahoo.splits_failed", ticker=key, error=str(exc))
         return []
     if bars is None or bars.empty:
+        if _disowned(ticker, key):
+            return []  # an answer: Yahoo has no such symbol, so no splits
         _not_answered()
         obs.warn("yahoo.splits_blank", ticker=key)
         return []  # not cached: a blank is not an answer
@@ -702,7 +744,7 @@ def close_on(ticker: str, day: str) -> float | None:
     with _close_lock:
         if key in _close_memo:
             return _close_memo[key]
-    if unaskable(key[0]):
+    if unaskable(key[0]) or unlisted({ticker, key[0]}):
         return None
     if throttle_remaining():
         return _close_fallback(ticker, key[0], day)
@@ -722,6 +764,8 @@ def close_on(ticker: str, day: str) -> float | None:
         obs.warn("yahoo.close_on_failed", ticker=key[0], error=str(exc))
         return _close_fallback(ticker, key[0], day)
     if df is None or df.empty:
+        if _disowned(ticker, key[0]):
+            return None  # Yahoo has no such symbol; not a refusal
         obs.warn("yahoo.close_on_blank", ticker=key[0])
         return _close_fallback(ticker, key[0], day)  # not cached, as above
     close = None

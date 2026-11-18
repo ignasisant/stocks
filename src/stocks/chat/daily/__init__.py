@@ -52,6 +52,7 @@ stocks/views/briefing.py is the layer over it.
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -417,18 +418,34 @@ def thread_title(day: str, lang: str) -> str:
     )
 
 
+def _bold_tickers(item: dict) -> str:
+    """A card line as a bullet, its tickers in bold: the chat draws a bold
+    ticker it knows as its mark and a link to its page (the house rule for
+    every ticker on screen), and a plain one as text. Only the line's own
+    `tickers`, so a ticker-shaped word in the copy ("PER") stays a word."""
+    line = str(item.get("line") or "")
+    if "**" not in line:
+        for ticker in sorted({str(t) for t in item.get("tickers") or [] if t},
+                             key=len, reverse=True):
+            line = re.sub(
+                rf"(?<![\w.*-]){re.escape(ticker)}(?![\w*]|[.-]\w)",
+                f"**{ticker}**", line,
+            )
+    return f"- {line}"
+
+
 def thread_text(action: DailyAction) -> str:
     """The card as the chat turn it is filed as: headline, its lines, then
     each section of the brief under its title — so a follow-up in the thread
     can build on it."""
-    lines = [f"- {i['line']}" for i in action.items] if action.sections else [
-        f"- {e['line']}" for e in action.entries]
+    lines = [_bold_tickers(i) for i in (
+        action.items if action.sections else action.entries)]
     for sec in action.sections:
         if lines:
             lines.append("")
         if sec.get("title"):
             lines.append(f"**{sec['title']}**")
-        lines += [f"- {ln['line']}" for ln in sec["lines"]]
+        lines += [_bold_tickers(ln) for ln in sec["lines"]]
     head = action.headline.strip()
     return "\n".join([f"**{head}**", "", *lines] if head else lines)
 

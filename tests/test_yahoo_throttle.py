@@ -493,6 +493,9 @@ def blank_yahoo(monkeypatch):
     _BlankYahoo.asked = []
     monkeypatch.setattr(fetch, "ticker_aliases", dict)
     monkeypatch.setattr(fetch.yf, "Ticker", _BlankYahoo)
+    # The probe after a blank (`_disowned`) is a bulk download; this one says
+    # nothing, as a Yahoo that is not answering says nothing.
+    monkeypatch.setattr(fetch.yf, "download", lambda symbols, **kw: pd.DataFrame())
     monkeypatch.setattr(fetch, "_splits_memo", {})
     monkeypatch.setattr(fetch, "_close_memo", {})
     return _BlankYahoo.asked
@@ -518,6 +521,98 @@ def test_a_disowned_name_is_not_asked_for_its_splits(blank_yahoo, monkeypatch):
     assert fetch.splits("ORGN") == []
     assert blank_yahoo == []
     assert fetch.unanswered() == before
+
+
+def _disowning(yf_log, probed: list):
+    """A `yf.download` that prices nothing and says, in Yahoo's own words,
+    it has no such symbol."""
+
+    def download(symbols, **kwargs):
+        probed.append(symbols)
+        yf_log.error("\n%.f Failed downloads:", len(symbols))
+        yf_log.error(f"{[s.upper() for s in symbols]}: " + DISOWNED)
+        return pd.DataFrame()
+
+    return download
+
+
+def test_a_blank_yahoo_disowns_is_an_answer(blank_yahoo, monkeypatch, yf_log):
+    """Prod 2026-11-04 → 11-17: ORGN, TWTR and bare German codes sold out
+    long ago are in no price download, so nothing ever marked them unlisted.
+    Each blank was counted, the sweep never stamped those books, and every
+    warm tick asked Yahoo for all their names again. Asked the way a bulk
+    download asks, Yahoo says it has no such symbol: that is the answer."""
+    probed: list = []
+    monkeypatch.setattr(fetch.yf, "download", _disowning(yf_log, probed))
+    before = fetch.unanswered()
+    assert fetch.splits("ORGN") == []
+    assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+    assert fetch.splits("ORGN") == []
+    assert blank_yahoo == ["ORGN"]  # the second call never reaches Yahoo
+    assert probed == [["ORGN"]]
+    assert fetch.close_on("ORGN", "2026-08-04") is None
+    assert blank_yahoo == ["ORGN"]
+    assert fetch.unanswered() == before
+
+
+def test_a_disowned_bare_code_leaves_its_line_alone(blank_yahoo, monkeypatch, yf_log):
+    """The verdict is on the code as asked: a bare IUSA Yahoo disowns says
+    nothing about IUSA.DE, the line a EUR book holds it on."""
+    monkeypatch.setattr(fetch.yf, "download", _disowning(yf_log, []))
+    assert fetch.splits("IUSA") == []
+    assert fetch.unlisted(["IUSA", "IUSA.DE"]) == {"IUSA"}
+
+
+def test_a_throttled_moment_does_not_use_the_probe_up(blank_yahoo, monkeypatch, yf_log):
+    probed: list = []
+    monkeypatch.setattr(fetch.yf, "download", _disowning(yf_log, probed))
+    # Open when the blank lands (between the bars and the probe), then shut.
+    waits = iter([0.0, 30.0])
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: next(waits, 0.0))
+    before = fetch.unanswered()
+    assert fetch.splits("ORGN") == []
+    assert probed == []
+    assert fetch.unanswered() == before + 1
+    assert fetch.splits("ORGN") == []
+    assert probed == [["ORGN"]]
+    assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+
+
+def test_a_probe_that_fails_is_not_a_verdict(blank_yahoo, monkeypatch):
+    def broken(symbols, **kwargs):
+        raise RuntimeError("socket closed")
+
+    monkeypatch.setattr(fetch.yf, "download", broken)
+    before = fetch.unanswered()
+    assert fetch.splits("ORGN") == []
+    assert fetch.unlisted(["ORGN"]) == set()
+    assert fetch.unanswered() == before + 1
+
+
+def test_a_disowned_close_is_an_answer(blank_yahoo, monkeypatch, yf_log):
+    probed: list = []
+    monkeypatch.setattr(fetch.yf, "download", _disowning(yf_log, probed))
+    before = fetch.unanswered()
+    assert fetch.close_on("MIMI", "2026-08-04") is None
+    assert fetch.unlisted(["MIMI"]) == {"MIMI"}
+    assert fetch.unanswered() == before
+
+
+def test_a_silent_blank_is_probed_once_a_day(blank_yahoo, monkeypatch):
+    """A Yahoo blanking every name is weather: the probe is not repeated on
+    each lookup, and the blank still holds the sweep's stamp back."""
+    probed: list = []
+
+    def silent(symbols, **kwargs):
+        probed.append(symbols)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(fetch.yf, "download", silent)
+    before = fetch.unanswered()
+    for _ in range(3):
+        assert fetch.splits("BYND") == []
+    assert probed == [["BYND"]]
+    assert fetch.unanswered() == before + 3
 
 
 def test_a_blank_close_is_asked_again_and_counted(blank_yahoo):

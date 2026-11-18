@@ -36,6 +36,27 @@ def test_reference_maps_fall_back_to_example(monkeypatch, tmp_path):
     assert config.ticker_aliases(tmp_path / "other.yaml") == {}
 
 
+def test_a_personal_watchlist_keeps_the_shipped_aliases(monkeypatch, tmp_path):
+    """Prod restores the owner's watchlist.yaml, which read alone hid every
+    alias shipped after it was written (LC -> HAPN, prod 2026-11-17). The
+    example's entries apply under it; the personal file wins a code both name."""
+    from stocks import config
+
+    personal = tmp_path / "watchlist.yaml"
+    example = tmp_path / "watchlist.example.yaml"
+    personal.write_text("aliases:\n  RCF: TEP.MC\ntv:\n  HMI: EURONEXT:RMS@france\n")
+    example.write_text(
+        "aliases:\n  RCF: TEP.PA\n  LC: HAPN\ntv:\n  RCF: EURONEXT:TEP@france\n"
+    )
+    monkeypatch.setattr(config, "WATCHLIST_FILE", personal)
+    monkeypatch.setattr(config, "EXAMPLE_WATCHLIST_FILE", example)
+    assert config.ticker_aliases(personal) == {"RCF": "TEP.MC", "LC": "HAPN"}
+    assert config.tv_symbols(personal) == {
+        "RCF": "EURONEXT:TEP@france",
+        "HMI": "EURONEXT:RMS@france",
+    }
+
+
 def test_a_listing_that_moved_to_a_new_symbol_resolves_to_it():
     """A rename Yahoo files under the new symbol, history and all, leaves the
     old one blank: LendingClub's LC became Happen's HAPN (2026-06-22, one
