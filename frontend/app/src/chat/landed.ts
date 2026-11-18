@@ -45,7 +45,7 @@ export function landed(
 ): Landed[] {
   const out: Landed[] = [];
   const listed = new Set(list.map((c) => c.id));
-  for (const id of [...watch.keys()]) if (!listed.has(id)) watch.delete(id);
+  for (const id of watch.keys()) if (!listed.has(id)) watch.delete(id);
   for (const conv of list) {
     if (conv.id === active) {
       watch.delete(conv.id);

@@ -109,7 +109,8 @@ jobs:
   # pushed without `npm run build` therefore ships the *previous* bundle and
   # every check here stays green — so this job rebuilds it and fails if what is
   # committed is not what the sources produce. `npm run build` is also what
-  # runs prettier, tsc and vitest, so the front end's own gates ride along.
+  # runs prettier, oxlint, tsc and vitest, so the front end's own gates ride
+  # along.
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -124,9 +125,8 @@ jobs:
           cache-dependency-path: frontend/app/package-lock.json
       - run: npm --prefix frontend/app ci
       - run: npm --prefix frontend/app run build
-      # Dead exports and unreachable files. The front end has no linter
-      # beyond prettier and tsc, and neither of those sees a helper that
-      # nothing imports any more.
+      # Dead exports and unreachable files. Neither oxlint nor tsc sees a
+      # helper that nothing imports any more.
       - run: npm --prefix frontend/app run knip
       - name: the committed bundle is the one these sources build
         # `git status`, not `git diff`: a rebuild that *adds* a chunk file
