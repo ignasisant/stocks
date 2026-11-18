@@ -254,6 +254,31 @@ def test_a_model_still_thinking_past_the_deadline_gives_way(monkeypatch):
     assert llm._slow(_FreeBackend("openrouter", "k", "model-openrouter", None))
 
 
+def test_a_caller_nobody_watches_gives_a_slow_model_longer(monkeypatch):
+    # prod 2026-11-17/18: the scheduled cards groq's cap sent to OpenRouter
+    # were cut at 20 s each, while its free models answer at a median 27 s,
+    # and the chain ran dry every night (llm.free.exhausted).
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 30, then=("card",)), _ok("groq", ["x"])])
+
+    with llm.patient():
+        assert "".join(llm._free_stream("", "", "sys", [])) == "card"
+    assert not llm._free_slow
+
+
+def test_a_patient_caller_still_moves_past_a_model_that_never_writes(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(llm, "_clock", clock)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _thinking("openrouter", clock, 300), _ok("groq", ["fast"])])
+
+    with llm.patient():
+        assert "".join(llm._free_stream("", "", "sys", [])) == "fast"
+    assert clock.now == pytest.approx(llm._PATIENT_FIRST_TEXT_S + 1)
+
+
 def test_thinking_frames_never_reach_the_reader(monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(llm, "_clock", clock)
