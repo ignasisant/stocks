@@ -552,24 +552,78 @@ def test_a_backend_that_dies_before_its_first_word_falls_through(
     assert end["result"]["provider"] == "alive"
 
 
-def test_a_backend_that_dies_mid_sentence_keeps_what_it_said(
+def test_a_backend_that_dies_mid_sentence_is_answered_again_whole(
     client, account, signed_in, monkeypatch
 ):
-    """No failover once words are on screen: replacing them with another
-    model's answer mid-paragraph reads as corruption, and the half-answer is
-    still worth keeping."""
+    """Prod 2026-11-18: Gemini's 503 after one line left "UnitedHealth (UNH)
+    cotiza a 356,59 USD" and "type continue". The stub is withdrawn and the
+    next backend writes the answer from the start — never spliced onto it,
+    which mid-paragraph reads as corruption."""
     half = FakeProvider(chunks=("Los dividendos", " se declaran"), fail_after=2)
-    other = FakeProvider(chunks=("otra cosa",), pid="other")
+    other = FakeProvider(chunks=("Los dividendos se pagan", " cada trimestre."),
+                         pid="other")
     patch_engine(
         monkeypatch, "attempts",
         lambda prefs: [(half, "k", "fake-1"), (other, "k", "fake-1")],
     )
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
+    stream = events(signed_in.post("/v1/chat/runs", json=run("hola")).text)
+    end = finished(stream)
+    assert end["result"]["text"] == "Los dividendos se pagan cada trimestre."
+    assert end["result"]["provider"] == "other"
+    names = [e.get("name") or e.get("stepName") for e in stream
+             if e["type"] in ("CUSTOM", "STEP_STARTED")]
+    # Withdrawn, said so while the screen is empty, then the new answer's meta.
+    restart = names.index("chat.restart")
+    assert names[restart + 1] == "retrying"
+    assert names.index("chat.meta", restart) > restart
+    said = [e["delta"] for e in stream if e["type"] == "TEXT_MESSAGE_CONTENT"]
+    assert "".join(said[said.index(" se declaran") + 1:]) == end["result"]["text"]
+
+
+def test_a_chain_of_one_that_dies_mid_sentence_is_asked_once_more(
+    client, account, signed_in, monkeypatch
+):
+    """A keyless account's whole chain is the free one: the model that died
+    is asked again, once, rather than leaving "type continue"."""
+
+    class Flaky(FakeProvider):
+        def __init__(self):
+            super().__init__(chunks=("UNH cotiza", " a 356 USD."))
+            self.asked = 0
+
+        def stream(self, api_key, model, system, messages):
+            self.asked += 1
+            if self.asked == 1:
+                yield "UNH cotiza"
+                raise RuntimeError("503 high demand")
+            yield from super().stream(api_key, model, system, messages)
+
+    flaky = Flaky()
+    patch_engine(monkeypatch, "attempts", lambda prefs: [(flaky, "k", "fake-1")])
+    monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     end = finished(events(signed_in.post("/v1/chat/runs", json=run("hola")).text))
-    # What it said is kept, then marked as cut so the reader can ask to go on.
-    assert end["result"]["text"].startswith("Los dividendos se declaran")
-    assert "continúa" in end["result"]["text"] or "continue" in end["result"]["text"]
-    assert end["result"]["provider"] != "other"
+    assert end["result"]["text"] == "UNH cotiza a 356 USD."
+    assert flaky.asked == 2
+
+
+def test_a_backend_that_dies_mid_sentence_with_none_left_keeps_what_it_said(
+    client, account, signed_in, monkeypatch
+):
+    """Nobody to write it again: the half answer, marked as cut, beats a
+    refusal — whether the last backend died mid-sentence or said nothing."""
+    half = FakeProvider(chunks=("Los dividendos", " se declaran"), fail_after=2)
+    mute = FakeProvider(chunks=("x",), fail_after=0, pid="mute")
+    for chain in ([half], [half, mute]):
+        patch_engine(monkeypatch, "attempts",
+                     lambda prefs, chain=chain: [(p, "k", "fake-1") for p in chain])
+        monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
+        end = finished(events(signed_in.post("/v1/chat/runs",
+                                             json=run("hola")).text))
+        text = end["result"]["text"]
+        assert text.startswith("Los dividendos se declaran")
+        assert "continúa" in text or "continue" in text
+        assert end["result"]["provider"] == "fake"
 
 
 def test_an_exhausted_chain_still_ends_the_stream(

@@ -448,6 +448,50 @@ describe("the events it reads", () => {
   });
 });
 
+describe("an answer written again", () => {
+  it("withdraws the words of a model that died mid-answer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stream([
+          { type: "RUN_STARTED", threadId: "c", runId: "r" },
+          { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+          { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "UNH cotiza" },
+          { type: "CUSTOM", name: "chat.restart", value: {} },
+          { type: "STEP_STARTED", stepName: "retrying" },
+          {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: "m1",
+            delta: "UNH cotiza a 356 USD.",
+          },
+          { type: "TEXT_MESSAGE_END", messageId: "m1" },
+          { type: "RUN_FINISHED", result: { text: "UNH cotiza a 356 USD." } },
+        ]),
+      ),
+    );
+    const order: string[] = [];
+    const done = await run(
+      runInput({ message: "UNH?" }, {}),
+      () => {},
+      (chunk) => order.push(`text:${chunk}`),
+      (phase) => order.push(`phase:${phase}`),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => order.push("restart"),
+    );
+    expect(order).toEqual([
+      "text:UNH cotiza",
+      "restart",
+      "phase:retrying",
+      "text:UNH cotiza a 356 USD.",
+    ]);
+    expect(done.text).toBe("UNH cotiza a 356 USD.");
+  });
+});
+
 describe("a run followed again", () => {
   it("replays it from the server's log, by its id", async () => {
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>

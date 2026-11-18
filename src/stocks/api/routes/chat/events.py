@@ -285,6 +285,12 @@ def _events(
                 yield from argued(payload)
             elif kind == "text":
                 yield from words(shown(str(payload)))
+            elif kind == "restart":
+                # The provider died mid-answer and the next one writes it again
+                # whole: the client drops the words streamed so far.
+                for gate in gates:
+                    gate.reset()
+                yield _frame(CustomEvent(name="chat.restart", value={}))
             elif kind == "meta":
                 assert isinstance(payload, dict)
                 yield from close_step()

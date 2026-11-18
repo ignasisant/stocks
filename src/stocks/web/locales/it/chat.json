@@ -240,6 +240,7 @@
   "chat.work_gathering": "Raccolgo il contesto",
   "chat.work_searching": "Cerco sul web",
   "chat.work_writing": "Scrivo",
+  "chat.work_retrying": "Si è interrotta — rispondo di nuovo",
   "chat.work_reading": "Leggo {filename}",
   "chat.push_offer": "Vuoi una notifica quando la risposta è pronta, anche se esci dall'app?",
   "chat.push_offer_yes": "Avvisami",
