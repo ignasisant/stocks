@@ -186,6 +186,12 @@ class MarkerFilter:
             out, self._held = held, ""
         return out
 
+    def reset(self) -> None:
+        """The answer is being written again: forget what the withdrawn one
+        held back and the markers it carried."""
+        self.found.clear()
+        self._held = ""
+
     def close(self) -> str:
         """The stream ended: whatever was held, minus any marker in it."""
         held, self._held = self._held, ""

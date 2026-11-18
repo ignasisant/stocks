@@ -240,6 +240,7 @@
   "chat.work_gathering": "Gathering context",
   "chat.work_searching": "Searching the web",
   "chat.work_writing": "Writing",
+  "chat.work_retrying": "Cut off — answering again",
   "chat.work_reading": "Reading {filename}",
   "chat.push_offer": "Get notified when the answer is ready, even if you leave the app?",
   "chat.push_offer_yes": "Notify me",

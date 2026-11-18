@@ -536,6 +536,8 @@ def read_run(events: Iterable[dict], *, started: float | None = None) -> Answer:
             if out.first_s is None:
                 out.first_s = time.monotonic() - t0
             parts.append(ev.get("delta") or "")
+        elif kind == "CUSTOM" and ev.get("name") == "chat.restart":
+            parts.clear()  # the words so far were withdrawn, written again
         elif kind == "TOOL_CALL_START":
             cid = ev.get("toolCallId") or ""
             pending[cid] = Call(ev.get("toolCallName") or "", {})

@@ -1464,10 +1464,13 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     `answer()` would have returned, including its error key.
 
     A provider that dies *before* its first chunk falls through to the next
-    candidate, exactly as `answer()` does. One that dies *after* does not: the
-    reader has already seen those words, and swapping in another model's
-    answer mid-paragraph reads as corruption. What arrived is kept and stored,
-    so the thread does not lose it.
+    candidate, exactly as `answer()` does. One that dies *after* is withdrawn
+    whole — `("restart", None)`, then `("phase", "retrying")` — and the next
+    candidate writes the answer again from the start: never spliced onto the
+    stub, which mid-paragraph reads as corruption, and never left for the
+    reader to type "continue" under; the last candidate is asked once more
+    before that. Only when nobody writes it again is what arrived kept,
+    closed and marked as cut, so the thread does not lose it.
 
     `thread`, `depth`, `brief`, `screenshots` and `documents` are
     `prepare`'s: the conversation the answer is stored in, how far its
@@ -1586,6 +1589,11 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
     missed: list[str] = []  # for `llm.byok_to_free`
+    # The longest answer a provider died in the middle of, withdrawn for the
+    # next one to write whole: what the reader gets, marked as cut, if no
+    # other provider answers at all.
+    stub: tuple[Provider, str, str, str] | None = None
+    asked_again = False
     while pending:
         provider, key, model = pending.pop(0)
         model = model or provider.default_model
@@ -1643,6 +1651,30 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 if not _light(turn, provider, model):
                     pending[:0] = _busy_siblings(exc, provider, key, tried)
                 continue
+            # The stream died mid-answer (prod 2026-11-18: Gemini's 503 "high
+            # demand" after one line). With another model still to ask, the
+            # stub is withdrawn and the answer written again whole, rather
+            # than left for the reader to type "continue" under.
+            if not _light(turn, provider, model):
+                pending[:0] = _busy_siblings(exc, provider, key, tried)
+            if not pending and not asked_again:
+                # The last one asked: a keyless account's whole chain is the
+                # free one. Asked once more — the spike is usually gone.
+                asked_again = True
+                pending.append((provider, key, model))
+            if pending:
+                said = "".join(parts).strip()
+                if stub is None or len(said) > len(stub[3]):
+                    stub = (provider, key, model, said)
+                missed.append(f"{provider.id}:{type(exc).__name__}")
+                _refund(prefs, prefs_path, provider, turn.units)
+                if checkpoint is not None:
+                    checkpoint.charged("")
+                obs.warn("chat.answer_restarted", provider=provider.id,
+                         model=model, chars=len(said))
+                yield ("restart", None)
+                yield ("phase", "retrying")
+                continue
             cut = True  # the stream died mid-answer: what arrived is a stub
         if held:
             # The whole reply stayed held: a written call and nothing else is
@@ -1676,4 +1708,18 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                                    chat_path=chat_path, polish=polish))
             return
 
+    if stub is not None:
+        # Nobody wrote it again: the half answer beats a refusal, as before.
+        provider, key, model, text = stub
+        yield ("restart", None)
+        yield ("meta", {"provider": provider.id, "model": model,
+                        "skills": list(turn.skills),
+                        "sources": list(turn.sources)})
+        text = close_markdown(text) + "\n\n" + translate(
+            "chat.cut_off", turn.lang or "en")
+        yield ("text", text)
+        yield ("done", _record(turn, text, provider, model, key, prefs=prefs,
+                               prefs_path=prefs_path, chat_path=chat_path,
+                               polish=polish))
+        return
     yield ("done", _exhausted(prefs, turn.attempts, capped, tuple(turn.learned)))
