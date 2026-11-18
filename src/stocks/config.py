@@ -209,17 +209,26 @@ def _yaml(path: Path) -> dict:
     return {} if key is None else _yaml_cached(path, key)
 
 
-def _reference_raw(path: Path) -> dict:
-    """Raw watchlist YAML for the global reference maps (aliases/tv).
+def _reference_map(path: Path, key: str) -> dict[str, str]:
+    """One of the global reference maps (`aliases`, `tv`), code -> value.
 
-    The default watchlist.yaml is git-ignored, so fresh checkouts and deploys
-    don't have it; fall back to the tracked example there so broker-code
-    resolution works before the personal file exists. Explicit paths (tests,
-    per-user files) never fall back.
+    The default watchlist.yaml is git-ignored, and prod restores the owner's
+    from the bucket, so the tracked example's entries are read first and the
+    personal file's laid over them, its own answer winning a code both name.
+    Read alone, the personal file hid every alias that shipped after it was
+    first written: LC -> HAPN was deployed on 2026-11-16 and prod still asked
+    for LC the next day. Explicit paths (tests, per-user files) are read alone.
     """
-    if not path.exists() and path == WATCHLIST_FILE:
-        path = EXAMPLE_WATCHLIST_FILE
-    return _yaml(path)
+    files = [path]
+    if path == WATCHLIST_FILE:
+        files = [EXAMPLE_WATCHLIST_FILE, path]
+    out: dict[str, str] = {}
+    for f in files:
+        out.update(
+            (str(code).upper(), str(value))
+            for code, value in (_yaml(f).get(key) or {}).items()
+        )
+    return out
 
 
 def ticker_aliases(path: Path = WATCHLIST_FILE) -> dict[str, str]:
@@ -229,11 +238,7 @@ def ticker_aliases(path: Path = WATCHLIST_FILE) -> dict[str, str]:
     doesn't know; the ledger and watchlist keep the broker code and every
     yfinance lookup resolves through this map (stocks.data.fetch.resolve).
     """
-    raw = _reference_raw(path)
-    return {
-        str(code).upper(): str(symbol)
-        for code, symbol in (raw.get("aliases") or {}).items()
-    }
+    return _reference_map(path, "aliases")
 
 
 def tv_symbols(path: Path = WATCHLIST_FILE) -> dict[str, str]:
@@ -247,11 +252,7 @@ def tv_symbols(path: Path = WATCHLIST_FILE) -> dict[str, str]:
     stocks.data.tradingview.candidates. Empty dict when the file or key is
     absent, so TradingView support is entirely opt-in.
     """
-    raw = _reference_raw(path)
-    return {
-        str(code).upper(): str(spec)
-        for code, spec in (raw.get("tv") or {}).items()
-    }
+    return _reference_map(path, "tv")
 
 
 def load_watchlist(path: Path = WATCHLIST_FILE) -> list[Holding]:

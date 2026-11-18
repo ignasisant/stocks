@@ -338,13 +338,17 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
     # and the alerts price it every day, and a split it lacks is wrong in each
     # (a dormant book's BYND 1:30, triage 2026-11-03). Last and under the same
     # budget; the sweep's stamp makes an unchanged book a file read, and the
-    # rest one Yahoo round a week.
+    # rest one Yahoo round a week. The app's own repairs too: each is written
+    # once and marked, so a healed book costs a table read, and a bare BTC
+    # left on a dormant book stayed a US share's price for a week after its
+    # repair shipped (prod 2026-11-17).
     swept = 0
     dormant = [u for u in users if u not in recent]
     for i, user in enumerate(dormant):
         if spent(swept, len(dormant) - i, "splits"):
             break
         repair_splits(str(user.db))
+        heal_book(str(user.db))
         swept += 1
     # Previews nobody committed: the warm is the one thing that runs on a
     # clock while Cloud Run sleeps between requests.
