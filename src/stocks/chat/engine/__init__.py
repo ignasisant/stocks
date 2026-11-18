@@ -887,7 +887,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             debate.wants(message) or (asked_for is not None and asked_for.debate)):
         say("debating")
         sides = debate.run(provider, key, msgs, lang, on_event=on_subagent,
-                           timeout=min(timeout_s, debate.TIMEOUT))
+                           timeout=min(timeout_s, debate.TIMEOUT),
+                           drop=asked_for.shape if asked_for is not None else "")
         kept_sides = debate.recorded(sides)
         if sides:
             msgs[-1]["content"] += debate.brief(sides)

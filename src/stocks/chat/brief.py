@@ -473,6 +473,9 @@ class Brief:
     facts: Facts
     skills: list[str] = field(default_factory=list)
     text: str = ""
+    # The answer's format, as it sits inside `text`: cut from what the debate's
+    # sides read (`debate.run`'s `drop`), since writing it is not their job.
+    shape: str = ""
     # Both sides argued before the answer (`chat.debate`): a verdict and a
     # bear case are the questions a debate exists for.
     debate: bool = False
@@ -549,21 +552,24 @@ def build(angle: str, ticker: str, *, watchlist: Path, db: Path,
                      "research shows it.")
     if f.summary:
         lines.append(f"Profile (Yahoo): {_clip(f.summary, 400)}")
+    shape = ""
     if company:
         sections, words = _SECTIONS[angle]
         holds = held.startswith("The user holds")
         sections = sections.format(book=_BOOK_HELD if holds else _BOOK_NEW,
                                    kill=_KILL_HELD if holds else _KILL_NEW)
-        lines.append(f"Answer in this structure, about {words} words in all:\n"
-                     f"{sections}")
-    lines.append(_RULES if company else
-                 "Label every figure as reported, consensus or your estimate.")
+        shape = (f"Answer in this structure, about {words} words in all:\n"
+                 f"{sections}\n{_RULES}")
+        lines.append(shape)
+    else:
+        lines.append("Label every figure as reported, consensus or your estimate.")
     return Brief(
         angle=angle,
         ticker=ticker,
         facts=f,
         skills=pick_skills(angle, f, style, recent, dossier),
         text="\n\n" + "\n".join(lines),
+        shape=shape,
         debate=company and angle in ("full", "bear"),
         deep=angle == "full",
         dossier=dossier,

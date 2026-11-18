@@ -10,10 +10,19 @@ which is stronger rather than to pick the one the question hoped for.
 
 Each side is an AG-UI subagent: its run is announced, its words stream under
 its own id, and it finishes or fails on its own without taking the answer
-with it. A side that fails or overruns TIMEOUT is left out of what the
-answer is written against, and the answer goes on; but it is kept as failed
-in what the turn stores (`recorded`), so the cards read "this case did not
-arrive" rather than one case passing for the whole debate.
+with it. A side that fails, or has not landed by the time the debate stops
+waiting, is left out of what the answer is written against, and the answer
+goes on; but it is kept as failed in what the turn stores (`recorded`), so
+the cards read "this case did not arrive" rather than one case passing for
+the whole debate. A side that lands while the other is still being waited
+for is kept, though its own TIMEOUT had passed: the wait was being paid
+anyway (prod 2026-11-18, the bull landed 2 s past its timeout and 10 s
+before the debate returned, and was shown as failed).
+
+The sides read the turn's material but not the answer's format: a ticker
+page's brief asks the answer for seven sections and 350 words, and a free
+model told that last wrote the whole analysis under the bear's card, three
+times over its word cap and slow enough to sink its partner (`run`'s `drop`).
 
 Gated tightly, because it is two more model calls on keys that are often the
 operator's: an explicit ask for a decision or for both sides, about something
@@ -24,6 +33,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import threading
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -111,45 +121,80 @@ def argue(provider: Provider, api_key: str, model: str, messages: list[dict],
 
 def run(provider: Provider, api_key: str, messages: list[dict], lang: str, *,
         on_event: Callable[[dict], None] | None = None,
-        timeout: float = TIMEOUT) -> list[dict]:
+        timeout: float = TIMEOUT, drop: str = "") -> list[dict]:
     """Both sides at once. Returns `[{side, text}]` for the sides that spoke.
 
     `on_event` is told `{kind: "start"|"text"|"end"|"error", id, side, ...}` as
     each side starts and lands — the AG-UI subagent lifecycle, left to the
-    caller to put on its own wire. Runs on the provider's cheap model, like
-    the gather: arguing from given material is not what the big model is for.
+    caller to put on its own wire. Nothing is told once this returns: a side
+    still running then is already failed on the wire and in the turn. Runs on
+    the provider's cheap model, like the gather: arguing from given material
+    is not what the big model is for.
+
+    `drop` is text cut from the newest message before the sides read it —
+    the answer's own format, which is not theirs to write.
     """
     from stocks.chat.engine import in_parallel
 
-    tell = on_event or (lambda _event: None)
     model = provider.classifier_model or provider.default_model
     ids = {side: f"sub_{side}_{secrets.token_hex(4)}" for side in SIDES}
+    thread = _without(messages, drop)
+    lock = threading.Lock()
+    said: dict[str, dict] = {}
+    closed = False
 
-    def one(side: str) -> dict | None:
+    def tell(event: dict) -> None:
+        with lock:
+            if closed or on_event is None:
+                return
+            on_event(event)
+
+    began = time.monotonic()
+
+    def one(side: str) -> None:
         tell({"kind": "start", "id": ids[side], "side": side})
         try:
-            text = argue(provider, api_key, model, messages, side, lang)
+            text = argue(provider, api_key, model, thread, side, lang)
         except Exception as exc:  # noqa: BLE001 — one side failing is not the answer failing
             obs.warn("chat.debate_side_failed", side=side, provider=provider.id,
                      error_type=type(exc).__name__, error=str(exc)[:300])
             tell({"kind": "error", "id": ids[side], "side": side,
                   "message": "chat.debate_failed"})
-            return None
+            return
+        ms = round((time.monotonic() - began) * 1000)
+        with lock:
+            late = closed
+            if text and not closed:
+                said[side] = {"side": side, "text": text}
+        # Per side, late ones included: the debate's own `ms` stops at its
+        # wait, so only this says what TIMEOUT a side actually needs.
+        obs.event("chat.debate_side", side=side, provider=provider.id, ms=ms,
+                  words=len(text.split()), late=late)
         if not text:
             tell({"kind": "error", "id": ids[side], "side": side,
                   "message": "chat.debate_failed"})
-            return None
+            return
         tell({"kind": "text", "id": ids[side], "side": side, "text": text})
         tell({"kind": "end", "id": ids[side], "side": side})
-        return {"side": side, "text": text}
 
-    began = time.monotonic()
-    got = in_parallel(*(lambda s=side: one(s) for side in SIDES), timeout=timeout)
-    spoken = [g for g in got if isinstance(g, dict)]
-    # `ms` is what says whether TIMEOUT is too tight for the sides that miss.
+    in_parallel(*(lambda s=side: one(s) for side in SIDES), timeout=timeout)
+    with lock:
+        closed = True
+        spoken = [said[side] for side in SIDES if side in said]
     obs.event("chat.debated", provider=provider.id, sides=[g["side"] for g in spoken],
               ms=round((time.monotonic() - began) * 1000))
     return spoken
+
+
+def _without(messages: list[dict], drop: str) -> list[dict]:
+    """`messages` with `drop` cut from the newest one, the rest shared."""
+    if not drop or not messages:
+        return messages
+    last = messages[-1]
+    content = last.get("content")
+    if not isinstance(content, str) or drop not in content:
+        return messages
+    return [*messages[:-1], {**last, "content": content.replace(drop, "")}]
 
 
 def recorded(spoken: list[dict]) -> list[dict]:
@@ -165,11 +210,25 @@ def brief(sides: list[dict]) -> str:
     if not sides:
         return ""
     cases = "\n\n".join(f"{s['side'].upper()} ANALYST:\n{s['text']}" for s in sides)
+    if len(sides) == 1:
+        # The reader saw the other card fail: a lone case weighed as if it
+        # were the debate is the one-voice answer the debate exists to stop.
+        missing = next(side for side in SIDES if side != sides[0]["side"])
+        intro = (
+            "\n\n---\nTwo analysts were asked to argue this before you; only "
+            f"one case arrived (the {missing} case did not, and the reader saw "
+            "that):\n\n"
+        )
+        weigh = (
+            f"Weigh it: build the {missing} case yourself from the material, "
+            "say which you find stronger for THIS reader and why, "
+        )
+    else:
+        intro = ("\n\n---\nTwo analysts argued this before you, from the same "
+                 "material (the reader has seen both):\n\n")
+        weigh = "Weigh them: say which case you find stronger for THIS reader and why, "
     return (
-        "\n\n---\nTwo analysts argued this before you, from the same material "
-        "(the reader has seen both):\n\n"
-        f"{cases}\n\n"
-        "Weigh them: say which case you find stronger for THIS reader and why, "
+        f"{intro}{cases}\n\n{weigh}"
         "what would change your mind, and do not simply repeat either one. "
         "An analyst may overstate: correct any figure of theirs the material "
         "does not support, and treat a forecast site's number as its claim. "

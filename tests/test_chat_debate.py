@@ -63,3 +63,69 @@ def test_the_brief_asks_the_answer_to_correct_the_analysts():
     text = debate.brief([{"side": "bull", "text": "- cash"}])
     assert "correct any figure" in text
     assert "not among the reader's holdings" in text
+
+
+class _Slow:
+    """A provider whose sides land after set delays, recording what each read."""
+
+    id = "fake"
+    classifier_model = "cheap"
+    default_model = "big"
+
+    def __init__(self, delays: dict[str, float]):
+        self.delays = delays
+        self.read: dict[str, list[dict]] = {}
+
+    def complete(self, api_key, model, system, messages):
+        import time
+
+        side = "bull" if "case FOR" in system else "bear"
+        self.read[side] = messages
+        time.sleep(self.delays[side])
+        return f"- {side} point"
+
+
+def test_a_side_that_lands_while_the_other_is_awaited_is_kept():
+    # Prod 2026-11-18: the bull landed 2 s past its timeout, 10 s before the
+    # bear did, and was stored as failed beside a lone bear case.
+    told: list[dict] = []
+    spoken = debate.run(_Slow({"bull": 0.4, "bear": 0.5}), "", [
+        {"role": "user", "content": "q"}], "en", on_event=told.append,
+        timeout=0.3)
+    assert [s["side"] for s in spoken] == ["bull", "bear"]
+    assert [e["kind"] for e in told if e["side"] == "bull"] == [
+        "start", "text", "end"]
+
+
+def test_nothing_is_told_after_the_debate_returns():
+    import time
+
+    told: list[dict] = []
+    spoken = debate.run(_Slow({"bull": 0.05, "bear": 0.6}), "", [
+        {"role": "user", "content": "q"}], "en", on_event=told.append,
+        timeout=0.1)
+    assert [s["side"] for s in spoken] == ["bull"]
+    time.sleep(0.8)  # the bear lands now, on its orphaned thread
+    assert not any(e["side"] == "bear" and e["kind"] == "text" for e in told)
+
+
+def test_the_sides_do_not_read_the_answers_format():
+    # A ticker page's brief asks the answer for seven sections; a free model
+    # told that last wrote all seven under the bear's card.
+    shape = "Answer in this structure, about 350 words in all:\n1. **Verdict**"
+    fake = _Slow({"bull": 0, "bear": 0})
+    history = [{"role": "assistant", "content": "earlier"},
+               {"role": "user", "content": f"Analiza FICO\n\nfacts\n{shape}"}]
+    debate.run(fake, "", history, "es", timeout=2, drop=shape)
+    for side in debate.SIDES:
+        last = fake.read[side][-1]["content"]
+        assert "Verdict" not in last and "facts" in last
+        assert fake.read[side][0] is history[0]
+    assert shape in history[-1]["content"]  # the answer still gets it
+
+
+def test_a_lone_case_is_not_weighed_as_the_whole_debate():
+    text = debate.brief([{"side": "bear", "text": "- debt"}])
+    assert "only one case arrived" in text and "the bull case did not" in text
+    assert "build the bull case yourself" in text
+    assert "has seen both" not in text
