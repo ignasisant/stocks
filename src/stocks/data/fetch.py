@@ -358,7 +358,8 @@ def unlisted(tickers) -> set[str]:
     with _unlisted_lock:
         _load_unlisted()
         return gone | {
-            t for t, symbol in keys.items() if _unlisted.get(symbol.upper(), -1.0) > cutoff
+            t for t, symbol in keys.items()
+            if _unlisted.get(symbol.upper(), -1.0) > cutoff
         }
 
 

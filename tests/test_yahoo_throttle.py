@@ -270,7 +270,8 @@ def test_a_verdict_on_the_alias_target_holds_for_the_code(monkeypatch, yf_log):
     """The other way round: what Yahoo disowned is the symbol asked, so a
     code whose alias Yahoo has no line for stays disowned."""
     monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"LC": "HAPN"})
-    monkeypatch.setattr(fetch.yf, "download", _bulk(yf_log, ["AAPL"], {DISOWNED: ["HAPN"]}))
+    monkeypatch.setattr(
+        fetch.yf, "download", _bulk(yf_log, ["AAPL"], {DISOWNED: ["HAPN"]}))
     fetch.fetch_many(["AAPL", "LC"])
     assert fetch.unlisted(["LC"]) == {"LC"}
     assert fetch.unlisted(["HAPN"]) == {"HAPN"}
