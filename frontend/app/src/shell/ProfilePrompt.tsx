@@ -1,14 +1,18 @@
 /**
- * The investor-profile nudge: once per session, for an account with no profile.
+ * The investor-profile nudge: once a day, for an account with no profile.
  *
  * The assistant is told who it is advising from exactly these five fields
  * (`chat.engine.persona`), and an account that never filled them in gets
  * generic advice without knowing why — so a signed-in account whose profile was
- * never saved is asked, once per session, with "skip for now" one press away.
- * It asks again next session until the profile is saved here or on the Profile
+ * never saved is asked, once a day, with "skip for now" one press away.
+ * It asks again another day until the profile is saved here or on the Profile
  * page — or until the reader says not to (`profile_prompt_off`, an account
  * setting): a question nobody can stop is a nag, and the Profile page keeps the
  * same five fields for whenever they want them.
+ *
+ * The day is remembered per account, on this device: two accounts signing in
+ * one after the other in a tab are two people, and the first one's answer is
+ * not the second one's.
  *
  * Last in line on a first load. The walkthrough and "what's new" come first,
  * and only one modal gets a first load; the tour says whether it took the slot
@@ -18,9 +22,9 @@
  * And behind the section guide altogether: while it is up, put away in its
  * strip, or still on offer on Home, the account is being shown round, and five
  * questions about how it invests would land in the middle of that. Nor on its
- * heels: somebody who has just pressed "skip the tutorial" did not ask for a
- * form instead, so a load that had the guide in it asks nothing, and the next
- * session does.
+ * heels: somebody who has just been shown round, or pressed "skip the
+ * tutorial", did not ask for a form instead, so a day that had the guide in it
+ * asks nothing, and the next visit day does.
  *
  * Its own small form rather than the Profile page's: that page is a lazy chunk
  * with its own autosaving cards, and pulling it into the shell to draw a dialog
@@ -64,26 +68,47 @@ type Profile = {
 
 const SEEN = "profilePromptSeen";
 
-/** Whether this tab was already nudged. Storage that throws reads as "yes": a
- *  nag that cannot remember it asked would ask on every reload. */
-function seen(): boolean {
+/** The reader's own calendar day, which is when "today" turns over for them. */
+function today(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** The account's storage key: a hash of the address rather than the address,
+ *  which would otherwise sit in this browser after signing out. FNV-1a; telling
+ *  accounts apart is all it is for. */
+export function seenKey(account: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < account.length; i++) {
+    hash ^= account.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${SEEN}:${(hash >>> 0).toString(36)}`;
+}
+
+/** Whether this account was already nudged, or shown round, on `day`. Storage
+ *  that throws reads as "yes": a nag that cannot remember it asked would ask
+ *  on every reload. */
+export function seen(account: string, day = today()): boolean {
   try {
-    return window.sessionStorage.getItem(SEEN) === "1";
+    return window.localStorage.getItem(seenKey(account)) === day;
   } catch {
     return true;
   }
 }
 
-function markSeen(): void {
+export function markSeen(account: string, day = today()): void {
   try {
-    window.sessionStorage.setItem(SEEN, "1");
+    window.localStorage.setItem(seenKey(account), day);
   } catch {
     // `seen()` already reads a throwing store as "asked".
   }
 }
 
 export function ProfilePrompt() {
-  const { prefs } = useSession();
+  const { prefs, me } = useSession();
+  const account = me?.email ?? "";
   const off = prefs.profile_prompt_off;
   // The offer is the account's (it survives the tab); the guide on screen is
   // this tab's, strip included.
@@ -96,11 +121,13 @@ export function ProfilePrompt() {
 
   // Declared first, so it has run by the time the one below reads it.
   useEffect(() => {
-    if (guided) wasGuided.current = true;
-  }, [guided]);
+    if (!guided) return;
+    wasGuided.current = true;
+    markSeen(account);
+  }, [guided, account]);
 
   useEffect(() => {
-    if (off || guided || wasGuided.current || seen()) return;
+    if (off || guided || wasGuided.current || seen(account)) return;
     let alive = true;
     whenFirstLoadDecided()
       .then(async (interrupted) => {
@@ -115,7 +142,7 @@ export function ProfilePrompt() {
         if (profile.set || !claimNudge()) return;
         // Stamped when it is shown, not when it is answered: a reload with the
         // dialog open is a "skip", as closing the tab would be.
-        markSeen();
+        markSeen(account);
         setLoaded({ options, profile });
       })
       .catch(() => {
@@ -124,7 +151,7 @@ export function ProfilePrompt() {
     return () => {
       alive = false;
     };
-  }, [off, guided]);
+  }, [off, guided, account]);
 
   if (!loaded) return null;
   return (

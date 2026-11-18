@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from stocks import loaders
 from stocks.analysis.portfolio import (
     market_active,
+    market_live,
     money_change,
     ticker_changes,
     ticker_day_changes,
@@ -211,19 +212,26 @@ def movers(
     quotes = book_moves.session_quotes(frame) if days <= 1 else None
 
     premarket: set[str] = set()
+    alone: dict[str, float] = {}
     if days <= 1:
         changes = ticker_day_changes(frame, quotes)
         whole = book_moves.day(frame, quotes)
         # Before the open a name's own day is a few premarket prints, so its row
         # reads the last session with the premarket on top. The rows only: the
         # book's own day above (`whole`) stays the move since the last close.
+        # The premarket by itself rides along (`alone`) for the card's
+        # "pre only" reading, kept before the compounding overwrites it.
         for ticker, quote in (quotes or {}).items():
-            prior = quote.get("prior")
-            if quote.get("session") != "pre" or prior is None:
+            if quote.get("session") != "pre":
                 continue
-            if ticker in changes.index and not pd.isna(changes[ticker]):
-                changes.loc[ticker] = (1 + changes[ticker]) * (1 + prior) - 1
-                premarket.add(ticker)
+            if ticker not in changes.index or pd.isna(changes[ticker]):
+                continue
+            alone[str(ticker)] = float(changes[ticker])
+            prior = quote.get("prior")
+            if prior is None:
+                continue
+            changes.loc[ticker] = (1 + changes[ticker]) * (1 + prior) - 1
+            premarket.add(ticker)
     else:
         changes = ticker_changes(frame, days)
         hist = loaders.history(db, mtime, ccy)[0]
@@ -239,6 +247,8 @@ def movers(
             pct=float(pct),
             active=live,
             premarket=ticker in premarket,
+            pre_pct=alone.get(str(ticker)),
+            in_session=market_live(str(ticker)) if days <= 1 else None,
         )
 
     cut = None if every else SHOWN

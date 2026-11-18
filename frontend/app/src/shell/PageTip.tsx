@@ -9,7 +9,9 @@
  * is fetched only when a tip is actually drawn.
  *
  * "Got it" removes the page from that list, on the account rather than in the
- * browser: the tip is gone on every device, not only on this one. It waits
+ * browser: the tip is gone on every device, not only on this one. Until then
+ * it is there on every visit, so its eyebrow names what it is ("Quick
+ * guide") rather than which visit this is. It waits
  * while the tour or the welcome is up, open or parked — two guides talking at
  * once is one too many — and it is not marked read for having waited.
  */

@@ -26,6 +26,7 @@ import {
   setAssistantUnread,
   setAssistantWorking,
   useAssistantAsks,
+  useAssistantCloses,
   useAssistantAttach,
   useAssistantThreads,
 } from "../shell/assistant";
@@ -143,6 +144,8 @@ export function Drawer() {
     [show],
   );
   useAssistantAsks(onAsk);
+  const onClose = useCallback(() => show(false), [show]);
+  useAssistantCloses(onClose);
 
   // A page opened one conversation (the daily card's "Ask"): the panel
   // switches to it once the drawer has finished its own opening read, the way
@@ -416,7 +419,15 @@ export function Drawer() {
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") show(false);
+      if (event.key !== "Escape") return;
+      // Pressed in one of the shell's cards (a guide stop, "what's new", the
+      // profile nudge), it is that card's: one press puts one thing away, and
+      // the panel the guide opened stays for the reader.
+      // The event's target, not the focus now: the card may already have
+      // closed and handed focus to the page by the time this runs.
+      const from = event.target;
+      if (from instanceof Element && from.closest(".ag-tour, .ag-coach")) return;
+      show(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

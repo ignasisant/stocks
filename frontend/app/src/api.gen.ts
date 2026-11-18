@@ -2061,6 +2061,8 @@ export type Mover = {
   "pct": number;
   "active": boolean | null;
   "premarket": boolean;
+  "pre_pct": number | null;
+  "in_session": boolean | null;
 };
 
 export type Movers = {

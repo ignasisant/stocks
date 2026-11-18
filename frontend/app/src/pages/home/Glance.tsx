@@ -405,6 +405,31 @@ type Side = (typeof SIDES)[number]["key"];
 export type SortBy = "money" | "pct";
 
 /**
+ * What a premarket row's figure covers: the last session with the premarket
+ * on top, as the server sends it, or the premarket alone.
+ */
+type Basis = "session" | "pre";
+
+const BASIS = "hm.movers.basis";
+
+function rememberedBasis(): Basis {
+  try {
+    if (window.localStorage.getItem(BASIS) === "pre") return "pre";
+  } catch {
+    // Storage blocked: the default is a fine answer.
+  }
+  return "session";
+}
+
+function rememberBasis(value: Basis) {
+  try {
+    window.localStorage.setItem(BASIS, value);
+  } catch {
+    // Not kept: the pick still holds for this visit.
+  }
+}
+
+/**
  * Every open position that moved over the selected window, up and down.
  *
  * All three windows come back with the page: picking a range is then a choice
@@ -428,6 +453,7 @@ function MoversCard({
   const [range, setRange] = useState<WindowKey>("day");
   const [side, setSide] = useState<Side>("all");
   const [sort, setSort] = useState<SortBy>("money");
+  const [basis, setBasis] = useState<Basis>(rememberedBasis);
   const moved = WINDOWS.some(
     ({ key }) => movers[key].gainers.length > 0 || movers[key].losers.length > 0,
   );
@@ -435,12 +461,19 @@ function MoversCard({
 
   const held = new Map(positions.map((position) => [position.ticker, position]));
   const picked = movers[range];
-  const { gainers, losers } = picked;
-  const worth = (row: Mover) => moveMoney(row.pct, held.get(row.ticker)?.value);
-  const shown = moverSides(picked, sort, worth);
+  // The choice exists only while something is quoting before the bell; the
+  // rest of the day there is one reading and a remembered "pre" sleeps.
+  const early =
+    range === "day" &&
+    [...picked.gainers, ...picked.losers].some((row) => row.pre_pct != null);
+  const alone = early && basis === "pre";
+  const { gainers, losers } = alone ? preOnly(picked) : picked;
+  const worth = (row: Mover) =>
+    moveMoney(row.pct, atQuote(held.get(row.ticker)?.value, row));
+  const shown = moverSides({ gainers, losers }, sort, worth);
   // The server leaves out a name whose move is exactly zero or unmeasurable
   // (no price, no FX path): "all" must not read as every position when it is
-  // not.
+  // not. "Pre only" also leaves out every name whose market is shut.
   const still = Math.max(0, picked.positions - gainers.length - losers.length);
   const sides = [
     side !== "down" ? (
@@ -496,17 +529,35 @@ function MoversCard({
           value={sort}
           onPick={setSort}
         />
+        {early ? (
+          <Segmented
+            label={t("home.movers_basis")}
+            items={[
+              { id: "session" as const, label: t("home.movers_basis_session") },
+              { id: "pre" as const, label: t("home.movers_basis_pre") },
+            ]}
+            value={basis}
+            onPick={(value) => {
+              setBasis(value);
+              rememberBasis(value);
+            }}
+          />
+        ) : null}
       </div>
       <div className={side === "all" ? "hm-split hm-split-tables" : "hm-mv-one"}>
         {sides}
       </div>
-      {[...shown.gainers, ...shown.losers].some((row) => row.premarket) ? (
+      {alone ? (
+        <p className="hm-caption">{t("home.movers_pre_only")}</p>
+      ) : [...shown.gainers, ...shown.losers].some((row) => row.premarket) ? (
         <p className="hm-caption">{t("home.movers_premarket")}</p>
       ) : null}
       <p className="hm-caption">
         {[
           t("home.movers_money_note"),
-          still > 0 ? t("home.movers_still", { n: still }) : null,
+          still > 0
+            ? t(alone ? "home.movers_idle" : "home.movers_still", { n: still })
+            : null,
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -563,6 +614,44 @@ export function moveMoney(
 }
 
 /**
+ * A figure taken at the regular close, moved to the price a premarket row's
+ * move runs to. A position's value and price are the last close until the
+ * bell; a move measured to the premarket print is worth money on the value at
+ * that print, and reads beside that price. Untouched on every other row.
+ */
+export function atQuote(
+  amount: number | null | undefined,
+  row: Pick<Mover, "pre_pct">,
+): number | null | undefined {
+  if (amount === null || amount === undefined || row.pre_pct == null) return amount;
+  return amount * (1 + row.pre_pct);
+}
+
+/**
+ * The day's rows as what is moving right now, before the US open: a name in
+ * premarket by its premarket alone, a name whose own market is open (Europe
+ * mid-morning, crypto always) by the session it is in, and nothing for a name
+ * whose market is shut — its figure is a session already over.
+ *
+ * The server split the sides on the compounded figure, so they are split
+ * again here: up 2 % yesterday and down 1 % this morning is a loser now.
+ */
+export function preOnly(movers: Pick<Movers, "gainers" | "losers">): {
+  gainers: Mover[];
+  losers: Mover[];
+} {
+  const rows: Mover[] = [];
+  for (const row of [...movers.gainers, ...movers.losers]) {
+    if (row.pre_pct != null) rows.push({ ...row, pct: row.pre_pct, premarket: false });
+    else if (row.in_session) rows.push(row);
+  }
+  return {
+    gainers: rows.filter((row) => row.pct > 0).sort((a, b) => b.pct - a.pct),
+    losers: rows.filter((row) => row.pct < 0).sort((a, b) => a.pct - b.pct),
+  };
+}
+
+/**
  * The rows each side of the movers card draws, strongest first on both.
  *
  * Every name is drawn, so a side can run to thirty rows: the move worth
@@ -600,7 +689,7 @@ export function moverSides(
 function MoveChip({ row, text }: { row: Mover; text: string | null | undefined }) {
   const t = useT();
   const chip = <Chip chip={chipFor(row.pct, text, row.active === false)} />;
-  if (!row.premarket) return chip;
+  if (!row.premarket && row.pre_pct == null) return chip;
   return (
     <span className="hm-move">
       {chip}
@@ -701,7 +790,7 @@ function MoverTable({
                     {/* In the currency the name trades in — a share price is
                     quoted by its own market, unlike the value beside it. */}
                     <td className="hm-num">
-                      {money(position?.price, {
+                      {money(atQuote(position?.price, row), {
                         currency: position?.currency || currency,
                         lang,
                         digits: priceDigits(position?.price),
@@ -756,7 +845,7 @@ function MoverTable({
               sub: (row) => {
                 const position = held.get(row.ticker);
                 return [
-                  money(position?.price, {
+                  money(atQuote(position?.price, row), {
                     currency: position?.currency || currency,
                     lang,
                     digits: priceDigits(position?.price),

@@ -480,6 +480,53 @@ def test_a_premarket_row_reads_the_last_session_plus_the_premarket(
     assert payload["basket"] == pytest.approx((300 - opening) / opening)
 
 
+def test_a_premarket_row_also_carries_the_premarket_alone(
+    client, account, monkeypatch
+):
+    """The card's "pre only" reading needs the morning by itself, and which of
+    the other names are moving right now: a name in its own session keeps its
+    figure there, one whose market is shut has nothing to show."""
+    index = pd.to_datetime([date(2024, 3, 1) + timedelta(days=i) for i in range(3)])
+    flat = pd.DataFrame(
+        {
+            "AAPL": pd.Series([100.0] * 3, index=index),
+            "NOPRIOR": pd.Series([100.0] * 3, index=index),
+            "MSFT": pd.Series([200.0] * 3, index=index),
+            "SAN.MC": pd.Series([50.0, 50.0, 51.0], index=index),
+        }
+    )
+    patch_loaders(monkeypatch, "basket_values", lambda db, mtime, base="EUR": flat)
+    monkeypatch.setattr(book_moves, "us_market_open", lambda: False)
+    open_now = lambda ticker: ticker == "SAN.MC"  # noqa: E731
+    monkeypatch.setattr(book_moves, "market_live", open_now)
+    monkeypatch.setattr(glance, "market_live", open_now)
+    patch_loaders(
+        monkeypatch, "quotes",
+        lambda tickers: {
+            "AAPL": {"pct": 0.01, "prior": 0.02, "session": "pre"},
+            # A premarket print with no session before it to compound.
+            "NOPRIOR": {"pct": 0.03, "prior": None, "session": "pre"},
+            # No premarket print: yesterday's session, nothing of this morning.
+            "MSFT": {"pct": -0.01, "session": None},
+        },
+    )
+    payload = client.get("/v1/movers", params=WHO, headers=AUTH).json()
+    rows = {m["ticker"]: m for m in payload["gainers"] + payload["losers"]}
+    assert rows["AAPL"]["pre_pct"] == pytest.approx(0.01)
+    assert rows["AAPL"]["pct"] == pytest.approx(1.02 * 1.01 - 1)
+    assert rows["NOPRIOR"]["pre_pct"] == pytest.approx(0.03)
+    assert rows["NOPRIOR"]["premarket"] is False
+    assert rows["MSFT"]["pre_pct"] is None
+    assert rows["MSFT"]["in_session"] is False
+    assert rows["SAN.MC"]["pre_pct"] is None
+    assert rows["SAN.MC"]["in_session"] is True
+    week = client.get("/v1/movers", params=WHO | {"window": "week"}, headers=AUTH)
+    assert all(
+        m["pre_pct"] is None and m["in_session"] is None
+        for m in week.json()["gainers"] + week.json()["losers"]
+    )
+
+
 def test_a_live_session_leaves_the_bars_alone(client, account, monkeypatch):
     """Inside the session the bars already track the live price, so reaching
     for a quote would cost a request to be told what the frame says."""
