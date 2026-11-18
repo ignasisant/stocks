@@ -45,7 +45,7 @@ import { get, send } from "./api";
 const SEEN = { touches: ["/onboarding"] };
 /** The guide answered also withdraws Home's offer, which rides `/prefs`. */
 const WALKED = { touches: ["/onboarding", "/prefs"] };
-import { drawerWidth, openAssistant, roomBeside } from "./assistant";
+import { closeAssistant, drawerWidth, openAssistant, roomBeside } from "./assistant";
 import { Icon } from "./Icon";
 import { useT } from "./i18n";
 import { onIdle } from "./idle";
@@ -358,6 +358,24 @@ export function Tour() {
   // reader's — a link followed from it must not be pulled back to the stop.
   const guiding = place?.mode === "tour" && place.open ? place.at : null;
   const ready = state !== null;
+  // The drawer the assistant stop put up, to be put away again when the guide
+  // moves on to a page or ends. One the reader already had open is left be.
+  const openedChat = useRef(false);
+  const putChatBack = () => {
+    if (!openedChat.current) return;
+    openedChat.current = false;
+    closeAssistant();
+  };
+  // Parked, the reader stepped out of the guide and may be using the panel by
+  // now: it is theirs, and finishing from the strip later leaves it open.
+  // Ended or skipped, it goes with the guide.
+  const off = guiding === null;
+  const parked = place !== null && !place.open;
+  useEffect(() => {
+    if (!off) return;
+    if (parked) openedChat.current = false;
+    else putChatBack();
+  }, [off, parked]);
   const latest = useRef({ state, guest, asked, go, setParams });
   latest.current = { state, guest, asked, go, setParams };
   useEffect(() => {
@@ -383,9 +401,14 @@ export function Tour() {
       // drawer dragged wide) it would cover the card too, so the card offers
       // it instead.
       const beside = !phoneNow() && roomBeside(drawerWidth());
-      if (stop.session?.chat_panel_open && beside) openAssistant();
+      if (stop.session?.chat_panel_open && beside) {
+        if (document.documentElement.dataset.chat === undefined)
+          openedChat.current = true;
+        openAssistant();
+      }
       return;
     }
+    putChatBack();
     const slug = canonical(stop.path);
     const query = arrive(stop, "tour");
     const here = standing();
@@ -736,7 +759,9 @@ function Coach({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      const at = document.activeElement;
+      // Where the key was pressed, not where focus is now: the panel's own
+      // Escape may already have closed it and moved focus to the page.
+      const at = event.target instanceof Element ? event.target : null;
       if (!card.current?.contains(at) && (covered() || claimed(at))) return;
       onPark();
     };

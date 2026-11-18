@@ -60,6 +60,28 @@ export function openAssistant(): void {
   for (const listener of listeners) listener(null);
 }
 
+const closers = new Set<() => void>();
+
+/**
+ * Put the assistant away. Only for a panel this code opened itself: the
+ * guide's assistant stop opens it, and once the guide has moved on or ended
+ * the page it left the reader on should not stay narrowed by a drawer they
+ * never asked for. A drawer the reader opened is theirs to close.
+ */
+export function closeAssistant(): void {
+  for (const close of closers) close();
+}
+
+/** Subscribe to `closeAssistant`. The drawer is the only caller. */
+export function useAssistantCloses(handler: () => void): void {
+  useEffect(() => {
+    closers.add(handler);
+    return () => {
+      closers.delete(handler);
+    };
+  }, [handler]);
+}
+
 /** Narrowest page the open drawer leaves before it covers it instead (px). */
 const PAGE_MIN = 560;
 

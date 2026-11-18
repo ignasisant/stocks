@@ -599,6 +599,21 @@ class Mover(BaseModel):
             "regular session compounded with the premarket move on top of it."
         ),
     )
+    pre_pct: float | None = Field(
+        default=None,
+        description=(
+            "Day window only: the premarket move alone, off the last close, for "
+            "a name quoting in US premarket. `pct` less the session before it."
+        ),
+    )
+    in_session: bool | None = Field(
+        default=None,
+        description=(
+            "Day window only: whether the name's own exchange is in its regular "
+            "session now, so `pct` is a move under way. Narrower than `active`, "
+            "which a US name is through extended hours with or without a print."
+        ),
+    )
 
 
 class Movers(BaseModel):

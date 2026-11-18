@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { moveMoney, moverSides } from "./Glance";
+import { atQuote, moveMoney, moverSides, preOnly } from "./Glance";
 import type { Mover } from "./types";
 
 const row = (ticker: string, pct: number): Mover => ({ ticker, pct });
@@ -104,5 +104,91 @@ describe("moveMoney", () => {
     expect(moveMoney(0.1, undefined)).toBeNull();
     expect(moveMoney(-1, 100)).toBeNull();
     expect(moveMoney(Number.NaN, 100)).toBeNull();
+  });
+});
+
+describe("preOnly", () => {
+  // Before the US open: `pct` is yesterday with the premarket on top,
+  // `pre_pct` the premarket by itself.
+  const pre = (ticker: string, pct: number, pre_pct: number): Mover => ({
+    ticker,
+    pct,
+    pre_pct,
+    premarket: true,
+    active: true,
+    in_session: false,
+  });
+  const open = (ticker: string, pct: number): Mover => ({
+    ticker,
+    pct,
+    active: true,
+    in_session: true,
+  });
+  // US extended hours with no print, or a market that is shut.
+  const shut = (ticker: string, pct: number, active: boolean): Mover => ({
+    ticker,
+    pct,
+    active,
+    in_session: false,
+  });
+
+  it("reads a premarket row by its premarket alone", () => {
+    const { gainers } = preOnly({ gainers: [pre("SEZL", 0.0543, 0.012)], losers: [] });
+    expect(gainers).toEqual([
+      { ...pre("SEZL", 0.0543, 0.012), pct: 0.012, premarket: false },
+    ]);
+  });
+
+  it("keeps a name whose own market is open on its session", () => {
+    const { gainers, losers } = preOnly({
+      gainers: [open("SOL-EUR", 0.0192)],
+      losers: [open("SAN.MC", -0.004)],
+    });
+    expect(tickers(gainers)).toEqual(["SOL-EUR"]);
+    expect(pcts(losers)).toEqual([-0.004]);
+  });
+
+  it("leaves out a name that is not trading now", () => {
+    const { gainers, losers } = preOnly({
+      gainers: [shut("MNDY", 0.0263, true)],
+      losers: [shut("7203.T", -0.01, false)],
+    });
+    expect(gainers).toEqual([]);
+    expect(losers).toEqual([]);
+  });
+
+  it("splits the sides again on the premarket's own sign", () => {
+    // Up yesterday and down this morning is a loser now, and the reverse.
+    const { gainers, losers } = preOnly({
+      gainers: [pre("HUBS", 0.0472, -0.003), pre("ADBE", 0.001, 0.02)],
+      losers: [pre("DUOL", -0.03, 0.01), pre("SHOP", -0.02, -0.015)],
+    });
+    expect(tickers(gainers)).toEqual(["ADBE", "DUOL"]);
+    expect(tickers(losers)).toEqual(["SHOP", "HUBS"]);
+  });
+
+  it("drops a premarket that has not moved", () => {
+    const { gainers, losers } = preOnly({
+      gainers: [pre("DSGX", 0.007, 0)],
+      losers: [],
+    });
+    expect([...gainers, ...losers]).toEqual([]);
+  });
+});
+
+describe("atQuote", () => {
+  it("moves a close-priced figure to the premarket print", () => {
+    expect(atQuote(100, { pre_pct: 0.02 })).toBeCloseTo(102);
+  });
+
+  it("leaves every other row alone", () => {
+    expect(atQuote(100, {})).toBe(100);
+    expect(atQuote(100, { pre_pct: null })).toBe(100);
+    expect(atQuote(null, { pre_pct: 0.02 })).toBeNull();
+  });
+
+  it("makes the premarket alone worth the close value times the move", () => {
+    // 1,000 at the close, +2 % before the bell: 20 gained, on 1,020 now.
+    expect(moveMoney(0.02, atQuote(1000, { pre_pct: 0.02 }))).toBeCloseTo(20);
   });
 });

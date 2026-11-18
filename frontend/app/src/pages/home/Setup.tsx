@@ -23,7 +23,7 @@
  *
  * The count is over the steps an account needs (sign in, import); the rest
  * say "Optional" until they are on. Profile counts every capability instead
- * and says so ("features on"), so the two numbers are not one number twice.
+ * and says so ("Setup 2 of 5"), so the two numbers are not one number twice.
  */
 
 import { useState, type ReactNode } from "react";
@@ -307,7 +307,12 @@ export function SetupCard() {
               row={next.row}
               steps={state.steps}
               guest={guest}
-              className="hm-start-go"
+              // Lit, but not filled, once what is left is optional: the
+              // account has everything it needs, and the card's one filled
+              // button on something it can do without read as a step owed.
+              className={
+                next.row.optional ? "hm-start-go hm-start-go-quiet" : "hm-start-go"
+              }
               label={t(next.row.cta)}
             >
               <Icon name={next.row.icon} size={18} />

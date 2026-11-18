@@ -79,7 +79,9 @@ class Tip:
 TIPS: dict[str, Tip] = {
     "today": Tip(3, "beta-and-benchmarks"),
     "portfolio": Tip(3, "total-return"),
-    "review": Tip(3, "offsetting-losses"),
+    # No lesson teaches the plan or the map; the Spanish tax path's loss
+    # offsetting was the nearest, and wrong for every other country.
+    "review": Tip(3),
     "ticker": Tip(3, "what-is-a-stock"),
     "sentiment": Tip(2, "volatility-and-drawdown"),
     "sector": Tip(2),
@@ -828,12 +830,21 @@ def _has_searched(prefs: dict) -> bool:
 
 
 def _has_asked(_prefs: dict, paths) -> bool:
-    """Whether any conversation with the assistant has a turn in it."""
+    """Whether the reader has put a question to the assistant.
+
+    A turn of theirs, not any turn: the daily briefing and the scheduled
+    routines write threads the assistant alone speaks in, and counting those
+    took the "ask" chip off Home before the reader had asked anything.
+    """
     try:
         book = conversations.load_book(paths.chat)
     except Exception:
         return False
-    return any(c.get("messages") for c in book.get("conversations", []))
+    return any(
+        m.get("role") == "user"
+        for c in book.get("conversations", [])
+        for m in c.get("messages") or []
+    )
 
 
 def _watchlist_is_own(_prefs: dict, paths) -> bool:
