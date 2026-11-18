@@ -1157,6 +1157,20 @@ a.hm-step {
   cursor: not-allowed;
 }
 
+/* What is left is optional: the same way there, as an outline. */
+.hm-start-go-quiet {
+  border: 1px solid var(--ag-border);
+  background: transparent;
+  color: var(--ag-text-primary);
+  font-weight: 500;
+}
+
+@media (hover: hover) {
+  .hm-start-go-quiet:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
 /* What already works: small icon chips under a hairline. */
 .hm-start-try {
   display: flex;

@@ -205,6 +205,16 @@ export type Mover = {
    * session compounded with the premarket move on top of it.
    */
   premarket?: boolean;
+  /**
+   * Day window only: the premarket move alone, off the last close, for a name
+   * quoting in US premarket. What the card's "pre only" reading prints.
+   */
+  pre_pct?: number | null;
+  /**
+   * Day window only: the name's own exchange is in its regular session now.
+   * Narrower than `active`, which a US name is all through extended hours.
+   */
+  in_session?: boolean | null;
 };
 
 export type Movers = {

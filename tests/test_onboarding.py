@@ -571,6 +571,17 @@ def test_an_empty_conversation_does_not_count(account):
     assert onboarding.explore_state({}, account)["ask"] is False
 
 
+def test_a_thread_only_the_assistant_spoke_in_does_not_count(account):
+    """The daily briefing writes its card as a thread of its own; that is the
+    app talking, not the reader asking, and Home's "ask" chip must stay."""
+    account.watchlist.write_text(accounts.STARTER_WATCHLIST)
+    account.chat.write_text(
+        '{"conversations": [{"id": "d", "daily": "2026-11-17", "messages":'
+        ' [{"role": "assistant", "content": "S&P 500 down"}]}]}'
+    )
+    assert onboarding.explore_state({}, account)["ask"] is False
+
+
 def test_editing_the_seeded_watchlist_is_what_makes_it_the_users_own(account):
     account.watchlist.write_text(accounts.STARTER_WATCHLIST)
     assert onboarding.explore_state({}, account)["watchlist"] is False

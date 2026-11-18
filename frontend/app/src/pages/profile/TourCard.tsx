@@ -13,7 +13,8 @@
  *
  * Under the button, how much of the app is switched on: every capability
  * `onboarding.setup_state` reports, optional ones included, as a bar and a
- * "2/5 features on", off the `/onboarding` read. Home's start card counts
+ * "Setup 2 of 5", off the `/onboarding` read: the same words as the chip under
+ * the account's name on this page, which counts the same thing. Home's start card counts
  * only the steps an account needs and words it "steps". A failed read draws
  * no bar rather than a wrong one.
  */
@@ -63,7 +64,7 @@ export function TourCard() {
           <div
             className="pr-prog"
             role="progressbar"
-            aria-label={t("home.setup_progress", {
+            aria-label={t("profile.setup_chip", {
               done: counted[0],
               total: counted[1],
             })}
@@ -78,7 +79,7 @@ export function TourCard() {
               />
             </div>
             <span className="pr-prog-n">
-              {t("home.setup_progress", { done: counted[0], total: counted[1] })}
+              {t("profile.setup_chip", { done: counted[0], total: counted[1] })}
             </span>
           </div>
         )}
