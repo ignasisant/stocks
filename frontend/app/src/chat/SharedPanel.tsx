@@ -249,6 +249,8 @@ export function SharedPanel({
     if (!carriesOn(carryOnNow, signedIn, share) || carried.current) return;
     carried.current = true;
     void carryOn();
+    // Fires on its inputs only: `carryOn` is new every render.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [carryOnNow, signedIn, share]);
 
   const takeDown = async () => {

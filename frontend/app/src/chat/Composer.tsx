@@ -667,6 +667,9 @@ export function Composer({
   // The reading a queued question waited for is in: it goes now.
   useEffect(() => {
     if (queued && !waiting && !busy && !live) submit();
+    // Fires when the wait ends only: `submit` is new every render, and
+    // re-running on it could send the queued question twice.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [queued, waiting, busy, live]);
 
   const pickDepth = (next: boolean) => {

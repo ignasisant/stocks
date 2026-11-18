@@ -14,7 +14,14 @@
  * scales them, since the ledger stores what was actually paid.
  */
 
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { chart as palette, token } from "../../shell/theme";
 import { useLang } from "../../shell/i18n";
 import { useWidth } from "../../shell/useWidth";
@@ -86,6 +93,10 @@ const LABEL_SLOT = 120;
 
 /** Fewer bars than this in a drag is a mis-click, not a window somebody picked. */
 const MIN_SPAN = 3;
+
+// The one stand-in for a series the bars lack: a fresh `[]` each render would
+// make every memo that reads it recompute.
+const NONE: (number | null)[] = [];
 
 /** How far from a fill's disc, in px, the pointer still reads that fill. */
 const SNAP = 10;
@@ -379,7 +390,7 @@ export function PriceChart({
   const from = zoom ? Math.max(0, zoom.from) : 0;
   const to = zoom ? Math.min(n - 1, zoom.to) : n - 1;
 
-  const close = bars.series.Close ?? [];
+  const close = bars.series.Close ?? NONE;
   const intradayBars = /[mh]$/.test(bars.interval);
   useEffect(() => {
     if (!onWindow) return;
@@ -394,16 +405,13 @@ export function PriceChart({
       start: format(bars.dates[move.a] ?? ""),
       end: format(bars.dates[move.z] ?? ""),
     });
-    // `close` is read off `bars`, which is in the list: listing the array
-    // itself would re-fire on the `[]` a series without closes makes anew.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, from, to, bars, lang, intradayBars, onWindow]);
+  }, [zoom, from, to, bars, close, lang, intradayBars, onWindow]);
   // Gone with the chart (a new range loading): the figure goes back to the range.
   useEffect(() => () => onWindow?.(null), [onWindow]);
-  const open = bars.series.Open ?? [];
-  const high = bars.series.High ?? [];
-  const low = bars.series.Low ?? [];
-  const volume = bars.series.Volume ?? [];
+  const open = bars.series.Open ?? NONE;
+  const high = bars.series.High ?? NONE;
+  const low = bars.series.Low ?? NONE;
+  const volume = bars.series.Volume ?? NONE;
   const days = useMemo(
     () => bars.dates.map((stamp) => stamp.slice(0, 10)),
     [bars.dates],
@@ -441,7 +449,10 @@ export function PriceChart({
    * it annotates, never on it. The close on a bar with no high, which a line
    * chart's series can be.
    */
-  const diamondY = (index: number) => (high[index] ?? close[index] ?? 0) * 1.01;
+  const diamondY = useCallback(
+    (index: number) => (high[index] ?? close[index] ?? 0) * 1.01,
+    [high, close],
+  );
 
   // Every buy and sell dated inside the range, on the bar it belongs to, so an
   // entry older than the window is off its left edge rather than stacked onto
@@ -556,7 +567,20 @@ export function PriceChart({
       .map(([index]) => index)
       .map((index) => diamondY(index));
     return bounds([...price, ...overlays, marked, diamonds]);
-  }, [bars.series, shown, hidden, candles, close, high, low, from, to, fills, marks]);
+  }, [
+    bars.series,
+    shown,
+    hidden,
+    candles,
+    close,
+    high,
+    low,
+    from,
+    to,
+    fills,
+    marks,
+    diamondY,
+  ]);
 
   // What a pointer move never changes, built once per window and size: the
   // y scale, the price line's runs and the area under them, each average's

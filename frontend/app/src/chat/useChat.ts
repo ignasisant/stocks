@@ -646,7 +646,7 @@ export function useChat(live: boolean) {
         chose,
       );
     },
-    [activeId, busy, focus, lang, preview, state, track, view],
+    [activeId, busy, focus, lang, preview, state, tab, track, view],
   );
 
   /**

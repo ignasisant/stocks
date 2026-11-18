@@ -290,6 +290,8 @@ export default function Panel({
     if (jump === "scheduled") setScheduledOpen(true);
     setView(jump === "scheduled" ? "threads" : jump);
     onJumpTaken?.();
+    // Fires on a new `jump` only: the Drawer's callback is new every render.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [jump]);
   // An earlier conversation named under an answer, or the one a memory was
   // said in: the thread view, on that thread.
@@ -312,6 +314,9 @@ export default function Panel({
     if (!thread || !chat.ready) return;
     openThread(thread);
     onThreadTaken?.();
+    // Fires on a new `thread` only: both functions are new every render, and
+    // re-running on them would open the thread twice.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [thread, chat.ready]);
   // Opening the drawer on the guide's own thread is the moment a capability
   // may have been switched on somewhere the guide was not looking — an import
