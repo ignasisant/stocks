@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "react"],
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
   "categories": {
     "correctness": "error"
   },
@@ -13,7 +13,16 @@
     "react/refs": "off",
     "react/immutability": "off",
     "react/purity": "off",
-    "react/preserve-manual-memoization": "off"
+    "react/preserve-manual-memoization": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/click-events-have-key-events": "off",
+    "jsx-a11y/no-noninteractive-element-interactions": "off",
+    "jsx-a11y/no-static-element-interactions": "off",
+    "jsx-a11y/interactive-supports-focus": "off",
+    "jsx-a11y/control-has-associated-label": "off",
+    "jsx-a11y/no-autofocus": "off",
+    "jsx-a11y/role-has-required-aria-props": "off",
+    "jsx-a11y/no-noninteractive-element-to-interactive-role": "off"
   },
   "ignorePatterns": ["src/api.gen.ts"]
 }
