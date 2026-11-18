@@ -94,7 +94,7 @@ export function forget(urls: Iterable<string>): void {
 export function forgetUnder(prefixes: readonly string[]): void {
   const heads = prefixes.map((prefix) => `${BASE}${prefix}`);
   if (!heads.length) return;
-  for (const url of [...memo.keys()]) {
+  for (const url of memo.keys()) {
     if (heads.some((head) => url.startsWith(head))) memo.delete(url);
   }
 }

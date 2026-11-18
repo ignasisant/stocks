@@ -596,13 +596,19 @@ export function Attachment({
     if (held.length)
       setPicked((set) => {
         const next = new Set(set);
-        for (const i of held) to ? next.add(i) : next.delete(i);
+        for (const i of held) {
+          if (to) next.add(i);
+          else next.delete(i);
+        }
         return next;
       });
     if (mine.length)
       setOff((set) => {
         const next = new Set(set);
-        for (const i of mine) to ? next.delete(i) : next.add(i);
+        for (const i of mine) {
+          if (to) next.delete(i);
+          else next.add(i);
+        }
         return next;
       });
   };

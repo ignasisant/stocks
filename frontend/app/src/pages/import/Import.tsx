@@ -269,7 +269,9 @@ function Importer({
     const same = seen.platform === platform.key && seen.staged === staged;
     tried.current = { platform: platform.key, staged, data: outcome };
     if (!same && missed(outcome)) miss();
-  }, [outcome]);
+    // `staged` and the platform are read, not watched: a change to either
+    // without a new outcome stops at the `seen.data` check above.
+  }, [outcome, staged, platform.key]);
 
   const held = ledger.state === "loaded" ? ledger.data : null;
   // What the repairs work on and what the example statement must not be offered

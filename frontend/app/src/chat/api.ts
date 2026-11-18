@@ -80,6 +80,8 @@ export async function keyed<T>(
       ...(verb === "GET" ? {} : { "Content-Type": "application/json" }),
       ...keyHeaders(),
     },
+    // No GET caller passes a body; the rule only sees that `verb` may be GET.
+    // oxlint-disable-next-line unicorn/no-invalid-fetch-options
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) await refusal(response);

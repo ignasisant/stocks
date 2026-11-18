@@ -29,7 +29,7 @@ function mapShelf() {
     },
     meta: async () => meta,
     reset: async (next, spare) => {
-      for (const key of [...answers.keys()]) {
+      for (const key of answers.keys()) {
         if (!spare || !key.startsWith(spare)) answers.delete(key);
       }
       meta = next;

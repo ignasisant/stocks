@@ -266,8 +266,9 @@ export function Drawer() {
       .catch(() => {
         // A guest, or no walkthrough on this server: nothing is owed.
       });
-    // Once per mount: the URL case re-runs only when `?guide=` itself changes.
-  }, [asked]);
+    // Once per mount: the URL case re-runs only when `?guide=` itself changes
+    // (`setParams` and `show` never change).
+  }, [asked, setParams, show]);
 
   // Back from a provider's sign-in page (`connect.ts`): `?code=` on the URL
   // and the verifier this tab saved before it left. Taken off the URL at
@@ -294,14 +295,14 @@ export function Drawer() {
       setConnect({ code, pending });
       show(true);
     });
-  }, [code]);
+  }, [code, setParams, show]);
 
   // Back from a sign-in that a question started (`draft.ts`): the drawer opens
   // and its composer takes the question into the field. Once, on mount — the
   // composer clears the draft when it takes it.
   useEffect(() => {
     if (hasDraft()) show(true);
-  }, []);
+  }, [show]);
 
   // `?chat=memory` and `?chat=scheduled` — the profile's links to what the
   // assistant remembers and to when the scheduled runs go out — and
@@ -314,7 +315,7 @@ export function Drawer() {
     setParams({ chat: undefined });
     setJump(view);
     show(true);
-  }, [view]);
+  }, [view, setParams, show]);
 
   // `?thread=<id>` — a push notification's "your answer is ready" (`sw.js`)
   // lands here: the drawer opens on that conversation, and the parameter
@@ -324,7 +325,7 @@ export function Drawer() {
     if (!pushed) return;
     setParams({ thread: undefined });
     onThread(pushed);
-  }, [pushed]);
+  }, [pushed, setParams, onThread]);
 
   // `?share=<id>` — somebody sent the reader one answer (`SharedPanel`). The
   // drawer opens on it, on a phone too, over whatever page the link named.
@@ -339,7 +340,7 @@ export function Drawer() {
     if (!linked) return;
     setShared(linked);
     show(true);
-  }, [linked]);
+  }, [linked, show]);
   const leaveShared = useCallback(() => {
     setShared(null);
     setParams({ share: undefined, continue: undefined });
@@ -414,7 +415,7 @@ export function Drawer() {
     if (seenPage.current === page) return;
     seenPage.current = page;
     if (open && small) show(false);
-  }, [page]);
+  }, [page, open, small, show]);
 
   useEffect(() => {
     if (!open) return;
