@@ -157,13 +157,15 @@ def _ticker_gaps(
     )
     fills = list({id(e[0]): e for e in evidence.values() if e}.values())
     chosen, off = _fit(fills, events, have)
-    for t, close in off:
-        quotient = t.price / close
+    for t, quotient in off:
         # No reading of the splits explains the row's scale. A split's worth
         # away from its day's close — pence booked as pounds, another name
         # under the symbol, a typo — is a contradiction worth a line; closer
         # than that is a volatile day, which is not. About a hundred off is
-        # the minor-unit slip, counted apart since a scale fixes it.
+        # the minor-unit slip, counted apart since a scale fixes it. The
+        # quotient is the one left after the ledger's own split rows: a book
+        # that holds BYND's 1:30 reads a raw pre-split fill at 1/30 of the
+        # close, and only what is left of that is the day's noise.
         if quotient >= _MIN_RATIO or quotient <= 1 / _MIN_RATIO:
             consistency.report(
                 "currency_off" if consistency.unit_slip(quotient) else "price_off_market",
@@ -171,7 +173,7 @@ def _ticker_gaps(
                 ticker=ticker,
                 key=t.date,
                 traded=t.date,
-                off=consistency.ratio(t.price, close),
+                off=round(quotient, 3),
             )
     unexplained = {id(t) for t, _ in off}
 
@@ -255,6 +257,9 @@ def _fit(
 ) -> tuple[set[str], list[tuple[Transaction, float]]]:
     """The missing splits the ledger needs, and the fills no reading explains.
 
+    Each unexplained fill comes back with its price over the close, divided
+    by the splits the ledger already carries after it.
+
     A fill's price over the adjusted close is every split after it that the
     row was not restated for. A statement restates the splits that had
     happened when it printed, so what a book lacks is a *suffix* of them:
@@ -289,7 +294,7 @@ def _fit(
         explained |= hits
         if len(hits) > best[0] or (len(hits) == best[0] and error < best[1] - 1e-9):
             best = (len(hits), error, suffix)
-    return {d for d, _ in best[2]}, [f for f in fills if id(f[0]) not in explained]
+    return {d for d, _ in best[2]}, [r for r in restated if id(r[0]) not in explained]
 
 
 def _unproven(ticker: str, day: str, why: str, source: consistency.Source) -> None:
