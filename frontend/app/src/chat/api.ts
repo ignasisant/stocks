@@ -621,6 +621,9 @@ export async function run(
   onRecalled?: (recalled: Recalled[]) => void,
   /** A deep research's plan, whole, each time the model updates it. */
   onPlan?: (plan: PlanStep[]) => void,
+  /** The words so far are withdrawn: the model died mid-answer, another
+   * writes it again from the start. */
+  onRestart?: () => void,
 ): Promise<Done> {
   const response = await fetch("/api/v1/chat/runs", {
     method: "POST",
@@ -636,7 +639,17 @@ export async function run(
     // effect between two chunks rather than at the end of the answer.
     signal,
   });
-  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled, onPlan);
+  return follow(
+    response,
+    onMeta,
+    onText,
+    onPhase,
+    onTool,
+    onSide,
+    onRecalled,
+    onPlan,
+    onRestart,
+  );
 }
 
 /**
@@ -657,13 +670,24 @@ export async function rejoin(
   onSide?: (side: Arguing) => void,
   onRecalled?: (recalled: Recalled[]) => void,
   onPlan?: (plan: PlanStep[]) => void,
+  onRestart?: () => void,
 ): Promise<Done> {
   const response = await fetch(`/api/v1/chat/runs/${id(runId)}`, {
     credentials: "same-origin",
     headers: { Accept: "text/event-stream" },
     signal,
   });
-  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled, onPlan);
+  return follow(
+    response,
+    onMeta,
+    onText,
+    onPhase,
+    onTool,
+    onSide,
+    onRecalled,
+    onPlan,
+    onRestart,
+  );
 }
 
 /**
@@ -682,6 +706,7 @@ async function follow(
   onSide?: (side: Arguing) => void,
   onRecalled?: (recalled: Recalled[]) => void,
   onPlan?: (plan: PlanStep[]) => void,
+  onRestart?: () => void,
 ): Promise<Done> {
   if (!response.ok) await refusal(response);
 
@@ -727,6 +752,7 @@ async function follow(
             onRecalled?.(event.value as Recalled[]);
           else if (event.name === "chat.plan") onPlan?.(event.value as PlanStep[]);
           else if (event.name === "chat.learned") learned = event.value as Learned[];
+          else if (event.name === "chat.restart") onRestart?.();
           break;
         case "TEXT_MESSAGE_CONTENT":
           // A subagent's words are its own: they never join the answer's.

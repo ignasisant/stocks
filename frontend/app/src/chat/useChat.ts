@@ -139,6 +139,8 @@ type Listeners = {
   side: (side: Arguing) => void;
   recalled: (recalled: Recalled[]) => void;
   plan: (plan: PlanStep[]) => void;
+  /** The model died mid-answer and another writes it again: drop the words. */
+  restart: () => void;
 };
 
 /** The request that opens a run's stream: `run` for a question, or `rejoin`. */
@@ -365,6 +367,10 @@ export function useChat(live: boolean) {
           })),
         recalled: (recalled) => write((turn) => ({ ...turn, recalled })),
         plan: (plan) => write((turn) => ({ ...turn, plan })),
+        restart: () => {
+          settle();
+          write((turn) => ({ ...turn, content: "" }));
+        },
       };
       // Stopped, not failed. The words that arrived are kept and marked as cut
       // short; the server recorded none of it, so the thread is unchanged and
@@ -454,6 +460,7 @@ export function useChat(live: boolean) {
               listen.side,
               listen.recalled,
               listen.plan,
+              listen.restart,
             );
         }
       } finally {
@@ -641,6 +648,7 @@ export function useChat(live: boolean) {
             on.side,
             on.recalled,
             on.plan,
+            on.restart,
           ),
         started,
         chose,
@@ -681,6 +689,7 @@ export function useChat(live: boolean) {
             on.side,
             on.recalled,
             on.plan,
+            on.restart,
           ),
         Date.now(),
         null,
