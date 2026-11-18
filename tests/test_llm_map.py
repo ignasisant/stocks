@@ -489,6 +489,68 @@ def test_extracted_trades_become_transactions(monkeypatch):
     assert (tx.quantity, tx.price, tx.fee, tx.currency) == (10.0, 180.5, 1.2, "USD")
 
 
+ISIN_PAGE = """Extracto de valores
+Fecha | Valor | ISIN | Operación | Títulos | Precio
+08/01/2024 | BBVA | ES0113211835 | Compra | 300 | 8,912
+09/01/2024 | Microsoft | US5949181045 | Compra | 2 | 370,00
+10/01/2024 | Apple | — | Compra | 1 | 185,00
+"""
+
+
+def test_a_pdf_row_with_no_currency_takes_its_isins(monkeypatch):
+    """Prod 2026-11-18: a Spanish bank's PDF printed BBVA beside its ISIN and
+    no currency; the model named BBVA and nothing else, and it went in as
+    dollars. The ISIN on its line says euros; a stated currency still wins,
+    and a line with no ISIN keeps the default."""
+    _batches(monkeypatch, [ISIN_PAGE])
+    provider = _StubProvider(_extraction("trades", [
+        {"date": "2024-01-08", "ticker": "BBVA", "action": "buy",
+         "quantity": 300, "price": 8.912},
+        {"date": "2024-01-09", "ticker": "Microsoft", "action": "buy",
+         "quantity": 2, "price": 370},
+        {"date": "2024-01-10", "ticker": "Apple", "action": "buy",
+         "quantity": 1, "price": 185},
+        {"date": "2024-01-08", "ticker": "BBVA", "action": "buy",
+         "quantity": 1, "price": 9, "currency": "usd"},
+    ]))
+    found = llm_map.extract("extracto.pdf", b"%PDF", provider, "k")
+
+    # The fourth row's USD is printed nowhere on the page: a guess, so the
+    # ISIN beside BBVA wins over it too.
+    assert [tx.currency for tx in found.result.transactions] == [
+        "EUR", "USD", "USD", "EUR"]
+
+
+def test_a_currency_the_page_prints_is_kept_over_the_isin(monkeypatch):
+    _batches(monkeypatch, [ISIN_PAGE + "Divisa: USD\n"])
+    provider = _StubProvider(_extraction("trades", [
+        {"date": "2024-01-08", "ticker": "BBVA", "action": "buy",
+         "quantity": 300, "price": 8.912, "currency": "USD"},
+    ]))
+    found = llm_map.extract("extracto.pdf", b"%PDF", provider, "k")
+
+    assert [tx.currency for tx in found.result.transactions] == ["USD"]
+
+
+def test_printed_reads_codes_and_signs():
+    assert llm_map._printed("usd", "Price 12.00 USD")
+    assert llm_map._printed("USD", "Price $12.00")
+    assert llm_map._printed("EUR", "8,91 €")
+    assert not llm_map._printed("USD", "8,91 | ES0113211835")
+    assert not llm_map._printed("USD", "USDT 5")  # inside a longer word
+    assert not llm_map._printed("", "USD")
+
+
+def test_listed_currency_reads_the_isin_on_the_rows_line():
+    assert llm_map._listed_currency("ES0113211835", "") == "EUR"
+    assert llm_map._listed_currency("bbva", ISIN_PAGE) == "EUR"
+    assert llm_map._listed_currency("Apple", ISIN_PAGE) == ""
+    # Two lines naming it with ISINs of different countries: no answer.
+    assert llm_map._listed_currency("X", "X | ES0113211835\nX | US5949181045") == ""
+    # A ticker inside a longer word is not that ticker.
+    assert llm_map._listed_currency("BBV", ISIN_PAGE) == ""
+
+
 def test_the_resolution_call_is_retried_once(monkeypatch):
     """It lands right behind the extraction calls, into a per-minute limit."""
     _batches(monkeypatch, [TRADES_PAGE])

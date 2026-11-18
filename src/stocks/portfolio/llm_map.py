@@ -1601,6 +1601,38 @@ def parse_extraction(raw: str) -> tuple[list[dict], str]:
     return data.get("transactions") or [], kind
 
 
+_ISIN_ANY = re.compile(r"\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b")
+
+
+_CURRENCY_SIGNS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
+
+
+def _printed(currency: str, text: str) -> bool:
+    """Whether the page itself states `currency`, by code or by sign."""
+    code = currency.strip().upper()[:3]
+    if not code:
+        return False
+    if re.search(rf"(?<![A-Za-z]){code}(?![A-Za-z])", text, re.IGNORECASE):
+        return True
+    sign = _CURRENCY_SIGNS.get(code, "")
+    return bool(sign) and sign in text
+
+
+def _listed_currency(ticker: str, text: str) -> str:
+    """The currency an ISIN names for `ticker` on a page: the ISIN itself, or
+    the ones printed on the lines that name it. Empty when none does or when
+    those lines disagree."""
+    if not ticker.strip():
+        return ""
+    if _is_isin(ticker):
+        return _ISIN_CURRENCY.get(ticker.strip().upper()[:2], "")
+    named = re.compile(rf"(?<![\w.]){re.escape(ticker.strip())}(?!\w)", re.IGNORECASE)
+    found = {_ISIN_CURRENCY.get(code[:2], "")
+             for line in text.splitlines() if named.search(line)
+             for code in _ISIN_ANY.findall(line.upper())}
+    return next(iter(found)) if len(found) == 1 else ""
+
+
 def extract_pdf(data: bytes, provider: Provider, api_key: str = "") -> Extraction:
     """Have the model read a PDF's transactions out of it, batch by batch.
 
@@ -1644,8 +1676,13 @@ def extract_pdf(data: bytes, provider: Provider, api_key: str = "") -> Extractio
             tx, why = _transaction_from(record)
             if tx is None:
                 result.skipped.append({"row": index, "type": "row", "reason": why})
-            else:
-                result.transactions.append(tx)
+                continue
+            if not _printed(str(record.get("currency") or ""), batch):
+                # The model named no currency, or one the page never prints
+                # (dollars is only a default): an ISIN on the row's own line
+                # says where it is listed.
+                tx.currency = _listed_currency(tx.ticker, batch) or tx.currency
+            result.transactions.append(tx)
 
     if dropped > 0:  # never a silent truncation
         result.skipped.append({
