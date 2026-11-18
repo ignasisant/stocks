@@ -492,7 +492,8 @@ export function Settings({
           error: failure instanceof ConnectFailed ? failure.key : "chat.api_error",
         });
       });
-  }, [connect]);
+    // The callbacks are new every render; `spent` keeps the code single use.
+  }, [connect, onConnectTaken, onState]);
   const joinedAs = joining ? providerLabel(state.providers, joining.provider) : "";
 
   const picked =
