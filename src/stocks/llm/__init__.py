@@ -1095,6 +1095,13 @@ def _resting(b: _FreeBackend) -> bool:
 # under 2 s and dots in ~5 s on a 10k-token prompt.
 _FIRST_TEXT_S = 20.0
 
+# A caller nobody is watching (`patient()`) waits longer: OpenRouter's free
+# models wrote their first word at a median 27 s and p95 41 s (prod, week to
+# 2026-11-18), so at 20 s every scheduled card that groq's cap sent their way
+# was cut, and the chain ran dry each night. Three of them still fit the
+# card's 180 s.
+_PATIENT_FIRST_TEXT_S = 45.0
+
 # The last one left may think longer, since a slow answer beats none, but not
 # past the longest any caller waits (the daily card's 180 s). A caller that
 # timed out leaves its worker thread streaming: on 2026-11-03
@@ -1327,7 +1334,8 @@ def _free_stream(api_key, model, system, messages):
         while candidates:
             model = candidates.pop(0)
             t0 = _clock()
-            limit = (_FIRST_TEXT_S if candidates or attempt + 1 < len(plan)
+            limit = ((_PATIENT_FIRST_TEXT_S if _PATIENT.get() else _FIRST_TEXT_S)
+                     if candidates or attempt + 1 < len(plan)
                      else _LAST_FIRST_TEXT_S)
             late = t0 + limit
             first_ms = chunks = None
