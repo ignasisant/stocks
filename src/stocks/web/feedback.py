@@ -25,6 +25,7 @@ written into it from outside would not be seen until the next boot.
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import threading
@@ -93,6 +94,59 @@ _ANSWER_CHARS = 4000
 _QUESTION_CHARS = 1000
 _HISTORY_TURNS = 12
 _HISTORY_CHARS = 600
+# A rating carries the reader's own words (question, answer, the turns above),
+# so it lives no longer than the conversation it was copied from: the privacy
+# page promises the stored conversations 30 days (conversations.KEEP_DAYS).
+# `expire_ratings` deletes older ones, run daily by .github/workflows/backup.yml.
+RATING_KEEP_DAYS = 30
+_PREFIX = "data/feedback/"
+_STAMP = "%Y-%m-%dT%H-%M-%SZ"
+
+
+def _filed(name: str) -> float | None:
+    """When a submission was filed, read off its name (<stamp>-<id>.json)."""
+    try:
+        return calendar.timegm(time.strptime(name[:20], _STAMP))
+    except ValueError:
+        return None
+
+
+def expire_ratings(days: int = RATING_KEEP_DAYS, *, dry_run: bool = False,
+                   now: float | None = None) -> list[str]:
+    """Delete the answer ratings filed more than `days` ago, local and bucket.
+
+    Only kind "rating": bug reports, ideas and app scores carry no
+    conversation and stay. The JSON is read only for names past the cutoff,
+    so a daily run costs one listing. Returns the ids deleted (or, with
+    `dry_run`, the ones that would be)."""
+    cutoff = (time.time() if now is None else now) - days * 86400
+    local = ({f.name: f for f in FEEDBACK_DIR.glob("*.json")}
+             if FEEDBACK_DIR.is_dir() else {})
+    remote = {k.removeprefix(_PREFIX) for k in storage.list_keys(_PREFIX)
+              if "/" not in k.removeprefix(_PREFIX) and k.endswith(".json")}
+    gone: list[str] = []
+    for name in sorted(set(local) | remote):
+        filed = _filed(name)
+        if filed is None or filed >= cutoff:
+            continue
+        try:
+            raw = (local[name].read_bytes() if name in local
+                   else storage.read_key(_PREFIX + name))
+            kind = json.loads(raw or b"{}").get("kind")
+        except (OSError, ValueError):
+            continue
+        if kind != "rating":
+            continue
+        gone.append(name.removesuffix(".json"))
+        if dry_run:
+            continue
+        if name in remote:
+            storage.delete_key(_PREFIX + name)
+        if name in local:
+            local[name].unlink(missing_ok=True)
+    if gone and not dry_run:
+        obs.event("feedback.ratings_expired", count=len(gone), days=days)
+    return gone
 
 
 def rate(vote: str, turn: dict, question: str, *, reason: str = "",

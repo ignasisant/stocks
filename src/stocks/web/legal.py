@@ -21,7 +21,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-11-16"
+LAST_UPDATED = "2026-11-19"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -114,6 +114,9 @@ _PRIVACY = {
                 "(kept 30 days) to fix the assistant. You can switch all of "
                 "this off in Profile → Data and account → Review the "
                 "assistant's answers.",
+                "When you rate an answer with 👍 or 👎, that question, the "
+                "answer and the last few messages before it are kept with the "
+                "vote, to fix the assistant, and deleted after 30 days.",
                 "If you turn on notifications, each device's push subscription "
                 "(its browser push address and keys) is stored so the "
                 "notifications you enabled can be sent to it; switching them "
@@ -224,6 +227,9 @@ _PRIVACY = {
                 "(30 días) para corregir el asistente. Puedes desactivarlo "
                 "todo en Perfil → Datos y cuenta → Revisar las respuestas del "
                 "asistente.",
+                "Cuando valoras una respuesta con 👍 o 👎, esa pregunta, la "
+                "respuesta y los últimos mensajes anteriores se guardan con el "
+                "voto para corregir el asistente, y se borran a los 30 días.",
                 "Si activas las notificaciones, se guarda la suscripción push de "
                 "cada dispositivo (su dirección push del navegador y sus "
                 "claves) para poder enviarte las notificaciones que actives; "
@@ -343,6 +349,10 @@ _PRIVACY = {
                 "conversazioni salvate (30 giorni) per correggere "
                 "l'assistente. Puoi disattivare tutto in Profilo → Dati e "
                 "account → Revisione delle risposte dell'assistente.",
+                "Quando valuti una risposta con 👍 o 👎, quella domanda, la "
+                "risposta e gli ultimi messaggi precedenti vengono conservati "
+                "con il voto per correggere l'assistente, e cancellati dopo "
+                "30 giorni.",
                 "Se attivi le notifiche, la sottoscrizione push di ciascun "
                 "dispositivo (il suo indirizzo push del browser e le chiavi) "
                 "viene conservata affinché le notifiche che hai abilitato "
