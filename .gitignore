@@ -56,6 +56,7 @@ wheels/
 /data/code_symbols.json
 /data/profiles.json
 /data/form4.json
+/data/insider_roles.json
 # Names Yahoo has no data for (stocks.data.fetch) — runtime, restored from R2
 /data/unlisted.json
 # What Yahoo lists per search query (stocks.api.loaders.WORLD_MEMO), shared

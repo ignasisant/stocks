@@ -393,6 +393,8 @@ class FakeTx:
     shares: float
     price: float | None
     currency: str | None = "USD"
+    filed: date | None = None
+    held_after: float | None = None
 
     @property
     def is_open_market(self) -> bool:
@@ -889,3 +891,39 @@ def test_no_coverage_is_an_empty_view_not_an_error(client, monkeypatch):
     assert body["analysts"] == 0 and body["covered"] is False
     assert body["months"] == [] and body["revisions"] == []
     assert body["currency"] is None
+
+
+def test_a_buy_says_whether_it_was_routine_and_how_much_it_grew_the_stake(
+    client, monkeypatch
+):
+    """The page reads the pattern and the stake off each buy, and the summary
+    counts deliberate buyers — the classification runs on the whole feed."""
+    today = date.today()
+    past = [
+        FakeTx(date(today.year - back, 1, 15), "Boss", "CEO", "S", False, 50, 10.0)
+        for back in (1, 2, 3)
+    ]
+    buy = FakeTx(today, "Boss", "CEO", "P", True, 100, 10.0,
+                 filed=today, held_after=500)
+    patch_loaders(monkeypatch, "insiders", lambda t: [buy, *past])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: True)
+    body = client.get("/v1/ticker/EXPL/insiders", headers=AUTH).json()
+    (row,) = [r for r in body["trades"] if r["code"] == "P"]
+    assert row["pattern"] == "not_routine" and row["stake_pct"] == 25.0
+    assert row["filed"] == str(today)
+    assert body["summary"]["deliberate_buyers"] == 1
+
+
+def test_a_finnhub_line_shows_the_role_edgar_taught(client, monkeypatch):
+    """Finnhub sends no role; what the background pass learnt fills it in."""
+    from stocks.data import insiders
+
+    today = date.today()
+    insiders._roles_cache()["EXPL"] = {
+        "at": today.isoformat(), "roles": {"BOSS": "Chief Financial Officer"}
+    }
+    buy = FakeTx(today, "Boss", "", "P", True, 100, 10.0)
+    patch_loaders(monkeypatch, "insiders", lambda t: [buy])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: True)
+    body = client.get("/v1/ticker/EXPL/insiders", headers=AUTH).json()
+    assert [r["role"] for r in body["trades"]] == ["Chief Financial Officer"]

@@ -526,9 +526,19 @@ type InsiderTrade = {
   /** A real purchase or sale (P/S), not a grant or an option exercise. */
   is_open_market: boolean;
   currency: string | null;
+  /** When the market could first see it (filing date). */
+  filed?: string | null;
+  /**
+   * Open-market buys only: "routine" when the same insider bought in that
+   * calendar month in each of the three years before, "not_routine"
+   * otherwise; null when the feed does not reach that far back.
+   */
+  pattern?: "routine" | "not_routine" | string | null;
+  /** Open-market buys only: percent more shares than they held before. */
+  stake_pct?: number | null;
 };
 
-type InsiderSummary = {
+export type InsiderSummary = {
   window_days: number;
   buy_count: number;
   sell_count: number;
@@ -541,6 +551,10 @@ type InsiderSummary = {
   net_value: number;
   /** Two or more distinct insiders buying, outweighing the sells. */
   cluster_buy: boolean;
+  /** Buyers with at least one purchase off their own calendar. */
+  deliberate_buyers?: number;
+  /** Buyers whose every purchase was routine. */
+  routine_buyers?: number;
 };
 
 type ShortHolderRow = { name: string; pct: number; date: string | null };

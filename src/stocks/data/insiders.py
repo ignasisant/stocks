@@ -20,9 +20,10 @@ only `insider_transactions` touches the network.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import urllib.error
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 from xml.etree import ElementTree as ET
 
@@ -34,9 +35,22 @@ from stocks.data import finnhub
 from stocks.data.edgar import _user_agent, cik_for
 from stocks.data.http import get_bytes
 
-# How far back Finnhub's feed is read. A year covers the trailing window
-# `summarize` scores (180 days) with room for the table's older rows.
-FINNHUB_LOOKBACK_DAYS = 365
+# How far back Finnhub's feed is read, still one request. The window
+# `summarize` scores is 180 days, but the table shows a year, and telling a
+# routine buyer from a deliberate one (`buy_pattern`) needs the three whole
+# calendar years before each shown trade: a year plus three back to January.
+FINNHUB_LOOKBACK_DAYS = 5 * 366
+
+# Routine vs deliberate buying (Cohen, Malloy & Pomorski, "Decoding Inside
+# Information", Journal of Finance 2012): an insider who bought in the same
+# calendar month in each of the three previous years is buying on a calendar,
+# and those purchases tell nothing about the company. The rest of the buys
+# are where the signal lives. Only an insider who traded in each of those
+# three years is classified at all; anyone else is left unclassified, never
+# assumed deliberate.
+ROUTINE_YEARS = 3
+ROUTINE = "routine"
+NOT_ROUTINE = "not_routine"
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{doc}"
@@ -94,6 +108,12 @@ class InsiderTx:
     # it came from — callers must not add across currencies.
     currency: str = "USD"
     source: str = "SEC"
+    # The day the market could first see it (Form 4 filing date). None when
+    # the source does not say; the trade date is then the nearest stand-in.
+    filed: date | None = None
+    # Shares the insider held after this line — how big the trade was for
+    # them, which the notional alone cannot say. None when not reported.
+    held_after: float | None = None
 
     @property
     def value(self) -> float | None:
@@ -118,6 +138,11 @@ class InsiderSummary:
     sell_value: float = 0.0
     buyers: int = 0  # distinct insiders with ≥1 open-market buy
     sellers: int = 0  # distinct insiders with ≥1 open-market sell
+    # Distinct buyers by `buy_pattern`; the buyers neither counts could not be
+    # classified (too little history). Only filled when `summarize` was given
+    # the history to classify against.
+    deliberate_buyers: int = 0
+    routine_buyers: int = 0
 
     @property
     def net_value(self) -> float:
@@ -195,6 +220,12 @@ def parse_form4(xml_text: str) -> list[InsiderTx]:
     insider = _text(owner, "reportingOwnerId/rptOwnerName") or "Unknown"
     relationship = _relationship(owner)
     ticker = _text(root, "issuer/issuerTradingSymbol") or ""
+    # The document carries no filing date; the owner's signature date is the
+    # day it was put together, which is the filing day or the one before.
+    try:
+        signed = date.fromisoformat(_text(root, "ownerSignature/signatureDate") or "")
+    except ValueError:
+        signed = None
 
     txs: list[InsiderTx] = []
     for t in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
@@ -218,24 +249,79 @@ def parse_form4(xml_text: str) -> list[InsiderTx]:
                 shares=shares,
                 price=_float(t, "transactionAmounts/transactionPricePerShare"),
                 ticker=ticker,
+                filed=signed,
+                held_after=_float(
+                    t, "postTransactionAmounts/sharesOwnedFollowingTransaction"
+                ),
             )
         )
     return txs
 
 
+def buy_pattern(tx: InsiderTx, history: list[InsiderTx]) -> str | None:
+    """`ROUTINE`, `NOT_ROUTINE` or None for one open-market buy. Pure.
+
+    Cohen, Malloy & Pomorski (2012) only classify an insider who traded on
+    the open market in each of the `ROUTINE_YEARS` calendar years before:
+    routine when they bought in this same month every one of those years,
+    not routine otherwise. Anyone without that track record — a first-ever
+    purchase, or a past the feed does not reach — is None: a buy that breaks
+    no habit cannot be read as breaking one.
+    """
+    if tx.code != BUY_CODE or tx.date is None:
+        return None
+    own = [
+        t
+        for t in history
+        if t.insider == tx.insider and t.is_open_market and t.date is not None
+    ]
+    years = {t.date.year for t in own if t.date}
+    prior = range(tx.date.year - ROUTINE_YEARS, tx.date.year)
+    if not all(y in years for y in prior):
+        return None
+    months = {
+        (t.date.year, t.date.month) for t in own if t.code == BUY_CODE and t.date
+    }
+    every_year = all((y, tx.date.month) in months for y in prior)
+    return ROUTINE if every_year else NOT_ROUTINE
+
+
+def stake_change(tx: InsiderTx) -> float | None:
+    """How much an open-market buy grew the insider's direct holding, as a
+    fraction of what they held before (0.25 = a quarter more). Pure.
+
+    None when the holding after is not reported, or when there was nothing
+    before it to grow (a first stake: no ratio means anything there).
+    """
+    if tx.code != BUY_CODE or tx.held_after is None:
+        return None
+    before = tx.held_after - tx.shares
+    if before <= 0:
+        return None
+    return tx.shares / before
+
+
 def summarize(
-    txs: list[InsiderTx], ref: date | None = None, within_days: int = 180
+    txs: list[InsiderTx],
+    ref: date | None = None,
+    within_days: int = 180,
+    history: list[InsiderTx] | None = None,
 ) -> InsiderSummary:
     """Aggregate open-market buys (P) vs sells (S) over the trailing window.
 
     Pure: `ref` defaults to today, but pass it in tests for a fixed clock. Only
     codes P/S count — grants, exercises and tax withholding are excluded so the
-    net is a real discretionary buy/sell balance, not grant noise.
+    net is a real discretionary buy/sell balance, not grant noise. With
+    `history` (usually `txs` itself, when it reaches back years) each buyer is
+    also counted as deliberate or routine (`buy_pattern`): one deliberate buy
+    makes them deliberate.
     """
     ref = ref or date.today()
     cutoff = ref - timedelta(days=within_days)
     buyers: set[str] = set()
     sellers: set[str] = set()
+    deliberate: set[str] = set()
+    routine: set[str] = set()
     agg = {
         "buy_count": 0, "sell_count": 0, "buy_shares": 0.0,
         "sell_shares": 0.0, "buy_value": 0.0, "sell_value": 0.0,
@@ -248,10 +334,18 @@ def summarize(
         agg[f"{side}_shares"] += t.shares
         agg[f"{side}_value"] += t.value or 0.0
         (buyers if side == "buy" else sellers).add(t.insider)
+        if side == "buy" and history is not None:
+            pattern = buy_pattern(t, history)
+            if pattern == NOT_ROUTINE:
+                deliberate.add(t.insider)
+            elif pattern == ROUTINE:
+                routine.add(t.insider)
     return InsiderSummary(
         window_days=within_days,
         buyers=len(buyers),
         sellers=len(sellers),
+        deliberate_buyers=len(deliberate),
+        routine_buyers=len(routine - deliberate),
         **agg,
     )
 
@@ -339,12 +433,15 @@ def clear_form4_cache() -> None:
 def _encode(tx: InsiderTx) -> dict:
     row = asdict(tx)
     row["date"] = tx.date.isoformat() if tx.date else None
+    row["filed"] = tx.filed.isoformat() if tx.filed else None
     return row
 
 
 def _decode(row: dict) -> InsiderTx:
     when = row.get("date")
     price = row.get("price")
+    filed = row.get("filed")
+    held = row.get("held_after")
     return InsiderTx(
         date=date.fromisoformat(str(when)) if when else None,
         insider=str(row.get("insider") or ""),
@@ -356,6 +453,8 @@ def _decode(row: dict) -> InsiderTx:
         ticker=str(row.get("ticker") or ""),
         currency=str(row.get("currency") or "USD"),
         source=str(row.get("source") or "SEC"),
+        filed=date.fromisoformat(str(filed)) if filed else None,
+        held_after=None if held is None else float(held),
     )
 
 
@@ -397,8 +496,15 @@ def from_finnhub(ticker: str, rows: list[dict]) -> list[InsiderTx]:
     code or no shares is a holding line, not a trade. Finnhub carries no
     role, so `relationship` is blank — the table's Role column reads empty
     for these rows rather than guessing one.
+
+    A Form 4/A repeats the trade it amends under a new filing, so the same
+    insider, day, code and share change is one trade, kept from the latest
+    filing: counted twice it doubles a purchase and can make one buyer look
+    like a habit.
     """
     out: list[InsiderTx] = []
+    seen: dict[tuple, int] = {}
+    within: dict[tuple, int] = {}
     for row in rows:
         if row.get("isDerivative"):
             continue
@@ -412,18 +518,36 @@ def from_finnhub(ticker: str, rows: list[dict]) -> list[InsiderTx]:
         except ValueError:
             tx_date = None
         price = _finnhub_float(row.get("transactionPrice"))
-        out.append(
-            InsiderTx(
-                date=tx_date,
-                insider=str(row.get("name") or "Unknown"),
-                relationship="",
-                code=code,
-                acquired=change > 0,
-                shares=abs(change),
-                price=price if price else None,
-                ticker=ticker,
-            )
+        filed_raw = str(row.get("filingDate") or "")[:10]
+        try:
+            filed = date.fromisoformat(filed_raw) if filed_raw else None
+        except ValueError:
+            filed = None
+        tx = InsiderTx(
+            date=tx_date,
+            insider=str(row.get("name") or "Unknown"),
+            relationship="",
+            code=code,
+            acquired=change > 0,
+            shares=abs(change),
+            price=price if price else None,
+            ticker=ticker,
+            filed=filed,
+            held_after=_finnhub_float(row.get("share")),
         )
+        # Two identical lines inside one filing are two trades; the nth of
+        # them only matches the nth of an amendment.
+        filing = str(row.get("id") or "")
+        line = (tx.insider, tx.date, code, change)
+        nth = within.get((filing, line), 0)
+        within[(filing, line)] = nth + 1
+        key = (*line, nth)
+        at = seen.get(key)
+        if at is None:
+            seen[key] = len(out)
+            out.append(tx)
+        elif (filed or date.min) > (out[at].filed or date.min):
+            out[at] = tx
     return sorted(out, key=lambda t: t.date or date.min, reverse=True)
 
 
@@ -433,11 +557,142 @@ def _from_finnhub(ticker: str) -> list[InsiderTx]:
     if not finnhub.covers(ticker) or not finnhub.has_key():
         return []
     today = date.today()
-    rows = finnhub.insider_transactions(
-        finnhub.spelling(ticker), today - timedelta(days=FINNHUB_LOOKBACK_DAYS), today
-    )
+    start = today - timedelta(days=FINNHUB_LOOKBACK_DAYS)
+    rows = finnhub.insider_transactions(finnhub.spelling(ticker), start, today)
     return from_finnhub(ticker, rows) if rows else []
 
+
+
+# Who an insider is, for the lines Finnhub sends without it. Finnhub's feed
+# carries no role, the Form 4 itself does (`_relationship`), but reading the
+# documents is a round trip each — measured 2026-11-19 at ~1.3 s apiece — so
+# it never happens on a page load. `with_roles` only reads what is already
+# learnt and, when a name in the year shown is missing, starts one background
+# pass over the issuer's recent filings that stops once every wanted name has
+# a role. The page shows the role from the next load on. Keyed by ticker, the
+# names in `_name_key` form; a pass that leaves names unfound is not repeated
+# the same day.
+ROLES_CACHE = DATA_DIR / "insider_roles.json"
+ROLE_DOCS = 40
+ROLE_DAYS = 365
+_roles_memo: dict[str, dict] | None = None
+_roles_lock = threading.Lock()
+_roles_running: set[str] = set()
+
+
+def _name_key(name: str) -> str:
+    """EDGAR and Finnhub spell one filer alike up to case and punctuation."""
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", name.upper()).split())
+
+
+def _roles_cache() -> dict[str, dict]:
+    global _roles_memo
+    with _roles_lock:
+        if _roles_memo is None:
+            if not ROLES_CACHE.exists():
+                with obs.swallow("insiders.roles_restore"):
+                    from stocks import storage
+
+                    storage.restore(ROLES_CACHE)
+            try:
+                loaded = json.loads(ROLES_CACHE.read_text())
+            except (OSError, ValueError):
+                loaded = {}
+            _roles_memo = loaded if isinstance(loaded, dict) else {}
+        return _roles_memo
+
+
+def clear_roles_cache() -> None:
+    """Forget the memo — for tests that point `ROLES_CACHE` somewhere else."""
+    global _roles_memo
+    with _roles_lock:
+        _roles_memo = None
+
+
+def apply_roles(txs: list, roles: dict[str, str]) -> list:
+    """`txs` with a blank `relationship` filled from `roles`. Pure."""
+    return [
+        replace(t, relationship=roles[key])
+        if not t.relationship and (key := _name_key(t.insider)) in roles
+        else t
+        for t in txs
+    ]
+
+
+def with_roles(ticker: str, txs: list) -> list:
+    """`txs` with each blank role filled from what is already learnt; never
+    waits on the network (see `ROLES_CACHE`)."""
+    if not txs or all(t.relationship for t in txs):
+        return txs
+    entry = _roles_cache().get(ticker.upper()) or {}
+    roles = entry.get("roles") or {}
+    out = apply_roles(txs, roles)
+    cutoff = date.today() - timedelta(days=ROLE_DAYS)
+    wanted = {
+        _name_key(t.insider)
+        for t in out
+        if not t.relationship and (t.date is None or t.date >= cutoff)
+    }
+    if wanted and entry.get("at") != date.today().isoformat():
+        _learn_roles_later(ticker.upper(), wanted)
+    return out
+
+
+def _learn_roles_later(ticker: str, wanted: set[str]) -> None:
+    with _roles_lock:
+        if ticker in _roles_running:
+            return
+        _roles_running.add(ticker)
+    threading.Thread(
+        target=_learn_roles, args=(ticker, wanted), daemon=True, name="insider-roles"
+    ).start()
+
+
+def _learn_roles(ticker: str, wanted: set[str]) -> None:
+    """Read the issuer's recent Form 4s, newest first, until every wanted name
+    has a role, and keep what was found. Never raises."""
+    try:
+        found: dict[str, str] = {}
+        cik = cik_for(ticker)
+        if cik is not None:
+            known = _form4_cache()
+            fetched: dict[str, list[InsiderTx]] = {}
+            for url in _recent_form4_docs(cik, ROLE_DOCS):
+                if url in known:
+                    lines = [_decode(row) for row in known[url]]
+                else:
+                    try:
+                        xml = _get(url).decode("utf-8", errors="replace")
+                    except (urllib.error.URLError, TimeoutError):
+                        continue
+                    lines = fetched[url] = parse_form4(xml)
+                for t in lines:
+                    if t.relationship:
+                        found.setdefault(_name_key(t.insider), t.relationship)
+                if wanted <= found.keys():
+                    break
+            if fetched:
+                _remember_form4(fetched)
+        memo = _roles_cache()
+        with _roles_lock:
+            old = (memo.get(ticker) or {}).get("roles") or {}
+            memo[ticker] = {"at": date.today().isoformat(), "roles": {**old, **found}}
+            with obs.swallow("insiders.roles_remember"):
+                ROLES_CACHE.parent.mkdir(parents=True, exist_ok=True)
+                atomic.write_json(ROLES_CACHE, memo, separators=(",", ":"))
+                from stocks import storage
+
+                storage.persist(ROLES_CACHE)
+    except Exception as exc:  # a background pass must not take the process down
+        obs.warn(
+            "insiders.roles_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:200],
+        )
+    finally:
+        with _roles_lock:
+            _roles_running.discard(ticker)
 
 def insider_transactions(ticker: str, limit: int = 40) -> list[InsiderTx]:
     """Recent Form 4 transactions for a ticker, newest first.

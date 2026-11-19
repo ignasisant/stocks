@@ -1581,6 +1581,8 @@ export type InsiderSummary = {
   "sellers": number;
   "net_value": number;
   "cluster_buy": boolean;
+  "deliberate_buyers": number;
+  "routine_buyers": number;
 };
 
 export type InsiderTrade = {
@@ -1594,6 +1596,9 @@ export type InsiderTrade = {
   "value": number | null;
   "is_open_market": boolean;
   "currency": string | null;
+  "filed": string | null;
+  "pattern": string | null;
+  "stake_pct": number | null;
 };
 
 export type Insiders = {
@@ -2147,6 +2152,10 @@ export type Onboarding = {
   "explore": {
     [key: string]: boolean;
   };
+};
+
+export type Opened = {
+  "via": "window" | "opened" | "message" | "pending";
 };
 
 export type OptionsView = {
@@ -3903,6 +3912,23 @@ export type VideoPart = {
   "source": DataSource | UrlSource | FileSource;
   "metadata"?: unknown | null;
   [key: string]: unknown;
+};
+
+export type ViewportStuck = {
+  "inner": number;
+  "vv": number;
+  "top": number;
+  "client": number;
+  "fixed": number;
+  "tallest": number;
+  "screen": number;
+  "typing": number;
+  "after_inner": number;
+  "after_vv": number;
+  "after_top": number;
+  "after_fixed": number;
+  "tried": boolean;
+  "healed": boolean;
 };
 
 export type Vital = {

@@ -19,6 +19,7 @@ import {
   compact,
   growthLabel,
   insiderPrice,
+  insiderSignal,
   insiderValue,
   legend,
   orElse,
@@ -106,6 +107,59 @@ describe("insider table cells", () => {
     expect(insiderPrice(330.19, "USD")).toBe("$330.19");
     expect(insiderPrice(null, "USD")).toBe("");
     expect(insiderValue(null, "USD")).toBe("");
+  });
+});
+
+describe("insider signal", () => {
+  const base = {
+    window_days: 180,
+    buy_count: 0,
+    sell_count: 0,
+    buy_shares: 0,
+    sell_shares: 0,
+    buy_value: 0,
+    sell_value: 0,
+    buyers: 0,
+    sellers: 0,
+    net_value: 0,
+    cluster_buy: false,
+    deliberate_buyers: 0,
+    routine_buyers: 0,
+  };
+
+  it("does not call a cluster of routine buyers a cluster", () => {
+    const routine = {
+      ...base,
+      buy_count: 3,
+      buyers: 3,
+      routine_buyers: 3,
+      cluster_buy: true,
+    };
+    expect(insiderSignal(routine)).toBe("routine");
+    expect(insiderSignal({ ...routine, routine_buyers: 2, deliberate_buyers: 1 })).toBe(
+      "cluster",
+    );
+    // Unclassified buyers keep the cluster: too little history is not routine.
+    expect(insiderSignal({ ...routine, routine_buyers: 0 })).toBe("cluster");
+  });
+
+  it("reads one off-calendar buy even when sells outweigh it", () => {
+    const one = {
+      ...base,
+      buy_count: 1,
+      buyers: 1,
+      deliberate_buyers: 1,
+      sell_count: 4,
+      sell_value: 1_000_000,
+      buy_value: 50_000,
+    };
+    expect(insiderSignal(one)).toBe("deliberate");
+    expect(insiderSignal({ ...one, deliberate_buyers: 0 })).toBe("selling");
+  });
+
+  it("says nothing without a summary or a lopsided flow", () => {
+    expect(insiderSignal(null)).toBeNull();
+    expect(insiderSignal(base)).toBeNull();
   });
 });
 

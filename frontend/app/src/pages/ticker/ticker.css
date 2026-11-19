@@ -409,6 +409,14 @@
   color: var(--ag-text-muted);
 }
 
+/* A second, quieter line inside a table cell: when a filing came out, what a
+   buy says. Block so it sits under the cell's value, not beside it. */
+.tk-cell-sub {
+  display: block;
+  font-size: var(--ag-fs-xs);
+  margin-top: 2px;
+}
+
 .tk-details > summary {
   cursor: pointer;
   font-size: var(--ag-fs-sm);
@@ -1417,6 +1425,16 @@
   padding: 6px 10px 6px 0;
   border-top: 1px solid var(--ag-border);
   white-space: nowrap;
+}
+
+/* Insider, role and type wrap; dates and figures never do. A role reads as
+   the filer wrote it ("EVP, Brand President, HEYDUDE"), and on one line it
+   pushed the share count behind a sideways scroll nobody knew was there. */
+.tk-insider-table td:nth-child(2),
+.tk-insider-table td:nth-child(3),
+.tk-insider-table td:nth-child(4) {
+  white-space: normal;
+  min-width: 8em;
 }
 
 /* A holding's name wraps and its weight never does: a closed-end fund's lines
