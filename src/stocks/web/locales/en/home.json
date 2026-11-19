@@ -541,6 +541,7 @@
   "home.daily_an_note_history": "Move: from the close before the report to the close after it.",
   "home.daily_an_note_corr": "Correlation of a year of daily returns with the sector you are overweight in: the lower, the more differently it moves.",
   "home.daily_an_note_attribution": "Today's weight × the month's move in each listing's own currency: an attribution, not an exact reconciliation.",
+  "home.loading_title": "Getting your Home ready",
   "home.customize": "Customise",
   "home.customize_guest": "Sign in to arrange Home your way: reorder the cards, put some away, add others.",
   "home.edit_title": "Customise Home",

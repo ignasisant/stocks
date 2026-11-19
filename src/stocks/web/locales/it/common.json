@@ -74,6 +74,7 @@
   "activity.step_rebase": "Prezzi dell'ultimo mese",
   "activity.step_full": "Storico completo dei prezzi",
   "activity.names": "{done} di {total} titoli",
+  "activity.parts": "{done} di {total}",
   "activity.expected": "Di solito ci vogliono ~{s} s",
   "activity.hint_slow": "Lento, ma ancora in corso.",
   "activity.hint_long": "I caricamenti grandi possono durare fino a un minuto.",

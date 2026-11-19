@@ -549,6 +549,14 @@ fixed meaning — they are not a series palette.
   row tools) is visible on touch.
 - **Loading:** skeletons keep their final height from the first frame and
   fade in after `calc(var(--ag-dur-move) * 2)`, so a fast load never flashes.
+- **Page loading card** (`PageLoading`, Home): a page whose whole first
+  screen is waiting shows one card instead of a wall of skeletons — title,
+  "n of N" + seconds, a bar that never sits at zero, steps in the page's own
+  order (✓ "Listo" / ✻ what it waits on). The page mounts hidden underneath
+  and cross-fades in once the first screen has something to read, never on a
+  block below the fold. While the card is up the corner activity banner and
+  the stale/retry line keep out: one report per wait, and nothing on screen is
+  old yet.
 - **Failed loads** use `LoadFailed` (`shell/Layout.tsx`): offline,
   rate-limited, transient or generic copy plus Retry; offline retries itself
   when the connection returns. Never print a raw error. `role="alert"` only

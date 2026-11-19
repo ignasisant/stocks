@@ -165,6 +165,16 @@ body {
   );
 }
 
+/* `shell/viewport.ts`: fixed to every edge, so its height is the box the tab
+   bar and the toasts are laid out against. Never seen, never in the way. */
+.ag-vp-probe {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* The brand light (`shell/ambient`, off with `?ambient=0`): three soft
    washes in DS hues — purple 600, purple 800, chart blue 600 — drifting
    behind every card. The cards stay opaque, so it reads in the gutters and
@@ -771,6 +781,159 @@ body {
   animation-duration: 1.4s;
 }
 
+/* One card in place of a page of skeletons (`PageLoading`): an empty state,
+   so capped and centred rather than run edge to edge. Fades in a beat late —
+   a page that answers at once never shows it. Head says how far (parts and
+   seconds), the bar shows it, the rows say which part is which, in the
+   page's order. */
+.ag-page-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+  width: min(32rem, 100%);
+  margin: clamp(0.5rem, 6vh, 3rem) auto 0;
+  padding: 1.25rem 1.5rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg, 16px);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
+  font-size: 13px;
+  color: var(--ag-text-secondary);
+  animation: ag-page-loading-in var(--ag-dur-move) var(--ag-ease-out) 250ms both;
+}
+
+@container ag-main (max-width: 520px) {
+  .ag-page-loading {
+    margin-top: 0.5rem;
+    padding: 14px 14px 10px;
+  }
+}
+
+@keyframes ag-page-loading-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.ag-page-loading-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.ag-page-loading-title {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.ag-page-loading-meta {
+  flex: none;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono, "Martian Mono", ui-monospace, monospace);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-page-loading-bar {
+  height: 6px;
+  border-radius: 999px;
+}
+
+.ag-page-loading-bar > div {
+  border-radius: inherit;
+  background: var(--ag-brand-accent);
+}
+
+.ag-page-loading-server {
+  margin: -4px 0 0;
+  color: var(--ag-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-page-loading-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-page-loading-steps > li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  min-width: 0;
+}
+
+.ag-page-loading-steps > li + li {
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-page-loading-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ag-brand-accent);
+  animation: ag-work-pulse 1.2s ease-in-out infinite;
+}
+
+.ag-page-loading-steps > li[data-done] .ag-page-loading-mark {
+  background: var(--ag-profit-band);
+  color: var(--ag-up, var(--ag-text-primary));
+  font-size: 11px;
+  font-weight: 700;
+  animation: none;
+}
+
+.ag-page-loading-label {
+  overflow: hidden;
+  color: var(--ag-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-page-loading-steps > li[data-done] .ag-page-loading-label {
+  color: var(--ag-text-secondary);
+  font-weight: 400;
+}
+
+.ag-page-loading-what {
+  /* The part's name keeps the room; what it is doing gives way. */
+  max-width: min(16rem, 45cqi);
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-page-loading-steps > li[data-done] .ag-page-loading-what {
+  color: var(--ag-up, var(--ag-text-muted));
+}
+
+.ag-page-loading .ag-activity-hint {
+  margin: 0;
+}
+
 @keyframes ag-sweep {
   to {
     transform: translateX(300%);
@@ -806,6 +969,12 @@ body {
   .ag-activity[data-leaving] {
     transform: none;
     transition: none;
+  }
+
+  @keyframes ag-page-loading-in {
+    from {
+      opacity: 0;
+    }
   }
 
   @keyframes ag-activity-in {

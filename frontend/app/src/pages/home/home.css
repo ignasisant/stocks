@@ -12,6 +12,47 @@
   gap: 1.5rem;
 }
 
+/* The page under its loading card (`PageLoading` in Home.tsx). Laid out like
+   the page itself; while nothing has landed the cards still mount and load,
+   but out of sight under the card, clipped to a screen so only the slots a
+   reader would see on arrival come into view (`useInView`) and ask. */
+.hm-wait,
+.hm-wait-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.hm-wait[data-waiting] {
+  position: relative;
+}
+
+.hm-wait[data-waiting] > .ag-page-loading {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+}
+
+.hm-wait[data-waiting] > .hm-wait-body {
+  max-height: 100dvh;
+  overflow: clip;
+  visibility: hidden;
+}
+
+.hm-wait[data-revealed] > .hm-wait-body {
+  animation: hm-reveal var(--ag-dur-move) var(--ag-ease-out);
+}
+
+@keyframes hm-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+.hm-watch {
+  display: contents;
+}
+
 .hm-section {
   display: flex;
   flex-direction: column;

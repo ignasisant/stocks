@@ -74,6 +74,7 @@
   "activity.step_rebase": "Last month of prices",
   "activity.step_full": "Full price history",
   "activity.names": "{done} of {total} names",
+  "activity.parts": "{done} of {total}",
   "activity.expected": "Usually takes ~{s} s",
   "activity.hint_slow": "Slow, but still going.",
   "activity.hint_long": "Big loads can take up to a minute.",
