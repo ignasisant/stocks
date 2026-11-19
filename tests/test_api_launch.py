@@ -60,3 +60,43 @@ def test_a_flood_is_dropped_quietly(client, caplog):
     for _ in range(route.MAX_PER_HOUR + 5):
         assert client.post("/v1/launch", json={"device": "android"}).status_code == 204
     assert len(_logged(caplog)) == route.MAX_PER_HOUR
+
+
+STUCK = {
+    "inner": 520, "vv": 520, "top": 0, "client": 520, "fixed": 520,
+    "tallest": 852, "screen": 852, "typing": 516,
+    "after_inner": 852, "after_vv": 852, "after_top": 0, "after_fixed": 852,
+    "tried": True, "healed": True,
+}
+
+
+def _stuck(caplog) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if getattr(r, "event", "") == "app.viewport_stuck"]
+
+
+def test_a_stuck_window_is_logged_with_its_sizes(client, caplog):
+    caplog.set_level(logging.INFO)
+    response = client.post(
+        "/v1/viewport-stuck", json=STUCK, headers={"user-agent": IPHONE},
+    )
+    assert response.status_code == 204
+    [record] = _stuck(caplog)
+    assert (record.inner, record.tallest, record.after_inner) == (520, 852, 852)
+    assert record.healed is True
+    assert record.ua == "safari/ios"
+
+
+def test_a_stuck_report_takes_only_sizes(client):
+    assert client.post(
+        "/v1/viewport-stuck", json={**STUCK, "where": "home"},
+    ).status_code == 422
+    assert client.post(
+        "/v1/viewport-stuck", json={**STUCK, "inner": -1},
+    ).status_code == 422
+
+
+def test_stuck_reports_are_metered(client, caplog):
+    caplog.set_level(logging.INFO)
+    for _ in range(route.STUCK_PER_HOUR + 5):
+        assert client.post("/v1/viewport-stuck", json=STUCK).status_code == 204
+    assert len(_stuck(caplog)) == route.STUCK_PER_HOUR

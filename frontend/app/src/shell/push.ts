@@ -209,21 +209,143 @@ export function workerTarget(data: unknown): string | null {
   return said.url;
 }
 
+/* The worker's note of a pressed notification (`sw.js`, `remember`). */
+const PENDING_CACHE = "topstocks-push";
+const PENDING_KEY = "/__push/pending";
+/** A note older than this is a press nobody followed: left alone. */
+export const PENDING_MS = 120_000;
+
+/** One press: where it goes and when it happened (the worker's clock). */
+export type Press = { url: string; at: number };
+
+/** The press a worker's note or message names, or null for anything else. */
+function pressOf(said: unknown): Press | null {
+  const at = (said as { at?: unknown } | null)?.at;
+  const url = workerTarget({
+    type: "open",
+    url: (said as { url?: unknown } | null)?.url,
+  });
+  return url && typeof at === "number" ? { url, at } : null;
+}
+
+/** The note's press if it is fresh, else null. */
+export function pendingPress(note: unknown, now: number): Press | null {
+  const press = pressOf(note);
+  return press && now - press.at <= PENDING_MS ? press : null;
+}
+
 /**
- * A notification pressed while this window was open but the worker could not
- * move it (`sw.js`): the worker sends the address and the page goes there
- * itself — same origin only, and only a path, never somewhere else.
+ * Take the worker's note, if one is there: read once and gone, so the press
+ * opens its page once. Null without the Cache API or with nothing pending.
+ */
+export async function takePending(): Promise<Press | null> {
+  if (typeof caches === "undefined") return null;
+  try {
+    const cache = await caches.open(PENDING_CACHE);
+    const hit = await cache.match(PENDING_KEY);
+    if (!hit) return null;
+    await cache.delete(PENDING_KEY);
+    return pendingPress(await hit.json(), Date.now());
+  } catch {
+    return null;
+  }
+}
+
+/** How the page got there, filed as `push.opened` — best effort. */
+function opened(via: "message" | "pending"): void {
+  void fetch(`${BASE}/push/opened`, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ via }),
+  }).catch(() => {});
+}
+
+/**
+ * Deciding what to do with a press, however it arrived. The same press can
+ * come twice — the worker's message and its note — and opens once; two
+ * presses on the same thread are two presses. A note for the address the
+ * page was opened on (the worker's `openWindow`) is already on screen.
+ */
+export function pressTaker(
+  boot: string,
+  go: (url: string) => void,
+  report: (via: "message" | "pending") => void,
+) {
+  const taken = new Set<number>();
+  let first = true;
+  return (press: Press | null, via: "message" | "pending"): boolean => {
+    if (!press) return false;
+    const atBoot = first && via === "pending" && press.url === boot;
+    first = false;
+    if (taken.has(press.at)) return false;
+    taken.add(press.at);
+    if (atBoot) return false;
+    report(via);
+    go(press.url);
+    return true;
+  };
+}
+
+/**
+ * The address the app was opened on, read before the drawer takes `?thread=`
+ * off it.
+ */
+const BOOT_URL =
+  typeof location === "undefined" ? "" : location.pathname + location.search;
+
+/** The worker may still be writing its note when the app comes to the front;
+ * a worker started cold takes longest. */
+const RECHECK_MS = [0, 500, 1500, 4000];
+
+/**
+ * A notification pressed while this window was open: the page goes to its
+ * address itself (`sw.js`). Two ways it hears of it — the worker's message,
+ * when the page is running to receive it, and the worker's note, read on
+ * opening and each time the app comes back to the front, for an iPhone app
+ * woken by the press. Same origin only, and only a path, never somewhere
+ * else. The page answers the message (`took`), so the worker knows not to
+ * move the window itself.
  */
 export function useWorkerOpen(): void {
   useEffect(() => {
+    const take = pressTaker(BOOT_URL, navigate, opened);
     const worker =
       typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
-    if (!worker) return;
     const heard = (event: MessageEvent) => {
-      const url = workerTarget(event.data);
-      if (url) navigate(url);
+      if (!workerTarget(event.data)) return;
+      const press = pressOf(event.data);
+      if (press) {
+        (event.source as ServiceWorker | null)?.postMessage({
+          type: "took",
+          at: press.at,
+        });
+      }
+      take(press, "message");
     };
-    worker.addEventListener("message", heard);
-    return () => worker.removeEventListener("message", heard);
+    worker?.addEventListener("message", heard);
+
+    const timers: number[] = [];
+    const look = () => {
+      if (document.visibilityState !== "visible") return;
+      for (const t of timers.splice(0)) window.clearTimeout(t);
+      for (const ms of RECHECK_MS) {
+        timers.push(
+          window.setTimeout(() => {
+            void takePending().then((press) => take(press, "pending"));
+          }, ms),
+        );
+      }
+    };
+    look();
+    document.addEventListener("visibilitychange", look);
+    window.addEventListener("pageshow", look);
+    return () => {
+      worker?.removeEventListener("message", heard);
+      document.removeEventListener("visibilitychange", look);
+      window.removeEventListener("pageshow", look);
+      for (const t of timers) window.clearTimeout(t);
+    };
   }, []);
 }

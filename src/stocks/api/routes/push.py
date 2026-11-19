@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
+from stocks import obs
 from stocks.api.deps import Account, Writer
 from stocks.config import public_origin
 from stocks.notify import webpush
@@ -174,3 +175,21 @@ def test(body: Endpoint, paths: Writer, request: Request) -> None:
 @router.post("/presence", status_code=status.HTTP_204_NO_CONTENT)
 def presence(body: Presence, paths: Writer) -> None:
     webpush.seen(str(paths.chat), body.client, body.visible)
+
+
+class Opened(BaseModel):
+    """How a pressed notification reached its page (`sw.js`, `shell/push.ts`).
+
+    The worker says what it did — `window` (told an open window to move),
+    `opened` (opened a new one) — and the page what it heard: `message` (the
+    worker's word, on screen) or `pending` (the note the worker left, read
+    when the app came back to the front)."""
+
+    via: Literal["window", "opened", "message", "pending"]
+
+
+@router.post("/opened", status_code=status.HTTP_204_NO_CONTENT)
+def opened(body: Opened, paths: Writer) -> None:
+    """File `push.opened`: an iPhone app woken from the background gives no
+    other sign of whether the tap reached the thread."""
+    obs.event("push.opened", via=body.via)

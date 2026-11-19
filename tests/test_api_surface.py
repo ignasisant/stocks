@@ -185,7 +185,9 @@ def test_the_guest_list_is_not_silently_growing():
     # copy cut before it was published, read by people with no account.
     # 72: `POST /missing-strings` — catalog keys a guest's screen drew as their
     # own dotted name: one log line per key, metered with `/client-error`.
-    assert len(guest.OPEN) == 72
+    # 73: `POST /viewport-stuck` — a guest's Home Screen app left short by an
+    # iOS keyboard: one log line of window sizes, metered like `/launch`.
+    assert len(guest.OPEN) == 73
 
 
 def test_every_route_a_guest_may_read_is_a_read():

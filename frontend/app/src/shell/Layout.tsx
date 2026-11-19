@@ -52,6 +52,7 @@ import { usePresence, useSwipeDismiss } from "./useSheet";
 import { PullRefresh } from "./PullRefresh";
 import { useDeviceClaim, useWorkerOpen } from "./push";
 import { useReloadOnReturn } from "./resume";
+import { isTextField } from "./viewport";
 import { useZoneSync } from "./zone";
 
 /**
@@ -131,20 +132,12 @@ function Nav() {
   // it would leave a sliver of page. Hidden for as long as a text field holds
   // focus (`:root[data-kbd]`, shell.css) — only on touch, where there is one.
   useEffect(() => {
-    const typing = (el: EventTarget | null) =>
-      el instanceof HTMLElement &&
-      (el.isContentEditable ||
-        el instanceof HTMLTextAreaElement ||
-        (el instanceof HTMLInputElement &&
-          !["button", "checkbox", "radio", "range", "file", "submit", "reset"].includes(
-            el.type,
-          )));
     const set = (on: boolean) => {
       if (on && !window.matchMedia?.("(pointer: coarse)").matches) return;
       if (on) document.documentElement.dataset.kbd = "";
       else delete document.documentElement.dataset.kbd;
     };
-    const onIn = (event: FocusEvent) => set(typing(event.target));
+    const onIn = (event: FocusEvent) => set(isTextField(event.target));
     const onOut = () => set(false);
     document.addEventListener("focusin", onIn);
     document.addEventListener("focusout", onOut);

@@ -4,12 +4,14 @@ import App from "./App";
 import { Broken, Crash } from "./shell/Crash";
 import { listen, report } from "./shell/errors";
 import { watchInstall } from "./shell/install";
+import { watchViewport } from "./shell/viewport";
 import { watchVitals } from "./shell/vitals";
 import "./styles.css";
 
 listen();
 watchVitals();
 watchInstall();
+watchViewport();
 
 // Outside the catalog, which is fetched by the tree that just failed: the
 // languages the app speaks, chosen by the browser's own.
