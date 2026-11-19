@@ -9,7 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from stocks.chat import conversations, engine
+from stocks.chat import conversations, engine, toolbox, websearch
+from stocks.chat.engine import instructions
+from stocks.chat.engine import text as engine_text
 from tests.patching import patch_engine
 
 
@@ -722,6 +724,102 @@ def test_a_streamed_written_tool_call_never_reaches_the_reader(
     done = next(v for k, v in seen if k == "done")
     assert shown == "Adyen beat consensus." and metas == ["free"]
     assert done.provider_id == "free" and done.text == shown
+
+
+# Prod 2026-11-19, "resultados walmart": gemini-flash-lite answered a
+# two-word question by writing back the English web block stapled under it.
+_WEB_BLOCK = ("\n\n---\n" + websearch.HEADER + toolbox.UNTRUSTED
+              + "- Walmart Q3 earnings preview (https://x.example/wmt)")
+_ECHO = ("--- " + websearch.HEADER + toolbox.UNTRUSTED
+         + "- Walmart Q3 earnings preview")
+
+
+@pytest.fixture
+def stapled(monkeypatch):
+    """Every outgoing turn carries the web block, as a searched one does."""
+    monkeypatch.setattr(engine.memory, "augment",
+                        lambda message, *a, **k: message + _WEB_BLOCK)
+
+
+def test_echo_state_reads_an_answer_opening_with_a_stapled_block():
+    heads = engine_text.scaffold_heads("resultados walmart" + _WEB_BLOCK)
+    assert len(heads) == 1
+    assert engine_text.echo_state(_ECHO, heads) == "echo"
+    assert engine_text.echo_state("**Web search", heads) == "maybe"
+    assert engine_text.echo_state("", heads) == "maybe"
+    assert engine_text.echo_state("Walmart publica hoy antes de la apertura.",
+                           heads) == ""
+    assert engine_text.echo_state(_ECHO, ()) == ""
+    assert engine_text.scaffold_heads("no block here") == ()
+    assert engine_text.scaffold_heads(None) == ()
+
+
+def test_the_readers_own_text_after_a_rule_is_not_scaffold():
+    # "Corrige este texto:\n---\n<their paragraph>": the answer may rightly
+    # open with their own words.
+    own = ("Corrige este texto:\n---\nLa empresa ha presentado unos "
+           "resultados trimestrales muy por encima de lo esperado")
+    heads = engine_text.scaffold_heads(own + _WEB_BLOCK, own)
+    assert len(heads) == 1 and heads[0].startswith("web search results")
+    assert engine_text.echo_state(
+        "La empresa ha presentado unos resultados trimestrales muy por "
+        "encima de lo esperado, con un error: …", heads) == ""
+
+
+def test_an_answer_that_echoes_the_stapled_block_fails_over(
+        providers, enc, paths, stapled):
+    providers["anthropic"].reply = _ECHO
+    reply = engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                          message="resultados walmart", **paths)
+    assert (reply.provider_id, reply.text) == ("free", "Free answer.")
+
+
+def test_a_streamed_echo_never_reaches_the_reader(providers, enc, paths,
+                                                  monkeypatch, stapled):
+    from stocks import llm
+
+    streamers = {
+        "anthropic": Streamer("anthropic", reply=_ECHO),
+        "free": Streamer("free", reply="Walmart publica hoy antes de abrir."),
+    }
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, **streamers})
+    seen = list(engine.answer_stream(prefs={**BASE_PREFS, **enc("anthropic")},
+                                     message="resultados walmart", **paths))
+    shown = "".join(v for k, v in seen if k == "text")
+    metas = [v["provider"] for k, v in seen if k == "meta"]
+    done = next(v for k, v in seen if k == "done")
+    assert shown == "Walmart publica hoy antes de abrir." and metas == ["free"]
+    assert done.provider_id == "free" and done.text == shown
+
+
+def test_the_question_is_said_again_after_the_stapled_material(
+        providers, enc, paths, stapled):
+    engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                  message="resultados walmart", **paths)
+    sent = next(c[3][-1]["content"] for c in providers["anthropic"].calls
+                if _WEB_BLOCK in str(c[3][-1].get("content")))
+    assert sent.index(_WEB_BLOCK) < sent.index(instructions.QUESTION_MARK)
+    assert sent.endswith("«resultados walmart»")
+    assert "never repeat it back" in sent
+
+
+def test_a_plain_turn_is_not_restated(providers, enc, paths):
+    engine.answer(prefs={**BASE_PREFS, **enc("anthropic")},
+                  message="hola", **paths)
+    assert providers["anthropic"].calls
+    assert not any(instructions.QUESTION_MARK in str(c[3])
+                   for c in providers["anthropic"].calls)
+
+
+def test_the_restated_question_leaves_the_kept_answer_key_alone(monkeypatch):
+    turn = SimpleNamespace(
+        system="s", proposal=None, activities=None, debate=None, learned=None,
+        rules_for=None,
+        messages=[{"role": "user", "content": "q\n\n---\nblock"}])
+    key = engine._answer_key(turn, "chat.json")
+    monkeypatch.setattr(instructions.clock, "now", lambda: "23:59")
+    turn.messages[-1]["content"] += instructions.question_last("q", "es")
+    assert key and engine._answer_key(turn, "chat.json") == key
 
 
 @dataclass
@@ -1902,6 +2000,19 @@ def test_the_light_route_is_only_taken_on_a_quick_keyed_turn():
     assert engine._routed(chain, (keyed, "k", "lite"), hard=False, **quick) == []
     keyless = FakeProvider("free", classifier_model="lite")
     assert engine._routed(chain, (keyless, "", ""), hard=False, **quick) == []
+
+
+def test_a_report_to_read_keeps_the_readers_model():
+    # Prod 2026-11-19: "resultados walmart" read as a look-up, and the cheap
+    # model wrote the fetched pages back instead of reading them.
+    keyed = FakeProvider("gemini", classifier_model="lite")
+    keyed.needs_key = True
+    head = (keyed, "k", "")
+    quick = dict(profile=engine.agent.FAST, argued=False, hard=False)
+    assert engine._routed([head], head, skills=["earnings-review"],
+                          **quick) == []
+    assert engine._routed([head], head, skills=["retail-restaurants"],
+                          **quick) == [(keyed, "k", "lite"), head]
 
 
 def test_the_answer_thinks_by_the_turns_depth():

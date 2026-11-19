@@ -19,6 +19,11 @@ def today() -> date:
     return datetime.now(UTC).astimezone(ZONE).date()
 
 
+def now() -> str:
+    """The time of day in Europe/Madrid, HH:MM."""
+    return datetime.now(UTC).astimezone(ZONE).strftime("%H:%M")
+
+
 def line() -> str:
     """The sentence that pins the date in a system prompt.
 

@@ -664,6 +664,11 @@ def collect(queries: list[str], message: str = "") -> list[Result]:
 
 # ------------------------------------------------------------- prompt
 
+# Model-facing, and a small model handed nothing else has written it back as
+# its answer (prod 2026-11-19): engine.text.echoes_scaffold watches for it.
+HEADER = ("Web search results fetched for this message (ground your answer in "
+          "them where relevant and cite the URLs you use). ")
+
 
 def augment(message: str, results: list[Result]) -> str:
     """The user message with the search hits appended (unchanged when none).
@@ -687,13 +692,7 @@ def augment(message: str, results: list[Result]) -> str:
         f"{i}. {r.title} — {r.url}" + (f"\n   {r.body}" if r.body else "")
         for i, r in enumerate(results, 1)
     ]
-    return (
-        message
-        + "\n\n---\nWeb search results fetched for this message (ground your "
-        "answer in them where relevant and cite the URLs you use). "
-        + UNTRUSTED
-        + "\n".join(lines)
-    )
+    return message + "\n\n---\n" + HEADER + UNTRUSTED + "\n".join(lines)
 
 
 def sources(results: list[Result]) -> list[dict]:

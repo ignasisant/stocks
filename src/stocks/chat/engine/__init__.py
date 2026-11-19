@@ -97,10 +97,12 @@ from stocks.chat.engine.completion import (
 from stocks.chat.engine.instructions import (
     CARD_OPENER,
     MAX_CONTEXT_MSGS,
+    QUESTION_MARK,
     RULES,
     SCHEDULED_OPENERS,
     _brief_skills,
     language_rule,
+    question_last,
     recent,
     resolve_skills,
     system_prompt,
@@ -210,7 +212,9 @@ from stocks.chat.engine.text import (
     _may_open_call,
     _only_calls,
     close_markdown,
+    echo_state,
     may_head_with_date,
+    scaffold_heads,
     scrub_written_calls,
     strip_cite_marks,
     strip_date_head,
@@ -893,8 +897,13 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if sides:
             msgs[-1]["content"] += debate.brief(sides)
             msgs = tokens.fit(msgs, system=system)
+    # After the last fit, which cuts an overlong turn from its tail: the
+    # question said again is the one part of it that must survive.
+    if msgs and isinstance(msgs[-1].get("content"), str) \
+            and "\n---\n" in msgs[-1]["content"]:
+        msgs[-1]["content"] += question_last(message, lang)
 
-    routed = _routed(atts, live[0], profile=profile, hard=hard,
+    routed = _routed(atts, live[0], profile=profile, hard=hard, skills=skills,
                      argued=bool(sides) or asked_for is not None)
     say("writing")
     steps = trace(evidence, hits, quotes, lang)
@@ -971,12 +980,22 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         proposal=offered,
         rules_for=(_rules_asked(message, watchlist, focus)
                    if confirm_actions and offered is None else ""),
+        scaffold=scaffold_heads(msgs[-1].get("content") if msgs else "",
+                                message),
     ), None
+
+
+# Lenses whose answer is read out of a report the turn fetched: a two-word
+# "resultados walmart" looks like a look-up to the router, and the cheap
+# model handed the pages wrote them back instead of reading them (prod
+# 2026-11-19). These keep the reader's model whatever the router said.
+NEVER_LIGHT = frozenset({"earnings-review"})
 
 
 def _routed(atts: list[tuple[Provider, str, str]],
             head: tuple[Provider, str, str], *, profile: agent.Profile,
-            hard: bool | None, argued: bool) -> list[tuple[Provider, str, str]]:
+            hard: bool | None, argued: bool,
+            skills: Sequence[str] = ()) -> list[tuple[Provider, str, str]]:
     """The chain with the head provider's cheapest model asked first, when the
     question is an easy one; [] to leave it as it is.
 
@@ -990,6 +1009,7 @@ def _routed(atts: list[tuple[Provider, str, str]],
     provider, key, model = head
     light = getattr(provider, "classifier_model", "")
     if (hard is not False or argued or profile is not agent.FAST
+            or NEVER_LIGHT.intersection(skills)
             or not getattr(provider, "needs_key", False) or not light
             or light == (model or provider.default_model)):
         return []
@@ -1244,7 +1264,9 @@ def _answer_key(turn: Turn, chat_path: Path) -> str:
     if (turn.proposal or turn.activities or turn.debate or turn.learned
             or turn.rules_for):
         return ""
-    blob = json.dumps([str(chat_path), str(turn.system), turn.messages],
+    said = [{**m, "content": m["content"].split(QUESTION_MARK)[0]}
+            if isinstance(m.get("content"), str) else m for m in turn.messages]
+    blob = json.dumps([str(chat_path), str(turn.system), said],
                       ensure_ascii=False, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 
@@ -1416,6 +1438,11 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             pool.shutdown(wait=False, cancel_futures=True)
         if _only_calls(text, provider, model):
             missed.append(f"{provider.id}:rejected")
+            _refund(prefs, prefs_path, provider, turn.units)
+            continue
+        if echo_state(strip_date_head(text), turn.scaffold) == "echo":
+            obs.warn("chat.scaffold_echo", provider=provider.id, model=model)
+            missed.append(f"{provider.id}:echo")
             _refund(prefs, prefs_path, provider, turn.units)
             continue
         if text:
@@ -1594,6 +1621,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     # other provider answers at all.
     stub: tuple[Provider, str, str, str] | None = None
     asked_again = False
+    heads = turn.scaffold
     while pending:
         provider, key, model = pending.pop(0)
         model = model or provider.default_model
@@ -1607,6 +1635,7 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             checkpoint.charged(provider.id)
         parts: list[str] = []
         cut = False
+        echoed = False
         # The opening words, kept back while they may be a written tool call
         # (`_may_open_call`); None once they are shown.
         held: str | None = ""
@@ -1626,6 +1655,12 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                         continue
                     held = strip_date_head(held)
                     if not held.strip():
+                        continue
+                    state = echo_state(held, heads)
+                    if state == "echo":
+                        echoed = True
+                        break
+                    if state == "maybe":
                         continue
                     if _may_open_call(held) and (
                             len(held) < CALL_HOLD_CHARS
@@ -1676,6 +1711,15 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 yield ("phase", "retrying")
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
+        if echoed:
+            # The material stapled onto the question, written back as the
+            # answer (`echo_state`): no answer, so the next model is asked.
+            obs.warn("chat.scaffold_echo", provider=provider.id, model=model)
+            missed.append(f"{provider.id}:echo")
+            _refund(prefs, prefs_path, provider, turn.units)
+            if checkpoint is not None:
+                checkpoint.charged("")
+            continue
         if held:
             # The whole reply stayed held: a written call and nothing else is
             # no answer, so it fails over like a provider that said nothing.

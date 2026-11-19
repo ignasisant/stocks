@@ -71,6 +71,45 @@ def _only_calls(text: str, provider: Provider, model: str) -> bool:
     return True
 
 
+# Everything the app staples onto the outgoing user turn opens after a "---"
+# line (web results, quotes, recalled notes, the app's own figures). Handed a
+# two-word question under a long English block, gemini-flash-lite wrote the
+# block back as its answer, in English (prod 2026-11-19, "resultados walmart",
+# twice). An answer that opens with ECHO_CHARS of a block's opening words is
+# that, and fails over before the reader sees a word of it.
+ECHO_CHARS = 60
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
+def scaffold_heads(stapled: object, own: str = "") -> tuple[str, ...]:
+    """The opening words of each block stapled onto the user's turn.
+
+    A "---" line in the reader's own message splits it too, and an answer
+    may rightly open with their words ("corrige este texto"), so a part
+    that is theirs is not scaffold."""
+    if not isinstance(stapled, str):
+        return ()
+    said = _plain(own)
+    heads = (_plain(part)[:ECHO_CHARS] for part in stapled.split("\n---\n")[1:])
+    return tuple(h for h in heads if len(h) >= ECHO_CHARS and h not in said)
+
+
+def echo_state(text: str, heads: tuple[str, ...]) -> str:
+    """"echo" when the answer opens with a stapled block, "maybe" while its
+    first words could still be one, "" once they cannot."""
+    if not heads:
+        return ""
+    head = _plain(text)
+    if not head:
+        return "maybe"
+    if any(head.startswith(h) for h in heads):
+        return "echo"
+    return "maybe" if any(h.startswith(head) for h in heads) else ""
+
+
 # Gemini headed answers with the bare date ("2026-11-02", then the answer),
 # read off the prompt's own clock line (prod 2026-11-02, three in a day).
 _DATE_HEAD = re.compile(r"\A[\s*#]*\d{4}-\d{2}-\d{2}[ \t*]*(?:\n\s*|\Z)")
