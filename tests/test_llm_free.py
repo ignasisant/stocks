@@ -381,6 +381,47 @@ def test_a_413_with_a_lower_limit_refits_under_that_model_s_limit(monkeypatch):
     assert len(seen) == 2 and seen[-1] * 1.05 <= 7000
 
 
+def test_a_second_model_s_413_on_the_same_backend_is_learned_too(monkeypatch):
+    # Prod 2026-11-19 (01:16): gpt-oss-120b came back 413 ("Limit 8000"), then
+    # qwen on the same groq key 413 ("Limit 7000"). The refit was booked per
+    # backend, so qwen's limit was never learned and the chain ran dry.
+    from stocks.llm import tokens
+
+    seen = []
+    # One paste between qwen's 7000 and the 7200 cap, by whichever count runs.
+    thread = next(t for w in range(6000, 8000, 10)
+                  if 7000 < tokens.count("sys")
+                  + tokens.count_messages(t := _thread(1, words=w)) <= 7200)
+
+    def gpt_oss(api_key, model, system, messages):
+        sent = tokens.count(system) + tokens.count_messages(messages)
+        seen.append(("gpt-oss", sent))
+        if len(seen) == 1:
+            exc = RuntimeError(f"Error code: 413 - Request too large (TPM): "
+                               f"Limit 8000, Requested {int(sent * 1.16)}")
+            exc.status_code = 413
+            raise exc
+        raise RuntimeError("Error code: 503 - over capacity")
+        yield
+
+    def qwen(api_key, model, system, messages):
+        sent = tokens.count(system) + tokens.count_messages(messages)
+        seen.append(("qwen", sent))
+        if sent * 1.05 > 7000:
+            exc = RuntimeError(f"Error code: 413 - Request too large (ITPM): "
+                               f"Limit 7000, Requested {int(sent * 1.05)}")
+            exc.status_code = 413
+            raise exc
+        yield "q"
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "gpt-oss", gpt_oss, tpm=8000),
+        _FreeBackend("groq", "k", "qwen", qwen, tpm=8000, primary=False)])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["q"]
+    assert seen[-1][0] == "qwen" and seen[-1][1] * 1.05 <= 7000
+    assert llm._tpm_limit[("groq", "qwen")] == 7000
+
+
 def test_error_mapping():
     assert llm._free_error(FreeTierExhausted()) == "chat.free_exhausted"
     assert llm._free_error(RuntimeError("anything else")) == "chat.api_error"

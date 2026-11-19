@@ -1312,7 +1312,10 @@ def _free_stream(api_key, model, system, messages):
         raise FreeTierExhausted("no free backend configured")
     started = False
     plan = _free_plan(backends, system, messages)
-    refitted: set[str] = set()
+    # One refit per model, not per backend: groq's models share a key but not
+    # a limit, and qwen's 413 right after gpt-oss-120b's ("Limit 7000" after
+    # "Limit 8000") went unlearned, so the chain ran dry (prod 2026-11-19).
+    refitted: set[tuple[str, str]] = set()
     attempt = -1
     while (attempt := attempt + 1) < len(plan):
         b, thread = plan[attempt]
@@ -1382,12 +1385,12 @@ def _free_stream(api_key, model, system, messages):
                          status=getattr(exc, "status_code", None))
                 _note_dead(b, exc)
                 _note_rest(b, exc)
-                if (b.id not in refitted
+                if ((b.id, b.model) not in refitted
                         and _learn_skew(b, exc, _sent(system, thread))):
                     # Their count ran over ours: the same backend, the thread
                     # cut to the corrected cap, after every other one has had
                     # its turn with the whole of it.
-                    refitted.add(b.id)
+                    refitted.add((b.id, b.model))
                     if (cut := _refit(b, system, messages)) is not None:
                         plan.append((b, cut))
                     break
@@ -1513,7 +1516,7 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds,
         [{"name": t.name, "description": t.description, "parameters": t.schema}
          for t in tools]))
     plan = _free_plan(backends, system, messages, extra=schema)
-    refitted: set[str] = set()
+    refitted: set[tuple[str, str]] = set()  # per model, as in _free_stream
     attempt = -1
     while (attempt := attempt + 1) < len(plan):
         b, thread = plan[attempt]
@@ -1538,8 +1541,8 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds,
                 # Each round is squeezed under `cap`, and the one that failed
                 # may be a later, fuller one than the thread: `cap` is the
                 # nearest thing to what was sent, and errs to a smaller skew.
-                if b.id not in refitted and _learn_skew(b, exc, cap):
-                    refitted.add(b.id)
+                if (b.id, b.model) not in refitted and _learn_skew(b, exc, cap):
+                    refitted.add((b.id, b.model))
                     if (cut := _refit(b, system, messages, schema)) is not None:
                         plan.append((b, cut))
                     break
