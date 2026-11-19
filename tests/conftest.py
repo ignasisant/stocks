@@ -960,3 +960,26 @@ def _sec_bulk_offline(_scratch):
     (frames._get, frames.FRAMES_FILE, frames._loaded, thirteenf.DB,
      thirteenf._page, thirteenf._fetch_zip, thirteenf._post,
      thirteenf._restored) = before
+
+
+@pytest.fixture(autouse=True)
+def _insider_roles_offline(_scratch):
+    """Keep the background role pass off EDGAR and out of data/.
+
+    `insiders.with_roles` starts a thread for any blank role in the year a
+    route shows, and most stub feeds have blank roles. A test about the pass
+    calls `_learn_roles` itself with `_get`/`cik_for` stubbed.
+
+    Swapped by hand, not with `monkeypatch`: an autouse fixture that asks for
+    it sets it up first, so it would tear down last — after module fixtures
+    like test_api_home's `_clean` that expect their patches already undone.
+    """
+    from stocks.data import insiders
+
+    before = insiders.ROLES_CACHE, insiders._learn_roles_later
+    insiders.ROLES_CACHE = _scratch / "insider_roles.json"
+    insiders._learn_roles_later = lambda *args: None
+    insiders.clear_roles_cache()
+    yield
+    insiders.clear_roles_cache()
+    insiders.ROLES_CACHE, insiders._learn_roles_later = before

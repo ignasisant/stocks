@@ -52,6 +52,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -62,6 +63,12 @@ import { useT } from "../../shell/i18n";
 import { GuestBanner, SignInWall, type GuestHighlight } from "../../shell/guest";
 import { useGuest, useSession } from "../../shell/session";
 import { Skeleton } from "../../shell/Layout";
+import {
+  PageLoading,
+  SkeletonWatch,
+  useSkeletonWatch,
+  type LoadingStep,
+} from "../../shell/Loading";
 import { Link } from "../../shell/router";
 import { Icon } from "../../shell/Icon";
 import { useInView } from "../../shell/useInView";
@@ -112,6 +119,53 @@ const GUEST_PERKS = [
   "home.guest_perk_watchlist",
 ];
 
+/** Where one block of the page stands: what it still waits for (null once
+ * nothing in it is a skeleton), and whether it drew anything at all. */
+/** `fold`: the block starts within the first screen, where a reader looks. */
+type BlockState = { waiting: string | null; content: boolean; fold: boolean };
+
+const sameState = (a: BlockState | undefined, b: BlockState): boolean =>
+  a !== undefined &&
+  a.waiting === b.waiting &&
+  a.content === b.content &&
+  a.fold === b.fold;
+
+/**
+ * Watch the skeletons drawn inside a block and report where it stands, before
+ * paint — so the page can tell "everything still loading" from "something to
+ * show" on the very frame it draws. `ready` false (a slot not yet in view)
+ * reports nothing landed whatever is in it.
+ */
+function useBlockState(
+  id: string,
+  ready: boolean,
+  onState: (id: string, state: BlockState) => void,
+): {
+  watch: (kind: string) => () => void;
+  box: React.RefObject<HTMLDivElement | null>;
+} {
+  const { watch, waiting } = useSkeletonWatch();
+  const box = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    // The DOM is the truth for whether a skeleton is up: on the frame one
+    // mounts, its registration has not re-rendered this block yet, and
+    // `waiting` alone would call the slot landed for that one pass.
+    const skeleton = el?.querySelector(".ag-skeleton") != null;
+    // Anything but the "Customise" control the lead slot carries.
+    const drawn =
+      el != null &&
+      [...el.children].some((child) => !child.classList.contains("hm-customize"));
+    const still = waiting ?? (skeleton ? "activity.other" : null);
+    onState(id, {
+      waiting: ready ? still : "activity.other",
+      content: ready && still === null && drawn,
+      fold: el != null && el.getBoundingClientRect().top < window.innerHeight,
+    });
+  }, [id, ready, waiting, onState]);
+  return { watch, box };
+}
+
 /**
  * One slot of the grid, drawing its card only once the slot nears the
  * viewport. Until then a skeleton holds the room — a slot has to take room
@@ -126,6 +180,7 @@ function LazySlot({
   eager,
   lead,
   onSeen,
+  onState,
   children,
 }: {
   id: CardId;
@@ -133,16 +188,44 @@ function LazySlot({
   eager: boolean;
   lead?: ReactNode;
   onSeen: (id: CardId) => void;
+  onState: (id: string, state: BlockState) => void;
   children: ReactNode;
 }) {
   const [ref, seen] = useInView<HTMLDivElement>(eager);
+  const { watch, box } = useBlockState(id, seen, onState);
+  const attach = useCallback(
+    (node: HTMLDivElement | null) => {
+      box.current = node;
+      ref(node);
+    },
+    [box, ref],
+  );
   useEffect(() => {
     if (seen) onSeen(id);
   }, [seen, id, onSeen]);
   return (
-    <div ref={ref} className={className} data-card={id}>
+    <div ref={attach} className={className} data-card={id}>
       {lead}
-      {seen ? children : <Skeleton rows={4} />}
+      <SkeletonWatch.Provider value={watch}>
+        {seen ? children : <Skeleton rows={4} />}
+      </SkeletonWatch.Provider>
+    </div>
+  );
+}
+
+/** The start card, watched like a slot: a new account's checklist is
+ * something to show. `display: contents`, so it lays out as it always did. */
+function WatchedSetup({
+  onState,
+}: {
+  onState: (id: string, state: BlockState) => void;
+}) {
+  const { watch, box } = useBlockState("setup", true, onState);
+  return (
+    <div ref={box} className="hm-watch">
+      <SkeletonWatch.Provider value={watch}>
+        <SetupCard />
+      </SkeletonWatch.Provider>
     </div>
   );
 }
@@ -193,7 +276,7 @@ export default function Page() {
   );
 
   const cards = visibleCards(layout, guest);
-  const shown = new Set<CardId>(cards.map((card) => card.id));
+  const onPage = new Set<CardId>(cards.map((card) => card.id));
   // The cards whose slots have come into view. A latch like the slots' own:
   // a card seen once keeps its figures while the reader scrolls on.
   const [seen, setSeen] = useState<ReadonlySet<CardId>>(() => new Set());
@@ -202,12 +285,51 @@ export default function Page() {
   }, []);
   // On the page AND in view: a card put away in the editor after it was seen
   // stops asking.
-  const wanted = (id: CardId) => shown.has(id) && seen.has(id);
+  const wanted = (id: CardId) => onPage.has(id) && seen.has(id);
   // One read behind the glance and the movers, and none until one of them is
   // in view.
   const book = useBook(nonce, !guest && (wanted("glance") || wanted("movers")));
   // Read here, like the book, so a refresh's nonce reaches it.
   const extremes = useExtremes(nonce, wanted("extremes"));
+
+  // While no block in view has anything to show, one card stands in for the
+  // page (`PageLoading`) instead of a column of captioned grey bars; the
+  // grid loads behind it, hidden, and is shown as is the moment one card
+  // lands — or every one in view turns out to have nothing to say. Once
+  // shown it stays shown: a refresh re-asking is not a page loading.
+  const [blocks, setBlocks] = useState<Readonly<Record<string, BlockState>>>({});
+  const onState = useCallback((id: string, state: BlockState) => {
+    setBlocks((prev) => (sameState(prev[id], state) ? prev : { ...prev, [id]: state }));
+  }, []);
+  const inView = cards.filter((card) => seen.has(card.id));
+  const watched = [...inView.map((card) => blocks[card.id]), blocks.setup];
+  const firstScreen = watched.filter((state) => state?.fold === true) as BlockState[];
+  const landed =
+    editing ||
+    cards.length === 0 ||
+    // Something to read on the first screen: a card that lands further down
+    // would open on a screen of skeletons.
+    watched.some((state) => state?.content && state.fold) ||
+    (inView.length > 0 && watched.every((state) => state && state.waiting === null)) ||
+    (firstScreen.length > 0 &&
+      firstScreen.every((state) => state.waiting === null) &&
+      watched.some((state) => state?.content));
+  const [shown, setShown] = useState(false);
+  useLayoutEffect(() => {
+    if (landed) setShown(true);
+  }, [landed]);
+  const waiting = !shown && !landed;
+  // The page fades in only after the loading card stood in for it; a Home
+  // that answers at once just appears.
+  const [waited, setWaited] = useState(false);
+  useLayoutEffect(() => {
+    if (waiting) setWaited(true);
+  }, [waiting]);
+  const steps: LoadingStep[] = inView.map((card) => ({
+    id: card.id,
+    label: t(`home.card_${card.id}`),
+    waiting: blocks[card.id]?.waiting ?? "activity.other",
+  }));
 
   const draw = (id: CardId): ReactNode => {
     switch (id) {
@@ -218,7 +340,7 @@ export default function Page() {
       case "glance":
         return <Glance query={book} ledger={ledger} />;
       case "movers":
-        return <MoversSlot query={book} alone={!shown.has("glance")} />;
+        return <MoversSlot query={book} alone={!onPage.has("glance")} />;
       case "extremes":
         return <ExtremesCard query={extremes} book={book} />;
       case "earnings":
@@ -295,45 +417,55 @@ export default function Page() {
         </GuestBanner>
       ) : null}
       <TourOffer />
-      <SetupCard />
-      {editing ? (
-        <Suspense fallback={<Skeleton rows={6} />}>
-          <Editor
-            layout={layout}
-            onClose={(saved) => {
-              if (saved !== undefined) {
-                rememberLayout(saved);
-                setLayout(resolveLayout(saved));
-              }
-              setEditing(false);
-              setRefocus(true);
-            }}
-          />
-        </Suspense>
-      ) : (
-        <>
-          {guest && nudge ? <SignInWall text="home.customize_guest" /> : null}
-          {cards.length === 0 ? (
-            // Every card put away: the control has no heading to sit in, and
-            // is the only way back.
-            <div className="hm-slot hm-slot-lead">{customize}</div>
-          ) : null}
-          <div className="hm-grid">
-            {cards.map((card, i) => (
-              <LazySlot
-                key={card.id}
-                id={card.id}
-                className={`hm-slot hm-slot-${card.span}${i === 0 ? " hm-slot-lead" : ""}`}
-                eager={i === 0}
-                lead={i === 0 ? customize : undefined}
-                onSeen={onSeen}
-              >
-                {draw(card.id)}
-              </LazySlot>
-            ))}
-          </div>
-        </>
-      )}
+      <div
+        className="hm-wait"
+        data-waiting={waiting || undefined}
+        data-revealed={(waited && !waiting) || undefined}
+      >
+        {waiting ? <PageLoading title={t("home.loading_title")} steps={steps} /> : null}
+        <div className="hm-wait-body">
+          <WatchedSetup onState={onState} />
+          {editing ? (
+            <Suspense fallback={<Skeleton rows={6} />}>
+              <Editor
+                layout={layout}
+                onClose={(saved) => {
+                  if (saved !== undefined) {
+                    rememberLayout(saved);
+                    setLayout(resolveLayout(saved));
+                  }
+                  setEditing(false);
+                  setRefocus(true);
+                }}
+              />
+            </Suspense>
+          ) : (
+            <>
+              {guest && nudge ? <SignInWall text="home.customize_guest" /> : null}
+              {cards.length === 0 ? (
+                // Every card put away: the control has no heading to sit in, and
+                // is the only way back.
+                <div className="hm-slot hm-slot-lead">{customize}</div>
+              ) : null}
+              <div className="hm-grid">
+                {cards.map((card, i) => (
+                  <LazySlot
+                    key={card.id}
+                    id={card.id}
+                    className={`hm-slot hm-slot-${card.span}${i === 0 ? " hm-slot-lead" : ""}`}
+                    eager={i === 0}
+                    lead={i === 0 ? customize : undefined}
+                    onSeen={onSeen}
+                    onState={onState}
+                  >
+                    {draw(card.id)}
+                  </LazySlot>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

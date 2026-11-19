@@ -561,6 +561,18 @@ def test_presence_is_kept_per_account(client, account, signed_in):
     assert webpush.present(str(account.chat))
 
 
+def test_a_pressed_notification_files_how_it_arrived(client, account, signed_in, caplog):
+    with caplog.at_level("INFO"):
+        for via in ("window", "opened", "message", "pending"):
+            assert signed_in.post("/v1/push/opened",
+                                  json={"via": via}).status_code == 204
+    seen = [r.__dict__.get("via") for r in caplog.records
+            if r.getMessage() == "push.opened"]
+    assert seen == ["window", "opened", "message", "pending"]
+    assert signed_in.post("/v1/push/opened",
+                          json={"via": "anything"}).status_code == 422
+
+
 # -------------------------------------------------------------- the run hook
 
 

@@ -15,6 +15,7 @@ import { InsiderFlow, FundExposure } from "./Charts";
 import {
   currencySymbol,
   insiderPrice,
+  insiderSignal,
   insiderValue,
   kpiText,
   orElse,
@@ -609,6 +610,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
 
   const ccy = insiders.trades[0]?.currency ?? null;
   const rows = insiders.trades.slice(0, 30);
+  const signal = insiderSignal(summary);
 
   return (
     <Card
@@ -668,11 +670,13 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
       ) : null}
 
       {/* The one reading the page offers on this data, in the app's words. */}
-      {summary?.cluster_buy ? (
+      {signal === "cluster" ? (
         <Banner tone="good">{t("ticker.cluster_buying")}</Banner>
-      ) : summary &&
-        summary.sell_value > summary.buy_value * 3 &&
-        summary.sell_count ? (
+      ) : signal === "deliberate" ? (
+        <Banner tone="good">{t("ticker.insider_deliberate")}</Banner>
+      ) : signal === "routine" ? (
+        <Note>{t("ticker.insider_routine_only")}</Note>
+      ) : signal === "selling" ? (
         <Banner tone="warn">{t("ticker.selling_dominates")}</Banner>
       ) : null}
 
@@ -703,10 +707,21 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
                 label={t("ticker.col_date")}
                 value={trade.date ? calendarDay(trade.date) : DASH}
               />
-              {/* Untranslated: the catalog labels only Date/Shares/Price/Value,
-                  and Role is the filer's own words. */}
-              <Line label="Role" value={trade.role} />
+              {/* The label is ours; the value is the filer's own words. */}
+              <Line label={t("ticker.col_role")} value={trade.role} />
+              {filedLate(trade) ? (
+                <Line
+                  label={t("ticker.insider_filed_label")}
+                  value={calendarDay(trade.filed!)}
+                />
+              ) : null}
               <Line label={t("ticker.col_type")} value={codeLabel(t, trade)} />
+              {buyReading(t, trade) ? (
+                <Line
+                  label={t("ticker.insider_reading")}
+                  value={buyReading(t, trade)}
+                />
+              ) : null}
               <Line
                 label={t("ticker.col_shares")}
                 value={decimal(trade.shares, { digits: 0, signed: "always" }) ?? DASH}
@@ -730,12 +745,12 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
         </div>
       ) : (
         <Scroll>
-          <table className="tk-table">
+          <table className="tk-table tk-insider-table">
             <thead>
               <tr>
                 <th>{t("ticker.col_date")}</th>
                 <th>Insider</th>
-                <th>Role</th>
+                <th>{t("ticker.col_role")}</th>
                 <th>{t("ticker.col_type")}</th>
                 <th>{t("ticker.col_shares")}</th>
                 <th>{t("ticker.col_price")}</th>
@@ -745,10 +760,24 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             <tbody>
               {rows.map((trade, index) => (
                 <tr key={`${trade.date}-${trade.insider}-${index}`}>
-                  <td>{trade.date ? calendarDay(trade.date) : DASH}</td>
+                  <td>
+                    {trade.date ? calendarDay(trade.date) : DASH}
+                    {filedLate(trade) ? (
+                      <span className="tk-muted tk-cell-sub">
+                        {t("ticker.insider_filed", { day: calendarDay(trade.filed!) })}
+                      </span>
+                    ) : null}
+                  </td>
                   <td>{trade.insider}</td>
                   <td className="tk-muted">{trade.role}</td>
-                  <td>{codeLabel(t, trade)}</td>
+                  <td>
+                    {codeLabel(t, trade)}
+                    {buyReading(t, trade) ? (
+                      <span className="tk-muted tk-cell-sub">
+                        {buyReading(t, trade)}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className={trade.shares >= 0 ? "tk-is-green" : "tk-is-red"}>
                     {decimal(trade.shares, { digits: 0, signed: "always" }) ?? DASH}
                   </td>
@@ -782,6 +811,36 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
  */
 function codeLabel(t: Translate, trade: Insiders["trades"][number]): string {
   return orElse(t, `ticker.insider_code_${trade.code}`, trade.label || trade.code);
+}
+
+/**
+ * Filed days after the trade: the market learned of it only then, and part of
+ * the move a buy predicts happens before anyone outside can act. Two business
+ * days is the rule, so only a later filing is worth a line.
+ */
+function filedLate(trade: Insiders["trades"][number]): boolean {
+  if (!trade.filed || !trade.date) return false;
+  const days = (Date.parse(trade.filed) - Date.parse(trade.date)) / 86_400_000;
+  return days > 4;
+}
+
+/**
+ * What a buy says beyond its size: off the insider's usual calendar or on
+ * it, and how much it grew their stake. Empty for anything else.
+ */
+function buyReading(t: Translate, trade: Insiders["trades"][number]): string {
+  const parts: string[] = [];
+  if (trade.pattern === "not_routine")
+    parts.push(t("ticker.insider_pattern_not_routine"));
+  else if (trade.pattern === "routine") parts.push(t("ticker.insider_pattern_routine"));
+  if (trade.stake_pct != null && trade.stake_pct > 0) {
+    parts.push(
+      t("ticker.insider_stake", {
+        pct: percent(trade.stake_pct, { points: true, digits: 0, signed: "always" }),
+      }),
+    );
+  }
+  return parts.join(" · ");
 }
 
 function Line({

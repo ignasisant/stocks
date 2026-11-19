@@ -394,6 +394,18 @@ class InsiderSummary(BaseModel):
             "is a view."
         ),
     )
+    deliberate_buyers: int = Field(
+        default=0,
+        description=(
+            "Buyers in the window with at least one purchase off their own "
+            "calendar (`pattern` not_routine on a trade). Buyers counted in "
+            "neither this nor `routine_buyers` could not be classified."
+        ),
+    )
+    routine_buyers: int = Field(
+        default=0,
+        description="Buyers in the window whose every purchase was routine.",
+    )
 
 
 class InsiderTrade(BaseModel):
@@ -427,6 +439,28 @@ class InsiderTrade(BaseModel):
         ),
     )
     currency: str | None = None
+    filed: str | None = Field(
+        default=None,
+        description="When the market could first see it (filing date), ISO.",
+    )
+    pattern: str | None = Field(
+        default=None,
+        description=(
+            "Open-market buys only: routine when the same insider bought in the "
+            "same calendar month in each of the three years before, "
+            "not_routine otherwise; null when the feed does not reach that far "
+            "back. Routine buys carry no information (Cohen, Malloy & "
+            "Pomorski 2012)."
+        ),
+    )
+    stake_pct: float | None = Field(
+        default=None,
+        description=(
+            "Open-market buys only: how much the buy grew the insider's direct "
+            "holding, percent of what they held before (25.0 = a quarter more). "
+            "Null when the holding is not reported or this was a first stake."
+        ),
+    )
 
 
 class ShortHolderRow(BaseModel):

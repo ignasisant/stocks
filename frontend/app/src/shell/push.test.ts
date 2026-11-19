@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { onSignOut, signOut } from "./keep";
-import { claimPush, keyBytes, releasePush, workerTarget } from "./push";
+import {
+  PENDING_MS,
+  claimPush,
+  keyBytes,
+  pendingPress,
+  pressTaker,
+  releasePush,
+  takePending,
+  workerTarget,
+} from "./push";
 
 describe("keyBytes", () => {
   it("reads base64url without padding, as the server sends the VAPID key", () => {
@@ -31,6 +40,95 @@ describe("workerTarget", () => {
     expect(workerTarget({ type: "other", url: "/today" })).toBeNull();
     expect(workerTarget({ type: "open" })).toBeNull();
     expect(workerTarget(null)).toBeNull();
+  });
+});
+
+describe("the worker's note of a press", () => {
+  const NOW = 1_000_000;
+
+  it("is the page a press just now pointed at", () => {
+    expect(pendingPress({ url: "/review?thread=c_1", at: NOW - 3_000 }, NOW)).toEqual({
+      url: "/review?thread=c_1",
+      at: NOW - 3_000,
+    });
+  });
+
+  it("is nothing once it is old, malformed or off the site", () => {
+    expect(
+      pendingPress({ url: "/?thread=c_1", at: NOW - PENDING_MS - 1 }, NOW),
+    ).toBeNull();
+    expect(pendingPress({ url: "/?thread=c_1" }, NOW)).toBeNull();
+    expect(
+      pendingPress({ url: "https://elsewhere.example/", at: NOW }, NOW),
+    ).toBeNull();
+    expect(pendingPress(null, NOW)).toBeNull();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is taken once: the second look finds nothing", async () => {
+    const store = new Map<string, string>();
+    store.set(
+      "/__push/pending",
+      JSON.stringify({ url: "/?thread=c_1", at: Date.now() }),
+    );
+    vi.stubGlobal("caches", {
+      open: async () => ({
+        match: async (key: string) => {
+          const body = store.get(key);
+          return body === undefined
+            ? undefined
+            : { json: async () => JSON.parse(body) };
+        },
+        delete: async (key: string) => store.delete(key),
+      }),
+    });
+    expect((await takePending())?.url).toBe("/?thread=c_1");
+    expect(await takePending()).toBeNull();
+  });
+});
+
+describe("taking a press", () => {
+  function taker(boot = "/today") {
+    const went: string[] = [];
+    const via: string[] = [];
+    const take = pressTaker(
+      boot,
+      (url) => went.push(url),
+      (v) => via.push(v),
+    );
+    return { take, went, via };
+  }
+
+  it("opens a press once, though it comes as a message and as a note", () => {
+    const { take, went, via } = taker();
+    const press = { url: "/?thread=c_1", at: 5 };
+    expect(take(press, "message")).toBe(true);
+    expect(take(press, "pending")).toBe(false);
+    expect(went).toEqual(["/?thread=c_1"]);
+    expect(via).toEqual(["message"]);
+  });
+
+  it("opens the next answer on the same thread too", () => {
+    const { take, went } = taker();
+    take({ url: "/?thread=c_1", at: 5 }, "pending");
+    take({ url: "/?thread=c_1", at: 9 }, "pending");
+    expect(went).toEqual(["/?thread=c_1", "/?thread=c_1"]);
+  });
+
+  it("leaves alone the note of a press that opened this very window", () => {
+    const { take, went, via } = taker("/?thread=c_1");
+    expect(take({ url: "/?thread=c_1", at: 5 }, "pending")).toBe(false);
+    expect(went).toEqual([]);
+    expect(via).toEqual([]);
+    // A later press on that thread is a new one.
+    expect(take({ url: "/?thread=c_1", at: 9 }, "pending")).toBe(true);
+  });
+
+  it("does nothing with nothing", () => {
+    const { take, went } = taker();
+    expect(take(null, "pending")).toBe(false);
+    expect(went).toEqual([]);
   });
 });
 

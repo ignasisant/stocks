@@ -17,6 +17,7 @@ import { ratingLabel, ratingTone } from "./Analysts";
 import { cell, isoToday } from "./Price";
 import { jumpTo, sectionId, type SectionKey } from "./SectionTabs";
 import { Judged } from "./Sections";
+import { insiderSignal } from "./format";
 import { Card } from "./ui";
 import type {
   Analysts,
@@ -147,9 +148,14 @@ export function ReadingSection({
       key: "insiders",
       label: t("ticker.read_insiders"),
       text: insiderText(t, insiders, pending),
-      // Only a cluster of buyers reads as a signal: insiders sell for a
-      // hundred reasons (taxes, a house, a vesting schedule) and buy for one.
-      tone: insiders?.summary?.cluster_buy ? "up" : "flat",
+      // Only buying reads as a signal: insiders sell for a hundred reasons
+      // (taxes, a house, a vesting schedule) and buy for one. A cluster of
+      // routine buyers is a calendar, not a view.
+      tone: ["cluster", "deliberate"].includes(
+        insiderSignal(insiders?.summary ?? null) ?? "",
+      )
+        ? "up"
+        : "flat",
       to: "opinions",
     },
     {
@@ -202,8 +208,12 @@ function insiderText(
   if (insiders === undefined) return pending;
   const summary = insiders?.summary;
   if (!insiders?.source || !summary) return t("ticker.read_insiders_none");
-  if (summary.cluster_buy)
+  const signal = insiderSignal(summary);
+  if (signal === "cluster")
     return t("ticker.read_insiders_cluster", { n: summary.buyers });
+  if (signal === "deliberate")
+    return t("ticker.read_insiders_deliberate", { n: summary.deliberate_buyers ?? 0 });
+  if (signal === "routine") return t("ticker.read_insiders_routine");
   if (summary.buy_count === 0 && summary.sell_count === 0) {
     return t("ticker.read_insiders_quiet");
   }

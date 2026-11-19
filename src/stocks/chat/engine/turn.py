@@ -154,6 +154,10 @@ class Turn:
     #: proposed none: `_record` drafts the card from the answer's own words
     #: (`_drafted_rules`). "" otherwise.
     rules_for: str = ""
+    #: The opening words of each block stapled onto the question
+    #: (`text.scaffold_heads`): an answer that opens with one is the block
+    #: written back, and the next model is asked.
+    scaffold: tuple[str, ...] = ()
 
     @property
     def units(self) -> int:

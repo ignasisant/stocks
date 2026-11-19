@@ -284,3 +284,75 @@ def test_the_reply_command_files_it_and_says_the_push_did_not_go(
     cli.cmd_feedback(Namespace(kind=[], user=""))
     assert f"id {first}" in capsys.readouterr().out
 
+
+
+# ------------------------------------------- ratings expire with the chat
+
+
+def _kept(sandbox, stamp: str, kind: str, rid: str = "abcdef"):
+    sandbox.mkdir(parents=True, exist_ok=True)
+    p = sandbox / f"{stamp}-{rid}.json"
+    p.write_text(json.dumps({"ts": stamp, "kind": kind, "text": "q"}))
+    return p
+
+
+_NOW = 1_800_000_000.0  # 2027-01-15
+_OLD = "2026-11-01T10-00-00Z"  # 75 days before _NOW
+_NEW = "2027-01-10T10-00-00Z"  # 5 days before
+
+
+def test_old_ratings_expire_and_nothing_else_does(sandbox):
+    old_rating = _kept(sandbox, _OLD, "rating", "aaaaaa")
+    new_rating = _kept(sandbox, _NEW, "rating", "bbbbbb")
+    old_bug = _kept(sandbox, _OLD, "bug", "cccccc")
+    old_stars = _kept(sandbox, _OLD, "app_rating", "dddddd")
+    gone = feedback.expire_ratings(30, now=_NOW)
+    assert gone == [f"{_OLD}-aaaaaa"]
+    assert not old_rating.exists()
+    assert new_rating.exists() and old_bug.exists() and old_stars.exists()
+
+
+def test_a_dry_run_names_them_and_deletes_nothing(sandbox):
+    old_rating = _kept(sandbox, _OLD, "rating")
+    assert feedback.expire_ratings(30, dry_run=True, now=_NOW) == [
+        f"{_OLD}-abcdef"]
+    assert old_rating.exists()
+
+
+def test_a_bucket_only_rating_is_deleted_in_the_bucket(sandbox, monkeypatch):
+    bucket = {
+        f"data/feedback/{_OLD}-eeeeee.json": json.dumps(
+            {"kind": "rating"}).encode(),
+        f"data/feedback/{_OLD}-ffffff.json": json.dumps(
+            {"kind": "idea"}).encode(),
+        f"data/feedback/replies/{_OLD}-gggggg.json": b'{"kind": "rating"}',
+    }
+    monkeypatch.setattr(
+        storage, "list_keys",
+        lambda prefix="": sorted(k for k in bucket if k.startswith(prefix)))
+    monkeypatch.setattr(storage, "read_key", bucket.get)
+    monkeypatch.setattr(storage, "delete_key", bucket.pop)
+    assert feedback.expire_ratings(30, now=_NOW) == [f"{_OLD}-eeeeee"]
+    assert sorted(bucket) == [f"data/feedback/{_OLD}-ffffff.json",
+                              f"data/feedback/replies/{_OLD}-gggggg.json"]
+
+
+def test_a_name_without_a_stamp_is_never_guessed_at(sandbox):
+    sandbox.mkdir(parents=True)
+    odd = sandbox / "notes.json"
+    odd.write_text('{"kind": "rating"}')
+    assert feedback.expire_ratings(0, now=_NOW) == []
+    assert odd.exists()
+
+
+def test_the_expire_command_says_what_it_would_delete(sandbox, capsys):
+    from argparse import Namespace
+
+    from stocks import cli
+
+    _kept(sandbox, "2020-01-01T00-00-00Z", "rating")
+    cli.cmd_feedback_expire(Namespace(days=None, dry_run=True))
+    out = capsys.readouterr().out
+    assert "2020-01-01T00-00-00Z-abcdef" in out
+    assert "would delete 1 rating(s) older than 30 days" in out
+    assert list(sandbox.iterdir())

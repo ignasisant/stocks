@@ -828,6 +828,9 @@ WRITES = {
     ("/v1/push/unsubscribe", "post"),
     ("/v1/push/test", "post"),
     ("/v1/push/presence", "post"),
+    # Only files how a pressed notification reached its page (`push.opened`):
+    # a token has no device that could have been tapped.
+    ("/v1/push/opened", "post"),
     # Whose device this is: the account signed in on it claims it when the app
     # opens and lets it go on sign-out. A token that could claim would silence
     # the phone's real owner, or take over its notifications.
@@ -849,6 +852,8 @@ WRITES = {
     ("/v1/vitals", "post"),
     # The app opened from a Home Screen: one log line, the same shape again.
     ("/v1/launch", "post"),
+    # Its window left short by iOS after a keyboard: one log line again.
+    ("/v1/viewport-stuck", "post"),
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
     ("/v1/account", "delete"),
@@ -922,6 +927,7 @@ def test_no_write_will_answer_a_bearer_token(client, token, account):
         "content": "",
         "alerts": [],
         "confirm": EMAIL,
+        "via": "window",
     }
     for path, method in sorted(WRITES):
         url = (

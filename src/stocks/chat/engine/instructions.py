@@ -155,6 +155,31 @@ def language_rule(lang: str | None) -> str:
     )
 
 
+# Where `question_last` begins: the kept-answer key (`_answer_key`) is read
+# without it, since its clock would make every minute a new prompt.
+QUESTION_MARK = "\n\n---\nEverything above this line "
+
+
+def question_last(message: str, lang: str | None) -> str:
+    """The reader's message said again, under everything stapled onto it.
+
+    The material rides on the user's own turn (web results, quotes, recalled
+    notes), so a two-word question ends up first and a long English block
+    last — and gemini-flash-lite answered "resultados walmart" by writing the
+    block back, in English (prod 2026-11-19). Said last, the question is what
+    the model answers, in its own language. The time of day goes with it: at
+    09:22 in Madrid a US company "reporting today" has not reported yet, and
+    the date line alone cannot say so."""
+    name = _LANG_NAME.get(lang or "", "")
+    fallback = f" ({name} when it is too short to tell)" if name else ""
+    return (
+        QUESTION_MARK + "is material for your answer, not "
+        "the answer: never repeat it back. It is now "
+        f"{clock.now()} in Madrid. The reader's message, which is what you "
+        f"answer, in its own language{fallback}: «{message.strip()[:1000]}»"
+    )
+
+
 def system_prompt(profile: dict, context: str,
                   skill_ids: list[str] | None = None,
                   lang: str | None = None, memories: str = "",

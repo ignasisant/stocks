@@ -15,6 +15,9 @@
  *   re-ask counting down, then the press to ask again once nothing will.
  * - `Skeleton`: a block on its way, captioned with what it waits for after a
  *   few seconds, and whatever replaces it faded in.
+ * - `PageLoading`: one card in place of a whole page of skeletons, while
+ *   nothing on the page has anything to show yet — what it is loading, what
+ *   has already landed, one bar. The corner banner stays quiet meanwhile.
  *
  * Under reduced motion every one still changes — text, counts, a slow opacity
  * pulse — it only stops sliding.
@@ -22,12 +25,14 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useStringsReady, useT } from "./i18n";
 import { kindOf, useActivity } from "./activity";
@@ -67,6 +72,30 @@ const HINTS: [number, string][] = [
   [8, "activity.hint_slow"],
 ];
 
+let holds = 0;
+const holdListeners = new Set<() => void>();
+
+function subscribeHolds(fn: () => void): () => void {
+  holdListeners.add(fn);
+  return () => {
+    holdListeners.delete(fn);
+  };
+}
+
+function setHolds(n: number): void {
+  holds = n;
+  holdListeners.forEach((fn) => fn());
+}
+
+/** Whether a `PageLoading` card is up, and the corner banner should keep out. */
+function useActivityHeld(): boolean {
+  return useSyncExternalStore(
+    subscribeHolds,
+    () => holds > 0,
+    () => false,
+  );
+}
+
 const STEPS: Record<string, string> = {
   "prices.tail": "activity.step_tail",
   "prices.rebase": "activity.step_rebase",
@@ -93,7 +122,10 @@ export function hintFor(seconds: number, expected: number | null): string | null
 export function ActivityBanner() {
   const t = useT();
   const activity = useActivity();
-  const busy = activity.slow.length > 0;
+  // A page's own loading card already says all this, in the middle of the
+  // screen: two progress reports for one wait is one too many.
+  const held = useActivityHeld();
+  const busy = activity.slow.length > 0 && !held;
   // Nothing slow left. A reader who left the screen (`activity.forget`, which
   // zeroes the count) did not see anything finish; anything else did — even
   // if the content that landed has fired a few quick requests of its own.
@@ -217,11 +249,17 @@ function formatWhen(at: number): string {
  */
 export function StaleNotice() {
   const t = useT();
+  // While a page's loading card is up nothing is on screen to be old yet, and
+  // the card already says the wait is being worked on: a retry countdown above
+  // it is a second, scarier report of the same wait. Held, the line keeps out
+  // — and since it never showed, there is no "live again" to say afterwards.
+  const held = useActivityHeld();
   const refused = useStaleSince();
   const updating = useUpdatingSince();
-  const since = refused ?? updating;
+  const since = held ? null : (refused ?? updating);
   const retry = useRetry();
-  const kept = useKeptSince();
+  const keptSince = useKeptSince();
+  const kept = held ? null : keptSince;
   const now = useNow(since !== null && retry.due !== null ? 1000 : null);
 
   const [pressed, setPressed] = useState(false);
@@ -413,7 +451,11 @@ export function Skeleton({
   const now = useNow(1000);
   useArrivalFade(ref, start);
   const seconds = Math.floor((now - start) / 1000);
-  const what = t(urls?.[0] ? kindOf(urls[0]) : "activity.other");
+  const kind = urls?.[0] ? kindOf(urls[0]) : "activity.other";
+  const what = t(kind);
+  const watch = useContext(SkeletonWatch);
+  // Before paint, so a slot knows it is waiting on the very frame it shows.
+  useLayoutEffect(() => watch?.(kind), [watch, kind]);
   return (
     <div className="ag-skeleton" role="status" ref={ref} data-shape={shape}>
       <span className="ag-sr">{t("common.loading")}</span>
@@ -459,5 +501,135 @@ export function Skeleton({
         </span>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Where a `Skeleton` says it is on the page: a slot that wants to know whether
+ * what it holds is still on its way provides this, and every skeleton drawn
+ * inside it registers what it waits for (an `activity.*` key) for as long as
+ * it is up. The returned function takes the registration back.
+ */
+export const SkeletonWatch = createContext<((kind: string) => () => void) | undefined>(
+  undefined,
+);
+
+/**
+ * The skeletons inside one block, live: `watch` goes into `SkeletonWatch`,
+ * `waiting` is what the first of them waits for, or null once none is up.
+ */
+export function useSkeletonWatch(): {
+  watch: (kind: string) => () => void;
+  waiting: string | null;
+} {
+  const [kinds, setKinds] = useState<readonly string[]>([]);
+  const watch = useCallback((kind: string) => {
+    setKinds((prev) => [...prev, kind]);
+    return () =>
+      setKinds((prev) => {
+        const at = prev.indexOf(kind);
+        return at < 0 ? prev : [...prev.slice(0, at), ...prev.slice(at + 1)];
+      });
+  }, []);
+  return { watch, waiting: kinds[0] ?? null };
+}
+
+export type LoadingStep = {
+  id: string;
+  /** What the reader calls this part of the page ("Market"). */
+  label: string;
+  /** What it still waits for (an `activity.*` key); null once it is in. */
+  waiting: string | null;
+};
+
+/**
+ * The whole page's wait in one card, for while nothing on it has landed.
+ *
+ * A screen of grey bars, each captioned "Pricing your portfolio… 60 s", says
+ * the same thing eight times and shows nothing moving. This says it once: the
+ * seconds, one bar (the server's own count when its download has one, else
+ * the parts landed), and the parts of the page — ticked as each comes in,
+ * pulsing with what it waits for while it does not. The page swaps it for
+ * itself the moment anything has something to show (Home's `hm-wait`).
+ *
+ * It fades in a moment late, so a page that answers at once never shows it.
+ * While it is up, the corner banner keeps out.
+ */
+export function PageLoading({ title, steps }: { title: string; steps: LoadingStep[] }) {
+  const t = useT();
+  const [start] = useState(() => Date.now());
+  const now = useNow(1000);
+  useEffect(() => {
+    setHolds(holds + 1);
+    return () => setHolds(holds - 1);
+  }, []);
+  const job = useServerProgress(true);
+  const seconds = Math.max(0, Math.floor((now - start) / 1000));
+  const landed = steps.filter((step) => step.waiting === null).length;
+  const { share, measured } = barShare(job, landed, steps.length);
+  const hint = hintFor(seconds, job?.expected_s ?? null);
+  const serverStep = job ? STEPS[job.step] : undefined;
+  return (
+    <section className="ag-page-loading" role="status" aria-live="polite">
+      <div className="ag-page-loading-head">
+        <h2 className="ag-page-loading-title">
+          <span className="ag-activity-glyph" aria-hidden="true">
+            ✻
+          </span>
+          {title}
+        </h2>
+        <span className="ag-page-loading-meta" aria-hidden="true">
+          {steps.length > 1
+            ? `${t("activity.parts", { done: landed, total: steps.length })} · `
+            : null}
+          {t("common.seconds", { s: seconds })}
+        </span>
+      </div>
+      <div
+        className="ag-activity-bar ag-page-loading-bar"
+        aria-hidden="true"
+        data-sweep={share === null || undefined}
+        data-guess={(share !== null && !measured) || undefined}
+      >
+        {share === null ? null : (
+          // A sliver even at nothing measured: an empty track reads as stuck.
+          <div style={{ width: `${Math.max(4, Math.round(share * 100))}%` }} />
+        )}
+      </div>
+      {serverStep && job ? (
+        <p className="ag-page-loading-server">
+          {t(serverStep)}
+          {job.total > 0
+            ? ` · ${t("activity.names", { done: job.done, total: job.total })}`
+            : null}
+        </p>
+      ) : null}
+      {steps.length > 0 ? (
+        // In the page's own order: a part that lands keeps its row.
+        <ol className="ag-page-loading-steps">
+          {steps.map((step) => (
+            <li key={step.id} data-done={step.waiting === null || undefined}>
+              <span className="ag-page-loading-mark" aria-hidden="true">
+                {step.waiting === null ? "✓" : "✻"}
+              </span>
+              <span className="ag-page-loading-label">{step.label}</span>
+              {step.waiting === null ? (
+                <span className="ag-page-loading-what">{t("activity.done")}</span>
+              ) : step.waiting === "activity.other" ? (
+                // "Loading data" beside a part that is loading says nothing.
+                <span className="ag-sr">{t("common.loading")}</span>
+              ) : (
+                <span className="ag-page-loading-what">{t(step.waiting)}</span>
+              )}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {hint ? (
+        <p className="ag-activity-hint">
+          {t(hint, { s: Math.round(job?.expected_s ?? 0) })}
+        </p>
+      ) : null}
+    </section>
   );
 }

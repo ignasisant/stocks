@@ -32,7 +32,8 @@ from __future__ import annotations
 #: unauthenticated writes, so each carries an IP rate limit of its own; see
 #: `routes/feedback.py` and `routes/client_error.py`. A page's timings
 #: (`routes/vitals.py`) are the same shape: one log line, metered by address,
-#: and so is a launch from the Home Screen (`routes/launch.py`).
+#: and so are a launch from the Home Screen and its window left short by a
+#: keyboard (`routes/launch.py`).
 OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("/v1/feedback", "POST"),
@@ -40,6 +41,7 @@ OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
         ("/v1/missing-strings", "POST"),
         ("/v1/vitals", "POST"),
         ("/v1/launch", "POST"),
+        ("/v1/viewport-stuck", "POST"),
     }
 )
 

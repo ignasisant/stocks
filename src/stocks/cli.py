@@ -1265,6 +1265,21 @@ def cmd_review_answer(args: argparse.Namespace) -> None:
         print(f"  ↳ {url}")
 
 
+def cmd_feedback_expire(args: argparse.Namespace) -> None:
+    """Delete the answer ratings older than their keep (web/feedback.py)."""
+    from stocks import storage
+    from stocks.web import feedback
+
+    days = feedback.RATING_KEEP_DAYS if args.days is None else args.days
+    print(f"read: local data/feedback + bucket {storage.bucket()}"
+          if storage.bucket() else "read: local data/feedback only (no [storage])")
+    gone = feedback.expire_ratings(days, dry_run=args.dry_run)
+    for rid in gone:
+        print(rid)
+    verb = "would delete" if args.dry_run else "deleted"
+    print(f"{verb} {len(gone)} rating(s) older than {days} days")
+
+
 def cmd_feedback_reply(args: argparse.Namespace) -> None:
     """Answer one submission: shown once in the writer's app, and pushed to
     their devices when this machine holds the push key."""
@@ -1870,6 +1885,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_fb.add_argument("--user", default="",
                       help="only submissions whose account slug contains this")
     p_fb.set_defaults(func=cmd_feedback)
+
+    p_fe = sub.add_parser(
+        "feedback-expire",
+        help="delete answer ratings past their keep (daily, backup.yml)",
+    )
+    p_fe.add_argument("--days", type=int, default=None,
+                      help="keep this many days (default: RATING_KEEP_DAYS)")
+    p_fe.add_argument("--dry-run", action="store_true",
+                      help="list what would be deleted, delete nothing")
+    p_fe.set_defaults(func=cmd_feedback_expire)
 
     p_fr = sub.add_parser(
         "feedback-reply",

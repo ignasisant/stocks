@@ -541,6 +541,7 @@
   "home.daily_an_note_history": "Movimiento: del cierre anterior al resultado al cierre posterior.",
   "home.daily_an_note_corr": "Correlación de un año de rendimientos diarios con el sector en el que estás sobreponderado: cuanto más baja, más distinto se mueve.",
   "home.daily_an_note_attribution": "Peso actual × movimiento del mes en la divisa de cada cotización: una atribución, no una conciliación exacta.",
+  "home.loading_title": "Preparando tu inicio",
   "home.customize": "Personalizar",
   "home.customize_guest": "Inicia sesión para ordenar el inicio a tu manera: reordenar las tarjetas, ocultar unas y añadir otras.",
   "home.edit_title": "Personalizar inicio",

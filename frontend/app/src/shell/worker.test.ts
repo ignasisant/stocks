@@ -20,36 +20,72 @@ type Client = {
   postMessage: (message: unknown) => void;
 };
 
-/** A window of the app and what the worker did to it. */
-function appWindow(over: Partial<Client> = {}) {
+/** The worker's message to a window, without its timestamp. */
+function said(message: unknown): string {
+  const { at, ...rest } = message as { at?: unknown };
+  return `message ${JSON.stringify(rest)}${typeof at === "number" ? " @" : ""}`;
+}
+
+const OPEN = said({ type: "open", url: THREAD, at: 1 });
+
+/**
+ * A window of the app and what the worker did to it. `answers`: the app's
+ * shell is running there and says it took the press (`useWorkerOpen`).
+ */
+function appWindow(over: Partial<Client> = {}, answers = true) {
   const did: string[] = [];
+  let reply: ((at: number) => void) | null = null;
   const client: Client = {
     url: `${ORIGIN}/portfolio`,
     focus: async () => did.push("focus"),
     navigate: async (url) => did.push(`navigate ${url}`),
-    postMessage: (message) => did.push(`message ${JSON.stringify(message)}`),
+    postMessage: (message) => {
+      did.push(said(message));
+      if (answers) reply?.((message as { at: number }).at);
+    },
     ...over,
   };
-  return { client, did };
+  return { client, did, wire: (fn: (at: number) => void) => (reply = fn) };
 }
 
+type Win = ReturnType<typeof appWindow>;
+
 /** Press a notification pointing at `url` with `open` windows on screen. */
-async function press(open: Client[], url = THREAD) {
+async function press(open: Win[], url = THREAD, cacheWorks = true) {
   const handlers: Record<string, (event: unknown) => void> = {};
   const opened: string[] = [];
+  const noted: Record<string, unknown> = {};
+  const reported: unknown[] = [];
   const self = {
     location: { origin: ORIGIN },
     addEventListener: (name: string, handler: (event: unknown) => void) => {
       handlers[name] = handler;
     },
     skipWaiting: () => undefined,
+    caches: {
+      open: async () => {
+        if (!cacheWorks) throw new Error("no Cache API");
+        return {
+          put: async (key: string, response: Response) => {
+            noted[key] = await response.json();
+          },
+        };
+      },
+    },
     clients: {
       claim: async () => undefined,
-      matchAll: async () => open,
+      matchAll: async () => open.map((w) => w.client),
       openWindow: async (href: string) => opened.push(href),
     },
   };
-  new Function("self", SOURCE)(self);
+  const fetch = async (_: string, init: RequestInit) => {
+    reported.push(JSON.parse(String(init.body)).via);
+    return new Response(null, { status: 204 });
+  };
+  new Function("self", "fetch", SOURCE)(self, fetch);
+  for (const w of open) {
+    w.wire((at) => handlers.message?.({ data: { type: "took", at } }));
+  }
   let settled: Promise<unknown> = Promise.resolve();
   handlers.notificationclick?.({
     action: "",
@@ -59,52 +95,69 @@ async function press(open: Client[], url = THREAD) {
     },
   });
   await settled;
-  return opened;
+  const note = noted["/__push/pending"] as { url?: string; at?: number } | undefined;
+  return { opened, note: note ?? null, reported };
 }
 
 describe("a pressed notification", () => {
-  it("raises the open window and sends it to the thread", async () => {
-    const { client, did } = appWindow();
-    expect(await press([client])).toEqual([]);
-    expect(did).toEqual(["focus", `navigate ${ORIGIN}${THREAD}`]);
+  it("tells the open app to go to the thread, and raises it", async () => {
+    const app = appWindow();
+    const { opened, reported } = await press([app]);
+    expect(opened).toEqual([]);
+    expect(app.did).toEqual([OPEN, "focus"]);
+    expect(reported).toEqual(["window"]);
   });
 
-  it("still sends the window to the thread when the browser will not raise it", async () => {
-    const { client, did } = appWindow({
+  it("leaves a note of the press for an app that wakes up later", async () => {
+    const asleep = appWindow({}, false);
+    const { note } = await press([asleep]);
+    expect(note?.url).toBe(THREAD);
+    expect(typeof note?.at).toBe("number");
+  });
+
+  it("moves a window that does not answer itself", async () => {
+    const silent = appWindow({}, false);
+    await press([silent]);
+    expect(silent.did).toEqual([OPEN, "focus", `navigate ${ORIGIN}${THREAD}`]);
+    const without = appWindow({ navigate: undefined }, false);
+    delete without.client.navigate;
+    await press([without]);
+    expect(without.did).toEqual([OPEN, "focus"]);
+  });
+
+  it("is not held up by a window that will not be raised", async () => {
+    const hangs = appWindow({ focus: () => new Promise(() => undefined) });
+    const { reported } = await press([hangs]);
+    expect(hangs.did).toEqual([OPEN]);
+    expect(reported).toEqual(["window"]);
+    const refuses = appWindow({
       focus: async () => {
         throw new TypeError("Not allowed to focus a window.");
       },
     });
-    expect(await press([client])).toEqual([]);
-    expect(did).toEqual([`navigate ${ORIGIN}${THREAD}`]);
+    await press([refuses]);
+    expect(refuses.did).toEqual([OPEN]);
   });
 
-  it("tells the page to move itself when the worker may not move it", async () => {
-    const refused = appWindow({
-      navigate: async () => {
-        throw new TypeError("This service worker is not the client's active one.");
-      },
-    });
-    await press([refused.client]);
-    expect(refused.did).toEqual([
-      "focus",
-      `message ${JSON.stringify({ type: "open", url: THREAD })}`,
-    ]);
-    const without = appWindow({ navigate: undefined });
-    delete without.client.navigate;
-    await press([without.client]);
-    expect(without.did.at(-1)).toBe(
-      `message ${JSON.stringify({ type: "open", url: THREAD })}`,
-    );
+  it("still sends the app there without the Cache API", async () => {
+    const app = appWindow();
+    const { note } = await press([app], THREAD, false);
+    expect(note).toBeNull();
+    expect(app.did[0]).toBe(OPEN);
   });
 
   it("opens a window on the thread when the app has none", async () => {
-    expect(await press([])).toEqual([`${ORIGIN}${THREAD}`]);
+    const { opened, note, reported } = await press([]);
+    expect(opened).toEqual([`${ORIGIN}${THREAD}`]);
+    expect(note?.url).toBe(THREAD);
+    expect(reported).toEqual(["opened"]);
   });
 
   it("never leaves the site", async () => {
-    const { client, did } = appWindow();
-    expect(await press([client], "https://elsewhere.example/")).toEqual([]);
-    expect(did).toEqual([]);
+    const app = appWindow();
+    const { opened, note } = await press([app], "https://elsewhere.example/");
+    expect(opened).toEqual([]);
+    expect(app.did).toEqual([]);
+    expect(note).toBeNull();
   });
 });

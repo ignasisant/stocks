@@ -40,4 +40,9 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uv sync --frozen --no-dev
+      # Answer ratings copy the reader's conversation, so they expire with it
+      # (web/feedback.RATING_KEEP_DAYS). Before the snapshot, so it holds none;
+      # a failure here must never cost the night its backup.
+      - run: uv run --no-sync stocks feedback-expire
+        continue-on-error: true
       - run: uv run --no-sync stocks backup run

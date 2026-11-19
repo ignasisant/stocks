@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
-from datetime import UTC, date
+from datetime import UTC, date, timedelta
 from typing import Annotated, Literal, cast
 
 import pandas as pd
@@ -53,7 +53,13 @@ from stocks.data.estimates import (
     projection,
 )
 from stocks.data.funds import is_fund
-from stocks.data.insiders import CODE_LABELS, summarize
+from stocks.data.insiders import (
+    CODE_LABELS,
+    buy_pattern,
+    stake_change,
+    summarize,
+    with_roles,
+)
 from stocks.data.listing import listing_currencies
 from stocks.jsonsafe import num as _num
 from stocks.portfolio import platforms
@@ -118,6 +124,12 @@ router = APIRouter(prefix="/ticker", tags=["ticker"])
 # The comparison's opening window: from the book's first buy. Not one of
 # `compare.RANGES`, which `window_days` reads as calendar spans back from today.
 INCEPTION = "inception"
+
+# Insider lines the page is sent: the last year, as the feed used to hold —
+# the rest of the feed is history for telling routine buys apart. A quiet
+# name still gets its newest lines, however old.
+INSIDER_SHOWN_DAYS = 365
+INSIDER_SHOWN_MIN = 40
 
 Symbol = Annotated[
     str, Path(min_length=1, max_length=32, description="Ticker, e.g. AAPL or BTC-EUR.")
@@ -588,7 +600,11 @@ def _split_gaps(db, ticker: str) -> list:
     if not any(tx.action == "buy" for tx in rows):
         return []
     return corporate.missing_splits(
-        rows, splits=fetch.splits, close_on=fetch.close_on, source="page"
+        rows,
+        splits=fetch.splits,
+        close_on=fetch.close_on,
+        range_on=fetch.range_on,
+        source="page",
     )
 
 
@@ -1065,7 +1081,9 @@ def insiders(symbol: Symbol) -> Insiders:
     own would read as "no insider has traded", which is a different claim.
     """
     ticker = symbol.strip().upper()
-    trades = loaders.insiders(ticker)
+    # Finnhub's lines come without a role; what EDGAR has taught so far fills
+    # it in, and a name still blank is learnt in the background for next time.
+    trades = with_roles(ticker, loaders.insiders(ticker))
     source = "SEC" if trades else None
     filer = _sec_filer(ticker)
 
@@ -1089,6 +1107,17 @@ def insiders(symbol: Symbol) -> Insiders:
     trades = sorted(
         trades, key=lambda t: (t.date is not None, t.date or date.min), reverse=True
     )
+    # The feed reaches back years so a buy can be told routine or not; the
+    # page needs only the last of them. A quiet name keeps its newest lines
+    # however old, as before.
+    cutoff = date.today() - timedelta(days=INSIDER_SHOWN_DAYS)
+    shown = [t for t in trades if t.date is None or t.date >= cutoff]
+    if len(shown) < INSIDER_SHOWN_MIN:
+        shown = trades[:INSIDER_SHOWN_MIN]
+
+    def stake(t) -> float | None:
+        change = stake_change(t)
+        return None if change is None else round(change * 100, 1)
 
     return Insiders(
         ticker=ticker,
@@ -1110,8 +1139,11 @@ def insiders(symbol: Symbol) -> Insiders:
                 value=_num(t.value if t.acquired else -t.value) if t.value else None,
                 is_open_market=t.is_open_market,
                 currency=getattr(t, "currency", None),
+                filed=str(t.filed) if t.filed else None,
+                pattern=buy_pattern(t, trades),
+                stake_pct=stake(t),
             )
-            for t in trades
+            for t in shown
         ],
         sec_filer=filer,
     )
@@ -1185,7 +1217,7 @@ def _insider_summary(trades) -> InsiderSummary:
     that says the net is zero for every company on earth. Named field by field
     here so a reader can check the list against the model.
     """
-    summary = summarize(trades)
+    summary = summarize(trades, history=trades)
     return InsiderSummary(
         window_days=summary.window_days,
         buy_count=summary.buy_count,
@@ -1198,6 +1230,8 @@ def _insider_summary(trades) -> InsiderSummary:
         sellers=summary.sellers,
         net_value=summary.net_value,
         cluster_buy=summary.cluster_buy,
+        deliberate_buyers=summary.deliberate_buyers,
+        routine_buyers=summary.routine_buyers,
     )
 
 

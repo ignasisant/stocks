@@ -74,6 +74,7 @@
   "activity.step_rebase": "Precios del último mes",
   "activity.step_full": "Historial completo de precios",
   "activity.names": "{done} de {total} valores",
+  "activity.parts": "{done} de {total}",
   "activity.expected": "Suele tardar ~{s} s",
   "activity.hint_slow": "Va lento, pero sigue en marcha.",
   "activity.hint_long": "Las cargas grandes pueden tardar hasta un minuto.",

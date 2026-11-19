@@ -13,7 +13,7 @@
 import { DASH, UNITS, decimal, isNum, percent } from "../../shell/format";
 import { known } from "../../shell/i18n";
 import { formatter, num, numberLang } from "../../shell/numbers";
-import type { Bars } from "./types";
+import type { Bars, InsiderSummary } from "./types";
 
 type Maybe = number | null | undefined;
 
@@ -94,6 +94,29 @@ export function insiderValue(value: Maybe, currency: string | null): string {
   return isNum(value)
     ? `${mark(currency)}${decimal(value, { digits: 0, signed: "always" })}`
     : "";
+}
+
+/**
+ * The one reading the insider card offers, strongest first.
+ *
+ * Buys are read, sells barely: insiders sell for taxes, a house or a vesting
+ * schedule, and buy for one reason. Among buys, a routine one (the same month
+ * every year) tells nothing, so a cluster made only of routine buyers is not
+ * called a cluster, and one insider buying off their calendar is worth a line
+ * even when the window's sells outweigh it.
+ */
+export type InsiderSignal = "cluster" | "deliberate" | "routine" | "selling";
+
+export function insiderSignal(summary: InsiderSummary | null): InsiderSignal | null {
+  if (!summary) return null;
+  const routine = summary.routine_buyers ?? 0;
+  const allRoutine = summary.buyers > 0 && routine === summary.buyers;
+  if (summary.cluster_buy && !allRoutine) return "cluster";
+  if ((summary.deliberate_buyers ?? 0) > 0) return "deliberate";
+  if (allRoutine) return "routine";
+  if (summary.sell_count && summary.sell_value > summary.buy_value * 3)
+    return "selling";
+  return null;
 }
 
 /**
