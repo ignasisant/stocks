@@ -1,1 +1,0 @@
-import{et as e}from"./api-D9yfsCC5.js";function t(t){let n=e(),r=e=>{let r=`portfolio.${t.toLowerCase()}_${e}`;if(n.has(r))return r;let i=`portfolio.${e}`;return n.has(i)?i:null};return{has:e=>r(e)!==null,say:(e,t)=>n(r(e)??`portfolio.${e}`,t)}}export{t};
