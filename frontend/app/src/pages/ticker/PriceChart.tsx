@@ -41,6 +41,8 @@ import {
   hoverTitle,
   placeFills,
   priceRows,
+  rsiBand,
+  rsiRow,
   volumeAverage,
   volumeRow,
   type Fill,
@@ -62,6 +64,7 @@ import {
   scale,
   spoken,
   tickDigits,
+  type Frame,
   type TipLine,
 } from "./plot";
 import { fitHeight } from "../../ui/chart/fit";
@@ -88,6 +91,13 @@ const FALLBACK_WIDTH = 760;
  * strip squared off the card's width.
  */
 const PHONE_HEIGHT = 340;
+
+/**
+ * The RSI strip's height under the price: room for its name over a 0–100
+ * band, never so much that it competes with the chart it annotates.
+ */
+const RSI_HEIGHT = 84;
+const RSI_PHONE_HEIGHT = 84;
 /** Room an axis label needs along the x axis, date and gap together. */
 const LABEL_SLOT = 120;
 
@@ -291,6 +301,7 @@ export function PriceChart({
   avgCost,
   candles,
   overlays: shown = ALL_OVERLAYS,
+  rsi = false,
   markers = ALL_MARKERS,
   mobile,
   onWindow,
@@ -312,6 +323,8 @@ export function PriceChart({
    * straight line that says nothing.
    */
   overlays?: readonly Overlay[];
+  /** Whether this kind is read with an RSI strip under the price (`layout.ts`). */
+  rsi?: boolean;
   /** The corporate events worth a vertical on this kind of chart. */
   markers?: readonly Marker[];
   mobile: boolean;
@@ -799,10 +812,21 @@ export function PriceChart({
     bars.series[key]?.slice(from, to + 1).some((value) => value !== null),
   );
   const drawn = present.filter(([key]) => !hidden.has(key));
+  // The RSI keeps its own 0–100 scale in a strip under the price: laid over
+  // the price it would wreck the axis the averages share.
+  const rsiValues = rsi ? (bars.series.RSI14 ?? NONE) : NONE;
+  const rsiPresent = rsiValues
+    .slice(from, to + 1)
+    .some((value) => typeof value === "number");
+  const rsiOn = rsiPresent && !hidden.has("RSI");
+  const rsiColor = colors.brandAccent;
 
   const legend = [
     { label: t("ticker.price"), color: candles ? colors.candleUp : lineColor },
     ...present.map(([key, color, name]) => ({ key, label: name, color })),
+    ...(rsiPresent
+      ? [{ key: "RSI", label: t("ticker.rsi_label"), color: rsiColor }]
+      : []),
     ...(placed.some((fill) => fill.trade.action === "buy")
       ? [
           {
@@ -932,6 +956,8 @@ export function PriceChart({
       const value = averageRow(name, bars.series[key]?.[index] ?? null, color);
       if (value) averages.push(value);
     }
+    const momentum = rsiOn ? rsiRow(rsiValues[index], rsiColor, t) : null;
+    if (momentum) averages.push(momentum);
     // On a phone the reading is a strip, and the averages are the rows the
     // legend's lines already tell: the fills and events go ahead of them.
     if (!mobile) lines.push(...averages);
@@ -1349,6 +1375,23 @@ export function PriceChart({
         />
       </Chart>
 
+      {rsiOn ? (
+        <RsiStrip
+          values={rsiValues}
+          from={from}
+          to={to}
+          xOf={xOf}
+          price={box}
+          height={mobile ? RSI_PHONE_HEIGHT : RSI_HEIGHT}
+          inside={mobile}
+          at={measure ? null : hover}
+          onPointer={(x) => setHover(indexAt(x))}
+          onLeave={() => setHover(null)}
+          color={rsiColor}
+          t={t}
+        />
+      ) : null}
+
       {strip ? (
         <Tooltip
           frame={box}
@@ -1416,5 +1459,144 @@ export function PriceChart({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The RSI (14) under the price, on the price chart's x axis so a bar reads
+ * straight down: a 0–100 line between dashed 30 and 70 levels, its name and
+ * value (the pointed bar's, else the window's last) at the top left. Out of
+ * the 30–70 band the value is coloured and its zone spelled out — stretched
+ * low green, stretched high red — so the colour never carries it alone.
+ * Context for the price, not a call.
+ */
+function RsiStrip({
+  values,
+  from,
+  to,
+  xOf,
+  price,
+  height,
+  inside,
+  at,
+  onPointer,
+  onLeave,
+  color,
+  t,
+}: {
+  values: (number | null)[];
+  from: number;
+  to: number;
+  /** The price chart's own bar-to-x, so both plots share one axis. */
+  xOf: (index: number) => number;
+  /** The price chart's frame: same width and side insets. */
+  price: Frame;
+  height: number;
+  /** A phone: the level labels go inside the plot, as the price's do. */
+  inside: boolean;
+  /** The bar being pointed at on either plot. */
+  at: number | null;
+  onPointer: (x: number) => void;
+  onLeave: () => void;
+  color: string;
+  t: Translate;
+}) {
+  const colors = palette();
+  const f = frame({
+    width: price.width,
+    height,
+    left: price.left,
+    right: price.right,
+    top: 18,
+    bottom: 4,
+  });
+  const y = scale(0, 100, f.height - f.bottom, f.top);
+  const runs = segments(values, from, to).map((run) =>
+    run.map((index) => `${xOf(index)},${y(values[index] as number)}`).join(" "),
+  );
+  const pointed = at === null ? null : (values[at] ?? null);
+  const value = pointed ?? latest(values.slice(from, to + 1));
+  const band = value === null ? null : rsiBand(value);
+  const tone =
+    band === "oversold"
+      ? colors.candleUp
+      : band === "overbought"
+        ? colors.candleDown
+        : colors.textPrimary;
+  const zone =
+    band === "oversold"
+      ? t("ticker.rsi_oversold")
+      : band === "overbought"
+        ? t("ticker.rsi_overbought")
+        : t("ticker.rsi_neutral");
+  const reading = value === null ? DASH : decimal(value, { digits: 1 });
+  return (
+    <svg
+      className="tk-svg tk-rsi"
+      viewBox={`0 0 ${f.width} ${f.height}`}
+      role="img"
+      aria-label={t("ticker.rsi_summary", { value: reading, zone })}
+      onPointerMove={(event) => {
+        if (event.pointerType === "touch") return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (box.width === 0) return;
+        onPointer((event.clientX - box.left) / (box.width / f.width));
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") onLeave();
+      }}
+    >
+      <g className={inside ? "tk-grid tk-grid-in" : "tk-grid"}>
+        {[70, 30].map((level) => (
+          <g key={level}>
+            <line
+              className="tk-rsi-level"
+              x1={f.left}
+              x2={f.width - f.right}
+              y1={y(level)}
+              y2={y(level)}
+            />
+            {/* On a phone, inside at the left as the price's labels are:
+              at the right they sat on the line's last value. */}
+            <text
+              x={inside ? f.left : f.left - 8}
+              y={inside ? y(level) - 3 : y(level) + 4}
+              textAnchor={inside ? "start" : "end"}
+            >
+              {level}
+            </text>
+          </g>
+        ))}
+      </g>
+      {runs.map((points, index) => (
+        <polyline
+          key={`rsi-${index}`}
+          className="tk-line"
+          points={points}
+          stroke={color}
+          strokeWidth={LINE.secondary}
+        />
+      ))}
+      {at !== null && at >= from && at <= to ? (
+        <line
+          className="ag-cross ag-cross-area"
+          x1={xOf(at)}
+          x2={xOf(at)}
+          y1={f.top}
+          y2={f.height - f.bottom}
+        />
+      ) : null}
+      <text className="tk-rsi-name" x={f.left} y={12} aria-hidden="true">
+        <tspan>{t("ticker.rsi_label")}</tspan>
+        <tspan className="tk-rsi-value" dx={6} fill={tone}>
+          {reading}
+        </tspan>
+        {band && band !== "neutral" ? (
+          <tspan dx={6} fill={tone}>
+            {zone}
+          </tspan>
+        ) : null}
+      </text>
+    </svg>
   );
 }

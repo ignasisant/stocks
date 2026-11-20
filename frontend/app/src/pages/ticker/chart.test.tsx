@@ -84,6 +84,49 @@ describe("PriceChart", () => {
     expect(phone).toMatch(/aria-pressed="false"[^>]*>(?:(?!<\/button>).)*SMA200/);
     expect(desk).toMatch(/aria-pressed="true"[^>]*>(?:(?!<\/button>).)*SMA200/);
   });
+
+  // The RSI's 0–100 rides in its own strip under the price, only for a kind
+  // that is read by it, and only once it has a value in the window.
+  const withRsi = (rsi: boolean, series: (number | null)[]) =>
+    renderToStaticMarkup(
+      <PriceChart
+        bars={{ ...bars, series: { ...bars.series, RSI14: series } }}
+        events={[]}
+        trades={[]}
+        avgCost={null}
+        candles={false}
+        rsi={rsi}
+        mobile={false}
+        t={(key) => key}
+      />,
+    );
+
+  it("draws the RSI strip under the price, with its levels and a legend entry", () => {
+    const html = withRsi(
+      true,
+      dates.map((_, i) => (i < 14 ? null : 40 + i)),
+    );
+    expect(html).toContain('class="tk-svg tk-rsi"');
+    expect(html).toMatch(
+      /aria-pressed="true"[^>]*>(?:(?!<\/button>).)*ticker\.rsi_label/,
+    );
+    expect(html).toContain(">70<");
+    expect(html).toContain(">30<");
+    // The window's last value is 99, past 70: coloured and spelled out.
+    expect(html).toContain("ticker.rsi_overbought");
+  });
+
+  it("draws no RSI for a kind not read by it, nor before it has a value", () => {
+    const series = dates.map((_, i) => 50 + (i % 5));
+    expect(withRsi(false, series)).not.toContain("tk-rsi");
+    expect(withRsi(false, series)).not.toContain("ticker.rsi_label");
+    expect(
+      withRsi(
+        true,
+        dates.map(() => null),
+      ),
+    ).not.toContain("tk-rsi");
+  });
 });
 
 describe("labeller", () => {

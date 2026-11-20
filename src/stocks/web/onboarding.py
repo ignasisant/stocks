@@ -818,6 +818,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="today", icon="wb_sunny", step="today"),
         ),
     ),
+    Release(
+        version="2026.11.5",
+        date="2026-11",
+        items=(
+            # A holding's own rows, on its page: no screen listed them before
+            # (Home shows the book's last five; the chat had to be asked), so
+            # reconciling a fund's contributions against a statement had
+            # nowhere to go. A section of the ticker page, so the market step.
+            News(slug="transactions", icon="receipt_long", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

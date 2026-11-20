@@ -56,6 +56,12 @@ export type Shape = {
   /** The cells beside the price, in order. The price itself always leads. */
   metrics: readonly MetricId[];
   overlays: readonly Overlay[];
+  /**
+   * Whether the RSI (14) strip runs under the price. Off for what is read by
+   * what it pays: a cash fund's line climbs a sliver a day, so its RSI sits in
+   * the nineties and calls cash "overbought"; a bond fund's moves are rates.
+   */
+  rsi: boolean;
   /** Whether the line/candles toggle is offered at all. */
   candles: boolean;
   markers: readonly Marker[];
@@ -116,6 +122,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "stock",
     metrics: MARKET,
     overlays: ALL_AVERAGES,
+    rsi: true,
     candles: true,
     markers: ["results", "dividends"],
     sections: { ...NO_SECTIONS, company: true },
@@ -130,6 +137,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "equity_fund",
     metrics: FOLLOWED,
     overlays: ALL_AVERAGES,
+    rsi: true,
     candles: true,
     markers: ["dividends"],
     sections: FUND,
@@ -144,6 +152,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "bond_fund",
     metrics: ["distribution", "duration"],
     overlays: SLOW_AVERAGES,
+    rsi: false,
     candles: false,
     markers: ["dividends"],
     sections: FUND,
@@ -158,6 +167,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "money_market",
     metrics: ["cash_yield", "policy", "ter"],
     overlays: [],
+    rsi: false,
     candles: false,
     markers: [],
     sections: { ...NO_SECTIONS, fund: true },
@@ -173,6 +183,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "closed_end",
     metrics: ["premium", "cef_distribution"],
     overlays: SLOW_AVERAGES,
+    rsi: true,
     candles: true,
     markers: ["dividends"],
     sections: FUND,
@@ -190,6 +201,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     // beside the year's range. The averages stay on the chart.
     metrics: ["range_52w", "ath_drawdown", "trend"],
     overlays: ALL_AVERAGES,
+    rsi: true,
     candles: true,
     markers: ["cycle"],
     sections: {
@@ -210,6 +222,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     kind: "index",
     metrics: FOLLOWED,
     overlays: ALL_AVERAGES,
+    rsi: true,
     candles: true,
     markers: [],
     sections: NO_SECTIONS,

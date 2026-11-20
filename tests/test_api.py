@@ -260,6 +260,39 @@ def test_transactions_are_newest_first_and_paged(client, token, account):
     assert [t["date"] for t in second["transactions"]] == ["2024-01-02"]
 
 
+def test_a_ticker_page_lists_its_position_and_no_other_listing(
+    client, token, account
+):
+    """`exact` is the ticker page's filter: the rows its own position holds.
+
+    The default match is generous on purpose (`AAPL.MX` answers to `AAPL`), and
+    on a page for one listing that would list another venue's buys as this
+    one's.
+    """
+    ledger.add_many(
+        [Transaction("2024-04-01", "AAPL.MX", "buy", 2, 3000.0, "MXN", 0.0)],
+        path=account.db,
+    )
+    loaders.ledger_state.cache_clear()
+
+    def rows(**params):
+        return client.get(
+            "/v1/portfolio/transactions",
+            params={"account": EMAIL, "ticker": "AAPL", **params},
+            headers=AUTH,
+        ).json()
+
+    generous = rows()
+    assert {t["ticker"] for t in generous["transactions"]} == {"AAPL", "AAPL.MX"}
+
+    exact = rows(exact=True)
+    assert exact["total"] == 2
+    assert [(t["date"], t["action"]) for t in exact["transactions"]] == [
+        ("2024-03-01", "sell"),
+        ("2024-01-02", "buy"),
+    ]
+
+
 def test_an_unpriced_position_reads_null_and_is_counted(
     client, token, account, monkeypatch
 ):

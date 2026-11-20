@@ -283,6 +283,16 @@ def transactions(
     until: Annotated[
         str, Query(alias="to", max_length=10, description="ISO date, inclusive.")
     ] = "",
+    exact: Annotated[
+        bool,
+        Query(
+            description=(
+                "Match `ticker` only as the one position it names: the label "
+                "the replay unifies a row under, never the bare symbol on "
+                "another venue. What a ticker page lists."
+            )
+        ),
+    ] = False,
 ) -> Transactions:
     """The ledger, newest first, paged, optionally narrowed.
 
@@ -290,10 +300,25 @@ def transactions(
     against a broker statement wants exactly what is stored; the analytics
     endpoints are where transfers get unified into one position. The filters
     only choose rows; `total` counts the rows they chose.
+
+    `ticker` is generous by default (`GRF` finds `GRF.MC`), which suits a
+    person naming a company. A ticker page needs the rows of *its* position
+    and no sibling listing's, the same ones its chart marks
+    (`corporate.own_fills`): `exact` matches the unified label alone.
     """
     ccy = reporting_currency(account, base)
     db = str(account.db)
     txs = loaders.ledger_state(db, loaders.db_mtime(db), ccy).txs
+    if exact and ticker.strip():
+        from stocks.portfolio import transfers
+
+        label = ticker.strip().upper()
+        txs = [
+            tx
+            for tx, shown in zip(txs, transfers.relabel(txs), strict=True)
+            if shown.ticker == label
+        ]
+        ticker = ""
     wanted = edits.Selector(
         ticker=ticker, broker=broker, action=action, since=since, until=until
     )

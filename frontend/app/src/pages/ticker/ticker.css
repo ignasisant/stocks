@@ -659,6 +659,26 @@
   }
 }
 
+/* The RSI strip under the price: its 30 and 70 levels dashed, so the line
+   between them is what the eye follows. */
+.tk-rsi {
+  margin-top: 4px;
+}
+
+.tk-rsi-level {
+  stroke-dasharray: 2 4;
+}
+
+.tk-rsi-name {
+  fill: var(--ag-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-rsi-value {
+  font-weight: 600;
+}
+
 .tk-event {
   stroke-width: 1;
   stroke-dasharray: 2 3;
@@ -1745,6 +1765,58 @@
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 4px;
+}
+
+/* ------------------------------------------------- typing a trade by hand */
+.tk-trade-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-trade-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-trade-field .tk-field {
+  padding-right: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Price and its currency on one line: the currency is three letters. */
+.tk-trade-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem;
+  gap: 8px;
+}
+
+.tk-trade-ccy .tk-field {
+  text-transform: uppercase;
+}
+
+.tk-trade-help {
+  margin: -6px 0 0;
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-trade-total {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .tk-trade-field .tk-field {
+    height: 44px;
+    /* 16px stops iOS zooming into the field on focus. */
+    font-size: 16px;
+  }
 }
 
 .ag-btn.tk-btn-danger {
@@ -2837,4 +2909,18 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Transactions: figures right-aligned so a column of amounts reads down its
+   decimals; a buy and a sale carry the book's in/out tones on the verb only. */
+.tk-tx .tk-tx-num {
+  text-align: right;
+}
+
+.tk-tx .tk-tx-in {
+  color: var(--ag-up);
+}
+
+.tk-tx .tk-tx-out {
+  color: var(--ag-down);
 }
