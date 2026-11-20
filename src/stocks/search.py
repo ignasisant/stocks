@@ -138,11 +138,15 @@ def fuzzy_order(
 def own_matches(q: str, catalog: Catalog) -> Marked:
     """The account's own rows for `q`: `(symbol, name, mark)`, favorites first."""
     order, labels, tags = catalog.order, catalog.labels, catalog.tags
+    # "service now" finds ServiceNow: a multi-word query also matches the name
+    # with spaces and punctuation dropped.
+    squeezed = _norm_name(q) if len(q.split()) > 1 else ""
     hits = [
         t
         for t in order
         if q in t.upper()
         or q in labels[t].upper()
+        or (squeezed and squeezed in _norm_name(labels[t]))
         or any(q in tag.upper() for tag in tags.get(t, ()))
     ]
     if not hits:
