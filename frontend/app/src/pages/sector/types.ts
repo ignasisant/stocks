@@ -41,7 +41,13 @@ export type CohortRow = {
   metrics: Record<string, number | null>;
   /** On fundamentals rows only; an older server leaves it out. */
   judged?: CohortJudged | null;
+  /** Off the market cap in dollars; null is "unknown", never "small". */
+  size?: Size | null;
+  /** A small or mid cap growing fast, listed beside the cohort: unscored. */
+  growth?: boolean;
 };
+
+export type Size = "large" | "mid" | "small";
 
 export type SectorCohort = {
   sector: string;

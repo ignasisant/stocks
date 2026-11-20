@@ -13,7 +13,7 @@
  * ranking opens on the most expensive company in the sector.
  */
 
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { useDebounced } from "../../shell/useDebounced";
@@ -23,6 +23,7 @@ import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 import { MAX_ADDED, SYMBOL } from "../review/format";
 import { useLabels } from "./labels";
 import {
+  fits,
   formatMetric,
   isPercent,
   ordered,
@@ -32,7 +33,7 @@ import {
   toWire,
 } from "./metrics";
 import { percentiles, tint } from "./rank";
-import type { CohortRow, SectorCohort } from "./types";
+import type { CohortRow, SectorCohort, Size } from "./types";
 
 /**
  * The width the table goes dense at, 40rem, and the one `Responsive` swaps the
@@ -56,6 +57,9 @@ const SCREENS: { metric: string; kind: "min" | "max"; value: string }[] = [
   { metric: "roic", kind: "min", value: "15" },
   { metric: "fcf_yield", kind: "min", value: "3" },
 ];
+
+/** The size chips, largest first, as `size_band` in routes/sector.py cuts them. */
+const SIZES: Size[] = ["large", "mid", "small"];
 
 /** How many columns a phone opens with, before anyone adds more. */
 const NARROW_COLUMNS = 4;
@@ -121,6 +125,9 @@ export function Cohort({
   // Rows picked to carry to Sell or add, in the order they were picked.
   const [picked, setPicked] = useState<string[]>([]);
   const [on, setOn] = useState<Record<string, boolean>>({});
+  // Sizes picked (none = every size) and whether only the growth names show.
+  const [sizes, setSizes] = useState<Size[]>([]);
+  const [growthOnly, setGrowthOnly] = useState(false);
   // The column last toggled: its definition reads under the chips, because a
   // chip's `title` is a hover hint and a phone has no hover.
   const [lastMetric, setLastMetric] = useState<string | null>(null);
@@ -160,7 +167,7 @@ export function Cohort({
   // rows and a sort of seventeen rows is free, while a memo keyed on a filter
   // list is a stale table waiting to happen.
   const view = ordered(
-    data.rows.filter((row) => passes(row, screens)),
+    data.rows.filter((row) => passes(row, screens) && fits(row, sizes, growthOnly)),
     sort,
     ascending,
   );
@@ -173,16 +180,34 @@ export function Cohort({
   // Each figure's standing in the whole cohort, not in the rows a screen
   // left: switching a screen on must not recolour the figures that stay.
   // The ranked-by metric too, column or not: a phone row's headline is it.
+  const cohortRows = data.rows.filter((row) => !row.growth);
+  const growthRows = data.rows.filter((row) => row.growth);
   const standing = new Map(
     [...new Set([...columns, sort])]
       .filter(tinted)
       .map((column) => [
         column,
-        percentiles(data.rows, column, data.lower_is_better.includes(column)),
+        percentiles(
+          cohortRows,
+          column,
+          data.lower_is_better.includes(column),
+          growthRows,
+        ),
       ]),
   );
   const shade = (column: string, ticker: string) =>
     tint(standing.get(column)?.get(ticker));
+
+  // The names listed beside the cohort, and whether any row has a size at all
+  // (a scan from before sizes existed has none to filter on).
+  const grown = growthRows.length;
+  const sized = data.rows.some((row) => row.size != null);
+  const growthBadge = (row: CohortRow) =>
+    row.growth ? (
+      <span className="ag-sec-growth" title={t("sector.growth_hint")}>
+        {t("sector.growth_badge")}
+      </span>
+    ) : null;
 
   const choosable = (ticker: string) => SYMBOL.test(ticker.toUpperCase());
   const full = picked.length >= MAX_ADDED;
@@ -200,8 +225,45 @@ export function Cohort({
     <section className="ag-sec-card ag-sec-cohort">
       <h2 className="ag-sec-h2">{t("sector.table_title")}</h2>
       <p className="ag-sec-caption">
-        {t("sector.cohort_caption", { n: data.rows.length, etf: data.etf })}
+        {t("sector.cohort_caption", { n: data.rows.length - grown, etf: data.etf })}
+        {grown ? ` ${t("sector.growth_caption", { n: grown })}` : null}
       </p>
+
+      {/* Size is a category, not a threshold: its own row of chips, any
+          number on, none on meaning every size. */}
+      {sized || grown ? (
+        <>
+          <ToggleRow label={t("sector.size")} className="ag-sec-chips ag-sec-sizes">
+            {sized
+              ? SIZES.map((size) => (
+                  <ToggleChip
+                    key={size}
+                    on={sizes.includes(size)}
+                    onClick={() =>
+                      setSizes((current) =>
+                        current.includes(size)
+                          ? current.filter((one) => one !== size)
+                          : [...current, size],
+                      )
+                    }
+                  >
+                    {t(`sector.size_${size}`)}
+                  </ToggleChip>
+                ))
+              : null}
+            {grown ? (
+              <ToggleChip
+                on={growthOnly}
+                title={t("sector.growth_hint")}
+                onClick={() => setGrowthOnly((current) => !current)}
+              >
+                {t("sector.growth_only", { n: grown })}
+              </ToggleChip>
+            ) : null}
+          </ToggleRow>
+          {sized ? <p className="ag-sec-caption">{t("sector.size_caption")}</p> : null}
+        </>
+      ) : null}
 
       {/* The ready screens, one tap each; the threshold is in the chip, so
           what it applies is read before it is applied. */}
@@ -337,6 +399,7 @@ export function Cohort({
             held={held}
             shade={shade}
             pick={pick}
+            badge={growthBadge}
           />
         }
         narrow={
@@ -350,7 +413,9 @@ export function Cohort({
               badge: (row) =>
                 held.has(row.ticker.toUpperCase()) ? (
                   <span className="ag-sec-held">{t("sector.held_badge")}</span>
-                ) : null,
+                ) : (
+                  growthBadge(row)
+                ),
               sub: (row) =>
                 sub.map(
                   (column) =>
@@ -445,6 +510,7 @@ function Table({
   held,
   shade,
   pick,
+  badge,
 }: {
   rows: CohortRow[];
   columns: string[];
@@ -456,6 +522,8 @@ function Table({
   /** A figure's background for its standing in the cohort, if it has one. */
   shade: (column: string, ticker: string) => string | undefined;
   pick: Picking;
+  /** The growth mark, on the rows listed beside the cohort. */
+  badge: (row: CohortRow) => ReactNode;
 }) {
   const t = useT();
   const labels = useLabels();
@@ -507,6 +575,7 @@ function Table({
                   {held.has(row.ticker.toUpperCase()) ? (
                     <span className="ag-sec-held">{t("sector.held_badge")}</span>
                   ) : null}
+                  {badge(row)}
                 </span>
               </th>
               {columns.map((column) => (

@@ -15,6 +15,13 @@ The cohort is assembled from two sources, in this order:
    here trusts them: `validate_symbols` makes Yahoo confirm both that the
    symbol exists and that it is filed under this sector, and drops it
    otherwise. An invented ticker never reaches a podium.
+3. Small and mid caps growing fast (`growth_candidates`): a Yahoo screen, not
+   a model, for the names neither of the above reaches — under $10B, sales up
+   more than 15 % on the year, with a positive EBITDA margin. They sit in the
+   table beside the cohort (`SectorScan.growth_metrics`) but are scored and
+   medalled nowhere: a podium of the S&P's largest names does not change
+   because eight small ones were listed next to it, and neither do the peer
+   medians the company page reads off `metrics`.
 
 The score is `analysis.fundamentals.comp_scores`, unchanged — a cross-sectional
 percentile over 18 valuation and quality KPIs. Two things follow from that, and
@@ -29,9 +36,11 @@ both belong in the copy, not just here:
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any, cast
 
 from stocks import atomic, obs, storage
 from stocks.analysis.fundamentals import comp_medals, comp_scores
@@ -86,6 +95,13 @@ class SectorScan:
     tech_metrics: tuple[dict, ...] = ()
     tech_scores: dict[str, float] = field(default_factory=dict)
     tech_podium: tuple[str, ...] = ()
+    # The small, fast-growing names (`growth_candidates`): rows like
+    # `metrics`, kept apart so no score, podium or peer median counts them.
+    growth_metrics: tuple[dict, ...] = ()
+
+    @property
+    def growth_tickers(self) -> tuple[str, ...]:
+        return tuple(str(m.get("ticker") or "") for m in self.growth_metrics)
 
     @property
     def medals(self) -> dict[str, str]:
@@ -103,6 +119,7 @@ class SectorScan:
             "tech_metrics": [_plain(m) for m in self.tech_metrics],
             "tech_scores": {k: float(v) for k, v in self.tech_scores.items()},
             "tech_podium": list(self.tech_podium),
+            "growth_metrics": [_plain(m) for m in self.growth_metrics],
         }
 
     @classmethod
@@ -121,6 +138,9 @@ class SectorScan:
                 str(k): float(v) for k, v in (raw.get("tech_scores") or {}).items()
             },
             tech_podium=tuple(str(t) for t in raw.get("tech_podium") or ()),
+            growth_metrics=tuple(
+                m for m in raw.get("growth_metrics") or () if isinstance(m, dict)
+            ),
         )
 
 
@@ -283,6 +303,161 @@ def validate_symbols(
     return keep
 
 
+# ------------------------------------------------- small and growing fast
+
+#: The dollar band a growth name's market cap must sit in: small and mid caps.
+#: Under the floor a name is too thin to act on a screen's say-so; over the
+#: ceiling the ETF basket and the proposed peers already cover its size.
+GROWTH_CAP_USD = (300e6, 10e9)
+
+#: Growth names per sector, at most. Each costs the nightly scan ~5 Yahoo
+#: requests, so eleven sectors of these is ~440 more on a throttled IP.
+GROWTH_PER_SECTOR = 8
+
+#: How many of them come from US exchanges before Europe's get their turn.
+GROWTH_US = 5
+
+# Primary exchanges only. Yahoo's US set also holds the pink sheets (PNK),
+# and Vienna (VIE) lists half of Nasdaq; Xetra (GER) does too, which is what
+# the country check in `growth_candidates` is for.
+_US_EXCHANGES = ("NMS", "NGM", "NCM", "NYQ", "ASE")
+_EU_EXCHANGES = ("PAR", "AMS", "BRU", "LIS", "MCE", "GER", "MIL", "STO",
+                 "CPH", "HEL", "OSL", "LSE", "EBS")
+
+_PREFERRED = re.compile(r"-P[A-Z]?$")
+
+#: Sales growth over the last twelve months, percent, a name must beat.
+GROWTH_MIN_PCT = 15
+#: Twelve months' sales a name must have (listing currency): not a story yet.
+GROWTH_MIN_REVENUE = 100e6
+
+
+def _screen(sector: str, exchanges: tuple[str, ...], cap: tuple[float, float],
+            size: int) -> list[dict]:
+    """Yahoo's screener: `sector` names on `exchanges` growing fast and
+    with a positive EBITDA margin, fastest first. `cap` bounds are in each
+    listing's own currency — Yahoo's, not ours to choose."""
+    import yfinance as yf
+    from yfinance import EquityQuery
+
+    from stocks.data import fetch
+
+    def Q(op: str, operand: list) -> EquityQuery:  # noqa: N802 - reads as yfinance's
+        # yfinance types an operand as all strings or all numbers; a field
+        # name followed by its bounds is what it actually takes.
+        return EquityQuery(cast("Any", op), cast("Any", operand))
+
+    query = Q("and", [
+        Q("eq", ["sector", sector]),
+        Q("is-in", ["exchange", *exchanges]),
+        Q("btwn", ["intradaymarketcap", cap[0], cap[1]]),
+        Q("gt", ["totalrevenues1yrgrowth.lasttwelvemonths", GROWTH_MIN_PCT]),
+        Q("gt", ["totalrevenues.lasttwelvemonths", GROWTH_MIN_REVENUE]),
+        # A positive EBITDA margin: what keeps the pre-revenue story stocks out,
+        # which a sales-growth sort alone puts first.
+        Q("gt", ["ebitdamargin.lasttwelvemonths", 0]),
+    ])
+    found = fetch.retry(lambda: yf.screen(
+        query, sortField="totalrevenues1yrgrowth.lasttwelvemonths",
+        sortAsc=False, size=size,
+    ))
+    quotes = found.get("quotes") if isinstance(found, dict) else None
+    return [q for q in quotes or () if isinstance(q, dict) and q.get("symbol")]
+
+
+def _usd_rate(currency: str | None) -> float | None:
+    """Dollars per unit of a listing's major currency; None when unquoted."""
+    from stocks.data import fx
+    from stocks.data.listing import quote_unit
+
+    iso = quote_unit(currency)[0]
+    if not iso:
+        return None
+    if iso == "USD":
+        return 1.0
+    try:
+        return fx.spot(iso, "USD")[0]
+    except Exception:  # noqa: BLE001 - an unquoted currency drops the name
+        return None
+
+
+def _with_cap_usd(rows: list[dict]) -> list[dict]:
+    """Copies of `rows` carrying `market_cap_usd`. Yahoo states the cap in
+    the quote currency's major unit (pounds for a pence line), so only the
+    rate applies. Kept here, not in `compute_metrics`: no score reads it."""
+    out = []
+    for r in rows:
+        cap, rate = r.get("market_cap"), _usd_rate(r.get("currency"))
+        priced = isinstance(cap, (int, float)) and cap and rate
+        usd = float(cap) * rate if priced else None
+        out.append({**r, "market_cap_usd": usd})
+    return out
+
+
+def in_growth_band(cap_usd: float | None) -> bool:
+    low, high = GROWTH_CAP_USD
+    return cap_usd is not None and low <= cap_usd <= high
+
+
+def growth_candidates(
+    sector: str, *, known: tuple[str, ...] = (), limit: int = GROWTH_PER_SECTOR
+) -> list[str]:
+    """Small and mid caps in `sector` growing sales fastest, US first, then
+    Europe. Two screener requests, plus one profile per European pick.
+
+    Not validated the way a model's proposals are, and not needing it: the
+    symbols come from Yahoo's own index, filed under the sector by Yahoo.
+    A rate limit propagates, like `validate_symbols`.
+    """
+    from stocks.data import fetch
+
+    if sector not in SECTOR_ETFS:
+        raise ValueError(f"unknown sector: {sector!r}")
+    seen = {s.upper() for s in known}
+    picks: list[str] = []
+
+    def take(symbol: str) -> None:
+        seen.add(symbol)
+        picks.append(symbol)
+
+    us = [str(q["symbol"]).upper()
+          for q in _screen(sector, _US_EXCHANGES, GROWTH_CAP_USD, 15)]
+    # A preferred share (SLG-PI) is the company's debt, not its growth.
+    us = [symbol for symbol in us if not _PREFERRED.search(symbol)]
+    for symbol in us:
+        if len(picks) >= GROWTH_US:
+            break
+        if symbol not in seen:
+            take(symbol)
+
+    # European bounds wide in the listing's currency (a $10B Swedish company
+    # is ~100B SEK); the dollar band is applied per name below.
+    for quote in _screen(sector, _EU_EXCHANGES, (GROWTH_CAP_USD[0], 150e9), 25):
+        if len(picks) >= limit:
+            break
+        symbol = str(quote["symbol"]).upper()
+        if symbol in seen:
+            continue
+        rate = _usd_rate(quote.get("currency"))
+        cap = quote.get("marketCap")
+        if rate is None or not cap or not in_growth_band(float(cap) * rate):
+            continue
+        # Xetra lists Nasdaq's companies too: a US company's German line is
+        # the US name twice, and in euros.
+        if str(fetch.info(symbol).get("country") or "") in ("United States", ""):
+            obs.event("sector.growth_cross_listing", symbol=symbol, sector=sector)
+            continue
+        take(symbol)
+
+    # Europe short (Real Estate, Utilities): the US list fills the rest.
+    for symbol in us:
+        if len(picks) >= limit:
+            break
+        if symbol not in seen:
+            take(symbol)
+    return picks
+
+
 _TechScan = tuple[list[dict], dict[str, float], tuple[str, ...]]
 
 
@@ -337,19 +512,26 @@ def _one_class(metrics: list[dict]) -> list[dict]:
 
 
 def scan_sector(
-    sector: str, extra: tuple[str, ...] = (), *, as_of: str | None = None
+    sector: str,
+    extra: tuple[str, ...] = (),
+    *,
+    growth: tuple[str, ...] = (),
+    as_of: str | None = None,
 ) -> SectorScan:
     """Fetch and score one sector's cohort.
 
     `extra` is already validated — this does not re-check it, so callers that
     got their names from a model run them through `validate_symbols` first.
+    `growth` (`growth_candidates`) is fetched beside the cohort and kept out
+    of its scores; a name that has left the dollar band since it was found is
+    dropped.
     """
     if sector not in SECTOR_ETFS:
         raise ValueError(f"unknown sector: {sector!r}")
     cohort = list(dict.fromkeys([*etf_candidates(sector),
                                  *(s.upper() for s in extra)]))
     fetched = fetch_metrics_many(cohort, drop_funds=True) if cohort else []
-    metrics = _one_class(fetched)
+    metrics = _with_cap_usd(_one_class(fetched))
     # The technical table keeps to the same names: one class per company.
     twins = {r.get("ticker") for r in fetched} - {r.get("ticker") for r in metrics}
     cohort = [t for t in cohort if t not in twins]
@@ -361,8 +543,10 @@ def scan_sector(
     # winners in rank order; reading the keys keeps that rule in one place.
     podium = tuple(comp_medals(metrics))
     tech_metrics, tech_scores, tech_podium = _scan_technicals(cohort)
+    growth_metrics = _scan_growth(growth, {str(m.get("ticker") or "") for m in metrics})
     obs.event("sector.scanned", sector=sector, cohort=len(cohort), filled=filled,
-              scored=len(scores), podium=len(podium), tech_podium=len(tech_podium))
+              scored=len(scores), podium=len(podium), tech_podium=len(tech_podium),
+              growth=len(growth_metrics))
     return SectorScan(
         sector=sector,
         as_of=as_of or date.today().isoformat(),
@@ -373,7 +557,27 @@ def scan_sector(
         tech_metrics=tuple(tech_metrics),
         tech_scores=tech_scores,
         tech_podium=tech_podium,
+        growth_metrics=tuple(growth_metrics),
     )
+
+
+def _scan_growth(growth: tuple[str, ...], cohort: set[str]) -> list[dict]:
+    """The growth names' rows, minus any the cohort already has and any whose
+    dollar cap is unknown or out of the band. Best-effort: Yahoo failing here
+    costs tonight's growth names, never the cohort scored above."""
+    wanted = [s.upper() for s in dict.fromkeys(growth) if s.upper() not in cohort]
+    if not wanted:
+        return []
+    try:
+        rows = fetch_metrics_many(wanted, drop_funds=True)
+    except Exception as exc:
+        obs.warn("sector.growth_failed", names=len(wanted),
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return []
+    rows = [r for r in _with_cap_usd(rows) if in_growth_band(r.get("market_cap_usd"))]
+    if rows:
+        frames.fill_gaps(rows)
+    return rows
 
 
 # ----------------------------------------------------------- the stored scan
@@ -470,8 +674,19 @@ def run_scan(
             except Exception as exc:
                 obs.warn("sector.widen_failed", sector=sector,
                          error_type=type(exc).__name__, error=str(exc)[:200])
+        # Same policy: no growth names tonight is a sector without them.
+        growth: tuple[str, ...] = ()
         try:
-            scan = scan_sector(sector, extra)
+            growth = tuple(growth_candidates(sector, known=extra))
+        except Exception as exc:
+            obs.warn("sector.growth_screen_failed", sector=sector,
+                     error_type=type(exc).__name__, error=str(exc)[:200])
+            # Last night's names, refetched: a screen that failed is not a
+            # sector whose small companies all stopped growing.
+            if sector in stored:
+                growth = stored[sector].growth_tickers
+        try:
+            scan = scan_sector(sector, extra, growth=growth)
         except Exception as exc:
             obs.warn("sector.scan_failed", sector=sector,
                      error_type=type(exc).__name__, error=str(exc)[:200])

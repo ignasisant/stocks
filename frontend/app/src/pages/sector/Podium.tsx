@@ -109,7 +109,9 @@ export function Podium({
         <p className="ag-sec-caption">
           {tech
             ? t("sector.tech_podium_help", { cohort: data.tech_rows.length })
-            : t("sector.podium_help", { cohort: data.rows.length })}
+            : t("sector.podium_help", {
+                cohort: data.rows.filter((row) => !row.growth).length,
+              })}
         </p>
       )}
     </section>

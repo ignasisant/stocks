@@ -952,6 +952,18 @@
   color: var(--ag-text-primary);
 }
 
+/* A small or mid cap growing fast, listed beside the cohort and unscored. */
+.ag-sec-growth {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in srgb, var(--ag-up) 16%, transparent);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-primary);
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------- picking rows to weigh */
 
 .ag-sec-screens {

@@ -11,7 +11,7 @@
 
 import { num } from "../../shell/numbers";
 import { currencySymbol } from "../ticker/format";
-import type { CohortRow } from "./types";
+import type { CohortRow, Size } from "./types";
 
 type Unit = "money" | "x" | "pct" | "score" | "ratio";
 
@@ -72,6 +72,9 @@ const SCALES: [number, string][] = [
  * not a zero, and printing it as one would make the least measurable company
  * in the cohort look like the cheapest.
  */
+/** Quote currencies in a minor unit, as Yahoo spells them (`data.listing`). */
+const MINOR_UNITS = new Set(["GBp", "GBX", "ZAc", "ILA"]);
+
 export function formatMetric(
   key: string,
   value: number | null | undefined,
@@ -87,7 +90,12 @@ export function formatMetric(
     case "score":
       return `${num(value, 0)}/100`;
     case "money": {
-      const sym = currencySymbol(currency);
+      // A pence (or cent) line keeps its code: `currencySymbol` upper-cases,
+      // and "GBp" read as "£" is a hundredfold.
+      const sym =
+        currency && MINOR_UNITS.has(currency)
+          ? `${currency} `
+          : currencySymbol(currency);
       for (const [divisor, suffix] of SCALES) {
         if (Math.abs(value) >= divisor)
           return `${sym}${grouped(value / divisor, 2)}${suffix}`;
@@ -134,6 +142,21 @@ export function passes(row: CohortRow, screens: readonly Screen[]): boolean {
     if (value === null) return false;
     return screen.kind === "min" ? value >= screen.value : value <= screen.value;
   });
+}
+
+/**
+ * Whether a row is one of the sizes picked, and a growth name when only
+ * those are asked for. No size picked keeps every row, a row whose size is
+ * unknown included; any size picked drops it — unknown is not small.
+ */
+export function fits(
+  row: CohortRow,
+  sizes: readonly Size[],
+  growthOnly: boolean,
+): boolean {
+  if (growthOnly && !row.growth) return false;
+  if (!sizes.length) return true;
+  return row.size != null && sizes.includes(row.size);
 }
 
 /**

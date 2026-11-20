@@ -36,6 +36,9 @@ def cohort(monkeypatch, tmp_path):
                     "NVDA": "Technology", "ASML.AS": "Technology",
                     "XOM": "Energy"},
         "quoted": {"AAPL", "MSFT", "NVDA", "ASML.AS", "XOM", "TSM"},
+        # The growth screener's answers, by market: none unless a test says.
+        "screen": {"us": [], "eu": []},
+        "countries": {},
     }
 
     def profile(ticker, info=None):
@@ -56,7 +59,14 @@ def cohort(monkeypatch, tmp_path):
         else [],
     )
     monkeypatch.setattr(
-        fetch, "info", lambda s: {"sector": state["sectors"].get(s.upper(), "")}
+        fetch, "info", lambda s: {"sector": state["sectors"].get(s.upper(), ""),
+                                  "country": state["countries"].get(s.upper(), "")}
+    )
+    monkeypatch.setattr(
+        sectors, "_screen",
+        lambda sector, exchanges, cap, size: list(
+            state["screen"]["us" if exchanges == sectors._US_EXCHANGES else "eu"]
+        ),
     )
     monkeypatch.setattr(
         sectors, "fetch_metrics_many",
@@ -442,3 +452,112 @@ def test_a_trailing_pe_on_a_year_that_will_not_repeat_is_not_ranked():
     assert once["pe_ttm"] is None and once["pe_fwd"] == 8.8
     steady = _rankable({"ticker": "UBER", "pe_ttm": 15.6, "pe_fwd": 16.2})
     assert steady["pe_ttm"] == 15.6
+
+
+# ------------------------------------------------- small and growing fast
+
+
+def _quote(symbol: str, cap: float, currency: str = "USD") -> dict:
+    return {"symbol": symbol, "marketCap": cap, "currency": currency}
+
+
+@pytest.fixture
+def growth(cohort, monkeypatch):
+    """Rows that carry a cap in dollars, and fixed rates."""
+    caps: dict[str, float] = {}
+    monkeypatch.setattr(
+        sectors, "fetch_metrics_many",
+        lambda ts, **kw: [
+            {**_row(t, 1.0 - i * 0.1), "market_cap": caps.get(t, 1e12),
+             "currency": "USD"}
+            for i, t in enumerate(ts)
+        ],
+    )
+    monkeypatch.setattr(
+        sectors, "_usd_rate", lambda c: {"USD": 1.0, "EUR": 1.1, "SEK": 0.1}.get(c)
+    )
+    cohort["caps"] = caps
+    return cohort
+
+
+def test_growth_names_come_from_the_us_first_then_europe(growth):
+    growth["screen"]["us"] = [_quote(f"US{i}", 1e9) for i in range(7)]
+    growth["screen"]["eu"] = [_quote("MIDS.ST", 6e9, "SEK"),
+                              _quote("ENO.MC", 2.6e9, "EUR")]
+    growth["countries"].update({"MIDS.ST": "Sweden", "ENO.MC": "Spain"})
+    picks = sectors.growth_candidates("Technology")
+    assert picks == ["US0", "US1", "US2", "US3", "US4", "MIDS.ST", "ENO.MC", "US5"]
+
+
+def test_a_european_line_of_a_us_company_is_not_a_european_name(growth):
+    growth["screen"]["eu"] = [_quote("I1V.DE", 3e9, "EUR"),
+                              _quote("ENO.MC", 2.6e9, "EUR")]
+    growth["countries"].update({"I1V.DE": "United States", "ENO.MC": "Spain"})
+    assert sectors.growth_candidates("Technology") == ["ENO.MC"]
+
+
+def test_the_size_band_is_in_dollars_not_the_listings_currency(growth):
+    # 2B SEK is $200M: under the floor however big the number looks.
+    growth["screen"]["eu"] = [_quote("TINY.ST", 2e9, "SEK"),
+                              _quote("BIG.PA", 12e9, "EUR")]
+    growth["countries"].update({"TINY.ST": "Sweden", "BIG.PA": "France"})
+    assert sectors.growth_candidates("Technology") == []
+
+
+def test_a_preferred_share_and_a_cohort_name_are_not_growth_names(growth):
+    growth["screen"]["us"] = [_quote("SLG-PI", 1e9), _quote("AAPL", 1e9),
+                              _quote("STRL", 5e9)]
+    assert sectors.growth_candidates("Technology", known=("AAPL",)) == ["STRL"]
+
+
+def test_growth_names_sit_beside_the_cohort_and_never_in_its_scores(growth):
+    plain = sectors.scan_sector("Technology")
+    growth["caps"].update({"STRL": 5e9, "AAPL": 3e9})
+    scan = sectors.scan_sector("Technology", growth=("STRL", "AAPL"))
+    assert scan.tickers == plain.tickers
+    assert scan.podium == plain.podium
+    assert scan.scores == plain.scores
+    # AAPL is in the cohort already: listed once, as itself.
+    assert scan.growth_tickers == ("STRL",)
+
+
+def test_a_growth_name_that_outgrew_the_band_is_dropped(growth):
+    growth["caps"].update({"STRL": 5e9, "GONE": 40e9, "NOCAP": None})
+    scan = sectors.scan_sector("Technology", growth=("STRL", "GONE", "NOCAP"))
+    assert scan.growth_tickers == ("STRL",)
+
+
+def test_growth_names_survive_a_round_trip(growth):
+    growth["caps"]["STRL"] = 5e9
+    scan = sectors.scan_sector("Technology", growth=("STRL",))
+    sectors.save_scan({"Technology": scan})
+    assert sectors.load_scan()["Technology"].growth_tickers == ("STRL",)
+
+
+def test_a_failed_growth_screen_refetches_last_nights_names(growth, monkeypatch):
+    growth["caps"]["STRL"] = 5e9
+    growth["screen"]["us"] = [_quote("STRL", 5e9)]
+    sectors.run_scan(("Technology",), pause_s=0)
+    assert sectors.load_scan()["Technology"].growth_tickers == ("STRL",)
+
+    def refused(*a, **kw):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(sectors, "_screen", refused)
+    sectors.run_scan(("Technology",), pause_s=0)
+    assert sectors.load_scan()["Technology"].growth_tickers == ("STRL",)
+
+
+def test_dollar_cap_reads_a_pence_line_in_pounds(monkeypatch):
+    """Yahoo states a GBp line's cap in pounds: the rate applies, not the 1/100."""
+    from stocks.data import fx
+
+    monkeypatch.setattr(fx, "spot", lambda iso, to: ({"GBP": 1.3}[iso], "2026-11-20"))
+    rows = [
+        {"ticker": "RPI.L", "market_cap": 1e9, "currency": "GBp"},
+        {"ticker": "AXTI", "market_cap": 5e8, "currency": "USD"},
+        {"ticker": "ODD", "market_cap": 5e8, "currency": None},
+    ]
+    out = sectors._with_cap_usd(rows)
+    assert [r["market_cap_usd"] for r in out] == [1.3e9, 5e8, None]
+    assert "market_cap_usd" not in rows[0]  # the fetched rows stay untouched
