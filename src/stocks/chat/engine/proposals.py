@@ -126,7 +126,8 @@ class ProposalError(Exception):
 def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
            ticker: str | None = None, args: dict | None = None,
            form: dict | None = None, db: Path | None = None,
-           source: str = "chat", journal_path: Path | None = None) -> str:
+           source: str = "chat", journal_path: Path | None = None,
+           asked: str = "") -> str:
     """Run (or drop) one proposal in place; return the line that says so.
 
     Mutates `offer` — its state, and on approval the symbol and fields the
@@ -140,12 +141,20 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
     """
     from stocks.chat import book, tools
 
+    if not approve and isinstance(offer.get("back"), dict):
+        # Cancel on the planned trade a form turned into: back to the form,
+        # with what was typed in it, rather than dropping the whole trade.
+        back = offer.pop("back")
+        offer.update({k: back[k] for k in ("kind", "ticker", "args", "book")})
+        obs.event("chat.action_back", action=offer.get("kind"))
+        return str(back.get("content") or "")
     if not approve:
         offer["state"] = "cancelled"
         obs.event("chat.action_cancelled", action=offer.get("kind"))
         return _tr("chat.action_cancelled", lang)
     if isinstance(offer.get("book"), dict) and "fill" in offer["book"]:
-        return _fill(offer, form, db=db, lang=lang)
+        return _fill(offer, form, db=db, lang=lang, asked=asked,
+                     watchlist=watchlist)
     if isinstance(offer.get("book"), dict):
         if db is None:
             raise ProposalError("chat.action_failed")
@@ -183,7 +192,8 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
     return action_reply(act, lang)
 
 
-def _fill(offer: dict, form: dict | None, *, db: Path | None, lang: str) -> str:
+def _fill(offer: dict, form: dict | None, *, db: Path | None, lang: str,
+          asked: str = "", watchlist: Path | None = None) -> str:
     """A trade form sent back filled: the trade planned, the card now asking it.
 
     The offer stays pending and keeps its id — it turns from the form into the
@@ -208,11 +218,21 @@ def _fill(offer: dict, form: dict | None, *, db: Path | None, lang: str) -> str:
     drafted = book.draft(act, db=db, resolve=book.resolver(),
                          translate=lambda k, **kw: _tr(k, lang, **kw),
                          currency=str(held.get("currency") or "EUR"),
-                         market=book.market_close)
+                         market=book.market_close, name=_namer(watchlist))
     if drafted.book is None:
         raise ProposalError(drafted.text)
+    # The form as it stood, the figures just typed preset in it: what Cancel
+    # on the planned trade goes back to (`_apply`).
+    typed = {k: args[k] for k in ("trade", "quantity", "price", "date") if k in args}
+    if (amount := tools.trade_amount(form or {})) is not None:
+        # Bought by the sum: the form comes back with the sum, not the units.
+        typed.update(quantity=None, amount=amount)
+    back = {"kind": offer.get("kind"), "ticker": offer.get("ticker"),
+            "args": dict(offer.get("args") or {}),
+            "book": {**offer["book"], "fill": {**held, **typed}},
+            "content": asked}
     offer.update({"kind": act.kind, "ticker": ticker, "args": dict(act.args),
-                  "book": drafted.book})
+                  "book": drafted.book, "back": back})
     obs.event("chat.action_filled", action=act.kind)
     return drafted.text
 
@@ -258,12 +278,15 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     asked = str(entry.get("content") or "")
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
                   ticker=ticker, args=args, form=form, db=db,
-                  journal_path=journal.path_for(chat_path))
+                  journal_path=journal.path_for(chat_path), asked=asked)
+    stepped_back = not approve and offer.get("state") == "pending"
+    if offer.get("state") != "pending":
+        offer.pop("back", None)
     _journal(offer, chat_path, asked)
     # A card under an answer (`_proposed`): the answer stays, and the outcome
     # is its last line. Every other card was only the question, so its words
-    # become the outcome.
-    if offer.get("by") == "agent":
+    # become the outcome. Back on its form, the card's words are the form's.
+    if offer.get("by") == "agent" and not stepped_back:
         note = f"{asked}\n\n{note}"
     entry["content"] = note
     if offer["state"] == "done":
@@ -285,6 +308,9 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     from stocks.chat import conversations
 
     offer = history[index]["proposal"]
+    # A typed "no" drops the trade outright: the form would come back above
+    # the words that turned it down.
+    offer.pop("back", None)
     try:
         note = _apply(offer, approve, watchlist=watchlist, lang=lang, db=db,
                       source=source, journal_path=journal.path_for(chat_path))
@@ -331,10 +357,20 @@ def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
     return Reply(text=note, proposal=dict(offer))
 
 
+def _namer(watchlist: Path | None) -> Callable[[str], str | None] | None:
+    """The account's names for the labels a ledger question mentions."""
+    if watchlist is None:
+        return None
+    from stocks import identity
+
+    return lambda ticker: identity.company_name(ticker, watchlist)
+
+
 def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
                chat_path: Path, lang: str, typed: bool,
                stored: Callable[[dict], dict] = lambda e: e,
-               thread: str | None = None) -> Reply:
+               thread: str | None = None,
+               watchlist: Path | None = None) -> Reply:
     """A ledger request (`chat/book.py`): drafted with the book in hand, and
     put to the reader whenever it would change anything — on every surface.
 
@@ -347,7 +383,8 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
         drafted = book.draft(act, db=db, resolve=book.resolver(),
                              translate=lambda k, **kw: _tr(k, lang, **kw),
                              currency=str(prefs.get("currency") or "EUR"),
-                             market=book.market_close)
+                             market=book.market_close,
+                             name=_namer(watchlist))
     except Exception as exc:
         obs.warn("chat.engine.book_failed", action=act.kind,
                  error_type=type(exc).__name__, error=str(exc)[:300])

@@ -34,11 +34,12 @@ import { useT } from "../shell/i18n";
 import { Badge } from "../ui/Badge";
 import { Status } from "../ui/Status";
 import { toast } from "../ui/toast";
-import { Surface, type A2uiMessage } from "./a2ui";
+import { Surface, typedUnits, type A2uiMessage } from "./a2ui";
 import type { Edits, ToolCall } from "./types";
 
 /**
- * Whether a trade form is whole: a side, shares and a price above zero, a day.
+ * Whether a trade form is whole: a side, shares (or a sum to buy them with)
+ * and a price above zero, a day.
  * Review waits for it — the server would refuse anything less
  * (`tools.trade_args`), and a round trip to say "fill it in" is one too many.
  */
@@ -47,7 +48,7 @@ export function tradeReady(form: Record<string, string> | null): boolean {
   const figure = (raw: string | undefined) => Number((raw ?? "").replace(",", "."));
   return (
     (form.trade === "buy" || form.trade === "sell") &&
-    figure(form.quantity) > 0 &&
+    typedUnits(form.quantity, form.amount, form.price) > 0 &&
     figure(form.price) > 0 &&
     /^\d{4}-\d{2}-\d{2}$/.test(form.date ?? "")
   );

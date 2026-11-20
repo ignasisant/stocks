@@ -71,3 +71,19 @@ describe("drawerWidth", () => {
     expect(drawerWidth()).toBe(390);
   });
 });
+
+describe("announceChange", () => {
+  it("drops every memoized answer and asks every screen on show again", async () => {
+    vi.resetModules();
+    const invalidate = vi.fn();
+    const reloadAll = vi.fn(() => Promise.resolve());
+    vi.doMock("./api", () => ({ invalidate }));
+    vi.doMock("./resume", () => ({ reloadAll }));
+    const { announceChange } = await import("./assistant");
+    announceChange("add_transactions");
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(reloadAll).toHaveBeenCalledTimes(1);
+    vi.doUnmock("./api");
+    vi.doUnmock("./resume");
+  });
+});

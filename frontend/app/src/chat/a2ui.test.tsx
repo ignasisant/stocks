@@ -9,7 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Surface, numeric, tradeImpact, type A2uiMessage } from "./a2ui";
+import { Surface, numeric, tradeImpact, typedPrice, type A2uiMessage } from "./a2ui";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -251,5 +251,16 @@ describe("a trade being typed", () => {
     expect(out).toContain("Acciones");
     expect(out).toContain("100 → 0");
     expect(out).toContain("Ganancia/pérdida");
+  });
+});
+
+describe("typedPrice", () => {
+  it("divides the sum by the units when both are typed", () => {
+    // A sum typed as the price booked 16 units at 5000 each.
+    expect(typedPrice("16,16135", "5000", "5000")).toBeCloseTo(309.3801, 4);
+  });
+
+  it("keeps the typed price without a sum", () => {
+    expect(typedPrice("10", "", "12,5")).toBe(12.5);
   });
 });

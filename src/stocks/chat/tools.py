@@ -1117,13 +1117,32 @@ TRADE_FORM = ("trade", "quantity", "price", "date")
 TRADE_SIDES = ("buy", "sell")
 
 
+def trade_amount(form: dict) -> float | None:
+    """The sum a trade form was filled with in place of the units ("1.000 €
+    of a fund"), None when units were typed or no sum reads."""
+    if _number(str(form.get("quantity") or "").strip()):
+        return None
+    return _number(str(form.get("amount") or "").strip()) or None
+
+
 def trade_args(form: dict) -> dict | None:
     """The filled trade form as `add_transaction` arguments, None if incomplete.
 
     Every field must read: a side, a quantity and a price above zero, an ISO
-    day. Anything else is the form sent back half done, not a trade.
+    day. Anything else is the form sent back half done, not a trade. A fund is
+    bought by the sum as often as by the units: an `amount` with no quantity
+    is that many units at the price.
     """
     args = _book_args({k: str(form.get(k) or "").strip() for k in TRADE_FORM})
+    amount = trade_amount(form)
+    if amount and args.get("price"):
+        args["quantity"] = round(amount / args["price"], 6)
+    paid = _number(str(form.get("amount") or "").strip())
+    if paid and args.get("quantity") and amount is None:
+        # Units and the sum both typed, as a broker's statement gives them:
+        # the price is theirs to divide, never a figure typed in its box (a
+        # sum typed as the price booked 16 units at 5000 each).
+        args["price"] = round(paid / args["quantity"], 6)
     if (args.get("trade") not in TRADE_SIDES or "date" not in args
             or not args.get("quantity") or not args.get("price")):
         return None

@@ -279,6 +279,30 @@ function Range({ part, data, set, fire, disabled }: Draw) {
 const typedNumber = (value: unknown) =>
   str(value).trim() ? Number(str(value).replace(",", ".")) : NaN;
 
+/**
+ * The units a trade form stands for: the count typed, or else the sum typed
+ * at the price ("1.000 € of a fund"), as the server reads it
+ * (`tools.trade_args`). NaN while neither reads.
+ */
+export function typedUnits(quantity: unknown, amount: unknown, price: unknown): number {
+  const units = typedNumber(quantity);
+  if (units > 0) return units;
+  const sum = typedNumber(amount);
+  const each = typedNumber(price);
+  return sum > 0 && each > 0 ? sum / each : NaN;
+}
+
+/**
+ * The price a trade form stands for: with units and the sum both typed, the
+ * one divided by the other (a broker's statement gives those two), else the
+ * price typed — as the server reads it (`tools.trade_args`).
+ */
+export function typedPrice(quantity: unknown, amount: unknown, price: unknown): number {
+  const units = typedNumber(quantity);
+  const sum = typedNumber(amount);
+  return units > 0 && sum > 0 ? sum / units : typedNumber(price);
+}
+
 export type Impact = {
   held: number;
   after: number | null;
@@ -341,8 +365,16 @@ function TradeFigures({ part, data }: Draw) {
   const lots = resolve(part.lots, data);
   const impact = tradeImpact(
     str(resolve(part.trade, data)),
-    typedNumber(resolve(part.quantity, data)),
-    typedNumber(resolve(part.price, data)),
+    typedUnits(
+      resolve(part.quantity, data),
+      resolve(part.amount, data),
+      resolve(part.price, data),
+    ),
+    typedPrice(
+      resolve(part.quantity, data),
+      resolve(part.amount, data),
+      resolve(part.price, data),
+    ),
     Array.isArray(lots) ? (lots as [number, number][]) : [],
   );
   if (!impact) return null;

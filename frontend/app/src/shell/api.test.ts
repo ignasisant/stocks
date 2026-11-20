@@ -17,7 +17,9 @@ import {
   seed,
   send,
   withMemo,
+  writesBook,
 } from "./api";
+import { onReloadAll } from "./resume";
 import { isRefreshing, resetFreshness, staleSince } from "./freshness";
 
 function ok(body: unknown): Response {
@@ -290,5 +292,83 @@ describe("abandoned requests", () => {
     vi.stubGlobal("fetch", stub);
     expect(await withMemo(() => get("/x"))).toEqual({ n: 1 });
     expect(stub).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("writesBook", () => {
+  it("names every write that changes the book", () => {
+    for (const path of [
+      "/portfolio/changes",
+      "/portfolio/changes/42",
+      "/portfolio/transactions",
+      "/portfolio/demo",
+      "/import/commit",
+      "/import/last",
+      "/import/fix",
+      "/import/ticker",
+      "/import/venue",
+      "/import/moves/apply",
+      "/import/splits/apply",
+      "/import/held/apply",
+      "/ticker/AAPL/splits",
+      "/bank/session",
+      "/bank/connections/abc/refresh",
+      "/chat/attachments/commit",
+      "/chat/proposals/p1/undo?lang=es",
+    ])
+      expect(writesBook(path), path).toBe(true);
+  });
+
+  it("leaves out previews, plans and the writes a screen makes while loading", () => {
+    for (const path of [
+      "/portfolio/changes/plan",
+      "/portfolio/positions/AAPL/removal",
+      "/import/preview",
+      "/import/venues",
+      "/import/record",
+      "/import/reupload/dismiss",
+      "/bank/auth",
+      "/daily",
+      "/today",
+      "/home/refresh",
+      "/prefs",
+    ])
+      expect(writesBook(path), path).toBe(false);
+  });
+});
+
+describe("send to the book", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("asks every screen on show again once the write lands", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ok({})),
+    );
+    const screen = vi.fn(() => Promise.resolve());
+    const off = onReloadAll(screen);
+    await send("POST", "/portfolio/changes", { ops: [] });
+    expect(screen).toHaveBeenCalledTimes(1);
+    await send("POST", "/portfolio/changes/plan", { ops: [] });
+    await send("PATCH", "/prefs", {}, { touches: ["/prefs"] });
+    expect(screen).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it("asks nobody again when the write is refused", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        headers: new Headers(),
+        json: async () => ({}),
+      })),
+    );
+    const screen = vi.fn(() => Promise.resolve());
+    const off = onReloadAll(screen);
+    await expect(send("POST", "/import/commit", {})).rejects.toBeTruthy();
+    expect(screen).not.toHaveBeenCalled();
+    off();
   });
 });

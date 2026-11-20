@@ -16,6 +16,7 @@ import type { Responses } from "../api.gen";
 import { begin } from "./activity";
 import { noteFreshness, noteRefreshing, noteUpdating } from "./freshness";
 import { keepable, landed, recall } from "./keep";
+import { reloadAll } from "./resume";
 
 export const BASE = "/api/v1";
 
@@ -406,6 +407,36 @@ async function read<T>(url: string, abort: AbortController): Promise<T> {
 
 type Verb = "POST" | "PATCH" | "PUT" | "DELETE";
 
+/**
+ * The writes that change the book — a trade added, edited or undone, an import
+ * or its undo, a split, a broker move, a fix, a line picked for a code, the
+ * bank's balances. Every figure on most screens is read off the book, so once
+ * one lands every screen on show asks again (`reloadAll`), not only the one
+ * that wrote: Home stays on view beside the chat drawer, and on a wide screen
+ * beside whatever page wrote.
+ *
+ * A list rather than "every write without `touches`": `POST /daily` and
+ * `POST /today` are writes their screens make while loading, and reloading
+ * every screen after one would ask them to write again. Previews and plans
+ * (`/import/preview`, `/portfolio/changes/plan`, `…/removal`) write nothing.
+ * The chat's own confirmations run over its stream, not `send`, and say so
+ * through `announceChange` (`shell/assistant`).
+ */
+const BOOK_WRITES: readonly RegExp[] = [
+  /^\/portfolio\/(changes(\/\d+)?|transactions|demo)$/,
+  /^\/import\/(commit|last|fix|ticker|venue|moves\/apply|splits\/apply|held\/apply)$/,
+  /^\/ticker\/[^/]+\/splits$/,
+  /^\/bank\/(session|connections\/.+)$/,
+  /^\/chat\/attachments\/commit$/,
+  /^\/chat\/proposals\/[^/]+\/undo$/,
+];
+
+/** Whether a write to `path` (under `/api/v1`, query and all) changes the book. */
+export function writesBook(path: string): boolean {
+  const [bare = ""] = path.split("?");
+  return BOOK_WRITES.some((pattern) => pattern.test(bare));
+}
+
 export type SendOptions = {
   headers?: Record<string, string>;
   /**
@@ -442,6 +473,7 @@ export async function send<T>(
   });
   if (!response.ok) await fail(response);
   drop();
+  if (writesBook(path)) void reloadAll();
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }

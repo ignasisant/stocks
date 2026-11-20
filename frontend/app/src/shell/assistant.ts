@@ -15,6 +15,8 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { keepDraft } from "../chat/draft";
+import { invalidate } from "./api";
+import { reloadAll } from "./resume";
 
 /**
  * The angles the Ticker page's "Analyse with AI" offers. The server writes
@@ -231,12 +233,22 @@ export function useAssistantAsks(handler: Listener): void {
 const changeListeners = new Set<(kind: string) => void>();
 
 /**
- * The drawer says an action the reader approved went through (`kind` is the
- * proposal's: "set_criteria", "favorite"…), so a page already drawing what it
- * changed can read it again. Without it the exit rules saved from the chat
- * stayed "none yet" in the open journal panel until a reload.
+ * The drawer says an action went through — a card approved or a "yes" typed
+ * under one (`kind` is the proposal's: "set_criteria", "favorite"…) — so
+ * every figure on show is asked for again. A trade recorded from the chat
+ * left Home, Today and the rest on the book as it stood before, until a
+ * reload: the confirmation runs over the chat's stream, not `send`, so
+ * nothing dropped the memo. The chat's undo and file import go through
+ * `send`, whose book-write list reloads on its own (`api.writesBook`).
+ *
+ * Every memoized answer goes, not the ones `kind` names: a trade moves the
+ * value, the returns, the allocation, the taxes and the day's moves, and a
+ * screen not on view must not open later on the old book either. What is on
+ * view reloads in place (`reloadAll`), its figures dimmed rather than lost.
  */
 export function announceChange(kind: string): void {
+  invalidate();
+  void reloadAll();
   for (const listener of changeListeners) listener(kind);
 }
 

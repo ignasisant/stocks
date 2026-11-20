@@ -59,7 +59,7 @@ CATALOG: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "Chart": (frozenset({"series"}), frozenset({"mode", "label"})),
     "Donut": (frozenset({"slices"}), frozenset({"by", "label", "other"})),
     "TradeImpact": (frozenset({"trade", "quantity", "price", "lots"}),
-                    frozenset({"currency", "labels"})),
+                    frozenset({"amount", "currency", "labels"})),
 }
 
 
@@ -197,12 +197,23 @@ def trade_form(offer: dict, translate) -> list[dict]:
                          for t in tools.TRADE_SIDES],
         value=path("/form/trade"), variant="mutuallyExclusive")
     currency = str(fill.get("currency") or "")
+    # A fund is held in units ("participaciones"), a coin in an amount.
+    unit = fill.get("unit") if fill.get("unit") in ("fund", "coin") else "share"
+    # And a fund is as often bought by the sum: either one fills the form, the
+    # units then being the sum at the NAV (`tools.trade_args`).
+    amount = [component("f_amount", "TextField",
+                        label=translate("chat.action_field_amount",
+                                        currency=currency),
+                        value=path("/form/amount"), variant="number")
+              ] if unit == "fund" else []
     figures = [
+        *amount,
         component("f_quantity", "TextField",
-                  label=translate("chat.action_field_quantity"),
+                  label=translate(f"chat.action_field_quantity_{unit}"),
                   value=path("/form/quantity"), variant="number"),
         component("f_price", "TextField",
-                  label=translate("chat.action_field_price", currency=currency),
+                  label=translate("chat.action_field_price_fund" if unit == "fund"
+                                  else "chat.action_field_price", currency=currency),
                   value=path("/form/price"), variant="number"),
         component("f_date", "DateTimeInput",
                   label=translate("chat.action_field_date"),
@@ -216,6 +227,7 @@ def trade_form(offer: dict, translate) -> list[dict]:
     impact = component(
         "f_impact", "TradeImpact",
         trade=path("/form/trade"), quantity=path("/form/quantity"),
+        amount=path("/form/amount"),
         price=path("/form/price"), lots=path("/position/lots"),
         currency=currency,
         labels={
@@ -229,6 +241,7 @@ def trade_form(offer: dict, translate) -> list[dict]:
         "form": {
             "trade": trade,
             "quantity": _figure(fill.get("quantity")),
+            **({"amount": _figure(fill.get("amount"))} if amount else {}),
             "price": _figure(fill.get("price")),
             "date": str(fill.get("date") or ""),
         },
