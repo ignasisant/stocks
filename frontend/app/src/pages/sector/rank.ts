@@ -12,11 +12,16 @@ import type { CohortRow } from "./types";
  * Each row's standing on one metric inside the cohort, 0 (worst) to 1 (best),
  * by ticker. Ties share the mean of their places; a row with no number has no
  * standing rather than the worst one, and fewer than two numbers rank nobody.
+ *
+ * `beside` (the fast growers listed next to the cohort) are placed against the
+ * cohort's numbers without joining them, so listing them recolours no
+ * cohort cell: each lands where the cohort would have put it.
  */
 export function percentiles(
   rows: readonly CohortRow[],
   key: string,
   lowerIsBetter: boolean,
+  beside: readonly CohortRow[] = [],
 ): Map<string, number> {
   const known = rows
     .map((row) => ({ ticker: row.ticker, value: row.metrics[key] ?? null }))
@@ -36,6 +41,16 @@ export function percentiles(
     const place = (start + end) / 2 / last;
     for (let i = start; i <= end; i++) out.set(known[i]!.ticker, place);
     start = end + 1;
+  }
+  const worse = (a: number, b: number) => (lowerIsBetter ? a > b : a < b);
+  for (const row of beside) {
+    const value = row.metrics[key] ?? null;
+    if (value === null || !Number.isFinite(value)) continue;
+    const below = known.filter((one) => worse(one.value, value)).length;
+    const ties = known.filter((one) => one.value === value).length;
+    // The same place a tie inside the cohort gets, halfway between
+    // neighbours when it falls in a gap; clamped past either end.
+    out.set(row.ticker, Math.min(1, Math.max(0, (below + (ties - 1) / 2) / last)));
   }
   return out;
 }

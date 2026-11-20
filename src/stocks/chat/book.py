@@ -48,6 +48,9 @@ _FINDINGS = 5  # problems a book check lists
 # narrow enough that 20000 for a 200 stock (a typo, a total typed as a price)
 # never reaches the book.
 _PRICE_BAND = 2.0
+# A fund's price held to its latest NAV when the day's is missing
+# (`_price_off_latest`): years apart, so wider than the day's band.
+_STALE_BAND = 4.0
 
 
 class Refused(Exception):
@@ -88,6 +91,7 @@ class _Ctx:
     today: str
     currency: str
     market: Market | None = None
+    name: Callable[[str], str | None] | None = None
 
 
 def resolver() -> transfers.Resolver:
@@ -106,15 +110,18 @@ def draft(
     today: str | None = None,
     currency: str = "EUR",
     market: Market | None = None,
+    name: Callable[[str], str | None] | None = None,
 ) -> Draft:
     """What `act` would do to the book at `db`, put as the reader will read it.
 
     `market` checks a reported trade's price against the day's close
     (`market_close`); without it any positive price is taken at its word.
+    `name` gives a label's human name for the questions the reader answers
+    (an ISIN reads as nothing); without it they say the label.
     """
     ctx = _Ctx(db=db, tr=translate, resolve=resolve,
                today=today or clock.today().isoformat(), currency=currency,
-               market=market)
+               market=market, name=name)
     rows = demo.without(ledger.all_transactions(db))
     return _DRAFTS[act.kind](act, rows, ctx)
 
@@ -173,35 +180,43 @@ def _delete(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
 
 
 def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
-    a = act.args
+    a = dict(act.args)
     same = [t.currency for t in rows if t.ticker == act.ticker]
     currency = a.get("currency") or (
         Counter(same).most_common(1)[0][0] if same else ctx.currency
     )
-    missing = [k for k in ("trade", "quantity", "price") if k not in a]
     day = a.get("date") or ctx.today
+    unit = _unit(act.ticker, ctx)
+    if unit == "fund" and "price" not in a:
+        # A fund deals once a day at its NAV, which the reader rarely has to
+        # hand and the app already knows: preset it, so only the units are typed.
+        if nav := _nav(act.ticker, day, currency, ctx):
+            a["price"] = nav
+    missing = [k for k in ("trade", "quantity", "price") if k not in a]
     off = None if missing else _price_off(act.ticker, a["price"], day, currency, ctx)
     if off:
         side = a["trade"]
         return Draft(off, fill={
             "trade": side if side in ("buy", "sell") else "",
             "quantity": a["quantity"], "price": a["price"], "date": day,
-            "currency": currency,
+            "currency": currency, "unit": unit,
             "lots": _lots(act.ticker, currency, rows, ctx)})
     if missing:
         side = a.get("trade")
         trade = (_trade(side, ctx) if side in ("buy", "sell")
                  else ctx.tr("chat.book_add_any"))
-        wants = [ctx.tr(f"chat.book_add_need_{k}") for k in missing]
+        wants = [ctx.tr(f"chat.book_add_need_{k}_{unit}" if k == "quantity"
+                        else f"chat.book_add_need_{k}") for k in missing]
         need = (wants[0] if len(wants) == 1 else
                 ctx.tr("chat.book_add_and", first=", ".join(wants[:-1]),
                        last=wants[-1]))
         return Draft(
-            ctx.tr("chat.book_add_what", trade=trade, ticker=act.ticker,
-                   need=need),
+            ctx.tr("chat.book_add_what", trade=trade,
+                   ticker=_called(act.ticker, ctx), need=need),
             fill={"trade": side if side in ("buy", "sell") else "",
                   "quantity": a.get("quantity"), "price": a.get("price"),
                   "date": a.get("date") or ctx.today, "currency": currency,
+                  "unit": unit,
                   "lots": _lots(act.ticker, currency, rows, ctx)},
         )
     row = {
@@ -214,10 +229,70 @@ def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
         "fee": a.get("fee", 0.0),
         "note": a.get("broker", ""),
     }
+    # The sum spelled out (units × price each = total): "16,16 a 5000" read as
+    # 5000 for all of them and booked 80.807 € instead of 5.000 €.
     summary = ctx.tr("chat.book_summary_add", trade=_trade(a["trade"], ctx),
                      quantity=_n(a["quantity"]), ticker=act.ticker,
-                     price=_n(a["price"]), currency=currency, date=row["date"])
+                     price=_n(a["price"]), currency=currency, date=row["date"],
+                     total=_n(round(float(a["quantity"]) * float(a["price"]), 2)))
     return _planned([{"op": "add", "row": row}], summary, ctx)
+
+
+def _called(ticker: str, ctx: _Ctx) -> str:
+    """What the reader calls `ticker`: its name when one is known, else the
+    label itself."""
+    if ctx.name is None:
+        return ticker
+    try:
+        return (ctx.name(ticker) or "").strip() or ticker
+    except Exception:
+        return ticker
+
+
+def _symbol(ticker: str, ctx: _Ctx) -> str:
+    """The Yahoo symbol behind a stored label (an ISIN, a broker code)."""
+    if ctx.resolve is None:
+        return ticker
+    try:
+        return ctx.resolve(ticker) or ticker
+    except Exception:
+        return ticker
+
+
+def _unit(ticker: str, ctx: _Ctx) -> str:
+    """What a holding of `ticker` is counted in: "fund" (units of a fund or an
+    ETF), "coin" or "share". From what this host already knows, never a
+    network call; a Morningstar `0P…` line is a fund before any page opened it.
+    """
+    from stocks.data import asset_kind
+
+    symbol = _symbol(ticker, ctx).upper()
+    try:
+        kind = asset_kind.cached(symbol)
+    except Exception:
+        kind = None
+    if kind == asset_kind.CRYPTO:
+        return "coin"
+    fund = kind in asset_kind.FUND_KINDS or kind == asset_kind.FUND
+    if fund or symbol.startswith("0P"):
+        return "fund"
+    return "share"
+
+
+def _nav(ticker: str, day: str, currency: str, ctx: _Ctx) -> float | None:
+    """A fund's price on `day` (its NAV, or the last one before) in
+    `currency`, split-adjusted back to the day; None when the market cannot
+    say."""
+    if ctx.market is None:
+        return None
+    try:
+        quote = ctx.market(_symbol(ticker, ctx), day, currency)
+    except Exception:
+        return None
+    if not quote or quote[0] <= 0:
+        return None
+    close, factor = quote
+    return round(close * factor, 4)
 
 
 def _lots(ticker: str, currency: str, rows: list[Transaction],
@@ -254,12 +329,38 @@ def _price_off(ticker: str, price: float, day: str, currency: str,
     except Exception:
         return None
     if not quote:
-        return None
+        return _price_off_latest(ticker, price, day, currency, ctx)
     close, factor = quote
     if close <= 0 or close / _PRICE_BAND <= price <= close * factor * _PRICE_BAND:
         return None
     return ctx.tr("chat.book_price_off", price=_n(price), ticker=ticker,
                   date=day, close=_n(close * factor), currency=currency)
+
+
+def _price_off_latest(ticker: str, price: float, day: str, currency: str,
+                      ctx: _Ctx) -> str | None:
+    """`_price_off` for a fund whose NAV on `day` the market cannot give:
+    held to its latest NAV instead, in a band wide enough for years of drift.
+
+    Yahoo's NAV lines often have nothing for an old day, and that let
+    "16,16 participaciones a 5000" (the sum typed as the price) book 80.807 €
+    for a 5.000 € buy. Funds only: a fund's NAV seldom moves fourfold in a few
+    years, a share's can, and this answer sends the form back with no way past.
+    """
+    if ctx.market is None or day >= ctx.today or _unit(ticker, ctx) != "fund":
+        return None
+    try:
+        quote = ctx.market(ticker, ctx.today, currency)
+    except Exception:
+        return None
+    if not quote or quote[0] <= 0:
+        return None
+    close, factor = quote
+    latest = close * factor
+    if latest / _STALE_BAND <= price <= latest * _STALE_BAND:
+        return None
+    return ctx.tr("chat.book_price_off_latest", price=_n(price), ticker=ticker,
+                  close=_n(round(latest, 4)), currency=currency)
 
 
 def market_close(ticker: str, day: str, currency: str) -> tuple[float, float] | None:
@@ -408,11 +509,15 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
         if price is None:
             # "He vendido oracle": the sale itself, with every share the book
             # holds preset, so the form only asks the price ("¿a cuánto?").
+            day = a.get("date") or ctx.today
+            unit = _unit(label, ctx)
             fill = None if len(held) > 1 else {
                 "ticker": label, "trade": "sell", "quantity": state.held,
-                "price": None, "date": a.get("date") or ctx.today,
-                "currency": currency, "lots": _lots(label, currency, rows, ctx)}
-            return Draft(ctx.tr("chat.book_close_what", ticker=label), fill=fill)
+                "price": _nav(label, day, currency, ctx) if unit == "fund" else None,
+                "date": day, "currency": currency, "unit": unit,
+                "lots": _lots(label, currency, rows, ctx)}
+            return Draft(ctx.tr("chat.book_close_what",
+                                ticker=_called(label, ctx)), fill=fill)
         ops.append({"op": "add", "row": {
             "date": a.get("date") or (sale.date if sale else ctx.today),
             "ticker": label, "action": "sell", "quantity": state.held,

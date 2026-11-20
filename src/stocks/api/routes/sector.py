@@ -66,6 +66,26 @@ def _judged(metrics: dict) -> CohortJudged:
     )
 
 
+#: Dollar market caps the size filter splits the table at: under $2B small,
+#: under $10B mid, the rest large (the usual small/mid/large cut-offs).
+SIZE_BANDS: tuple[tuple[float, str], ...] = ((2e9, "small"), (10e9, "mid"))
+
+
+def size_band(metrics: dict) -> str | None:
+    """small | mid | large off the dollar cap; None when it is unknown.
+
+    A scan from before `market_cap_usd` existed has only the listing-currency
+    cap, which reads as dollars only for a dollar listing — a Tokyo cap in yen
+    would file every Japanese company as large.
+    """
+    cap = _num(metrics.get("market_cap_usd"))
+    if cap is None and str(metrics.get("currency") or "") == "USD":
+        cap = _num(metrics.get("market_cap"))
+    if cap is None or cap <= 0:
+        return None
+    return next((band for limit, band in SIZE_BANDS if cap < limit), "large")
+
+
 def _resolve(name: str) -> str:
     """The canonical spelling of a sector, or 404.
 
@@ -200,8 +220,20 @@ def cohort(
             score=_num(scan.scores.get(str(metrics.get("ticker") or "").upper())),
             metrics={key: _num(metrics.get(key)) for key in METRIC_ORDER},
             judged=_judged(metrics),
+            size=size_band(metrics),
         )
         for metrics in scan.metrics
+    ] + [
+        # Beside the cohort, never in its scores: unranked on purpose.
+        CohortRow(
+            ticker=str(metrics.get("ticker") or "").upper(),
+            currency=str(metrics.get("currency") or "").upper() or None,
+            metrics={key: _num(metrics.get(key)) for key in METRIC_ORDER},
+            judged=_judged(metrics),
+            size=size_band(metrics),
+            growth=True,
+        )
+        for metrics in scan.growth_metrics
     ]
     # A row with no value for the sort metric sinks to the bottom whichever way
     # the rest is going — same rule as `screener.rank`. Sorting it as zero would
@@ -450,8 +482,10 @@ def _rescan(name: str) -> None:
 
     kept = loaders.sector_scans().get(name)
     extra = tuple(kept.tickers) if kept else ()
+    # The growth names too, or a refresh would drop them until tonight.
+    growth = tuple(kept.growth_tickers) if kept else ()
     try:
-        scan = sector_scan.scan_sector(name, extra)
+        scan = sector_scan.scan_sector(name, extra, growth=growth)
     except Exception as exc:
         obs.warn("sector.rescan_failed", sector=name,
                  error_type=type(exc).__name__, error=str(exc)[:200])

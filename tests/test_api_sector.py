@@ -195,3 +195,41 @@ def test_every_row_carries_the_review_pages_read_of_it(client, scanned):
         assert judged["cheapness"] == expected.cheapness
         assert set(judged["metrics"]) == set(expected.metrics)
     assert all(row.get("judged") is None for row in payload["tech_rows"])
+
+
+def test_growth_names_are_listed_unranked_and_marked(client, monkeypatch):
+    grown = SectorScan(
+        sector=TECH,
+        as_of="2026-11-20",
+        tickers=("AAPL",),
+        metrics=({"ticker": "AAPL", "roic": 0.40, "market_cap_usd": 4e12},),
+        scores={"AAPL": 0.91},
+        podium=(),
+        growth_metrics=(
+            {"ticker": "STRL", "roic": 0.30, "market_cap_usd": 5e9,
+             "currency": "USD"},
+        ),
+    )
+    patch_loaders(monkeypatch, "sector_scans", lambda: {TECH: grown})
+    rows = {r["ticker"]: r for r in client.get(f"/v1/sectors/{TECH}",
+                                               headers=AUTH).json()["rows"]}
+    assert rows["STRL"]["growth"] is True
+    assert rows["STRL"]["score"] is None
+    assert rows["STRL"]["size"] == "mid"
+    assert rows["AAPL"]["growth"] is False
+    assert rows["AAPL"]["size"] == "large"
+    # The summary counts the cohort, not the names beside it.
+    summary = client.get("/v1/sectors", headers=AUTH).json()["sectors"]
+    assert next(s for s in summary if s["sector"] == TECH)["cohort"] == 1
+
+
+def test_a_size_is_read_in_dollars_or_not_at_all():
+    from stocks.api.routes.sector import size_band
+
+    assert size_band({"market_cap_usd": 1.5e9}) == "small"
+    assert size_band({"market_cap_usd": 9e9}) == "mid"
+    assert size_band({"market_cap_usd": 50e9}) == "large"
+    # An older scan: a dollar listing's cap is dollars, a yen one's is not.
+    assert size_band({"market_cap": 1e9, "currency": "USD"}) == "small"
+    assert size_band({"market_cap": 2.5e13, "currency": "JPY"}) is None
+    assert size_band({}) is None

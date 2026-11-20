@@ -44,6 +44,13 @@ describe("layout", () => {
     expect(layout("crypto").opens).toBeNull();
   });
 
+  it("draws the RSI under what trades on momentum, never under cash or bonds", () => {
+    const rsi = ASSET_KINDS.filter((kind) => layout(kind).rsi);
+    expect(rsi.sort()).toEqual(
+      ["closed_end", "crypto", "equity_fund", "index", "stock"].sort(),
+    );
+  });
+
   it("only a share asks for the company sections", () => {
     const company = ASSET_KINDS.filter((kind) => layout(kind).sections.company);
     expect(company).toEqual(["stock"]);

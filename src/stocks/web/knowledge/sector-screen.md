@@ -1,10 +1,10 @@
 ---
 id: sector-screen
 title: How the Sector screen builds and ranks a cohort
-as_of: 2026-10-11
+as_of: 2026-11-20
 step: sector
 related: review-scoring
-tags: Cribado por sectores, Sector screen, sectores, sectors, cohorte, cohort, ETF, XLK, pares, peers, no estadounidenses, non-US, las tres mejores, best three, podio, podium, ROIC, valoración, calidad, momentum técnico, technical momentum, RSI, MACD, calendario, calendar, resultados, earnings, ex-dividendo, ex-dividend, plazos fiscales, tax deadlines, Fed, BCE, ECB
+tags: Cribado por sectores, empresas pequeñas, small caps, crece rápido, fast grower, tamaño, size, capitalización, market cap, Sector screen, sectores, sectors, cohorte, cohort, ETF, XLK, pares, peers, no estadounidenses, non-US, las tres mejores, best three, podio, podium, ROIC, valoración, calidad, momentum técnico, technical momentum, RSI, MACD, calendario, calendar, resultados, earnings, ex-dividendo, ex-dividend, plazos fiscales, tax deadlines, Fed, BCE, ECB
 ---
 The Sector screen (Cribado por sectores) compares companies inside one of eleven sectors, ranked against each other rather than against the whole market. It is a screen, not advice.
 
@@ -14,6 +14,15 @@ Eleven sectors map to SPDR ETFs: XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, XL
 - Each proposed peer is checked against Yahoo, which must confirm the symbol exists and is filed under that sector. Invented or misfiled symbols are dropped, and funds are dropped. A cohort ends up at roughly 18 names.
 - The scan runs nightly with a 5-second pause between sectors. If a sector's scan fails it keeps its previous cohort.
 - "Refresh this sector" rescans one sector in the background, shared across users, capped at 4 per account per hour.
+
+## Small companies growing fast
+Beside the cohort, each sector lists up to 8 smaller companies growing fast, found by a Yahoo screen every night: market cap between $300 million and $10 billion, revenue up more than 15 % over the last year, revenue above $100 million and a positive EBITDA margin, fastest growth first.
+- Five come from the main US exchanges (no OTC), the rest from the main European ones; a European line of a US company and preferred shares are left out.
+- They sit in the cohort table marked "Fast grower" but are not scored: the podium, the ranking, the peer medians and the cohort count are the same as without them.
+- The table shades their figures by where they would fall in the cohort, without recolouring the cohort's own cells. The quality-against-price map places them too, against the same fixed bars as every other name.
+- A name that has grown past $10 billion leaves the list at the next scan. If the screen fails, last night's names are rescanned.
+- Size chips filter the table by market cap in dollars: small under $2 billion, mid up to $10 billion, large above. A name whose size is unknown hides when a size is picked. A chip shows only the fast growers.
+- It is a screen for names to look at, not a forecast: fast past growth says nothing certain about the next years.
 
 ## Valuation and quality ranking
 The first podium ranks cohort members on 18 KPIs by percentile within the cohort, so it names the best three of these, not the best anywhere.

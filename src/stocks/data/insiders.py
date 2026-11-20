@@ -29,7 +29,7 @@ from xml.etree import ElementTree as ET
 
 import pandas as pd
 
-from stocks import atomic, obs
+from stocks import atomic, cpu_hold, obs
 from stocks.config import DATA_DIR
 from stocks.data import finnhub
 from stocks.data.edgar import _user_agent, cik_for
@@ -643,9 +643,10 @@ def _learn_roles_later(ticker: str, wanted: set[str]) -> None:
         if ticker in _roles_running:
             return
         _roles_running.add(ticker)
-    threading.Thread(
-        target=_learn_roles, args=(ticker, wanted), daemon=True, name="insider-roles"
-    ).start()
+    # Spawned with the CPU held: billed per request, Cloud Run throttles an
+    # instance between requests, and a pass left on a bare thread froze the
+    # moment the page's answer went out, so no role was ever learnt in prod.
+    cpu_hold.spawn("insider-roles", lambda: _learn_roles(ticker, wanted))
 
 
 def _learn_roles(ticker: str, wanted: set[str]) -> None:

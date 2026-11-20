@@ -29,6 +29,23 @@ describe("percentiles", () => {
     expect(out.get("B")).toBe(0);
   });
 
+  it("places names listed beside the cohort without moving it", () => {
+    const beside = [
+      row("G1", null, { roic: 0.25 }),
+      row("G2", null, { roic: 0.5 }),
+      row("G3", null, { roic: 0.1 }),
+      row("G4", null, { roic: null }),
+    ];
+    const out = percentiles(rows, "roic", false, beside);
+    expect(out.get("A")).toBe(1);
+    expect(out.get("C")).toBe(0.5);
+    expect(out.get("B")).toBe(0);
+    expect(out.get("G1")).toBe(0.75);
+    expect(out.get("G2")).toBe(1);
+    expect(out.get("G3")).toBe(0);
+    expect(out.has("G4")).toBe(false);
+  });
+
   it("gives a missing figure no standing, not the worst one", () => {
     expect(percentiles(rows, "pe_ttm", true).has("C")).toBe(false);
   });

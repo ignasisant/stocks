@@ -126,3 +126,22 @@ def test_an_exit_rule_form_ticks_its_events_and_hides_the_rules_it_does_not_use(
     form = messages[-1]["updateDataModel"]["value"]["form"]
     assert form["crit_ceo_change"] is True
     assert tools.revise(act, "AMD", tools.args_from_form(act.kind, form)) == act
+
+
+@pytest.mark.parametrize("unit, label", [
+    ("fund", "chat.action_field_quantity_fund"),
+    ("coin", "chat.action_field_quantity_coin"),
+    (None, "chat.action_field_quantity_share"),
+])
+def test_a_trade_form_counts_a_fund_in_units_and_a_coin_in_an_amount(unit, label):
+    fill = {"date": "2026-11-18", "currency": "EUR", **({"unit": unit} if unit else {})}
+    offer = {"id": "act_1", "kind": "add_transaction", "ticker": "X",
+             "book": {"fill": fill}}
+    messages = a2ui.trade_form(offer, lambda key, **kw: key)
+    (quantity,) = [c for m in messages for c in m.get("updateComponents", {})
+                   .get("components", []) if c["id"] == "f_quantity"]
+    assert quantity["label"] == label
+    ids = {c["id"] for m in messages for c in m.get("updateComponents", {})
+           .get("components", [])}
+    # A fund is as often bought by the sum: a field for it beside the units.
+    assert ("f_amount" in ids) == (unit == "fund")

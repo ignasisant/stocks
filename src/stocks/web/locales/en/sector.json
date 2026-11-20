@@ -65,5 +65,14 @@
   "sector.picked_full": "{n} picked — max {max}",
   "sector.picked_to_review": "Take to Sell or add",
   "sector.picked_clear": "Clear",
-  "sector.picked_hint": "Tick rows to weigh them together in Sell or add."
+  "sector.picked_hint": "Tick rows to weigh them together in Sell or add.",
+  "sector.growth_caption": "Plus {n} small and mid caps growing fast, listed beside them and kept off the podium.",
+  "sector.growth_badge": "Fast grower",
+  "sector.growth_hint": "Under $10B, sales up more than 15% in a year, positive EBITDA. Found by a screen, not scored against the cohort.",
+  "sector.growth_only": "Fast growers ({n})",
+  "sector.size": "Size",
+  "sector.size_large": "Large",
+  "sector.size_mid": "Mid",
+  "sector.size_small": "Small",
+  "sector.size_caption": "Market cap in dollars: small under $2B, mid up to $10B."
 }

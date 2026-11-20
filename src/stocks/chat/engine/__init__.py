@@ -577,7 +577,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             reply = _book_turn(act, history=history, prefs=prefs, db=db,
                                chat_path=chat_path, lang=lang,
                                typed=not confirm_actions, stored=stored,
-                               thread=thread)
+                               thread=thread, watchlist=watchlist)
             if not reply.error:
                 autotitle(chat_path, provider, key, history, lang, thread)
                 _keep_byok(prefs, prefs_path)

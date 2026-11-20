@@ -42,6 +42,7 @@ import { useT } from "../../shell/i18n";
 import { useCurrency, useGuest } from "../../shell/session";
 import { useRoute } from "../../shell/router";
 import { Actions, type Mine } from "./Actions";
+import { majorUnit, type TradeDefaults } from "./AddTrade";
 import { SignIn, SignedInOnly } from "../../shell/guest";
 import { AnalystsSection } from "./Analysts";
 import { FinancialsChart, ValuationChart } from "./Charts";
@@ -94,6 +95,7 @@ import {
 import { FundFitSection } from "./FundFit";
 import { ReadingSection } from "./Reading";
 import { SectionTabs, sectionId, type SectionKey } from "./SectionTabs";
+import { TransactionsSection } from "./Transactions";
 import { DASH, percent } from "../../shell/format";
 import { num } from "../../shell/numbers";
 import { Card, Empty, useMobile } from "./ui";
@@ -525,13 +527,34 @@ export default function Page() {
       : query.state === "loading"
         ? undefined
         : null;
+  // A name the reader has bought or sold, open or closed: its rows are worth a
+  // section. One they never traded costs no request.
+  const ledgered = Boolean(
+    shape.holdable && held && (held.held || held.trades.length > 0),
+  );
   const sections = pageSections(t, {
     company,
     crypto,
     fund: Boolean(shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund),
     compare: shape.compare,
+    transactions: ledgered,
   });
   const live = quote.state === "loaded" ? quote.data : null;
+  // A typed trade opens in the holding's own currency when the book has one,
+  // else the listing's (in its major unit: pence are never a ledger price),
+  // else the account's. The live price only pre-fills a field in its currency.
+  const quoted = majorUnit(live?.currency ?? null, live?.price ?? null);
+  const tradeCurrency = held?.currency || quoted.currency || base;
+  const trade = useMemo<TradeDefaults | null>(
+    () =>
+      shape.holdable && !absent && tradeCurrency
+        ? {
+            currency: tradeCurrency,
+            price: quoted.currency === tradeCurrency ? quoted.price : null,
+          }
+        : null,
+    [shape.holdable, absent, tradeCurrency, quoted.currency, quoted.price],
+  );
   const mini = (
     <>
       {drawn?.logo ? <img className="tk-logo" src={drawn.logo} alt="" /> : null}
@@ -620,6 +643,7 @@ export default function Page() {
                   held={!!held?.held}
                   inBook={!!held && (held.held || held.trades.length > 0)}
                   onBookChanged={position.state === "loaded" ? position.reload : noop}
+                  trade={trade}
                   entry={entry}
                   onEntry={onEntry}
                   onMine={setMine}
@@ -938,6 +962,20 @@ export default function Page() {
               {company ? <KpiSourcesSection /> : null}
             </Section>
           ) : null}
+
+          {/* The reader's own rows, last: a record to check against a
+              statement now and then, not something read on every visit. */}
+          {ledgered && held && ticker ? (
+            <Section at="transactions" label={t("ticker.tab_transactions")}>
+              <TransactionsSection
+                ticker={ticker}
+                base={base}
+                position={held}
+                units={shape.units}
+                last={quoted}
+              />
+            </Section>
+          ) : null}
         </>
       )}
     </div>
@@ -953,15 +991,25 @@ const AUTO_PEERS = 3;
  */
 function pageSections(
   t: ReturnType<typeof useT>,
-  has: { company: boolean; crypto: boolean; fund: boolean; compare: boolean },
+  has: {
+    company: boolean;
+    crypto: boolean;
+    fund: boolean;
+    compare: boolean;
+    transactions: boolean;
+  },
 ): { key: SectionKey; label: string }[] {
+  // The reader's own rows close the page: a record checked against a
+  // statement now and then, not read on every visit.
+  const mine: SectionKey[] = has.transactions ? ["transactions"] : [];
   const keys: SectionKey[] = has.company
-    ? ["summary", "price", "valuation", "business", "opinions", "compare"]
+    ? ["summary", "price", "valuation", "business", "opinions", "compare", ...mine]
     : [
         "price",
         ...(has.fund ? (["fund"] as const) : []),
         ...(has.crypto ? (["market"] as const) : []),
         ...(has.compare ? (["compare"] as const) : []),
+        ...mine,
       ];
   return keys.map((key) => ({ key, label: t(`ticker.tab_${key}`) }));
 }

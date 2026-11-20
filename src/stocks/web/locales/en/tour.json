@@ -191,6 +191,8 @@
   "tour.news_2026_11_3_sector_body": "**Sectors** shows where your names rank in each sector and sends the ones you tick to Sell or add.",
   "tour.news_2026_11_4_today_title": "Today, market first",
   "tour.news_2026_11_4_today_body": "**Today** puts the market first, with its quotes, and sets your book against the index from its first day.",
+  "tour.news_2026_11_5_transactions_title": "Each holding's transactions",
+  "tour.news_2026_11_5_transactions_body": "Your holdings' pages now list their **Transactions**: every contribution, sale and dividend, with totals.",
   "tour.offer_title": "Your portfolio is in. Want a quick tour?",
   "tour.offer_caption": "One stop per section, two minutes. Skip it whenever you like.",
   "tour.offer_start": "Start the tour",

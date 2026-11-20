@@ -106,7 +106,7 @@ def inline(monkeypatch):
     asked: list[tuple[str, tuple[str, ...]]] = []
     result = {"scan": scan("2026-09-24", ("AAPL", "MSFT", "ASML", "NVDA"))}
 
-    def fake(name, extra=(), *, as_of=None):
+    def fake(name, extra=(), *, growth=(), as_of=None):
         asked.append((name, tuple(extra)))
         outcome = result["scan"]
         if isinstance(outcome, Exception):

@@ -980,6 +980,6 @@ def _insider_roles_offline(_scratch):
     insiders.ROLES_CACHE = _scratch / "insider_roles.json"
     insiders._learn_roles_later = lambda *args: None
     insiders.clear_roles_cache()
-    yield
+    yield before[1]  # the real `_learn_roles_later`, for a test about it
     insiders.clear_roles_cache()
     insiders.ROLES_CACHE, insiders._learn_roles_later = before

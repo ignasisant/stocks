@@ -31,6 +31,7 @@ import { usePresence, useSwipeDismiss } from "../../shell/useSheet";
 import { useTickerJournal, type JournalEntry } from "../../ui/Journal";
 import { complete, draft, duplicateAt, payload, summary } from "./alerts";
 import { follow, getAlertTypes, getAlerts, getTags, setAlerts } from "./data";
+import { useTradeEntry, type TradeDefaults } from "./AddTrade";
 import { usePositionRemoval } from "./Removal";
 import { useTickerShare } from "./Share";
 import type { AlertForm, AlertRule, WatchlistEntry } from "./types";
@@ -483,6 +484,7 @@ export function Actions({
   held,
   inBook,
   onBookChanged,
+  trade,
   entry,
   onEntry,
   onMine,
@@ -495,6 +497,8 @@ export function Actions({
   inBook: boolean;
   /** The book changed here (a holding removed, or put back): re-ask for it. */
   onBookChanged: () => void;
+  /** What a typed trade opens with; null where nothing can be held. */
+  trade: TradeDefaults | null;
   /** This ticker's watchlist row, or null when it is not listed yet. */
   entry: WatchlistEntry | null;
   onEntry: (entry: WatchlistEntry) => void;
@@ -509,6 +513,7 @@ export function Actions({
   const journal = useTickerJournal(ticker, name, held);
   const sharing = useTickerShare(ticker, name);
   const removal = usePositionRemoval(ticker, inBook, onBookChanged);
+  const trading = useTradeEntry(ticker, trade, onBookChanged);
 
   const favorite = entry?.favorite ?? false;
   const tags = entry?.tags ?? [];
@@ -608,6 +613,15 @@ export function Actions({
       pick: () => setView("tags"),
     },
   ];
+  if (trading.offered)
+    rows.push({
+      id: "trade",
+      label: trading.label,
+      pick: () => {
+        setView(null);
+        trading.open();
+      },
+    });
   if (journal.label)
     rows.push({
       id: "journal",
@@ -671,6 +685,7 @@ export function Actions({
       {journal.panel}
       {sharing.dialog}
       {removal.panel}
+      {trading.panel}
     </>
   );
 }

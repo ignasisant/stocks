@@ -26,6 +26,7 @@ import { LAND_EVENT } from "../../ui/Fold";
 export type SectionKey =
   | "summary"
   | "price"
+  | "transactions"
   | "valuation"
   | "business"
   | "opinions"

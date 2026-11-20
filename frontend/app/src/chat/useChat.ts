@@ -522,6 +522,7 @@ export function useChat(live: boolean) {
           );
         }
         if (offer && offer.state !== "pending") {
+          if (offer.state === "done") announceChange(offer.kind);
           setTurns((list) =>
             list.map((turn) =>
               turn.tool_calls?.some((call) => call.id === offer.id)

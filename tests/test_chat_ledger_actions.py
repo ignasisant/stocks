@@ -19,7 +19,7 @@ from dataclasses import replace
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
+from stocks import accounts, identity
 from stocks.api.app import app as fastapi_app
 from stocks.chat import book, conversations, engine, tools
 from stocks.chat.tools import Action
@@ -66,6 +66,9 @@ def offline(monkeypatch):
     monkeypatch.setattr(book, "resolver", lambda: lambda s: SYMBOLS.get(s, s))
     patch_engine(monkeypatch, "attempts", lambda prefs: [(Provider(), "k", "fake-1")])
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
+    # The questions say a label as given unless a test names it: the name
+    # sources (profiles, EDGAR) differ between a checkout and CI.
+    monkeypatch.setattr(identity, "company_name", lambda ticker, watchlist: None)
 
 
 @pytest.fixture
@@ -653,3 +656,161 @@ def test_a_bare_symbol_does_not_select_the_coin_when_the_stock_is_held():
 
 def test_close_price_questions_do_not_wake_the_action_classifier():
     assert not tools.maybe_action("what was NVDA's close price yesterday?")
+
+
+@pytest.mark.parametrize("ticker, unit", [
+    ("0P00006SZ0.F", "fund"), ("GRF.MC", "share")])
+def test_a_fund_buy_asks_for_units_with_the_day_s_nav_preset(account, ticker, unit):
+    """Rated locally: "si tengo, quiero añadir" on a fund asked "cuántas
+    acciones y a qué precio". A fund deals at its NAV, which the app knows:
+    the form asks for units only, the price already filled in."""
+    act = Action("add_transaction", ticker, {"trade": "buy", "date": "2026-11-18"})
+    drafted = book.draft(act, db=account.db, translate=lambda k, **kw: k,
+                         market=lambda symbol, day, currency: (422.62, 1.0))
+    assert drafted.book is None and drafted.fill is not None
+    assert drafted.fill["unit"] == unit
+    if unit == "fund":
+        assert drafted.fill["price"] == 422.62
+    else:
+        assert drafted.fill["price"] is None
+
+
+def test_cancel_on_the_planned_trade_goes_back_to_its_form(account, signed_in, hears):
+    """Rated locally: Cancel on the Review step dropped the whole trade. It is
+    a step back: the form again, with what was typed in it, the question
+    above it unchanged; a second Review and Confirm still book it."""
+    stream, end = ask(signed_in, hears, SALE_SAID)
+    offer = end["result"]["proposal"]
+    question = "".join(e["delta"] for e in stream
+                       if e["type"] == "TEXT_MESSAGE_CONTENT")
+    form = {"trade": "sell", "quantity": "50", "price": "13", "date": "2026-10-09"}
+    fill(signed_in, offer["id"], form)
+
+    back = answer(signed_in, offer["id"], approved=False)
+    end = back[-1]
+    assert end["type"] == "RUN_FINISHED"
+    again = end["result"]["proposal"]
+    assert again["state"] == "pending" and "fill" in again["book"]
+    assert end["outcome"]["interrupts"][0]["id"] == offer["id"]
+    said = "".join(e["delta"] for e in back if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert said == question
+    (shown,) = [e for e in back if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == f"form_{offer['id']}"
+    (data,) = [m["updateDataModel"]["value"] for m in shown["content"]["messages"]
+               if "updateDataModel" in m]
+    assert data["form"] == form
+    assert len(all_transactions(account.db)) == 3
+
+    fill(signed_in, offer["id"], form)
+    answer(signed_in, offer["id"])
+    added = all_transactions(account.db)[-1]
+    assert (added.action, added.quantity, added.price) == ("sell", 50, 13.0)
+
+
+def test_a_fund_is_bought_by_the_sum_as_well_as_by_the_units(
+    account, signed_in, hears, monkeypatch
+):
+    """Asked locally: a fund is bought as "1.000 €", not as units. A sum with
+    no units is that many units at the price; going back shows the sum typed;
+    the question names the fund, not its ISIN."""
+    monkeypatch.setattr(identity, "company_name",
+                        lambda ticker, watchlist: "Grifols SA")
+    monkeypatch.setattr(book, "_unit", lambda ticker, ctx: "fund")
+    stream, end = ask(signed_in, hears, SALE_SAID)
+    offer = end["result"]["proposal"]
+    question = "".join(e["delta"] for e in stream
+                       if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert "Grifols SA" in question and "GRF.MC" not in question
+    (form_shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert '"f_amount"' in json.dumps(form_shown)
+    form = {"trade": "sell", "quantity": "", "amount": "650", "price": "13",
+            "date": "2026-10-09"}
+    fill(signed_in, offer["id"], form)
+
+    back = answer(signed_in, offer["id"], approved=False)
+    (shown,) = [e for e in back if e["type"] == "ACTIVITY_SNAPSHOT"]
+    (data,) = [m["updateDataModel"]["value"] for m in shown["content"]["messages"]
+               if "updateDataModel" in m]
+    assert data["form"] == form
+
+    fill(signed_in, offer["id"], form)
+    answer(signed_in, offer["id"])
+    added = all_transactions(account.db)[-1]
+    assert (added.action, added.quantity, added.price) == ("sell", 50, 13.0)
+
+
+def test_typed_units_win_over_a_sum_and_a_sum_needs_a_price():
+    whole = {"trade": "buy", "price": "422,62", "date": "2026-11-18"}
+    assert tools.trade_args({**whole, "amount": "1000"})["quantity"] == round(
+        1000 / 422.62, 6)
+    assert tools.trade_args({**whole, "quantity": "2", "amount": "1000"})[
+        "quantity"] == 2
+    assert tools.trade_args({**whole, "price": "", "amount": "1000"}) is None
+    assert tools.trade_args({**whole, "amount": "0"}) is None
+
+
+def test_a_question_names_the_holding_and_falls_back_to_its_label(tmp_path):
+    act = Action("add_transaction", "LU0270904781", {"trade": "buy"})
+
+    def said(key, **kw):
+        return str(kw.get("ticker", key))
+
+    def broken(ticker):
+        raise ConnectionError("offline")
+
+    named = book.draft(act, db=tmp_path / "book.db", translate=said,
+                       name=lambda ticker: "Allianz Europe Equity Growth")
+    assert named.text == "Allianz Europe Equity Growth"
+    for name in (None, lambda ticker: None, broken):
+        plain = book.draft(act, db=tmp_path / "book.db", translate=said, name=name)
+        assert plain.text == "LU0270904781"
+
+
+def test_cancel_on_the_form_itself_still_drops_the_trade(account, signed_in, hears):
+    _, end = ask(signed_in, hears, SALE_SAID)
+    gone = answer(signed_in, end["result"]["proposal"]["id"], approved=False)
+    assert gone[-1]["result"]["proposal"]["state"] == "cancelled"
+
+
+def test_a_planned_buy_spells_out_units_times_price_equals_total(tmp_path):
+    """Rated locally: "16,16135 0P00006SZ0.F a 5000 EUR" read as 5000 for all
+    of them and booked 80.807 €. The summary says the sum it books."""
+    act = Action("add_transaction", "0P00006SZ0.F",
+                 {"trade": "buy", "quantity": 16.16135, "price": 5000,
+                  "date": "2021-06-14"})
+    drafted = book.draft(act, db=tmp_path / "book.db", translate=_translate)
+    assert "16.16135 × 5000 EUR" in drafted.book["summary"]
+    assert "= 80806.75 EUR" in drafted.book["summary"]
+
+
+def test_units_and_the_sum_typed_make_the_price():
+    """A broker's statement gives units and the sum: the price is divided
+    from them, whatever sits in the price box."""
+    form = {"trade": "buy", "quantity": "16,16135", "amount": "5000",
+            "price": "5000", "date": "2021-06-14"}
+    args = tools.trade_args(form)
+    assert args["quantity"] == 16.16135
+    assert args["price"] == pytest.approx(309.3801, abs=1e-4)
+
+
+def _no_old_close(symbol, day, currency):
+    return (422.62, 1.0) if day == "2026-11-19" else None
+
+
+@pytest.mark.parametrize("ticker, price, refused", [
+    ("0P00006SZ0.F", 5000, True),      # the sum typed as the price
+    ("0P00006SZ0.F", 309.38, False),   # the NAV it really dealt at
+    ("GRF.MC", 5000, False),           # a share: no stale check
+])
+def test_a_fund_price_with_no_close_that_day_is_held_to_its_latest_nav(
+        tmp_path, ticker, price, refused):
+    """Rated locally: Yahoo had no NAV for 2021-06-14, so 5000 per unit went
+    through and booked 80.807 € for a 5.000 € buy."""
+    act = Action("add_transaction", ticker,
+                 {"trade": "buy", "quantity": 16.16135, "price": price,
+                  "date": "2021-06-14"})
+    drafted = book.draft(act, db=tmp_path / "book.db", translate=_translate,
+                         today="2026-11-19", market=_no_old_close)
+    assert (drafted.book is None) is refused
+    if refused:
+        assert "422.62" in drafted.text and drafted.fill["price"] == 5000

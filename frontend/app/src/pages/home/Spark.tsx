@@ -503,9 +503,6 @@ function Spark({ history }: { history: History | null }) {
                 strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
               />
-              {hovered
-                ? null
-                : dot(days.length - 1, end.value, token("brand-accent"), 7)}
             </g>
             {measure && measure.to < days.length ? (
               <g className="hm-spark-span" pointerEvents="none">

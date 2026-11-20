@@ -562,6 +562,8 @@ export type CohortRow = {
     [key: string]: number | null;
   };
   "judged": CohortJudged | null;
+  "size": string | null;
+  "growth": boolean;
 };
 
 export type CoinHarvest = {

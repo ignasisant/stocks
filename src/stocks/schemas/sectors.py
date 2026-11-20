@@ -72,6 +72,20 @@ class CohortRow(BaseModel):
             "against price map. Fundamentals rows only; null on `tech_rows`."
         ),
     )
+    size: str | None = Field(
+        default=None,
+        description=(
+            "small (< $2B market cap) | mid (< $10B) | large, off the cap in "
+            "dollars. Null when unknown — not small."
+        ),
+    )
+    growth: bool = Field(
+        default=False,
+        description=(
+            "A small or mid cap growing sales > 15 % a year, found by a screen "
+            "and listed beside the cohort: no score, no rank in the podium."
+        ),
+    )
 
 
 class SectorCohort(BaseModel):

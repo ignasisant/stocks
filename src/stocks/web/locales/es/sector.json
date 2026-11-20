@@ -65,5 +65,14 @@
   "sector.picked_full": "{n} elegidas — máx. {max}",
   "sector.picked_to_review": "Llevar a Vender o reforzar",
   "sector.picked_clear": "Quitar",
-  "sector.picked_hint": "Marca filas para valorarlas juntas en Vender o reforzar."
+  "sector.picked_hint": "Marca filas para valorarlas juntas en Vender o reforzar.",
+  "sector.growth_caption": "Y {n} pequeñas y medianas que crecen rápido, listadas aparte y fuera del podio.",
+  "sector.growth_badge": "Crece rápido",
+  "sector.growth_hint": "Menos de 10.000 M$, ventas +15 % en un año y EBITDA positivo. Salen de un cribado y no puntúan contra el grupo.",
+  "sector.growth_only": "Crecen rápido ({n})",
+  "sector.size": "Tamaño",
+  "sector.size_large": "Grandes",
+  "sector.size_mid": "Medianas",
+  "sector.size_small": "Pequeñas",
+  "sector.size_caption": "Capitalización en dólares: pequeña bajo 2.000 M$, mediana hasta 10.000 M$."
 }

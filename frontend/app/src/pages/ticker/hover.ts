@@ -225,6 +225,29 @@ export function volumeRow(
   return row([{ text, tone: "dim" }]);
 }
 
+/** The RSI's zone: under 30 oversold, over 70 overbought, the rest neutral. */
+export type RsiBand = "oversold" | "neutral" | "overbought";
+
+export function rsiBand(value: number): RsiBand {
+  return value < 30 ? "oversold" : value > 70 ? "overbought" : "neutral";
+}
+
+/**
+ * "RSI (14)  54.3", muted name and bold value, like an average's row — the
+ * value is an index from 0 to 100, never money. Nothing while it warms up.
+ */
+export function rsiRow(value: number | null | undefined, swatch: string, t: Translate) {
+  if (value === null || value === undefined) return null;
+  return row(
+    [
+      { text: t("ticker.rsi_label"), tone: "dim" },
+      { text: "  " },
+      { text: decimal(value, { digits: 1 }), bold: true },
+    ],
+    swatch,
+  );
+}
+
 /** "SMA50  201.33" — muted name, bold value; nothing where it is still warming up. */
 export function averageRow(name: string, value: number | null, swatch: string) {
   if (value === null || value === undefined) return null;

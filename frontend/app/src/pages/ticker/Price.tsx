@@ -169,6 +169,14 @@ export function PriceSection({
   // No figures over bars that have nothing to show: the metric row clears
   // whenever the chart under it cannot draw.
   const drawable = Boolean(bars && bars.dates.length > 0);
+  // Whether the bars trade through the day at all. A mutual fund prices once,
+  // at its NAV, so open, high, low and close are one number and every candle
+  // is a dash. Kept across a reload, so switching range does not flash the
+  // toggle out and back.
+  const [spread, setSpread] = useState(true);
+  const spreadNow = bars && bars.dates.length > 0 ? intraday(bars) : spread;
+  if (spreadNow !== spread) setSpread(spreadNow);
+  const candlesOffered = shape.candles && spreadNow;
   // The quote's move when there is one; the bars' own otherwise, so a
   // throttled quote costs the page its live figure and not the day change.
   const dayPct = quote?.pct ?? barsDayPct(bars);
@@ -262,11 +270,11 @@ export function PriceSection({
         onChange={onRange}
         format={(one) => t(`ticker.period_${one}`)}
       />
-      {/* A price that barely moves draws a candle as a hairline: the kinds
-              read off a line get no toggle, not one that draws nothing. Two
-              glyphs rather than two words, so it shares the ranges' row on a
-              phone. */}
-      {shape.candles ? (
+      {/* A price that barely moves draws a candle as a hairline, and one
+              priced once a day draws none: those get no toggle, not one that
+              draws nothing. Two glyphs rather than two words, so it shares
+              the ranges' row on a phone. */}
+      {candlesOffered ? (
         <Seg
           className="tk-seg-icons"
           label={t("ticker.chart_type")}
@@ -396,8 +404,9 @@ export function PriceSection({
             // and out is the part of the chart that was theirs.
             trades={shape.holdable ? (position?.trades ?? []) : []}
             avgCost={held?.avg_cost_native ?? null}
-            candles={shape.candles && candles}
+            candles={candlesOffered && candles}
             overlays={shape.overlays}
+            rsi={shape.rsi}
             markers={shape.markers}
             mobile={mobile}
             onWindow={setZoomed}
@@ -801,6 +810,21 @@ function RangeMeter({ at }: { at: number }) {
       <span className="tk-range-dot" style={{ left: `${at * 100}%` }} />
     </span>
   );
+}
+
+/**
+ * Whether any bar's high and low differ — a candle with a body or a wick.
+ * Bars priced once a day (a mutual fund's NAV) carry the same number in all
+ * four columns, or no high and low at all.
+ */
+export function intraday(bars: Bars): boolean {
+  const high = bars.series.High;
+  const low = bars.series.Low;
+  if (!high || !low) return false;
+  return high.some((one, i) => {
+    const under = low[i];
+    return isNum(one) && isNum(under) && one > under;
+  });
 }
 
 /**

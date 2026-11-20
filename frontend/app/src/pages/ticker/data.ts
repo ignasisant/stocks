@@ -11,7 +11,7 @@
  * failure.
  */
 
-import type { Change, EditPlan } from "../../api.gen";
+import type { Change, EditPlan, Transactions } from "../../api.gen";
 import { get, send } from "../../shell/api";
 import { findTickers, forgetSearches } from "../../shell/findTickers";
 import type {
@@ -87,6 +87,21 @@ export const getProfile = (ticker: string) => get<Profile>(`${at(ticker)}/profil
 export const getPosition = (ticker: string, base: string) =>
   get<TickerPosition>(`${at(ticker)}/position`, { base });
 
+/** Rows the transactions card asks for: every one a holding plausibly has. */
+const TX_LIMIT = 1000;
+
+/**
+ * The ledger rows of this one holding, newest first. `exact`: the rows its
+ * position is replayed from, never another listing's of the same symbol.
+ */
+export const getTransactions = (ticker: string, base: string) =>
+  get<Transactions>("/portfolio/transactions", {
+    ticker,
+    exact: "true",
+    base,
+    limit: TX_LIMIT,
+  });
+
 /**
  * The position as the page reads it: every list there, even when the answer
  * that landed lost one. The route always sends them, yet a position without
@@ -122,6 +137,22 @@ export const undoChange = (changeId: number) =>
 /** Every row of this holding as one deletion, planned: nothing is written. */
 export const planRemoval = (ticker: string) =>
   send<EditPlan>("POST", `/portfolio/positions/${encodeURIComponent(ticker)}/removal`);
+
+/** One ledger row, as `POST /portfolio/changes/plan` takes it in an `add` op. */
+export type TradeRow = {
+  date: string;
+  ticker: string;
+  action: "buy" | "sell";
+  quantity: number;
+  price: number;
+  currency: string;
+  fee: number;
+  note: string;
+};
+
+/** A typed buy or sale, planned: nothing is written. */
+export const planTrade = (row: TradeRow) =>
+  send<EditPlan>("POST", "/portfolio/changes/plan", { ops: [{ op: "add", row }] });
 
 /** Apply a plan the reader saw, under its token: journalled, one undo away. */
 export const commitPlan = (plan: EditPlan, summary: string) =>

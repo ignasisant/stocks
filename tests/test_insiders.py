@@ -474,3 +474,25 @@ def test_the_role_pass_stops_once_every_name_is_found(tmp_path, monkeypatch):
     assert entry["roles"] == {"COOK JANE D": "Chief Executive Officer"}
     assert entry["at"] == date.today().isoformat()
     insiders.clear_form4_cache()
+
+
+def test_the_role_pass_runs_with_the_cpu_held(_insider_roles_offline, monkeypatch):
+    """Cloud Run throttles an instance between requests: a pass on a bare
+    thread froze as soon as the page answered and never learnt a role."""
+    from stocks import cpu_hold
+    from stocks.data import insiders
+
+    learn_later = _insider_roles_offline
+    spawned: list[str] = []
+    ran: list[tuple] = []
+
+    def spawn(name, target):
+        spawned.append(name)
+        target()
+
+    monkeypatch.setattr(cpu_hold, "spawn", spawn)
+    monkeypatch.setattr(insiders, "_learn_roles", lambda *args: ran.append(args))
+    learn_later("EXPL", {"NEW FACE"})
+    assert spawned == ["insider-roles"]
+    assert ran == [("EXPL", {"NEW FACE"})]
+    insiders._roles_running.discard("EXPL")  # the stub pass does not clear it

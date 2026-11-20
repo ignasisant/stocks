@@ -65,5 +65,14 @@
   "sector.picked_full": "{n} scelte — max {max}",
   "sector.picked_to_review": "Porta in Vendere o rafforzare",
   "sector.picked_clear": "Togli",
-  "sector.picked_hint": "Spunta le righe per valutarle insieme in Vendere o rafforzare."
+  "sector.picked_hint": "Spunta le righe per valutarle insieme in Vendere o rafforzare.",
+  "sector.growth_caption": "Più {n} small e mid cap in forte crescita, elencate a parte e fuori dal podio.",
+  "sector.growth_badge": "Crescita rapida",
+  "sector.growth_hint": "Sotto 10 mld $, vendite +15% in un anno ed EBITDA positivo. Trovate da uno screening, non valutate contro il gruppo.",
+  "sector.growth_only": "Crescita rapida ({n})",
+  "sector.size": "Dimensione",
+  "sector.size_large": "Grandi",
+  "sector.size_mid": "Medie",
+  "sector.size_small": "Piccole",
+  "sector.size_caption": "Capitalizzazione in dollari: piccola sotto 2 mld $, media fino a 10 mld $."
 }

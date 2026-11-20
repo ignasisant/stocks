@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { tradeReady } from "./ActionCard";
+import { typedUnits } from "./a2ui";
 
 const whole = { trade: "sell", quantity: "50", price: "26,51", date: "2026-10-09" };
 
@@ -22,5 +23,15 @@ describe("a trade form", () => {
     expect(tradeReady({ ...whole, quantity: "0" })).toBe(false);
     expect(tradeReady({ ...whole, price: "ewq" })).toBe(false);
     expect(tradeReady({ ...whole, date: "" })).toBe(false);
+  });
+
+  it("takes a fund's sum in place of its units, at the price", () => {
+    const bySum = { ...whole, quantity: "", amount: "1000" };
+    expect(tradeReady(bySum)).toBe(true);
+    expect(tradeReady({ ...bySum, price: "" })).toBe(false);
+    expect(tradeReady({ ...bySum, amount: "0" })).toBe(false);
+    expect(typedUnits("", "1000", "422,62")).toBeCloseTo(1000 / 422.62, 9);
+    expect(typedUnits("2", "1000", "422,62")).toBe(2);
+    expect(typedUnits("", "1000", "")).toBeNaN();
   });
 });

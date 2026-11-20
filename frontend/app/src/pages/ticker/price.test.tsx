@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { calendarDay } from "../../shell/dates";
 import { layout } from "./layout";
-import { PriceSection } from "./Price";
+import { PriceSection, intraday } from "./Price";
 import type { AssetKind } from "../../shell/assets";
 import type {
   Bars,
@@ -478,5 +478,36 @@ describe("the phone hero", () => {
     const html = render(position);
     expect(html.indexOf("tk-hero-range")).toBeLessThan(html.indexOf("ag-kpis"));
     expect(html).not.toContain("≈ €");
+  });
+});
+
+describe("the line/candles toggle", () => {
+  /** The bars with an open, high and low beside each close, `wick` either side. */
+  const ohlc = (wick: number): Bars => {
+    const one = bars(260, 400, 420);
+    const close = one.series.Close ?? [];
+    return {
+      ...one,
+      series: {
+        ...one.series,
+        Open: close,
+        High: close.map((c) => (c === null ? null : c + wick)),
+        Low: close.map((c) => (c === null ? null : c - wick)),
+      },
+    };
+  };
+
+  it("reads a once-a-day price as having no candles", () => {
+    expect(intraday(ohlc(0))).toBe(false);
+    expect(intraday(bars(260, 400, 420))).toBe(false);
+    expect(intraday(ohlc(1.5))).toBe(true);
+  });
+
+  it("is offered on bars that trade through the day, not on a fund's NAV", () => {
+    dom();
+    const traded = render(null, quote, ohlc(1.5));
+    expect(traded).toContain("ticker.chart_candles");
+    const nav = render(null, quote, ohlc(0));
+    expect(nav).not.toContain("ticker.chart_candles");
   });
 });
