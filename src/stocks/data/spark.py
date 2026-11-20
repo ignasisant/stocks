@@ -22,7 +22,9 @@ and shares the host's one throttle verdict (`fetch.trip_throttle`).
 
 from __future__ import annotations
 
+import math
 import time
+from dataclasses import dataclass
 
 import pandas as pd
 from yfinance.exceptions import YFRateLimitError
@@ -152,6 +154,35 @@ def closes(
     return out
 
 
+def _metas(symbols: list[str], budget: float, *, strict: bool = False) -> dict[str, dict]:
+    """`{symbol: meta}` from one spark request per twenty symbols. Empty
+    while the host is cooling off or once Yahoo refuses — or, `strict`,
+    `YFRateLimitError`, for a caller that must tell "Yahoo has no price" from
+    "Yahoo was not asked"."""
+    symbols = list(dict.fromkeys(symbols))
+    if not symbols:
+        return {}
+    if throttle_remaining() > 0:
+        if strict:
+            raise YFRateLimitError()
+        return {}
+    deadline = time.monotonic() + budget
+    out: dict[str, dict] = {}
+    try:
+        for i in range(0, len(symbols), CHUNK):
+            for entry in _ask(symbols[i : i + CHUNK], "1d", deadline):
+                responses = entry.get("response") or [{}]
+                first = responses[0] if isinstance(responses[0], dict) else {}
+                meta = first.get("meta")
+                symbol = str(entry.get("symbol") or "")
+                if symbol and isinstance(meta, dict):
+                    out[symbol] = meta
+    except YFRateLimitError:
+        if strict:
+            raise
+    return out
+
+
 def names(symbols: list[str], *, budget: float = TIMEOUT) -> dict[str, str]:
     """`{symbol: company name}`, from the meta of the same spark request.
 
@@ -163,22 +194,37 @@ def names(symbols: list[str], *, budget: float = TIMEOUT) -> dict[str, str]:
     Never raises, unlike `closes`: a name is a label beside a symbol, and
     no label is a page that still works. Empty while the host is cooling off.
     """
-    symbols = list(dict.fromkeys(symbols))
-    if not symbols or throttle_remaining() > 0:
-        return {}
-    deadline = time.monotonic() + budget
     out: dict[str, str] = {}
-    try:
-        for i in range(0, len(symbols), CHUNK):
-            for entry in _ask(symbols[i : i + CHUNK], "1d", deadline):
-                responses = entry.get("response") or [{}]
-                first = responses[0] if isinstance(responses[0], dict) else {}
-                meta = first.get("meta")
-                meta = meta if isinstance(meta, dict) else {}
-                name = str(meta.get("longName") or meta.get("shortName") or "").strip()
-                symbol = str(entry.get("symbol") or "")
-                if symbol and name:
-                    out[symbol] = name
-    except YFRateLimitError:
-        pass
+    for symbol, meta in _metas(symbols, budget).items():
+        name = str(meta.get("longName") or meta.get("shortName") or "").strip()
+        if name:
+            out[symbol] = name
+    return out
+
+
+@dataclass(frozen=True)
+class Mark:
+    """A listing's last price as Yahoo prints it: currency, price, and when
+    (epoch seconds)."""
+
+    currency: str
+    price: float
+    when: float
+
+
+def marks(
+    symbols: list[str], *, budget: float = TIMEOUT, strict: bool = False
+) -> dict[str, Mark]:
+    """`{symbol: Mark}` from the same spark meta. Symbols with no currency or
+    no positive price are absent. Never raises unless `strict` (see `_metas`)."""
+    out: dict[str, Mark] = {}
+    for symbol, meta in _metas(symbols, budget, strict=strict).items():
+        currency = str(meta.get("currency") or "").strip()  # "GBp" is pence
+        try:
+            price = float(meta.get("regularMarketPrice") or 0.0)
+            when = float(meta.get("regularMarketTime") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if currency and price > 0 and math.isfinite(price):
+            out[symbol] = Mark(currency, price, when)
     return out

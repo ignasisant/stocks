@@ -25,7 +25,7 @@ import re
 import threading
 import time
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from stocks import atomic
 from stocks.config import DATA_DIR
@@ -206,6 +206,15 @@ _ISIN_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 # security Yahoo really doesn't quote, and the next boot should ask again.
 _isin_memo: dict[str, str] | None = None
 _isin_misses: set[str] = set()
+# A fund's NAV line found by price (`fund_lines`), with the name Yahoo gives
+# it: what the search box shows for the ISIN, this process only.
+_isin_names: dict[str, str] = {}
+# ISINs cached on a floor quote whose NAV line was looked for this process.
+_floor_rechecked: set[str] = set()
+# ISINs whose NAV-line lookup could not ask (`fund_lines.Unanswered`): no
+# verdict, so no miss, but no fresh search on every render either.
+_isin_retry: dict[str, float] = {}
+RETRY_S = 600.0
 
 
 def is_isin(text: str) -> bool:
@@ -262,6 +271,64 @@ def isin_for_symbol(symbol: str) -> str | None:
     )
 
 
+def isin_answers(isins: Iterable[str]) -> dict[str, dict[str, str]]:
+    """What this process resolved `isins` to, for the book that holds them to
+    keep (`seed_isins` reads it back): the symbol, and for a NAV line the
+    currency it trades in and Yahoo's name for it.
+
+    The map is local to the host and every lookup behind it is slow — a fund
+    found by price is a dozen requests, under a budget — so a book that
+    re-asked after each restart waited seconds a fund, and minutes past the
+    budget. Kept per book, beside the book's own prices, it tells nobody
+    which ISINs an account holds that its prices did not already.
+    """
+    from stocks.data import profiles
+
+    cache = _load_isin_cache()
+    out: dict[str, dict[str, str]] = {}
+    for isin in isins:
+        key = (isin or "").strip().upper()
+        symbol = cache.get(key)
+        if not symbol:
+            continue
+        row = {"symbol": symbol}
+        if is_nav_line(symbol):
+            if name := _isin_names.get(key):
+                row["name"] = name
+            if currency := (profiles.known(symbol) or {}).get("currency"):
+                row["currency"] = currency
+        out[key] = row
+    return out
+
+
+def seed_isins(kept: dict) -> None:
+    """Lay a book's kept answers (`isin_answers`) under this process's map.
+
+    Never over an answer this process already has, and never to disk: the
+    host's own map stays what this host asked. A NAV line's currency goes
+    back to the profile memo, so a borrowed class (BGF A2 EUR priced off its
+    A2 USD line) converts at its line's rate before anything is re-asked.
+    """
+    from stocks.data import profiles
+
+    cache = _load_isin_cache()
+    for isin, row in kept.items():
+        key = str(isin).strip().upper()
+        if not is_isin(key) or key in cache or not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        cache[key] = symbol
+        if not is_nav_line(symbol):
+            continue
+        if name := str(row.get("name") or ""):
+            _isin_names.setdefault(key, name)
+        if (currency := str(row.get("currency") or "")) and not profiles.known(symbol):
+            blob = {"quoteType": "MUTUALFUND", "currency": currency}
+            profiles.remember(symbol, {**blob, "longName": name or None})
+
+
 def symbol_for_isin(isin: str) -> str | None:
     """Yahoo symbol for an ISIN, or None when nothing resolves it.
 
@@ -269,7 +336,9 @@ def symbol_for_isin(isin: str) -> str | None:
     for the process. A US ISIN prefers the bare US listing when Yahoo offers
     several — the security's home line is the one whose price history the
     rest of the app can read (Yahoo answers a foreign ISIN with its local
-    venue, "NL0010273215" -> "ASML.AS", which is equally right).
+    venue, "NL0010273215" -> "ASML.AS", which is equally right). An open-end
+    fund Yahoo's ISIN search misses, or answers only with floor quotes, gets
+    its NAV line found by name and verified by price (`fund_lines`).
 
     Never raises: search_symbols already turns a throttled Yahoo into an
     empty list, and every caller here is a label being drawn on screen.
@@ -279,8 +348,20 @@ def symbol_for_isin(isin: str) -> str | None:
         return None
     cache = _load_isin_cache()
     if hit := cache.get(key):
+        if on_floor(hit) and key not in _floor_rechecked and _open_end_known(key):
+            # Cached before funds were looked up by price: a floor quote is a
+            # dealer's, and the fund's own NAV line may be findable now. Only
+            # for a fund OpenFIGI already named open-end (its memo, no
+            # request): an equity's floor line is drawn on every render.
+            nav, answered = _nav_line(key, [hit], [])
+            if answered:
+                _floor_rechecked.add(key)
+            if nav:
+                cache[key] = nav
+                _save_isin_cache(cache)
+                return nav
         return hit
-    if key in _isin_misses:
+    if key in _isin_misses or time.monotonic() < _isin_retry.get(key, 0.0):
         return None
 
     # OpenFIGI first: for an ISIN whose country names its primary exchange the
@@ -294,20 +375,45 @@ def symbol_for_isin(isin: str) -> str | None:
     # The raw rows, not `search_symbols`: that one collapses an issuer's
     # venues into its best-ranked line, and the line worth having here is
     # sometimes further down the list.
+    asked = time.monotonic() >= _blocked_until
     rows = [
         row
         for row in _quotes(key, 12)
         if row.get("quoteType") in QUOTE_TYPES and row.get("symbol")
     ]
     found = [str(row["symbol"]).strip() for row in rows]
+    answered = True
+    if not any(not on_floor(s) for s in found):
+        # Nothing, or only floor quotes: an open-end fund's NAV line is often
+        # missing from the ISIN search, and is found by name and price.
+        floors = [s for s in found if on_floor(s)]
+        names = [
+            str(row.get(k) or "")
+            for row in rows
+            for k in ("longname", "shortname")
+            if on_floor(str(row["symbol"]))
+        ]
+        nav, answered = _nav_line(key, floors, names)
+        if nav:
+            cache[key] = nav
+            _save_isin_cache(cache)
+            return nav
     if not found:
-        _isin_misses.add(key)
+        # A throttled Yahoo is no verdict on the ISIN: ask again next time.
+        if not answered:
+            _isin_retry[key] = time.monotonic() + RETRY_S
+        elif asked and time.monotonic() >= _blocked_until:
+            _isin_misses.add(key)
         return None
     symbol = found[0]
-    if rows[0].get("quoteType") == "MUTUALFUND" and on_floor(symbol):
+    if on_floor(symbol):
         # A fund's ISIN is sometimes answered with a floor quote first
-        # ("IE00BYX5NX33.SG", no prices) and its NAV line below it.
-        symbol = next((s for s in found if not on_floor(s)), symbol)
+        # ("IE00BYX5NX33.SG", no prices) and its NAV line below it — the floor
+        # row even labelled ETF (LU0690375182: GQC4.MU, then 0P0000WEK5.F).
+        if rows[0].get("quoteType") == "MUTUALFUND":
+            symbol = next((s for s in found if not on_floor(s)), symbol)
+        else:
+            symbol = next((s for s in found if is_nav_line(s)), symbol)
     if key.startswith("US"):
         # A US security's ISIN is regularly answered with a European line
         # first ("US7223041028" -> "9PDA.SG", Stuttgart). The home listing is
@@ -318,6 +424,39 @@ def symbol_for_isin(isin: str) -> str | None:
     cache[key] = symbol
     _save_isin_cache(cache)
     return symbol
+
+
+def _nav_line(isin: str, floors: list[str], names: list[str]) -> tuple[str | None, bool]:
+    """(`fund_lines.nav_line`'s symbol, whether it reached a verdict).
+
+    The name is kept for the search box, and the line's currency in the
+    profile memo: a borrowed class (BGF A2 EUR priced off A2 USD) must
+    convert at its line's rate, never the ledger row's.
+    """
+    from stocks.data import fund_lines, profiles
+
+    try:
+        found = fund_lines.nav_line(isin, floors=floors, floor_names=names)
+    except fund_lines.Unanswered:
+        return None, False
+    if found is None:
+        return None, True
+    _isin_names[isin] = found.name
+    if found.currency:
+        blob = {"quoteType": "MUTUALFUND", "currency": found.currency}
+        profiles.remember(found.symbol, {**blob, "longName": found.name})
+    return found.symbol, True
+
+
+def _open_end_known(isin: str) -> bool:
+    sec = openfigi.known(isin)
+    return bool(sec and sec.open_end)
+
+
+def isin_name(isin: str) -> str | None:
+    """The name of the NAV line `symbol_for_isin` found by price for `isin`,
+    this process; None for any other answer."""
+    return _isin_names.get((isin or "").strip().upper())
 
 
 def _us_home_by_name(row: dict, fallback: str) -> str:

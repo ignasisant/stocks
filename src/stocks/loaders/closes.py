@@ -74,7 +74,60 @@ def _held(db: str) -> tuple[list, list[str]]:
 def _held_at(db: str, mtime: float) -> tuple[list, list[str]]:
     txs = transfers.relabel(all_transactions(Path(db)))
     held = [t for t in txs if t.action in HELD_ACTIONS]
-    return txs, sorted({t.ticker for t in held})
+    tickers = sorted({t.ticker for t in held})
+    _seed_isins(db, tickers)
+    return txs, tickers
+
+
+# The symbol each ISIN the book holds was resolved to (`symbols.isin_answers`),
+# kept beside the book's prices and mirrored to the bucket the same way. The
+# host's ISIN map is local, so after every restart a book of funds re-asked
+# each one: a couple of seconds an ISIN inside the download, eight a download,
+# and a fund found by price (`fund_lines`) under a budget of six a ten minutes —
+# a book of eight such funds held two at cost for ten minutes each cold boot.
+_ISINS_ON_DISK = 64
+_kept_isins: dict[str, dict] = {}
+_kept_lock = threading.Lock()
+
+
+def _isins_path(db: str) -> Path:
+    return disk_path("held_isins", (db,))
+
+
+def _seed_isins(db: str, tickers: list[str]) -> None:
+    from stocks.data import symbols
+
+    if not any(symbols.is_isin(t) for t in tickers):
+        return
+    with _kept_lock:
+        if db in _kept_isins:
+            return
+    with obs.swallow("prices.isins_restore"):
+        entry = read_entry(_isins_path(db), 0.0, _ISINS_ON_DISK)
+        kept = entry[1] if entry is not None and isinstance(entry[1], dict) else {}
+        symbols.seed_isins(kept)
+        _remember_kept(db, kept)
+
+
+def _keep_isins(db: str, tickers: list[str]) -> None:
+    """Write the book's ISIN answers when they differ from the kept ones."""
+    from stocks.data import symbols
+
+    answers = symbols.isin_answers(t for t in tickers if symbols.is_isin(t))
+    with _kept_lock:
+        if not answers or _kept_isins.get(db) == answers:
+            return
+    _remember_kept(db, answers)
+    with obs.swallow("prices.isins_persist"):
+        write_entry(_isins_path(db), (0.0, answers, time.time()), _ISINS_ON_DISK)
+
+
+def _remember_kept(db: str, kept: dict) -> None:
+    with _kept_lock:
+        _kept_isins.pop(db, None)
+        _kept_isins[db] = kept
+        while len(_kept_isins) > _ISINS_ON_DISK:
+            _kept_isins.pop(next(iter(_kept_isins)))
 
 
 # Strict expiry, not stale-while-revalidate: the two memos derived from it
@@ -178,6 +231,9 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     # two readings below trust what this returns, and their own copies come
     # back from disk after a restart without a download — re-judging those
     # would be asking `fetch.unlisted` about a download this process never made.
+    # Before the judgement: what the ISINs resolved to holds even when the
+    # download came back gutted.
+    _keep_isins(db, tickers)
     complete_download(_close_series(frames, "Close"), tickers)
     _keep_base(
         db,
