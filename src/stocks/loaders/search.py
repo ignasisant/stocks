@@ -111,7 +111,30 @@ def world_matches(query: str) -> list[tuple[str, str, str]]:
         return []
     if shared and rows:
         WORLD_MEMO.put(_world_key(key), rows)
+    if not shared and not any(not symbols.on_floor(s) for s, _, _, _ in rows):
+        rows = [*_fund_by_isin(key), *rows]
     return [(s, n, x) for s, n, x, _ in rows]
+
+
+def _fund_by_isin(isin: str) -> list[tuple[str, str, str, str]]:
+    """The NAV line of a fund ISIN Yahoo's search misses ("LU0270904781",
+    Pictet-Security P EUR), as `symbol_for_isin` resolves it — found by
+    price, never guessed by name (`data.fund_lines`)."""
+    from stocks.data import funds, symbols
+
+    try:
+        symbol = symbols.symbol_for_isin(isin)
+    except Exception:
+        return []
+    if not symbol or not symbols.is_nav_line(symbol):
+        return []
+    funds.remember(symbol, "MUTUALFUND")
+    name = symbols.isin_name(isin) or funds.fund_name(symbol)
+    if not name:
+        from stocks.data.spark import names
+
+        name = names([symbol]).get(symbol) or symbol
+    return [(symbol, name, "", "MUTUALFUND")]
 
 
 @ttl_cache(_SEARCH_TTL, max_entries=128)

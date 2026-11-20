@@ -131,8 +131,11 @@ HOME: dict[str, tuple[str, ...]] = {
 # a Bloomberg mnemonic (ES0119199000 -> SM "COBASIN", IE00B03HD191 -> ID
 # "VANGEIS"), which spell a Yahoo symbol that does not exist, and its German
 # floor lines (P3IE.DE) carry no prices. Its line is Yahoo's NAV line, which
-# only Yahoo's own search knows, so no listing is offered for one here.
+# only Yahoo's own search knows, so no listing is offered for one here. A
+# fund of funds is dealt the same way (ES0138172038, CaixaBank Bolsa Selección
+# Global: SM "GESFO93", no Yahoo symbol).
 OPEN_END = "Open-End Fund"
+OPEN_END_TYPES = frozenset({OPEN_END, "Fund of Funds"})
 
 _ISIN = re.compile(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")
 _TICKER = re.compile(r"^[A-Z0-9][A-Z0-9-]{0,9}$")
@@ -164,8 +167,8 @@ class Security:
 
     @property
     def open_end(self) -> bool:
-        """A fund dealt at NAV, not on an exchange (`OPEN_END`)."""
-        return self.type == OPEN_END
+        """A fund dealt at NAV, not on an exchange (`OPEN_END_TYPES`)."""
+        return self.type in OPEN_END_TYPES
 
 
 def yahoo_symbol(exch: str, ticker: str) -> str | None:
@@ -442,7 +445,7 @@ def home(isin: str) -> str | None:
 
     Only where the country prefix names one (`HOME`); an ETF's or a shell
     company's ISIN does not, and is left to `candidates` and Yahoo. Never for
-    an open-end fund (`OPEN_END`), whose "home" is a Bloomberg mnemonic.
+    an open-end fund (`OPEN_END_TYPES`), whose "home" is a Bloomberg mnemonic.
     """
     key = (isin or "").strip().upper()
     exchanges = HOME.get(key[:2])

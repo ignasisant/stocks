@@ -450,3 +450,81 @@ def test_a_fallback_frame_serves_the_render_but_never_the_base(
     assert set(first) == {"AAPL", "MSFT"}
     base = loaders._frames_base(db, "2024-01-02")
     assert base is not None and set(base[0]) == {"AAPL"}
+
+
+@pytest.fixture
+def fresh_isins(monkeypatch, tmp_path):
+    """A host's own ISIN map and profile memo, empty and off the checkout."""
+    from stocks.data import profiles, symbols
+    from stocks.loaders import closes
+
+    monkeypatch.setattr(symbols, "ISIN_CACHE", tmp_path / "isin_symbols.json")
+    monkeypatch.setattr(symbols, "_isin_memo", None)
+    monkeypatch.setattr(symbols, "_isin_names", {})
+    monkeypatch.setattr(profiles, "PROFILE_CACHE", tmp_path / "profiles.json")
+    monkeypatch.setattr(profiles, "_memo", None)
+    monkeypatch.setattr(closes, "_kept_isins", {})
+    closes._held_at.cache_clear()
+    yield symbols, profiles, closes
+    closes._held_at.cache_clear()
+
+
+PICTET = "LU0270904781"
+
+
+def test_a_books_isin_answers_outlive_the_process(book, yahoo, fresh_isins, monkeypatch):
+    """The host's ISIN map is local, so after a restart a book of funds asked
+    for each one again — seconds an ISIN, and a fund found by price under a
+    budget of six a ten minutes. The book keeps its own answers beside its
+    prices, and the next process reads them back before anything is asked."""
+    symbols, profiles, closes = fresh_isins
+    db = book(("2024-01-02", PICTET), ("2024-01-02", "AAPL"))
+    yahoo({PICTET: _bars(300.0), "AAPL": _bars(100.0)})
+    symbols._load_isin_cache()[PICTET] = "0P00006SZ0.F"
+    symbols._isin_names[PICTET] = "Pictet-Security P EUR"
+    profiles.remember("0P00006SZ0.F", {"quoteType": "MUTUALFUND", "currency": "EUR"})
+    loaders._held_frames(db, 1.0)
+
+    # The restart: a new process, its map and profile memo empty.
+    monkeypatch.setattr(symbols, "_isin_memo", {})
+    monkeypatch.setattr(symbols, "_isin_names", {})
+    monkeypatch.setattr(profiles, "PROFILE_CACHE", closes.Path(db).with_name("p2.json"))
+    monkeypatch.setattr(profiles, "_memo", None)
+    monkeypatch.setattr(closes, "_kept_isins", {})
+    closes._held_at.cache_clear()
+    closes._held(db)
+
+    assert symbols.cached_isin_symbol(PICTET) == "0P00006SZ0.F"
+    assert symbols._isin_names[PICTET] == "Pictet-Security P EUR"
+    assert (profiles.known("0P00006SZ0.F") or {}).get("currency") == "EUR"
+    # Read back into memory only: the host's own file stays what it asked.
+    assert not symbols.ISIN_CACHE.exists() or PICTET not in symbols.ISIN_CACHE.read_text()
+
+
+def test_a_kept_answer_never_overrides_one_this_process_has(fresh_isins):
+    symbols, _, _ = fresh_isins
+    symbols._load_isin_cache()[PICTET] = "0P00006SZ0.F"
+    symbols.seed_isins({PICTET: {"symbol": "P3IE.MU"}, "not an isin": {"symbol": "X"}})
+    assert symbols.cached_isin_symbol(PICTET) == "0P00006SZ0.F"
+    assert symbols.cached_isin_symbol("not an isin") is None
+
+
+def test_an_unchanged_book_does_not_write_its_answers_again(
+    book, yahoo, fresh_isins, monkeypatch
+):
+    symbols, _, closes = fresh_isins
+    db = book(("2024-01-02", PICTET))
+    yahoo({PICTET: _bars(300.0)})
+    symbols._load_isin_cache()[PICTET] = "0P00006SZ0.F"
+    writes: list[dict] = []
+    real = closes.write_entry
+
+    def counted(path, entry, disk_max):
+        if path == closes._isins_path(db):
+            writes.append(entry[1])
+        real(path, entry, disk_max)
+
+    monkeypatch.setattr(closes, "write_entry", counted)
+    loaders._held_frames(db, 1.0)
+    _refresh(db)
+    assert writes == [{PICTET: {"symbol": "0P00006SZ0.F"}}]

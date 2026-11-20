@@ -161,12 +161,63 @@ def test_classes_of_one_fund_are_not_collapsed(monkeypatch):
             ],
             "0P0001CLDK.F",
         ),
+        # Fundsmith Equity Feeder T EUR: the Munich floor first and labelled
+        # ETF, the NAV line second (live answer, 2026-11-19).
+        (
+            "LU0690375182",
+            [
+                quote(
+                    "GQC4.MU", "FUNDSMITH EQUITY FEEDER T EUR", qtype="ETF", exch="Munich"
+                ),
+                quote(
+                    "0P0000WEK5.F",
+                    "0P0000WEK5.F",
+                    "Fundsmith Equity Fund Feeder T EUR Acc",
+                ),
+                quote("LU0690375182.SG", "LU0690375182.SG", exch="Stuttgart"),
+            ],
+            "0P0000WEK5.F",
+        ),
     ],
 )
 def test_fund_isin_resolves_to_its_nav_line(monkeypatch, isin, rows, want):
     serve(monkeypatch, {isin: rows})
     assert symbols.symbol_for_isin(isin) == want
     assert symbols.cached_isin_symbol(isin) == want  # what prices it from now on
+
+
+def test_fund_of_funds_never_takes_openfigis_mnemonic(monkeypatch):
+    """CaixaBank Bolsa Selección Global is a "Fund of Funds" to OpenFIGI, its
+    home SM GESFO93: as GESFO93.MC no Yahoo symbol, so the NAV line Yahoo's
+    ISIN search answers must win (live answers, 2026-11-19)."""
+
+    def post(jobs, key):
+        row = {
+            "name": "FONCAIXA BOLSA SELECCION GLB",
+            "ticker": "GESFO93",
+            "exchCode": "SM",
+            "compositeFIGI": "BBG000BH0FK5",
+            "securityType": "Fund of Funds",
+            "securityType2": "Mutual Fund",
+        }
+        return [{"data": [row]} for _ in jobs]
+
+    monkeypatch.setattr(openfigi, "_post", post)
+    assert openfigi.security("ES0138172038").open_end
+    assert openfigi.home("ES0138172038") is None
+    serve(
+        monkeypatch,
+        {
+            "ES0138172038": [
+                quote(
+                    "0P00000NZ4.F",
+                    "0P00000NZ4.F",
+                    "CaixaBank Bolsa Selección Global Estándar FI",
+                )
+            ]
+        },
+    )
+    assert symbols.symbol_for_isin("ES0138172038") == "0P00000NZ4.F"
 
 
 def test_fund_isin_yahoo_does_not_know_stays_unresolved(monkeypatch):
