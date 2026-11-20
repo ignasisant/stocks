@@ -347,7 +347,7 @@ def _price_off_latest(ticker: str, price: float, day: str, currency: str,
     for a 5.000 € buy. Funds only: a fund's NAV seldom moves fourfold in a few
     years, a share's can, and this answer sends the form back with no way past.
     """
-    if day >= ctx.today or _unit(ticker, ctx) != "fund":
+    if ctx.market is None or day >= ctx.today or _unit(ticker, ctx) != "fund":
         return None
     try:
         quote = ctx.market(ticker, ctx.today, currency)
