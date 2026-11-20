@@ -131,6 +131,10 @@ def search_companies(query: str, limit: int = 8) -> list[tuple[str, str]]:
     if not q:
         return []
     _load_map()
+    # "service now" for ServiceNow, "coca cola" for Coca-Cola: the substring
+    # tier also compares with spaces and punctuation dropped, or the fuzzy
+    # pass below, which goes word by word, lands on a different company.
+    squeezed = _squeeze(q) if len(q.split()) > 1 else ""
     ranked: list[tuple[int, int, str, str]] = []
     seen_cik: set[int] = set()
     for i, (ticker, title, cik) in enumerate(_ROWS or []):
@@ -141,7 +145,7 @@ def search_companies(query: str, limit: int = 8) -> list[tuple[str, str]]:
             rank = 1
         elif any(word.startswith(q) for word in name.split()):
             rank = 2
-        elif q in ticker or q in name:
+        elif q in ticker or q in name or (squeezed and squeezed in _squeeze(name)):
             rank = 3
         else:
             continue
@@ -153,6 +157,10 @@ def search_companies(query: str, limit: int = 8) -> list[tuple[str, str]]:
         return _fuzzy_companies(q, limit)
     ranked.sort()
     return [(t, _display_title(n)) for _, _, t, n in ranked[:limit]]
+
+
+def _squeeze(text: str) -> str:
+    return "".join(c for c in text if c.isalnum())
 
 
 def _fuzzy_companies(q: str, limit: int) -> list[tuple[str, str]]:

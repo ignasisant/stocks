@@ -18,6 +18,12 @@ FIXTURE = {
     "7": {"cik_str": 1652044, "ticker": "GOOG", "title": "Alphabet Inc."},
     "8": {"cik_str": 70858, "ticker": "BAC-PB", "title": "BANK OF AMERICA CORP /DE/"},
     "9": {"cik_str": 70858, "ticker": "BML-PG", "title": "BANK OF AMERICA CORP /DE/"},
+    "10": {"cik_str": 1373715, "ticker": "NOW", "title": "ServiceNow, Inc."},
+    "11": {
+        "cik_str": 81023,
+        "ticker": "PNMXO",
+        "title": "PUBLIC SERVICE CO OF NEW MEXICO",
+    },
 }
 
 
@@ -104,3 +110,9 @@ def test_fuzzy_skipped_when_exact_matches():
 
 def test_fuzzy_needs_min_query_length():
     assert edgar.search_companies("zz") == []
+
+
+def test_a_name_typed_with_a_space_finds_the_one_word_company():
+    # Word-by-word fuzz alone picked Public Service Co Of New Mexico
+    # ("SERVICE" + "NEW" ~ "NOW") over ServiceNow.
+    assert edgar.search_companies("service now")[0] == ("NOW", "ServiceNow, Inc.")

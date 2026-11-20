@@ -82,6 +82,13 @@ def test_a_held_but_unlisted_symbol_is_searchable_by_company_name():
     assert [t for t, _, _ in tiers("oracle", catalog)[0]] == ["ORCL"]
 
 
+def test_a_name_typed_with_a_space_finds_the_one_word_company():
+    catalog = search.account_catalog(
+        WATCHLIST, held=["NOW"], title=lambda t: "ServiceNow, Inc."
+    )
+    assert [t for t, _, _ in tiers("service now", catalog)[0]] == ["NOW"]
+
+
 # ----------------------------------------------------------------- the tiers
 
 
