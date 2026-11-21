@@ -169,8 +169,10 @@ function Regime({ data }: { data: MarketGlance }) {
   const lang = useLang();
   if (data.score === null) return null;
   const band = REGIME_TONES[data.regime] ? data.regime : "unknown";
-  const last = data.history.at(-1);
-  const before = data.history.at(-6);
+  // `?? []`, as for the tiles: a body without the list costs the week, not the Home.
+  const history = data.history ?? [];
+  const last = history.at(-1);
+  const before = history.at(-6);
   const week = last !== undefined && before !== undefined ? last - before : null;
   const run = data.run ? t("sentiment.regime_run", { n: data.run }) : null;
   return (
