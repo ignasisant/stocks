@@ -768,6 +768,7 @@ def _own_code_symbols(_scratch):
         symbols._code_misses,
         symbols._code_settled,
         symbols._listings_memo,
+        symbols._blocked_until,
     )
     made = _own(_scratch, "codes")
     symbols.CODE_CACHE = made / "code_symbols.json"
@@ -775,6 +776,9 @@ def _own_code_symbols(_scratch):
     symbols._code_misses = set()
     symbols._code_settled = set()
     symbols._listings_memo = {}
+    # A test that reached the real search (no network here) starts its
+    # cooldown; the next one on the worker would read "could not ask".
+    symbols._blocked_until = 0.0
     yield
     (
         symbols.CODE_CACHE,
@@ -782,6 +786,7 @@ def _own_code_symbols(_scratch):
         symbols._code_misses,
         symbols._code_settled,
         symbols._listings_memo,
+        symbols._blocked_until,
     ) = before
 
 
