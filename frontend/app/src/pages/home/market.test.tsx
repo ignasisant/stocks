@@ -137,6 +137,14 @@ describe("the Market card", () => {
     const bare = { ...glance, tiles: undefined } as unknown as MarketGlance;
     expect(() => renderToStaticMarkup(<Market data={bare} />)).not.toThrow();
   });
+
+  it("draws the chip without its week, not a crash, for a body without history", () => {
+    // Prod 2026-11-20 (safari/ios, /home): "evaluating 'e.history.at'".
+    const bare = { ...glance, history: undefined } as unknown as MarketGlance;
+    const html = renderToStaticMarkup(<Market data={bare} />);
+    expect(html).toContain("hm-regime");
+    expect(html).not.toContain("hm-regime-delta");
+  });
 });
 
 describe("the editor", () => {
