@@ -665,7 +665,7 @@ def collect(queries: list[str], message: str = "") -> list[Result]:
 # ------------------------------------------------------------- prompt
 
 # Model-facing, and a small model handed nothing else has written it back as
-# its answer (prod 2026-11-19): engine.text.echoes_scaffold watches for it.
+# its answer (prod 2026-11-19): engine.text.echo_state watches for it.
 HEADER = ("Web search results fetched for this message (ground your answer in "
           "them where relevant and cite the URLs you use). ")
 
