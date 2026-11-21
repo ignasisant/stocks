@@ -847,10 +847,10 @@ _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 # free"); the google/* and poolside free slugs 429 on the shared upstream pool.
 # Best answers first. 2026-10-29, a 10k-token prompt: nemotron-3-super-120b
 # went paid-only (404) too; dots wrote its first word in 4.5 s; lightning
-# reasoned 7 s and wrote nothing, so it stays last.
+# reasoned 7 s and wrote nothing, so it stays last. 2026-11-21: dots-3 lost
+# its last provider (404 "no longer available on OpenRouter").
 _FREE_FALLBACK_MODELS: dict[str, tuple[str, ...]] = {
-    "openrouter": ("dots-studio/dots-3-note-preview:free",
-                   "nvidia/nemotron-3.5-lightning:free"),
+    "openrouter": ("nvidia/nemotron-3.5-lightning:free",),
 }
 
 # Tokens per minute a backend's free tier admits, prompt included. One request
@@ -957,12 +957,13 @@ def _retired_model(exc: Exception) -> bool:
     """True when a failure says the *model* is gone rather than the tier being
     rate-limited, out of credit or the key being wrong. OpenRouter's way of
     saying it is a 404 "This model is unavailable for free" once a :free slug
-    goes paid-only."""
+    goes paid-only, or "is no longer available on OpenRouter" once no
+    provider serves it at all."""
     if getattr(exc, "status_code", None) not in (None, 404):
         return False
     text = str(exc).lower()
     return ("model_not_found" in text or "does not exist" in text
-            or "unavailable for free" in text)
+            or "unavailable for free" in text or "no longer available" in text)
 
 
 # Slugs that answered "retired", per backend, for the life of the process: a

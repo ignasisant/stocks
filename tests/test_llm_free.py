@@ -275,6 +275,24 @@ def test_a_free_slug_gone_paid_reads_as_retired():
     assert llm._retired_model(went_paid)
 
 
+def test_a_free_slug_no_provider_serves_reads_as_retired():
+    # OpenRouter's wording once dots-3-note-preview lost its last provider
+    # (prod 2026-11-21): no "model_not_found", no "unavailable for free".
+    dropped = RuntimeError(
+        "Error code: 404 - dots-studio/dots-3-note-preview:free is no longer "
+        "available on OpenRouter: no provider serves this model anymore. See "
+        "available models at https://openrouter.ai/models")
+    dropped.status_code = 404
+    assert llm._retired_model(dropped)
+
+
+def test_the_default_free_slugs_are_none_openrouter_dropped():
+    from stocks.llm import vision
+    dead = {"dots-studio/dots-3-note-preview:free"}
+    assert not dead & set(llm._FREE_FALLBACK_MODELS["openrouter"])
+    assert not dead & set(vision._FREE_VISION["openrouter"])
+
+
 def test_a_free_slug_is_only_replaced_by_another_free_one(monkeypatch):
     llm._free_gone.add(("openrouter", "z-ai/glm-9:free"))
     monkeypatch.setattr("openai.OpenAI", _fake_openai(
