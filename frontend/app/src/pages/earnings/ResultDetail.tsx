@@ -20,7 +20,7 @@
  */
 
 import type { ReactNode } from "react";
-import { askAssistant } from "../../shell/assistant";
+import { askAssistant, tickerTopic } from "../../shell/assistant";
 import { get } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
@@ -856,6 +856,7 @@ function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
               t("earnings.ev_ask_prompt", {
                 what: `${ticker} ${t("earnings.reported_on", { date: date })}`,
               }),
+              { topic: tickerTopic(ticker) },
             );
             onClose();
           }}

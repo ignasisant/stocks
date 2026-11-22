@@ -103,6 +103,7 @@ export function Drawer() {
   // (`?thread=`, `?chat=`, the guide, a draft) still open it.
   const [open, setOpen] = useState(() => prefs.chat_panel_open && !isPhone());
   const chat = useChat(open);
+  const { hold, leftBehind } = chat;
   // The walkthrough sent the reader to a page and the drawer stepped aside
   // (phones only — see `GuideCard.useVisit`). Per tab and in memory; any open
   // of the drawer clears it.
@@ -128,20 +129,34 @@ export function Drawer() {
   // for the same reason: the press happens while `useChat` is still loading.
   // `fresh` (Review's "Ask the AI") starts a new conversation first: a prompt
   // that long is its own subject, not a follow-up to whatever was on screen.
-  // `brief` is the Ticker page's angle, expanded by the server.
+  // `brief` is the Ticker page's angle, expanded by the server. `topic` says
+  // what it is about: the thread on that subject is picked back up within the
+  // hour, or a new one started (`placed` once that is done, `follow`).
   const [queued, setQueued] = useState<{
     text: string;
     fresh: boolean;
     brief?: Brief;
+    topic?: string;
+    placed?: boolean;
   } | null>(null);
   const onAsk = useCallback(
-    (prompt: string | null, fresh = false, brief?: Brief) => {
+    (prompt: string | null, fresh = false, brief?: Brief, topic?: string) => {
       // A null prompt is "show me the assistant" — the tour's stop and the
       // Home checklist's row both mean that, and neither should spend a turn.
-      if (prompt) setQueued({ text: prompt, fresh, brief });
+      // A question asked on reopening, of a thread left long ago, is a new
+      // subject too (`chat/fresh.ts`).
+      if (prompt) {
+        hold();
+        setQueued({
+          text: prompt,
+          fresh: fresh || (!open && leftBehind()),
+          brief,
+          topic,
+        });
+      }
       show(true);
     },
-    [show],
+    [hold, leftBehind, open, show],
   );
   useAssistantAsks(onAsk);
   const onClose = useCallback(() => show(false), [show]);
@@ -153,14 +168,15 @@ export function Drawer() {
   const [thread, setThread] = useState<string | null>(null);
   const onThread = useCallback(
     (cid: string) => {
+      hold();
       setThread(cid);
       show(true);
     },
-    [show],
+    [hold, show],
   );
   useAssistantThreads(onThread);
 
-  const { state, busy, send: ask, create } = chat;
+  const { state, ready, busy, send: ask, create, follow } = chat;
   // At it on any thread — the one on screen, or one the reader left to be
   // answered while they moved to another.
   const working = busy || !!chat.threads?.some((c) => c.answering);
@@ -202,7 +218,18 @@ export function Drawer() {
     });
   }, [notice, dismissNotice, onThread, t]);
   useEffect(() => {
-    if (!queued || !open || !state) return;
+    // After the opening read: it sets the thread on screen when it lands,
+    // and would take the drawer back off the one this question went to.
+    if (!queued || !open || !state || !ready) return;
+    if (queued.topic && !queued.placed) {
+      // Same as `fresh` below, but the thread is the subject's: this one, an
+      // earlier one, or a new one. Asked where the reader is if that fails.
+      setQueued(null);
+      void follow(queued.topic)
+        .catch(() => {})
+        .finally(() => setQueued({ ...queued, placed: true, fresh: false }));
+      return;
+    }
     if (queued.fresh) {
       // A new thread leaves any answer still being written to finish on the
       // server, so it need not wait for one. Sent once the new thread is the
@@ -215,8 +242,18 @@ export function Drawer() {
     }
     if (busy) return;
     setQueued(null);
-    void ask(queued.text, false, false, false, queued.brief);
-  }, [queued, open, state, busy, ask, create]);
+    void ask(
+      queued.text,
+      false,
+      false,
+      false,
+      queued.brief,
+      undefined,
+      false,
+      undefined,
+      queued.topic,
+    );
+  }, [queued, open, state, ready, busy, ask, create, follow]);
 
   // A page handed over a statement (Import's "Import with the assistant"):
   // read once the drawer is open and free, as the paperclip would. Queued for
@@ -224,10 +261,11 @@ export function Drawer() {
   const [statement, setStatement] = useState<File | null>(null);
   const onStatement = useCallback(
     (file: File) => {
+      hold();
       setStatement(file);
       show(true);
     },
-    [show],
+    [hold, show],
   );
   useAssistantAttach(onStatement);
   useEffect(() => {
@@ -252,6 +290,7 @@ export function Drawer() {
       setParams({ guide: undefined });
       const top = ["1", "true", "yes"].includes(asked.toLowerCase());
       setGuideAsk({ auto: false, step: top ? undefined : asked });
+      hold();
       show(true);
       return;
     }
@@ -261,14 +300,15 @@ export function Drawer() {
       .then((guide) => {
         if (guide.surface !== "chat" || !guide.auto_open) return;
         setGuideAsk({ auto: true });
+        hold();
         show(true);
       })
       .catch(() => {
         // A guest, or no walkthrough on this server: nothing is owed.
       });
     // Once per mount: the URL case re-runs only when `?guide=` itself changes
-    // (`setParams` and `show` never change).
-  }, [asked, setParams, show]);
+    // (`setParams`, `show` and `hold` never change).
+  }, [asked, setParams, show, hold]);
 
   // Back from a provider's sign-in page (`connect.ts`): `?code=` on the URL
   // and the verifier this tab saved before it left. Taken off the URL at
@@ -338,9 +378,10 @@ export function Drawer() {
   const [shared, setShared] = useState<string | null>(null);
   useEffect(() => {
     if (!linked) return;
+    hold();
     setShared(linked);
     show(true);
-  }, [linked, show]);
+  }, [hold, linked, show]);
   const leaveShared = useCallback(() => {
     setShared(null);
     setParams({ share: undefined, continue: undefined });
@@ -356,7 +397,7 @@ export function Drawer() {
 
   // Started once the drawer has finished its own opening read — otherwise the
   // thread it was loading would land on top of the guide's.
-  const { ready, guideStart } = chat;
+  const { guideStart } = chat;
   useEffect(() => {
     if (!guideAsk || !open || !ready) return;
     const ask = guideAsk;
@@ -397,16 +438,20 @@ export function Drawer() {
 
   // On a phone the assistant is one of the tab bar's destinations, so the
   // bar's other items leave it the way they leave any page: a press on one
-  // closes the drawer before it navigates (the same page included, which
-  // changes no route), and so does any route change — a ticker named in an
-  // answer is a page to look at, not something to open behind the drawer.
+  // closes the drawer before it navigates, and so does any route change — a
+  // ticker named in an answer is a page to look at, not something to open
+  // behind the drawer. The item for the page already under the drawer only
+  // closes it: navigating there again would be the "same page, back to the
+  // top" press, and the reader is going back to where they were reading.
   const small = usePhone();
   const seenPage = useRef(page);
   useEffect(() => {
     if (!open || !small) return;
     const away = (event: MouseEvent) => {
       const item = (event.target as Element | null)?.closest(".ag-nav-item");
-      if (item && !item.classList.contains("ag-nav-ask")) show(false);
+      if (!item || item.classList.contains("ag-nav-ask")) return;
+      if (item.getAttribute("aria-current") === "page") event.preventDefault();
+      show(false);
     };
     document.addEventListener("click", away, { capture: true });
     return () => document.removeEventListener("click", away, { capture: true });

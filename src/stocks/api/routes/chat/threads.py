@@ -32,6 +32,8 @@ class Conversation(BaseModel):
     # The job a scheduled run's thread came from (`notify/schedule.py`):
     # "briefing", "digest" or "weekly"; "" for any other thread.
     scheduled: str = ""
+    # What it is about (`conversations.add_topics`): "ticker:NVDA", "plan"…
+    topics: list[str] = Field(default_factory=list)
     # An answer is still being written on it (`runs.live_threads`). The panel
     # polls the list while one it is not showing is, to say when it lands.
     answering: bool = False
@@ -194,7 +196,8 @@ def edit(cid: str, body: EditThread, paths: Writer) -> Conversation:
         # Pins the title: auto-titling never overwrites a name a user chose.
         conversations.rename_conversation(cid, body.title, paths.chat)
     if body.active:
-        conversations.set_active_conversation(cid, paths.chat)
+        conversations.set_active_conversation(
+            cid, paths.chat, busy=runs.live_threads(str(paths.chat)))
     return next(
         Conversation(**c)
         for c in conversations.list_conversations(paths.chat)

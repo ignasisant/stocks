@@ -98,21 +98,43 @@ export function depth(): number {
 }
 
 /**
- * Where each visited address was scrolled to when the reader left it, so back
- * and forward land where they were. The browser's own restoration cannot: the
- * page is a lazy chunk that has not rendered, let alone fetched, by the time
- * `popstate` fires, so there is nothing tall enough to scroll to yet.
+ * How long a screen keeps its scroll for a reader who comes back to it by a
+ * link or the tab bar rather than the back button: a look at a ticker and
+ * back to Home is the same visit to Home, and its calendar is where they left
+ * it. Past this the figures have likely moved under it, and the page opens at
+ * the top like any fresh one. Back and forward restore at any age, as a
+ * browser does.
  */
-const scrolls = new Map<string, number>();
+export const KEEP_MS = 5 * 60_000;
+
+/**
+ * Where each visited address was scrolled to when the reader left it, and
+ * when, so back, forward and a quick return land where they were. The
+ * browser's own restoration cannot: the page is a lazy chunk that has not
+ * rendered, let alone fetched, by the time `popstate` fires, so there is
+ * nothing tall enough to scroll to yet.
+ */
+const scrolls = new Map<string, { y: number; at: number }>();
 let here = typeof window === "undefined" ? "" : place();
-// Set by a `popstate` that moved to another address, or to the top by a
-// `push`, and taken by the page once it has rendered (`takeRestore`): the
-// scroll waits for the page, because the one on screen stays until then.
+// Set by a `popstate` that moved to another address, or by a `push` (the top,
+// or where a recent visit left off), and taken by the page once it has
+// rendered (`takeRestore`): the scroll waits for the page, because the one on
+// screen stays until then.
 let restore: number | null = null;
 
+/**
+ * The address as the page column means it: `/` and `/home` are one screen, as
+ * are an old `/?ticker=` link and `/ticker?ticker=`, so a scroll left on one
+ * is found from the other. The query stays in it: AAPL and MSFT are two.
+ */
 function place(): string {
   const { pathname = "", search = "" } = window.location ?? {};
-  return `${pathname}${search}`;
+  const route = routeFor(pagePath(pathname), search);
+  return `${route.page}?${route.params}`;
+}
+
+function leave(address: string): void {
+  scrolls.set(address, { y: window.scrollY ?? 0, at: Date.now() });
 }
 
 if (typeof window !== "undefined") {
@@ -122,16 +144,16 @@ if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     const next = place();
     if (next === here) return;
-    scrolls.set(here, window.scrollY);
+    leave(here);
     here = next;
-    restore = scrolls.get(next) ?? null;
+    restore = scrolls.get(next)?.y ?? null;
   });
 }
 
 /**
  * The scroll the page just rendered should land at, once: where a
- * back/forward step left this address, the top after a push, or null when
- * nothing asked for one (a tab switched in place).
+ * back/forward step or a recent visit left this address, the top after a
+ * push, or null when nothing asked for one (a tab switched in place).
  */
 export function takeRestore(): number | null {
   const y = restore;
@@ -139,32 +161,31 @@ export function takeRestore(): number | null {
   return y;
 }
 
-/** `pushState` to `href`, one step deeper than here. A fresh page starts at the top. */
+/**
+ * `pushState` to `href`, one step deeper than here. A fresh page starts at
+ * the top; one left less than `KEEP_MS` ago, where the reader left it.
+ */
 export function push(href: string): void {
-  scrolls.set(here, window.scrollY);
-  restore = 0;
+  leave(place());
   window.history.pushState({ depth: depth() + 1 }, "", href);
   here = place();
-}
-
-/** What the address bar means now, as the page column keys its render. */
-function at(): string {
-  const route = routeFor(pagePath(window.location.pathname), window.location.search);
-  return `${route.page}?${route.params}`;
+  const kept = scrolls.get(here);
+  restore = kept && Date.now() - kept.at < KEEP_MS ? kept.y : 0;
 }
 
 /**
- * Push `href` and tell every `useRoute`. The next page scrolls to the top
- * itself once it has rendered (`takeRestore`), not here: the move is a
+ * Push `href` and tell every `useRoute`. The next page scrolls itself once it
+ * has rendered (`takeRestore`) — to the top, or where a recent visit left it
+ * — not here: the move is a
  * transition, so the page on screen stays until the next one's code is ready,
  * and scrolling it now would be a jump the reader did not ask for. The same
  * address again renders nothing new, so that one scrolls now.
  */
 export function navigate(href: string): void {
-  const from = at();
+  const from = place();
   push(href);
   announce();
-  if (at() === from) {
+  if (here === from) {
     restore = null;
     window.scrollTo(0, 0);
   }

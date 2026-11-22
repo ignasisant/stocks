@@ -563,7 +563,9 @@ function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boole
       title={t("review.ask_help")}
       aria-label={t("review.ask")}
       disabled={busy}
-      onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}
+      onClick={() =>
+        askAssistant(buildPrompt(data, t, lang, words), { topic: "review" })
+      }
     >
       <Icon name="auto_awesome" size={18} />
       <span className="ag-rev-ask-label">{t("review.ask")}</span>

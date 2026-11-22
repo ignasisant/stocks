@@ -280,6 +280,8 @@ def test_a_daily_card_is_not_listed_until_it_is_opened(client, account, signed_i
     from stocks.chat import conversations
 
     mine = signed_in.post("/v1/chat/conversations", json={"title": "Mine"}).json()
+    # Written in: a blank one would go the moment the card is opened instead.
+    conversations.save_chat([{"role": "user", "content": "hi"}], account.chat, mine["id"])
     cid = conversations.save_card_thread("2026-10-03", "Daily action · Oct 3", "**NVDA**",
                                 account.chat)
 
@@ -3676,6 +3678,25 @@ def test_recall_switched_off_quotes_no_earlier_conversation(
         signed_in.post("/v1/chat/runs", json=run(_AGAIN)).text))["result"]
     assert "recalled" not in done
     assert _GOLAR not in provider.asked[-1]
+
+
+def test_a_turn_notes_its_subject_on_the_thread(client, account, signed_in, served):
+    """A page's "Ask the AI" names its subject (`forwardedProps.topic`) and a
+    typed question the tickers it spells: both go on the thread, so the drawer
+    can send the next press on the same subject there (`chat/fresh.ts`). The
+    tickers a page's prompt spells are not its subject: NVDA's thread is not
+    one on TSLA because the brief compares the two."""
+    served()
+    # The drawer starts the thread first, as it does for a subject with none.
+    signed_in.post("/v1/chat/conversations", json={})
+    signed_in.post(
+        "/v1/chat/runs", json=run("Analiza NVDA frente a TSLA", topic="ticker:NVDA")
+    )
+    signed_in.post("/v1/chat/runs", json=run("¿Y frente a AMD? Dime algo"))
+    [meta] = signed_in.get("/v1/chat/conversations").json()["conversations"]
+    assert meta["topics"] == ["ticker:NVDA", "ticker:AMD"]
+    too_long = signed_in.post("/v1/chat/runs", json=run("x", topic="t" * 81))
+    assert too_long.status_code == 422
 
 
 def test_in_depth_reaches_the_research_and_less_is_never_asked_for(

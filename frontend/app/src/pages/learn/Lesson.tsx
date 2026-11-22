@@ -141,7 +141,7 @@ export function LessonBody({
           className="ag-btn lr-ask"
           onClick={() =>
             askAssistant(t("learn.ask_lesson", { title: lesson.title }), {
-              fresh: true,
+              topic: `lesson:${lesson.id}`,
             })
           }
         >

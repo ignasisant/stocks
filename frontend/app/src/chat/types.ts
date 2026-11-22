@@ -325,6 +325,8 @@ export type Conversation = {
   daily?: string;
   /** The job a scheduled run's thread came from, "" for any other. */
   scheduled?: string;
+  /** What it is about, as pages name it: "ticker:NVDA", "plan"… (`fresh.onTopic`). */
+  topics?: string[];
   /** An answer is still being written on it (`landed.ts` watches for it). */
   answering?: boolean;
 };

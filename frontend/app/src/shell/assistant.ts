@@ -28,9 +28,17 @@ export type Brief = "full" | "bear" | "earnings" | "fit";
 /**
  * `null` is "just open it" — the drawer opens and asks nothing. `fresh` asks
  * in a new conversation rather than the one on screen; `brief` names the
- * angle the server expands the prompt into.
+ * angle the server expands the prompt into. `topic` names what the question
+ * is about ("ticker:NVDA", "plan", "lesson:<id>"): the drawer continues a
+ * thread on that subject used within the hour, or starts one
+ * (`chat/fresh.onTopic`). It outranks `fresh`.
  */
-type Listener = (prompt: string | null, fresh?: boolean, brief?: Brief) => void;
+type Listener = (
+  prompt: string | null,
+  fresh?: boolean,
+  brief?: Brief,
+  topic?: string,
+) => void;
 
 const listeners = new Set<Listener>();
 
@@ -43,11 +51,22 @@ const listeners = new Set<Listener>();
  */
 export function askAssistant(
   prompt: string,
-  { fresh = false, brief }: { fresh?: boolean; brief?: Brief } = {},
+  {
+    fresh = false,
+    brief,
+    topic,
+  }: { fresh?: boolean; brief?: Brief; topic?: string } = {},
 ): void {
   const text = prompt.trim();
   if (!text) return;
-  for (const listener of listeners) listener(text, fresh, brief);
+  // The server keeps 80 characters of it; the thread is matched on the same.
+  const subject = topic?.trim().slice(0, 80) || undefined;
+  for (const listener of listeners) listener(text, fresh, brief, subject);
+}
+
+/** The subject a page's question about one company goes under. */
+export function tickerTopic(symbol: string): string {
+  return `ticker:${symbol.trim().toUpperCase()}`;
 }
 
 /**

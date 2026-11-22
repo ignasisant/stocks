@@ -30,7 +30,7 @@ import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
-import { askAssistant } from "../../shell/assistant";
+import { askAssistant, tickerTopic } from "../../shell/assistant";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
 import { SidePanel } from "../../ui/SidePanel";
 import { tone } from "../portfolio/format";
@@ -554,6 +554,13 @@ export function lessonFor(kind: EventPick["kind"]): string | null {
 }
 
 /** The date in a few words, for the question the assistant is handed. */
+/** The subject a question on `pick` goes under: its company, or tax. */
+function askTopic(pick: EventPick): string | undefined {
+  const symbol = (pick.item as { ticker?: string }).ticker;
+  if (symbol) return tickerTopic(symbol);
+  return pick.kind === "tax" ? "tax" : undefined;
+}
+
 export function askAbout(pick: Exclude<EventPick, { kind: "result" }>, t: T): string {
   const kind = (key: string) => t(key);
   switch (pick.kind) {
@@ -680,7 +687,9 @@ export default function EventDetail({
         pick={pick}
         held={held}
         onAsk={() => {
-          askAssistant(t("earnings.ev_ask_prompt", { what: askAbout(pick, t) }));
+          askAssistant(t("earnings.ev_ask_prompt", { what: askAbout(pick, t) }), {
+            topic: askTopic(pick),
+          });
           onClose();
         }}
       />

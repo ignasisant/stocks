@@ -156,6 +156,10 @@ class Forwarded(BaseModel):
     # sentence stands for. "" is a typed question.
     # `brief.ANGLES`, spelled out: the field shadows the module here.
     brief: Literal["", "full", "bear", "earnings", "fit"] = ""
+    # What a page's "Ask the AI" is about ("ticker:NVDA", "plan"): noted on
+    # the thread, so the next press on the same subject lands here rather than
+    # in a new one (`conversations.add_topics`). "" for a typed question.
+    topic: str = Field(default="", max_length=80)
     # What the screenshots pasted with the question show, as `POST
     # /chat/screenshots` read them (`chat/screenshot.py`). Text, like
     # everything else on a turn: the picture itself is never sent here. Filed
@@ -256,6 +260,19 @@ def _view(view: str, focus: str, lang: str, tab: str = "") -> tuple[str, str]:
     tab_name = translate(tab_key, lang) if tab_key else ""
     sym = engine.clean_focus(focus)
     return engine.view_context(page, sym, tab_name, brief.about(sym)), sym
+
+
+def _topics(topic: str, message: str) -> list[str]:
+    """The subjects a question puts on its thread: the page's, when a page
+    asked it, or else every ticker the reader typed (`market.named`, no
+    lookup). A page's prompt names whatever the page shows — Review's lists
+    the book — and none of that is what the thread is about."""
+    from stocks.chat import market
+
+    if topic.strip():
+        return [topic.strip()]
+    typed = [n for n in market.named(message) if " " not in n and n == n.upper()]
+    return [f"ticker:{n}" for n in typed]
 
 
 def _rewind(paths: UserPaths) -> tuple[str, dict, list[str], list[dict]]:
@@ -366,7 +383,8 @@ def ask(
         # and the bot have always meant by "the conversation". The answer is
         # pinned to it all the same (`thread=` into the engine), so a reader
         # who switches threads mid-answer does not move where it lands.
-        conversations.set_active_conversation(body.thread_id, paths.chat)
+        conversations.set_active_conversation(
+            body.thread_id, paths.chat, busy=runs.live_threads(str(paths.chat)))
 
     props = body.props
     prefs = _prefs(paths)
@@ -448,6 +466,8 @@ def ask(
         # again; the pictures and the documents are the same ones, as the
         # server kept them.
         _, _, shots, docs = _rewind(paths)
+    if message and not props.regenerate:
+        conversations.add_topics(thread, _topics(props.topic, message), paths.chat)
     held = session_keys(x_chat_provider, x_chat_key)
     asked_how = {
         "lang": lang, "staged_import": props.staged_import.strip(), "view": view,
