@@ -364,6 +364,19 @@ _GUARDRAILS = (
     "repurchase rule; it does not tell the user to sell."
 )
 
+# `facts["gaps"]` (`briefing.card_gaps`): the checks the round could not run.
+# The app prints them in a line of its own; the model's job is only not to
+# write the all-clear they would contradict.
+_GAPS_RULE = (
+    "`gaps` lists what the app could not check today: `theses`, exit "
+    "`rules` or SEC `filings`, with the `tickers` left unread (none listed: "
+    "that whole part). The app says this in a line of its own, so do not "
+    "repeat it, but never write past it: no 'your theses hold', no 'nothing "
+    "changed' or 'quiet day' for those names, and with `gaps` present an "
+    "empty `actions` means nothing came up in what was read, not that "
+    "nothing needs a decision."
+)
+
 
 # What the chat's RULES block does for a conversation, cut down to what a
 # one-shot card needs: it reads no web pages, but a brief's data may carry
@@ -504,7 +517,7 @@ def prompt(
             f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
             f"{memories}"
             f"{_BRIEF_DATA}\n\n{_KINDS}\n\n{_WHEN}\n\n{_ATTRIBUTION}\n\n"
-            f"{_BRIEF_RULES}\n\n"
+            f"{_BRIEF_RULES}\n\n{_GAPS_RULE}\n\n"
             f"{_BRIEF_SHAPE}"
         )
     else:
@@ -513,6 +526,7 @@ def prompt(
             f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
             f"{memories}"
             f"{_KINDS}\n\n{_WHEN}\n\n{_ATTRIBUTION}\n\n{_GUARDRAILS}\n\n"
+            f"{_GAPS_RULE}\n\n"
             f"{_SHAPE}"
         )
     if memories or talk:

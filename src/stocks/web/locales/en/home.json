@@ -651,5 +651,12 @@
   "home.chart_range_1y": "1Y",
   "home.chart_range_2y": "2Y",
   "home.chart_range_all": "All",
-  "home.chart_since_start": "since the start"
+  "home.chart_since_start": "since the start",
+  "home.daily_gaps": "Not checked today: {parts}. I'll retry on the next summary; if it matters, take a look yourself.",
+  "home.daily_gap_theses": "theses for {tickers}",
+  "home.daily_gap_theses_any": "your theses",
+  "home.daily_gap_rules": "rules for {tickers}",
+  "home.daily_gap_rules_any": "your rules",
+  "home.daily_gap_filings": "SEC filings for {tickers}",
+  "home.daily_gap_filings_any": "SEC filings"
 }

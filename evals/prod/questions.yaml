@@ -623,6 +623,49 @@
   truth:
     - {get: /earnings, label: "Earnings calendar (results = past prints)"}
 
+# Rated down in prod 2026-11-19 ("missed"): two words on the day of the
+# print, answered in English with the web results it was handed pasted back
+# as the answer. Siblings: the same need in English, another company.
+- id: earnings-results-named
+  area: earnings
+  kind: data
+  message: "resultados walmart"
+  goals:
+    - Answers in Spanish, the language of the question
+    - Gives Walmart's latest reported quarter (revenue, EPS against the estimate, guidance) or says it has not reported yet and when it does
+    - Cites where the figures come from
+    - Does not write back the search results or any other material handed to it as its answer
+  mentions: ["Walmart", "WMT"]
+  forbids: ["Web search results", "Fetched from the data"]
+  truth:
+    - {get: /ticker/WMT/events, label: "WMT events"}
+
+- id: earnings-results-named-en
+  area: earnings
+  kind: data
+  lang: en
+  message: "walmart earnings"
+  goals:
+    - Gives Walmart's latest reported quarter (revenue, EPS against the estimate, guidance) or says when it reports
+    - Does not write back the search results or any other material handed to it as its answer
+  mentions: ["Walmart", "WMT"]
+  forbids: ["Web search results", "Fetched from the data"]
+  truth:
+    - {get: /ticker/WMT/events, label: "WMT events"}
+
+- id: earnings-results-named-other
+  area: earnings
+  kind: data
+  message: "resultados nvidia ultimo trimestre"
+  goals:
+    - Answers in Spanish, the language of the question
+    - Gives NVIDIA's latest reported quarter (revenue, EPS against the estimate, guidance), with where the figures come from
+    - Does not write back the search results or any other material handed to it as its answer
+  mentions: ["NVIDIA", "NVDA"]
+  forbids: ["Web search results", "Fetched from the data"]
+  truth:
+    - {get: /ticker/NVDA/events, label: "NVDA events"}
+
 # ------------------------------------------------------------------- learn
 
 - id: learn-start

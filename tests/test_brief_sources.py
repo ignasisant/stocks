@@ -62,6 +62,25 @@ def test_a_venue_suffix_and_a_generic_name_are_not_what_matches():
     assert not news.about("A san francisco startup raises", "SAN.MC", None)
 
 
+def test_a_short_symbol_is_not_another_firm_that_starts_with_it():
+    jd = "JD.com, Inc."
+    # JD Sports is a UK retailer: its guidance cut once broke JD.com's thesis.
+    assert not news.about("JD Sports trims top end of profit guidance", "JD", jd)
+    assert not news.about("GE Vernova soars on orders", "GE", "GE Aerospace")
+    # A name with no plain word is still found by its dotted one.
+    assert news.about("JD.com beats estimates", "JD", jd)
+    assert news.about("JD beats on revenue", "JD", jd)
+    assert news.about("JD Shares Fall", "JD", jd)
+    assert news.about("Why (JD) is down today", "JD", jd)
+    assert news.about("GE Aerospace wins an order", "GE", "GE Aerospace")
+    assert news.about("GM recalls 500,000 trucks", "GM", "General Motors Company")
+    # Title Case capitalises every verb: there the symbol counts, and the
+    # judge, told the company's name, sets JD Sports apart.
+    assert news.about("GM Cuts Full-Year Guidance", "GM", "General Motors Company")
+    assert news.about("JD Beats Revenue Estimates", "JD", jd)
+    assert news.about("BP Lifts Its Dividend", "BP", "BP p.l.c.")
+
+
 def test_a_non_us_listing_is_searched_by_its_name_when_the_symbol_finds_none(
         monkeypatch):
     asked = []

@@ -98,6 +98,7 @@ from stocks.chat.daily.card import (
     _clip,
     action_day,
     card_session,
+    gaps_of,
     is_fresh,
     keyed_actions,
     offered,
@@ -123,7 +124,9 @@ from stocks.chat.daily.fallback import (
     _when,
     computed,
     dressed,
+    gaps_line,
     go_of,
+    with_gaps,
     with_today,
 )
 from stocks.chat.daily.instructions import (
@@ -222,10 +225,13 @@ __all__ = [
     "seen",
     "spend_unit",
     "talked_names",
+    "gaps_line",
+    "gaps_of",
     "thread_text",
     "thread_title",
     "to_store",
     "wants_upgrade",
+    "with_gaps",
     "with_today",
 ]
 
@@ -446,6 +452,9 @@ def thread_text(action: DailyAction) -> str:
         if sec.get("title"):
             lines.append(f"**{sec['title']}**")
         lines += [_bold_tickers(ln) for ln in sec["lines"]]
+    gap = gaps_line(action.gaps, action.lang)
+    if gap:
+        lines += ["", f"_{gap}_"]
     head = action.headline.strip()
     return "\n".join([f"**{head}**", "", *lines] if head else lines)
 

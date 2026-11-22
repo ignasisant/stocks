@@ -606,3 +606,33 @@ def test_red_flags_follow_the_rules_that_fired_within_their_cap():
     assert [a["ticker"] for a in out[:-1]] == ["AMD", "ASML"]
     assert with_flags([other], [], None, TODAY) == [other]
 
+
+
+def test_a_broken_thesis_is_told_on_the_card_not_in_a_push_of_its_own(
+        monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from stocks.chat import journal
+    from stocks.notify import webpush
+    from stocks.views import briefing
+    from stocks.views.briefing import with_fired
+
+    row = _rule("hit", id="t1", rule="thesis", level=None, value=None,
+                gap_pct=None, hit_day=TODAY.isoformat(), pillar="A. Margins hold",
+                verdict="damaged", quote="margins fell", source="Reuters")
+    seen = {}
+
+    def check_theses(path, day, **kw):
+        seen.update(kw)
+        return [row]
+
+    monkeypatch.setattr(journal, "check_theses", check_theses)
+    monkeypatch.setattr(webpush, "send_all",
+                        lambda *a, **k: pytest.fail("a thesis pushed by itself"))
+    paths = SimpleNamespace(journal=tmp_path / "journal.json")
+    fired = briefing.check_theses(paths, {}, TODAY)
+    assert fired == [row] and seen["max_calls"] == briefing.THESIS_MAX_CALLS
+    out = with_fired([], fired, {"ASML"}, TODAY)
+    assert out[0]["kind"] == signals.CRITERION_HIT
+    assert out[0]["pillar"] == "A. Margins hold"
+    assert out[0]["quote"] == "margins fell"

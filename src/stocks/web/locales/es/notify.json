@@ -12,7 +12,5 @@
   "notify.push_answer_title": "Tu respuesta está lista",
   "notify.push_test_title": "Las notificaciones de TopStocks funcionan",
   "notify.push_test_body": "Este dispositivo recibirá el resumen diario, las alertas de precio y las respuestas listas.",
-  "notify.thesis_title": "{ticker}: un hecho contra tu tesis",
-  "notify.thesis_line": "{pillar}: «{quote}»",
   "notify.briefing_change": "Cambiar hora"
 }

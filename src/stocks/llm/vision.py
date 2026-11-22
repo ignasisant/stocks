@@ -57,7 +57,8 @@ _BASES = {
 # Free models that take an image, per backend, in the order to try them.
 # groq: the two its vision docs named on 2026-11-11 — unverified from here,
 # its API refuses this machine's address. openrouter: the `:free` slugs its
-# catalogue listed with image input the same day.
+# catalogue listed with image input the same day, minus dots-3-note-preview,
+# which no provider serves since 2026-11-21.
 _FREE_VISION: dict[str, tuple[str, ...]] = {
     "groq": (
         "qwen/qwen3.6-27b",
@@ -65,7 +66,6 @@ _FREE_VISION: dict[str, tuple[str, ...]] = {
     ),
     "openrouter": (
         "nvidia/nemotron-3.5-super-vl:free",
-        "dots-studio/dots-3-note-preview:free",
         "google/gemma-4-31b-it:free",
     ),
 }

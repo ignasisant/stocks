@@ -55,14 +55,28 @@ QUESTIONS = {
 }
 
 _SYSTEM = (
-    "You check one of an investor's exit rules against the company's own "
+    "You check one of an investor's exit rules on {ticker} against the "
+    "company's own "
     "filings and recent headlines. Answer only from the numbered passages. "
     "Set met to true only when a passage plainly states that the event "
     "happened to {ticker}; rumours, analysts' views and other companies do "
-    "not count. When met is true, give the passage's number in item and copy "
+    "not count, a different firm whose name shares its letters included. "
+    "When met is true, give the passage's number in item and copy "
     "the words that say so into quote exactly as written, at most 30 words. "
     "When unsure, met is false.\n\nThe question: {question}"
 )
+
+
+def named(ticker: str, name_of: Callable[[str], str | None] | None) -> str:
+    """The ticker as a prompt names it: with its company's name when one is
+    known, "JD (JD.com, Inc.)", so a headline about "JD Sports" reads as
+    another company's."""
+    try:
+        name = name_of(ticker) if name_of is not None else None
+    except Exception:  # noqa: BLE001 — the symbol alone
+        name = None
+    name = " ".join(str(name or "").split())
+    return f"{ticker} ({name})" if name and name.upper() != ticker.upper() else ticker
 
 
 def judge_input(passages: list[dict]) -> str:
@@ -86,7 +100,8 @@ def parse(raw: str) -> dict | None:
 
 
 def make_judge(prefs: dict, *, spend_free: Callable[[dict], bool],
-               timeout_s: float = JUDGE_TIMEOUT_S):
+               timeout_s: float = JUDGE_TIMEOUT_S,
+               name_of: Callable[[str], str | None] | None = None):
     """`journal.Judge` on the reader's own models (their key, or the free
     chain within their allowance). None comes back when no model answered."""
 
@@ -97,7 +112,7 @@ def make_judge(prefs: dict, *, spend_free: Callable[[dict], bool],
         try:
             system, messages = structured.render(
                 "JudgeExitEvent",
-                _SYSTEM.format(ticker=ticker, question=question),
+                _SYSTEM.format(ticker=named(ticker, name_of), question=question),
                 judge_input(passages))
             got = engine.complete_attempts(
                 prefs, system, messages, timeout_s, spend_free=spend_free,
@@ -121,7 +136,8 @@ _THESIS_SYSTEM = (
     "is affected or it is only noise.\n\n{pillars}\n\n"
     "noise: price moves, analyst ratings and targets, opinion and "
     "'stocks to buy' pieces, rumours, general market or macro news, other "
-    "companies, and any news that supports the pillar. Most passages are "
+    "companies (a different firm whose name shares {ticker}'s letters "
+    "too), and any news that supports the pillar. Most passages are "
     "noise.\n"
     "watch: a concrete fact about {ticker} that goes against a pillar but "
     "is partial, early or one-off: one customer lost, one product delayed, a "
@@ -136,12 +152,12 @@ _THESIS_SYSTEM = (
 )
 
 
-def thesis_system(ticker: str, pillars: list[str]) -> str:
+def thesis_system(ticker: str, pillars: list[str], name: str = "") -> str:
     from stocks.chat import journal
 
     lines = "\n".join(f"{journal.PILLAR_LETTERS[i]}. {p}"
                       for i, p in enumerate(pillars))
-    return _THESIS_SYSTEM.format(ticker=ticker, pillars=lines)
+    return _THESIS_SYSTEM.format(ticker=name or ticker, pillars=lines)
 
 
 def parse_thesis(raw: str) -> dict | None:
@@ -164,7 +180,8 @@ def parse_thesis(raw: str) -> dict | None:
 
 
 def make_thesis_judge(prefs: dict, *, spend_free: Callable[[dict], bool],
-                      timeout_s: float = THESIS_TIMEOUT_S):
+                      timeout_s: float = THESIS_TIMEOUT_S,
+                      name_of: Callable[[str], str | None] | None = None):
     """`journal.ThesisJudge` on the reader's own models, as `make_judge`."""
 
     def judge(ticker: str, pillars: list[str], passages: list[dict]) -> dict | None:
@@ -172,7 +189,8 @@ def make_thesis_judge(prefs: dict, *, spend_free: Callable[[dict], bool],
             return None
         try:
             system, messages = structured.render(
-                "JudgeThesis", thesis_system(ticker, pillars),
+                "JudgeThesis",
+                thesis_system(ticker, pillars, named(ticker, name_of)),
                 judge_input(passages))
             return engine.complete_attempts(
                 prefs, system, messages, timeout_s, spend_free=spend_free,

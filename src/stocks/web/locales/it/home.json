@@ -651,5 +651,12 @@
   "home.chart_range_1y": "1A",
   "home.chart_range_2y": "2A",
   "home.chart_range_all": "Inizio",
-  "home.chart_since_start": "dall'inizio"
+  "home.chart_since_start": "dall'inizio",
+  "home.daily_gaps": "Non controllato oggi: {parts}. Riprovo al prossimo riepilogo; se ti importa, dai un'occhiata tu.",
+  "home.daily_gap_theses": "tesi di {tickers}",
+  "home.daily_gap_theses_any": "le tue tesi",
+  "home.daily_gap_rules": "regole di {tickers}",
+  "home.daily_gap_rules_any": "le tue regole",
+  "home.daily_gap_filings": "filing SEC di {tickers}",
+  "home.daily_gap_filings_any": "i filing SEC"
 }

@@ -876,6 +876,7 @@ export type DailyCard = {
   "brief": "" | "pending" | "written" | "missed";
   "today": TodaySection[];
   "shape": string;
+  "gaps_note": string | null;
 };
 
 export type DailyChartLine = {

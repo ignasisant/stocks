@@ -148,6 +148,13 @@ export function Daily() {
           {t(note)}
         </p>
       ) : null}
+      {/* What the job could not read today, before the headline too: a card
+          silent on a thesis it never checked reads as one that held. */}
+      {card.gaps_note && !card.pending ? (
+        <p className="hm-note" role="status">
+          {card.gaps_note}
+        </p>
+      ) : null}
       <p className="hm-daily-headline">{card.headline}</p>
       {lines.length ? <Lines items={lines} /> : null}
       {card.pending ? <Status label={t("home.daily_pending")} /> : null}

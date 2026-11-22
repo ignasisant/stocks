@@ -65,6 +65,11 @@ CARD = "card"
 # after the US close in every week of the year, DST gap weeks included, so it
 # always reports a finished week.
 EMAIL = "weekly_email"
+# The thesis round (`briefing.read_theses`): alone on the tick the card is
+# due (or a morning briefing that will write it), the card on the next one, so
+# the round has the tick's time to itself and the card finds the theses read.
+# Marked run with the action day it read for.
+THESES = "theses"
 EMAIL_ZONE = "Europe/Madrid"
 DEFAULTS: dict[str, dict] = {
     "briefing": {"time": "08:30", "days": [0, 1, 2, 3, 4], "close": False},
@@ -195,6 +200,26 @@ def close_due(prefs: dict, session: date, last: object) -> date | None:
     return session if str(last or "") < session.isoformat() else None
 
 
+def theses_due(paths, prefs: dict, now: datetime, last: object) -> date | None:
+    """The action day the night's thesis round reads for, before the card is
+    written: not read for it yet, no card standing for it (a round after the
+    card would stamp breaks no card tells), and a thesis rule owed a reading.
+    A journal that cannot be read goes straight to the card."""
+    from stocks.chat import daily, journal
+    from stocks.views import daily_card
+
+    try:
+        day = daily.action_day(now.astimezone(zone(prefs)), turnover(prefs))
+        if str(last or "") >= day.isoformat():
+            return None
+        card = daily_card.stored(paths)
+        if card is not None and card.day == day.isoformat():
+            return None
+        return day if journal.thesis_reads(paths.journal, day) else None
+    except Exception:  # noqa: BLE001 — the card's own round reads them
+        return None
+
+
 def eligible(prefs: dict, devices: int, today: date) -> bool:
     """Whether runs are worth spending on this account (see the module note)."""
     if devices > 0:
@@ -281,7 +306,14 @@ def plan(now: datetime) -> list[Account]:
                 for job in JOBS
                 if (day := due(slot(prefs, job), tz, now, last.get(job))) is not None
             ]
-            if (session := card_due(now, last.get(CARD), turnover(prefs))) is not None:
+            session = card_due(now, last.get(CARD), turnover(prefs))
+            # Ahead of whatever writes the card: the evening's card run, or
+            # a morning briefing with no card standing (Monday's, a
+            # holiday's: no session closed the evening before).
+            if (session is not None or runs) and (
+                    read := theses_due(paths, prefs, now, last.get(THESES))) is not None:
+                runs = [(THESES, read)]
+            elif session is not None:
                 runs.insert(0, (CARD, session))
                 if (after := close_due(prefs, session, last.get("briefing"))) is not None:
                     runs.insert(1, ("briefing", after))
@@ -461,6 +493,12 @@ def _briefing(account: Account, day: date) -> str:
     ):
         return "not filed"
     lines = [i.get("line") for i in card.items] or [e.get("line") for e in card.entries]
+    # What the card could not check rides near the top, after the first
+    # line (a rule met beats it): a push that reads all clear while a
+    # thesis went unread is the one the reader trusts and skips.
+    gap = daily.gaps_line(card.gaps, card.lang)
+    if gap:
+        lines = [*lines[:1], gap, *lines[1:]]
     # The way out is on the notification itself: one press to the switch and
     # the clock, never a hunt through the settings.
     change = {"action": "schedule", "url": SETTINGS_URL,
@@ -480,4 +518,14 @@ def _weekly_email(account: Account, day: date) -> str:
     return weekly_email.send_for(account.label, account.paths, account.prefs, day)
 
 
-RUNNERS = {CARD: _card, "briefing": _briefing, EMAIL: _weekly_email}
+def _theses(account: Account, day: date) -> str:
+    """The theses read before `day`'s card (`briefing.read_theses`), its
+    events (`briefing.thesis_pass`, the judge's) under the account's name."""
+    from stocks.views import briefing
+
+    with obs.context(user=account.label):
+        return briefing.read_theses(account.paths)
+
+
+RUNNERS = {CARD: _card, "briefing": _briefing, EMAIL: _weekly_email,
+           THESES: _theses}

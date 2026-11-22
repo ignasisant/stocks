@@ -45,15 +45,42 @@ def _fold(text: str) -> str:
     return "".join(c for c in bare if not unicodedata.combining(c))
 
 
-def _marks(ticker: str, name: str | None) -> list[re.Pattern]:
+# A symbol this short is also the start of other firms' names ("JD Sports"
+# is not JD.com, "GE Vernova" not GE Aerospace): followed by a capitalised
+# word its own company name does not have, it is someone else. Only in a
+# title written in sentence case: in Title Case every verb is capitalised
+# ("GM Cuts Guidance"), and the judge reading it knows the company's name.
+SHORT_SYMBOL = 2
+_TICKER_WORDS = ("Stock", "Stocks", "Shares", "Share", "Earnings", "Results",
+                 "Revenue", "Sales", "Profit", "Price", "Investors", "CEO")
+
+
+def _marks(ticker: str, name: str | None, *,
+           titled: bool = False) -> list[re.Pattern]:
     """What a title has to say to be about this name: its symbol (without
-    the venue suffix), or the first distinctive word of its company name."""
+    the venue suffix), or the first distinctive word of its company name —
+    or, a name with none ("JD.com, Inc."), its dotted or hyphenated word."""
     base = ticker.split(".")[0].split("-")[0].upper()
-    marks = [re.compile(rf"\b{re.escape(base)}\b")] if len(base) > 1 else []
-    for word in re.findall(r"\w+", _fold(name or "")):
-        if len(word) >= 4 and word not in _GENERIC:
-            marks.append(re.compile(rf"\b{re.escape(word)}", re.IGNORECASE))
-            break
+    marks: list[re.Pattern] = []
+    if len(base) > SHORT_SYMBOL:
+        marks.append(re.compile(rf"\b{re.escape(base)}\b"))
+    elif len(base) > 1 and titled:
+        marks.append(re.compile(rf"\b{re.escape(base)}\b"))
+    elif len(base) > 1:
+        sym = re.escape(base)
+        own = [re.escape(w) for w in re.findall(r"[^\W\d_]+", name or "")
+               if w.upper() != base] + list(_TICKER_WORDS)
+        mine = rf"(?!(?:{'|'.join(own)})\b)"
+        marks.append(re.compile(
+            rf"\b{sym}\b(?!\s+{mine}[A-Z][a-z])", re.ASCII))
+    folded = _fold(name or "")
+    word = next((w for w in re.findall(r"\w+", folded)
+                 if len(w) >= 4 and w not in _GENERIC), None)
+    if word is None:
+        word = next((w for w in re.findall(r"\w+(?:[.&-]\w+)+", folded)
+                     if len(w) >= 4), None)
+    if word is not None:
+        marks.append(re.compile(rf"\b{re.escape(word)}", re.IGNORECASE))
     return marks
 
 
@@ -61,7 +88,15 @@ def about(title: str, ticker: str, name: str | None = None) -> bool:
     """Does the title name this company?"""
     folded = _fold(title)
     return any(m.search(title if m.flags & re.IGNORECASE == 0 else folded)
-               for m in _marks(ticker, name))
+               for m in _marks(ticker, name, titled=_titled(title)))
+
+
+def _titled(title: str) -> bool:
+    """Is the title in Title Case — most of its longer words capitalised,
+    not counting the one that opens it?"""
+    words = [m.group() for m in re.finditer(r"[^\W\d_]{4,}", title)
+             if m.start() > 0 and not m.group().isupper()]
+    return len(words) >= 2 and sum(w[0].isupper() for w in words) > len(words) / 2
 
 
 def _search(query: str, count: int) -> list[dict]:

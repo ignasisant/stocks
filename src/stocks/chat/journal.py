@@ -1408,6 +1408,70 @@ def event_due(entry: Entry, day: date) -> bool:
     return entry.snapshot.get("checked") != day.isoformat()
 
 
+def owed(entry: Entry, day: date) -> str:
+    """What reading `entry` today is still owed as: "thesis" or "rule", or ""
+    when nothing is — met already, read today, or nothing to read it by (a
+    thesis with no pillars, a level-less rule). After a card's rounds
+    (`check_slow`, `check_theses`) an owed rule is one they could not read:
+    no model answered, no feed did, or the round ran out."""
+    rule = str(entry.snapshot.get("rule") or entry.action)
+    if entry.type != "criterion" or entry.state != "open":
+        return ""
+    if rule in THESIS_RULES:
+        return "thesis" if pillars_of(entry.snapshot.get("pillars")) \
+            and event_due(entry, day) else ""
+    if rule in EVENT_RULES:
+        return "rule" if event_due(entry, day) else ""
+    if _finite(entry.snapshot.get("level")) is None:
+        return ""
+    if rule in FUNDAMENTAL_RULES + BUY_FUNDAMENTAL_RULES:
+        return "rule" if fundamental_due(entry, day) else ""
+    if rule in BUY_VALUE_RULES:
+        return "rule" if event_due(entry, day) else ""
+    return ""
+
+
+def unchecked(path: Path, day: date) -> list[dict]:
+    """The rules still owed a reading today (`owed`), {"ticker", "rule",
+    "part"}: what a card says it could not check."""
+    out = []
+    for e in criteria(load(path)):
+        part = owed(e, day)
+        if part:
+            out.append({"ticker": e.ticker, "part": part,
+                        "rule": str(e.snapshot.get("rule") or e.action)})
+    return out
+
+
+def _since(e: Entry, day: date) -> date:
+    """The day a rule's reading starts from: the day it was written."""
+    try:
+        return date.fromisoformat(e.day)
+    except ValueError:
+        return day
+
+
+def thesis_reads(path: Path, day: date) -> list[tuple[str, date]]:
+    """(ticker, since) for every thesis rule still owed today's reading, the
+    longest unread first: what `check_theses` will ask `passages_of` for, so
+    a caller can fetch it ahead (`briefing.read_theses`)."""
+    due = [e for e in criteria(load(path)) if owed(e, day) == "thesis"]
+    due.sort(key=lambda e: str(e.snapshot.get("checked") or ""))
+    return [(e.ticker, _since(e, day)) for e in due]
+
+
+def theses_hit_on(path: Path, day: date) -> list[dict]:
+    """The thesis rules met on `day`, as `check_theses` returns them: a card
+    written after the tick's pass met one (`briefing.read_theses`) still
+    says it, though its own round finds nothing left to read."""
+    iso = day.isoformat()
+    rows = [_stored_row(e, str(e.snapshot.get("rule") or e.action))
+            for e in criteria(load(path))
+            if e.state == "hit" and str(e.snapshot.get("hit_day") or "") == iso
+            and str(e.snapshot.get("rule") or e.action) in THESIS_RULES]
+    return [r for r in rows if r is not None]
+
+
 # (rule, ticker, passages) -> {"met", "item", "quote"}, or None when no model
 # answered (the passages are then judged on the next check).
 Judge = Callable[[str, str, list[dict]], dict | None]
@@ -1670,10 +1734,7 @@ def _check_thesis(e: Entry, day: date, passages_of, judge: ThesisJudge,
     pillars = pillars_of(e.snapshot.get("pillars"))
     if not pillars:
         return None, False
-    try:
-        since = date.fromisoformat(e.day)
-    except ValueError:
-        since = day
+    since = _since(e, day)
     iso = day.isoformat()
     seen = list(e.snapshot.get("seen") or [])
     fresh = [p for p in passages_of(e.ticker, since) or ()
@@ -1729,9 +1790,7 @@ def check_theses(path: Path, day: date, *,
     `max_calls` times, so a book of forty names on a tight allowance is read
     in turns rather than always the same few. Never raises."""
     start = time.monotonic()
-    due = [e for e in criteria(load(path))
-           if e.state == "open" and event_due(e, day)
-           and str(e.snapshot.get("rule") or e.action) in THESIS_RULES]
+    due = [e for e in criteria(load(path)) if owed(e, day) == "thesis"]
     due.sort(key=lambda e: str(e.snapshot.get("checked") or ""))
     found: dict[str, dict] = {}
     calls = 0

@@ -40,6 +40,11 @@ export type DailyCard = {
   upgradable: boolean;
   /** Keys of the lines whose analysis is already written (reading it is free). */
   analysed: string[];
+  /**
+   * What the card's job could not check today (rules, theses, SEC filings),
+   * in the card's language. Null when it read everything.
+   */
+  gaps_note?: string | null;
   /** The chat conversation the card is filed in — what "Ask" opens. */
   thread?: string | null;
   /**

@@ -62,6 +62,9 @@ def answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Dai
         brief=action.brief if action.brief in daily.BRIEF_STATES else "",
         today=[sec for sec in map(_today, action.today) if sec],
         shape=action.shape,
+        # "Not checked today" is that day's: an older card's gaps are not
+        # today's, and its own stale mark already says it is old.
+        gaps_note=(daily.gaps_line(action.gaps, action.lang) or None) if fresh else None,
     )
 
 
