@@ -1071,6 +1071,32 @@
   opacity: 0.15;
 }
 
+/* Another name's tooltip is open: the rest step back so its label, ring and
+   path read clean, still there to place it; round it, they all but go. */
+.ag-rev-dot-hush-far {
+  opacity: 0.3;
+}
+
+.ag-rev-dot-hush-near {
+  opacity: 0.08;
+}
+
+.ag-rev-map-hush .ag-rev-map-quad {
+  opacity: 0.3;
+}
+
+.ag-rev-dot,
+.ag-rev-map-quad {
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-dot,
+  .ag-rev-map-quad {
+    transition: none;
+  }
+}
+
 .ag-rev-legend {
   display: flex;
   flex-wrap: wrap;

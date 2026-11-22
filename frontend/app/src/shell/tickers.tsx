@@ -171,6 +171,37 @@ export function useTickerProfile(ticker: string): Profile | null {
  * empty alt: the symbol is right beside it, and a screen reader announcing
  * "Apple logo Apple" reads the name twice.
  */
+/**
+ * The mark alone: the logo on its plate, or the initials when the name has no
+ * logo, nothing until the profile lands. For a place that is not a link — a
+ * tooltip — and inside `TickerCell` for every one that is.
+ */
+export function TickerMark({
+  profile,
+  symbol,
+}: {
+  profile: Pick<Profile, "logo"> | null;
+  /** What the initials are drawn from when there is no logo. */
+  symbol: string;
+}) {
+  if (!profile) return null;
+  return profile.logo ? (
+    <img
+      className="ag-tick-logo"
+      src={profile.logo}
+      alt=""
+      loading="lazy"
+      // Decoded off the main thread: forty marks landing at once must not
+      // hold the frame the table is drawn in.
+      decoding="async"
+    />
+  ) : (
+    <span className="ag-tick-logo ag-tick-initials" aria-hidden="true">
+      <span>{initials(symbol)}</span>
+    </span>
+  );
+}
+
 export function TickerCell({
   ticker,
   className,
@@ -198,21 +229,7 @@ export function TickerCell({
       // The name is still the hover text where it is not printed.
       title={company && (!name || children) ? company : undefined}
     >
-      {profile?.logo ? (
-        <img
-          className="ag-tick-logo"
-          src={profile.logo}
-          alt=""
-          loading="lazy"
-          // Decoded off the main thread: forty marks landing at once must not
-          // hold the frame the table is drawn in.
-          decoding="async"
-        />
-      ) : profile ? (
-        <span className="ag-tick-logo ag-tick-initials" aria-hidden="true">
-          <span>{initials(symbol)}</span>
-        </span>
-      ) : null}
+      <TickerMark profile={profile} symbol={symbol} />
       {children ?? (
         <>
           <span className="ag-tick-sym">{symbol}</span>
