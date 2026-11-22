@@ -298,6 +298,79 @@ _SECTIONS = {
     ),
 }
 
+# The headers in the reader's language. The instructions stay English, but a
+# header is text the answer copies verbatim: an English "**Verdict**" in a
+# Spanish thread pulled the whole answer into English after it (prod
+# 2026-11-22, BYDDF: the debate cards in Spanish, the seven sections not).
+_HEADERS: dict[str, dict[str, str]] = {
+    "es": {
+        "Verdict": "Veredicto",
+        "Business": "Negocio",
+        "Numbers that matter here": "Las cifras que importan",
+        "Valuation": "Valoración",
+        "Risks and kill criteria": "Riesgos y criterios de salida",
+        "Catalysts": "Catalizadores",
+        "In your book": "En tu cartera",
+        "The strongest bear case": "El mejor argumento bajista",
+        "What the price assumes": "Lo que descuenta el precio",
+        "Red flags": "Señales de alerta",
+        "Pre-mortem": "Pre-mortem",
+        "What would change my mind": "Qué me haría cambiar de opinión",
+        "Kill criteria": "Criterios de salida",
+        "The quarter": "El trimestre",
+        "Guidance": "Previsiones",
+        "What moved": "Qué se ha movido",
+        "Market reaction": "Reacción del mercado",
+        "Thesis check": "La tesis, revisada",
+        "Next": "Lo próximo",
+        "What it adds": "Qué aporta",
+        "Overlap": "Solapamiento",
+        "Size": "Tamaño",
+        "Risk to the book": "Riesgo para la cartera",
+    },
+    "it": {
+        "Verdict": "Verdetto",
+        "Business": "Attività",
+        "Numbers that matter here": "I numeri che contano",
+        "Valuation": "Valutazione",
+        "Risks and kill criteria": "Rischi e criteri di uscita",
+        "Catalysts": "Catalizzatori",
+        "In your book": "Nel tuo portafoglio",
+        "The strongest bear case": "Il miglior argomento ribassista",
+        "What the price assumes": "Cosa sconta il prezzo",
+        "Red flags": "Segnali d'allarme",
+        "Pre-mortem": "Pre-mortem",
+        "What would change my mind": "Cosa mi farebbe cambiare idea",
+        "Kill criteria": "Criteri di uscita",
+        "The quarter": "Il trimestre",
+        "Guidance": "Previsioni",
+        "What moved": "Cosa si è mosso",
+        "Market reaction": "Reazione del mercato",
+        "Thesis check": "Verifica della tesi",
+        "Next": "Prossimamente",
+        "What it adds": "Cosa aggiunge",
+        "Overlap": "Sovrapposizione",
+        "Size": "Dimensione",
+        "Risk to the book": "Rischio per il portafoglio",
+    },
+}
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
+_HEADER_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _localized(sections: str, lang: str) -> str:
+    """`sections` with each bold header in `lang`, and the closing line that
+    says the whole answer goes in it — labels included. English as it was."""
+    names = _HEADERS.get(lang)
+    if not names:
+        return sections
+    sections = _HEADER_RE.sub(
+        lambda m: f"**{names.get(m.group(1), m.group(1))}**", sections)
+    return (f"{sections}\nWrite the whole answer in {_LANG_NAME[lang]}: these "
+            "headers as given, and the figure labels (reported, consensus, "
+            "estimate, not found) translated too.")
+
+
 _BOOK_HELD = ("its weight now, whether to add or trim, and what else in the "
               "book moves with it.")
 _BOOK_NEW = ("a starting size as a share of the book, how to enter (all at "
@@ -512,7 +585,8 @@ def pick_skills(angle: str, f: Facts, style: str, recent: bool,
 
 
 def build(angle: str, ticker: str, *, watchlist: Path, db: Path,
-          currency: str = "EUR", today: date | None = None) -> Brief | None:
+          currency: str = "EUR", today: date | None = None,
+          lang: str = "en") -> Brief | None:
     """The brief for `angle` on `ticker`, or None when there is none to write
     (an unknown angle, no symbol). Never raises: every lookup in here is
     best-effort, and a press with less context is still a question."""
@@ -558,6 +632,7 @@ def build(angle: str, ticker: str, *, watchlist: Path, db: Path,
         holds = held.startswith("The user holds")
         sections = sections.format(book=_BOOK_HELD if holds else _BOOK_NEW,
                                    kill=_KILL_HELD if holds else _KILL_NEW)
+        sections = _localized(sections, lang)
         shape = (f"Answer in this structure, about {words} words in all:\n"
                  f"{sections}\n{_RULES}")
         lines.append(shape)

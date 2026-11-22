@@ -138,8 +138,10 @@ def test_system_prompt_names_the_language_to_answer_in():
     read — persona, context, RULES, the fetched extracts — was English, and
     nothing said which language to write."""
     out = engine.system_prompt({"set": False}, "x", [], "es")
-    assert "language of the user's latest message" in out
-    assert "write in Spanish" in out
+    # The app's language decides, not the message's: the English stapled
+    # onto a Spanish button press won "the latest message" (prod 2026-11-22).
+    assert "Write your whole answer in Spanish" in out
+    assert "latest message" not in out
     # last thing read, after RULES, where the small models weight hardest
     assert out.rstrip().endswith("stay as they are.")
 
@@ -150,7 +152,7 @@ def test_system_prompt_without_a_locale_is_unchanged():
     assert engine.system_prompt({"set": False}, "x", []) == engine.system_prompt(
         {"set": False}, "x", [], None
     )
-    assert "latest message" not in engine.system_prompt({"set": False}, "x", [])
+    assert "whole answer in" not in engine.system_prompt({"set": False}, "x", [])
 
 
 def test_system_prompt_bans_inventing_an_import():
@@ -414,10 +416,17 @@ def test_title_for_uses_the_cheap_model(providers):
 
 def test_a_greeting_is_titled_in_the_accounts_language(providers):
     """"hola" reads as Portuguese to a small model as easily as Spanish; the
-    locale settles it, the way `language_rule` settles a short answer."""
+    locale decides, the way `language_rule` decides the answer's."""
     engine.title_for(providers["free"], "", "hola", lang="es")
     _, _, system, _ = providers["free"].calls[-1]
-    assert "write the title in Spanish" in system
+    assert "written in Spanish, whatever language the message is in" in system
+
+
+def test_an_english_message_on_a_spanish_account_is_titled_in_spanish(providers):
+    engine.title_for(providers["free"], "", "how is my book doing?", lang="es")
+    _, _, system, _ = providers["free"].calls[-1]
+    assert "written in Spanish" in system
+    assert "same language as the message" not in system
 
 
 def test_the_title_of_a_whole_turn_hears_the_callers_locale(providers, paths):
@@ -425,7 +434,7 @@ def test_the_title_of_a_whole_turn_hears_the_callers_locale(providers, paths):
     the second call of the turn, after the answer."""
     engine.answer(prefs=dict(BASE_PREFS), lang="es", message="hola", **paths)
     systems = [call[2] for call in providers["free"].calls]
-    assert any("write the title in Spanish" in s for s in systems)
+    assert any("written in Spanish" in s for s in systems)
 
 
 def test_autotitle_leaves_a_renamed_thread_alone(providers, tmp_path):
@@ -549,7 +558,7 @@ def test_the_turns_language_rule_follows_the_callers_locale(providers, paths):
     engine.answer(prefs=dict(BASE_PREFS), lang="es",
                   message="Analiza CEG", **paths)
     _, _, system, _ = providers["free"].calls[0]
-    assert "write in Spanish" in system
+    assert "whole answer in Spanish" in system
 
 
 def test_answer_refuses_to_import_from_a_message(providers, paths):
@@ -2144,3 +2153,10 @@ def test_with_nothing_in_focus_this_is_the_ticker_the_talk_is_about():
     assert engine.topic_view("", "ADBE").startswith(
         "Current view: No ticker is in focus; the conversation is about ADBE.")
     assert engine.topic_view(page, "") == page
+
+
+def test_the_question_said_last_names_the_apps_language():
+    from stocks.chat.engine import instructions
+
+    assert "what you answer, in Spanish:" in instructions.question_last("hi", "es")
+    assert "in its own language" in instructions.question_last("hi", None)

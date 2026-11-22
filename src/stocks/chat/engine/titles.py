@@ -27,21 +27,19 @@ _TITLE_SYSTEM = (
 
 
 def _title_system(lang: str | None) -> str:
-    """The title prompt, with the account's language as the tiebreak.
+    """The title prompt, in the account's language when the caller knows it.
 
-    A greeting is the most common opener and the least telling: the small
-    models the free chain runs on read "hola" or "oi" as whichever Romance
-    language they lean to, and a Spanish account got a Portuguese thread name.
-    Same rule as `language_rule` for the answer — the message decides, the
-    locale settles what the message cannot."""
+    Same rule as `language_rule` for the answer: the language the reader
+    picked in the app decides, whatever the message is written in. It also
+    settles a greeting, which the small models the free chain runs on read
+    as whichever Romance language they lean to ("hola" got a Portuguese
+    thread name on a Spanish account)."""
     if not lang:
         return _TITLE_SYSTEM
     name = _LANG_NAME.get(lang, _LANG_NAME["en"])
-    return (
-        _TITLE_SYSTEM + " When the message is too short to tell its language — "
-        "a greeting, a bare ticker, a number — or could be either of two close "
-        f"languages (Spanish or Portuguese, say), write the title in {name}."
-    )
+    return _TITLE_SYSTEM.replace(
+        "written in the same language as the message",
+        f"written in {name}, whatever language the message is in")
 
 
 def _trim(text: str) -> str:

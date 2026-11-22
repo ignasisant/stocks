@@ -522,3 +522,18 @@ def test_the_gather_is_told_what_the_reader_is_looking_at():
     rule = agent.GATHER_SYSTEM
     assert "the conversation is about" in rule  # "this" without a focus
     assert '"Quality"' in rule  # a plain word is not a ticker
+
+
+def test_the_plan_is_written_in_the_apps_language():
+    """The plan is on the reader's screen while they wait, so it follows the
+    app's language like the answer does."""
+    p = _Provider()
+    p.run = lambda execute: ToolRun("DONE", [])
+    agent.gather(p, "k", _MSGS, toolbox.Context(), model="big-model",
+                 profile=agent.DEEP, lang="es")
+    assert "update_plan steps in Spanish" in p.calls[0][2]
+    q = _Provider()
+    q.run = lambda execute: ToolRun("DONE", [])
+    agent.gather(q, "k", _MSGS, toolbox.Context(), model="big-model",
+                 profile=agent.DEEP)
+    assert "update_plan steps in" not in q.calls[0][2]

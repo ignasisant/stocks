@@ -122,7 +122,21 @@ class Watch:
         return self._said()
 
 
-def start(provider: Provider, key: str, message: str) -> Watch | None:
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
+
+
+def instructions(lang: str | None = None) -> str:
+    """INSTRUCTIONS, with the refusal in the language the reader picked in
+    the app (the answer's rule, `language_rule`) when the caller knows it."""
+    name = _LANG_NAME.get(lang or "")
+    if not name:
+        return INSTRUCTIONS
+    return INSTRUCTIONS.replace("in the message's own language",
+                                f"in {name}, whatever language the message is in")
+
+
+def start(provider: Provider, key: str, message: str,
+          lang: str | None = None) -> Watch | None:
     """Ask about `message` on a thread of its own; None when there is
     nothing to ask (mode off, a key the reader pays for, a short message).
 
@@ -136,7 +150,7 @@ def start(provider: Provider, key: str, message: str) -> Watch | None:
     def ask() -> Verdict | None:
         t0 = time.perf_counter()
         try:
-            verdict = structured.ask(provider, key, "CheckScope", INSTRUCTIONS,
+            verdict = structured.ask(provider, key, "CheckScope", instructions(lang),
                                      fenced(message), Verdict, repair=False)
         except Exception as exc:  # noqa: BLE001 — fail open
             obs.warn("chat.guard_failed", error_type=type(exc).__name__,

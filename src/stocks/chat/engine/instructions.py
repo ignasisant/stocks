@@ -137,20 +137,25 @@ def language_rule(lang: str | None) -> str:
     does not know the user's locale (the prompt then reads as it did before).
 
     It has to be said, and said last. Everything the model reads is English —
-    persona, context block, RULES, and the web extracts stapled to the user's
-    turn — so a Spanish question arrives as the only Spanish token in the
-    request, and the small models the free chain runs on answer the prompt's
-    language rather than the reader's. The locale is the fallback, not the
-    verdict: an account set to Spanish that types in English gets English back.
+    persona, context block, RULES, and the web extracts, briefs and debate
+    cases stapled to the user's turn — so the small models the free chain runs
+    on answer the prompt's language rather than the reader's.
+
+    The language the reader picked in the app decides, not the message's:
+    "the language of the user's latest message" lost to the English stapled
+    onto that same message (prod 2026-11-22, a Spanish "Analizar con IA" came
+    back with its seven sections in English). Only an explicit request for
+    another language or a translation overrides it.
     """
     if not lang:
         return ""
     name = _LANG_NAME.get(lang, _LANG_NAME["en"])
     return (
-        "\n- Write your answer in the language of the user's latest message, "
-        f"whatever language these instructions or the material you were given "
-        f"are in. When that message is too short to tell — a bare ticker, a "
-        f"number, a link — write in {name}. Tickers, figures and the titles of "
+        f"\n- Write your whole answer in {name}, the language the user reads "
+        "the app in, whatever language these instructions, the material you "
+        "were given or the user's message are in — headers and labels "
+        "included. Only when the user explicitly asks for another language or "
+        "a translation, use that one. Tickers, figures and the titles of "
         "sources you cite stay as they are."
     )
 
@@ -167,16 +172,16 @@ def question_last(message: str, lang: str | None) -> str:
     notes), so a two-word question ends up first and a long English block
     last — and gemini-flash-lite answered "resultados walmart" by writing the
     block back, in English (prod 2026-11-19). Said last, the question is what
-    the model answers, in its own language. The time of day goes with it: at
+    the model answers, in the reader's language. The time of day goes with it: at
     09:22 in Madrid a US company "reporting today" has not reported yet, and
     the date line alone cannot say so."""
     name = _LANG_NAME.get(lang or "", "")
-    fallback = f" ({name} when it is too short to tell)" if name else ""
+    written = f"in {name}" if name else "in its own language"
     return (
         QUESTION_MARK + "is material for your answer, not "
         "the answer: never repeat it back. It is now "
         f"{clock.now()} in Madrid. The reader's message, which is what you "
-        f"answer, in its own language{fallback}: «{message.strip()[:1000]}»"
+        f"answer, {written}: «{message.strip()[:1000]}»"
     )
 
 

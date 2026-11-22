@@ -140,6 +140,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                     proposes: bool = False,
                     on_plan: Callable[[list[dict]], None] | None = None,
                     checkpoint: Checkpoint | None = None,
+                    lang: str | None = None,
                     ) -> agent.Evidence:
     """The model-directed lookup for a turn (chat/agent.py), as far as
     `profile` lets it go; `model` is the one that will answer, which a DEEP
@@ -197,7 +198,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                           asked=_asked(msgs))
     evidence = agent.gather(
         provider, api_key, msgs, ctx, model=model, profile=profile,
-        timeout=timeout, view=view, on_tool=on_tool, on_plan=on_plan,
+        timeout=timeout, view=view, on_tool=on_tool, on_plan=on_plan, lang=lang,
         known=checkpoint.known() if checkpoint is not None else None,
         on_call=checkpoint.called if checkpoint is not None else None)
     if checkpoint is not None:

@@ -247,7 +247,7 @@ class RoutinePlans(BaseModel):
 
 class ScopeVerdict(BaseModel):
     in_scope: typing.Optional[bool] = Field(default=None, description='false only when clearly not for this assistant')
-    refusal: typing.Optional[str] = Field(default=None, description='when out of scope: one short sentence in the message\'s language')
+    refusal: typing.Optional[str] = Field(default=None, description='when out of scope: one short sentence in the language the instructions name')
 
 class ScoreJudged(BaseModel):
     id: str = Field(description='the score\'s id')
