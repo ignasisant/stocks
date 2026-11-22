@@ -23,6 +23,7 @@ from stocks.chat.daily.card import (
     DailyAction,
     _clip,
     _today,
+    gaps_of,
     section_of,
 )
 from stocks.formatting import fmt_num
@@ -637,6 +638,34 @@ def dressed(
         for sec in action.sections
     ]
     return replace(action, book=book, sections=sections)
+
+
+# How many names a gap lists before it says how many more.
+GAP_NAMES = 5
+
+
+def with_gaps(action: DailyAction | None, facts: dict) -> DailyAction | None:
+    """`action` carrying what its job could not read (`facts["gaps"]`)."""
+    if action is None:
+        return None
+    return replace(action, gaps=gaps_of((facts or {}).get("gaps")))
+
+
+def gaps_line(gaps: list[dict], lang: str) -> str:
+    """The card's one line on what it could not check today, "" for none."""
+    from stocks.i18n import translate
+
+    parts = []
+    for gap in gaps_of(gaps):
+        names = gap["tickers"]
+        if not names:
+            parts.append(translate(f"home.daily_gap_{gap['part']}_any", lang))
+            continue
+        shown = ", ".join(names[:GAP_NAMES])
+        if len(names) > GAP_NAMES:
+            shown += f" +{len(names) - GAP_NAMES}"
+        parts.append(translate(f"home.daily_gap_{gap['part']}", lang, tickers=shown))
+    return translate("home.daily_gaps", lang, parts="; ".join(parts)) if parts else ""
 
 
 def with_today(action: DailyAction | None, facts: dict) -> DailyAction | None:

@@ -405,6 +405,16 @@ class DailyCard(BaseModel):
             "| crypto_only | concentrated | dividend | mixed."
         ),
     )
+    gaps_note: str | None = Field(
+        default=None,
+        description=(
+            "What the card's job could not check today, in the card's "
+            "language — exit rules or theses no source or model read, held "
+            "names whose SEC filings did not come. Null when everything was "
+            "read: a card silent on a thesis it never read would pass for "
+            "one that held."
+        ),
+    )
 
 
 class MarketLine(BaseModel):

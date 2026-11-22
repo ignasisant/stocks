@@ -1,0 +1,29 @@
+{
+  "displayName": "stocks: thesis round leaves the book unread",
+  "documentation": {
+    "subject": "TopStocks · tesis sin leer ${log.extracted_label.runs} noches · ${log.extracted_label.user}",
+    "content": "The night's thesis round (`briefing.read_theses`, run by the schedule's tick before the card) left theses unread two rounds in a row or more (`briefing.thesis_pass_short`). Account `${log.extracted_label.user}`: `${log.extracted_label.left}` of `${log.extracted_label.owed}` unread, `${log.extracted_label.fetched}` fetched in time, `${log.extracted_label.asked}` judge calls. The card names those theses as not checked, so the reader is told; this is the round not fitting the book.\n\nRead the numbers: `fetched` well under `owed` = the news feeds are slow (`THESIS_PASS_FETCH_S`); `asked` at `THESIS_PASS_MAX_CALLS` = the call cap; neither = the time budget (`THESIS_PASS_S`), usually the free models throttling (`llm.free.over_tpm`). Logged every round the streak lasts.\n\nTriage: `uv run stocks logs tail --since 48h --event briefing.thesis_pass --json`, then `uv run stocks logs tail --since 24h --user ${log.extracted_label.user} --grep thesis` and `--event llm.free.over_tpm`.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "briefing.thesis_pass_short in the app log",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"briefing.thesis_pass_short\"",
+        "labelExtractors": {
+          "user": "EXTRACT(jsonPayload.user)",
+          "runs": "EXTRACT(jsonPayload.runs)",
+          "left": "EXTRACT(jsonPayload.left)",
+          "owed": "EXTRACT(jsonPayload.owed)",
+          "fetched": "EXTRACT(jsonPayload.fetched)",
+          "asked": "EXTRACT(jsonPayload.asked)"
+        }
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "3600s" },
+    "autoClose": "86400s"
+  }
+}

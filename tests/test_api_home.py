@@ -249,6 +249,92 @@ def test_no_model_answering_leaves_the_stand_in_and_is_not_retried(
     assert calls == [1], "a provider that is down stays down for the next few seconds"
 
 
+def test_a_thesis_no_model_read_is_said_on_the_card_it_could_not_check(
+    client, account, signed_in, facts, monkeypatch
+):
+    from stocks.chat import exit_judge, journal
+
+    journal.add_criteria(account.journal, "BABA", [
+        {"rule": "thesis", "pillars": ["Cloud revenue keeps growing"]}], today())
+    monkeypatch.setattr(briefing, "thesis_passages", lambda t, since: [
+        {"source": "Reuters", "day": today().isoformat(),
+         "text": "Alibaba cloud revenue growth slows sharply"}])
+    monkeypatch.setattr(exit_judge, "make_thesis_judge",
+                        lambda *a, **k: lambda *args: None)
+    monkeypatch.setattr(daily, "generate", lambda *a, **k: None)
+    signed_in.post("/v1/daily", params={"lang": "en"})
+    wait_done(account)
+    card = signed_in.get("/v1/daily", params={"lang": "en"}).json()
+    # Written from what was read, and saying what was not.
+    assert card["headline"] and card["source"] == "computed"
+    assert card["gaps_note"].startswith("Not checked today: theses for BABA")
+
+
+def test_a_written_card_still_says_the_thesis_it_could_not_check(
+    client, account, signed_in, facts, monkeypatch
+):
+    """The model wrote the card; the gap comes from the round, not the model,
+    so it is on the card all the same — and on the stand-in the 150 s push
+    would send while the model is still writing."""
+    from stocks.chat import exit_judge, journal
+
+    journal.add_criteria(account.journal, "BABA", [
+        {"rule": "thesis", "pillars": ["Cloud revenue keeps growing"]}], today())
+    monkeypatch.setattr(briefing, "thesis_passages", lambda t, since: [
+        {"source": "Reuters", "day": today().isoformat(),
+         "text": "Alibaba cloud revenue growth slows sharply"}])
+    monkeypatch.setattr(exit_judge, "make_thesis_judge",
+                        lambda *a, **k: lambda *args: None)
+    seen = {}
+
+    def write(prefs, profile, facts, *a, **k):
+        seen["facts"] = facts.get("gaps")
+        seen["stand_in"] = briefing._jobs[str(account.root)].computed
+        return written(today())
+
+    monkeypatch.setattr(daily, "generate", write)
+    signed_in.post("/v1/daily", params={"lang": "en"})
+    wait_done(account)
+    card = signed_in.get("/v1/daily", params={"lang": "en"}).json()
+    assert card["source"] != "computed"
+    assert card["gaps_note"].startswith("Not checked today: theses for BABA")
+    assert {"part": "theses", "tickers": ["BABA"]} in seen["facts"]
+    assert {"part": "theses", "tickers": ["BABA"]} in seen["stand_in"].gaps
+
+
+def test_a_thesis_the_nights_round_found_broken_is_on_the_card(
+    client, account, signed_in, facts, monkeypatch
+):
+    """The schedule reads the theses a tick before the card
+    (`briefing.read_theses`): the card's own round then has nothing left to
+    read, and says the break all the same."""
+    from stocks.chat import exit_judge, journal
+
+    journal.add_criteria(account.journal, "BABA", [
+        {"rule": "thesis", "pillars": ["Cloud revenue keeps growing"]}], today())
+    monkeypatch.setattr(briefing, "thesis_passages", lambda t, since: [
+        {"source": "Reuters", "day": today().isoformat(),
+         "text": "Alibaba cloud revenue falls for the first time"}])
+    monkeypatch.setattr(exit_judge, "make_thesis_judge", lambda *a, **k: (
+        lambda *args: {"verdicts": [{"pillar": "A", "verdict": "damaged",
+                                     "item": 0, "quote": "cloud revenue falls"}]}))
+    assert briefing.read_theses(account) == "read 1/1, met 1"
+    monkeypatch.setattr(exit_judge, "make_thesis_judge",
+                        lambda *a, **k: lambda *args: pytest.fail("read already"))
+    seen = {}
+
+    def write(prefs, profile, facts, *a, **k):
+        seen["actions"] = facts.get("actions") or []
+        return written(today())
+
+    monkeypatch.setattr(daily, "generate", write)
+    signed_in.post("/v1/daily", params={"lang": "en"})
+    wait_done(account)
+    assert any(a.get("ticker") == "BABA" and a.get("kind") == "criterion_hit"
+               for a in seen["actions"]), seen["actions"]
+    assert signed_in.get("/v1/daily", params={"lang": "en"}).json()["gaps_note"] is None
+
+
 def test_regenerate_takes_the_old_card_away_at_once(
     client, account, signed_in, facts, monkeypatch
 ):

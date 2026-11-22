@@ -171,6 +171,10 @@ class DailyAction:
     today: list[dict] = field(default_factory=list)
     # What kind of book the sections were chosen for (`today_sections.shape`).
     shape: str = ""
+    # What the card's job could not read today, so a quiet card is not taken
+    # for an all-clear: [{"part": "theses" | "rules" | "filings", "tickers"}]
+    # (`briefing.card_gaps`); no tickers is the whole part.
+    gaps: list[dict] = field(default_factory=list)
 
     @property
     def from_model(self) -> bool:
@@ -213,6 +217,7 @@ class DailyAction:
             "brief_sig": self.brief_sig,
             "today": [dict(s) for s in self.today],
             "shape": self.shape,
+            "gaps": [dict(g) for g in self.gaps],
         }
 
     @classmethod
@@ -265,7 +270,21 @@ class DailyAction:
             brief_sig=str(raw.get("brief_sig") or ""),
             today=_today(raw.get("today")),
             shape=str(raw.get("shape") or ""),
+            gaps=gaps_of(raw.get("gaps")),
         )
+
+
+GAP_PARTS: Final = ("theses", "rules", "filings")
+
+
+def gaps_of(raw) -> list[dict]:
+    """Gaps (`DailyAction.gaps`) as stored or gathered, kept only in the shape
+    the card says them in, in GAP_PARTS order."""
+    found = {g.get("part"): g for g in raw or () if isinstance(g, dict)}
+    return [{"part": part, "tickers": sorted({str(t) for t in
+                                             found[part].get("tickers") or ()
+                                             if str(t).strip()})}
+            for part in GAP_PARTS if part in found]
 
 
 def _book(raw) -> dict:

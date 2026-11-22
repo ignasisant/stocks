@@ -924,6 +924,38 @@ def test_the_judge_never_takes_the_cards_free_units(monkeypatch, left, charged):
     assert len(calls) == int(charged)
 
 
+@pytest.mark.parametrize(("left", "charged"), [(400, True), (201, True),
+                                               (200, False), (0, False)])
+def test_a_judgement_nobody_asked_for_takes_the_pot_never_the_account(
+    monkeypatch, left, charged
+):
+    """The night's rules and theses are charged to the shared free pot, and
+    stop while half of it is left: the reader's own 30 stay theirs."""
+    from stocks.views import briefing
+
+    patch_engine(monkeypatch, "free_global_daily_cap", lambda: 400)
+    patch_engine(monkeypatch, "free_global_left", lambda: left)
+    pot = []
+    patch_engine(monkeypatch, "spend_free_global", lambda p: pot.append(p) or True)
+    patch_engine(monkeypatch, "spend_free_quota",
+                 lambda *a: pytest.fail("charged to the account"))
+    prefs: dict = {}
+    assert briefing.spend_in_background(prefs) is charged
+    assert len(pot) == int(charged) and prefs == {}
+
+
+def test_regenerate_pays_its_judgements_from_the_account(monkeypatch):
+    """The button has no limit of its own: a judge whose model keeps failing
+    would drain the pot press after press. Pressed, the account pays."""
+    from stocks.views import briefing
+
+    assert briefing.judge_charge(False, None) is briefing.spend_in_background
+    patch_engine(monkeypatch, "free_left", lambda prefs: 10)
+    account = []
+    charge = briefing.judge_charge(True, lambda p: account.append(p) or True)
+    assert charge({}) and len(account) == 1
+
+
 # ------------------------------------------------------------- thesis rules
 
 PILLARS = ["Hyperscalers keep raising AI capex", "Data center revenue keeps growing"]
@@ -1078,6 +1110,29 @@ def test_the_thesis_judge_reads_its_contract(monkeypatch):
     assert "B. Data center revenue keeps growing" in asked["system"]
     assert "[0] 8-K (5.02)" in asked["text"]
     assert judge("NVDA", [], [_passage("x")]) is None
+
+
+def test_the_judges_are_told_which_company_the_symbol_is(monkeypatch):
+    from stocks.chat import exit_judge
+
+    assert exit_judge.named("JD", lambda t: "JD.com, Inc.") == "JD (JD.com, Inc.)"
+    assert exit_judge.named("SAP", lambda t: "sap") == "SAP"
+    assert exit_judge.named("JD", lambda t: 1 / 0) == "JD"
+    assert exit_judge.named("JD", None) == "JD"
+    asked = []
+
+    def complete(prefs, system, messages, timeout_s, *, spend_free, accept):
+        asked.append(system)
+        return accept('{"met": false}')
+
+    patch_engine(monkeypatch, "complete_attempts", complete)
+    name_of = {"JD": "JD.com, Inc."}.get
+    exit_judge.make_judge({}, spend_free=lambda p: True, name_of=name_of)(
+        "guidance_cut", "JD", [_passage("JD Sports trims guidance")])
+    exit_judge.make_thesis_judge({}, spend_free=lambda p: True, name_of=name_of)(
+        "JD", PILLARS, [_passage("JD Sports trims guidance")])
+    assert all("JD (JD.com, Inc.)" in system for system in asked)
+    assert all("other companies" in system for system in asked)
 
 
 def test_the_route_serves_a_rule_whose_checks_keep_lists(book):

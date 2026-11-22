@@ -513,6 +513,13 @@ export default function Today() {
             })}
           </p>
         ) : null}
+        {/* What the job could not read today, before the headline too: a card
+            silent on a thesis it never checked reads as one that held. */}
+        {card?.gaps_note && !card.pending && !regenerating ? (
+          <p className="hm-note" role="status">
+            {card.gaps_note}
+          </p>
+        ) : null}
         {market && view.market_stale && session ? (
           <p className="hm-note">{t("today.market_stale", { date: session })}</p>
         ) : null}

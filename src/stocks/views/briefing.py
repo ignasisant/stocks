@@ -731,11 +731,17 @@ _RULE_ITEMS = ("5.02", "2.02", "7.01", "8.01")
 # delisting, past accounts withdrawn.
 _THESIS_ITEMS = _RULE_ITEMS + ("1.01", "1.02", "1.03", "2.01", "2.05", "2.06",
                                "3.01", "4.02")
-# The thesis rules' round, after the card is stored: how long it may run and
-# how many names it may ask a model about. A book with more theses than
-# calls is read in turns (`journal.check_theses`), the longest unread first.
-THESIS_BUDGET_S = 90.0
+# The thesis rules' round, before the card is written so a broken thesis is
+# on it: how long it may run and how many names it may ask a model about. A
+# book with more theses than calls is read in turns (`journal.check_theses`),
+# the longest unread first; what is left waits for the next card.
+THESIS_BUDGET_S = 30.0
 THESIS_MAX_CALLS = 10
+# One thesis call's own limit on the card's path, under the judge's usual
+# THESIS_TIMEOUT_S: the rules and the card's model must fit the briefing's
+# wait (`schedule.BRIEFING_WAIT_S`), or the morning push is the stand-in
+# built before they ran. A call that times out is read on the next card.
+THESIS_CALL_TIMEOUT_S = 20.0
 
 
 def _passages(ticker: str, since: date, items: tuple[str, ...] = _RULE_ITEMS
@@ -748,25 +754,30 @@ def _passages(ticker: str, since: date, items: tuple[str, ...] = _RULE_ITEMS
     from stocks.data import edgar
 
     out: list[dict] = []
-    failed = 0
+    # A name the SEC has no feed for is read on its headlines alone: those
+    # failing, nothing was read, and the rule must not be stamped as checked.
+    try:
+        failed = 0 if edgar.cik_for(ticker) else 1
+    except Exception:  # noqa: BLE001 — the ticker map is unreadable
+        failed = 1
     try:
         reports = loaders.current_reports(ticker) or []
     except Exception:  # noqa: BLE001 — the headlines may still say it
-        reports, failed = [], failed + 1
+        reports, failed = [], 1
     for r in reports:
         if r.filed < since or not set(r.items) & set(items):
             continue
         text = (edgar.earnings_release(ticker, r.filed) if "2.02" in r.items
                 else None) or edgar.current_report_text(r.url)
         if text:
-            items = ", ".join(r.topics)
-            out.append({"source": f"{r.form} ({items})", "day": r.filed.isoformat(),
+            topics = ", ".join(r.topics)
+            out.append({"source": f"{r.form} ({topics})", "day": r.filed.isoformat(),
                         "text": text})
     try:
         news = loaders.headlines(ticker) or []
     except Exception:  # noqa: BLE001
         news, failed = [], failed + 1
-    if failed == 2:
+    if failed >= 2:
         raise RuntimeError("no source could be read")
     out.extend({"source": h.publisher or "news", "day": h.published.isoformat(),
                 "text": h.title} for h in news if h.published >= since)
@@ -777,34 +788,138 @@ def thesis_passages(ticker: str, since: date) -> list[dict]:
     return _passages(ticker, since, _THESIS_ITEMS)
 
 
-def check_theses(paths, prefs: dict, lang: str, day: date, spend) -> list[dict]:
-    """The reader's thesis rules read against the day's business news, and a
-    push for any met: the card that saw it is already written, and a broken
-    thesis should not wait for tomorrow's. The next card says so too
-    (`journal.measured`). Never raises."""
-    fired = journal.safely(
+def check_theses(paths, prefs: dict, day: date,
+                 spend_free=None) -> list[dict]:
+    """The reader's thesis rules read against the day's business news; the
+    rows of those met today, for the card (`with_fired`). The card is where a
+    broken thesis is told, not a push of its own: it is filed in the chat and
+    pushed with the morning's briefing. Never raises."""
+    return journal.safely(
         journal.check_theses, paths.journal, day,
         passages_of=thesis_passages,
         judge=exit_judge.make_thesis_judge(
-            prefs, spend_free=lambda p: spend_for_judge(p, spend)),
+            prefs, spend_free=spend_free or spend_in_background,
+            timeout_s=THESIS_CALL_TIMEOUT_S, name_of=judged_name),
         budget_s=THESIS_BUDGET_S,
         max_calls=THESIS_MAX_CALLS,
     ) or []
-    if fired and prefs.get("notify_alerts", True):
-        with obs.swallow("journal.thesis_push"):
-            from stocks.i18n import translate
-            from stocks.notify import render, webpush
 
-            first = fired[0]
-            title = translate("notify.thesis_title", lang,
-                              ticker=str(first.get("ticker") or ""))
-            lines: list[str | None] = [
-                translate("notify.thesis_line", lang,
-                          pillar=str(r.get("pillar") or ""),
-                          quote=str(r.get("quote") or "")) for r in fired]
-            webpush.send_all(paths.push, render.message(
-                title, lines, "/profile?tab=journal", "thesis"), topic="thesis")
-    return fired
+
+# The night's own thesis round (`read_theses`), run by the schedule's tick a
+# quarter of an hour before the card's, inside the tick's request so it keeps
+# its CPU: the card's round (above) has 30 s for a book of forty theses and
+# reads a few a night. Every owed name's news is fetched at once, up to
+# THESIS_PASS_FETCH_S; the model is then asked name by name until the whole
+# round has run THESIS_PASS_S. What is left is the card's round's, and the
+# card says what neither read. Under the tick's budget and Cloud Run's 300 s
+# request: a run started at the tick's 120 s ends by ~260 s.
+THESIS_PASS_S = 120.0
+THESIS_PASS_FETCH_S = 45.0
+THESIS_PASS_FETCHERS = 4
+THESIS_PASS_MAX_CALLS = 20
+# Rounds in a row that left a thesis unread before `briefing.thesis_pass_short`
+# is logged (a WARNING, emailed: infra/monitoring/policy-thesis-pass-short.json).
+# One short night is a slow feed; two is a round that does not fit the book.
+# The streak is kept in the account's prefs, under THESIS_SHORT_KEY.
+THESIS_SHORT_RUNS = 2
+THESIS_SHORT_KEY = "thesis_pass_short"
+
+
+def read_theses(paths) -> str:
+    """Read every thesis rule owed today before the card is written, and
+    stamp it (`journal.check_theses`): the card's round then has only what
+    this one could not read, and tells the theses it found broken
+    (`journal.theses_hit_on`). A status line for the schedule; never raises."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor, wait
+    from typing import cast
+
+    began = time.monotonic()
+    _, day = now_day(paths)
+    owed = journal.safely(journal.thesis_reads, paths.journal, day) or []
+    if not owed:
+        return "nothing owed"
+    try:
+        prefs = accounts.load_prefs(paths.prefs)
+    except Exception as exc:  # noqa: BLE001 — the card's round reads them
+        obs.warn("briefing.thesis_pass_failed", error_type=type(exc).__name__)
+        return "skipped: prefs unreadable"
+    # One live thesis a company (`journal.add_criteria` retires the last).
+    pool = ThreadPoolExecutor(THESIS_PASS_FETCHERS, thread_name_prefix="theses")
+    futures = {pool.submit(contextvars.copy_context().run, thesis_passages,
+                           ticker, since): ticker
+               for ticker, since in owed}
+    done, _ = wait(futures, timeout=THESIS_PASS_FETCH_S)
+    pool.shutdown(wait=False, cancel_futures=True)
+    fetched: dict[str, list[dict]] = {}
+    for future in done:
+        try:
+            fetched[futures[future]] = list(cast(list, future.result()) or [])
+        except Exception:  # noqa: BLE001 — owed still; the card's round retries
+            continue
+
+    def passages_of(ticker: str, since: date) -> list[dict]:
+        if ticker not in fetched:
+            # Raising leaves the rule owed, not stamped as read with nothing.
+            raise TimeoutError("not fetched in time")
+        return fetched[ticker]
+
+    asked = 0
+    judge = exit_judge.make_thesis_judge(
+        prefs, spend_free=spend_in_background,
+        timeout_s=THESIS_CALL_TIMEOUT_S, name_of=judged_name)
+
+    def counted(ticker: str, pillars: list[str], passages: list[dict]):
+        nonlocal asked
+        asked += 1
+        return judge(ticker, pillars, passages)
+
+    met = journal.safely(
+        journal.check_theses, paths.journal, day,
+        passages_of=passages_of, judge=counted,
+        budget_s=max(0.0, THESIS_PASS_S - (time.monotonic() - began)),
+        max_calls=THESIS_PASS_MAX_CALLS) or []
+    left = len(journal.safely(journal.thesis_reads, paths.journal, day) or [])
+    seconds = round(time.monotonic() - began, 1)
+    obs.event("briefing.thesis_pass", owed=len(owed), fetched=len(fetched),
+              asked=asked, met=len(met), left=left, seconds=seconds)
+    _short_streak(paths, prefs, day, left, owed=len(owed), fetched=len(fetched),
+                  asked=asked, seconds=seconds)
+    return f"read {len(owed) - left}/{len(owed)}, met {len(met)}"
+
+
+def _short_streak(paths, prefs: dict, day: date, left: int, **counts) -> None:
+    """Count the rounds in a row that left a thesis unread, and log the
+    streak as a WARNING from THESIS_SHORT_RUNS on, each round it lasts. A
+    round that read them all ends it."""
+    stored = prefs.get(THESIS_SHORT_KEY)
+    stored = stored if isinstance(stored, dict) else {}
+    if str(stored.get("day") or "") == day.isoformat():
+        return  # this day's round counted already
+    try:
+        runs = int(stored.get("runs") or 0) + 1 if left else 0
+    except (TypeError, ValueError):
+        runs = 1 if left else 0
+    if runs >= THESIS_SHORT_RUNS:
+        obs.warn("briefing.thesis_pass_short", runs=runs, left=left, **counts)
+    if runs or stored:
+        try:
+            accounts.update_prefs(paths.prefs, {
+                THESIS_SHORT_KEY: {"day": day.isoformat(), "runs": runs}})
+        except Exception as exc:  # noqa: BLE001 — a lost count, not a lost round
+            obs.warn("briefing.thesis_pass_unsaved", error_type=type(exc).__name__)
+
+
+def judged_name(ticker: str) -> str | None:
+    """The company's name for a judge's prompt, so a headline about another
+    firm sharing its letters ("JD Sports" for JD.com) reads as one. None when
+    no source knows it."""
+    try:
+        from stocks.data import edgar
+
+        return edgar.title_for(ticker) or loaders.issuer_name(ticker) or None
+    except Exception:  # noqa: BLE001 — the symbol alone, as before
+        return None
 
 
 def held_symbols(paths) -> set[str]:
@@ -845,19 +960,29 @@ FILINGS_BUDGET_S = 15.0
 FILINGS_WORKERS = 4
 
 
-def _filings(held: set[str]) -> dict[str, list]:
-    """The held companies' recent 8-Ks, {ticker: reports}. Only names the SEC
-    knows are asked for — a fund, a coin or a name listed only in Europe has
-    no feed. A feed that fails or runs past the budget is left out."""
-    from concurrent.futures import ThreadPoolExecutor, wait
-
+def filers(held: set[str]) -> list[str] | None:
+    """The held names the SEC has a filings feed for — not a fund, a coin or a
+    name listed only in Europe; None when the ticker map cannot be read."""
     from stocks.data import edgar
 
     try:
-        names = sorted(t for t in held
-                       if not is_crypto(t) and not _fund(t) and edgar.cik_for(t))
+        return sorted(t for t in held
+                      if not is_crypto(t) and not _fund(t) and edgar.cik_for(t))
     except Exception as exc:  # noqa: BLE001 — the ticker map is unreadable
         obs.warn("daily_action.filings_unavailable", error_type=type(exc).__name__)
+        return None
+
+
+def _filings(held: set[str], missed: list | None = None) -> dict[str, list]:
+    """The held companies' recent 8-Ks, {ticker: reports}, for `filers`. A
+    feed that fails or runs past the budget is left out, and named in
+    `missed` when one is given."""
+    from concurrent.futures import ThreadPoolExecutor, wait
+
+    names = filers(held)
+    if names is None:
+        if missed is not None:
+            missed.append("")  # which names is unknown: SEC filings at large
         return {}
     if not names:
         return {}
@@ -873,7 +998,34 @@ def _filings(held: set[str]) -> dict[str, list]:
             continue
     if len(out) < len(names):
         obs.warn("daily_action.filings_partial", read=len(out), wanted=len(names))
+        if missed is not None:
+            missed.extend(t for t in names if t not in out)
     return out
+
+
+def card_gaps(paths, day: date, filings: list[str] | None) -> list[dict]:
+    """What the card's job has not read today, for the card to say
+    (`DailyAction.gaps`): the rules still owed a reading (`journal.owed`) and
+    the held names whose filings were not read — `filings` None when they
+    were not read at all. Before the rounds run that is everything due, so a
+    stand-in sent before they end says so rather than reading as all clear."""
+    gaps: list[dict] = []
+    if journal.writable(paths.journal):
+        try:
+            rows = journal.unchecked(paths.journal, day)
+        except Exception as exc:  # noqa: BLE001 — unknown is not all clear
+            obs.warn("daily_action.gaps_unread", error_type=type(exc).__name__)
+            rows = None
+        if rows is None:
+            gaps.append({"part": "rules", "tickers": []})
+        else:
+            for part, kind in (("theses", "thesis"), ("rules", "rule")):
+                names = [r["ticker"] for r in rows if r["part"] == kind]
+                if names:
+                    gaps.append({"part": part, "tickers": names})
+    if filings is None or filings:
+        gaps.append({"part": "filings", "tickers": list(filings or [])})
+    return daily.gaps_of(gaps)
 
 
 def with_flags(actions: list[dict], flags: list, shown: dict | None,
@@ -1108,12 +1260,44 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool,
 
 
 def spend_for_judge(prefs: dict, spend) -> bool:
-    """Charge one exit-rule judgement to the free chain through `spend`, but
-    only out of what the card cannot use: the rules are checked before the
-    card is written, and a reader on the allowance keeps its FREE_UNITS."""
+    """Charge one judgement a reader asked for (MCP `check_thesis`) to the
+    free chain through `spend`, but only out of what the card cannot use: a
+    reader on the allowance keeps the card's FREE_UNITS. The judgements
+    nobody asked for are `spend_in_background`'s."""
     if engine.free_left(prefs) <= daily.FREE_UNITS:
         return False
     return spend(prefs)
+
+
+# Share of the shared free pot the background judgements leave alone. The
+# exit rules and theses read at night are nobody's question this minute, so
+# they are charged to the pot only, never to the reader's own daily
+# allowance: forty theses read at 01:15 UTC would otherwise take a new day's
+# chat. They stop while this much of the pot is left, which the readers'
+# own turns keep.
+JUDGE_POT_RESERVE = 0.5
+
+
+def spend_in_background(prefs: dict) -> bool:
+    """Charge one judgement nobody asked for (an exit rule, a thesis) to the
+    shared free pot (`engine.spend_free_global`), while more than
+    JUDGE_POT_RESERVE of it is left. The account's own counter is untouched."""
+    floor = engine.free_global_daily_cap() * JUDGE_POT_RESERVE
+    if engine.free_global_left() <= floor:
+        obs.event("briefing.judge_pot_reserved")
+        return False
+    return engine.spend_free_global(prefs)
+
+
+def judge_charge(forced: bool, spend):
+    """How the card's own rounds pay their judgements: the shared pot when
+    the card is written by itself (the night, a first visit), the account's
+    allowance through `spend` when the reader pressed Regenerate — the button
+    has no limit of its own, and a judge whose model keeps failing would be
+    asked again on every press."""
+    if forced:
+        return lambda p: spend_for_judge(p, spend)
+    return spend_in_background
 
 
 def start(
@@ -1140,9 +1324,15 @@ def start(
     drawn: dict[int, dict] = {}
 
     def stand_in() -> daily.DailyAction | None:
-        return daily.with_today(
-            daily.dressed(daily.computed(facts, lang, day), chart, drawn), facts)
+        return daily.with_gaps(daily.with_today(
+            daily.dressed(daily.computed(facts, lang, day), chart, drawn), facts),
+            facts)
 
+    # Nothing is read yet: a stand-in shown now says the rules it has not
+    # checked. The filings join on the job's thread (`filers` may fetch the
+    # SEC's ticker map); None there until `_check_filings` has read them.
+    facts["gaps"] = card_gaps(paths, day, [])
+    filings: dict[str, list[str] | None] = {"missed": None}
     job = Job(key=key, forced=forced, computed=None if forced else stand_in())
     with _lock:
         previous = _jobs.get(str(paths.root))
@@ -1200,18 +1390,26 @@ def start(
             facts["today"] = {"shape": today_sections.UNREAD, "sections": []}
 
     def _check_rules() -> None:
-        """The reader's fundamental and event exit rules, checked on the
-        job's thread (a statement, the filings, the news and maybe a model
-        call), and any met today put on this very card."""
+        """The reader's fundamental, event and thesis exit rules, checked on
+        the job's thread (a statement, the filings, the news and maybe a
+        model call), and any met today put on this very card."""
+        charge = judge_charge(forced, spend)
         fired = journal.safely(
             journal.check_slow, paths.journal, day,
             quarters_of=lambda t: _quarters(t)[0],
             passages_of=_passages,
             judge=exit_judge.make_judge(
-                prefs, spend_free=lambda p: spend_for_judge(p, spend)),
+                prefs, spend_free=charge,
+                name_of=judged_name),
             budget_s=SLOW_RULES_BUDGET_S,
             metrics_of=_metrics,
         ) or []
+        fired += check_theses(paths, prefs, day, charge)
+        # Met by the night's own round (`read_theses`) before this card's.
+        ids = {r.get("id") for r in fired}
+        fired += [r for r in journal.safely(journal.theses_hit_on,
+                                            paths.journal, day) or []
+                  if r.get("id") not in ids]
         if fired:
             facts["actions"] = with_fired(facts.get("actions") or [], fired,
                                           held_symbols(paths), day)
@@ -1221,17 +1419,35 @@ def start(
         found put on this very card. Before the Today sections, whose news
         reads a flagged name first (`_alerted`)."""
         held = held_symbols(paths)
-        flags = signals.filing_signals(_filings(held), held, day) if held else []
+        missed: list[str] = []
+        flags = signals.filing_signals(_filings(held, missed), held,
+                                       day) if held else []
+        filings["missed"] = missed
         if flags:
             facts["actions"] = with_flags(facts.get("actions") or [], flags,
                                           stored.shown if stored else None, day)
 
+    def gaps() -> None:
+        facts["gaps"] = card_gaps(paths, day, filings["missed"])
+
     def work() -> None:
         try:
+            if filers(held_symbols(paths)) != []:
+                # SEC filers held: their filings are unread until checked.
+                gaps()
+                if job.computed is not None:
+                    job.computed = stand_in()
+            else:
+                filings["missed"] = []
             _gather_brief()
             _check_filings()
             _gather_today()
             _check_rules()
+            gaps()
+            if job.computed is not None:
+                # The stand-in a briefing sends if the model is still out:
+                # with the rules met and what could not be read.
+                job.computed = stand_in()
             # What the card proposed about today's names before, and what
             # came of it: a move the reader declined or let lapse is not
             # worth the same words again. Settled off the ledger first, so
@@ -1240,7 +1456,7 @@ def start(
             journal.safely(journal.settle_from_db, decisions, paths.db, day)
             history = journal.safely(journal.history_for, decisions,
                                      daily.talked_names(facts), day) or []
-            job.action = daily.with_today(daily.dressed(
+            job.action = daily.with_gaps(daily.with_today(daily.dressed(
                 daily.generate(
                     prefs,
                     profile,
@@ -1255,7 +1471,7 @@ def start(
                 ),
                 chart,
                 drawn,
-            ), facts)
+            ), facts), facts)
         except Exception as exc:  # noqa: BLE001 — generate swallows its own; a
             # thread that died silently would leave the client polling forever.
             obs.warn(
@@ -1265,13 +1481,15 @@ def start(
             )
         finally:
             try:
-                if job.action is None and (job.computed is None or facts.get("brief")
-                                           or facts.get("today")):
-                    # A forced job that got nothing still owes the reader a
-                    # card: the computed one, built now rather than up front
-                    # so a Regenerate shows its wait line and not a stand-in.
-                    # A brief no model wrote is rebuilt too, so the card
-                    # says it was missed rather than still on its way.
+                if job.action is None:
+                    # A job no model answered still owes the reader a card:
+                    # the computed one, built now from everything the job
+                    # read — a forced job's so a Regenerate shows its wait
+                    # line and not a stand-in, a brief no model wrote so the
+                    # card says it was missed, and the rules met and the
+                    # gaps so the card says what it found and what it could
+                    # not check.
+                    gaps()
                     job.computed = stand_in()
                 _store(paths, job, prefs, facts, stored, spent, reviewed)
             finally:
@@ -1281,9 +1499,6 @@ def start(
             # back on the moves proposed a month and a quarter ago.
             journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
                            closes_on, day)
-            # The thesis rules too: a model call per name with news, too
-            # slow for a card anyone waits on, and pushed when one breaks.
-            check_theses(paths, prefs, lang, day, spend)
             _review_memories()
 
     def _review_memories() -> None:
