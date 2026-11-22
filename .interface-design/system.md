@@ -134,6 +134,16 @@ every page; a chart that breaks one is wrong, not a style choice.
    adjacent ΔE ≥ 8 under protan/deutan and ≥ 15 for full-colour vision,
    ≥ 3:1 on card and page. A new hue goes in only when that test passes.
 
+9. **Composition bars: three fills, one accent.** A bar that splits a whole
+   by what each part is to the page (a fund's disclosed lines on Sector)
+   draws each class by fill, not by three greys: the page's subject in
+   `brandAccent` (the same ink it wears elsewhere on the page), the related
+   class solid `textSecondary`, the unrelated class hatched `textMuted`
+   (135°, 1.5px on 4px), the unknown rest as the empty sunken track with a
+   1px `textFaint` inset. Segments in weight order, 2px gap, `role="img"`
+   with the sentence it shows; a legend of the same swatches sits once
+   under the table, never per row.
+
 Deliberate deviations: dark only, so no light-mode band; the Epilogue hero
 figure stays (tabular-nums); the price line keeps 2.25px and its 14% area
 fade (`Price chart hierarchy` below). The text-weight hues (`info`,

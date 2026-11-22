@@ -118,7 +118,7 @@ function ReviewMemories(instructions: string, input: string) -> ReviewOps {
 // investing assistant is for? Fail-open, so every field has a safe default.
 class ScopeVerdict {
   in_scope bool? @description("false only when clearly not for this assistant")
-  refusal string? @description("when out of scope: one short sentence in the message's language")
+  refusal string? @description("when out of scope: one short sentence in the language the instructions name")
 }
 
 function CheckScope(instructions: string, input: string) -> ScopeVerdict {

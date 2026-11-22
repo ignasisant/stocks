@@ -126,7 +126,9 @@ export function TermList({
                 type="button"
                 className="ag-btn"
                 onClick={() =>
-                  askAssistant(t("learn.ask_term", { q }), { fresh: true })
+                  askAssistant(t("learn.ask_term", { q }), {
+                    topic: `term:${q.trim().toLowerCase()}`,
+                  })
                 }
               >
                 <Icon name="auto_awesome" size={16} />

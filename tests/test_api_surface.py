@@ -187,7 +187,10 @@ def test_the_guest_list_is_not_silently_growing():
     # own dotted name: one log line per key, metered with `/client-error`.
     # 73: `POST /viewport-stuck` — a guest's Home Screen app left short by an
     # iOS keyboard: one log line of window sizes, metered like `/launch`.
-    assert len(guest.OPEN) == 73
+    # 74–75: `GET /sectors/{sector}/funds` and `/funds/returns` — the sector
+    # card's ETFs and funds: stored profiles and market closes like the
+    # cohort; a guest's returns skip the book (no first day, no residence).
+    assert len(guest.OPEN) == 75
 
 
 def test_every_route_a_guest_may_read_is_a_read():

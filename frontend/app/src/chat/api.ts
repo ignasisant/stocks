@@ -555,6 +555,8 @@ export function runInput(
     depth?: "deep";
     /** The Ticker page's angle on `focus`, which the server writes out. A question's only. */
     brief?: Brief;
+    /** The page's subject ("ticker:NVDA"), noted on the thread. A question's only. */
+    topic?: string;
     /** What the screenshots pasted with the question showed. A question's only. */
     screenshots?: string[];
     /** The documents set beside the question, as text. A question's only. */
@@ -570,6 +572,7 @@ export function runInput(
     props.staged_import = where.staged_import;
   if (where.depth && ask.message !== undefined) props.depth = where.depth;
   if (where.brief && ask.message !== undefined) props.brief = where.brief;
+  if (where.topic && ask.message !== undefined) props.topic = where.topic;
   if (where.screenshots?.length && ask.message !== undefined)
     props.screenshots = where.screenshots;
   if (where.documents?.length && ask.message !== undefined)

@@ -698,6 +698,7 @@ export type Conversation = {
   "active": boolean;
   "daily": string;
   "scheduled": string;
+  "topics": string[];
   "answering": boolean;
 };
 
@@ -1345,11 +1346,25 @@ export type FundHolding = {
   "weight": number;
 };
 
+export type FundHoldingLine = {
+  "ticker": string;
+  "name": string;
+  "weight": number;
+  "role": string;
+};
+
 export type FundOverlap = {
   "symbol": string;
   "name": string;
   "fund_weight": number;
   "book_weight": number;
+};
+
+export type FundReturn = {
+  "ticker": string;
+  "y1": number | null;
+  "since": number | null;
+  "opens": string | null;
 };
 
 export type FundSectorRow = {
@@ -2271,6 +2286,11 @@ export type PlanWrite = {
   "cash"?: PlanCash | null;
 };
 
+export type PodiumInFund = {
+  "ticker": string;
+  "weight": number | null;
+};
+
 export type Position = {
   "ticker": string;
   "shares": number;
@@ -2572,6 +2592,11 @@ export type PulseBook = {
   "betas": BookBeta[];
   "sector_weights": {
     [key: string]: number;
+  };
+  "sector_funds": {
+    [key: string]: {
+      [key: string]: number;
+    };
   };
   "unavailable": string | null;
 };
@@ -3017,6 +3042,37 @@ export type SectorCohort = {
   "metric_keys": string[];
   "default_columns": string[];
   "lower_is_better": string[];
+};
+
+export type SectorFund = {
+  "ticker": string;
+  "kind": string;
+  "scope": string;
+  "only": string | null;
+  "name": string;
+  "currency": string | null;
+  "family": string | null;
+  "expense_ratio": number | null;
+  "purity": number;
+  "lines": FundHoldingLine[];
+  "top3": number;
+  "top10": number;
+  "cohort_weight": number;
+  "podium": PodiumInFund[];
+  "fetched": string | null;
+};
+
+export type SectorFundReturns = {
+  "sector": string;
+  "currency": string;
+  "since": string | null;
+  "transfer_free": boolean;
+  "returns": FundReturn[];
+};
+
+export type SectorFunds = {
+  "sector": string;
+  "funds": SectorFund[];
 };
 
 export type SectorSummary = {
@@ -4052,6 +4108,8 @@ export interface Responses {
   "/search/recent": Recents;
   "/sectors": Sectors;
   "/sectors/{sector}": SectorCohort;
+  "/sectors/{sector}/funds": SectorFunds;
+  "/sectors/{sector}/funds/returns": SectorFundReturns;
   "/sectors/{sector}/rescan": RescanStatus;
   "/sectors/{sector}/verdict": SectorVerdict;
   "/shares/{share_id}": SharedAnswer;

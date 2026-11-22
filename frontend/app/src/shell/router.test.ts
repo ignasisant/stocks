@@ -8,10 +8,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { depth, navigate, push, routeFor, takeRestore } from "./router";
+import { KEEP_MS, depth, navigate, push, routeFor, takeRestore } from "./router";
 
 /** A window with just enough history and location for `push` and `navigate`. */
-function browser(pathname: string) {
+function browser(pathname: string, scrollY = 120) {
   const location = { pathname, search: "" };
   const scrolled: [number, number][] = [];
   const events: string[] = [];
@@ -24,7 +24,7 @@ function browser(pathname: string) {
   );
   vi.stubGlobal("window", {
     location,
-    scrollY: 120,
+    scrollY,
     scrollTo: (x: number, y: number) => scrolled.push([x, y]),
     dispatchEvent: (event: { type: string }) => events.push(event.type),
     history: {
@@ -111,6 +111,66 @@ describe("navigate", () => {
       // Nothing left for the page: a tab switched later must not jump.
       expect(takeRestore()).toBeNull();
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("brings a screen left minutes ago back where the reader left it", () => {
+    vi.useFakeTimers();
+    const { scrolled } = browser("/home", 840);
+    try {
+      navigate("/ticker?ticker=AAPL");
+      takeRestore();
+      vi.advanceTimersByTime(60_000);
+      navigate("/home");
+      expect(takeRestore()).toBe(840);
+      // Arrived at another address: nothing scrolled before the page drew.
+      expect(scrolled).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("finds the same screen under its other address", () => {
+    vi.useFakeTimers();
+    browser("/", 300);
+    try {
+      navigate("/portfolio");
+      takeRestore();
+      navigate("/home");
+      expect(takeRestore()).toBe(300);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("opens a screen left too long ago at the top", () => {
+    vi.useFakeTimers();
+    browser("/home", 840);
+    try {
+      navigate("/portfolio");
+      takeRestore();
+      vi.advanceTimersByTime(KEEP_MS + 1);
+      navigate("/home");
+      expect(takeRestore()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps each ticker's scroll apart", () => {
+    vi.useFakeTimers();
+    browser("/ticker", 500);
+    try {
+      navigate("/ticker?ticker=MSFT");
+      takeRestore();
+      navigate("/ticker?ticker=NVDA");
+      expect(takeRestore()).toBe(0);
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });

@@ -42,6 +42,7 @@ from stocks.loaders.bars import (
 from stocks.loaders.book import (
     _priced_positions,
     _self_priced_positions,
+    allocation_via_funds,
     allocation_weights,
     basket_report,
     basket_report_since,
@@ -113,6 +114,7 @@ from stocks.loaders.market import (
     pulse_closes,
     pulse_rate_rows,
     pulse_rates,
+    sector_funds,
     sector_scans,
     stored_action,
 )
@@ -168,6 +170,7 @@ __all__ = [
     "_SESSION_KEEP_S",
     "_stored_base",
     "_TAIL",
+    "allocation_via_funds",
     "allocation_weights",
     "aspsps",
     "asset_kind",
@@ -246,6 +249,7 @@ __all__ = [
     "review_metrics",
     "sec_matches",
     "sec_title",
+    "sector_funds",
     "sector_scans",
     "spot_rates",
     "stored_action",

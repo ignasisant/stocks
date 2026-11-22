@@ -26,7 +26,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { get, send } from "../shell/api";
-import { askAssistant, useAssistantChanges } from "../shell/assistant";
+import { askAssistant, tickerTopic, useAssistantChanges } from "../shell/assistant";
 import { useLang, useT } from "../shell/i18n";
 import { Link } from "../shell/router";
 import { useCurrency } from "../shell/session";
@@ -793,6 +793,7 @@ export function RulesBlock({
           onClick={() => {
             askAssistant(
               t(`journal.${side}_prompt`, { ticker: rulesSubject(ticker, name) }),
+              { topic: tickerTopic(ticker) },
             );
             onAsk();
           }}

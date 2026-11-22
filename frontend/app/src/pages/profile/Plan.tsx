@@ -734,7 +734,7 @@ function EntryAsk() {
       <button
         type="button"
         className="ag-btn ag-ai pl-ask-btn"
-        onClick={() => askAssistant(t("profile.entry_ask_prompt"), { fresh: true })}
+        onClick={() => askAssistant(t("profile.entry_ask_prompt"), { topic: "entry" })}
       >
         <Icon name="auto_awesome" size={18} />
         <span>{t("profile.entry_ask")}</span>
@@ -809,7 +809,7 @@ function Ask({ set }: { set: boolean }) {
       <button
         type="button"
         className="ag-btn ag-ai pl-ask-btn"
-        onClick={() => askAssistant(t("profile.plan_ask_prompt"), { fresh: true })}
+        onClick={() => askAssistant(t("profile.plan_ask_prompt"), { topic: "plan" })}
       >
         <Icon name="auto_awesome" size={18} />
         <span>{label}</span>

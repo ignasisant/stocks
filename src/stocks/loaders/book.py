@@ -129,6 +129,22 @@ def book_value_today(
     return float(series.iloc[-1]) if not series.empty else None
 
 
+def _priced_parts(
+    db: str, mtime: float, base: str, meta: dict[str, dict], key: str
+) -> tuple[dict[str, dict[str, float]], float]:
+    """`allocation_parts` over the priced positions table, and their total."""
+    from stocks.analysis.portfolio import allocation_parts
+
+    table = positions_table(db, mtime, base)
+    if table.empty or "value" not in table:
+        return {}, 0.0
+    amounts = {
+        str(ticker): float(value) for ticker, value in table["value"].dropna().items()
+    }
+    parts = allocation_parts(amounts, meta, key)
+    return parts, sum(sum(held.values()) for held in parts.values())
+
+
 def allocation_weights(
     db: str, mtime: float, base: str, meta: dict[str, dict], key: str, fallback
 ) -> dict[str, float]:
@@ -142,20 +158,36 @@ def allocation_weights(
     cost sums already do. `fallback` is the report's own split, for a table
     with nothing priced.
     """
-    from stocks.analysis.portfolio import allocation_parts
-
-    table = positions_table(db, mtime, base)
-    if table.empty or "value" not in table:
-        return dict(fallback)
-    amounts = {
-        str(ticker): float(value) for ticker, value in table["value"].dropna().items()
-    }
-    parts = allocation_parts(amounts, meta, key)
-    sums = {label: sum(held.values()) for label, held in parts.items()}
-    total = sum(sums.values())
+    parts, total = _priced_parts(db, mtime, base, meta, key)
     if not total:
         return dict(fallback)
+    sums = {label: sum(held.values()) for label, held in parts.items()}
     return dict(sorted(((k, v / total) for k, v in sums.items()), key=lambda kv: -kv[1]))
+
+
+def allocation_via_funds(
+    db: str, mtime: float, base: str, meta: dict[str, dict], key: str
+) -> dict[str, dict[str, float]]:
+    """{bucket: {fund: share of the book}}: the part of each of `key`'s buckets
+    held through a fund rather than a stock of its own.
+
+    Same table and total as `allocation_weights`, so a bucket's fund shares
+    never add up to more than the bucket it sits in. A sector the book only
+    reaches through a world ETF is the one a reader holds without knowing it.
+    """
+    parts, total = _priced_parts(db, mtime, base, meta, key)
+    if not total:
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    for label, held in parts.items():
+        via = {
+            ticker: amount / total
+            for ticker, amount in held.items()
+            if (meta.get(ticker) or {}).get(f"{key}_weights") and amount > 0
+        }
+        if via:
+            out[label] = dict(sorted(via.items(), key=lambda kv: -kv[1]))
+    return out
 
 
 def _clear_positions() -> None:

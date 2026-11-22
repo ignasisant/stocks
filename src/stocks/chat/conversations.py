@@ -11,7 +11,7 @@ import functools
 import inspect
 import json
 import uuid
-from collections.abc import Container
+from collections.abc import Container, Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -293,6 +293,7 @@ def list_conversations(path: Path, cards: bool = True) -> list[dict]:
             "messages": len(c["messages"]), "active": c["id"] == book["active"],
             "daily": str(c.get("daily") or ""),
             "scheduled": str(c.get("scheduled") or ""),
+            "topics": list(c.get("topics") or []),
         }
         for c in book["conversations"]
         if cards or c["id"] == book["active"] or c.get("scheduled")
@@ -312,28 +313,85 @@ def active_conversation(path: Path, cid: str | None = None) -> dict:
 def new_conversation(path: Path, title: str = "", busy: Container[str] = ()) -> str:
     """Start (and activate) an empty conversation; returns its id.
 
-    An active conversation that is still empty is reused, so pressing New
-    repeatedly can't stack blank threads — unless it is in `busy`: a first
-    question still being answered has not been written yet, and reusing its
-    thread would hand the reader the one they meant to leave."""
+    An empty conversation is reused — the active one first, else one left
+    behind — so pressing New repeatedly can't stack blank threads, and nor can
+    the drawer opening on a new one after a long absence and the reader going
+    back to an old one instead. Never one in `busy`: a first question still
+    being answered has not been written yet, and reusing its thread would hand
+    the reader the one they meant to leave. Any other blank thread goes
+    (`_sweep_blanks`)."""
     book = load_book(path)
-    conv = _active(book)
-    if conv["messages"] or conv["id"] in busy:
+    active = _active(book)
+    blank = [c for c in book["conversations"]
+             if not c["messages"] and c["id"] not in busy]
+    conv = next((c for c in blank if c is active), blank[0] if blank else None)
+    if conv is None:
         conv = _blank_conversation(title)
         book["conversations"].append(conv)
-    elif title:
-        conv["title"] = title[:_TITLE_MAX]
+    else:
+        if conv is not active:
+            conv["updated"] = _now()  # picked up again: not the oldest to prune
+        # A question that never landed may have named a subject here; the
+        # thread is starting over, and so is what it is about.
+        conv.pop("topics", None)
+        if title:
+            conv["title"] = title[:_TITLE_MAX]
     book["active"] = conv["id"]
+    _sweep_blanks(book, busy)
     save_book(book, path)
     return conv["id"]
 
 
+def _sweep_blanks(book: dict, busy: Container[str]) -> None:
+    """Drop every thread nobody wrote in but the active one: a blank thread is
+    only ever the page the next question lands on, never a conversation to
+    keep. Not one in `busy` either — its first question is being answered and
+    is not on disk until the answer lands (`save_chat`)."""
+    book["conversations"] = [
+        c for c in book["conversations"]
+        if c["messages"] or c["id"] == book["active"] or c["id"] in busy
+    ]
+
+
 @_locked
-def set_active_conversation(cid: str, path: Path) -> None:
+def set_active_conversation(cid: str, path: Path,
+                            busy: Container[str] | None = None) -> None:
+    """Make `cid` the active thread. With `busy` (the threads a run is still
+    answering), the blank ones left behind go (`_sweep_blanks`); without it
+    nothing is swept, since a caller that cannot tell which blank thread holds
+    a first question in flight would lose its answer."""
     book = load_book(path)
     if any(c["id"] == cid for c in book["conversations"]):
         book["active"] = cid
+        if busy is not None:
+            _sweep_blanks(book, busy)
         save_book(book, path)
+
+
+MAX_TOPICS = 12
+
+
+@_locked
+def add_topics(cid: str, topics: Iterable[str], path: Path) -> None:
+    """Note what thread `cid` is about: the subject a page's "Ask the AI"
+    named ("ticker:NVDA", "plan") and the tickers its questions named. The
+    drawer sends the next button press on the same subject here rather than
+    to a new thread (`chat/fresh.ts` `sameTopic`). Newest kept when full.
+
+    Only a thread on disk: the first thread of a book never written has no
+    durable id yet, and writing one here would leave chat.json behind for a
+    turn that may fail (`load_book`). The drawer starts a thread before asking
+    on a new subject, so the threads that matter are always there."""
+    book = load_book(path)
+    for c in book["conversations"]:
+        if c["id"] != cid:
+            continue
+        had = list(c.get("topics") or [])
+        new = [t for t in dict.fromkeys(topics) if t and t not in had]
+        if new:
+            c["topics"] = (had + new)[-MAX_TOPICS:]
+            save_book(book, path)
+        return
 
 
 @_locked

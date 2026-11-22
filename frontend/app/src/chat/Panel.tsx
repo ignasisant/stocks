@@ -13,7 +13,7 @@
  * answer that is still being written.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -23,6 +23,7 @@ import { useT } from "../shell/i18n";
 import { useWidth } from "../shell/useWidth";
 import { pageFor } from "../shell/pages";
 import { useRoute } from "../shell/router";
+import { holdScroll } from "../shell/settle";
 import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
@@ -39,6 +40,7 @@ import { PushOffer } from "./PushOffer";
 import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Tabs } from "./Tabs";
+import { END_PX, forget, left, note, recall } from "./spot";
 import { close as closeTab, fit, readTabs, same, saveTabs } from "./strip";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
@@ -312,6 +314,7 @@ export default function Panel({
   // active thread back on top of the one asked for.
   useEffect(() => {
     if (!thread || !chat.ready) return;
+    forget(thread);
     openThread(thread);
     onThreadTaken?.();
     // Fires on a new `thread` only: both functions are new every render, and
@@ -371,10 +374,63 @@ export default function Panel({
   const calm =
     typeof window !== "undefined" &&
     !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
-    initial: "instant",
-    resize: calm ? "instant" : undefined,
-  });
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom, stopScroll } =
+    useStickToBottom({
+      initial: "instant",
+      resize: calm ? "instant" : undefined,
+    });
+
+  // Where the reader was in this thread (`chat/spot`): noted as they scroll,
+  // put back when the thread is drawn again — the drawer reopened after a
+  // ticker it sent them to, the thread list and back — unless turns came in
+  // since. Laid out before the library's first measure, which would otherwise
+  // take the region to the bottom first. Not while a thread is being opened
+  // on purpose (`thread`): that is a link to its newest answer.
+  const [region, setRegion] = useState<HTMLDivElement | null>(null);
+  const placeRegion = useCallback(
+    (el: HTMLDivElement | null) => {
+      scrollRef(el);
+      setRegion(el);
+    },
+    [scrollRef],
+  );
+  const turnCount = chat.turns.length;
+  const turnsNow = useRef(turnCount);
+  turnsNow.current = turnCount;
+  const drawn = turnCount > 0 && !thread;
+  // The thread put back, and with how many turns: one more since is the
+  // reader's own question, and that is followed to the bottom again.
+  const kept = useRef<{ id: string; turns: number } | null>(null);
+  const release = useRef(() => {});
+  useLayoutEffect(() => {
+    if (!region || !activeId || !drawn) return;
+    const top = recall(activeId, turnsNow.current);
+    if (top !== null) {
+      stopScroll();
+      release.current = holdScroll(region, top);
+      kept.current = { id: activeId, turns: turnsNow.current };
+    }
+    const onScroll = () =>
+      note(
+        activeId,
+        region.scrollTop,
+        turnsNow.current,
+        region.scrollHeight - region.scrollTop - region.clientHeight < END_PX,
+      );
+    region.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      release.current();
+      region.removeEventListener("scroll", onScroll);
+      left(activeId);
+    };
+  }, [region, activeId, drawn, stopScroll]);
+  useEffect(() => {
+    const was = kept.current;
+    if (!was || (was.id === activeId && was.turns === turnCount)) return;
+    kept.current = null;
+    release.current();
+    if (was.id === activeId) void scrollToBottom(calm ? "instant" : undefined);
+  }, [activeId, turnCount, scrollToBottom, calm]);
 
   // The tabs over a wide drawer (`strip.ts`): the thread on screen joins them,
   // and a deleted one leaves, whichever way either happened.
@@ -677,7 +733,7 @@ export default function Panel({
               className={["ag-chat-scroll", below && "ag-chat-scroll-fade"]
                 .filter(Boolean)
                 .join(" ")}
-              ref={scrollRef}
+              ref={placeRegion}
             >
               <div className="ag-chat-stream" ref={contentRef}>
                 {chat.turns.length ? (

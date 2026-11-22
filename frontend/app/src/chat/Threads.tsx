@@ -209,10 +209,14 @@ export function Threads({
   // Client-side filtering: these are tens of threads and their titles are
   // already in memory from the listing above — an index would cost more than
   // it saves.
+  // A thread nobody wrote in is no conversation to go back to — the blank one
+  // on screen included: its place is the header. Unless its first question is
+  // being answered, which is not on disk until the answer lands.
+  const said = threads.filter((c) => c.messages > 0 || c.answering);
   const query = needle.trim().toLowerCase();
   const shown = query
-    ? threads.filter((c) => (c.title || "").toLowerCase().includes(query))
-    : threads;
+    ? said.filter((c) => (c.title || "").toLowerCase().includes(query))
+    : said;
   const runs = shown.filter((c) => c.scheduled);
   const rest = shown.filter((c) => !c.scheduled);
   const row = (conv: Conversation) => (

@@ -281,6 +281,7 @@ PLAN = "update_plan"
 FINISH = "finish_research"
 PLANNED = "Plan noted. Carry on."
 FINISHED = "Noted. Reply DONE."
+_LANG_NAME = {"en": "English", "es": "Spanish", "it": "Italian"}
 _PLAN_PARTS, _PLAN_CHARS = 6, 60
 
 PLAN_SPECS = [
@@ -442,6 +443,7 @@ def gather(
     on_plan: Callable[[list[dict]], None] | None = None,
     known: dict[tuple[str, str], str] | None = None,
     on_call: Callable[[str, dict, str], None] | None = None,
+    lang: str | None = None,
     view: str = "",
 ) -> Evidence:
     """Run the tool loop for the pending turn and return what it fetched.
@@ -484,6 +486,10 @@ def gather(
         calls=profile.max_calls)
     if view.strip():
         system += "\n\n" + view.strip()
+    if profile.plans and (name := _LANG_NAME.get(lang or "")):
+        # The plan is on the reader's screen while they wait: in the app's
+        # language, like the answer (`instructions.language_rule`).
+        system += f"\n\nWrite the update_plan steps in {name}."
     picked = ((model or provider.default_model) if profile.main_model
               else provider.classifier_model or provider.default_model)
     tools = toolbox.specs(ctx, engines=profile.engines)

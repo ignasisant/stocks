@@ -220,5 +220,7 @@
   "tour.tip_earnings_1": "When your companies report, by date.",
   "tour.tip_earnings_2": "Your trades, dividends and market holidays in the same calendar.",
   "tour.tip_profile_1": "Currency, language and tax country; each change saves itself.",
-  "tour.tip_profile_2": "Restart the guided tour from Preferences whenever you like."
+  "tour.tip_profile_2": "Restart the guided tour from Preferences whenever you like.",
+  "tour.news_2026_11_6_funds_title": "Funds for each sector",
+  "tour.news_2026_11_6_funds_body": "Each sector now lists its **ETFs and funds**: cost, purity, overlap with the podium and returns in your money."
 }

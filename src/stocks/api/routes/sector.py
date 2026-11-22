@@ -25,20 +25,29 @@ from pydantic import BaseModel, Field
 
 from stocks import accounts, cpu_hold, loaders, userstore
 from stocks.analysis import review as engine
+from stocks.analysis import sector_funds as funds_catalog
 from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.analysis.technicals import TECH_METRIC_ORDER
-from stocks.api.deps import Account, Writer
+from stocks.api.deps import Account, Base, Writer, reporting_currency
+from stocks.api.security import Who
 from stocks.jsonsafe import num as _num
 from stocks.schemas import (
     CohortJudged,
     CohortRow,
+    FundHoldingLine,
+    FundReturn,
+    PodiumInFund,
     SectorCohort,
+    SectorFund,
+    SectorFundReturns,
+    SectorFunds,
     Sectors,
     SectorSummary,
 )
+from stocks.views import sector_funds as fund_returns
 
 router = APIRouter(tags=["sector"])
 
@@ -265,6 +274,99 @@ def cohort(
     shell.tech_podium = list(scan.tech_podium)
     shell.tech_rows = tech_rows
     return shell
+
+
+# ------------------------------------------------------------- the funds
+
+
+def _rounded(value: float | None, digits: int = 4) -> float | None:
+    return None if value is None else round(value, digits)
+
+
+@router.get(
+    "/sectors/{sector}/funds",
+    response_model=SectorFunds,
+    summary="The funds that buy the whole sector",
+)
+def funds(sector: str) -> SectorFunds:
+    """The curated sector ETFs and mutual funds, read off tonight's stored
+    profiles: cost, how much of each really is the sector, how concentrated it
+    is, and how much of it is the cohort and podium this page ranks.
+
+    Account-free like the cohort. Holdings are the ten lines Yahoo discloses,
+    so every overlap is a floor and a podium name with a null weight is "not
+    among its ten largest", never zero.
+    """
+    name = _resolve(sector)
+    scan = _scans().get(name)
+    cohort = tuple(scan.tickers) if scan else ()
+    podium = tuple(scan.podium) if scan else ()
+    names = loaders.listing_names(list(cohort)) if cohort else {}
+    stored = loaders.sector_funds()
+    facts = funds_catalog.sector_facts(name, stored, cohort, podium, names)
+    return SectorFunds(
+        sector=name,
+        funds=[
+            SectorFund(
+                ticker=f.symbol,
+                kind=f.kind,
+                scope=f.scope,
+                only=f.only,
+                name=f.name,
+                currency=f.currency,
+                family=f.family,
+                expense_ratio=_rounded(f.expense_ratio, 5),
+                purity=round(f.purity, 4),
+                lines=[
+                    FundHoldingLine(
+                        ticker=line.symbol,
+                        name=line.name,
+                        weight=round(line.weight, 4),
+                        role=line.role,
+                    )
+                    for line in f.lines
+                ],
+                top3=round(f.top3, 4),
+                top10=round(f.top10, 4),
+                cohort_weight=round(f.cohort_weight, 4),
+                podium=[
+                    PodiumInFund(ticker=t, weight=_rounded(w))
+                    for t, w in f.podium
+                ],
+                fetched=f.fetched,
+            )
+            for f in facts
+        ],
+    )
+
+
+@router.get(
+    "/sectors/{sector}/funds/returns",
+    response_model=SectorFundReturns,
+    summary="What the sector's funds did, in the reader's money",
+)
+def funds_returns(
+    sector: str, account: Account, who: Who, base: Base = None
+) -> SectorFundReturns:
+    """Each curated fund's move from the book's first day and over the last
+    twelve months, in the reader's currency, plus whether a switch between
+    mutual funds is untaxed where the reader files.
+
+    Apart from `/funds` because it is the reader's: their first day, their
+    currency. A guest gets the twelve months only — the demo book's first day
+    is nobody's.
+    """
+    name = _resolve(sector)
+    ccy = reporting_currency(account, base)
+    guest = who.kind == "guest"
+    out = fund_returns.returns(name, account, ccy, own_book=not guest)
+    return SectorFundReturns(
+        sector=name,
+        currency=ccy,
+        since=out["since"],
+        transfer_free=False if guest else fund_returns.transfer_free(account),
+        returns=[FundReturn.model_validate(r) for r in out["returns"]],
+    )
 
 
 # ----------------------------------------------------------- the verdict

@@ -220,5 +220,7 @@
   "tour.tip_earnings_1": "Cuándo presentan resultados tus empresas, por fecha.",
   "tour.tip_earnings_2": "Tus operaciones, dividendos y festivos de mercado, en la misma agenda.",
   "tour.tip_profile_1": "Moneda, idioma y país fiscal; cada cambio se guarda solo.",
-  "tour.tip_profile_2": "Repite el tutorial guiado desde Preferencias cuando quieras."
+  "tour.tip_profile_2": "Repite el tutorial guiado desde Preferencias cuando quieras.",
+  "tour.news_2026_11_6_funds_title": "Fondos de cada sector",
+  "tour.news_2026_11_6_funds_body": "Cada sector lista sus **ETF y fondos**: coste, pureza, solape con el podio y rentabilidad en tu moneda."
 }

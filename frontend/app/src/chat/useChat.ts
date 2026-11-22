@@ -50,6 +50,7 @@ import {
   syncGuide,
   type GuideState,
 } from "./guide";
+import { lastSeen, markSeen, onTopic, stale } from "./fresh";
 import { useLanded } from "./landed";
 import { openOrBack, type Opened } from "./opening";
 import { nameOf, reportUnreadable } from "../pages/import/api";
@@ -262,12 +263,50 @@ export function useChat(live: boolean) {
   // only when the reader moves it, and every move answers with the new state.
   // Beside the opening read, never in its way: an account the route refuses
   // (a guest) or a server without it simply has no walkthrough.
-  const guideRead = useRef(false);
+  const guideRead = useRef<Promise<GuideState | null> | null>(null);
   useEffect(() => {
     if (!live || guideRead.current) return;
-    guideRead.current = true;
-    readGuide().then(setGuide, () => setGuide(null));
+    guideRead.current = readGuide().then(
+      (next) => {
+        setGuide(next);
+        return next;
+      },
+      () => {
+        setGuide(null);
+        return null;
+      },
+    );
   }, [live]);
+
+  /**
+   * Whether `open` was left long enough ago to start on a new thread instead
+   * (`fresh.ts`). Asks the walkthrough only when the answer is yes: a guide
+   * still under way keeps its thread.
+   */
+  const leftLongAgo = useCallback(async (open: Conversation | undefined) => {
+    const seen = lastSeen();
+    if (!stale(open, seen, Date.now())) return false;
+    const now = await (guideRead.current ?? Promise.resolve(null));
+    return stale(open, seen, Date.now(), now?.active ? now.thread : null);
+  }, []);
+
+  // Set by `hold`: this open of the drawer is for something in particular —
+  // a thread, a question, a statement, the guide — and is not started blank.
+  // Cleared when the drawer shuts.
+  const held = useRef(false);
+  const hold = useCallback(() => {
+    held.current = true;
+  }, []);
+
+  /**
+   * The same question asked now of the thread on screen, from what is already
+   * in hand: a page's question sent on reopening goes to a new thread rather
+   * than under one the reader left yesterday.
+   */
+  const leftBehind = useCallback(() => {
+    const open = threadsRef.current?.find((c) => c.id === activeRef.current);
+    return stale(open, lastSeen(), Date.now(), guide?.active ? guide.thread : null);
+  }, [guide]);
 
   const write = useCallback((edit: (turn: Turn) => Turn) => {
     setTurns((list) => {
@@ -589,6 +628,8 @@ export function useChat(live: boolean) {
       // The question takes the place of the last exchange (`edit`).
       replace = false,
       docs?: Doc[],
+      // The page's subject ("ticker:NVDA"), noted on the thread (`fresh.onTopic`).
+      topic?: string,
     ) => {
       const message = text.trim();
       // A second send while one is in flight is refused, not queued: one
@@ -630,6 +671,7 @@ export function useChat(live: boolean) {
         staged_import: preview?.filename,
         ...(deep ? { depth: "deep" as const } : {}),
         ...(brief ? { brief } : {}),
+        ...(topic ? { topic } : {}),
         // An edited question's pictures and documents are the server's to
         // carry over: it kept them when the first wording was filed.
         ...(shots?.length && !replace ? { screenshots: shots } : {}),
@@ -727,7 +769,17 @@ export function useChat(live: boolean) {
         const list = await readThreads();
         if (alive) setThreads(list);
         const open = list.find((c) => c.active) ?? list[0];
-        if (alive && open) {
+        // Away long enough that the question is a new one (`fresh.ts`) —
+        // unless the drawer was opened onto something in particular.
+        const blank =
+          !held.current && (await leftLongAgo(open))
+            ? await startThread().catch(() => null)
+            : null;
+        if (alive && blank) {
+          setActiveId(blank.id);
+          setTurns([]);
+          setThreads(await readThreads().catch(() => list));
+        } else if (alive && open) {
           setActiveId(open.id);
           const thread = await readThread(open.id);
           if (alive) show(thread);
@@ -748,7 +800,7 @@ export function useChat(live: boolean) {
       // again rather than leave a drawer that never loaded.
       if (!done) opened.current = false;
     };
-  }, [live, show]);
+  }, [leftLongAgo, live, show]);
 
   /**
    * Answer a proposal card: run the action (as edited) or drop it.
@@ -1087,6 +1139,65 @@ export function useChat(live: boolean) {
     await refresh();
   }, [detach, refresh]);
 
+  /**
+   * Put the drawer on the thread a page's question on `topic` belongs to
+   * (`fresh.onTopic`): stay, open the one on that subject, or start a new
+   * one. Read from the server, not the list in memory: the subject of the
+   * question just answered is noted there, not here.
+   */
+  const follow = useCallback(
+    async (topic: string) => {
+      const list = await readThreads().catch(() => threadsRef.current ?? []);
+      const here = activeRef.current;
+      const target = onTopic(list, here, topic, Date.now());
+      if (target && target === here) return;
+      if (target && (await open(target)) === "opened") return;
+      await create();
+    },
+    [create, open],
+  );
+
+  /**
+   * The drawer reopened on a thread left long enough ago that the question is
+   * a new one: start a blank thread, as the opening read does. Not when the
+   * open was for something in particular (`hold`), and not if, by the time
+   * the list is read, the reader asked something or opened another thread.
+   */
+  const freshen = useCallback(async () => {
+    const before = activeRef.current;
+    const known = threadsRef.current?.find((c) => c.id === before);
+    if (!ready || held.current || flight.current) return;
+    if (!stale(known, lastSeen(), Date.now())) return;
+    const list = await readThreads().catch(() => null);
+    if (!(await leftLongAgo(list?.find((c) => c.id === before)))) return;
+    if (held.current || flight.current || activeRef.current !== before) return;
+    await create().catch(() => {});
+  }, [create, leftLongAgo, ready]);
+
+  // The drawer's last sighting, for `freshen` and the next opening read: when
+  // it shuts, and when the app leaves the screen with it open.
+  const wasLive = useRef(live);
+  useEffect(() => {
+    const was = wasLive.current;
+    wasLive.current = live;
+    if (!live) {
+      held.current = false;
+      if (was) markSeen();
+      return;
+    }
+    if (!was) void freshen();
+    const away = () => {
+      if (document.visibilityState === "hidden") markSeen();
+    };
+    const gone = () => markSeen();
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("pagehide", gone);
+    return () => {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("pagehide", gone);
+    };
+  }, [live, freshen]);
+
   const rename = useCallback(
     async (cid: string, title: string) => {
       await editThread(cid, { title });
@@ -1304,6 +1415,8 @@ export function useChat(live: boolean) {
   const apply = useCallback((next: ChatState) => setState(next), []);
 
   return {
+    hold,
+    leftBehind,
     state,
     threads,
     activeId,
@@ -1325,6 +1438,7 @@ export function useChat(live: boolean) {
     shared,
     open,
     create,
+    follow,
     rename,
     remove,
     settings,

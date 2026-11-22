@@ -1080,3 +1080,472 @@
     min-height: 44px;
   }
 }
+
+/* ------------------------------------------------- buy the whole sector */
+
+/* `Funds.tsx`: one grid for the card, every row on subgrid, so each figure a
+   reader compares lines up down the column. The header row is decoration
+   (aria-hidden); every cell carries its own label, read aloud on desktop and
+   shown once the rows stack. */
+.ag-sec-funds {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  column-gap: 0.75rem;
+  grid-template-columns:
+    minmax(12rem, 1.6fr) 4rem 4.5rem minmax(7rem, 1fr) 5rem 6rem 4.5rem
+    2.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A guest or an empty book has no first day: no "since" column. */
+.ag-sec-funds-nosince {
+  grid-template-columns:
+    minmax(12rem, 1.6fr) 4rem 4.5rem minmax(7rem, 1fr) 5rem 4.5rem
+    2.75rem;
+}
+
+.ag-sec-funds-head,
+.ag-sec-fund {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.ag-sec-funds-head {
+  align-items: end;
+  padding: 0 0 0.5rem;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.3;
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund {
+  row-gap: 0.4rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-sec-fund:last-child {
+  border-bottom: 0;
+}
+
+.ag-sec-fund-num {
+  justify-self: end;
+  text-align: right;
+}
+
+.ag-sec-fund-who {
+  display: grid;
+  row-gap: 1px;
+  min-width: 0;
+}
+
+.ag-sec-fund-line1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.ag-sec-fund-line1 b {
+  font-size: var(--ag-fs-base);
+}
+
+/* Fund names run long ("iShares S&P 500 Information Technology Sector UCITS
+   ETF USD (Acc)"): one line, the rest in the title. */
+.ag-sec-fund-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund-ter,
+.ag-sec-fund-purity,
+.ag-sec-fund-cohort {
+  font-size: var(--ag-fs-base);
+  color: var(--ag-text-secondary);
+}
+
+.ag-sec-fund-none {
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund-ret {
+  font-family: var(--ag-font-display);
+  font-size: 1rem;
+}
+
+/* Without a first day the year is the one return: it takes the lead ink. */
+.ag-sec-funds-nosince .ag-sec-fund-y1v {
+  font-family: var(--ag-font-display);
+  font-size: 1rem;
+}
+
+/* Read aloud beside the figure, drawn only once the rows stack — except the
+   late opener's date, which changes what the figure means. */
+.ag-sec-fund-lab {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ag-sec-fund-sub {
+  font-size: var(--ag-fs-xs);
+  font-weight: 400;
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund-late {
+  position: static;
+  display: block;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  white-space: normal;
+}
+
+.ag-sec-fund-sk {
+  display: inline-block;
+  width: 3.5rem;
+  height: 0.9rem;
+  border-radius: 4px;
+  background: var(--ag-surface-sunken);
+  vertical-align: middle;
+}
+
+.ag-sec-fund-sk-s {
+  width: 2.75rem;
+}
+
+/* The signature: what a euro in the fund buys. The ten disclosed lines in
+   weight order — podium in the accent (as on the podium itself), the page's
+   other names solid, names the page does not rank hatched, the undisclosed
+   rest left as empty track. Three fills, never three greys. */
+.ag-sec-mix {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--ag-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--ag-text-faint);
+}
+
+.ag-sec-mix > i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+}
+
+.ag-sec-mix > .ag-sec-mix-gap {
+  min-width: 0;
+}
+
+.ag-sec-mix-podium {
+  background: var(--ag-brand-accent);
+}
+
+.ag-sec-mix-cohort {
+  background: var(--ag-text-secondary);
+}
+
+.ag-sec-mix-other {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--ag-text-muted) 0 1.5px,
+    transparent 1.5px 4px
+  );
+}
+
+.ag-sec-mix-rest {
+  background: var(--ag-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--ag-text-faint);
+}
+
+.ag-sec-mix-sw {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.ag-sec-fund-more {
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.ag-sec-fund-more:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+.ag-sec-fund-more svg {
+  transition: transform 0.2s var(--ag-ease-out);
+}
+
+.ag-sec-fund[data-open] .ag-sec-fund-more svg {
+  transform: rotate(180deg);
+}
+
+@media (hover: hover) {
+  .ag-sec-fund-more:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-sec-fund-more {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-sec-fund-more svg {
+    transition: none;
+  }
+}
+
+/* The phone's one line of facts; the desktop has columns for them. */
+.ag-sec-fund-facts {
+  display: none;
+}
+
+/* The podium names the fund does hold, under the bar they light up. */
+.ag-sec-fund-podium {
+  grid-column: 4 / -1;
+  margin: 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.ag-sec-fund-podium-label {
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund-detail {
+  grid-column: 1 / -1;
+  margin: 0.5rem 0 0.125rem;
+}
+
+.ag-sec-fund-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 2 16rem;
+  column-gap: 2rem;
+}
+
+.ag-sec-fund-lines > li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 3px 0;
+  break-inside: avoid;
+}
+
+.ag-sec-fund-lines a.ag-tick {
+  font-weight: 600;
+}
+
+.ag-sec-fund-line-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-fund-role {
+  font-size: var(--ag-fs-xs);
+  white-space: nowrap;
+  color: var(--ag-brand-accent);
+}
+
+.ag-sec-fund-line-weight {
+  color: var(--ag-text-secondary);
+}
+
+.ag-sec-fund-sums {
+  margin: 0.5rem 0 0;
+  color: var(--ag-text-muted);
+  text-wrap: pretty;
+}
+
+.ag-sec-mix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.ag-sec-mix-legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ag-sec-funds-foot {
+  max-width: 80ch;
+  margin: 0.625rem 0 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  text-wrap: pretty;
+}
+
+.ag-sec-you-funds {
+  margin: 0.25rem 0 0.5rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-sec-funds a.ag-tick,
+.ag-sec-you-funds a.ag-tick {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .ag-sec-funds a.ag-tick:hover,
+  .ag-sec-you-funds a.ag-tick:hover {
+    text-decoration: underline;
+  }
+}
+
+/* Narrow room (a phone, a tablet, the desktop with the chat open wide): each
+   fund stacks, its figures carry their own labels, the three facts read as
+   one line, and the chevron grows to a thumb's size beside the bar. */
+@container ag-main (max-width: 54rem) {
+  .ag-sec-funds {
+    display: block;
+  }
+
+  .ag-sec-funds-head {
+    display: none;
+  }
+
+  .ag-sec-fund {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "who since"
+      "facts y1"
+      "mix more";
+    column-gap: 0.75rem;
+    row-gap: 0.5rem;
+    padding: 0.875rem 0;
+  }
+
+  .ag-sec-fund-who {
+    grid-area: who;
+  }
+
+  /* No hover on a phone to read the title: two lines, then cut. */
+  .ag-sec-fund-name {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .ag-sec-fund-since,
+  .ag-sec-funds-nosince .ag-sec-fund-y1 {
+    grid-area: since;
+  }
+
+  .ag-sec-fund-y1 {
+    grid-area: y1;
+    align-self: start;
+  }
+
+  .ag-sec-fund-ter,
+  .ag-sec-fund-purity,
+  .ag-sec-fund-cohort {
+    display: none;
+  }
+
+  .ag-sec-fund-facts {
+    grid-area: facts;
+    display: block;
+    margin: 0;
+    line-height: 1.45;
+    color: var(--ag-text-secondary);
+  }
+
+  .ag-sec-fund-facts > span {
+    color: var(--ag-text-muted);
+  }
+
+  .ag-sec-mix {
+    grid-area: mix;
+  }
+
+  .ag-sec-fund-more {
+    grid-area: more;
+    width: 44px;
+    height: 44px;
+    margin: -0.5rem 0;
+  }
+
+  /* Full-width rows of their own, made only when there is something to put
+     in them: a named area would keep its gap under every fund. */
+  .ag-sec-fund-podium,
+  .ag-sec-fund-detail {
+    grid-column: 1 / -1;
+  }
+
+  .ag-sec-fund-detail {
+    margin: 0.25rem 0 0;
+  }
+
+  .ag-sec-fund-lines {
+    columns: 1;
+  }
+
+  .ag-sec-fund-lab {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+    font-size: var(--ag-fs-xs);
+    color: var(--ag-text-muted);
+  }
+
+  .ag-sec-fund-sub {
+    display: block;
+  }
+
+  .ag-sec-funds-nosince .ag-sec-fund-y1 .ag-sec-fund-lab {
+    display: block;
+  }
+}

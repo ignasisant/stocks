@@ -235,6 +235,15 @@ def book(account: Account, base: Base = None) -> PulseBook:
     answer.sector_weights = {
         str(name): float(weight) for name, weight in sectors.items() if weight == weight
     }
+    # The same split, the part of each sector a fund carries: the Sector
+    # page's "you here" line for a reader who holds a sector only through
+    # a world ETF and owns none of its names.
+    answer.sector_funds = {
+        str(label): {str(t): round(float(w), 6) for t, w in held.items()}
+        for label, held in loaders.allocation_via_funds(
+            db, mtime, ccy, report.meta, "sector"
+        ).items()
+    }
 
     # The benchmarks, degrading like `_market_readings`: a failed burst costs
     # the betas and correlations — each already null when its series is

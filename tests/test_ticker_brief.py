@@ -217,3 +217,24 @@ def test_about_reads_the_profile_memo_only(monkeypatch):
                         lambda t: {"sector": "Energy", "industry": "Uranium"})
     assert brief.about("LEU") == "Energy · Uranium"
     assert brief.about("") == ""
+
+
+@pytest.mark.parametrize("angle", brief.ANGLES)
+def test_headers_follow_the_reader_language(world, angle):
+    # An English "**Verdict**" in a Spanish thread pulled the whole answer
+    # into English (prod 2026-11-22, BYDDF).
+    es = brief.build(angle, "LEU", today=TODAY, lang="es", **world["paths"])
+    en = brief.build(angle, "LEU", today=TODAY, lang="en", **world["paths"])
+    heads = brief._HEADER_RE.findall(en.shape)
+    assert heads
+    for head in heads:
+        assert f"**{brief._HEADERS['es'][head]}**" in es.shape
+    assert "Write the whole answer in Spanish" in es.shape
+    assert "Write the whole answer in" not in en.shape
+
+
+def test_every_header_has_every_translation():
+    english = {h for sections, _ in brief._SECTIONS.values()
+               for h in brief._HEADER_RE.findall(sections)}
+    for lang, names in brief._HEADERS.items():
+        assert english <= names.keys(), (lang, english - names.keys())

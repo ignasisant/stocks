@@ -4,6 +4,7 @@ calendar, the pulse's series, the daily card and the banks list.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +26,39 @@ def sector_scans() -> dict:
     from stocks.analysis.sectors import load_scan
 
     return load_scan()
+
+
+@ttl_cache(_LEDGER_TTL, max_entries=1)
+def _stored_funds() -> dict:
+    from stocks.analysis.sector_funds import load
+
+    return load()
+
+
+# An empty read is asked again after this long rather than kept for the hour:
+# an instance that boots before the first `stocks sector-funds --publish`
+# (or whose restore failed) would otherwise serve no fund card for an hour
+# after the file is there. Not on every request either: a missing file means
+# a bucket round trip per read.
+_EMPTY_RETRY_S = 300.0
+_empty_since: list[float] = []
+
+
+def sector_funds() -> dict:
+    """The nightly sector-fund profiles (`analysis.sector_funds`), shared by
+    every reader like `sector_scans`."""
+    funds = _stored_funds()
+    if funds:
+        _empty_since.clear()
+        return funds
+    now = time.monotonic()
+    if not _empty_since:
+        _empty_since.append(now)
+    elif now - _empty_since[0] >= _EMPTY_RETRY_S:
+        _stored_funds.cache_clear()  # ty: ignore[missing-attribute]
+        funds = _stored_funds()
+        _empty_since[0] = now
+    return funds
 
 
 # The market-wide and calendar memos below serve stale for as long as the

@@ -83,6 +83,19 @@ def cmd_sector_scan(args: argparse.Namespace) -> None:
         _check_published(SCAN_FILE)
 
 
+def cmd_sector_funds(args: argparse.Namespace) -> None:
+    """Refresh the sector funds' stored profiles. Market-wide, no fan-out."""
+    from stocks.analysis.sector_funds import FUNDS_FILE, refresh
+
+    status = refresh(dry_run=args.dry_run)
+    for symbol, result in status.items():
+        print(f"{symbol}: {result}")
+    if not any(result == "ok" for result in status.values()):
+        raise SystemExit("no fund profile came back: the stored file was kept")
+    if args.publish and not args.dry_run:
+        _check_published(FUNDS_FILE)
+
+
 def _check_published(path) -> None:
     """Fail the run unless the bucket holds the file it just wrote (`--publish`).
 
@@ -1441,6 +1454,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail unless the bucket ends up holding the file written (cron)",
     )
     p_sector.set_defaults(func=cmd_sector_scan)
+
+    p_sector_funds = sub.add_parser(
+        "sector-funds",
+        help="refresh the profiles of the funds that buy each sector (nightly cron)",
+    )
+    p_sector_funds.add_argument(
+        "--dry-run", action="store_true",
+        help="fetch and print without writing the stored file",
+    )
+    p_sector_funds.add_argument(
+        "--publish", action="store_true",
+        help="fail unless the bucket ends up holding the file written (cron)",
+    )
+    p_sector_funds.set_defaults(func=cmd_sector_funds)
 
     p_13f = sub.add_parser(
         "holdings-13f",

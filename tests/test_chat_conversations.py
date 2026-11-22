@@ -104,6 +104,63 @@ def test_new_conversation_reuses_an_empty_active_thread(chat):
     assert len(conversations.list_conversations(chat)) == 1
 
 
+def test_new_conversation_reuses_an_empty_thread_that_is_not_active(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    old = conversations.active_conversation(chat)["id"]
+    blank = conversations.new_conversation(chat)  # opened after a long absence
+    conversations.set_active_conversation(old, chat)  # went back to the old one
+    assert conversations.new_conversation(chat) == blank
+    assert conversations.active_conversation(chat)["id"] == blank
+    assert len(conversations.list_conversations(chat)) == 2
+
+
+def test_leaving_a_blank_thread_drops_it(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    old = conversations.active_conversation(chat)["id"]
+    conversations.new_conversation(chat)
+    conversations.set_active_conversation(old, chat, busy=set())
+    assert [c["id"] for c in conversations.list_conversations(chat)] == [old]
+
+
+def test_leaving_a_blank_thread_being_answered_keeps_it(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    old = conversations.active_conversation(chat)["id"]
+    blank = conversations.new_conversation(chat)
+    conversations.set_active_conversation(old, chat, busy={blank})
+    assert {c["id"] for c in conversations.list_conversations(chat)} == {old, blank}
+    # …so its first answer still lands in it, not in the thread opened since.
+    turns = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]
+    conversations.save_chat(turns, chat, blank)
+    assert conversations.load_chat(chat, blank) == turns
+    assert len(conversations.load_chat(chat, old)) == 1
+
+
+def test_switching_without_busy_sweeps_nothing(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    old = conversations.active_conversation(chat)["id"]
+    blank = conversations.new_conversation(chat)
+    conversations.set_active_conversation(old, chat)
+    assert blank in {c["id"] for c in conversations.list_conversations(chat)}
+
+
+def test_new_conversation_drops_older_blanks(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    old = conversations.active_conversation(chat)["id"]
+    first = conversations.new_conversation(chat)
+    conversations.new_conversation(chat, busy={first})  # a second blank
+    conversations.set_active_conversation(old, chat)  # left with no sweep
+    third = conversations.new_conversation(chat)
+    listed = conversations.list_conversations(chat)
+    blanks = [c["id"] for c in listed if not c["messages"]]
+    assert blanks == [third] == [first]  # one reused, the other swept
+
+
+def test_new_conversation_skips_a_busy_blank(chat):
+    conversations.save_chat([{"role": "user", "content": "old"}], chat)
+    blank = conversations.new_conversation(chat)
+    assert conversations.new_conversation(chat, busy={blank}) != blank
+
+
 def test_new_conversation_forks_once_the_thread_has_turns(chat):
     conversations.save_chat([{"role": "user", "content": "hi"}], chat)
     first = conversations.active_conversation(chat)["id"]
@@ -289,3 +346,29 @@ def test_a_write_sweeps_the_memories_of_the_threads_it_let_go(chat, monkeypatch)
     conversations.delete_conversation("c_kept", chat)
     assert "c_kept" not in swept[-1]
 
+
+
+def test_add_topics_notes_each_subject_once(chat):
+    conversations.save_chat([{"role": "user", "content": "hi"}], chat)
+    cid = conversations.active_conversation(chat)["id"]
+    conversations.add_topics(cid, ["ticker:NVDA", "plan"], chat)
+    conversations.add_topics(cid, ["ticker:NVDA", "", "ticker:MSFT"], chat)
+    [meta] = conversations.list_conversations(chat)
+    assert meta["topics"] == ["ticker:NVDA", "plan", "ticker:MSFT"]
+
+
+def test_add_topics_keeps_the_newest_when_full(chat):
+    conversations.save_chat([{"role": "user", "content": "hi"}], chat)
+    cid = conversations.active_conversation(chat)["id"]
+    conversations.add_topics(cid, [f"ticker:T{i}" for i in range(20)], chat)
+    [meta] = conversations.list_conversations(chat)
+    assert len(meta["topics"]) == conversations.MAX_TOPICS
+    assert meta["topics"][-1] == "ticker:T19"
+
+
+def test_a_reused_blank_thread_forgets_its_topics(chat):
+    blank = conversations.new_conversation(chat)
+    conversations.add_topics(blank, ["ticker:NVDA"], chat)  # the question never landed
+    assert conversations.new_conversation(chat) == blank
+    [meta] = conversations.list_conversations(chat)
+    assert meta["topics"] == []

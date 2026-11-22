@@ -44,6 +44,18 @@ The first podium ranks cohort members on 18 KPIs by percentile within the cohort
 ## The written verdict
 Under the podium, "What the screen says" is written by the assistant against tonight's scan and checked figure by figure. Generating it costs one unit of the free allowance; simply opening the page never spends anything. If no model answers, a free computed summary is shown instead. It is stored per sector, scan date and language.
 
+## Buy the whole sector: ETFs and funds
+"Buy the whole sector" lists curated vehicles that hold the sector, for a reader who would rather own all of it than pick a podium name.
+- UCITS ETFs: a world, a US and a Europe one where they exist (Xtrackers, iShares). Europe's financials ETF holds banks only and is tagged so.
+- A mutual fund where one fits, tagged **Traspasable** for Spanish tax residents: a switch between funds carries the gain over untaxed, while leaving an ETF is a taxable sale.
+- One row per vehicle, the figures in columns (stacked with their own labels on a phone): TER; purity (the share of its sector split that is this sector; under 60 % it is left out); how much of it is the page's cohort; returns.
+- "Its ten largest" is a bar: the ten disclosed lines in weight order, podium names in purple, the page's other companies solid grey, companies the page does not rank hatched, the undisclosed rest left empty. Under it, "Podium:" names the podium companies the fund holds, with their weight.
+- The chevron opens the ten lines (share classes summed) with their weights, the sum of the top ten and top three, and the podium names outside its ten largest ("not in its top 10", never 0 %).
+- Yahoo discloses only the ten largest lines of a fund, so every overlap is a floor.
+- Returns are in the reader's currency, dividends included (adjusted closes): from the book's first day, or from the fund's own first price when it starts later (said so; Morningstar fund prices start in March 2022), and over the last year. A series that cannot be converted shows no figure. A guest sees the year only.
+- Profiles are refreshed nightly (`stocks sector-funds`); a fund Yahoo does not answer keeps last night's profile.
+- "You in this sector" also says how much of the book sits in the sector through the funds it holds (look-through of each fund's sector split), fund by fund.
+
 ## The calendar
 The Calendar page (Calendario) puts dated events in one place.
 - Earnings dates for stocks you hold or watch (crypto and funds are skipped).

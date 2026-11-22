@@ -28,7 +28,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Glyph } from "../../ui/Glyph";
-import { askAssistant, type Brief } from "../../shell/assistant";
+import { askAssistant, tickerTopic, type Brief } from "../../shell/assistant";
 import { useT } from "../../shell/i18n";
 
 type Angle = Exclude<Brief, "full"> | "entry";
@@ -61,11 +61,14 @@ export function AiAsk({
   const ask = (angle: Brief | "entry") => {
     setOpen(false);
     if (angle === "entry") {
-      askAssistant(t("ticker.ai_prompt_entry"), { fresh: true });
+      askAssistant(t("ticker.ai_prompt_entry"), { topic: tickerTopic(ticker) });
       return;
     }
     const key = angle === "full" ? prompt : `ticker.ai_prompt_${angle}`;
-    askAssistant(t(key, { ticker, name }), { fresh: true, brief: angle });
+    askAssistant(t(key, { ticker, name }), {
+      brief: angle,
+      topic: tickerTopic(ticker),
+    });
   };
 
   useEffect(() => {

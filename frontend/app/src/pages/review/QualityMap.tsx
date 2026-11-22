@@ -54,7 +54,7 @@ import {
 } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import { useTickerProfile } from "../../shell/tickers";
+import { TickerMark, useTickerProfile } from "../../shell/tickers";
 import { useWidth } from "../../shell/useWidth";
 import { Chip } from "../../ui/Kpi";
 import { Segmented } from "../../ui/Segmented";
@@ -135,6 +135,8 @@ type GainPick = "all" | "better" | "worse";
 
 /** How long the pointer rests on a dot before its tooltip opens, in ms. */
 const TIP_DELAY = 300;
+/** Px around a name looked at where the other names all but go. */
+const HUSH_NEAR = 160;
 /** How far past a dot's edge a finger still picks it: half a 44px target. */
 const REACH = 22;
 
@@ -290,6 +292,9 @@ export function QualityMap({
   const thenOf = (row: ReviewRow): ScorePoint | null =>
     returns && since ? returns.thenAt(row.symbol, since) : null;
   const timer = useRef<number | undefined>(undefined);
+  // Until when a pointer that just left an open tooltip opens the next one
+  // without the wait: sliding across a cluster keeps the others faded.
+  const warm = useRef(0);
   // Whether the press on the map's empty space was a finger's.
   const fingerDown = useRef(false);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -319,10 +324,12 @@ export function QualityMap({
   const open = (spot: Spot, wait: boolean) => {
     point({ ticker: spot.row.ticker, from: "map" });
     window.clearTimeout(timer.current);
-    if (wait) timer.current = window.setTimeout(() => setTip(spot), TIP_DELAY);
+    if (wait && performance.now() > warm.current)
+      timer.current = window.setTimeout(() => setTip(spot), TIP_DELAY);
     else setTip(spot);
   };
   const close = () => {
+    if (tip) warm.current = performance.now() + TIP_DELAY;
     point(null);
     window.clearTimeout(timer.current);
     setTip(null);
@@ -665,6 +672,7 @@ export function QualityMap({
       </div>
       <div className="ag-rev-map" ref={ref}>
         <svg
+          className={tip ? "ag-rev-map-hush" : undefined}
           width={width}
           height={height}
           viewBox={`0 0 ${width} ${height}`}
@@ -795,6 +803,18 @@ export function QualityMap({
                   : undefined)
               }
               dim={!lit(row)}
+              // The name looked at stands alone: its neighbours' labels and
+              // rings would cross the tooltip and its path.
+              hush={
+                tip === null || key(tip.row) === key(row)
+                  ? null
+                  : Math.hypot(
+                        x(row.cheapness as number) - tip.cx,
+                        y(row.quality as number) - tip.cy,
+                      ) < HUSH_NEAR
+                    ? "near"
+                    : "far"
+              }
               then={thenOf(row)}
               span={span}
               on={
@@ -896,6 +916,7 @@ function Dot({
   cy,
   label,
   dim,
+  hush,
   then,
   span,
   on,
@@ -910,6 +931,8 @@ function Dot({
   label: LabelSpot | undefined;
   /** Left out by the map's search: faded, still there to place the rest. */
   dim: boolean;
+  /** Another name's tooltip is open: faded so that one reads clean. */
+  hush: "near" | "far" | null;
   /** Where it sat when the window `span` opened. */
   then: ScorePoint | null;
   span: string;
@@ -958,7 +981,7 @@ function Dot({
   };
   return (
     <g
-      className={`ag-rev-dot ag-rev-mark-${mark}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : ""}`}
+      className={`ag-rev-dot ag-rev-mark-${mark}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : hush ? ` ag-rev-dot-hush-${hush}` : ""}`}
       role="button"
       aria-haspopup="dialog"
       tabIndex={0}
@@ -1044,7 +1067,10 @@ function Tip({
       style={place ?? { visibility: "hidden" }}
     >
       <div className="ag-rev-tip-head">
-        <span className="ag-rev-tip-sym">{symbol}</span>
+        <span className="ag-rev-tip-sym">
+          <TickerMark profile={profile} symbol={symbol} />
+          {symbol}
+        </span>
         <Chip
           chip={{
             text: t(`review.verdict_${row.verdict}`),

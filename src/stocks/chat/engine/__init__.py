@@ -638,7 +638,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         prefs, chat_path, history, watchlist, session_keys)
     # Beside the research too, and waited for only once it is back
     # (`chat/guard.py`): a question in scope pays nothing for the check.
-    vetting = guard.start(provider, key, message)
+    vetting = guard.start(provider, key, message, lang)
 
     def watching() -> None:
         if vetting is not None:
@@ -652,7 +652,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if brief and focus:
         try:
             asked_for = ticker_brief.build(brief, focus, watchlist=watchlist,
-                                           db=db, currency=reporting_currency(prefs))
+                                           db=db, currency=reporting_currency(prefs),
+                                           lang=lang)
         except Exception as exc:  # noqa: BLE001 — a press with less context is still a question
             obs.warn("chat.brief_failed", angle=brief, ticker=focus,
                      error_type=type(exc).__name__, error=str(exc)[:200])
@@ -719,7 +720,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                 timeout=researched, focus=focus, view=view,
                 on_tool=watch if on_tool else None, profile=profile,
                 model=model, prefs_path=prefs_path, proposes=confirm_actions,
-                on_plan=on_plan, checkpoint=checkpoint),
+                on_plan=on_plan, checkpoint=checkpoint, lang=lang),
             lambda: (_simulate_sale(message, watchlist, db, prefs_path, focus,
                                     lang, told) if one else None),
             lambda: (_chart(message, prefs, watchlist, db, focus, lang, told)

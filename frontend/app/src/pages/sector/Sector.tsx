@@ -15,6 +15,9 @@
  * The live "refresh this sector" button sits on the line that says how old the
  * scan is, and in the empty card (`Rescan.tsx`): it starts a server-side
  * rescan, polls until it lands, then reloads the cohort underneath.
+ *
+ * Under the verdict, the funds that buy the whole sector (`Funds.tsx`): the
+ * "or just buy all of them?" answer, before the map and the table.
  */
 
 import { useEffect, useState } from "react";
@@ -31,6 +34,7 @@ import { type Lens, Podium } from "./Podium";
 import { SectorRail } from "./Rail";
 import { ageDays, sectorWeight, STALE_DAYS } from "./rank";
 import { type Rescan, RescanButton, useRescan } from "./Rescan";
+import { Funds } from "./Funds";
 import { type Held, SectorMap } from "./SectorMap";
 import { TopThree } from "./TopThree";
 import type { BookSectors, SectorCohort, Sectors, SectorSummary } from "./types";
@@ -115,6 +119,10 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
     weights.state === "loaded" && weights.data && !weights.data.unavailable
       ? weights.data.sector_weights
       : null;
+  const viaFunds =
+    weights.state === "loaded" && weights.data && !weights.data.unavailable
+      ? (weights.data.sector_funds ?? null)
+      : null;
 
   if (!current) return <p className="ag-note">{t("sector.empty_title")}</p>;
 
@@ -159,6 +167,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
                   rows={data.rows}
                   held={held}
                   sectorWeight={sectorWeight(sectorWeights, data.sector)}
+                  viaFunds={viaFunds?.[data.sector] ?? null}
                 />
               )}
               {data.podium.length > 0 && (
@@ -166,6 +175,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
                   {data.podium.length > 1 ? <TopThree data={data} /> : null}
                 </Verdict>
               )}
+              <Funds sector={data.sector} base={base} />
               <SectorMap
                 key={`map-${data.sector}`}
                 rows={data.rows}

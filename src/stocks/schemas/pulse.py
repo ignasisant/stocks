@@ -211,6 +211,14 @@ class PulseBook(BaseModel):
             "carries the sectors it has a fund for."
         ),
     )
+    sector_funds: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description=(
+            "Per sector, the funds that put the book in it and the share of the "
+            "book each one puts there — the part of `sector_weights` held "
+            "through a fund's look-through rather than a stock of its own."
+        ),
+    )
     unavailable: str | None = Field(
         default=None,
         description=(

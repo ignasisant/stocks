@@ -117,13 +117,15 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/market/quotes", "GET"),
         ("/v1/market/profiles", "GET"),
         ("/v1/market/status", "GET"),
-        # --- Sector: the computed cohort, and the verdict's stand-in ------
+        # --- Sector: the cohort, its funds, and the verdict's stand-in ----
         # The GET never spends and a guest can store nothing, so what it gets
         # is the computed read, the answer for a visitor with no account.
         # Having one *written* is the POST, and that stays shut.
         ("/v1/sectors", "GET"),
         ("/v1/sectors/{sector}", "GET"),
         ("/v1/sectors/{sector}/verdict", "GET"),
+        ("/v1/sectors/{sector}/funds", "GET"),
+        ("/v1/sectors/{sector}/funds/returns", "GET"),
         # --- Review: the demo book judged, plus what the guest asks about --
         # Computed from the book and cached fundamentals; `?add=` rides the
         # URL and nothing is written.

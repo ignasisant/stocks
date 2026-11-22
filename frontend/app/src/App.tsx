@@ -6,6 +6,7 @@ import { onIdle } from "./shell/idle";
 import { Layout, MAIN_ID, Skeleton } from "./shell/Layout";
 import { BOTTOM, pageFor, preload } from "./shell/pages";
 import { takeRestore, useRoute } from "./shell/router";
+import { holdScroll } from "./shell/settle";
 import { SignIn } from "./shell/guest";
 import { WithSession, useGuest } from "./shell/session";
 
@@ -97,8 +98,9 @@ function Current() {
   // that no longer matches the page. Focus goes to the page column (not past
   // the first move: loading the app is not a navigation), and the scroll is
   // set here, once the page has rendered — the top after a push, where the
-  // reader was after a back or forward step — retried while the lazy page
-  // fills in, because it is rarely tall enough on the first frame. Not at the
+  // reader was after a back or forward step or on a screen they left minutes
+  // ago (`router.KEEP_MS`) — held while the lazy page fills in, because it is
+  // rarely tall enough on the first frame (`shell/settle`). Not at the
   // click: the page on screen stays until this one is ready, and would jump.
   const first = useRef(true);
   const focusKey = `${page}?${params.get("ticker") ?? ""}`;
@@ -113,15 +115,7 @@ function Current() {
   useEffect(() => {
     const y = takeRestore();
     if (y === null) return;
-    let tries = 0;
-    let frame = 0;
-    const settle = () => {
-      window.scrollTo(0, y);
-      if (Math.abs(window.scrollY - y) > 2 && tries++ < 40)
-        frame = requestAnimationFrame(settle);
-    };
-    settle();
-    return () => cancelAnimationFrame(frame);
+    return holdScroll(window, y);
   }, [scrollKey]);
 
   // A page that throws while rendering keeps the chrome around it: the rail
