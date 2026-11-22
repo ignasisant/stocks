@@ -122,3 +122,92 @@ class SectorCohort(BaseModel):
             "worst rows on top."
         ),
     )
+
+
+# ----------------------------------------------------------------- the funds
+# The other way to own a sector: one fund that holds all of it. Facts are the
+# stored nightly profiles (`analysis.sector_funds`), the same for every
+# reader; the returns are read in the reader's money, so they come apart.
+
+
+class FundHoldingLine(BaseModel):
+    ticker: str
+    name: str
+    weight: float = Field(description="Fraction of the fund, share classes summed.")
+    role: str = Field(
+        description="podium | cohort | other — a podium name, another company this "
+        "page ranks, or neither."
+    )
+
+
+class PodiumInFund(BaseModel):
+    ticker: str
+    weight: float | None = Field(
+        default=None,
+        description=(
+            "The podium name's fraction of the fund. Null means it is not among "
+            "the ten largest lines Yahoo discloses — not that the fund lacks it."
+        ),
+    )
+
+
+class SectorFund(BaseModel):
+    ticker: str
+    kind: str = Field(description="etf | fund (a mutual fund).")
+    scope: str = Field(description="world | us | europe — where it buys the sector.")
+    only: str | None = Field(
+        default=None, description="A part of the sector only (banks); null = all of it."
+    )
+    name: str
+    currency: str | None = None
+    family: str | None = None
+    expense_ratio: float | None = Field(default=None, description="TER, a fraction.")
+    purity: float = Field(description="Fraction of the fund in this sector.")
+    lines: list[FundHoldingLine] = Field(
+        default_factory=list,
+        description="The disclosed lines (up to ten), largest first.",
+    )
+    top3: float = Field(description="The three largest lines, classes summed.")
+    top10: float = Field(description="What the ten disclosed lines add up to.")
+    cohort_weight: float = Field(
+        description=(
+            "Of the disclosed lines, the fraction that are companies this page "
+            "ranks. A floor: lines past the tenth are not disclosed."
+        ),
+    )
+    podium: list[PodiumInFund] = Field(default_factory=list)
+    fetched: str | None = None
+
+
+class SectorFunds(BaseModel):
+    sector: str
+    funds: list[SectorFund] = Field(default_factory=list)
+
+
+class FundReturn(BaseModel):
+    ticker: str
+    y1: float | None = Field(default=None, description="Last 12 months, percent.")
+    since: float | None = Field(
+        default=None,
+        description="From the book's first day (or `opens`, if later), percent.",
+    )
+    opens: str | None = Field(
+        default=None,
+        description="Set when the fund's history starts after the book's first "
+        "day: `since` is then read from here.",
+    )
+
+
+class SectorFundReturns(BaseModel):
+    sector: str
+    currency: str = Field(description="The reader's currency every move is in.")
+    since: str | None = Field(
+        default=None,
+        description="The book's first day; null for a guest or an empty book.",
+    )
+    transfer_free: bool = Field(
+        default=False,
+        description="The reader files in Spain, where switching between mutual "
+        "funds (traspaso) defers the tax. Never true of an ETF.",
+    )
+    returns: list[FundReturn] = Field(default_factory=list)

@@ -829,6 +829,18 @@ RELEASES: tuple[Release, ...] = (
             News(slug="transactions", icon="receipt_long", step="market"),
         ),
     ),
+    Release(
+        version="2026.11.6",
+        date="2026-11",
+        items=(
+            # Buying the whole sector instead of a podium name had nowhere to
+            # go: each sector page now lists its UCITS ETFs and (in Spain,
+            # traspasable) funds with cost, purity, concentration, overlap
+            # with the podium and returns in the reader's money. A section of
+            # the sector page, so the sector step.
+            News(slug="funds", icon="account_balance", step="sector"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

@@ -69,3 +69,10 @@ jobs:
             ${{ inputs.no_widen && '--no-widen' || '' }}
         env:
           SCAN_SECTOR: ${{ inputs.sector }}
+      - name: Funds
+        # The profiles of the funds that buy each sector (`stocks sector-funds`):
+        # thirty-odd symbols at two requests each. Run even when the scan
+        # failed: the two files are independent, and each keeps its last good
+        # copy on its own.
+        if: ${{ !cancelled() && !inputs.sector }}
+        run: uv run --no-sync stocks sector-funds --publish

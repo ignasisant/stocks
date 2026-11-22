@@ -78,5 +78,66 @@ export type SectorCohort = {
  */
 export type BookSectors = {
   sector_weights: Record<string, number>;
+  /** Per sector, the funds that put the book there and the share of the book
+   * each one carries (a fund's look-through). An older server leaves it out. */
+  sector_funds?: Record<string, Record<string, number>>;
   unavailable: string | null;
+};
+
+/**
+ * `/sectors/{sector}/funds`: the curated vehicles that buy the whole sector.
+ * Mirrors `SectorFunds` in `src/stocks/schemas/sectors.py`. Weights are
+ * fractions of the fund, read off the ten lines Yahoo discloses: every overlap
+ * is a floor, and a podium weight of null is "not among its ten largest",
+ * never zero.
+ */
+export type FundLine = {
+  ticker: string;
+  name: string;
+  weight: number;
+  role: "podium" | "cohort" | "other";
+};
+
+export type SectorFund = {
+  ticker: string;
+  kind: "etf" | "fund";
+  scope: "world" | "us" | "europe";
+  /** A part of the sector only ("banks"); null is all of it. */
+  only?: string | null;
+  name: string;
+  currency: string | null;
+  family: string | null;
+  /** TER, a fraction a year. */
+  expense_ratio: number | null;
+  purity: number;
+  /** The disclosed lines (up to ten), largest first, each with what it is
+   * to this page: a podium name, another ranked company, or neither. */
+  lines: FundLine[];
+  top3: number;
+  top10: number;
+  cohort_weight: number;
+  podium: { ticker: string; weight: number | null }[];
+  fetched: string | null;
+};
+
+export type SectorFunds = { sector: string; funds: SectorFund[] };
+
+/** `/sectors/{sector}/funds/returns`: the reader's half, in their currency.
+ * Moves are percentage points (12.3 = +12.3 %). */
+export type FundReturn = {
+  ticker: string;
+  y1: number | null;
+  since: number | null;
+  /** The first close, when it is later than the book's first day. */
+  opens: string | null;
+};
+
+export type SectorFundReturns = {
+  sector: string;
+  currency: string;
+  /** The book's first day; null for a guest or an empty book. */
+  since: string | null;
+  /** A switch between mutual funds carries no tax where the reader files. */
+  transfer_free: boolean;
+  returns: FundReturn[];
 };
