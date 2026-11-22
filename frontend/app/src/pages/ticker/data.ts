@@ -236,7 +236,14 @@ export async function getSectors(tickers: string[]): Promise<Record<string, stri
 export const getLastViewed = () =>
   get<{ tickers: string[] }>("/search/recent").then((body) => body.tickers[0] ?? null);
 
-export const getWatchlist = () => get("/watchlist");
+/**
+ * The tracked symbols, with `entries` always a list. Prod 2026-11-21 (safari/ios,
+ * /ticker): a body painted without it took the whole page down in the merge
+ * with the rows just written, the same unexplained shape Home's market card
+ * met. A missing list reads as an empty watchlist; the live answer replaces it.
+ */
+export const getWatchlist = () =>
+  get("/watchlist").then((body) => ({ ...body, entries: body?.entries ?? [] }));
 
 export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");
 
