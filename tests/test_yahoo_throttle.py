@@ -11,6 +11,7 @@ import functools
 import logging
 import threading
 import time
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -648,6 +649,92 @@ def test_a_blank_close_is_asked_again_and_counted(blank_yahoo):
     assert fetch.close_on("BYND", "2026-08-04") is None
     assert blank_yahoo == ["BYND", "BYND"]
     assert fetch.unanswered() == before + 2
+
+
+# ORGN's chart after the delisting (2026-07-02), as yfinance stores it: the
+# symbol and its exchange, no currency, no market time, no bars.
+ORGN_SHELL = {
+    "currency": None,
+    "symbol": "ORGN",
+    "exchangeName": "NGM",
+    "instrumentType": "EQUITY",
+    "firstTradeDate": 1784122200,
+    "regularMarketTime": None,
+    "exchangeTimezoneName": "America/New_York",
+    "YF repair?": False,
+}
+
+
+def _answered_with(meta: dict | None):
+    """A blank `yf.Ticker` that kept `meta` the way yfinance keeps the meta of
+    the chart it was just sent (None: the request never got that far)."""
+
+    class _Yahoo(_BlankYahoo):
+        def history(self, **kwargs):
+            if meta is not None:
+                self._price_history = SimpleNamespace(_history_metadata=dict(meta))
+            return super().history(**kwargs)
+
+    return _Yahoo
+
+
+def test_an_empty_shell_is_an_answer(blank_yahoo, monkeypatch):
+    """ERR-02 (triage 2026-11-23): ORGN answers with a 200 and an empty shell,
+    which yfinance reports as the generic "no price data found", so neither
+    the bulk verdict nor the probe ever disowned it and every warm tick logged
+    two `yahoo.splits_blank` (prod 2026-11-19 → 11-23)."""
+    monkeypatch.setattr(fetch.yf, "Ticker", _answered_with(ORGN_SHELL))
+    probed: list = []
+    monkeypatch.setattr(fetch.yf, "download", lambda s, **kw: probed.append(s))
+    before = fetch.unanswered()
+    assert fetch.splits("ORGN") == []
+    assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+    assert fetch.splits("ORGN") == []
+    assert fetch.close_on("ORGN", "2026-08-04") is None
+    assert blank_yahoo == ["ORGN"]  # nothing after the first answer
+    assert probed == []  # the shell is the verdict: no probe spent on it
+    assert fetch.unanswered() == before
+
+
+def test_an_empty_shell_close_is_an_answer(blank_yahoo, monkeypatch):
+    monkeypatch.setattr(fetch.yf, "Ticker", _answered_with(ORGN_SHELL))
+    before = fetch.unanswered()
+    assert fetch.close_on("ORGN", "2026-08-04") is None
+    assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+    assert fetch.unanswered() == before
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        None,  # the request failed before any chart came back
+        {"YF repair?": False},  # a chart with no result: refused or empty body
+        {**ORGN_SHELL, "currency": "USD", "regularMarketTime": 1795208402},
+    ],
+    ids=["no_request", "no_result", "listed"],
+)
+def test_only_an_empty_shell_disowns(blank_yahoo, monkeypatch, meta):
+    monkeypatch.setattr(fetch.yf, "Ticker", _answered_with(meta))
+    before = fetch.unanswered()
+    assert fetch.splits("BYND") == []
+    assert fetch.unlisted(["BYND"]) == set()
+    assert fetch.unanswered() == before + 1
+
+
+def test_only_bars_lift_a_verdict(monkeypatch, yf_log):
+    """A download that blanks the name again, in yfinance's words or with a
+    refusal, leaves the verdict alone: lifting on it undid the shell verdict
+    at the next warm tick. Bars still lift it."""
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    fetch.mark_unlisted("ORGN")
+    for said in ("possibly delisted; no price data found  (period=5d)", REFUSED):
+        blank = _bulk(yf_log, ["AAPL"], {said: ["ORGN"]})
+        monkeypatch.setattr(fetch.yf, "download", blank)
+        fetch.fetch_many(["AAPL", "ORGN"])
+        assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+    monkeypatch.setattr(fetch.yf, "download", _bulk(yf_log, ["AAPL", "ORGN"], {}))
+    fetch.fetch_many(["AAPL", "ORGN"])
+    assert fetch.unlisted(["ORGN"]) == set()
 
 
 def test_splits_are_read_off_the_bars(monkeypatch):

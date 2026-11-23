@@ -468,7 +468,12 @@ def _note_failures(
                 if said <= now - 86400.0:
                     _unlisted[key] = now
                     changed = True
-            elif _unlisted.pop(key, None) is not None:
+            elif t in priced and _unlisted.pop(key, None) is not None:
+                # Only bars lift a verdict. A blank in yfinance's own words or
+                # a refusal says nothing new about the symbol, and lifting on
+                # one undid the empty-shell verdict (`_shell`) on the next
+                # download: ORGN, delisted 2026-07-02, answers every download
+                # with "possibly delisted; no price data found".
                 changed = True
         if changed:
             _save_unlisted()
@@ -654,10 +659,48 @@ _probed_lock = threading.Lock()
 PROBE_EVERY_S = 86400.0
 
 
-def _disowned(ticker: str, symbol: str) -> bool:
+def _shell(asked) -> bool:
+    """Whether the `yf.Ticker` that just came back blank was answered with an
+    empty shell: Yahoo knows the symbol and has no quote on it at all.
+
+    A delisted line is not always a 404. ORGN (Nasdaq until 2026-07-02, then
+    dissolved) answers its chart with a 200 whose meta names the symbol and
+    the exchange but has no currency, no market time and no bars, so yfinance
+    reports the generic "no price data found" and the bulk verdict never came
+    (prod 2026-11-19 → 11-23, two `yahoo.splits_blank` per warm tick). A
+    refusal or a dead socket leaves no meta at all, and a listed name always
+    carries its currency, so the shell is an answer, not weather.
+
+    Reads what the blank request already stored on the yfinance object; never
+    a request of its own (yfinance's public accessor fetches when it has none).
+    """
+    try:
+        meta = asked._price_history._history_metadata  # noqa: SLF001
+    except AttributeError:
+        return False
+    if not isinstance(meta, dict) or not meta.get("symbol"):
+        return False
+    return meta.get("currency") is None and meta.get("regularMarketTime") is None
+
+
+def _disown(ticker: str, symbol: str) -> None:
+    """Record that Yahoo answered `symbol` with an empty shell (`_shell`)."""
+    with _unlisted_lock:
+        _load_unlisted()
+        key = symbol.upper()
+        if _unlisted.get(key, -1.0) > time.time() - 86400.0:
+            return
+        _unlisted[key] = time.time()
+        _save_unlisted()
+    if obs.first_sighting("yahoo.unlisted", ticker):
+        obs.warn("yahoo.unlisted", tickers=[ticker], why="shell")
+
+
+def _disowned(ticker: str, symbol: str, shell: bool = False) -> bool:
     """After a blank one-symbol lookup: whether Yahoo says it has no such
-    symbol at all, asked the way a bulk download asks (`_note_failures`
-    records the verdict in Yahoo's own words).
+    symbol at all — the blank itself was an empty shell (`shell`), or, asked
+    the way a bulk download asks, Yahoo says so in its own words
+    (`_note_failures` records that verdict).
 
     Only a price download ever stamped a name `unlisted`, and a name sold out
     is in none: ORGN, TWTR and eight bare German codes were asked for their
@@ -668,6 +711,9 @@ def _disowned(ticker: str, symbol: str) -> bool:
     the day's probe up; a refusal leaves it unanswered, as before.
     """
     if unlisted({ticker, symbol}):
+        return True
+    if shell:
+        _disown(ticker, symbol)
         return True
     if throttle_remaining():
         return False
@@ -713,7 +759,8 @@ def splits(ticker: str) -> list[tuple[str, float]]:
     try:
         # What `Ticker.splits` reads, but with the bars in hand: a listed name
         # always has some, so none at all is a refusal, not "never split".
-        bars = yf.Ticker(key).history(period="max", interval="1d", auto_adjust=False)
+        asked = yf.Ticker(key)
+        bars = asked.history(period="max", interval="1d", auto_adjust=False)
     except YFRateLimitError:
         trip_throttle()
         _not_answered()
@@ -724,7 +771,7 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         obs.warn("yahoo.splits_failed", ticker=key, error=str(exc))
         return []
     if bars is None or bars.empty:
-        if _disowned(ticker, key):
+        if _disowned(ticker, key, _shell(asked)):
             return []  # an answer: Yahoo has no such symbol, so no splits
         _not_answered()
         obs.warn("yahoo.splits_blank", ticker=key)
@@ -770,11 +817,10 @@ def close_on(ticker: str, day: str) -> float | None:
         return _close_fallback(ticker, key[0], day)
     start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
     end = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
+    asked = yf.Ticker(key[0])
     try:
         df = retry(
-            lambda: yf.Ticker(key[0]).history(
-                start=start, end=end, interval="1d", auto_adjust=False
-            )
+            lambda: asked.history(start=start, end=end, interval="1d", auto_adjust=False)
         )
     except YFRateLimitError:
         trip_throttle()
@@ -784,7 +830,7 @@ def close_on(ticker: str, day: str) -> float | None:
         obs.warn("yahoo.close_on_failed", ticker=key[0], error=str(exc))
         return _close_fallback(ticker, key[0], day)
     if df is None or df.empty:
-        if _disowned(ticker, key[0]):
+        if _disowned(ticker, key[0], _shell(asked)):
             return None  # Yahoo has no such symbol; not a refusal
         obs.warn("yahoo.close_on_blank", ticker=key[0])
         return _close_fallback(ticker, key[0], day)  # not cached, as above
