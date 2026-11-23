@@ -2160,3 +2160,68 @@ def test_the_question_said_last_names_the_apps_language():
 
     assert "what you answer, in Spanish:" in instructions.question_last("hi", "es")
     assert "in its own language" in instructions.question_last("hi", None)
+
+
+# ------------------------------------------------- free chain busy: the queue
+
+
+@dataclass
+class Busy(FakeProvider):
+    """The free chain dry on per-minute limits `busy` times, then answering."""
+
+    busy: int = 1
+    wait: float = 0.01
+    tries: list = field(default_factory=list)
+
+    def stream(self, api_key, model, system, messages):
+        from stocks import llm
+
+        self.tries.append(model)
+        if len(self.tries) <= self.busy:
+            raise llm.FreeTierBusy(self.wait)
+        yield self.reply
+
+
+def test_a_busy_free_chain_queues_the_turn_instead_of_refusing_it(
+        providers, paths, monkeypatch):
+    from stocks import llm
+
+    free = Busy("free", reply="Free answer.")
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "free": free})
+    seen = list(engine.answer_stream(prefs=dict(BASE_PREFS), message="hola",
+                                     **paths))
+    done = next(v for k, v in seen if k == "done")
+    assert ("phase", "queued") in seen
+    assert done.text == "Free answer." and done.error is None
+    assert len(free.tries) == 2
+
+
+def test_a_queue_past_its_minute_hands_back_the_wait_to_count_down(
+        providers, paths, monkeypatch):
+    from stocks import llm
+
+    free = Busy("free", busy=99, wait=45.4)
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "free": free})
+    monkeypatch.setattr(engine, "_queue", lambda wait, halt: iter(()))
+    seen = list(engine.answer_stream(prefs=dict(BASE_PREFS), message="hola",
+                                     **paths))
+    done = next(v for k, v in seen if k == "done")
+    # 45 s queued once; a second 45 s would pass the minute: refused, with
+    # the wait the panel counts down before asking again by itself.
+    assert len(free.tries) == 2
+    assert (done.error, done.wait) == ("chat.free_busy", 46)
+
+
+def test_a_free_chain_spent_for_the_day_says_so(providers, paths, monkeypatch):
+    from stocks import llm
+
+    class Spent(FakeProvider):
+        def stream(self, api_key, model, system, messages):
+            raise llm.FreeTierSpent("all spent")
+            yield
+
+    monkeypatch.setattr(llm, "PROVIDERS", {**providers, "free": Spent("free")})
+    seen = list(engine.answer_stream(prefs=dict(BASE_PREFS), message="hola",
+                                     **paths))
+    done = next(v for k, v in seen if k == "done")
+    assert done.error == "chat.free_exhausted" and done.wait is None

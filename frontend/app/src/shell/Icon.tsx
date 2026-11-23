@@ -39,6 +39,8 @@ const LINES: Record<string, string> = {
   side_panel:
     "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 4v16",
   chat_bubble: "M4 5h16v11H9l-5 4z",
+  // Profile's MCP tab sits beside the menu's glyphs, so it wears their line.
+  power: "M12 22v-5M9 8V2M15 8V2M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z",
   more_horiz:
     "M3.4 12a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M10.4 12a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M17.4 12a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0",
 };

@@ -1252,3 +1252,68 @@ def test_a_fund_has_no_fundamentals_to_check(client, account, monkeypatch):
     _entry(account, [{"rule": "op_margin_min", "level": 20}])
     r = client.get("/v1/ticker/VWCE.DE/entry", params={"account": EMAIL}, headers=AUTH)
     assert r.json()["set"] is True and r.json()["total"] == 0
+
+
+def _closes(monkeypatch, quote):
+    """`chat.book.market_close` answering `quote` for every name and day."""
+    asked = []
+
+    def market_close(ticker, day, currency):
+        asked.append((ticker, day, currency))
+        return quote
+
+    monkeypatch.setattr("stocks.chat.book.market_close", market_close)
+    return asked
+
+
+def test_a_price_the_name_never_traded_near_does_not_fit(client, monkeypatch):
+    """70.004 typed for a 75 stock: the hand-entry form is told before booking."""
+    asked = _closes(monkeypatch, (74.68, 1.0))
+    body = client.get(
+        "/v1/ticker/BYD/price-check",
+        params={"day": "2026-11-20", "price": 70004.68, "currency": "usd"},
+        headers=AUTH,
+    ).json()
+    assert body == {"fits": False, "close": 74.68}
+    assert asked == [("BYD", "2026-11-20", "USD")]
+
+
+def test_a_price_near_the_close_fits_and_a_pre_split_one_too(client, monkeypatch):
+    _closes(monkeypatch, (74.68, 1.0))
+    params = {"day": "2026-11-20", "price": 76.1, "currency": "USD"}
+    assert client.get("/v1/ticker/BYD/price-check", params=params, headers=AUTH).json()[
+        "fits"
+    ] is True
+    # A 4:1 split since: the fill was four times today's scale, and that fits.
+    _closes(monkeypatch, (50.0, 4.0))
+    body = client.get(
+        "/v1/ticker/AAPL/price-check",
+        params={"day": "2020-01-02", "price": 300, "currency": "USD"},
+        headers=AUTH,
+    ).json()
+    assert body == {"fits": True, "close": 200.0}
+
+
+def test_a_market_that_cannot_say_lets_any_price_through(client, monkeypatch):
+    _closes(monkeypatch, None)
+    params = {"day": "2026-11-20", "price": 70004.68, "currency": "USD"}
+    body = client.get("/v1/ticker/BYD/price-check", params=params, headers=AUTH).json()
+    assert body == {"fits": None, "close": None}
+
+    def broken(ticker, day, currency):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr("stocks.chat.book.market_close", broken)
+    body = client.get("/v1/ticker/BYD/price-check", params=params, headers=AUTH).json()
+    assert body["fits"] is None
+
+
+def test_a_price_check_needs_a_price_a_day_and_a_currency(client):
+    bad = [
+        {"day": "2026-11-20", "price": 0, "currency": "USD"},
+        {"day": "yesterday", "price": 10, "currency": "USD"},
+        {"day": "2026-11-20", "price": 10, "currency": "dollars"},
+    ]
+    for params in bad:
+        r = client.get("/v1/ticker/BYD/price-check", params=params, headers=AUTH)
+        assert r.status_code == 422, params

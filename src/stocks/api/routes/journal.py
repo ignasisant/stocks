@@ -101,7 +101,8 @@ def entries(
     limit: int = Query(500, ge=1, le=journal.MAX_ENTRIES),
 ) -> Journal:
     """Entries newest first (by the latest day shown), narrowed by any of the
-    filters given; `ticker` ignores the exchange suffix."""
+    filters given; `ticker` takes every line of its company
+    (`journal.same_name`: SAP and SAP.DE, TM and 7203.T)."""
     saved = journal.load(paths.journal)
     scope = journal.query(saved, ticker=ticker, type=type or "",
                           source=source or "", since=since)
@@ -152,3 +153,17 @@ def retire(entry_id: EntryId, paths: Writer) -> None:
     it existed is kept. 404 on an id that is not a live rule."""
     if journal.retire(paths.journal, entry_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such exit rule")
+
+
+@router.post("/criteria/{entry_id}/restore", status_code=status.HTTP_204_NO_CONTENT,
+             summary="Put back a retired rule")
+def restore(entry_id: EntryId, paths: Writer) -> None:
+    """Undo a retire: the rule stands again in the state it was taken down
+    in. 404 on an id that is not a retired rule; 409 when another live rule
+    on the same ticker and measure has taken its place since."""
+    rule = next((e for e in journal.load(paths.journal)
+                 if e.id == entry_id and e.type == "criterion"), None)
+    if rule is None or rule.state != "retired":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such retired rule")
+    if journal.restore(paths.journal, entry_id) is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "a newer rule stands")

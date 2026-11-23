@@ -103,7 +103,8 @@ def test_a_name_whose_news_did_not_come_in_time_stays_owed(paths, night, monkeyp
 
 
 def _planned(paths, monkeypatch, now, last=None):
-    paths.prefs.write_text(json.dumps({"language": "en", "last_seen": "2026-11-01",
+    paths.prefs.write_text(json.dumps({"language": "en",
+                                       "last_seen": now.date().isoformat(),
                                        "schedule_last": last or {}}))
     monkeypatch.setattr(schedule, "_roster", lambda: [("jane", paths)])
     monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)

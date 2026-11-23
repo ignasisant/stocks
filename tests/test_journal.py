@@ -10,6 +10,7 @@ route, the chat tool and the connector's.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -246,6 +247,54 @@ def test_query_matches_a_ticker_across_exchanges(path):
     assert [e.ticker for e in found] == ["ASML.AS"]
     assert journal.query(journal.load(path), state="lapsed") == []
 
+
+
+# Whose line is whose, as the profile memo names them: TM is 7203.T's ADR,
+# SAN.MC Santander and SAN.PA Sanofi.
+_COMPANIES = {"TM": "toyota motor corporation", "7203.T": "toyota motor corporation",
+              "SAN.MC": "banco santander s a", "SAN.PA": "sanofi",
+              "SAP": "sap se", "SAP.DE": "sap se"}
+
+
+@pytest.fixture
+def companies(monkeypatch):
+    from stocks.data import profiles
+
+    monkeypatch.setattr(profiles, "company", _COMPANIES.get)
+
+
+def test_one_company_is_one_name_whatever_the_root(companies):
+    assert journal.same_name("TM", "7203.T")
+    assert journal.same_name("sap", "SAP.DE")
+    assert not journal.same_name("SAN.MC", "SAN.PA")
+    # Unknown to the memo: the root still says whose it is.
+    assert journal.same_name("ASML", "ASML.AS")
+    assert not journal.same_name("ASML", "")
+
+
+def test_query_takes_every_line_of_the_company_and_no_other(companies, path):
+    journal.record(path, [_shown(subject="review:7203.T", ticker="7203.T"),
+                          _shown(subject="review:SAN.PA", ticker="SAN.PA"),
+                          _shown(subject="review:SAN.MC", ticker="SAN.MC")], DAY)
+    saved = journal.load(path)
+    assert [e.ticker for e in journal.query(saved, ticker="TM")] == ["7203.T"]
+    assert [e.ticker for e in journal.query(saved, ticker="san.mc")] == ["SAN.MC"]
+
+
+def test_a_rule_on_another_line_is_about_the_holding(companies, path):
+    journal.add_criteria(path, "SAP", [{"rule": "buy_below", "level": 200},
+                                       {"rule": "below", "level": 150}], DAY)
+    journal.add_criteria(path, "SAN.PA", [{"rule": "thesis", "pillars": ["A"]}], DAY)
+    entries = journal.load(path)
+    held = {"SAP.DE", "SAN.MC"}
+    assert journal.held_as("SAP", held) == "SAP.DE"
+    assert journal.held_as("SAN.PA", held) is None
+    buys = journal.entry_status(entries, held)
+    assert [(n["ticker"], n["held"]) for n in buys["names"]] == [("SAP", True)]
+    exits = journal.criteria_status(entries, held)
+    assert exits["without_rules"] == ["SAN.MC"]
+    assert exits["without_thesis"] == ["SAN.MC", "SAP.DE"]
+    assert exits["not_held"] == ["SAN.PA"]
 
 # ------------------------------------------------------------------ readers
 
@@ -664,6 +713,29 @@ def test_retire_takes_down_only_a_live_rule(path):
     assert journal.retire(path, rule.id).state == "retired"
     assert journal.retire(path, rule.id) is None
     assert journal.criteria(journal.load(path)) == []
+
+
+def test_restore_puts_a_retired_rule_back_as_it_was(path):
+    [rule] = journal.add_criteria(path, "AMD", [{"rule": "below", "level": 95}], DAY)
+    assert journal.restore(path, rule.id) is None  # live: nothing to undo
+    journal.retire(path, rule.id)
+    assert journal.restore(path, rule.id).state == "open"
+    [met] = journal.add_criteria(path, "NVDA", [{"rule": "below", "level": 90}], DAY)
+    saved = journal.load(path)
+    i = next(i for i, e in enumerate(saved) if e.id == met.id)
+    saved[i] = replace(saved[i], state="hit",
+                       snapshot={**saved[i].snapshot, "hit_day": DAY.isoformat()})
+    journal._save(path, saved)
+    journal.retire(path, met.id)
+    assert journal.restore(path, met.id).state == "hit"
+
+
+def test_restore_never_doubles_a_measure(path):
+    [old] = journal.add_criteria(path, "AMD", [{"rule": "below", "level": 95}], DAY)
+    journal.retire(path, old.id)
+    journal.add_criteria(path, "AMD", [{"rule": "below", "level": 80}], DAY)
+    assert journal.restore(path, old.id) is None
+    assert len(journal.criteria(journal.load(path))) == 1
 
 
 def test_a_rule_reads_as_a_journal_line(path):
@@ -1267,3 +1339,17 @@ def test_buy_and_exit_rules_are_read_apart(path):
         {"buy_below", "buy_pe_fwd_below"}
     assert all(r["side"] == "buy" for r in buys["names"][0]["rules"])
     assert buys["met"] == []
+
+
+def test_the_route_restores_a_retired_rule(book, sign_in):
+    [rule] = journal.add_criteria(book.journal, "AMD", [{"rule": "below", "level": 95}],
+                                  DAY)
+    session = sign_in(TestClient(fastapi_app), EMAIL)
+    url = f"/v1/journal/criteria/{rule.id}/restore"
+    assert session.post(url).status_code == 404  # still live
+    assert session.delete(f"/v1/journal/criteria/{rule.id}").status_code == 204
+    assert session.post(url).status_code == 204
+    assert [e.id for e in journal.criteria(journal.load(book.journal))] == [rule.id]
+    session.delete(f"/v1/journal/criteria/{rule.id}")
+    journal.add_criteria(book.journal, "AMD", [{"rule": "below", "level": 80}], DAY)
+    assert session.post(url).status_code == 409

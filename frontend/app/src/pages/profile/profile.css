@@ -267,6 +267,33 @@
   gap: 8px;
   align-items: center;
 }
+/* An app's mark on its chip, drawn as the import page's platform chips draw
+   one: the initial underneath, the logo over it on the same tile. */
+.pr-chip-mark {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  border-radius: var(--ag-radius-nav);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+}
+.pr-chip-mark img {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 1px;
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
 /* Free text for the assistant. Resizes vertically only: a textarea a reader
    can drag wider than its card is a layout bug they caused themselves. */
 .pr-notes {

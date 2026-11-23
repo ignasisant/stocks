@@ -11,7 +11,7 @@
  * failure.
  */
 
-import type { Change, EditPlan, Transactions } from "../../api.gen";
+import type { Change, EditPlan, PriceCheck, Transactions } from "../../api.gen";
 import { get, send } from "../../shell/api";
 import { findTickers, forgetSearches } from "../../shell/findTickers";
 import type {
@@ -153,6 +153,17 @@ export type TradeRow = {
 /** A typed buy or sale, planned: nothing is written. */
 export const planTrade = (row: TradeRow) =>
   send<EditPlan>("POST", "/portfolio/changes/plan", { ops: [{ op: "add", row }] });
+
+/**
+ * Whether a typed price fits its day's close (`fits: false` for 70.004 on a
+ * 75 stock). `fits: null` when the market could not say: never a refusal.
+ */
+export const checkPrice = (row: TradeRow) =>
+  get<PriceCheck>(`${at(row.ticker)}/price-check`, {
+    day: row.date,
+    price: row.price,
+    currency: row.currency,
+  });
 
 /** Apply a plan the reader saw, under its token: journalled, one undo away. */
 export const commitPlan = (plan: EditPlan, summary: string) =>

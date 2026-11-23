@@ -1811,6 +1811,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A price its day never traded near: why the trade cannot be added. */
+.tk-remove-body .tk-trade-off {
+  border: 1px solid var(--ag-critical-fill);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-loss-band);
+  padding: 0.55rem 0.8rem;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
 @media (pointer: coarse) {
   .tk-trade-field .tk-field {
     height: 44px;

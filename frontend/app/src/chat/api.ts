@@ -418,7 +418,12 @@ type Wire =
       content: Activity["content"];
     }
   | { type: "RUN_FINISHED"; result?: Partial<Done> }
-  | { type: "RUN_ERROR"; message: string; code?: string };
+  | {
+      type: "RUN_ERROR";
+      message: string;
+      code?: string;
+      metadata?: { wait?: number };
+    };
 
 /**
  * One SSE block's `data:` payload, or null for anything that is not an event.
@@ -839,6 +844,9 @@ async function follow(
             ...FAILED,
             error: event.code ?? "chat.api_error",
             ...(learned ? { learned } : {}),
+            ...(typeof event.metadata?.wait === "number"
+              ? { wait: event.metadata.wait }
+              : {}),
           };
           break;
       }

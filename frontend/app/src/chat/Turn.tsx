@@ -82,6 +82,11 @@ const AUTO_MAX = 60;
 /** When the countdown last asked again, so a wall that keeps refusing is not
  *  hammered in a loop: one automatic try a minute, the reader's Retry always. */
 let lastAuto = 0;
+/** Automatic tries in a row, each one a whole turn again: past `AUTO_STREAK`
+ *  inside `STREAK_MS` the wall is not a burst, and the reader decides. */
+let autoStreak = 0;
+const AUTO_STREAK = 3;
+const STREAK_MS = 5 * 60_000;
 
 /**
  * The burst wall's refusal, counted down: "try again in 12s" that actually
@@ -98,7 +103,15 @@ function Countdown({
   onRetry: () => void;
 }) {
   const t = useT();
-  const auto = wait > 0 && wait <= AUTO_MAX && Date.now() - lastAuto > 60_000;
+  const [auto] = useState(() => {
+    const since = Date.now() - lastAuto;
+    return (
+      wait > 0 &&
+      wait <= AUTO_MAX &&
+      since > 60_000 &&
+      (since > STREAK_MS || autoStreak < AUTO_STREAK)
+    );
+  });
   const [left, setLeft] = useState(wait);
   useEffect(() => {
     if (!auto) return;
@@ -107,9 +120,15 @@ function Countdown({
   }, [auto]);
   useEffect(() => {
     if (!auto || left > 0) return;
-    lastAuto = Date.now();
+    const now = Date.now();
+    autoStreak = now - lastAuto > STREAK_MS ? 1 : autoStreak + 1;
+    lastAuto = now;
     onRetry();
   }, [auto, left, onRetry]);
+  // No try coming: a wall that names one ("I'll try again in…") says the
+  // reader's way instead, rather than a number that never moves.
+  const later = `${error}_later`;
+  if (!auto && t.has(later)) return <>{t(later)}</>;
   return <>{t(error, { seconds: Math.max(left, 0) })}</>;
 }
 
@@ -1047,7 +1066,9 @@ function Failed({
   const t = useT();
   const error = turn.error ?? "";
   const quota = QUOTA.has(error);
-  const waiting = turn.wait !== undefined;
+  // A busy free chain always counts down; one restored without its wait
+  // says to come back, never the allowance wall `capMessage` falls back to.
+  const waiting = turn.wait !== undefined || error === "chat.free_busy";
   const cause = [provider, error.replace(/^chat\./, ""), when]
     .filter(Boolean)
     .join(" · ");

@@ -15,6 +15,7 @@ a read-only filesystem costs a repeated lookup, never a failed render.
 from __future__ import annotations
 
 import json
+import re
 import threading
 
 from stocks import atomic
@@ -68,6 +69,25 @@ def known(symbol: str) -> dict[str, str] | None:
     with _lock:
         hit = _all().get(symbol.upper())
     return dict(hit) if hit else None
+
+
+# The kinds whose name names one security across its lines: a company's
+# share (SAP and SAP.DE, an ADR and its home line: TM and 7203.T) or one
+# fund's class (CSPX.L and SXR8.DE). Yahoo spells the name the same on each.
+_ONE_ISSUER = frozenset({"EQUITY", "ETF"})
+
+
+def company(symbol: str) -> str | None:
+    """The issuer's name as one key across the lines it trades on: lower case,
+    punctuation and spacing folded ("sap se"). None for a symbol never seen
+    or of another kind (a coin, an index), whose name says nothing of whose
+    it is. Disk only, never the network."""
+    hit = known(symbol)
+    if not hit or hit.get("quoteType") not in _ONE_ISSUER:
+        return None
+    name = str(hit.get("name") or "").casefold()
+    key = " ".join(re.sub(r"[^0-9a-z]+", " ", name).split())
+    return key or None
 
 
 def fill(symbol: str, info: dict) -> dict:

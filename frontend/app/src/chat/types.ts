@@ -577,6 +577,8 @@ export type Done = {
   recalled?: Recalled[];
   /** The stored answer's id, for its thumbs. Absent when nothing was stored. */
   id?: string;
+  /** Seconds until the free models are awake again, on `chat.free_busy`. */
+  wait?: number;
   /** The stream ended with no ending: the connection dropped, not the run. */
   lost?: boolean;
 };

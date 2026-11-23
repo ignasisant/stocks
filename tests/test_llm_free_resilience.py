@@ -39,6 +39,7 @@ def slept(monkeypatch):
     monkeypatch.setattr(llm, "_free_dead", set())
     monkeypatch.setattr(llm, "_free_resting", {})
     monkeypatch.setattr(llm, "_free_slow", {})
+    monkeypatch.setattr(llm, "_free_spent", {})
     return waits
 
 
@@ -444,3 +445,106 @@ def test_a_host_hiccup_in_a_round_is_asked_again_once(monkeypatch, slept):
     assert run.text == "DONE"
     assert [kw["model"] for kw in client.sent] == [
         "gpt-oss-120b", "gpt-oss-120b", "gpt-oss-120b", "qwen3.8-27b"]
+
+
+# ------------------------------------------- busy for a minute vs spent today
+
+_GROQ_TPD = ("Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+             "day (TPD): Limit 200000, Used 199500, Requested 9700. Please try "
+             "again in 7m12.5s.")
+_OR_RPD = ("Error code: 429 - {'error': {'message': 'Rate limit exceeded: "
+           "free-models-per-day. Add 10 credits to unlock 1000 free model "
+           "requests per day', 'code': 429, 'metadata': {'headers': "
+           "{'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', "
+           "'X-RateLimit-Reset': '{}'}}}}")
+
+
+def test_a_per_day_limit_is_not_asked_again_even_as_the_last_awake(
+        monkeypatch):
+    """Resting a day's allowance 60 s had every turn ask groq first again."""
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    calls = []
+
+    def groq(api_key, model, system, messages):
+        calls.append(model)
+        raise _HttpError(429, _GROQ_TPD)
+        yield
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "gpt-oss-120b", groq)])
+    with pytest.raises(llm.FreeTierSpent):
+        list(llm._free_stream("", "auto", "sys", []))
+    now[0] += 120  # past the minute rest, inside the 7 m the 429 named
+    with pytest.raises(llm.FreeTierSpent):
+        list(llm._free_stream("", "auto", "sys", []))
+    assert calls == ["gpt-oss-120b"]
+    now[0] += 7 * 60
+    with pytest.raises(llm.FreeTierExhausted):
+        list(llm._free_stream("", "auto", "sys", []))
+    assert len(calls) == 2
+
+
+def test_openrouters_daily_allowance_sits_out_every_model_on_it(monkeypatch):
+    import time as real_time
+
+    reset_ms = int((real_time.time() + 3600) * 1000)
+    calls = []
+
+    def router(api_key, model, system, messages):
+        calls.append(model)
+        raise _HttpError(429, _OR_RPD.replace("{}", str(reset_ms)))
+        yield
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("openrouter", "k", "nemotron", router),
+        _FreeBackend("openrouter", "k", "dots", router, primary=False),
+        _ok("groq", ["g"])])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["g"]
+    assert calls == ["nemotron"]  # its sibling shares the account's 50 a day
+    until = llm._free_spent[("openrouter", "*")] - llm.time.monotonic()
+    assert 3500 < until <= 3600
+
+
+def test_a_chain_dry_on_minute_limits_says_how_long_until_one_is_back(
+        monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _dead("groq", _HttpError(429, _GROQ_429.format("21s"))),
+        _dead("openrouter", _HttpError(429, _GROQ_429.format("40s")))])
+    with pytest.raises(llm.FreeTierBusy) as dry:
+        list(llm._free_stream("", "auto", "sys", []))
+    assert dry.value.wait == pytest.approx(21)
+
+
+def test_a_chain_dry_for_other_reasons_is_neither_busy_nor_spent(monkeypatch):
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _dead("groq", _HttpError(500, "upstream broke"))])
+    with pytest.raises(FreeTierExhausted) as dry:
+        list(llm._free_stream("", "auto", "sys", []))
+    assert type(dry.value) is FreeTierExhausted
+
+
+def test_one_model_resting_is_enough_to_call_the_chain_busy(monkeypatch):
+    """The prod mix: groq over its minute while OpenRouter streams nothing or
+    breaks. The model coming back is the turn's chance, not an outage."""
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _dead("groq", _HttpError(429, _GROQ_429.format("21s"))),
+        _dead("openrouter", _HttpError(500, "upstream broke"))])
+    with pytest.raises(llm.FreeTierBusy) as dry:
+        list(llm._free_stream("", "auto", "sys", []))
+    assert dry.value.wait == pytest.approx(21)
+
+
+def test_a_short_wait_refused_twice_still_says_when_the_model_is_back(
+        monkeypatch, slept):
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _dead("groq", _HttpError(429, _GROQ_429.format("3s")))])
+    with pytest.raises(llm.FreeTierBusy) as dry:
+        list(llm._free_stream("", "auto", "sys", []))
+    assert len(slept) == 1 and dry.value.wait == pytest.approx(3)

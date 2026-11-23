@@ -55,6 +55,40 @@ class Connections(BaseModel):
         )
     )
     connections: list[Connection]
+    logos: dict[str, str | None] = Field(
+        default_factory=dict,
+        description=(
+            "Each app the card explains, by id, to its same-origin brand mark; "
+            "null for one with no brand (\"other\") or whose mark could not "
+            "be fetched."
+        ),
+    )
+
+
+#: The apps the card explains — `ConnectorCard.APPS`.
+App = Literal["claude", "claude_code", "chatgpt", "codex", "gemini", "cursor",
+              "vscode", "windsurf", "lechat", "other"]
+
+#: Where each app's mark is fetched from, once, then served from this host.
+#: Claude Code wears Claude's, Codex OpenAI's: those are the marks they show.
+_DOMAINS: dict[str, str | None] = {
+    "claude": "claude.ai",
+    "claude_code": "claude.ai",
+    "chatgpt": "chatgpt.com",
+    "codex": "openai.com",
+    "gemini": "gemini.google.com",
+    "cursor": "cursor.com",
+    "vscode": "code.visualstudio.com",
+    "windsurf": "windsurf.com",
+    "lechat": "chat.mistral.ai",
+    "other": None,
+}
+
+
+def _logos() -> dict[str, str | None]:
+    from stocks import loaders
+
+    return {app: loaders.app_logo(app, domain) for app, domain in _DOMAINS.items()}
 
 
 def _when(epoch: int) -> datetime:
@@ -102,6 +136,7 @@ def connections(
             )
             for r in rows
         ],
+        logos=_logos(),
     )
 
 
@@ -126,9 +161,6 @@ def revoke(
                             detail="no such connection")
 
 
-#: The apps the card explains — `ConnectorCard.APPS`.
-App = Literal["claude", "claude_code", "chatgpt", "codex", "gemini", "cursor",
-              "vscode", "windsurf", "lechat", "other"]
 
 
 class Copied(BaseModel):

@@ -218,6 +218,30 @@ describe("the events it reads", () => {
     expect(done.proposal).toEqual(proposal);
   });
 
+  it("carries the wait of a busy free chain, for the countdown", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stream([
+          {
+            type: "RUN_ERROR",
+            message: "x",
+            code: "chat.free_busy",
+            metadata: { wait: 23 },
+          },
+        ]),
+      ),
+    );
+    const busy = await run(
+      runInput({ message: "hola" }, {}),
+      () => {},
+      () => {},
+      () => {},
+    );
+    expect(busy.error).toBe("chat.free_busy");
+    expect(busy.wait).toBe(23);
+  });
+
   it("reads a run error as its locale key, and a cut stream as a failed one", async () => {
     vi.stubGlobal(
       "fetch",

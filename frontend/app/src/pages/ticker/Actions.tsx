@@ -17,6 +17,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -25,12 +26,25 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Glyph } from "../../ui/Glyph";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { useMobile } from "../../shell/useMobile";
 import { usePresence, useSwipeDismiss } from "../../shell/useSheet";
-import { useTickerJournal, type JournalEntry } from "../../ui/Journal";
+import {
+  useTickerJournal,
+  type ChecklistLine,
+  type JournalEntry,
+} from "../../ui/Journal";
+import type { RuleQuote } from "../../ui/ruleReading";
+import { entryFigure, entryText } from "../review/format";
 import { complete, draft, duplicateAt, payload, summary } from "./alerts";
-import { follow, getAlertTypes, getAlerts, getTags, setAlerts } from "./data";
+import {
+  follow,
+  getAlertTypes,
+  getAlerts,
+  getEntryFit,
+  getTags,
+  setAlerts,
+} from "./data";
 import { useTradeEntry, type TradeDefaults } from "./AddTrade";
 import { usePositionRemoval } from "./Removal";
 import { useTickerShare } from "./Share";
@@ -488,6 +502,7 @@ export function Actions({
   entry,
   onEntry,
   onMine,
+  quote = null,
 }: {
   ticker: string;
   name: string;
@@ -504,13 +519,32 @@ export function Actions({
   onEntry: (entry: WatchlistEntry) => void;
   /** Told what the reader set here, and again whenever it changes. */
   onMine?: (mine: Mine | null) => void;
+  /** The live quote, for the journal panel to read the reader's rules against. */
+  quote?: RuleQuote | null;
 }) {
   const t = useT();
+  const lang = useLang();
+  // `t` is a new function each render: the loader reads it through a ref so
+  // the checklist is fetched once per name and language, not per render.
+  const say = useRef(t);
+  say.current = t;
+  const checklist = useCallback(async (): Promise<ChecklistLine[] | null> => {
+    const fit = await getEntryFit(ticker);
+    if (!fit.set || !fit.lines.length) return null;
+    return fit.lines.map((line) => ({
+      rule: line.rule,
+      level: line.level,
+      text: entryText(line, say.current, lang),
+      shown: line.value === null ? null : entryFigure(line.rule, line.value, lang),
+      state: line.state,
+    }));
+  }, [ticker, lang]);
+  const rulesContext = useMemo(() => ({ quote, checklist }), [quote, checklist]);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [forms, setForms] = useState<AlertForm[]>([]);
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View | null>(null);
-  const journal = useTickerJournal(ticker, name, held);
+  const journal = useTickerJournal(ticker, name, held, rulesContext);
   const sharing = useTickerShare(ticker, name);
   const removal = usePositionRemoval(ticker, inBook, onBookChanged);
   const trading = useTradeEntry(ticker, trade, onBookChanged);

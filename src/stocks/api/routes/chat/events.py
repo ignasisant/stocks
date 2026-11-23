@@ -63,6 +63,16 @@ def _frame(event: BaseEvent) -> str:
     return _WIRE.encode(event)
 
 
+def _run_error(reply: engine.Reply) -> RunErrorEvent:
+    """A refused turn: its locale key, plus the wait the panel counts down
+    before it asks again by itself when the free chain is only busy."""
+    assert reply.error
+    if reply.wait is None:
+        return RunErrorEvent(message=reply.error, code=reply.error)
+    return RunErrorEvent(message=reply.error, code=reply.error,
+                         metadata={"wait": reply.wait})
+
+
 def _call(call_id: str, name: str, args: dict, parent: str) -> Iterator[str]:
     """A tool call, whole: start, its arguments in one piece, end.
 
@@ -319,7 +329,7 @@ def _events(
                             name="chat.learned",
                             value=[dict(c) for c in reply.learned],
                         ))
-                    yield _frame(RunErrorEvent(message=reply.error, code=reply.error))
+                    yield _frame(_run_error(reply))
                     return
                 # An answer the engine settled without streaming it (an import
                 # note, a proposal) arrives whole, as one text message.
@@ -406,7 +416,7 @@ def _settled(*, thread: str, run: str, reply: engine.Reply,
     mid = f"msg_{uuid.uuid4().hex[:16]}"
     yield _frame(RunStartedEvent(thread_id=thread, run_id=run))
     if reply.error:
-        yield _frame(RunErrorEvent(message=reply.error, code=reply.error))
+        yield _frame(_run_error(reply))
         return
     yield _frame(TextMessageStartEvent(message_id=mid, role="assistant"))
     yield _frame(TextMessageContentEvent(message_id=mid, delta=reply.text))

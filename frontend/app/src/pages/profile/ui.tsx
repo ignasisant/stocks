@@ -169,12 +169,15 @@ export function Chips<T extends string>({
   value,
   options,
   labelOf,
+  markOf,
   onPick,
   disabled,
 }: {
   value: T | null;
   options: readonly T[];
   labelOf: (option: T) => string;
+  /** A decorative mark before the label (a brand's logo); the label names it. */
+  markOf?: (option: T) => ReactNode;
   onPick: (option: T) => void;
   disabled?: boolean;
 }) {
@@ -187,6 +190,7 @@ export function Chips<T extends string>({
           disabled={disabled}
           onClick={() => onPick(option)}
         >
+          {markOf?.(option)}
           {labelOf(option)}
         </ToggleChip>
       ))}

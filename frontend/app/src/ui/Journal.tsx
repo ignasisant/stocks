@@ -31,12 +31,23 @@ import { useLang, useT } from "../shell/i18n";
 import { Link } from "../shell/router";
 import { useCurrency } from "../shell/session";
 import { TickerCell } from "../shell/tickers";
+import { calendarDay } from "../shell/dates";
 import { useApi } from "../shell/useApi";
 import { usePresence, useSwipeDismiss } from "../shell/useSheet";
 import { Glyph } from "./Glyph";
 import { Chip, type Tone } from "./Kpi";
 import "./journal.css";
 import { formatter } from "../shell/numbers";
+import {
+  clashWith,
+  closestOf,
+  gapOf,
+  type Reading,
+  readRule,
+  type RuleQuote,
+  ruleName,
+  trackOf,
+} from "./ruleReading";
 
 export type JournalState =
   "open" | "followed" | "declined" | "lapsed" | "hit" | "retired";
@@ -142,6 +153,16 @@ function retireRule(id: string): Promise<void> {
     {
       touches: ["/journal", "/ticker"],
     },
+  );
+}
+
+/** Put back a rule just retired: the undo of `retireRule`. */
+function restoreRule(id: string): Promise<void> {
+  return send<void>(
+    "POST",
+    `/journal/criteria/${encodeURIComponent(id)}/restore`,
+    undefined,
+    { touches: ["/journal", "/ticker"] },
   );
 }
 
@@ -613,6 +634,26 @@ export function JournalList({
 
 const noReload = () => {};
 
+/** A line of the reader's buy checklist, already in words (`/ticker/{s}/entry`). */
+export type ChecklistLine = {
+  rule: string;
+  level: number;
+  /** The line as the reader wrote it: "Operating margin ≥ 10 %". */
+  text: string;
+  /** Today's figure, formatted; null when there is none. */
+  shown: string | null;
+  state: "pass" | "fail" | "unknown";
+};
+
+/** What the ticker page lends the panel to read the rules against. */
+export type RulesContext = {
+  quote: RuleQuote | null;
+  /** The buy checklist on this name; null when the reader has none. */
+  checklist?: () => Promise<ChecklistLine[] | null>;
+};
+
+const noChecklist = () => Promise.resolve(null);
+
 /**
  * A ticker's journal, as a row of the header's "More" menu and the side
  * panel the row opens. `label` is null while the journal is loading or
@@ -628,6 +669,7 @@ export function useTickerJournal(
   ticker: string,
   name = "",
   held = false,
+  context: RulesContext | null = null,
 ): {
   label: string | null;
   count: number;
@@ -666,7 +708,10 @@ export function useTickerJournal(
         <JournalPanel
           ticker={ticker}
           name={name}
+          held={held}
           journal={journal}
+          quote={context?.quote ?? null}
+          checklist={context?.checklist ?? noChecklist}
           onClose={close}
           onChange={reload}
           leaving={presence.leaving}
@@ -688,125 +733,471 @@ export function rulesSubject(ticker: string, name = ""): string {
     : ticker;
 }
 
+type Say = (key: string, vars?: Record<string, string | number>) => string;
+
+const UNDO_MS = 8000;
+
+/** Today's figure for a rule, in its own unit. */
+function todayFigure(reading: Reading, lang: string): string {
+  const value = reading.value ?? 0;
+  if (reading.unit === "price") {
+    return formatter(lang, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+  const shown = formatter(lang, { maximumFractionDigits: 1 }).format(value);
+  return reading.unit === "x" ? `${shown}×` : `${shown} %`;
+}
+
+/** The small line under a rule: where it stands today, or why it cannot say. */
+function nowText(t: Say, entry: JournalEntry, reading: Reading, lang: string): string {
+  if (reading.kind === "watch" || (reading.kind === "met" && reading.value === null)) {
+    return reading.group === "news" ? t("journal.read_news") : t("journal.read_book");
+  }
+  if (reading.value === null) {
+    return reading.checked ||
+      reading.group !== "daily" ||
+      ruleName(entry) === "buy_pe_fwd_below"
+      ? t("journal.read_pending")
+      : "";
+  }
+  const value = todayFigure(reading, lang);
+  if (reading.checked) return t("journal.read_last", { value });
+  return reading.unit === "pct"
+    ? t("journal.read_drawdown", { value })
+    : t("journal.read_today", { value });
+}
+
+/** How far the line is, beside the track: "Has to fall 6.4 %", "2 points to go". */
+function gapText(t: Say, entry: JournalEntry, reading: Reading, lang: string): string {
+  if (reading.kind === "met") {
+    const day = entry.snapshot.hit_day;
+    return typeof day === "string" && day
+      ? t("journal.read_hit_on", { day: calendarDay(day, lang) })
+      : "";
+  }
+  if (reading.onLine) {
+    return reading.checked ? t("journal.read_on_line_slow") : t("journal.read_on_line");
+  }
+  const gap = gapOf(reading);
+  return gap
+    ? t(gap.key, { n: formatter(lang, { maximumFractionDigits: 1 }).format(gap.n) })
+    : "";
+}
+
+const GROUPS = ["daily", "quarter", "news"] as const;
+
+const lowerFirst = (text: string) => text.charAt(0).toLocaleLowerCase() + text.slice(1);
+
+/** One rule, as the chat is asked to review it: the words and today beside them. */
+function reviewLine(
+  t: Say,
+  entry: JournalEntry,
+  reading: Reading,
+  lang: string,
+): string {
+  const now = [nowText(t, entry, reading, lang), gapText(t, entry, reading, lang)]
+    .filter(Boolean)
+    .join(", ");
+  return `- ${ruleText(t, entry, lang)}${now ? ` (${now})` : ""}`;
+}
+
 /**
- * The reader's rules on this name, at the panel's head: the exit rules, then
- * the buy zones, each one in words with its state and a way to retire it, and
- * a way to write them with the assistant — which drafts them as a card the
+ * The reader's rules on this name, at the panel's head, each read against
+ * today: the figure now, how far the line is, a track that shows it, and a
+ * state — met (only once the server says so), near, far, waiting for the
+ * next results, or watched in the news. The buy side opens on a verdict and
+ * closes on the checklist every buy is held to, with a note where a rule asks
+ * for less than that list. A holder sees the exit side first; a name not held
+ * keeps its exit side to one line until it is bought.
+ *
+ * Retiring takes one press and leaves an Undo in its place for a few seconds;
+ * changing a rule goes through the assistant, which drafts it as a card the
  * reader approves, so a rule is never saved that they did not see.
  */
 export function RulesBlock({
   ticker,
   name = "",
+  held = false,
   rules,
+  quote = null,
+  checklist = null,
   onChange,
   onAsk,
 }: {
   ticker: string;
   name?: string;
+  held?: boolean;
   rules: JournalEntry[];
+  quote?: RuleQuote | null;
+  checklist?: ChecklistLine[] | null;
   onChange: () => void;
   onAsk: () => void;
 }) {
   const t = useT();
   const lang = useLang();
-  // Retiring asks twice: the first press turns the button into its
-  // confirmation, beside a Cancel, so a stray tap never takes a rule down.
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [failed, setFailed] = useState<"retire" | "restore" | null>(null);
   // Rules taken down here and not yet gone from `rules`: the row leaves at
   // the press, the journal is re-read behind it, and a refusal puts it back.
   const [gone, setGone] = useState<readonly string[]>([]);
-  const retire = (id: string) => {
-    setConfirming(null);
-    setFailed(false);
-    setGone((ids) => [...ids, id]);
-    retireRule(id)
-      .then(onChange)
+  const [undo, setUndo] = useState<{ id: string; words: string } | null>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!undo) return;
+    // The row the focus was on has gone: the Undo is where it lands.
+    undoButton.current?.focus();
+    // It goes after a while, but never from under the focus: while the Undo
+    // still holds it, the note waits for the next turn.
+    let timer = 0;
+    const expire = () => {
+      if (document.activeElement === undoButton.current) {
+        timer = window.setTimeout(expire, UNDO_MS);
+      } else setUndo(null);
+    };
+    timer = window.setTimeout(expire, UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+
+  const subject = rulesSubject(ticker, name);
+  const topic = tickerTopic(ticker);
+  const ask = (text: string) => {
+    askAssistant(text, { topic });
+    onAsk();
+  };
+  const retire = (rule: JournalEntry, words: string) => {
+    setMenu(null);
+    setFailed(null);
+    setUndo(null);
+    setGone((ids) => [...ids, rule.id]);
+    retireRule(rule.id)
+      .then(() => {
+        setUndo({ id: rule.id, words });
+        onChange();
+      })
       .catch(() => {
-        setFailed(true);
-        setGone((ids) => ids.filter((held) => held !== id));
+        setFailed("retire");
+        setGone((ids) => ids.filter((one) => one !== rule.id));
       });
   };
+  const putBack = (id: string) => {
+    setUndo(null);
+    setFailed(null);
+    restoreRule(id)
+      .then(() => {
+        setGone((ids) => ids.filter((one) => one !== id));
+        onChange();
+      })
+      .catch(() => setFailed("restore"));
+  };
+
   const standing = rules.filter((rule) => !gone.includes(rule.id));
-  // Each side keys its copy by prefix: `journal.criteria_*` for exits,
-  // `journal.entry_*` for buy zones.
-  const group = (side: "criteria" | "entry") => {
-    const own = rules.filter((rule) => buyRule(rule) === (side === "entry"));
-    const shown = standing.filter((rule) => own.includes(rule));
-    const heading = `ag-jr-${side}-h`;
+  const read = (rule: JournalEntry) =>
+    readRule(rule, quote, rule.ticker.toUpperCase() === ticker.toUpperCase());
+  const exits = standing.filter((rule) => !buyRule(rule));
+  const buys = standing.filter(buyRule);
+
+  const row = (rule: JournalEntry) => {
+    const reading = read(rule);
+    const words = ruleText(t, rule, lang);
+    const now = nowText(t, rule, reading, lang);
+    const gap = gapText(t, rule, reading, lang);
+    const track = trackOf(reading);
+    const side = buyRule(rule) ? "buy" : "exit";
+    const acts = `ag-jr-acts-${rule.id}`;
     return (
-      <section className="ag-jr-rules" aria-labelledby={heading}>
-        <h3 id={heading} className="ag-jr-h">
-          {t(`journal.${side}_title`)}
-        </h3>
-        {shown.length ? (
-          <ul className="ag-jr-rule-list">
-            {shown.map((rule) => {
-              const words = ruleText(t, rule, lang);
-              return (
-                <li key={rule.id} className="ag-jr-rule">
-                  <span className="ag-jr-rule-text">{words}</span>
-                  <StateBadge state={rule.state} />
-                  {confirming === rule.id ? (
-                    <>
-                      <button
-                        type="button"
-                        className="ag-jr-retire ag-jr-retire-confirm"
-                        aria-label={`${t("journal.criteria_confirm")}: ${words}`}
-                        onClick={() => retire(rule.id)}
-                      >
-                        {t("journal.criteria_confirm")}
-                      </button>
-                      <button
-                        type="button"
-                        className="ag-jr-retire"
-                        onClick={() => setConfirming(null)}
-                      >
-                        {t("journal.criteria_cancel")}
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="ag-jr-retire"
-                      aria-label={`${t("journal.criteria_retire")}: ${words}`}
-                      onClick={() => setConfirming(rule.id)}
-                    >
-                      {t("journal.criteria_retire")}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="ag-jr-rules-empty">{t(`journal.${side}_empty`)}</p>
-        )}
-        {failed && side === "criteria" ? (
-          <p className="ag-jr-rules-error" role="alert">
-            {t("journal.criteria_failed")}
-          </p>
-        ) : null}
+      <li key={rule.id} className="ag-jr-rule" data-side={side}>
+        <span className="ag-jr-rule-what">
+          <span className="ag-jr-rule-text">{words}</span>
+          {now ? <span className="ag-jr-rule-now">{now}</span> : null}
+        </span>
+        <span className="ag-jr-reading" data-kind={reading.kind} data-side={side}>
+          {reading.kind === "met" ? <Glyph name="check" size={12} /> : null}
+          {reading.kind === "met"
+            ? t("journal.state_hit")
+            : t(`journal.reading_${reading.kind}`)}
+        </span>
         <button
           type="button"
-          className="ag-jr-propose"
-          onClick={() => {
-            askAssistant(
-              t(`journal.${side}_prompt`, { ticker: rulesSubject(ticker, name) }),
-              { topic: tickerTopic(ticker) },
-            );
-            onAsk();
-          }}
+          className="ag-jr-more"
+          aria-expanded={menu === rule.id}
+          aria-controls={acts}
+          aria-label={`${t("journal.rule_options")}: ${words}`}
+          title={t("journal.rule_options")}
+          onClick={() => setMenu((open) => (open === rule.id ? null : rule.id))}
         >
-          {own.length ? t(`journal.${side}_edit`) : t(`journal.${side}_propose`)}
+          <Glyph name="more" size={16} />
         </button>
-      </section>
+        {track || gap ? (
+          <span className="ag-jr-track-row">
+            {track ? (
+              <span className="ag-jr-track" aria-hidden="true">
+                <span
+                  className="ag-jr-track-zone"
+                  style={{
+                    left: `${track.from * 100}%`,
+                    width: `${(track.to - track.from) * 100}%`,
+                  }}
+                />
+                <span
+                  className="ag-jr-track-tick"
+                  style={{ left: `${track.level * 100}%` }}
+                />
+                <span
+                  className="ag-jr-track-dot"
+                  style={{ left: `${track.value * 100}%` }}
+                />
+              </span>
+            ) : (
+              <span className="ag-jr-track ag-jr-track-empty" aria-hidden="true" />
+            )}
+            {gap ? <span className="ag-jr-gap">{gap}</span> : null}
+          </span>
+        ) : null}
+        {menu === rule.id ? (
+          <span id={acts} className="ag-jr-rule-acts">
+            <button
+              type="button"
+              className="ag-jr-btn ag-jr-btn-accent"
+              onClick={() =>
+                ask(
+                  t("journal.rule_prompt", {
+                    ticker: subject,
+                    rule: words,
+                    now: [now, gap].filter(Boolean).join(", ") || "—",
+                  }),
+                )
+              }
+            >
+              {t("journal.rule_change")}
+            </button>
+            <button
+              type="button"
+              className="ag-jr-btn"
+              aria-label={`${t("journal.criteria_retire")}: ${words}`}
+              onClick={() => retire(rule, words)}
+            >
+              {t("journal.criteria_retire")}
+            </button>
+          </span>
+        ) : null}
+      </li>
     );
   };
+
+  // Grouped by when they are read; a heading only when there is more than one.
+  const list = (own: JournalEntry[]) => {
+    const groups = GROUPS.map((group) => ({
+      group,
+      rows: own.filter((rule) => read(rule).group === group),
+    })).filter(({ rows }) => rows.length);
+    return groups.map(({ group, rows }) => (
+      <div key={group} className="ag-jr-group-rules">
+        {groups.length > 1 ? (
+          <p className="ag-jr-group-h">{t(`journal.group_${group}`)}</p>
+        ) : null}
+        <ul className="ag-jr-rule-list">{rows.map(row)}</ul>
+      </div>
+    ));
+  };
+
+  const verdict = () => {
+    if (!buys.length) return null;
+    // In the order the rows below are drawn, so pip and row line up.
+    const reads = GROUPS.flatMap((group) =>
+      buys
+        .map((rule) => ({ rule, reading: read(rule) }))
+        .filter(({ reading }) => reading.group === group),
+    );
+    const met = reads.filter(({ reading }) => reading.kind === "met").length;
+    const closest = closestOf(reads);
+    const head = met === reads.length ? "all" : met > 0 ? "some" : "none";
+    const near = closest ? gapText(t, closest.rule, closest.reading, lang) : "";
+    const hint = closest
+      ? t("journal.closest", {
+          rule: ruleText(t, closest.rule, lang),
+          gap: near ? lowerFirst(near) : t(`journal.reading_${closest.reading.kind}`),
+        })
+      : met === reads.length && checklist?.length
+        ? t("journal.verdict_check")
+        : "";
+    return (
+      <div className="ag-jr-verdict">
+        <p className="ag-jr-verdict-line">
+          <strong>{t(`journal.verdict_${head}`)}</strong>
+          <span className="ag-jr-verdict-count">
+            {t("journal.verdict_count", { met, total: reads.length })}
+          </span>
+        </p>
+        <span className="ag-jr-pips" aria-hidden="true">
+          {reads.map(({ rule, reading }) => (
+            <i key={rule.id} data-kind={reading.kind} />
+          ))}
+        </span>
+        {hint ? <p className="ag-jr-hint">{hint}</p> : null}
+      </div>
+    );
+  };
+
+  const clash = (() => {
+    for (const rule of buys) {
+      const line = clashWith(rule, checklist ?? []);
+      if (line) return { rule, line, words: ruleText(t, rule, lang) };
+    }
+    return null;
+  })();
+
+  const failedNote = failed ? (
+    <p className="ag-jr-rules-error" role="alert">
+      {t(failed === "retire" ? "journal.criteria_failed" : "journal.undo_failed")}
+    </p>
+  ) : null;
+
+  const exitSide = exits.length ? (
+    <section className="ag-jr-rules" aria-labelledby="ag-jr-criteria-h">
+      <h3 id="ag-jr-criteria-h" className="ag-jr-h">
+        {t("journal.criteria_title")}
+      </h3>
+      {list(exits)}
+    </section>
+  ) : held ? (
+    <section className="ag-jr-rules" aria-labelledby="ag-jr-criteria-h">
+      <h3 id="ag-jr-criteria-h" className="ag-jr-h">
+        {t("journal.criteria_title")}
+      </h3>
+      <p className="ag-jr-rules-empty">{t("journal.criteria_empty")}</p>
+      <button
+        type="button"
+        className="ag-jr-propose"
+        onClick={() => ask(t("journal.criteria_prompt", { ticker: subject }))}
+      >
+        {t("journal.criteria_propose")}
+      </button>
+    </section>
+  ) : (
+    // Not held: nothing to exit yet, so one line rather than an empty section.
+    <section className="ag-jr-later" aria-labelledby="ag-jr-criteria-h">
+      <h3 id="ag-jr-criteria-h" className="ag-jr-h">
+        {t("journal.criteria_title")}
+      </h3>
+      <p>{t("journal.criteria_later")}</p>
+      <button
+        type="button"
+        className="ag-jr-btn"
+        onClick={() => ask(t("journal.criteria_prompt", { ticker: subject }))}
+      >
+        {t("journal.criteria_now")}
+      </button>
+    </section>
+  );
+
+  const failing = checklist?.filter((line) => line.state === "fail").length ?? 0;
+  const buySide = (
+    <section className="ag-jr-rules" aria-labelledby="ag-jr-entry-h">
+      <h3 id="ag-jr-entry-h" className="ag-jr-h">
+        {held ? t("journal.entry_title_held") : t("journal.entry_title")}
+      </h3>
+      {buys.length ? (
+        <>
+          {verdict()}
+          {list(buys)}
+        </>
+      ) : (
+        <>
+          <p className="ag-jr-rules-empty">{t("journal.entry_empty")}</p>
+          <button
+            type="button"
+            className="ag-jr-propose"
+            onClick={() => ask(t("journal.entry_prompt", { ticker: subject }))}
+          >
+            {t("journal.entry_propose")}
+          </button>
+        </>
+      )}
+      {clash ? (
+        <div className="ag-jr-clash" role="note">
+          <p>{t("journal.clash", { rule: clash.words, check: clash.line.text })}</p>
+          <button
+            type="button"
+            className="ag-jr-btn ag-jr-btn-accent"
+            onClick={() =>
+              ask(
+                t("journal.clash_prompt", {
+                  ticker: subject,
+                  rule: clash.words,
+                  check: clash.line.text,
+                }),
+              )
+            }
+          >
+            {t("journal.clash_fix")}
+          </button>
+        </div>
+      ) : null}
+      {checklist?.length ? (
+        <div className="ag-jr-check">
+          <p className="ag-jr-check-h">
+            <span>{t("journal.checklist_title")}</span>
+            <span className="ag-jr-check-meta">
+              {failing
+                ? t("journal.checklist_fails", { n: failing, total: checklist.length })
+                : t("journal.checklist_pass")}
+            </span>
+          </p>
+          <ul className="ag-jr-check-list">
+            {checklist.map((line) => (
+              <li key={line.rule} data-state={line.state}>
+                <span className="ag-jr-check-mark" aria-hidden="true">
+                  {line.state === "pass" ? "✓" : line.state === "fail" ? "✗" : "–"}
+                </span>
+                <span className="ag-jr-check-text">
+                  <span className="ag-sr">{t(`journal.check_${line.state}`)} </span>
+                  {line.text}
+                </span>
+                <span className="ag-jr-check-value">
+                  {line.shown ?? t("journal.check_no_value")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <Link page="profile" params={{ tab: "plan" }} className="ag-jr-all">
+            {t("journal.checklist_edit")}
+          </Link>
+        </div>
+      ) : null}
+    </section>
+  );
+
   return (
     <>
-      {group("criteria")}
-      {group("entry")}
+      <div className="ag-jr-undo" role="status">
+        {undo ? (
+          <>
+            <span>{t("journal.retired_note", { rule: undo.words })}</span>
+            <button
+              ref={undoButton}
+              type="button"
+              className="ag-jr-btn ag-jr-btn-accent"
+              onClick={() => putBack(undo.id)}
+            >
+              {t("journal.undo")}
+            </button>
+          </>
+        ) : null}
+      </div>
+      {failedNote}
+      {held ? (
+        <>
+          {exitSide}
+          {buySide}
+        </>
+      ) : (
+        <>
+          {buySide}
+          {exitSide}
+        </>
+      )}
     </>
   );
 }
@@ -820,23 +1211,32 @@ export function RulesBlock({
 function JournalPanel({
   ticker,
   name,
+  held,
   journal,
+  quote,
+  checklist,
   onClose,
   onChange,
   leaving,
 }: {
   ticker: string;
   name: string;
+  held: boolean;
   journal: Journal;
+  quote: RuleQuote | null;
+  checklist: () => Promise<ChecklistLine[] | null>;
   onClose: () => void;
   onChange: () => void;
   leaving: boolean;
 }) {
   const t = useT();
+  const lang = useLang();
   const shut = useRef<HTMLButtonElement>(null);
   const sheet = useRef<HTMLElement>(null);
   // Thrown back off the edge it came in from, by a finger.
   useSwipeDismiss(sheet, "x", onClose);
+  // Read when the panel opens, not with the page: only the panel draws it.
+  const lines = useApi(checklist, [checklist]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -868,6 +1268,26 @@ function JournalPanel({
     shut.current?.focus();
     return () => before?.focus?.();
   }, []);
+
+  const rules = journal.entries.filter(liveRule);
+  // The whole set, with today beside each, for the assistant to look over.
+  const review = () => {
+    const text = rules
+      .map((rule) =>
+        reviewLine(
+          t,
+          rule,
+          readRule(rule, quote, rule.ticker.toUpperCase() === ticker.toUpperCase()),
+          lang,
+        ),
+      )
+      .join("\n");
+    askAssistant(
+      t("journal.review_prompt", { ticker: rulesSubject(ticker, name), rules: text }),
+      { topic: tickerTopic(ticker) },
+    );
+    onClose();
+  };
 
   const title = t("journal.panel_title", { ticker });
   return createPortal(
@@ -902,7 +1322,10 @@ function JournalPanel({
           <RulesBlock
             ticker={ticker}
             name={name}
-            rules={journal.entries.filter(liveRule)}
+            held={held}
+            rules={rules}
+            quote={quote}
+            checklist={lines.state === "loaded" ? lines.data : null}
             onChange={onChange}
             onAsk={onClose}
           />
@@ -913,6 +1336,11 @@ function JournalPanel({
           />
         </div>
         <footer className="ag-jr-panel-foot">
+          {rules.length ? (
+            <button type="button" className="ag-jr-propose" onClick={review}>
+              {t("journal.review_rules")}
+            </button>
+          ) : null}
           {/* Leaving the page unmounts the panel with it. */}
           <Link page="profile" params={{ tab: "journal" }} className="ag-jr-all">
             {t("journal.all")}

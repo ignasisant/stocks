@@ -121,6 +121,7 @@ from stocks.loaders.market import (
 from stocks.loaders.names import (
     _LISTING_NAMES,
     _company_name,
+    app_logo,
     brand_logo,
     company_name,
     display_symbol,
@@ -172,6 +173,7 @@ __all__ = [
     "_TAIL",
     "allocation_via_funds",
     "allocation_weights",
+    "app_logo",
     "aspsps",
     "asset_kind",
     "bar_closes",

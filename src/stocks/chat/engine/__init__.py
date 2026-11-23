@@ -18,6 +18,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import math
 import queue
 import secrets
 import threading
@@ -1315,15 +1316,46 @@ def forget_answers(chat_path: Path) -> None:
             del _kept_answers[k]
 
 
+# How long one turn stands in the free chain's queue, all waits together,
+# before it gives up and says so: past a minute a reader has left anyway.
+QUEUE_MAX_S = 60.0
+_QUEUE_TICK_S = 2.0
+
+
+def _queue(wait: float, halt: threading.Event | None) -> Iterator[tuple[str, object]]:
+    """Sit out `wait` seconds, saying so every tick: the panel shows the line,
+    and each yield is where Stop (`api/runs.py`) or `halt` gets a word in."""
+    end = time.monotonic() + wait
+    while (left := end - time.monotonic()) > 0:
+        yield ("phase", "queued")
+        if halt is not None:
+            if halt.wait(min(_QUEUE_TICK_S, left)):
+                return
+        else:
+            time.sleep(min(_QUEUE_TICK_S, left))
+
+
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
-               capped: bool, learned: tuple[dict, ...] = ()) -> Reply:
+               capped: bool, learned: tuple[dict, ...] = (),
+               dry: Exception | None = None) -> Reply:
     """The Reply for a chain that ran out — and which wall it hit.
 
     `learned` is a memory command the turn already carried out: it stands
     whether or not anybody answered the question after it, so the refusal
-    still says what was saved (and still offers the undo)."""
-    obs.warn("chat.failed", reason="free_cap" if capped else "api_error",
+    still says what was saved (and still offers the undo). `dry` is how the
+    free chain ran out, when it did: busy for a minute (high demand — the
+    panel counts down and asks again by itself) or spent for the day."""
+    reason = ("free_cap" if capped
+              else "busy" if isinstance(dry, llm.FreeTierBusy)
+              else "spent" if isinstance(dry, llm.FreeTierSpent)
+              else "api_error")
+    obs.warn("chat.failed", reason=reason,
              providers=[p.id for p, _k, _m in atts])
+    if isinstance(dry, llm.FreeTierBusy) and not capped:
+        return Reply(error="chat.free_busy", learned=learned,
+                     wait=max(1, math.ceil(dry.wait)))
+    if reason == "spent":
+        return Reply(error="chat.free_exhausted", learned=learned)
     if not capped:
         return Reply(error="chat.api_error", learned=learned)
     # Which wall: this account's allowance (back tomorrow), the shared pot
@@ -1411,6 +1443,7 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
     missed: list[str] = []  # for `llm.byok_to_free`
+    dry: Exception | None = None
     while pending:
         provider, key, model = pending.pop(0)
         model = model or provider.default_model
@@ -1429,6 +1462,8 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
             # before the call that never answered, so it goes back.
+            if isinstance(exc, llm.FreeTierExhausted):
+                dry = exc
             _provider_failed(exc, provider, model, key)
             missed.append(f"{provider.id}:{type(exc).__name__}")
             _refund(prefs, prefs_path, provider, turn.units)
@@ -1454,7 +1489,8 @@ def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
                                  prefs_path=prefs_path, chat_path=chat_path,
                                  polish=polish, grace=learn_grace)
 
-    return turn, _exhausted(prefs, turn.attempts, capped, tuple(turn.learned))
+    return turn, _exhausted(prefs, turn.attempts, capped, tuple(turn.learned),
+                            dry=dry)
 
 
 def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
@@ -1617,6 +1653,8 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     pending = list(turn.attempts)
     tried: set[tuple[str, str]] = set()
     missed: list[str] = []  # for `llm.byok_to_free`
+    dry: Exception | None = None  # how the free chain last ran out, if it did
+    queued = 0.0  # seconds this turn already stood in the free chain's queue
     # The longest answer a provider died in the middle of, withdrawn for the
     # next one to write whole: what the reader gets, marked as cut, if no
     # other provider answers at all.
@@ -1680,12 +1718,26 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         except Exception as exc:
             _provider_failed(exc, provider, model, key)
             if not parts:
+                if isinstance(exc, llm.FreeTierExhausted):
+                    dry = exc
                 missed.append(f"{provider.id}:{type(exc).__name__}")
                 _refund(prefs, prefs_path, provider, turn.units)
                 if checkpoint is not None:
                     checkpoint.charged("")
                 if not _light(turn, provider, model):
                     pending[:0] = _busy_siblings(exc, provider, key, tried)
+                if (not pending and isinstance(exc, llm.FreeTierBusy)
+                        and queued + exc.wait <= QUEUE_MAX_S):
+                    # Every free model is over its minute: the turn waits
+                    # for the first one back instead of handing the reader a
+                    # Retry button to press until it is.
+                    queued += exc.wait
+                    obs.event("chat.queued", wait_s=round(exc.wait, 1),
+                              total_s=round(queued, 1))
+                    yield from _queue(exc.wait, halt)
+                    if halt is not None and halt.is_set():
+                        break
+                    pending.append((provider, key, model))
                 continue
             # The stream died mid-answer (prod 2026-11-18: Gemini's 503 "high
             # demand" after one line). With another model still to ask, the
@@ -1767,4 +1819,5 @@ def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                                prefs_path=prefs_path, chat_path=chat_path,
                                polish=polish))
         return
-    yield ("done", _exhausted(prefs, turn.attempts, capped, tuple(turn.learned)))
+    yield ("done", _exhausted(prefs, turn.attempts, capped,
+                              tuple(turn.learned), dry=dry))

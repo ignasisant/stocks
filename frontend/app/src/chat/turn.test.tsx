@@ -77,6 +77,22 @@ describe("a refused turn", () => {
   });
 });
 
+describe("a busy free chain", () => {
+  it("counts down to asking again, with no allowance wall", () => {
+    const out = drawTurn(refused({ error: "chat.free_busy", wait: 23 }), () => {});
+    expect(out).toContain("chat.free_busy");
+    expect(out).toContain("chat.retry_now");
+    expect(out).not.toContain("chat.quota_title");
+  });
+
+  it("never falls back to the allowance wall when its wait is lost", () => {
+    const out = drawTurn(refused({ error: "chat.free_busy" }), () => {});
+    expect(out).toContain("chat.retry_now");
+    expect(out).not.toContain("chat.free_cap");
+    expect(out).not.toContain("chat.quota_title");
+  });
+});
+
 describe("switching AI on a refusal", () => {
   const draw = (turn: Stored, onDrop?: () => void) =>
     renderToStaticMarkup(

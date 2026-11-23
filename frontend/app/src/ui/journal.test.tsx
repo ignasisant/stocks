@@ -23,6 +23,7 @@ import {
   ruleText,
   rulesSubject,
 } from "./Journal";
+import { clashWith, closestOf, gapOf, readRule, trackOf } from "./ruleReading";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -289,45 +290,259 @@ describe("an exit rule", () => {
 
 describe("the rules block", () => {
   const noop = () => {};
-
-  it("lists each rule with its state and a named retire button", () => {
-    const out = renderToStaticMarkup(
-      <RulesBlock ticker="AMD" rules={[rule()]} onChange={noop} onAsk={noop} />,
-    );
-    expect(out).toContain("journal.criteria_title");
-    expect(out).toContain("journal.crit_below");
-    expect(out).toContain("journal.state_open");
-    expect(out).toContain('aria-label="journal.criteria_retire: ');
-    expect(out).toContain("journal.criteria_edit");
-    expect(out).not.toContain("journal.criteria_empty");
-  });
-
-  it("keeps buy zones in their own group, apart from the exit rules", () => {
-    const zone = rule({
+  const zone = (over: Partial<JournalEntry> = {}) =>
+    rule({
       id: "b1",
       action: "buy_below",
       subject: "criterion:AMD:buy_below",
       snapshot: { rule: "buy_below", level: 80 },
+      ...over,
     });
-    expect(buyRule(zone)).toBe(true);
-    expect(buyRule(rule())).toBe(false);
-    expect(ruleText(echo, zone, "en")).toBe("journal.crit_buy_below(80.00)");
+
+  it("reads each rule against today, with a named menu", () => {
     const out = renderToStaticMarkup(
-      <RulesBlock ticker="AMD" rules={[zone]} onChange={noop} onAsk={noop} />,
+      <RulesBlock
+        ticker="AMD"
+        held
+        rules={[rule()]}
+        quote={{ price: 100, high: 120 }}
+        onChange={noop}
+        onAsk={noop}
+      />,
     );
-    expect(out).toContain("journal.entry_title");
-    expect(out).toContain("journal.entry_edit");
-    // No exit rule yet: that side still offers to write one.
-    expect(out).toContain("journal.criteria_empty");
+    expect(out).toContain("journal.criteria_title");
+    expect(out).toContain("journal.crit_below");
+    expect(out).toContain("journal.read_today");
+    expect(out).toContain('data-kind="far"');
+    expect(out).toContain("journal.gap_fall");
+    expect(out).toContain('aria-label="journal.rule_options: ');
+    expect(out).toContain('aria-expanded="false"');
+    expect(out).toContain("ag-jr-track-dot");
+    // The actions stay folded until the menu opens.
+    expect(out).not.toContain("journal.criteria_retire");
+    expect(out).not.toContain("journal.criteria_empty");
   });
 
-  it("offers to write them with the assistant when there are none", () => {
+  it("calls a price under the line near until the server says met", () => {
+    const under = renderToStaticMarkup(
+      <RulesBlock
+        ticker="AMD"
+        rules={[zone()]}
+        quote={{ price: 79, high: 120 }}
+        onChange={noop}
+        onAsk={noop}
+      />,
+    );
+    expect(under).toContain('data-kind="near"');
+    expect(under).toContain("journal.read_on_line");
+    expect(under).toContain("journal.verdict_none");
+    const hit = renderToStaticMarkup(
+      <RulesBlock
+        ticker="AMD"
+        rules={[
+          zone({
+            state: "hit",
+            snapshot: { rule: "buy_below", level: 80, hit_day: "2026-11-20" },
+          }),
+        ]}
+        quote={{ price: 79, high: 120 }}
+        onChange={noop}
+        onAsk={noop}
+      />,
+    );
+    expect(hit).toContain('data-kind="met"');
+    expect(hit).toContain("journal.state_hit");
+    expect(hit).toContain("journal.read_hit_on");
+    expect(hit).toContain("journal.verdict_all");
+  });
+
+  it("never sets another listing's level against this quote", () => {
     const out = renderToStaticMarkup(
-      <RulesBlock ticker="AMD" rules={[]} onChange={noop} onAsk={noop} />,
+      <RulesBlock
+        ticker="AMD"
+        rules={[zone({ ticker: "AMD.DE" })]}
+        quote={{ price: 70, high: 120 }}
+        onChange={noop}
+        onAsk={noop}
+      />,
+    );
+    expect(out).toContain('data-kind="unread"');
+    expect(out).not.toContain("journal.read_today");
+  });
+
+  it("puts the buy side first on a name not held, and the exit side in one line", () => {
+    expect(buyRule(zone())).toBe(true);
+    expect(buyRule(rule())).toBe(false);
+    expect(ruleText(echo, zone(), "en")).toBe("journal.crit_buy_below(80.00)");
+    const out = renderToStaticMarkup(
+      <RulesBlock ticker="AMD" rules={[zone()]} onChange={noop} onAsk={noop} />,
+    );
+    expect(out).toContain("journal.entry_title");
+    expect(out).toContain("journal.criteria_later");
+    expect(out).not.toContain("journal.criteria_empty");
+    expect(out.indexOf("journal.entry_title")).toBeLessThan(
+      out.indexOf("journal.criteria_title"),
+    );
+  });
+
+  it("puts the exit side first for a holder, offering to write it", () => {
+    const out = renderToStaticMarkup(
+      <RulesBlock ticker="AMD" held rules={[]} onChange={noop} onAsk={noop} />,
     );
     expect(out).toContain("journal.criteria_empty");
     expect(out).toContain("journal.criteria_propose");
-    expect(out).not.toContain("ag-jr-retire");
+    expect(out).toContain("journal.entry_title_held");
+    expect(out.indexOf("journal.criteria_title")).toBeLessThan(
+      out.indexOf("journal.entry_title_held"),
+    );
+  });
+
+  it("shows the checklist and flags a buy rule that asks for less", () => {
+    const margin = zone({
+      id: "b2",
+      action: "buy_operating_margin_above",
+      subject: "criterion:AMD:buy_operating_margin_above",
+      snapshot: { rule: "buy_operating_margin_above", level: 10 },
+    });
+    const out = renderToStaticMarkup(
+      <RulesBlock
+        ticker="AMD"
+        rules={[margin]}
+        checklist={[
+          {
+            rule: "op_margin_min",
+            level: 15,
+            text: "margin at least 15 %",
+            shown: "12 %",
+            state: "fail",
+          },
+          {
+            rule: "pe_fwd_max",
+            level: 30,
+            text: "P/E at most 30",
+            shown: "22",
+            state: "pass",
+          },
+        ]}
+        onChange={noop}
+        onAsk={noop}
+      />,
+    );
+    expect(out).toContain("journal.checklist_title");
+    expect(out).toContain("journal.checklist_fails");
+    expect(out).toContain('data-state="fail"');
+    expect(out).toContain("journal.check_fail");
+    expect(out).toContain('role="note"');
+    expect(out).toContain("journal.clash_fix");
+  });
+});
+
+describe("a rule read against today", () => {
+  it("reads a drawdown from the year's high, a fundamental from its last check", () => {
+    const drop = readRule(
+      rule({ snapshot: { rule: "drawdown_high", level: 25 } }),
+      { price: 90, high: 120 },
+      true,
+    );
+    expect(drop.value).toBeCloseTo(25);
+    expect(drop.onLine).toBe(true);
+    expect(drop.kind).toBe("near");
+    const slow = readRule(
+      rule({
+        snapshot: {
+          rule: "buy_operating_margin_above",
+          level: 15,
+          checked: "2026-11-01",
+          value: 12,
+        },
+      }),
+      null,
+      true,
+    );
+    expect(slow.group).toBe("quarter");
+    expect(slow.kind).toBe("far");
+    expect(gapOf(slow)).toEqual({ key: "journal.gap_points", n: 3 });
+    const unchecked = readRule(
+      rule({ snapshot: { rule: "buy_operating_margin_above", level: 15, value: 12 } }),
+      null,
+      true,
+    );
+    expect(unchecked.kind).toBe("unread");
+  });
+
+  it("never calls a loss-making P/E near, and watches news and book rules", () => {
+    const pe = readRule(
+      rule({
+        snapshot: {
+          rule: "buy_pe_fwd_below",
+          level: 20,
+          checked: "2026-11-01",
+          value: -4,
+        },
+      }),
+      null,
+      true,
+    );
+    expect(pe.kind).toBe("far");
+    expect(trackOf(pe)).toBeNull();
+    expect(readRule(rule({ snapshot: { rule: "ceo_change" } }), null, true).kind).toBe(
+      "watch",
+    );
+    expect(
+      readRule(rule({ snapshot: { rule: "weight_above", level: 10 } }), null, true)
+        .group,
+    ).toBe("daily");
+  });
+
+  it("says what a price still has to fall, in percent of today", () => {
+    const below = readRule(rule(), { price: 100, high: null }, true);
+    expect(below.kind).toBe("far");
+    expect(gapOf(below)?.key).toBe("journal.gap_fall");
+    expect(gapOf(below)?.n).toBeCloseTo(5);
+    expect(gapOf(readRule(rule(), { price: 94, high: null }, true))).toBeNull();
+  });
+
+  it("names a rule already on its line the closest, whatever its distance", () => {
+    const far = {
+      id: "far",
+      reading: readRule(rule(), { price: 100, high: null }, true),
+    };
+    const on = {
+      id: "on",
+      reading: readRule(
+        rule({
+          snapshot: {
+            rule: "buy_pe_fwd_below",
+            level: 25,
+            checked: "2026-11-01",
+            value: 18,
+          },
+        }),
+        null,
+        true,
+      ),
+    };
+    const met = { id: "met", reading: readRule(rule({ state: "hit" }), null, true) };
+    expect(on.reading.onLine).toBe(true);
+    expect(closestOf([far, on, met])?.id).toBe("on");
+    expect(closestOf([far, met])?.id).toBe("far");
+    expect(closestOf([met])).toBeNull();
+  });
+
+  it("places the met side of the line on the track", () => {
+    const below = trackOf(readRule(rule(), { price: 100, high: null }, true));
+    expect(below?.from).toBe(0);
+    expect(below?.to).toBe(below?.level);
+    expect(below!.value).toBeGreaterThan(below!.level);
+  });
+
+  it("finds the checklist line a buy rule undercuts, and only that one", () => {
+    const lines = [{ rule: "pe_fwd_max", level: 25 }];
+    const loose = rule({ snapshot: { rule: "buy_pe_fwd_below", level: 30 } });
+    const tight = rule({ snapshot: { rule: "buy_pe_fwd_below", level: 20 } });
+    expect(clashWith(loose, lines)).toEqual(lines[0]);
+    expect(clashWith(tight, lines)).toBeNull();
+    expect(clashWith(rule(), lines)).toBeNull();
   });
 });
 

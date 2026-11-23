@@ -122,6 +122,7 @@ from stocks.schemas.edits import (
     Changes,
     EditEffect,
     EditPlan,
+    PriceCheck,
     RowChange,
 )
 from stocks.schemas.fundamentals import (
@@ -396,6 +397,7 @@ __all__ = [
     "Position",
     "Positions",
     "Prefs",
+    "PriceCheck",
     "PriceEvents",
     "Profile",
     "Profiles",
@@ -476,5 +478,4 @@ __all__ = [
     "Valuation",
     "ValuationWindow",
     "Watchlist",
-    "WatchlistEntry",
-]
+    "WatchlistEntry",]

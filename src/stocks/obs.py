@@ -41,7 +41,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
 # Cloud Run sets these on every instance; their presence is how we tell prod
@@ -305,6 +305,23 @@ def context(**fields) -> Generator[None]:
         yield
     finally:
         _ctx.reset(token)
+
+
+def carried(target: Callable[[], None]) -> Callable[[], None]:
+    """`target` run under the fields bound where it was handed over.
+
+    A new thread starts with no context of its own, so a job spawned from a
+    request or a schedule run would log without its `user` — the night's
+    `llm.byok_to_free` came in unnamed (prod 2026-11-16..23). Only the log
+    fields travel, not the caller's other contextvars.
+    """
+    fields = current()
+
+    def run() -> None:
+        with context(**fields):
+            target()
+
+    return run
 
 
 def new_id() -> str:

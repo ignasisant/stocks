@@ -47,7 +47,12 @@ export type Connection = {
   expires: string;
 };
 
-export type Connections = { url: string | null; connections: Connection[] };
+export type Connections = {
+  url: string | null;
+  connections: Connection[];
+  /** Each app's brand mark, same-origin; missing or null draws its initial. */
+  logos?: Partial<Record<string, string | null>>;
+};
 
 /** Where a reader arrived from — `routes.connections.Source`. */
 const SOURCES = ["profile", "chat", "news", "tour"] as const;
@@ -89,6 +94,31 @@ const INFO: Record<App, { name?: string; key: string }> = {
   lechat: { name: "Le Chat", key: "profile.connector_how_lechat" },
   other: { key: "profile.connector_how_other" },
 };
+
+/**
+ * An app's brand mark on its chip: the logo over its initial, so a logo that
+ * fails to load leaves a letter rather than a hole — the import page's
+ * platform chips do the same. Decorative: the name beside it is the label.
+ */
+function AppMark({ name, logo }: { name: string; logo?: string | null }) {
+  return (
+    <span aria-hidden="true" className="pr-chip-mark">
+      {name.charAt(0)}
+      {logo && (
+        <img
+          alt=""
+          src={logo}
+          width={18}
+          height={18}
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      )}
+    </span>
+  );
+}
 
 /** One server entry in the JSON files the editors read. */
 const entry = (root: string, key: string, url: string) =>
@@ -356,6 +386,7 @@ export function ConnectorCard({
     <Connector
       url={query.data.url}
       connections={query.data.connections.filter((c) => !gone.has(c.id))}
+      logos={query.data.logos}
       onGone={(id) => setGone((prev) => new Set(prev).add(id))}
       app={knownApp(app)}
     />
@@ -366,6 +397,7 @@ export function ConnectorCard({
 export function Connector({
   url,
   connections,
+  logos,
   onGone,
   app: first,
 }: Connections & { onGone: (id: string) => void; app?: App }) {
@@ -410,6 +442,10 @@ export function Connector({
               labelOf={(option) =>
                 INFO[option].name ?? t("profile.connector_app_other")
               }
+              markOf={(option) => {
+                const name = INFO[option].name;
+                return name ? <AppMark name={name} logo={logos?.[option]} /> : null;
+              }}
               onPick={(option) => {
                 setApp(option);
                 keepApp(option);

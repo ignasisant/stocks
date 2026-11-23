@@ -6,11 +6,13 @@ function rule(
   action: string,
   level: number | string,
   state: JournalEntry["state"] = "open",
+  ticker = "ASML",
 ): JournalEntry {
   return {
     type: "criterion",
     action,
     state,
+    ticker,
     snapshot: { rule: action, level },
   } as unknown as JournalEntry;
 }
@@ -62,6 +64,48 @@ describe("marks", () => {
     const [exit] = marks([], [rule("below", 90), rule("thesis", "", "hit")], 100, true);
     expect(exit?.key).toBe("ticker.mine_exit_hit");
     expect(exit?.tone).toBe("down");
+  });
+
+  it("never measures a level drawn on another listing against this price", () => {
+    // 600 on ASML.AS is euros; this page's 100 is the dollar line's price.
+    const [zone] = marks(
+      [],
+      [rule("buy_below", 600, "open", "ASML.AS")],
+      100,
+      false,
+      "ASML",
+    );
+    expect(zone?.key).toBe("ticker.mine_buy_on");
+    expect(zone?.vars).toMatchObject({ listing: "ASML.AS" });
+    expect(zone?.gap).toBeNull();
+    expect(zone?.tone).toBeNull();
+  });
+
+  it("prefers this listing's level and still trusts another's hit", () => {
+    const both = [rule("buy_below", 600, "open", "ASML.AS"), rule("buy_below", 80)];
+    const [zone] = marks([], both, 100, false, "asml");
+    expect(zone?.key).toBe("ticker.mine_buy");
+    expect(zone?.gap).toBeCloseTo(-0.2);
+    const [hit] = marks(
+      [],
+      [rule("buy_below", 600, "hit", "ASML.AS")],
+      100,
+      false,
+      "ASML",
+    );
+    expect(hit?.key).toBe("ticker.mine_buy_in");
+  });
+
+  it("names the listing of an exit floor drawn elsewhere", () => {
+    const [exit] = marks(
+      [],
+      [rule("below", 500, "open", "ASML.AS")],
+      100,
+      true,
+      "ASML",
+    );
+    expect(exit?.key).toBe("ticker.mine_exit_on");
+    expect(exit?.gap).toBeNull();
   });
 
   it("leaves retired rules out", () => {
