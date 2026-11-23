@@ -10,6 +10,7 @@ draws.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import date
 from typing import cast
 
@@ -45,6 +46,7 @@ from stocks.data.estimates import (
 )
 from stocks.jsonsafe import num as _num
 from stocks.jsonsafe import scalar as _scalar
+from stocks.portfolio import consistency
 from stocks.schemas import (
     AnalystMonth,
     Analysts,
@@ -163,25 +165,71 @@ def _price_in(
     return price * scale * rate, rate, as_of
 
 
+def live_prices(tickers: list[str]) -> dict[str, float]:
+    """The price the page header prints for each of `tickers`, off the
+    five-minute quote memo (`loaders.quotes`, one request for all of them).
+
+    The snapshot's `price`, extended hours included, because that is the
+    figure the header shows. Names Yahoo did not quote are absent; a failed
+    request is an empty answer, never a failed card.
+    """
+    out: dict[str, float] = {}
+    if not tickers:
+        return out
+    with obs.swallow("ticker.live_prices", tickers=len(tickers)):
+        snaps = loaders.quotes(tuple(sorted(set(tickers))))
+        for ticker in tickers:
+            price = _num((snaps.get(ticker) or {}).get("price"))
+            if price is not None and price > 0:
+                out[ticker] = price
+    return out
+
+
+def at_live(computed: dict, price: float | None) -> dict:
+    """`computed` read at `price`, the business unchanged (`review.at_price`).
+
+    The fundamentals pull is cached for hours, so its price trails the quote
+    drawn beside it: prod 2026-11-23, NVDA's header quoted 167.82 (+33.7 %)
+    over a DCF, a target range and a comps row all priced at Friday's 125.53.
+    No live price, or one about a hundred times the pull's (pence against
+    pounds, `consistency.unit_slip`), leaves the pull's own.
+    """
+    taken = _num(computed.get("price"))
+    if not price or not taken or price <= 0 or taken <= 0 or price == taken:
+        return computed
+    if consistency.unit_slip(price / taken):
+        return computed
+    out = review.at_price(computed, price / taken)
+    out["price"] = price
+    return out
+
+
+def _fundamentals_and_price(ticker: str, price: float | None):
+    """The fundamentals pull and the live price, side by side: the quote is a
+    request of its own on a cold memo and should not queue behind a cold pull."""
+    if price is not None:
+        return loaders.fundamentals(ticker), price
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        live = pool.submit(carried(live_prices), [ticker])
+        raw = loaders.fundamentals(ticker)
+        return raw, live.result().get(ticker)
+
+
 def metrics(
     symbol: str, base: str | None = None, price: float | None = None
 ) -> Metrics:
-    """The KPI grid, with every price-bound KPI moved to `price` when one is
-    given. `base` is a currency code already checked, or None.
+    """The KPI grid, every price-bound KPI read at the live price: `price`
+    when the caller holds one, else the quote memo's (`at_live`). `base` is a
+    currency code already checked, or None.
 
-    The fundamentals pull is cached for hours, so its price trails the quote a
-    caller drew beside it (prod 2026-11-09: NVDA quoted 178.25 over a grid
-    priced at 173.97). A caller holding the live quote passes it, and the
+    The fundamentals pull is cached for hours, so its price trails the quote
+    (prod 2026-11-09: NVDA quoted 178.25 over a grid priced at 173.97). The
     multiples are read at the price on the same screen; the business is the
     one the filings describe either way (`review.at_price`).
     """
     ticker = symbol.strip().upper()
-    raw = loaders.fundamentals(ticker)
-    computed = compute_metrics(raw)
-    taken = _num(computed.get("price"))
-    if price and taken and price > 0 and taken > 0:
-        computed = review.at_price(computed, price / taken)
-        computed["price"] = price
+    raw, live = _fundamentals_and_price(ticker, price)
+    computed = at_live(compute_metrics(raw), live)
     # No account dependency: every figure here is the company's, not the
     # reader's, and a route that demanded one would stop answering the scripts
     # that hold a token and name nobody. The single per-reader line — the market
@@ -400,10 +448,13 @@ def valuation(symbol: str) -> Valuation:
 
 
 def dcf(symbol: str) -> Dcf:
-    """The five-year DCF with every input, or the reason there is none."""
+    """The five-year DCF with every input, or the reason there is none.
+
+    Its upside against the live price, the one the header prints (`at_live`):
+    the value per share is the cash flows', the price is today's."""
     ticker = symbol.strip().upper()
-    raw = loaders.fundamentals(ticker)
-    out = dcf_model.compute(raw, compute_metrics(raw))
+    raw, live = _fundamentals_and_price(ticker, None)
+    out = dcf_model.compute(raw, at_live(compute_metrics(raw), live))
     return Dcf(
         ticker=ticker,
         reason=out.reason,
@@ -430,11 +481,18 @@ def analysts(symbol: str) -> Analysts:
     ticker = symbol.strip().upper()
     # Side by side: the rating changes are their own Yahoo call, and queued
     # behind the estimates they would add a second wait to a cold card.
-    with ThreadPoolExecutor(max_workers=1) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         moved = pool.submit(carried(_rating_changes_or_none), ticker)
+        live = pool.submit(carried(live_prices), [ticker])
         raw = loaders.estimates(ticker)
         changes = moved.result()
+        now = live.result().get(ticker)
     cons = consensus(raw)
+    # The targets payload carries the price of whenever it was pulled; the
+    # track and both upsides are read against the header's (`at_live`).
+    moved_to = at_live({"price": cons.price}, now)["price"]
+    if moved_to != cons.price:
+        cons = replace(cons, price=moved_to)
     months = rating_trend(raw, date.today())
     latest = months[-1] if months else None
     count = latest.total if latest else 0

@@ -13,6 +13,7 @@ from 14.2 is a second formatting rule for the same figure.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -28,7 +29,9 @@ from stocks.analysis.fundamentals import (
     format_value,
     peer_band,
 )
+from stocks.cache import carried
 from stocks.schemas import Comparables
+from stocks.views.ticker import at_live, live_prices
 
 router = APIRouter(tags=["comparables"])
 
@@ -61,7 +64,15 @@ def comparables(
             detail=f"at most {_MAX_TICKERS} tickers per request",
         )
 
-    rows = [compute_metrics(loaders.fundamentals(t)) for t in wanted]
+    # Every row at its live price, the one each name's own page heads with:
+    # a comps row priced at the pull's stale close ranks a name on yesterday's
+    # multiple (`views.ticker.at_live`). One quote request for the lot, beside
+    # the pulls.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        live = pool.submit(carried(live_prices), wanted)
+        pulled = [compute_metrics(loaders.fundamentals(t)) for t in wanted]
+        prices = live.result()
+    rows = [at_live(row, prices.get(t)) for t, row in zip(wanted, pulled, strict=True)]
     table = comparables_table(rows)
     band = peer_band(rows)
     flagged = comp_outliers(rows)

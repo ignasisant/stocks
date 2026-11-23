@@ -942,8 +942,10 @@ export type Comparison = {
   range: string;
   base: string;
   dates: string[];
-  /** Inception only: the book's first buy. `dates` opening later = listed later. */
+  /** Inception only: the book's first buy; `dates` opens on or after it. */
   since?: string | null;
+  /** Inception only: no session before `since`, so the lines open on the listing. */
+  listed_later?: boolean;
   lines: CompareLine[];
   offered: CompareOffer[];
   /** Asked for but not drawn: no history, or no rate into `base`. */

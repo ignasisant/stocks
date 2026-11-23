@@ -168,8 +168,15 @@ class Comparison(BaseModel):
     since: str | None = Field(
         default=None,
         description=(
-            "Inception only: the book's first buy, YYYY-MM-DD. When `dates` "
-            "opens later the subject was not listed yet that day."
+            "Inception only: the book's first buy, YYYY-MM-DD. `dates` opens "
+            "on the first session on or after it."
+        ),
+    )
+    listed_later: bool = Field(
+        default=False,
+        description=(
+            "Inception only: the subject has no session before `since`, so "
+            "its lines open on its listing rather than on the book's first day."
         ),
     )
     lines: list[CompareLine] = Field(
