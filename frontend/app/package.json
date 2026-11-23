@@ -25,16 +25,16 @@
     "web-vitals": "^6.2.3"
   },
   "devDependencies": {
-    "@ag-ui/core": "^1.0.4",
+    "@ag-ui/core": "^1.0.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.3.0",
-    "knip": "^6.45.1",
+    "knip": "^6.47.0",
     "oxlint": "^1.94.0",
     "preact": "^11.2.0",
     "prettier": "^3.10.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
