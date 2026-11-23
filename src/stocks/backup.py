@@ -68,15 +68,15 @@ def _stamp(now: float | None = None) -> str:
 # user data — a snapshot that carried them would grow by megabytes a day for
 # nothing anyone would ever restore.
 MEMO_PREFIX = "data/memo/"
+# Failed statements kept encrypted for fifteen days (portfolio.failed_files).
+# A month of snapshots would keep each one for a month and a half.
+KEPT_IMPORTS_PREFIX = "data/imports/raw/"
+_NOT_SNAPSHOTTED = (PREFIX, MEMO_PREFIX, KEPT_IMPORTS_PREFIX)
 
 
 def live_keys() -> list[str]:
     """Every key that belongs to the live tree (i.e. not a snapshot)."""
-    return [
-        k
-        for k in storage.list_keys()
-        if not k.startswith(PREFIX) and not k.startswith(MEMO_PREFIX)
-    ]
+    return [k for k in storage.list_keys() if not k.startswith(_NOT_SNAPSHOTTED)]
 
 
 def snapshots() -> list[str]:

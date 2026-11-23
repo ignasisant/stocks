@@ -350,10 +350,13 @@ def test_delete_account_erases_disk_and_bucket(monkeypatch, tmp_path):
     p.prefs.write_text("{}")
     me = f"data/users/{slug('jane@example.com')}"
     other = f"data/users/{slug('bob@example.com')}"
+    kept = "data/imports/raw/"  # failed statements, filed by slug elsewhere
     bucket.update({
         f"{me}/watchlist.yaml": b"x",
         f"{me}/portfolio.db": b"x",
+        f"{kept}{slug('jane@example.com')}/20261101T000000Z-{'a' * 16}.csv.enc": b"x",
         f"{other}/watchlist.yaml": b"bob",
+        f"{kept}{slug('bob@example.com')}/20261101T000000Z-{'b' * 16}.csv.enc": b"bob",
         "watchlist.yaml": b"root",
     })
 
@@ -361,7 +364,9 @@ def test_delete_account_erases_disk_and_bucket(monkeypatch, tmp_path):
 
     assert not p.root.exists()
     # Only this account's keys are gone; the neighbour and the root survive.
-    assert sorted(bucket) == [f"{other}/watchlist.yaml", "watchlist.yaml"]
+    assert sorted(bucket) == [
+        f"{kept}{slug('bob@example.com')}/20261101T000000Z-{'b' * 16}.csv.enc",
+        f"{other}/watchlist.yaml", "watchlist.yaml"]
 
 
 def test_delete_account_ends_its_connections_and_no_one_elses(monkeypatch, tmp_path):

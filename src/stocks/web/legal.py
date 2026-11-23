@@ -21,7 +21,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-11-19"
+LAST_UPDATED = "2026-11-23"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -57,8 +57,11 @@ _PRIVACY = {
                 "record its shape — column headings, file type, encoding and "
                 "the reasons rows were rejected — so the importer can be fixed. "
                 "Values are masked before they are stored (a date becomes "
-                "99-99-9999, an amount 9.999,99); the statement itself is never "
-                "kept and never leaves your browser.",
+                "99-99-9999, an amount 9.999,99). If you are signed in, the "
+                "file that failed is also kept, encrypted, for 15 days so the "
+                "importer can be fixed against it, then deleted; it is not in "
+                "backups, and deleting your account deletes it. Files that "
+                "import fine are never kept.",
             ]),
             ("Bank connection (optional)", [
                 "You can connect a bank account so the app can reconcile the "
@@ -167,8 +170,11 @@ _PRIVACY = {
                 "tipo de fichero, codificación y los motivos por los que se "
                 "descartaron filas— para poder arreglar el importador. Los "
                 "valores se enmascaran antes de guardarse (una fecha pasa a ser "
-                "99-99-9999; un importe, 9.999,99); el extracto en sí no se "
-                "guarda nunca ni sale de tu navegador.",
+                "99-99-9999; un importe, 9.999,99). Si has iniciado sesión, el "
+                "fichero que falló también se guarda, cifrado, durante 15 días "
+                "para arreglar el importador con él, y después se borra; no "
+                "entra en las copias de seguridad y se borra al eliminar tu "
+                "cuenta. Los ficheros que se importan bien no se guardan nunca.",
             ]),
             ("Conexión bancaria (opcional)", [
                 "Puedes conectar una cuenta bancaria para que la app concilie "
@@ -284,8 +290,11 @@ _PRIVACY = {
                 "codifica e motivi per cui le righe sono state scartate) per "
                 "poter correggere l'importatore. I valori vengono oscurati "
                 "prima di essere salvati (una data diventa 99-99-9999, un "
-                "importo 9.999,99); l'estratto conto in sé non viene mai "
-                "conservato e non lascia mai il tuo browser.",
+                "importo 9.999,99). Se hai effettuato l'accesso, anche il file "
+                "non importato viene conservato, cifrato, per 15 giorni per "
+                "correggere l'importatore, poi viene eliminato; non finisce "
+                "nei backup e si elimina con il tuo account. I file importati "
+                "senza errori non vengono mai conservati.",
             ]),
             ("Collegamento bancario (facoltativo)", [
                 "Puoi collegare un conto bancario affinché l'app possa "

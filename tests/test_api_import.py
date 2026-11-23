@@ -2064,3 +2064,23 @@ def test_an_empty_book_s_first_import_offers_the_tour_too(client, account, signe
     common newcomer, and their first commit raises the offer all the same."""
     signed_in.post("/v1/import/commit", json=body())
     assert signed_in.get("/v1/prefs").json()["tour_offer"] is True
+
+
+def test_a_failed_preview_keeps_the_file_for_the_account(
+    client, account, signed_in, monkeypatch
+):
+    """The real route and the real log context: the file lands under the
+    account's slug, encrypted, and a clean preview keeps nothing."""
+    from cryptography.fernet import Fernet
+
+    from stocks.portfolio import diagnostics, failed_files
+
+    monkeypatch.setenv("CHAT_ENC_KEY", Fernet.generate_key().decode())
+    bad = "not,a,ledger\n1,2,3\n"
+    assert signed_in.post("/v1/import/preview", json=body(bad)).status_code == 200
+    [file_id] = failed_files.kept()
+    assert file_id.startswith(accounts.slug(EMAIL) + "/")
+    assert failed_files.read(file_id) == bad.encode()
+    assert (diagnostics.DIAGNOSTICS_DIR / "raw").is_dir()
+    signed_in.post("/v1/import/preview", json=body())
+    assert failed_files.kept() == [file_id]

@@ -63,6 +63,12 @@ def delete_account(paths: UserPaths) -> None:
 
     shares.purge_owner(shares.owner_of(paths))
 
+    # Failed statements kept for the importer are filed by slug outside the
+    # account dir (portfolio.failed_files), so the sweep below would miss them.
+    from stocks.portfolio import failed_files
+
+    failed_files.purge_account(root.name)
+
     if storage.enabled():
         prefix = root.relative_to(PROJECT_ROOT.resolve()).as_posix()
         for key in storage.list_keys(prefix + "/"):

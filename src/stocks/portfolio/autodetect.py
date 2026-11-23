@@ -183,8 +183,8 @@ def _parsers(filename: str, data: bytes, prefer: str | None = None,
     ext = _extension(filename)
     head = _headers(filename, data)
     # Why each parser passed on the file. A decline is ordinary — that is how
-    # the cascade works — but when *every* parser declines, this is the only
-    # record of what they each objected to, and the file itself is never kept.
+    # the cascade works — but when *every* parser declines, the fingerprint
+    # carries this as the record of what each one objected to.
     declined: dict[str, str] = {}
     quiet: Detected | None = None
     for platform in _order(prefer):

@@ -1082,10 +1082,14 @@ def cmd_logs(args: argparse.Namespace) -> None:
 def cmd_imports(args: argparse.Namespace) -> None:
     """Read the anonymised import diagnostics (stocks.portfolio.diagnostics).
 
-    The failures nobody reported: which broker, which columns, which reason,
-    and never the statement itself.
+    The failures nobody reported: which broker, which columns, which reason —
+    and, for fifteen days, the encrypted file itself (`files`, `fetch`).
     """
     from stocks.portfolio import diagnostics as diag
+
+    if args.imports_command in ("files", "fetch", "expire"):
+        _kept_files(args)
+        return
 
     if args.imports_command == "show":
         item = diag.find(args.id)
@@ -1120,16 +1124,51 @@ def cmd_imports(args: argparse.Namespace) -> None:
         )
         print(f"    {item.get('id', '')}  {item.get('ext', '?')} "
               f"{item.get('encoding', '?')} delim={item.get('delimiter', '?')!r}")
+        if item.get("raw"):
+            print(f"    file: {item['raw']}")
     print(f"\n{len(items)} diagnostics")
     for spot in diag.hotspots(items, threshold=1):
         print(f"  {spot['platform']:<14} {spot['count']:>3} failures, "
               f"{spot['readers']} reader(s)  {spot['top_reason']}")
 
 
+def _kept_files(args: argparse.Namespace) -> None:
+    """The encrypted failed statements (stocks.portfolio.failed_files)."""
+    import tempfile
+
+    from stocks.config import PROJECT_ROOT
+    from stocks.portfolio import failed_files
+
+    if args.imports_command == "expire":
+        deleted, failed = failed_files.expire(args.days)
+        print(f"expired {deleted} file(s), {failed} failed")
+        if failed:
+            sys.exit(1)
+        return
+    if args.imports_command == "files":
+        ids = failed_files.kept()
+        print("\n".join(ids) if ids else "(no failed statements kept)")
+        return
+    name = args.id.rsplit("/", 1)[-1].removesuffix(".enc")
+    out = Path(args.out or Path(tempfile.gettempdir()) / name).expanduser().resolve()
+    # Outside the checkout, so a reader's statement can never be committed.
+    if out == PROJECT_ROOT or PROJECT_ROOT in out.parents:
+        sys.exit("imports: write the file outside the repository (-o)")
+    try:
+        data = failed_files.read(args.id)
+    except (OSError, ValueError, RuntimeError) as exc:
+        sys.exit(f"imports: {exc}")
+    except Exception as exc:  # noqa: BLE001 — a wrong key raises InvalidToken
+        sys.exit(f"imports: cannot decrypt {args.id} ({type(exc).__name__})")
+    out.write_bytes(data)
+    out.chmod(0o600)
+    print(out)
+
+
 def _replay_import(diagnostic_id: str) -> None:
     """Re-run a parser against the recorded shape of the file that broke it.
 
-    The statement was never kept, so this rebuilds what *is* known: the header
+    The fingerprint holds no values, so this rebuilds what *is* known: the header
     row, in the delimiter and encoding the file actually used. That reproduces
     the structural failures exactly — a refused header, an undetected
     semicolon, an encoding the parser can't decode — which is the class of bug
@@ -1879,6 +1918,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_imp_replay = imports_sub.add_parser(
         "replay", help="re-run the parser against the recorded file shape")
     p_imp_replay.add_argument("id", help="diagnostic id, from `stocks imports list`")
+    imports_sub.add_parser(
+        "files", help="the failed statements kept, encrypted, for 15 days")
+    p_imp_fetch = imports_sub.add_parser(
+        "fetch", help="decrypt one kept statement to a file outside the repo")
+    p_imp_fetch.add_argument("id", help="file id, from `stocks imports files`")
+    p_imp_fetch.add_argument("-o", "--out", help="where to write it (default: tmp)")
+    p_imp_exp = imports_sub.add_parser(
+        "expire", help="delete kept statements past their 15 days")
+    p_imp_exp.add_argument("--days", type=int, default=15)
     p_imports.set_defaults(func=cmd_imports)
 
     # ---- backup: snapshots of the persistence bucket (stocks.backup) --------

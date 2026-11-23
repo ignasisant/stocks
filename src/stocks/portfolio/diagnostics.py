@@ -24,6 +24,9 @@ Two sinks, deliberately redundant, the same pair stocks.web.feedback uses:
   bucket, which outlives Cloud Logging's 30 days and is what `stocks imports
   replay` reconstructs a synthetic statement from.
 
+A signed-in account's failed file is also kept itself, encrypted, for fifteen
+days (stocks.portfolio.failed_files); the fingerprint names it under `raw`.
+
 Nothing here raises. It runs on the failure path, where a second exception
 would cost us the report we came for.
 """
@@ -564,10 +567,23 @@ def report(
         **_fields(fp),
     )
     if broken:
+        kept = _keep_file(fp, filename, data)
+        if kept:
+            fp["raw"] = kept
         path = record(fp)
         if path is not None:
             fp["id"] = path.stem
     return fp
+
+
+def _keep_file(fp: dict, filename: str, data: bytes) -> str | None:
+    """The failed statement itself, encrypted for fifteen days (failed_files)."""
+    try:
+        from stocks.portfolio import failed_files
+
+        return failed_files.keep(str(fp.get("user", "")), filename, data)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 _ERROR_NAME = re.compile(r"[A-Za-z]{1,40}")
