@@ -1317,3 +1317,118 @@ def test_a_price_check_needs_a_price_a_day_and_a_currency(client):
     for params in bad:
         r = client.get("/v1/ticker/BYD/price-check", params=params, headers=AUTH)
         assert r.status_code == 422, params
+
+
+# ------------------------------------------------- the live price on every card
+
+
+def test_at_live_rescales_the_priced_figures_to_the_quote():
+    """Prod 2026-11-23: NVDA header 167.82, DCF/analysts/comparables 125.53 —
+    the hours-old fundamentals pull's price. `at_live` moves the price-bound
+    figures to the quote and leaves the business ones."""
+    from stocks.views.ticker import at_live
+
+    got = at_live({"price": 100.0, "pe_ttm": 30.0, "roe": 0.25}, 110.0)
+    assert got["price"] == 110.0
+    assert got["pe_ttm"] == pytest.approx(33.0)
+    assert got["roe"] == 0.25
+
+
+def test_at_live_keeps_the_pull_when_the_quote_is_missing_or_a_unit_slip():
+    from stocks.views.ticker import at_live
+
+    pulled = {"price": 100.0, "pe_ttm": 30.0}
+    assert at_live(pulled, None) is pulled, "no quote, the pull's own"
+    assert at_live(pulled, 0.0) is pulled
+    assert at_live({"pe_ttm": 30.0}, 110.0) == {"pe_ttm": 30.0}, "nothing to scale"
+    # Pence against pounds: ~100x apart is a unit, not a move.
+    assert at_live(pulled, 10_000.0) is pulled
+
+
+def test_the_dcf_upside_is_read_against_the_live_quote(monkeypatch, no_fetch):
+    from stocks.analysis.dcf import Dcf
+    from stocks.views import ticker as view
+
+    seen = {}
+
+    def fake_compute(raw, metrics):
+        seen.update(metrics)
+        return Dcf(ticker="NVDA", price=metrics["price"], value=150.0,
+                   upside=150.0 / metrics["price"] - 1)
+
+    monkeypatch.setattr("stocks.views.ticker.dcf_model.compute", fake_compute)
+    monkeypatch.setattr(
+        "stocks.views.ticker.compute_metrics",
+        lambda raw: {"currency": "USD", "price": 125.53, "pe_ttm": 40.0},
+    )
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {"NVDA": {"price": 167.82}})
+    out = view.dcf("nvda")
+    assert seen["price"] == 167.82
+    assert out.price == 167.82
+    assert out.upside == pytest.approx(150.0 / 167.82 - 1)
+
+
+def test_the_analysts_targets_are_measured_from_the_live_quote(monkeypatch):
+    from stocks.data.estimates import Consensus
+    from stocks.views import ticker as view
+
+    patch_loaders(monkeypatch, "estimates", lambda t: object())
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {"NVDA": {"price": 168.0}})
+    monkeypatch.setattr(
+        "stocks.views.ticker.consensus",
+        lambda raw: Consensus(ticker="NVDA", price=125.53, target_mean=210.0,
+                              target_median=200.0),
+    )
+    monkeypatch.setattr("stocks.views.ticker.rating_trend", lambda raw, today: [])
+    monkeypatch.setattr("stocks.views.ticker.eps_revisions", lambda raw: [])
+    monkeypatch.setattr("stocks.views.ticker.target_dispersion", lambda c: None)
+    monkeypatch.setattr("stocks.views.ticker._rating_changes_or_none", lambda t: [])
+    monkeypatch.setattr("stocks.views.ticker._quote_currency", lambda t: "USD")
+    out = view.analysts("NVDA")
+    assert out.price == 168.0
+    assert out.targets is not None
+    assert out.targets.upside_mean == pytest.approx(210.0 / 168.0 - 1)
+    assert out.targets.upside_median == pytest.approx(200.0 / 168.0 - 1)
+
+
+# ------------------------------------------- compare: from the book's first day
+
+
+def _daily(start: str, end: str) -> pd.Series:
+    days = pd.bdate_range(start, end)
+    return pd.Series(range(1, len(days) + 1), index=days, dtype=float)
+
+
+def test_compare_opens_on_the_book_s_first_day_for_an_old_listing():
+    """Prod 2026-11-23: NVDA (listed 1999) said "Cotiza desde el jun 21,
+    después de tu primer día" — the max history was coarsened to weeks before
+    the cut, so the first bucket sat after the book's first day."""
+    from stocks.api.routes.ticker import _since_axis
+
+    df, later = _since_axis(
+        _daily("1999-01-22", "2026-11-20"), pd.Timestamp("2021-06-14")
+    )
+    assert later is False
+    assert df.index[0].normalize() == pd.Timestamp("2021-06-14")
+
+
+def test_a_weekend_first_buy_is_not_a_late_listing():
+    from stocks.api.routes.ticker import _since_axis
+
+    df, later = _since_axis(
+        _daily("2010-01-04", "2026-11-20"), pd.Timestamp("2021-06-12")
+    )
+    assert later is False
+    assert df.index[0].normalize() == pd.Timestamp("2021-06-14"), "the Monday"
+
+
+def test_a_name_listed_after_the_book_started_says_so():
+    from stocks.api.routes.ticker import _since_axis
+
+    df, later = _since_axis(
+        _daily("2023-03-01", "2026-11-20"), pd.Timestamp("2021-06-14")
+    )
+    assert later is True
+    assert df.index[0].normalize() == pd.Timestamp("2023-03-01")
+    empty, none_later = _since_axis(None, pd.Timestamp("2021-06-14"))
+    assert empty.empty and none_later is False

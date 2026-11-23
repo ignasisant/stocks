@@ -257,7 +257,7 @@ export function CompareChart({
         formatDate={formatDate}
         legendValues
       />
-      {data.since && first && first > data.since ? (
+      {data.listed_later && first ? (
         <Note>{t("ticker.compare_listed_later", { date: formatDate(first) })}</Note>
       ) : null}
       {data.missing.length > 0 ? (

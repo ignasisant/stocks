@@ -36,7 +36,14 @@ from stocks.analysis.fundamentals import (
     quarterly_eps,
     verdict,
 )
-from stocks.analysis.history import PERIODS, bar_interval, listed, rangebreaks, ranges
+from stocks.analysis.history import (
+    PERIODS,
+    bar_interval,
+    coarsen,
+    listed,
+    rangebreaks,
+    ranges,
+)
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.portfolio import first_owned
 from stocks.analysis.sentiment import SECTOR_ETFS
@@ -314,13 +321,24 @@ def compare(
         for peer in shares[:OFFERED_PEERS]
     ]
     opens = str(since.date()) if since is not None else None
-    if since is not None and not df.empty:
-        # From the first session on or after the book's first buy; a name
-        # listed later opens on its own first, and `since` says which it was.
-        df = df[df.index >= since]
+    listed_later = False
+    if since is not None:
+        # From the first session on or after the book's first buy, cut from
+        # the daily closes BEFORE any regrouping: cut after, a "max" download
+        # is already monthly and its first bar on or after a 14 June buy is
+        # the one dated 30 June — the lines opened two weeks late under a
+        # "listed after your first day" note for NVDA (prod 2026-11-23). A
+        # name with no session before that day was listed later, and says so.
+        df, listed_later = _since_axis(got.get(ticker), since)
     if df.empty:
         return Comparison(
-            ticker=ticker, range=label, base=ccy, dates=[], offered=offered, since=opens
+            ticker=ticker,
+            range=label,
+            base=ccy,
+            dates=[],
+            offered=offered,
+            since=opens,
+            listed_later=listed_later,
         )
 
     axis = day_index(df.index)
@@ -360,7 +378,26 @@ def compare(
         offered=offered,
         missing=[name for name in asked if name not in drawn],
         since=opens,
+        listed_later=listed_later,
     )
+
+
+def _since_axis(
+    closes: pd.Series | None, since: pd.Timestamp
+) -> tuple[pd.DataFrame, bool]:
+    """The subject's sessions from `since` on, regrouped only once cut
+    (`history.coarsen` keeps the first on its own), and whether the listing
+    has no session before `since`."""
+    if closes is None or closes.dropna().empty:
+        return pd.DataFrame(), False
+    daily = closes.dropna().to_frame("Close")
+    days = pd.DatetimeIndex(daily.index)
+    if days.tz is not None:
+        days = days.tz_localize(None)
+    days = days.normalize()
+    later = bool(days[0] > since)
+    kept = daily[days >= since]
+    return coarsen(kept, "max"), later
 
 
 def _book_first_day(account: accounts.UserPaths) -> pd.Timestamp | None:

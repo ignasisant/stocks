@@ -927,3 +927,18 @@ def test_a_finnhub_line_shows_the_role_edgar_taught(client, monkeypatch):
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: True)
     body = client.get("/v1/ticker/EXPL/insiders", headers=AUTH).json()
     assert [r["role"] for r in body["trades"]] == ["Chief Financial Officer"]
+
+
+def test_the_rivals_are_priced_at_their_live_quotes(client, monkeypatch):
+    """Prod 2026-11-23: NVDA's row read P/E at 125.53 while the header showed
+    167.82. Each row moves to its own quote; a name with none keeps its pull."""
+    patch_loaders(monkeypatch, "fundamentals", lambda t: FakeRaw(ticker=t))
+    patch_loaders(monkeypatch, "quotes", lambda tickers: {"A": {"price": 150.0}})
+    monkeypatch.setattr(
+        "stocks.api.routes.comparables.compute_metrics",
+        lambda raw: {"ticker": raw.ticker, "price": 100.0, "pe_ttm": 20.0},
+    )
+    body = client.get("/v1/comparables", params={"tickers": "A,B"}, headers=AUTH).json()
+    row = body["labels"].index("P/E (TTM)")
+    assert body["rows"]["A"][row] == "30.0x"
+    assert body["rows"]["B"][row] == "20.0x"
