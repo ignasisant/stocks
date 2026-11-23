@@ -537,3 +537,15 @@ def test_the_plan_is_written_in_the_apps_language():
     agent.gather(q, "k", _MSGS, toolbox.Context(), model="big-model",
                  profile=agent.DEEP)
     assert "update_plan steps in" not in q.calls[0][2]
+
+
+def test_a_plan_longer_than_the_screen_shows_is_not_refused_by_the_schema():
+    # Prod 2026-11-22: Groq validates tool calls against the declared schema
+    # and refused a 7-step update_plan ("maxItems: got 7, want 6"), failing
+    # the round. The cap is the screen's, applied after the call.
+    import jsonschema
+
+    [spec] = [s for s in agent.PLAN_SPECS if s.name == agent.PLAN]
+    args = {"steps": [{"text": f"part {i}"} for i in range(7)]}
+    jsonschema.validate(args, spec.schema)
+    assert len(agent._plan(args)) == agent._PLAN_PARTS

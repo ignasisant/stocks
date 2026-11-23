@@ -289,9 +289,12 @@ PLAN_SPECS = [
         PLAN,
         "Set or update the plan of this research, which the user watches "
         "while they wait: the parts of the work, each a few words in the "
-        "user's language, done or not yet. Send the whole list every time.",
+        "user's language, done or not yet. Send the whole list every time, "
+        f"at most {_PLAN_PARTS} parts.",
+        # No maxItems: Groq validates calls against it and refuses the whole
+        # round over a seventh step; `_plan` keeps the first ones instead.
         {"type": "object", "properties": {"steps": {
-            "type": "array", "maxItems": _PLAN_PARTS,
+            "type": "array",
             "items": {"type": "object", "properties": {
                 "text": {"type": "string"},
                 "done": {"type": "boolean"},
