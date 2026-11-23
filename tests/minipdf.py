@@ -22,13 +22,14 @@ def pdf(pages: list[str]) -> bytes:
         ]
         body = "BT /F1 10 Tf 12 TL 40 800 Td " + " ".join(
             f"({line}) Tj T*" for line in lines) + " ET"
-        stream = body.encode("latin-1")
+        stream = body.encode("cp1252")  # WinAnsi: the euro sign fits
         objs.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
             f"/Contents {4 + 2 * i} 0 R "
             f"/Resources << /Font << /F1 {font} 0 R >> >> >>".encode())
         objs.append(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
-    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+                b" /Encoding /WinAnsiEncoding >>")
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for n, obj in enumerate(objs, start=1):

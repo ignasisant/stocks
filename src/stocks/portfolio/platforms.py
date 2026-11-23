@@ -23,6 +23,7 @@ from stocks.portfolio import (
     revolut_pdf,
     statement,
     trade_republic,
+    trade_republic_pdf,
     trading212,
 )
 from stocks.portfolio.fees import broker_of
@@ -60,6 +61,12 @@ def _parse_revolut(filename: str, data: bytes) -> ParseResult:
     if filename.lower().endswith(".pdf"):
         return revolut_pdf.parse_pdf(data)
     return revolut.parse_csv(statement.decode(data))
+
+
+def _parse_trade_republic(filename: str, data: bytes) -> ParseResult:
+    if filename.lower().endswith(".pdf"):
+        return trade_republic_pdf.parse_pdf(data)
+    return trade_republic.parse_csv(statement.decode(data))
 
 
 def _parse_generic(filename: str, data: bytes) -> ParseResult:
@@ -112,18 +119,18 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform(
         key="trade_republic",
         label="Trade Republic",
-        file_types=("csv",),
+        file_types=("csv", "pdf"),
         hint=(
             "Export from Trade Republic → Profile → Account statements → "
             "Transaction export (CSV). Only imported if it has the exact Trade "
             "Republic columns; shares import under their ISIN, coins as Yahoo "
             "pairs (BTC → BTC-EUR), dividends carry the withheld tax as the "
             "fee, and card payments, transfers and tax bookings are listed as "
-            "skipped."
+            "skipped. The Account statement PDF imports too, but it has no fee "
+            "or tax columns: a trade's price includes its fee and a dividend "
+            "books net. Import one of the two files, not both."
         ),
-        parse=lambda filename, data: trade_republic.parse_csv(
-            statement.decode(data)
-        ),
+        parse=_parse_trade_republic,
         domain="traderepublic.com",
     ),
     Platform(
