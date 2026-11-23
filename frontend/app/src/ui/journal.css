@@ -341,43 +341,20 @@
   overscroll-behavior: contain;
 }
 
-/* -------------------------------------------------------------- exit rules */
+/* ------------------------------------------------------------------ rules */
 
+/* The two sides, each a section: exit rules, buy rules (then the checklist). */
 .ag-jr-rules {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.25rem 0 0.9rem;
+  gap: 0.6rem;
+  padding: 0.25rem 0 1rem;
   margin-bottom: 0.25rem;
   border-bottom: 1px solid var(--ag-rule-soft);
 }
 
-.ag-jr-rules .ag-jr-h {
+.ag-jr-rules .ag-jr-h,
+.ag-jr-later .ag-jr-h {
   margin: 0;
-}
-
-.ag-jr-rule-list {
-  display: grid;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ag-jr-rule {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.ag-jr-rule-text {
-  flex: 1 1 14ch;
-  min-width: 0;
-  font-size: var(--ag-fs-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--ag-text-primary);
-  text-wrap: pretty;
 }
 
 .ag-jr-rules-empty,
@@ -393,10 +370,248 @@
   color: var(--ag-down);
 }
 
-.ag-jr-retire,
+/* The buy side's verdict: how many of the rules hold today, one pip each. */
+.ag-jr-verdict {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 0.9rem 0.75rem;
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.ag-jr-verdict-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+
+.ag-jr-verdict-line strong {
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ag-text-primary);
+  text-wrap: balance;
+}
+
+.ag-jr-verdict-count,
+.ag-jr-hint {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-hint {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.ag-jr-pips {
+  display: flex;
+  gap: 4px;
+}
+
+.ag-jr-pips i {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ag-border);
+}
+
+.ag-jr-pips i[data-kind="met"] {
+  background: var(--ag-up);
+}
+
+.ag-jr-pips i[data-kind="near"] {
+  background: var(--ag-warn);
+}
+
+.ag-jr-group-rules {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.ag-jr-group-h {
+  margin: 0.3rem 0 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-rule-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A rule: words and today on the left, state and its menu on the right, the
+   track across under both. */
+.ag-jr-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  margin: 0 -0.4rem;
+  padding: 0.55rem 0.4rem;
+  border-radius: var(--ag-radius-sm);
+}
+
+.ag-jr-rule-what {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.ag-jr-rule-text {
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+  text-wrap: pretty;
+}
+
+.ag-jr-rule-now {
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-muted);
+}
+
+/* Met is the side's own colour (an exit met is a loss to act on, a buy met
+   is the zone reached); near is a caution either way. */
+.ag-jr-reading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--ag-radius-sm);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-reading[data-kind="met"][data-side="buy"] {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.ag-jr-reading[data-kind="met"][data-side="exit"] {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.ag-jr-reading[data-kind="near"] {
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-warn);
+}
+
+.ag-jr-reading[data-kind="unread"] {
+  font-weight: 400;
+}
+
+.ag-jr-more {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.ag-jr-more[aria-expanded="true"] {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.ag-jr-track-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* The level as a tick, the side that meets it shaded, today as a dot. */
+.ag-jr-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ag-border);
+}
+
+.ag-jr-track-empty {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ag-border) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.ag-jr-track-zone,
+.ag-jr-track-tick,
+.ag-jr-track-dot {
+  position: absolute;
+}
+
+.ag-jr-track-zone {
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: var(--ag-profit-band);
+}
+
+.ag-jr-track-tick {
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ag-up);
+}
+
+.ag-jr-rule[data-side="exit"] .ag-jr-track-zone {
+  background: var(--ag-loss-band);
+}
+
+.ag-jr-rule[data-side="exit"] .ag-jr-track-tick {
+  background: var(--ag-down);
+}
+
+.ag-jr-track-dot {
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+  box-shadow: 0 0 0 2px var(--ag-surface-raised);
+  transition: left var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-jr-gap {
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+}
+
+.ag-jr-rule-acts {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.ag-jr-btn,
 .ag-jr-propose {
   flex: none;
-  padding: 0.25rem 0.7rem;
+  padding: 0.3rem 0.75rem;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill);
   background: transparent;
@@ -406,21 +621,136 @@
   cursor: pointer;
 }
 
-/* The second press: says what it does, in the colour of what it does. */
-.ag-jr-retire-confirm {
-  border-color: var(--ag-down);
-  color: var(--ag-down);
-}
-
-.ag-jr-retire:disabled {
-  opacity: 0.5;
-  cursor: default;
+.ag-jr-btn-accent,
+.ag-jr-propose {
+  border-color: var(--ag-brand-accent);
+  color: var(--ag-brand-accent);
 }
 
 .ag-jr-propose {
   justify-self: start;
-  border-color: var(--ag-brand-accent);
-  color: var(--ag-brand-accent);
+  background: var(--ag-accent-band);
+  font-size: var(--ag-fs-sm);
+  font-weight: 500;
+}
+
+/* A buy rule that asks for less than the checklist every buy is held to. */
+.ag-jr-clash {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--ag-warn);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+}
+
+.ag-jr-clash p,
+.ag-jr-later p {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
+  text-wrap: pretty;
+}
+
+.ag-jr-check {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--ag-rule-soft);
+}
+
+.ag-jr-check-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-check-meta {
+  font-weight: 400;
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-check-list {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-jr-check-list li {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-check-list li[data-state="fail"] {
+  color: var(--ag-text-primary);
+}
+
+.ag-jr-check-mark {
+  text-align: center;
+  color: var(--ag-text-muted);
+}
+
+li[data-state="pass"] .ag-jr-check-mark {
+  color: var(--ag-up);
+}
+
+li[data-state="fail"] .ag-jr-check-mark {
+  color: var(--ag-down);
+}
+
+.ag-jr-check-text {
+  min-width: 0;
+}
+
+.ag-jr-check-text::first-letter {
+  text-transform: uppercase;
+}
+
+.ag-jr-check-value {
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+}
+
+/* Exit rules on a name not held: one line, until it is bought. */
+.ag-jr-later {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--ag-border-focus);
+  border-radius: var(--ag-radius-md);
+}
+
+/* What was just retired, with its Undo; empty (and silent) otherwise. */
+.ag-jr-undo:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
 }
 
 .ag-jr-panel-head {
@@ -442,6 +772,11 @@
 }
 
 .ag-jr-panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--ag-rule-soft);
 }
@@ -457,20 +792,31 @@
 .ag-jr-fold:focus-visible,
 .ag-jr-link:focus-visible,
 .ag-jr-all:focus-visible,
-.ag-jr-retire:focus-visible,
+.ag-jr-more:focus-visible,
+.ag-jr-btn:focus-visible,
 .ag-jr-propose:focus-visible {
   outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
 
 @media (hover: hover) {
-  .ag-jr-retire:not(:disabled, .ag-jr-retire-confirm):hover,
+  .ag-jr-btn:not(.ag-jr-btn-accent):hover,
+  .ag-jr-more:hover,
   .ag-jr-fold:hover {
     color: var(--ag-text-primary);
   }
 
+  .ag-jr-btn-accent:hover,
   .ag-jr-propose:hover {
-    background: color-mix(in srgb, var(--ag-brand-accent) 10%, transparent);
+    background: color-mix(in srgb, var(--ag-brand-accent) 18%, transparent);
+  }
+
+  .ag-jr-rule:hover {
+    background: var(--ag-surface-hover);
+  }
+
+  .ag-jr-more:hover {
+    background: var(--ag-border);
   }
 
   .ag-jr-fold:hover {
@@ -486,9 +832,14 @@
 
 @media (pointer: coarse) {
   .ag-jr-link,
-  .ag-jr-retire,
+  .ag-jr-btn,
   .ag-jr-propose {
     min-height: 44px;
+  }
+
+  .ag-jr-more {
+    width: 44px;
+    height: 44px;
   }
 
   .ag-jr-fold {
@@ -505,7 +856,8 @@
     transition: none;
   }
 
-  .ag-jr-chevron {
+  .ag-jr-chevron,
+  .ag-jr-track-dot {
     transition: none;
   }
 }

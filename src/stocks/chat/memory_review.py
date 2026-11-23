@@ -355,5 +355,6 @@ def start(prefs: dict, chat_path: Path, *, day: str | None = None,
                 _RUNNING.discard(key)
             done.set()
 
-    threading.Thread(target=work, name="memory-review", daemon=True).start()
+    threading.Thread(target=obs.carried(work), name="memory-review",
+                     daemon=True).start()
     return done

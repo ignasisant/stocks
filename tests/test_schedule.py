@@ -178,11 +178,24 @@ def test_switching_to_the_evening_does_not_send_a_second_one_that_day():
 
 
 def test_runs_are_spent_on_accounts_somebody_reads():
+    """A device reads it in the push; a reader who came in the last days
+    opens it. Anyone else gets theirs written when they open Home."""
     today = date(2026, 10, 31)
     assert schedule.eligible({}, devices=1, today=today)
-    assert schedule.eligible({"last_seen": "2026-10-20T10:00:00Z"}, 0, today)
-    assert not schedule.eligible({"last_seen": "2026-10-01"}, 0, today)
+    assert schedule.eligible({"last_seen": "2026-10-28T10:00:00Z"}, 0, today)
+    assert not schedule.eligible({"last_seen": "2026-10-20"}, 0, today)
     assert not schedule.eligible({}, 0, today)
+
+
+def test_the_test_accounts_are_told_apart_by_address_or_slug():
+    assert schedule.synthetic("x", {"email": "e2e-4242-1@example.com"})
+    assert schedule.synthetic("x", {"email": "ai-eval@topstocks.eval"})
+    assert schedule.synthetic("e2e_4242_1_example_com_e1969156", {})
+    assert schedule.synthetic("ai_eval_topstocks_eval_ed4a2b42", {})
+    assert not schedule.synthetic("jane_example_com_1a2b3c4d",
+                                  {"email": "jane@example.com"})
+    assert not schedule.synthetic("ignasi484_gmail_com_764f11fe",
+                                  {"email": "ignasi484@gmail.com"})
 
 
 # ------------------------------------------------------------------ the tick
@@ -215,6 +228,7 @@ def test_a_run_that_fails_is_still_marked_run(account, monkeypatch):
 def test_runs_past_the_budget_wait_for_the_next_tick(account, monkeypatch):
     account.runs = [("card", date(2026, 11, 2)), ("briefing", date(2026, 11, 2))]
     monkeypatch.setattr(schedule, "plan", lambda now: [account])
+    monkeypatch.setattr(schedule, "MODEL_GAP_S", 0.0)
     ran: list[str] = []
     monkeypatch.setitem(
         schedule.RUNNERS, "card", lambda a, d: ran.append("card") or "filed"
@@ -231,6 +245,104 @@ def test_runs_past_the_budget_wait_for_the_next_tick(account, monkeypatch):
     assert ran == []
     assert schedule.tick(at("2026-11-02T22:00")) == {"due": 2, "ran": 2, "deferred": 0}
     assert ran == ["card", "briefing"]
+
+
+def _named(account: schedule.Account, label: str, devices: int = 0) -> schedule.Account:
+    return dataclasses.replace(account, label=label, devices=devices,
+                               runs=[("card", date(2026, 11, 2))])
+
+
+def test_runs_that_write_with_a_model_go_a_minute_apart_pushed_first(
+        account, monkeypatch):
+    """Ten cards started together hit the free chain's per-minute limit
+    and spilled onto the next provider's daily allowance."""
+    work = [_named(account, "ann"), _named(account, "bob"),
+            _named(account, "cat", devices=1)]
+    monkeypatch.setattr(schedule, "plan", lambda now: work)
+    ran: list[str] = []
+    monkeypatch.setattr(schedule, "run",
+                        lambda a, job, day: ran.append(a.label) or "filed")
+    pauses: list[float] = []
+    monkeypatch.setattr(schedule, "_pause", pauses.append)
+
+    out = schedule.tick(at("2026-11-03T01:15"), budget_s=100)
+
+    assert ran == ["cat", "ann"]
+    assert out == {"due": 3, "ran": 2, "deferred": 1}
+    assert [round(p) for p in pauses] == [0, 60]
+
+
+def test_an_account_on_its_own_key_is_not_queued_behind_the_others(
+        account, monkeypatch):
+    """Its key's per-minute limit is its own: the pacing is for the free
+    chain the others share."""
+    from types import SimpleNamespace
+
+    from stocks.chat.engine import providers
+
+    own = dataclasses.replace(_named(account, "own"), prefs={"own": True})
+    work = [_named(account, "ann"), _named(account, "bob"), own]
+    monkeypatch.setattr(schedule, "plan", lambda now: work)
+    monkeypatch.setattr(providers, "attempts", lambda prefs: [
+        (SimpleNamespace(id="gemini" if prefs.get("own") else "free"), "", "")])
+    ran: list[str] = []
+    monkeypatch.setattr(schedule, "run",
+                        lambda a, job, day: ran.append(a.label) or "filed")
+    pauses: list[float] = []
+    monkeypatch.setattr(schedule, "_pause", pauses.append)
+
+    out = schedule.tick(at("2026-11-03T01:15"), budget_s=100)
+
+    # Queued third it would start at 120 s, past the budget.
+    assert sorted(ran) == ["ann", "bob", "own"]
+    assert out == {"due": 3, "ran": 3, "deferred": 0}
+    assert [round(p) for p in pauses] == [0, 60]
+
+
+def test_a_run_and_the_threads_it_starts_log_under_the_account(
+        account, monkeypatch):
+    """The night's key fallbacks came in without a name: the card's
+    generation runs on a thread of its own."""
+    import threading
+
+    from stocks import cpu_hold, obs
+
+    seen: list[str | None] = []
+
+    def job(a, day):
+        seen.append(obs.current().get("user"))
+        cpu_hold.spawn("t", lambda: seen.append(obs.current().get("user"))).join()
+        return "filed"
+
+    monkeypatch.setitem(schedule.RUNNERS, "card", job)
+    monkeypatch.setattr(cpu_hold, "keep", lambda done: None)
+    monkeypatch.setattr(accounts, "update_prefs", lambda *a, **k: None)
+    schedule.run(_named(account, "jane"), "card", date(2026, 11, 2))
+    assert seen == ["jane", "jane"]
+    assert threading.current_thread() is threading.main_thread()
+    assert obs.current().get("user") is None
+
+
+def test_a_briefing_with_its_card_written_is_not_held_back(account, monkeypatch):
+    from stocks.views import briefing, daily_card
+
+    monday = date(2026, 11, 2)
+    monkeypatch.setattr(briefing, "now_day", lambda paths: (None, monday))
+    monkeypatch.setattr(daily_card, "stored",
+                        lambda paths: dataclasses.make_dataclass("C", ["day"])(
+                            monday.isoformat()))
+    assert not schedule._spends(account, "briefing")
+    assert schedule._spends(account, "card")
+    monkeypatch.setattr(daily_card, "stored", lambda paths: None)
+    assert schedule._spends(account, "briefing")
+
+
+def test_the_plan_skips_the_test_accounts(account, monkeypatch):
+    account.paths.prefs.write_text(json.dumps(
+        {"language": "en", "last_seen": "2026-11-02", "email": "ai-eval@topstocks.eval"}))
+    monkeypatch.setattr(schedule, "_roster", lambda: [("jane", account.paths)])
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    assert schedule.plan(at("2026-11-03T01:15")) == []
 
 
 def test_the_plan_takes_only_whats_due(account, monkeypatch):

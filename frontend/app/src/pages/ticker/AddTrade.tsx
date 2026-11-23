@@ -8,17 +8,24 @@
  * and the panel shows what it does to the holding before anything is written.
  * Confirming commits that plan under its token, as removing a holding does,
  * and the notice that follows carries the undo.
+ *
+ * Beside the plan the price is held to its day's close
+ * (`/ticker/{symbol}/price-check`, the chat's own test): 70.004 typed for a
+ * 75 stock cannot be added: the review says why and offers only "Back", as
+ * the chat refuses it. A market that cannot say (offline, throttled, no bar)
+ * lets any price through — the check stops typos, it never locks the form.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EditPlan } from "../../api.gen";
+import { calendarDay } from "../../shell/dates";
 import { decimal, money } from "../../shell/format";
 import { useT } from "../../shell/i18n";
 import { Segmented } from "../../ui/Segmented";
 import { SidePanel } from "../../ui/SidePanel";
 import { Status } from "../../ui/Status";
 import { toast } from "../../ui/toast";
-import { commitPlan, planTrade, undoChange, type TradeRow } from "./data";
+import { checkPrice, commitPlan, planTrade, undoChange, type TradeRow } from "./data";
 
 export type Side = "buy" | "sell";
 
@@ -127,6 +134,8 @@ export function useTradeEntry(
   const [draft, setDraft] = useState<Draft | null>(null);
   const [stage, setStage] = useState<Stage>({ state: "form" });
   const [busy, setBusy] = useState(false);
+  /** The day's close a reviewed price is nowhere near; null while it fits or nobody could say. */
+  const [offClose, setOffClose] = useState<number | null>(null);
 
   useEffect(() => setOpen(false), [ticker]);
 
@@ -157,8 +166,16 @@ export function useTradeEntry(
   const review = (next: TradeRow) => {
     const seq = ++asked.current;
     setStage({ state: "planning" });
-    planTrade(next).then(
-      (plan) => seq === asked.current && setStage({ state: "planned", plan }),
+    setOffClose(null);
+    // Both before the review shows, or confirm would flash before the refusal.
+    // The check is bounded server-side, and a failed one is no answer.
+    const check = next.price > 0 ? checkPrice(next).catch(() => null) : null;
+    Promise.all([planTrade(next), check]).then(
+      ([plan, priced]) => {
+        if (seq !== asked.current) return;
+        setOffClose(priced?.fits === false ? (priced.close ?? null) : null);
+        setStage({ state: "planned", plan });
+      },
       () => seq === asked.current && setStage({ state: "failed" }),
     );
   };
@@ -229,6 +246,16 @@ export function useTradeEntry(
         ) : (
           <TradePlan
             plan={stage.plan}
+            off={
+              offClose !== null && row
+                ? t("ticker.trade_price_off", {
+                    ticker,
+                    price: money(row.price, { currency: row.currency, digits: 2 }),
+                    date: calendarDay(row.date),
+                    close: money(offClose, { currency: row.currency, digits: 2 }),
+                  })
+                : null
+            }
             busy={busy}
             onConfirm={() => row && confirm(stage.plan, row)}
             onBack={() => {
@@ -368,11 +395,14 @@ export function TradeForm({
 
 export function TradePlan({
   plan,
+  off = null,
   busy,
   onConfirm,
   onBack,
 }: {
   plan: EditPlan;
+  /** Why the price does not fit its day, worded; null when it fits. Blocks confirm. */
+  off?: string | null;
   busy: boolean;
   onConfirm: () => void;
   onBack: () => void;
@@ -380,6 +410,11 @@ export function TradePlan({
   const t = useT();
   return (
     <div className="tk-remove-body">
+      {off ? (
+        <p className="tk-trade-off" role="alert">
+          {off}
+        </p>
+      ) : null}
       {plan.effects.length ? (
         <ul className="tk-remove-shifts">
           {plan.effects.map((effect) => (
@@ -403,7 +438,7 @@ export function TradePlan({
           ))}
         </ul>
       ) : null}
-      {plan.ok ? (
+      {off ? null : plan.ok ? (
         <p className="tk-muted">{t("ticker.trade_help")}</p>
       ) : (
         <div className="tk-remove-bad" role="alert">
@@ -416,7 +451,7 @@ export function TradePlan({
         </div>
       )}
       <div className="tk-remove-actions">
-        {plan.ok ? (
+        {plan.ok && !off ? (
           <button
             type="button"
             className="ag-btn ag-btn-cta"

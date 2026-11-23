@@ -62,6 +62,25 @@ class EditPlan(BaseModel):
     ok: bool
 
 
+class PriceCheck(BaseModel):
+    """Whether a typed fill fits its day (`/ticker/{symbol}/price-check`)."""
+
+    fits: bool | None = Field(
+        description=(
+            "False when the price is nowhere near that day's close (a typo, the "
+            "total typed as the price, another listing). Null when the market "
+            "could not say: offline, throttled, unlisted, no bar that day."
+        )
+    )
+    close: float | None = Field(
+        default=None,
+        description=(
+            "That day's close (or the last session before), in the asked "
+            "currency and on the scale of the day: splits since are undone."
+        ),
+    )
+
+
 class Change(BaseModel):
     """One committed edit in the book's history."""
 

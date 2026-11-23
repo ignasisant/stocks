@@ -331,10 +331,18 @@ def _price_off(ticker: str, price: float, day: str, currency: str,
     if not quote:
         return _price_off_latest(ticker, price, day, currency, ctx)
     close, factor = quote
-    if close <= 0 or close / _PRICE_BAND <= price <= close * factor * _PRICE_BAND:
+    if price_fits(price, close, factor):
         return None
     return ctx.tr("chat.book_price_off", price=_n(price), ticker=ticker,
                   date=day, close=_n(close * factor), currency=currency)
+
+
+def price_fits(price: float, close: float, factor: float) -> bool:
+    """Whether `price` can be a fill on a day `market_close` put at
+    (`close`, `factor`): within `_PRICE_BAND` of the close, and a price from
+    before a split up to the splits' product above it. A close that is not a
+    price says nothing, so it fits."""
+    return close <= 0 or close / _PRICE_BAND <= price <= close * factor * _PRICE_BAND
 
 
 def _price_off_latest(ticker: str, price: float, day: str, currency: str,

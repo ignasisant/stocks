@@ -27,6 +27,9 @@ class Reply:
     sources: tuple[dict, ...] = ()
     provider_id: str = ""
     error: str | None = None
+    # Seconds until the free chain has a model awake again, with error
+    # "chat.free_busy": the panel counts it down and asks again by itself.
+    wait: int | None = None
     # What ran to build the answer, as the panel's tool lines — {tool, arg,
     # out}. Also stored on the history turn under "steps", like the panel.
     steps: tuple[dict, ...] = ()

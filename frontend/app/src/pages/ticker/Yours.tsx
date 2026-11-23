@@ -38,6 +38,17 @@ function priceLevel(entry: JournalEntry): number | null {
     : null;
 }
 
+/**
+ * The other listing a rule was drawn on, or null when it is this page's. A
+ * price level is in its own line's currency: the ticker page matches rules by
+ * the symbol's root (ASML and ASML.AS), so a level set on one listing must not
+ * be measured against another's price.
+ */
+function elsewhere(entry: JournalEntry, ticker: string): string | null {
+  const own = (entry.ticker ?? "").trim().toUpperCase();
+  return own && ticker && own !== ticker.trim().toUpperCase() ? own : null;
+}
+
 /** The entry whose level the price is closest to, by distance as a fraction. */
 function nearest<T>(items: T[], level: (one: T) => number, price: number): T | null {
   let best: T | null = null;
@@ -58,10 +69,21 @@ export function marks(
   entries: JournalEntry[],
   price: number | null,
   held: boolean,
+  ticker = "",
 ): Mark[] {
   const out: Mark[] = [];
   const level = (value: number) => money(value, { digits: 2 }) ?? DASH;
   const gap = (value: number) => (price ? value / price - 1 : null);
+  // A level on this page's listing, measured against its price; one drawn on
+  // another listing keeps its own line's name and no distance.
+  const at = (entry: JournalEntry, key: string): Pick<Mark, "key" | "vars" | "gap"> => {
+    const value = priceLevel(entry) ?? 0;
+    const other = elsewhere(entry, ticker);
+    return other
+      ? { key: `${key}_on`, vars: { level: level(value), listing: other }, gap: null }
+      : { key, vars: { level: level(value) }, gap: gap(value) };
+  };
+  const local = (entry: JournalEntry) => !elsewhere(entry, ticker);
 
   const priced = rules.filter(
     (one): one is AlertRule & { price: number } =>
@@ -94,17 +116,19 @@ export function marks(
   const zones = live.filter(
     (one) => buyRule(one) && one.snapshot.rule === "buy_below" && priceLevel(one),
   );
-  const zone = nearest(zones, (one) => priceLevel(one) ?? 0, price ?? 1);
+  const zone =
+    nearest(zones.filter(local), (one) => priceLevel(one) ?? 0, price ?? 1) ??
+    zones[0] ??
+    null;
   if (zone) {
-    const at = priceLevel(zone) ?? 0;
-    const inside = zone.state === "hit" || (price !== null && price <= at);
-    out.push({
-      kind: "buy",
-      key: inside ? "ticker.mine_buy_in" : "ticker.mine_buy",
-      vars: { level: level(at) },
-      gap: inside ? null : gap(at),
-      tone: inside ? "up" : null,
-    });
+    const inside =
+      zone.state === "hit" ||
+      (local(zone) && price !== null && price <= (priceLevel(zone) ?? 0));
+    out.push(
+      inside
+        ? { kind: "buy", key: "ticker.mine_buy_in", vars: {}, gap: null, tone: "up" }
+        : { kind: "buy", ...at(zone, "ticker.mine_buy"), tone: null },
+    );
   }
 
   // An exit rule is about a position: on a name not held it waits, unread.
@@ -114,7 +138,10 @@ export function marks(
     const floors = exits.filter(
       (one) => one.snapshot.rule === "below" && priceLevel(one),
     );
-    const floor = nearest(floors, (one) => priceLevel(one) ?? 0, price ?? 1);
+    const floor =
+      nearest(floors.filter(local), (one) => priceLevel(one) ?? 0, price ?? 1) ??
+      floors[0] ??
+      null;
     if (hit) {
       out.push({
         kind: "exit",
@@ -124,14 +151,7 @@ export function marks(
         tone: "down",
       });
     } else if (floor) {
-      const at = priceLevel(floor) ?? 0;
-      out.push({
-        kind: "exit",
-        key: "ticker.mine_exit",
-        vars: { level: level(at) },
-        gap: gap(at),
-        tone: null,
-      });
+      out.push({ kind: "exit", ...at(floor, "ticker.mine_exit"), tone: null });
     } else if (exits.length) {
       out.push({
         kind: "exit",
@@ -161,7 +181,7 @@ export function Yours({
 }) {
   const t = useT();
   const fit = useFit(ticker);
-  const drawn = marks(mine.rules, mine.entries, price, held);
+  const drawn = marks(mine.rules, mine.entries, price, held, ticker);
   const entry = withEntry ? fit : null;
   if (!drawn.length && !entry) return null;
 

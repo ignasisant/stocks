@@ -554,10 +554,35 @@ def side_of(action: str) -> str:
 
 
 def same_name(a: str, b: str) -> bool:
-    """ASML and ASML.AS are one company; the journal writes what the surface
-    showed, the ledger what the statement said."""
+    """Whether two symbols are lines of one company: the journal writes what
+    the surface showed, the ledger what the statement said, and a rule drawn
+    on SAP is about the SAP.DE the book holds.
+
+    The issuer's name decides when both lines' profiles are on disk (TM and
+    7203.T are one; SAN.MC, Santander, and SAN.PA, Sanofi, are not). Without
+    them, the symbol's root before the exchange suffix (ASML and ASML.AS).
+    A price level stays its own line's: this only says whose the rule is."""
+    from stocks.data import profiles
+
     a, b = a.strip().upper(), b.strip().upper()
-    return bool(a) and bool(b) and (a == b or a.split(".")[0] == b.split(".")[0])
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    one, two = profiles.company(a), profiles.company(b)
+    if one and two:
+        return one == two
+    return a.split(".")[0] == b.split(".")[0]
+
+
+def held_as(ticker: str, held: Iterable[str]) -> str | None:
+    """The line of `ticker`'s company the book holds — itself first — or None
+    when it holds none."""
+    want = ticker.strip().upper()
+    lines = {h.strip().upper() for h in held}
+    if want in lines:
+        return want
+    return next((h for h in sorted(lines) if same_name(want, h)), None)
 
 
 def settle_from_ledger(path: Path, trades: Iterable, day: date) -> int:
@@ -1117,6 +1142,28 @@ def retire(path: Path, entry_id: str) -> Entry | None:
     return None
 
 
+def restore(path: Path, entry_id: str) -> Entry | None:
+    """Put back a rule the reader retired: the undo of `retire`, in the state
+    it was taken down in (met when it had been hit). None when there is no
+    retired criterion with that id, or when another live rule on the same
+    ticker and measure has taken its place since."""
+    with userstore.lock(path):
+        entries = load(path)
+        found = next((i for i, e in enumerate(entries)
+                      if e.id == entry_id and e.type == "criterion"
+                      and e.state == "retired"), None)
+        if found is None:
+            return None
+        rule = entries[found]
+        if any(e.type == "criterion" and e.subject == rule.subject
+               and e.state in LIVE for e in entries):
+            return None
+        state = "hit" if rule.snapshot.get("hit_day") else "open"
+        entries[found] = replace(rule, state=state, updated=_now())
+        _save(path, entries)
+        return entries[found]
+
+
 def criteria(entries: Iterable[Entry], ticker: str = "",
              side: str = "") -> list[Entry]:
     """The live rules (armed or hit), oldest first; one ticker's alone when
@@ -1152,7 +1199,7 @@ def entry_status(entries: Iterable[Entry], held: set[str]) -> dict:
     for e in criteria(entries, side="buy"):
         by.setdefault(e.ticker.upper(), []).append(rule_row(e))
     return {
-        "names": [{"ticker": t, "held": t in held, "rules": rows}
+        "names": [{"ticker": t, "held": held_as(t, held) is not None, "rules": rows}
                   for t, rows in sorted(by.items())],
         "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
                 for r in rows if r["state"] == "hit"],
@@ -1166,16 +1213,19 @@ def criteria_status(entries: Iterable[Entry], held: set[str]) -> dict:
     by: dict[str, list[dict]] = {}
     for e in criteria(entries, side="exit"):
         by.setdefault(e.ticker.upper(), []).append(rule_row(e))
+    # A rule drawn on another line of the company covers the holding.
+    covering = {h: [r for t, rows in by.items() if same_name(t, h) for r in rows]
+                for h in held}
     return {
-        "holdings": [{"ticker": t, "held": t in held, "rules": rows}
+        "holdings": [{"ticker": t, "held": held_as(t, held) is not None, "rules": rows}
                      for t, rows in sorted(by.items())],
         "met": [{"ticker": t, **r} for t, rows in sorted(by.items())
                 for r in rows if r["state"] == "hit"],
-        "without_rules": sorted(held - by.keys()),
+        "without_rules": sorted(h for h, rows in covering.items() if not rows),
         "without_thesis": sorted(
-            t for t in held
-            if not any(r["rule"] in THESIS_RULES for r in by.get(t, ()))),
-        "not_held": sorted(by.keys() - held),
+            h for h, rows in covering.items()
+            if not any(r["rule"] in THESIS_RULES for r in rows)),
+        "not_held": sorted(t for t in by if held_as(t, held) is None),
     }
 
 
@@ -1907,8 +1957,7 @@ def query(entries: list[Entry], *, ticker: str = "", type: str = "",
     want = ticker.strip().upper()
     out = [
         e for e in entries
-        if (not want or e.ticker.upper() == want
-            or e.ticker.upper().split(".")[0] == want.split(".")[0])
+        if (not want or same_name(e.ticker, want))
         and (not type or e.type == type)
         and (not state or e.state == state)
         and (not source or e.source == source)

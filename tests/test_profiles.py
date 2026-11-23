@@ -13,6 +13,7 @@ import pytest
 
 from stocks.analysis import review
 from stocks.data import fetch, profiles
+from stocks.data.profiles import company  # before conftest blanks it
 
 WHOLE = {
     "quoteType": "EQUITY",
@@ -245,3 +246,13 @@ def test_a_first_throttled_answer_is_no_row_at_all(yahoo, loaded, memo):
     yahoo.append(BARE_QUOTE)
     with pytest.raises(YFRateLimitError):
         loaders.review_metrics("ADBE")
+
+
+def test_a_company_is_one_key_across_its_lines(memo):
+    share = {"quoteType": "EQUITY", "currency": "USD"}
+    profiles.remember("SAP", {**share, "longName": "SAP SE"})
+    profiles.remember("SAP.DE", {**share, "longName": "SAP  SE.", "currency": "EUR"})
+    profiles.remember("BTC-EUR", {"quoteType": "CRYPTOCURRENCY", "longName": "Bitcoin"})
+    assert company("sap") == company("SAP.DE") == "sap se"
+    assert company("BTC-EUR") is None
+    assert company("NEVER") is None

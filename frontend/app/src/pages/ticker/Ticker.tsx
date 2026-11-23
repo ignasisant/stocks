@@ -540,6 +540,14 @@ export default function Page() {
     transactions: ledgered,
   });
   const live = quote.state === "loaded" ? quote.data : null;
+  // The raw price, in the listing's unit: what the server's closes and the
+  // reader's rule levels are in (pence stay pence here).
+  const livePrice = live?.price ?? null;
+  const liveHigh = live?.high_52w ?? null;
+  const ruleQuote = useMemo(
+    () => (livePrice === null ? null : { price: livePrice, high: liveHigh }),
+    [livePrice, liveHigh],
+  );
   // A typed trade opens in the holding's own currency when the book has one,
   // else the listing's (in its major unit: pence are never a ledger price),
   // else the account's. The live price only pre-fills a field in its currency.
@@ -647,6 +655,7 @@ export default function Page() {
                   entry={entry}
                   onEntry={onEntry}
                   onMine={setMine}
+                  quote={ruleQuote}
                 />
               </SignedInOnly>
             </div>

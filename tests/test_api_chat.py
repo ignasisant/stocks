@@ -637,6 +637,20 @@ def test_an_exhausted_chain_still_ends_the_stream(
     assert finished(stream)["code"] == "chat.free_exhausted"
 
 
+def test_a_busy_free_chain_ends_with_the_wait_to_count_down(
+    client, account, signed_in, monkeypatch
+):
+    from stocks.chat.engine import Reply
+
+    def busy(**_kw):
+        yield ("done", Reply(error="chat.free_busy", wait=23))
+
+    monkeypatch.setattr(engine, "answer_stream", busy)
+    stream = events(signed_in.post("/v1/chat/runs", json=run("hola")).text)
+    end = finished(stream)
+    assert (end["code"], end["metadata"]) == ("chat.free_busy", {"wait": 23})
+
+
 def test_a_turn_that_breaks_is_logged_with_its_cause(
     client, account, signed_in, monkeypatch, caplog
 ):

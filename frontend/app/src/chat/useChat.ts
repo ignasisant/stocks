@@ -537,6 +537,9 @@ export function useChat(live: boolean) {
           ts: Date.now(),
           took,
           ...(done.error ? { error: done.error } : {}),
+          // The free chain only busy: the error counts this down and asks
+          // again by itself (`Countdown`).
+          ...(done.error && done.wait !== undefined ? { wait: done.wait } : {}),
         }));
         // A "yes" typed under a card settles it: the card above moves to
         // where the proposal now stands, as a press would have moved it.

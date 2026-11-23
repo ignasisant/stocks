@@ -554,7 +554,7 @@ def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
             "level": _round(row.get("level")),
             "value": _round(row.get("value")),
             "gap_pct": _round(abs(finite(row.get("gap_pct")) or 0.0)),
-            "held": str(row["ticker"]) in held,
+            "held": journal.held_as(str(row["ticker"]), held) is not None,
             "hit_day": str(row.get("hit_day") or ""),
             # A fundamental rule's run, an event or thesis rule's passage
             # and, for a thesis, the pillar it went against.

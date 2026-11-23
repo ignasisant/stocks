@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import datetime
 import functools
 import importlib.util
 import re
@@ -923,6 +924,19 @@ class FreeTierExhausted(Exception):
     """Every configured free backend failed before producing any output."""
 
 
+class FreeTierBusy(FreeTierExhausted):
+    """The chain ran dry on per-minute limits: the soonest model is awake again
+    in `wait` seconds. High demand, not an outage — worth waiting out."""
+
+    def __init__(self, wait: float):
+        super().__init__(f"every free model is rate-limited for {wait:.0f} s")
+        self.wait = wait
+
+
+class FreeTierSpent(FreeTierExhausted):
+    """Every free backend still standing has spent its allowance for the day."""
+
+
 @dataclass(frozen=True)
 class _FreeBackend:
     id: str
@@ -1067,18 +1081,69 @@ def _note_dead(b: _FreeBackend, exc: Exception) -> None:
         obs.error("llm.free.backend_dead", exc, backend=b.id)
 
 
+# A 429 for the day's allowance, not the minute's: OpenRouter's "Rate limit
+# exceeded: free-models-per-day" (50 requests a day across every :free model,
+# for an account with no credits — 40 of them in prod, week to 2026-11-23) and
+# groq's "tokens per day (TPD)" / "requests per day (RPD)". Resting those 60 s
+# had every turn of the day ask again first. OpenRouter's is the account's,
+# so the whole backend sits out ("*"); groq's is the one model's.
+_PER_DAY = re.compile(r"per[- ]day|\((?:TPD|RPD)\)", re.I)
+_free_spent: dict[tuple[str, str], float] = {}  # (backend, model|"*") -> lifts at
+# OpenRouter's 429 body carries the reset as epoch milliseconds in its
+# metadata headers ('X-RateLimit-Reset': '1763942400000').
+_RESET_AT = re.compile(r"X-RateLimit-Reset['\"]?\s*:\s*['\"]?(\d{10,13})", re.I)
+
+
+def _day_rest(exc: Exception) -> float | None:
+    """Seconds until a spent daily allowance is back, or None for any other
+    failure. What the 429 names, else the next 00:00 UTC both vendors reset at."""
+    if getattr(exc, "status_code", None) != 429 or not _PER_DAY.search(str(exc)):
+        return None
+    secs = _retry_after(exc)
+    if secs is not None:
+        return secs
+    if m := _RESET_AT.search(str(exc)):
+        at = int(m.group(1)) / (1000 if len(m.group(1)) > 10 else 1)
+        if (left := at - time.time()) > 0:
+            return left
+    now = datetime.datetime.now(datetime.UTC)
+    midnight = (now + datetime.timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return (midnight - now).total_seconds()
+
+
+def _spent(b: _FreeBackend) -> bool:
+    now = time.monotonic()
+    for key in ((b.id, "*"), (b.id, b.model)):
+        until = _free_spent.get(key)
+        if until is not None:
+            if now < until:
+                return True
+            _free_spent.pop(key, None)
+    return False
+
+
 def _note_rest(b: _FreeBackend, exc: Exception) -> None:
     """A 429 the chain moves on from: skip `b` until the wait it named."""
+    if (day := _day_rest(exc)) is not None:
+        whole = "free-models-per-day" in str(exc)
+        _free_spent[(b.id, "*" if whole else b.model)] = time.monotonic() + day
+        obs.warn("llm.free.day_spent", backend=b.id,
+                 model="*" if whole else b.model, seconds=round(day))
+        return
     secs = _retry_after(exc)
-    if secs is not None and _short_wait(exc) is None:
-        _free_resting[(b.id, b.model)] = (time.monotonic()
-                                          + min(secs, _MAX_REST_S))
+    if secs is None:
+        return
+    # A short wait too: it is sat out once on the spot, and a second refusal
+    # still leaves the chain knowing when this model is back (`_free_wait`).
+    _free_resting[(b.id, b.model)] = time.monotonic() + min(secs, _MAX_REST_S)
+    if _short_wait(exc) is None:
         obs.warn("llm.free.backend_resting", backend=b.id, model=b.model,
                  seconds=round(secs, 1))
 
 
 def _resting(b: _FreeBackend) -> bool:
-    if _slow(b):
+    if _slow(b) or _spent(b):
         return True
     until = _free_resting.get((b.id, b.model))
     if until is None:
@@ -1166,10 +1231,51 @@ def _skip(plan: list, attempt: int) -> bool:
     later entry is awake — the last one awake is tried even resting, since a
     wait beats no answer."""
     b = plan[attempt][0]
-    if b.id in _free_dead:
-        return True
+    if b.id in _free_dead or _spent(b):
+        return True  # asking again only spends a call on the same refusal
     return _resting(b) and any(
         n.id not in _free_dead and not _resting(n) for n, _ in plan[attempt + 1:])
+
+
+def _free_wait(backends) -> float:
+    """Seconds until the soonest model the chain could still try is awake: 0
+    when one already is, inf when every one is dead or spent for the day."""
+    now = time.monotonic()
+    alive = False
+    lifts: list[float] = []
+    for b in backends:
+        if b.id in _free_dead or _spent(b) or (b.id, b.model) in _free_gone:
+            continue
+        alive = True
+        until = max(_free_resting.get((b.id, b.model), 0.0),
+                    _free_slow.get((b.id, b.model), 0.0))
+        if until > now:
+            lifts.append(until - now)
+    # One model resting is enough to call it busy: the others may have
+    # failed some other way this pass (an empty stream, a 5xx), and the one
+    # coming back is still the turn's best chance.
+    return min(lifts) if lifts else 0.0 if alive else float("inf")
+
+
+# Past this, a dry chain is not a queue worth standing in: the turn fails.
+_BUSY_WAIT_S = 60.0  # the panel counts down and asks again up to this (AUTO_MAX)
+
+
+def _dry(backends, why: str) -> FreeTierExhausted:
+    """What a chain that ran dry raises: busy for a short wait, spent when only
+    the day's allowance is left in the way, else a plain failure."""
+    wait = _free_wait(backends)
+    # Busy is what the chat's queue absorbs: a warning, not an incident.
+    log = obs.warn if 0 < wait <= _BUSY_WAIT_S else obs.error
+    log("llm.free.exhausted", backends=[b.id for b in backends],
+        wait_s=None if wait == float("inf") else round(wait, 1))
+    if wait == float("inf"):
+        if any(b.id not in _free_dead and _spent(b) for b in backends):
+            return FreeTierSpent(why)
+        return FreeTierExhausted(why)
+    if 0 < wait <= _BUSY_WAIT_S:
+        return FreeTierBusy(wait)
+    return FreeTierExhausted(why)
 
 
 @functools.cache
@@ -1426,8 +1532,7 @@ def _free_stream(api_key, model, system, messages):
                 obs.warn("llm.free.model_substituted", backend=b.id,
                          retired=model, model=alt)
                 candidates.append(alt)
-    obs.error("llm.free.exhausted", backends=[b.id for b in backends])
-    raise FreeTierExhausted("all free backends failed")
+    raise _dry(backends, "all free backends failed")
 
 
 # What a backend says when the model wrote a tool call it could not parse:
@@ -1487,6 +1592,8 @@ def _tools_swap(plan: list, live: list[_FreeBackend]):
             _sleep(wait)
             return model
         _note_rest(b, exc)
+        if _spent(b):
+            return None  # the day's allowance: no wait brings it back
         for n, _ in plan:
             if (n.id == b.id and n.model != b.model and n.id not in _free_dead
                     and (n.id, n.model) not in _free_gone and not _resting(n)):
@@ -1570,7 +1677,7 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds,
                 if wait is None:
                     break
                 _sleep(wait)
-    raise FreeTierExhausted("no free backend ran the tool loop")
+    raise _dry(backends, "no free backend ran the tool loop")
 
 
 def _free_error(exc):

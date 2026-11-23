@@ -925,6 +925,9 @@ WRITES = {
     # only journal entries that are theirs. Written by the chat (set_criteria,
     # after a confirm), taken down from the ticker page's journal panel.
     ("/v1/journal/criteria/{entry_id}", "delete"),
+    # Undoing that retire from the panel's Undo: the same entry put back as
+    # it stood, refused when a newer rule has taken its place.
+    ("/v1/journal/criteria/{entry_id}/restore", "post"),
     # Ticking a lesson read on the Learn page: a list of ids in prefs.json,
     # nothing anyone else reads.
     ("/v1/learn/progress", "post"),

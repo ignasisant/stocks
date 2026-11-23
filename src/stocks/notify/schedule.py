@@ -35,14 +35,27 @@ delivers this morning's briefing at nine, not at midnight.
 
 **Who**: accounts with a device to push to, or seen in the last
 `ACTIVE_DAYS` — a run spends a model call, and an account nobody opens has
-nobody to read it. The Friday email is the exception (`email_due`): it
-spends no model call and is how an account that has not come back hears
-from its book, so it goes to every account with an address and an import.
+nobody to read it. Everyone else gets the card when they open Home
+(`POST /daily` writes it then, the computed card standing in meanwhile): in
+prod (week of 2026-11-16) two of three cards written at night for accounts
+with no device were never opened before the next one replaced them. The
+Friday email is the exception (`email_due`): it spends no model call and is
+how an account that has not come back hears from its book, so it goes to
+every account with an address and an import. The test accounts (`synthetic`:
+the e2e suite's and the prod eval's) get nothing — nobody reads them.
+
+**Paced**: the runs that write with a model (`_spends`) go one at a time,
+`MODEL_GAP_S` apart, accounts with a device first: the free chain's
+per-minute token limit is what ten cards started together hit, and what
+sent them on to the next provider's daily allowance. An account whose
+model calls start on a key of its own (`_on_free_chain`) is not held
+back: its key's limits are its own.
 """
 
 from __future__ import annotations
 
 import contextvars
+import re
 import time as clock
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -81,8 +94,17 @@ ZONE_KEY = "timezone"
 DEFAULT_ZONE = "Europe/Madrid"
 # How late a run may still go out after its time.
 CATCH_UP = timedelta(hours=6)
-ACTIVE_DAYS = 14
+# A visit this recent and the card is written ahead at night: the accounts
+# that opened theirs in prod came every day or two.
+ACTIVE_DAYS = 3
 WORKERS = 4
+# Seconds between the starts of two runs that write with a model (`_spends`).
+MODEL_GAP_S = 60.0
+# The e2e suite's accounts (tests/e2e/conftest.py) and the prod eval's
+# (scripts/eval_prod.py), by address or, before a login stamped one, by slug.
+_SYNTHETIC_EMAIL = re.compile(r"e2e-[\w.-]+@example\.com|[^@\s]+@topstocks\.eval")
+_SYNTHETIC_SLUG = re.compile(
+    r"e2e_\d+_\d+_example_com_[0-9a-f]+|\w+_topstocks_eval_[0-9a-f]+")
 # How long the tick keeps starting runs. Under Cloud Run's 300 s request
 # timeout with a briefing's wait (`BRIEFING_WAIT_S`) to spare: a run not
 # started by then waits for the next tick, a quarter of an hour later.
@@ -231,6 +253,12 @@ def eligible(prefs: dict, devices: int, today: date) -> bool:
     return today - seen <= timedelta(days=ACTIVE_DAYS)
 
 
+def synthetic(label: str, prefs: dict) -> bool:
+    """A test account: no run, no email."""
+    email = str(prefs.get("email") or "").strip().lower()
+    return bool(_SYNTHETIC_EMAIL.fullmatch(email) or _SYNTHETIC_SLUG.fullmatch(label))
+
+
 def email_due(prefs: dict, paths, now: datetime, last: object) -> date | None:
     """The Friday the weekly email is due for at `now`, or None.
 
@@ -260,6 +288,7 @@ class Account:
     paths: UserPaths
     prefs: dict
     runs: list[tuple[str, date]] = field(default_factory=list)
+    devices: int = 0
 
     @property
     def lang(self) -> str:
@@ -296,11 +325,14 @@ def plan(now: datetime) -> list[Account]:
             obs.warn("schedule.account_unreadable", account=label,
                      error_type=type(exc).__name__)
             continue
+        if synthetic(label, prefs):
+            continue
         tz = zone(prefs)
         stored = prefs.get(LAST_KEY)
         last: dict = stored if isinstance(stored, dict) else {}
         runs: list[tuple[str, date]] = []
-        if eligible(prefs, webpush.devices(paths.push), now.astimezone(tz).date()):
+        devices = webpush.devices(paths.push)
+        if eligible(prefs, devices, now.astimezone(tz).date()):
             runs = [
                 (job, day)
                 for job in JOBS
@@ -320,7 +352,7 @@ def plan(now: datetime) -> list[Account]:
         if (friday := email_due(prefs, paths, now, last.get(EMAIL))) is not None:
             runs.append((EMAIL, friday))
         if runs:
-            out.append(Account(label, paths, prefs, runs))
+            out.append(Account(label, paths, prefs, runs, devices))
     return out
 
 
@@ -328,7 +360,9 @@ def tick(now: datetime | None = None, budget_s: float = TICK_BUDGET_S) -> dict:
     """Run every job due at `now`; what ran, what was left for the next tick.
 
     One account's runs one after the other (they share its prefs file), up to
-    `WORKERS` accounts at a time. A run not started within `budget_s` is left
+    `WORKERS` accounts at a time. An account with a run that writes with a
+    model goes instead to one lane of its own, those runs `MODEL_GAP_S`
+    apart (see the module note). A run not started within `budget_s` is left
     due. Never raises: one broken account is logged and the rest go out.
     """
     now = now or datetime.now(UTC)
@@ -350,15 +384,79 @@ def tick(now: datetime | None = None, budget_s: float = TICK_BUDGET_S) -> dict:
             run(account, job, day)
             ran.append(f"{account.label}:{job}")
 
-    with ThreadPoolExecutor(WORKERS, thread_name_prefix="schedule") as pool:
+    def lane(queue: list[Account]) -> None:
+        next_at = started
+        for account in queue:
+            for job, day in account.runs:
+                # Asked as each run comes up: a card just written by this
+                # account's run before leaves its briefing nothing to write.
+                spends = _spends(account, job)
+                start_at = max(clock.monotonic(), next_at if spends else started)
+                if start_at - started > budget_s:
+                    deferred.append(f"{account.label}:{job}")
+                    continue
+                if spends:
+                    _pause(start_at - clock.monotonic())
+                    next_at = start_at + MODEL_GAP_S
+                run(account, job, day)
+                ran.append(f"{account.label}:{job}")
+
+    paced: list[Account] = []
+    free: list[Account] = []
+    for account in work:
+        writes = any(_spends(account, job) for job, _ in account.runs)
+        (paced if writes and _on_free_chain(account) else free).append(account)
+    # The pushed first: theirs is read in the morning's notification.
+    paced.sort(key=lambda a: a.devices == 0)
+    with ThreadPoolExecutor(WORKERS + 1, thread_name_prefix="schedule") as pool:
         # In the request's context: the warm's `cache.SYNC` and the CPU hold's
         # base URL ride along into the workers.
-        for account in work:
+        if paced:
+            pool.submit(contextvars.copy_context().run, lane, paced)
+        for account in free:
             pool.submit(contextvars.copy_context().run, one, account)
     total = sum(len(a.runs) for a in work)
     obs.event("schedule.tick", due=total, ran=len(ran), deferred=len(deferred),
               seconds=round(clock.monotonic() - started, 1))
     return {"due": total, "ran": len(ran), "deferred": len(deferred)}
+
+
+def _spends(account: Account, job: str) -> bool:
+    """Whether this run writes with a model: the card and the thesis round
+    always; the briefing when no card stands for the action day (a Monday's,
+    a holiday's, a card run that missed), as it then writes one itself."""
+    if job in (CARD, THESES):
+        return True
+    if job != "briefing":
+        return False
+    from stocks.views import briefing, daily_card
+
+    try:
+        card = daily_card.stored(account.paths)
+        _, day = briefing.now_day(account.paths)
+    except Exception:  # noqa: BLE001 — unreadable: count it as writing
+        return True
+    return card is None or card.day != day.isoformat()
+
+
+def _on_free_chain(account: Account) -> bool:
+    """Whether this account's model calls start on the shared free chain: no
+    key of its own, or the free chain picked first. One that starts on its
+    own key reaches the free chain only when that key fails (prod 2026-11-16
+    to 23: Gemini timeouts and server errors, 18 runs), too seldom to queue
+    every run of it behind the others."""
+    from stocks.chat.engine import providers
+
+    try:
+        first = providers.attempts(account.prefs)[:1]
+    except Exception:  # noqa: BLE001 — unreadable keys: count it as free
+        return True
+    return not first or first[0][0].id == "free"
+
+
+def _pause(seconds: float) -> None:
+    if seconds > 0:
+        clock.sleep(seconds)
 
 
 def run(account: Account, job: str, day: date) -> str:
@@ -372,7 +470,10 @@ def run(account: Account, job: str, day: date) -> str:
 
     began = clock.monotonic()
     try:
-        status = RUNNERS[job](account, day)
+        # Under the account's name: the job's own events and those of the
+        # threads it starts (`obs.carried`) say whose run they are.
+        with obs.context(user=account.label):
+            status = RUNNERS[job](account, day)
     except Exception as exc:  # noqa: BLE001 — per-run isolation
         status = f"error: {type(exc).__name__}"
         obs.warn("schedule.run_failed", account=account.label, job=job,
@@ -519,12 +620,10 @@ def _weekly_email(account: Account, day: date) -> str:
 
 
 def _theses(account: Account, day: date) -> str:
-    """The theses read before `day`'s card (`briefing.read_theses`), its
-    events (`briefing.thesis_pass`, the judge's) under the account's name."""
+    """The theses read before `day`'s card (`briefing.read_theses`)."""
     from stocks.views import briefing
 
-    with obs.context(user=account.label):
-        return briefing.read_theses(account.paths)
+    return briefing.read_theses(account.paths)
 
 
 RUNNERS = {CARD: _card, "briefing": _briefing, EMAIL: _weekly_email,

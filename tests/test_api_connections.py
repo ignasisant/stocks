@@ -72,6 +72,27 @@ def test_the_address_to_paste_is_null_while_the_connector_is_closed(client, sign
     assert client.get("/v1/connections").json()["url"] is None
 
 
+def test_every_app_the_card_explains_gets_a_mark(client, sign_in, monkeypatch):
+    from typing import get_args
+
+    from stocks import loaders
+    from stocks.api.routes.connections import App
+
+    asked = {}
+
+    def logo(app, domain):
+        asked[app] = domain
+        return f"/app/static/logos/brand-mcp-{app}.png" if domain else None
+
+    monkeypatch.setattr(loaders, "app_logo", logo)
+    sign_in(client, EMAIL)
+    logos = client.get("/v1/connections").json()["logos"]
+    assert set(logos) == set(get_args(App))
+    assert logos["gemini"] == "/app/static/logos/brand-mcp-gemini.png"
+    # "Other" is no brand: its chip draws no mark rather than someone's.
+    assert asked["other"] is None and logos["other"] is None
+
+
 def test_revoking_ends_the_connection(client, sign_in):
     gid = grant()
     sign_in(client, EMAIL)

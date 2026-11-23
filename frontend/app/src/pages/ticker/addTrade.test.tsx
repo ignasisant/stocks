@@ -148,6 +148,23 @@ describe("TradePlan", () => {
       />,
     );
 
+  it("refuses a price its day never traded near: says why, offers only back", () => {
+    const html = renderToStaticMarkup(
+      <TradePlan
+        plan={plan(true)}
+        off="BYD never traded near $70,004.68"
+        busy={false}
+        onConfirm={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    expect(html).toMatch(/role="alert"[^>]*>BYD never traded near/);
+    expect(html).not.toContain("ticker.trade_confirm");
+    expect(html).not.toContain("ticker.trade_help");
+    expect(html).toContain("ticker.trade_back");
+    expect(draw(true)).not.toContain('role="alert"');
+  });
+
   it("offers confirm only for a plan that can go ahead", () => {
     expect(draw(true)).toContain("ticker.trade_confirm");
     expect(draw(false)).not.toContain("ticker.trade_confirm");

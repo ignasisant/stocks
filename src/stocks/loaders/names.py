@@ -215,6 +215,13 @@ def provider_logo(provider: str, domain: str | None) -> str | None:
     return _brand_src(f"ai-{provider}", domain)
 
 
+def app_logo(app: str, domain: str | None) -> str | None:
+    """Same-origin logo for an app the MCP card explains — the marks on its
+    chips. Under an `mcp-` key, apart from the chat providers' `ai-` ones: one
+    brand can be both (Claude, ChatGPT) and a stem names one place it shows."""
+    return _brand_src(f"mcp-{app}", domain)
+
+
 def _brand_src(key: str, domain: str | None) -> str | None:
     from stocks.data.logo import brand_logo_url, mirror_brand
 

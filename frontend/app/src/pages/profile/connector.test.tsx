@@ -49,6 +49,21 @@ describe("the MCP card", () => {
     expect(html).toContain("profile.connector_none");
   });
 
+  it("marks each app's chip with its logo, over its initial", () => {
+    const html = renderToStaticMarkup(
+      <Connector
+        url={URL}
+        connections={[]}
+        logos={{ gemini: "/app/static/logos/brand-mcp-gemini.png", other: null }}
+        onGone={() => {}}
+      />,
+    );
+    expect(html).toContain('src="/app/static/logos/brand-mcp-gemini.png"');
+    // No logo known: the initial alone. "Other" names no brand, so no mark.
+    expect(html).toMatch(/class="pr-chip-mark">C<\/span>Cursor/);
+    expect(html.match(/pr-chip-mark/g)).toHaveLength(APPS.length - 1);
+  });
+
   it("opens on Claude, whose setup is its own settings screen", () => {
     const html = draw(URL, []);
     expect(html).toContain("profile.connector_how_claude");

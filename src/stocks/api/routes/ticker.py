@@ -11,6 +11,7 @@ disagreeing about what a number says.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import asdict
 from datetime import UTC, date, timedelta
 from typing import Annotated, Literal, cast
@@ -99,6 +100,7 @@ from stocks.schemas import (
     OptionsView,
     Peer,
     Peers,
+    PriceCheck,
     PriceEvents,
     Profile,
     ProjectedRow,
@@ -476,6 +478,58 @@ def events(symbol: Symbol) -> PriceEvents:
             )
             for day in dates
         ],
+    )
+
+
+# How long a typed fill waits for its day's close before it is let through
+# unchecked: the check stops typos, it never holds the form up.
+PRICE_CHECK_BUDGET_S = 4.0
+
+
+@router.get(
+    "/{symbol}/price-check",
+    response_model=PriceCheck,
+    summary="Whether a typed fill fits its day",
+)
+def price_check(
+    symbol: Symbol,
+    day: Annotated[date, Query(description="The trade's day.")],
+    price: Annotated[float, Query(gt=0, description="Price per unit, as typed.")],
+    currency: Annotated[
+        str, Query(pattern="^[A-Za-z]{3}$", description="The price's currency.")
+    ],
+) -> PriceCheck:
+    """Whether `price` could have been paid for `symbol` on `day`.
+
+    The hand-entry form asks it beside the plan, so a price the name never
+    traded near (70.004 for a 75 stock) is pointed out before it is booked.
+    The same test the chat holds a reported trade to (`chat.book.price_fits`):
+    the day's close in `currency`, the splits since undone, and a wide band.
+    A market that cannot answer in time answers `fits: null`.
+    """
+    from stocks.chat import book
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        quote = pool.submit(
+            book.market_close, symbol, day.isoformat(), currency.upper()
+        ).result(timeout=PRICE_CHECK_BUDGET_S)
+    except FuturesTimeout:
+        obs.warn("ticker.price_check_budget_spent", ticker=symbol)
+        quote = None
+    except Exception as exc:  # a check that breaks is a check that could not say
+        obs.warn(
+            "ticker.price_check_failed", ticker=symbol, error_type=type(exc).__name__
+        )
+        quote = None
+    finally:
+        # No wait: that would block on exactly the hung call the budget escaped.
+        pool.shutdown(wait=False, cancel_futures=True)
+    if not quote or quote[0] <= 0:
+        return PriceCheck(fits=None)
+    close, factor = quote
+    return PriceCheck(
+        fits=book.price_fits(price, close, factor), close=_num(round(close * factor, 4))
     )
 
 

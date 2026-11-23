@@ -102,8 +102,9 @@ def spawn(name: str, target: Callable[[], None]) -> threading.Thread:
     """Start `target` on a daemon thread, the CPU kept on it until it ends.
 
     From the request thread: `keep` reads the request's base URL from a
-    contextvar, and the thread itself inherits none of it. Off Cloud Run this
-    is a plain daemon thread.
+    contextvar, and the thread itself inherits none of it but the log fields
+    (`obs.carried`), so its events still name the account. Off Cloud Run
+    this is a plain daemon thread.
     """
     done = threading.Event()
 
@@ -113,7 +114,7 @@ def spawn(name: str, target: Callable[[], None]) -> threading.Thread:
         finally:
             done.set()
 
-    thread = threading.Thread(target=run, name=name, daemon=True)
+    thread = threading.Thread(target=obs.carried(run), name=name, daemon=True)
     thread.start()
     keep(done)
     return thread

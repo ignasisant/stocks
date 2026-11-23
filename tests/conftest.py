@@ -544,7 +544,7 @@ def _web_off():
 
 @pytest.fixture(autouse=True)
 def _no_provider_logos():
-    """Start every test with the chat providers' marks unresolved.
+    """Start every test with the chat providers' and MCP apps' marks unresolved.
 
     `/chat/state` names a logo per provider, and resolving one mirrors the
     brand's favicon off the real internet on first touch. A test about the
@@ -553,10 +553,11 @@ def _no_provider_logos():
     """
     from stocks import loaders
 
-    before = loaders.provider_logo
+    before = loaders.provider_logo, loaders.app_logo
     loaders.provider_logo = lambda provider, domain: None
+    loaders.app_logo = lambda app, domain: None
     yield
-    loaders.provider_logo = before
+    loaders.provider_logo, loaders.app_logo = before
 
 
 @pytest.fixture(autouse=True)
@@ -606,6 +607,23 @@ def _own_world_search_memo(_scratch):
     yield
     memo.clear()
     memo.path = before
+
+
+@pytest.fixture(autouse=True)
+def _companies_unknown():
+    """Name no symbol's company: `journal.same_name` falls back to the root.
+
+    `profiles.company` reads the checkout's real profile memo (`data/
+    profiles.json`), which grows with every page anyone opened locally. A test
+    about whose line is whose says so by patching it; one that wants the real
+    reader imports it at module level, before this runs.
+    """
+    from stocks.data import profiles
+
+    before = profiles.company
+    profiles.company = lambda symbol: None
+    yield
+    profiles.company = before
 
 
 @pytest.fixture(autouse=True)

@@ -664,6 +664,9 @@ export type Connection = {
 export type Connections = {
   "url": string | null;
   "connections": Connection[];
+  "logos": {
+    [key: string]: string | null;
+  };
 };
 
 export type ConsensusPeriod = {
@@ -2390,6 +2393,11 @@ export type Preview = {
   "surface"?: {
     [key: string]: unknown;
   }[] | null;
+};
+
+export type PriceCheck = {
+  "fits": boolean | null;
+  "close": number | null;
 };
 
 export type PriceEvents = {
@@ -4132,6 +4140,7 @@ export interface Responses {
   "/ticker/{symbol}/options": OptionsView;
   "/ticker/{symbol}/peers": Peers;
   "/ticker/{symbol}/position": TickerPosition;
+  "/ticker/{symbol}/price-check": PriceCheck;
   "/ticker/{symbol}/profile": Profile;
   "/ticker/{symbol}/quote": Quote;
   "/ticker/{symbol}/shorts": Shorts;
