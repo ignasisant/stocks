@@ -155,13 +155,17 @@ def _fill_ratios(
     return out
 
 
-def _off_calendar(px: pd.Series, ticker: str, transactions) -> list[str]:
+def _off_calendar(
+    px: pd.Series, ticker: str, ccy: str, transactions
+) -> list[str]:
     """Days `ticker` was bought or sold on which its market printed no bar.
 
     Only inside the series' own span: before the first bar is history the
     feed does not carry, not a holiday. A Saturday fill counts on Friday's
     bar, since a US after-hours fill is stamped the next day in UTC; a market
-    open every day — crypto — never lands here.
+    open every day — crypto — never lands here. Only fills in the listing's
+    currency `ccy`: a US name bought in euros traded on a European venue,
+    open on US holidays.
     """
     from datetime import date, timedelta
 
@@ -173,6 +177,8 @@ def _off_calendar(px: pd.Series, ticker: str, transactions) -> list[str]:
     out = []
     for t in transactions:
         if t.ticker != ticker or t.action not in ("buy", "sell"):
+            continue
+        if ccy and t.currency.upper() != ccy:
             continue
         day = date.fromisoformat(t.date[:10])
         if not first <= day <= last:
@@ -242,7 +248,7 @@ def plausible_closes(
         fills = _fill_ratios(px * scale, ticker, ccy.upper(), transactions)
         if _plausible_ratio([off for _, off in fills]):
             out[ticker] = s
-            _audit_fills(px, ticker, fills, transactions)
+            _audit_fills(px, ticker, ccy.upper(), fills, transactions)
         else:
             obs.warn_once("portfolio.price_ticker_mismatch", ticker, ticker=ticker)
             offs = sorted(off for _, off in fills)
@@ -312,7 +318,9 @@ def mismatches(
     return out
 
 
-def _audit_fills(px: pd.Series, ticker: str, fills, transactions) -> None:
+def _audit_fills(
+    px: pd.Series, ticker: str, ccy: str, fills, transactions
+) -> None:
     """Say what a kept series' fills contradict: their unit, their calendar.
 
     The series matched the book as a whole; a few fills a hundred off it are
@@ -329,7 +337,7 @@ def _audit_fills(px: pd.Series, ticker: str, fills, transactions) -> None:
             n=len(slips),
             first=slips[0],
         )
-    if off_days := _off_calendar(px, ticker, transactions):
+    if off_days := _off_calendar(px, ticker, ccy, transactions):
         consistency.report(
             "trade_off_calendar",
             source="replay",

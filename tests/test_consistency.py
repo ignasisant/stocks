@@ -243,6 +243,21 @@ def test_a_trade_on_a_day_the_market_was_shut_is_said(lines):
     )
 
 
+def test_a_fill_on_another_venue_is_not_held_to_the_listings_calendar(lines):
+    # Prod 2026-11-22: a Trade Republic book under ISINs, priced off the US
+    # listing (USD), flagged EUR fills on Presidents' Day, Memorial Day and
+    # Juneteenth, days the German venue it trades on was open.
+    isin = "US5949181045"
+    book = [
+        Transaction("2026-06-18", isin, "buy", 1, 400.0, "EUR"),
+        Transaction("2026-06-19", isin, "buy", 1, 400.0, "EUR"),
+    ]
+    closes = {isin: _closes("2026-06-01", "2026-06-30", 460.0, skip=("2026-06-19",))}
+    kept = plausible_closes(closes, book, {isin: ("USD", 1.0)})
+    assert isin in kept
+    assert lines == []
+
+
 def test_crypto_trades_any_day(lines):
     book = [Transaction("2025-12-25", "BTC-EUR", "buy", 0.1, 90000.0, "EUR")]
     days = pd.date_range("2025-12-01", "2025-12-31")
