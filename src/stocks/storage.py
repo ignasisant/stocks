@@ -307,6 +307,18 @@ def read_key(key: str) -> bytes | None:
         return None
 
 
+def write_key(key: str, body: bytes) -> None:
+    """Write one object by bucket key, with no local file behind it.
+
+    For data that must never sit on the instance disk (the encrypted failed
+    statements). No-op when storage is unconfigured; errors propagate.
+    """
+    if not enabled():
+        return
+    cfg = _config() or {}
+    _client().put_object(Bucket=cfg["bucket"], Key=key, Body=body)
+
+
 def delete_key(key: str) -> None:
     """Delete one object by bucket key. No-op when storage is unconfigured."""
     if not enabled():
