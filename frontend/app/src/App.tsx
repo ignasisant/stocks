@@ -36,7 +36,7 @@ function Offline({ retry, error }: { retry: () => void; error?: unknown }) {
     error instanceof ApiError && error.detail === "common.storage_restore_failed";
   return (
     <div className="ag-wall">
-      <h1>TopStocks</h1>
+      <h1>MyBrainStock</h1>
       <p>{t(storage ? "common.storage_restore_failed" : "common.data_unavailable")}</p>
       <button className="ag-btn" onClick={retry}>
         {t("common.retry")}
@@ -57,7 +57,7 @@ function SignInWall() {
   const t = useT();
   return (
     <div className="ag-wall">
-      <h1>TopStocks</h1>
+      <h1>MyBrainStock</h1>
       <p>{t("common.sign_in")}</p>
       <SignIn label="common.cta_sign_in" />
     </div>
@@ -72,10 +72,10 @@ function Current() {
 
   // The document title is the shell's, not a page's: it is the one piece of
   // chrome a single-page app has to maintain by hand, and a link shared out of
-  // here otherwise arrives as a bare "TopStocks" whichever screen it points at.
+  // here otherwise arrives as a bare "MyBrainStock" whichever screen it points at.
   // Localized, because the title bar is read in the reader's own language.
   useEffect(() => {
-    document.title = `${t(entry.label)} · TopStocks`;
+    document.title = `${t(entry.label)} · MyBrainStock`;
   }, [t, entry.label]);
 
   // The tab bar's pages and the chat panel, fetched once the shell is idle

@@ -1,10 +1,10 @@
 /**
- * A ticker in the view is a logo and a link, as everywhere in TopStocks.
+ * A ticker in the view is a logo and a link, as everywhere in MyBrainStock.
  *
- * The logo is the server's mirrored copy on the TopStocks origin — the one
+ * The logo is the server's mirrored copy on the MyBrainStock origin — the one
  * image source the view's CSP admits — and initials when there is none. The
  * link goes through the host (`ui/open-link`): a sandboxed frame cannot
- * navigate anywhere on its own, and the reader's TopStocks is a tab of its
+ * navigate anywhere on its own, and the reader's MyBrainStock is a tab of its
  * own, not this frame.
  */
 

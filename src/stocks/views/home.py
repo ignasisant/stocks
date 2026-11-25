@@ -195,6 +195,75 @@ def last_closes(
     return out
 
 
+# The watchlist row's second read, all of it from the year of closes the row
+# already downloads plus the reader's own buy rules: nothing here asks Yahoo.
+MONTH_BARS = 21  # trading sessions in a calendar month
+SPARK_BARS = 22  # the month's line: its first close and the 21 after it
+# A day move this many times the name's usual daily swing is flagged: a split
+# or a bad print reads the same as news, and either way the reader should look.
+ODD_MOVE_Z = 5.0
+MIN_SWING_BARS = 60  # fewer returns than this and "usual" is not measured
+# A buy zone this close (percent of price, or points of drawdown) is "near".
+NEAR_ZONE = 10.0
+
+
+def month_move(closes: list[float]) -> float | None:
+    """Last close against the close a month of sessions back, as a fraction."""
+    if len(closes) <= MONTH_BARS or not closes[-MONTH_BARS - 1]:
+        return None
+    return closes[-1] / closes[-MONTH_BARS - 1] - 1
+
+
+def move_size(closes: list[float], day: float | None) -> float | None:
+    """How many usual daily swings `day` is: the day move over the standard
+    deviation of the year's daily returns before it. None when there is too
+    little history to call anything usual."""
+    if day is None or len(closes) < MIN_SWING_BARS + 2:
+        return None
+    returns = pd.Series(closes[:-1]).pct_change().dropna()
+    swing = float(returns.std())
+    if not swing or swing != swing:
+        return None
+    return round(abs(day) / swing, 1)
+
+
+def buy_zone(rules: list[dict], closes: list[float]) -> dict | None:
+    """Where a name stands against the reader's buy rules (`journal.rule_row`s).
+
+    `met` once any rule is met — stored as hit by the night check, or a price
+    rule the closes already satisfy; `near` when the closest price rule is
+    within NEAR_ZONE; `far` otherwise. `gap` is the price rule's distance
+    (percent of price for `buy_below`, points for `buy_drawdown_high`), None
+    for a rule only the night check can read. None without any buy rule."""
+    from stocks.chat import journal
+
+    if not rules:
+        return None
+    measured: list[tuple[dict, float | None, bool]] = []
+    for row in rules:
+        gap, met = None, row.get("state") == "hit"
+        level = row.get("level")
+        if row.get("rule") in journal.BUY_PRICE_RULES and level is not None:
+            reading = journal.measure_rule(row["rule"], float(level), closes, None)
+            if reading is not None:
+                gap, met = reading[1], met or reading[2]
+        measured.append((row, gap, met))
+    met = [m for m in measured if m[2]]
+    priced = sorted((m for m in measured if m[1] is not None), key=lambda m: m[1])
+    if met:
+        # A price rule met is the zone itself; a fundamental one is half of it.
+        row, gap, _ = next((m for m in met if m[1] is not None), met[0])
+        state = "met"
+    elif priced:
+        row, gap, _ = priced[0]
+        state = "near" if gap is not None and gap <= NEAR_ZONE else "far"
+    else:
+        row, gap, state = measured[0][0], None, "far"
+    return {"state": state, "rule": row.get("rule"), "level": row.get("level"),
+            "gap": gap, "since": row.get("since"), "met": len(met),
+            "rules": len(rules)}
+
+
 def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
     """The positions frame plus weight / day / day_pct / day_asof /
     day_basis, by weight.

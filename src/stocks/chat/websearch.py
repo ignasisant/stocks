@@ -98,13 +98,13 @@ class Result:
 # after this by structured.render.
 _PLANNER_SYSTEM = (
     "You write the web searches for the latest message in a stock-tracker "
-    "chat. The app is called TopStocks (also written \"Top Stocks\"). "
+    "chat. The app is called MyBrainStock (also written \"My Brain Stock\"; formerly TopStocks). "
     "Searching is the default: anything about a company, ticker, fund, "
     "coin, market, the economy or an event gets searched, even when you think "
     "you know the answer — prices, news and the reasons behind a move change "
     f"daily. Give at most {MAX_QUERIES} web search queries. Return an empty "
     "list only when the message needs nothing from the outside world: "
-    "greetings and thanks, questions about TopStocks itself (how it works, "
+    "greetings and thanks, questions about MyBrainStock (or TopStocks) itself (how it works, "
     "what it can do, how to get the most out of it), the user's own "
     "positions and their arithmetic, or definitions of long-settled terms. "
     "Write queries in the language most likely to find good sources (usually "
@@ -204,7 +204,7 @@ _BOOK_RE = re.compile(
 # used or got the most out of: "cómo sacar el máximo rendimiento de top
 # stocks" searched the web for generic investing tips (rated 2026-11-10).
 _APP_RE = re.compile(
-    r"\btop-?stocks\b|\baguait\b|"
+    r"\btop-?stocks\b|\bmy-?brain-?stock\b|\bmy brain stock\b|\baguait\b|"
     r"\b(sac\w*|partido|exprim\w*|aprovech\w*|us(?:ar|o|e|ing)|utiliz\w*|"
     r"most out of|make the most of|more out of)\b.{0,40}\btop stocks\b",
     re.IGNORECASE,

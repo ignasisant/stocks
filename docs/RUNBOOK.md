@@ -1,6 +1,6 @@
 # Runbook
 
-What to do when TopStocks misbehaves in production. Prod is Cloud Run:
+What to do when MyBrainStock misbehaves in production. Prod is Cloud Run:
 project `topstocks-507209`, region `europe-west1`, service `topstocks`
 (staging: `topstocks-staging`). Alerts come from the policies in
 `infra/monitoring/` (created by `scripts/setup_monitoring.sh`).

@@ -87,7 +87,7 @@ MOUNT_PATH = "/api"
 API_VERSION = "v1"
 
 DESCRIPTION = """\
-Read-only HTTP access to a TopStocks book: positions, totals, the ledger,
+Read-only HTTP access to a MyBrainStock book: positions, totals, the ledger,
 time- and money-weighted returns, the watchlist and live quotes.
 
 Two ways in. A browser signed into the app carries the session cookie and is
@@ -142,7 +142,7 @@ _PUBLISH_DOCS = not os.environ.get("K_SERVICE") or os.environ.get(
 ).lower() in ("1", "true", "yes")
 
 app = FastAPI(
-    title="TopStocks API",
+    title="MyBrainStock API",
     version=API_VERSION,
     description=DESCRIPTION,
     docs_url="/docs" if _PUBLISH_DOCS else None,

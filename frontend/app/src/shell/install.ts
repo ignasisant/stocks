@@ -1,5 +1,5 @@
 /**
- * TopStocks as an app on this device: whether it can be offered, and when.
+ * MyBrainStock as an app on this device: whether it can be offered, and when.
  *
  * Chromium (Chrome, Edge, Android, Samsung Internet) fires
  * `beforeinstallprompt` once the manifest qualifies. It is kept here, its own

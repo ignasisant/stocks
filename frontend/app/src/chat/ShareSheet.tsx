@@ -101,7 +101,7 @@ export function ShareSheet({
     }
   };
 
-  // The sharer's own voice on the question ("I asked TopStocks' AI: …"): on X
+  // The sharer's own voice on the question ("I asked MyBrainStock' AI: …"): on X
   // the card is an image and a domain, so the post's text is all that says
   // what the link is.
   const text = preview?.question

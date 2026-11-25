@@ -63,7 +63,7 @@ NA = float("nan")
 # other request. Any UA carrying a contact URL passes, so this identifies the
 # app properly and is the one header that must not be dropped back to the
 # default. Eurostat and the ECB are indifferent to it.
-USER_AGENT = "TopStocks/1.0 (+https://topstocks.app)"
+USER_AGENT = "MyBrainStock/1.0 (+https://mybrainstock.com)"
 TTL_S = 6 * 3600
 
 # Every FRED series the app reads, with what it is. Ids are opaque, so the

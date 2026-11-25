@@ -32,4 +32,4 @@ Tus acciones están custodiadas fuera de España. Si su valor supera los **50.00
 ## El error típico
 Copiar el beneficio en dólares que muestra la app, o el total de dividendos cobrados. Las dos cifras son incorrectas para Hacienda: la primera no está en euros y la segunda es neta.
 
-TopStocks importa el CSV de Revolut y hace estos cálculos: FIFO, euros al cambio de cada fecha, la regla de los dos meses y el bruto de cada dividendo con su retención. Es una ayuda para preparar la declaración, no asesoramiento fiscal: si tu caso es complejo, consulta a un asesor.
+MyBrainStock importa el CSV de Revolut y hace estos cálculos: FIFO, euros al cambio de cada fecha, la regla de los dos meses y el bruto de cada dividendo con su retención. Es una ayuda para preparar la declaración, no asesoramiento fiscal: si tu caso es complejo, consulta a un asesor.

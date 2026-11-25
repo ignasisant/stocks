@@ -1,16 +1,16 @@
 {
   "notify.shares": "{n} shares",
   "notify.alerts_subject": "⚠️ Price alerts",
-  "notify.nudge_title": "TopStocks — still here",
-  "notify.feedback_reply_title": "TopStocks — about what you reported",
+  "notify.nudge_title": "MyBrainStock — still here",
+  "notify.feedback_reply_title": "MyBrainStock — about what you reported",
   "notify.nudge_away": "{days} days since your last visit.",
   "notify.nudge_book": "Portfolio {value} · week {change}.",
   "notify.nudge_mover": "Biggest move: {ticker} {pct}.",
   "notify.nudge_empty": "Your book is still empty — import a statement and the assistant takes it from there.",
   "notify.nudge_last": "Last reminder of this kind; the daily briefing goes on as usual.",
-  "notify.test_message": "👋 Test message from TopStocks — notifications are working.",
+  "notify.test_message": "👋 Test message from MyBrainStock — notifications are working.",
   "notify.push_answer_title": "Your answer is ready",
-  "notify.push_test_title": "TopStocks notifications work",
+  "notify.push_test_title": "MyBrainStock notifications work",
   "notify.push_test_body": "This device will get your daily briefing, price alerts and finished answers.",
   "notify.briefing_change": "Change time"
 }

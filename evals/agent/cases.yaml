@@ -119,7 +119,7 @@
 - id: app-most-out-of
   message: "como sacar el maximo rendimiento de top stocks"
   goals:
-    - Talks about TopStocks' own features, not generic investing advice
+    - Talks about MyBrainStock's own features, not generic investing advice
     - Points at what this account has not set up yet
   must: [lookup_knowledge]
   must_not: [search_web]

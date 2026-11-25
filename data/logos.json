@@ -765,6 +765,7 @@
   "NVCR": "https://financialmodelingprep.com/image-stock/NVCR.png",
   "NVDQ": "https://financialmodelingprep.com/image-stock/NVDQ.png",
   "NVDX": "https://financialmodelingprep.com/image-stock/NVDX.png",
+  "NVIDIA": "",
   "NVII": "https://financialmodelingprep.com/image-stock/NVII.png",
   "NVMI": "https://financialmodelingprep.com/image-stock/NVMI.png",
   "NVR": "https://financialmodelingprep.com/image-stock/NVR.png",
@@ -1198,16 +1199,7 @@
   "^STOXX50E": "",
   "^TYX": "",
   "^VIX": "",
-  "_blocked": {
-    "INGA.AS": [
-      "https://financialmodelingprep.com/image-stock/INGA.AS.png",
-      1794868949.6142452
-    ],
-    "UBSG.SW": [
-      "https://financialmodelingprep.com/image-stock/UBSG.SW.png",
-      1794868949.738873
-    ]
-  },
+  "_blocked": {},
   "_v": 3,
   "brand:chat.mistral.ai": "https://www.google.com/s2/favicons?domain=chat.mistral.ai&sz=128",
   "brand:chatgpt.com": "https://www.google.com/s2/favicons?domain=chatgpt.com&sz=128",

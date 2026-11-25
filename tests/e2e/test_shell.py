@@ -27,7 +27,7 @@ def test_every_page_draws_for_a_guest(page: Page, path: str):
     instead of drawing its empty state throws for them first."""
     page.goto(f"/{path}")
     expect(page.get_by_role("navigation", name="Sections", exact=True)).to_be_visible()
-    expect(page).to_have_title(re.compile(r" · TopStocks$"))
+    expect(page).to_have_title(re.compile(r" · MyBrainStock$"))
     expect(page.locator("main.ag-main")).not_to_be_empty()
 
 

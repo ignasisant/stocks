@@ -6,7 +6,7 @@
  * the page loads from the network exactly as it does without this file.
  *
  * A push carries {title, body, url, tag, actions?} (`notify/render.py`).
- * Pressing the notification sends an open TopStocks window to `url` (a
+ * Pressing the notification sends an open MyBrainStock window to `url` (a
  * message, and a note it reads when it comes to the front), or opens one
  * there; pressing one of its `actions` buttons does the same with that
  * action's own url.
@@ -23,7 +23,7 @@ self.addEventListener("push", (event) => {
     data = { body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "TopStocks", {
+    self.registration.showNotification(data.title || "MyBrainStock", {
       body: data.body || "",
       tag: data.tag || undefined,
       icon: "/lp/icon-192.png",

@@ -288,6 +288,130 @@ def test_a_screenshot_that_is_not_a_jpeg_is_refused(
     assert response.status_code == 422
 
 
+def test_a_report_keeps_the_statement_it_was_sent_with(
+    client, account, signed_in, monkeypatch
+):
+    """The chat's "report a problem" on an import: the file goes to the
+    encrypted fifteen-day store under this account, and the comment names it
+    so `stocks imports fetch` finds it."""
+    import base64
+
+    kept: list = []
+    filed: list = []
+    monkeypatch.setattr(
+        "stocks.portfolio.failed_files.keep",
+        lambda user, filename, data: kept.append((user, filename, data))
+        or f"{user}/20261124T100000Z-0123456789abcdef.csv.enc",
+    )
+    monkeypatch.setattr(
+        "stocks.web.feedback.submit",
+        lambda *a, **k: filed.append(k),
+    )
+    response = signed_in.post(
+        "/v1/feedback",
+        json={
+            "text": "the quantities are wrong",
+            "kind": "bug",
+            "page": "chat/import?platform=llm",
+            "statement": {
+                "filename": "finizens.csv",
+                "content": base64.b64encode(b"date,isin\n").decode(),
+            },
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["statement"] is True
+    assert kept == [(account.root.name, "finizens.csv", b"date,isin\n")]
+    assert filed[0]["statement"].startswith(f"{account.root.name}/")
+
+
+def test_a_statement_that_could_not_be_kept_is_said_not_sent(
+    client, account, signed_in, monkeypatch
+):
+    """No key, too big, a test account: the comment still goes, and the answer
+    does not pretend the file went with it."""
+    import base64
+
+    filed: list = []
+    monkeypatch.setattr("stocks.portfolio.failed_files.keep", lambda *a: None)
+    monkeypatch.setattr(
+        "stocks.web.feedback.submit", lambda *a, **k: filed.append(k)
+    )
+    response = signed_in.post(
+        "/v1/feedback",
+        json={
+            "text": "wrong",
+            "statement": {
+                "filename": "a.csv",
+                "content": base64.b64encode(b"x").decode(),
+            },
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["statement"] is False
+    assert "statement" not in filed[0]
+
+
+def test_a_statement_that_is_not_base64_is_refused(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(
+        "stocks.web.feedback.submit",
+        lambda *a, **k: pytest.fail("nothing should be stored"),
+    )
+    response = signed_in.post(
+        "/v1/feedback",
+        json={"text": "hi", "statement": {"filename": "a.csv", "content": "no!!"}},
+    )
+    assert response.status_code == 422
+
+
+def test_a_statement_already_kept_is_linked_not_sent_again(
+    client, account, signed_in, monkeypatch
+):
+    """A read that failed kept the file already: the dialog asks by digest,
+    and the report names that copy with no upload."""
+    digest = "0123456789abcdef"
+    file_id = f"{account.root.name}/20261124T100000Z-{digest}.csv.enc"
+    filed: list = []
+    monkeypatch.setattr(
+        "stocks.portfolio.failed_files.held",
+        lambda user, d: file_id if (user, d) == (account.root.name, digest) else None,
+    )
+    monkeypatch.setattr(
+        "stocks.portfolio.failed_files.keep",
+        lambda *a: pytest.fail("a held file is not kept again"),
+    )
+    monkeypatch.setattr(
+        "stocks.web.feedback.submit", lambda *a, **k: filed.append(k)
+    )
+    assert signed_in.get(f"/v1/feedback/statement/{digest}").json() == {"held": True}
+    assert signed_in.get("/v1/feedback/statement/fedcba9876543210").json() == {
+        "held": False
+    }
+    response = signed_in.post(
+        "/v1/feedback", json={"text": "wrong", "statement_digest": digest}
+    )
+    assert response.status_code == 201
+    assert response.json()["statement"] is True
+    assert filed[0]["statement"] == file_id
+    assert (
+        signed_in.post(
+            "/v1/feedback", json={"text": "x", "statement_digest": "../etc"}
+        ).status_code
+        == 422
+    )
+
+
+def test_a_guest_cannot_ask_after_a_statement(client, monkeypatch):
+    monkeypatch.setattr(
+        "stocks.portfolio.failed_files.held",
+        lambda *a: pytest.fail("a guest's files are never looked up"),
+    )
+    # Not on the guest list: the gate turns a visitor away before the route.
+    assert client.get("/v1/feedback/statement/0123456789abcdef").status_code == 401
+
+
 def test_empty_feedback_is_not_a_submission(client, account, signed_in):
     assert signed_in.post("/v1/feedback", json={"text": ""}).status_code == 422
 

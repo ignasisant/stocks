@@ -1,6 +1,6 @@
 {
-  "name": "TopStocks",
-  "short_name": "TopStocks",
+  "name": "MyBrainStock",
+  "short_name": "MyBrainStock",
   "id": "/",
   "start_url": "/?installed=1",
   "scope": "/",

@@ -251,7 +251,7 @@ def _public_prefs(raw: bytes) -> bytes:
 
 
 def _readme(names: list[str], base: str) -> bytes:
-    lines = [f"Your TopStocks data, exported {date.today():%Y-%m-%d}.", ""]
+    lines = [f"Your MyBrainStock data, exported {date.today():%Y-%m-%d}.", ""]
     width = max(len(n) for n in names) + 2
     for name in names:
         about = _ABOUT.get(name, "")

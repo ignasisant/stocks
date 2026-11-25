@@ -190,7 +190,7 @@ def test_attempts_preferred_byok_then_free(providers, enc):
 
 
 def test_attempts_free_picked_over_a_held_key_answers_first(providers, enc):
-    # Local review 2026-10-29: "Probar con TopStocks AI" on a Gemini refusal
+    # Local review 2026-10-29: "Probar con MyBrainStock AI" on a Gemini refusal
     # saved the pick, and Gemini answered again because a key always led.
     prefs = {"llm_provider": "free", **enc("gemini")}
     assert [p.id for p, _, _ in engine.attempts(prefs)] == ["free", "gemini"]

@@ -1,5 +1,5 @@
 /**
- * "How is TopStocks for you?": five stars and an optional comment, asked once
+ * "How is MyBrainStock for you?": five stars and an optional comment, asked once
  * per account, ever.
  *
  * Never on a first look. It waits for the `VISIT_DAYS`th day this browser

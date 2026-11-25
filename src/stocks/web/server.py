@@ -434,9 +434,9 @@ def not_found(request: Request) -> Response:
     body = (
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="robots" content="noindex">'
-        "<title>404 — TopStocks</title>"
+        "<title>404 — MyBrainStock</title>"
         f"<style>{_NOT_FOUND_CSS}</style></head><body>"
-        f'<h1>404</h1><p>Nothing at this address. <a href="{home}">TopStocks</a></p>'
+        f'<h1>404</h1><p>Nothing at this address. <a href="{home}">MyBrainStock</a></p>'
         "</body></html>"
     )
     return Response(body, status_code=404, media_type=_HTML,
@@ -941,7 +941,7 @@ def _filled(html: str) -> bytes:
         f' href="{ASSET_BASE}icon-192.png">'
         f'<link rel="apple-touch-icon" href="{ASSET_BASE}apple-touch-icon.png">'
         f'<link rel="manifest" href="{ASSET_BASE}manifest.webmanifest">'
-        '<meta name="apple-mobile-web-app-title" content="TopStocks">'
+        '<meta name="apple-mobile-web-app-title" content="MyBrainStock">'
     )
     return html.replace("<!--AG-FONTS-->", _faces() + icon).encode("utf-8")
 
@@ -1010,7 +1010,7 @@ def _with_card(request: Request, document: bytes) -> bytes:
     """`document` with a link preview for the ticker it names, if it names one.
 
     The shell is one document for every page, and the ticker page is the one a
-    reader pastes into a chat: an unfurl that says only "TopStocks" loses the
+    reader pastes into a chat: an unfurl that says only "MyBrainStock" loses the
     link's whole point. The symbol comes from the query string, so it is
     validated before it is written anywhere, and the company name is the
     profiles memo's or nothing — never a fetch on a document request.
@@ -1030,7 +1030,7 @@ def _with_card(request: Request, document: bytes) -> bytes:
         symbol, base_url(request), _shell_lang(request), name=known.get("name")
     )
     html = document.decode("utf-8")
-    html = html.replace("<title>TopStocks</title>", f"<title>{esc(title)}</title>", 1)
+    html = html.replace("<title>MyBrainStock</title>", f"<title>{esc(title)}</title>", 1)
     return html.replace("</head>", tags + "</head>", 1).encode("utf-8")
 
 
@@ -1052,7 +1052,7 @@ def _with_share_card(request: Request, document: bytes) -> bytes:
         obs.event("share.opened", share=share["id"], **_attribution(request))
     title, tags = seo.share_head(share, base_url(request), _shell_lang(request))
     html = document.decode("utf-8")
-    html = html.replace("<title>TopStocks</title>", f"<title>{esc(title)}</title>", 1)
+    html = html.replace("<title>MyBrainStock</title>", f"<title>{esc(title)}</title>", 1)
     return html.replace("</head>", tags + "</head>", 1).encode("utf-8")
 
 

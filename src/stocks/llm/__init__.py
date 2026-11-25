@@ -1,8 +1,8 @@
-"""LLM provider registry for the chat page — TopStocks AI (free), Claude, ChatGPT,
+"""LLM provider registry for the chat page — MyBrainStock AI (free), Claude, ChatGPT,
 Gemini, OpenRouter.
 
 The named providers are bring-your-own-key: the user supplies their own API key
-(own billing). "TopStocks AI" is keyless for the user — it chains through
+(own billing). "MyBrainStock AI" is keyless for the user — it chains through
 operator-funded free-tier backends configured in the ``[free_llm]`` secrets
 section, hopping to the next backend when one is rate-limited, until all are
 exhausted. A provider exposes a streaming generator plus an error classifier
@@ -153,7 +153,7 @@ class Provider:
     # model argument and picks per backend.
     classifier_model: str = ""
     # Brand website, for the selector logo (mirrored same-origin like broker
-    # logos). None = no external brand; the keyless TopStocks provider ships its
+    # logos). None = no external brand; the keyless MyBrainStock provider ships its
     # own bundled icon instead.
     domain: str | None = None
     # Native tool use, when this backend has it wired up. None means the caller
@@ -812,7 +812,7 @@ def _openrouter_error(exc):
     return _openai_error(exc)
 
 
-# ------------------------------------------------------- TopStocks AI (free chain)
+# ------------------------------------------------------- MyBrainStock AI (free chain)
 # Keyless for the user: a fixed-order chain of free-tier backends billed to the
 # operator's keys ([free_llm] in secrets.toml). Each entry is (backend id,
 # default model, OpenAI-compatible base_url) — all backends speak the OpenAI
@@ -1754,7 +1754,7 @@ PROVIDERS: dict[str, Provider] = {
     p.id: p
     for p in (
         Provider(
-            "free", "TopStocks AI",
+            "free", "MyBrainStock AI",
             ("auto",),  # the chain picks the backend; no user-facing model list
             "", "",  # keyless: no placeholder, no console link
             "openai", _free_stream, _free_error,
@@ -1827,7 +1827,7 @@ def default_provider_id() -> str:
 
 
 def available_providers() -> list[Provider]:
-    """Usable providers, registry order (TopStocks AI, Claude, ChatGPT, Gemini,
+    """Usable providers, registry order (MyBrainStock AI, Claude, ChatGPT, Gemini,
     OpenRouter)."""
     return [p for p in PROVIDERS.values() if p.available()]
 

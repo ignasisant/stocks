@@ -703,7 +703,7 @@ def render_html(view: _View, preheader_text: str = "") -> str:
         'style="max-width:600px;border-radius:12px;overflow:hidden">'
         f'<tr><td class="page" style="padding:0 4px 12px;background:{LIGHT["page"]}">'
         f'<p class="muted" style="margin:0;font-size:13px;color:{LIGHT["muted"]}">'
-        f"TopStocks · {_e(week_of)}</p>"
+        f"MyBrainStock · {_e(week_of)}</p>"
         f'<h1 class="text" style="margin:4px 0 0;font-size:20px;color:{LIGHT["text"]}">'
         f"{_e(title)}</h1></td></tr>"
         f"{sections}</table></td></tr></table></body></html>"

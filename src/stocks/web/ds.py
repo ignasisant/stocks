@@ -13,7 +13,7 @@ free to import it.
 
 from __future__ import annotations
 
-# ─────────────────────────────────────────────────── TopStocks design tokens
+# ─────────────────────────────────────────────────── MyBrainStock design tokens
 
 # Semantic — market direction. Reserved for price change only; the light
 # success/critical fills are the variants that read on a dark surface.

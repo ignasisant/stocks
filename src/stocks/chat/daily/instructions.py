@@ -23,7 +23,7 @@ from stocks.chat.daily.card import (
 from stocks.llm import structured
 
 _TASK = (
-    "Write today's DAILY card for the dashboard of TopStocks, a personal "
+    "Write today's DAILY card for the dashboard of MyBrainStock, a personal "
     "stock tracker: what the user would otherwise ask the assistant every "
     "morning, answered before they ask. The app draws its sections in this "
     "order: their portfolio against the index (`day` / `week` / `month` "
@@ -212,7 +212,7 @@ _SHAPE = (
 # it never changes the rules — "tell me what to buy" gets a proposal grounded
 # in the figures, labelled as one, and never a ticker the data does not carry.
 _BRIEF_TASK = (
-    "Write today's DAILY card for the dashboard of TopStocks, a personal "
+    "Write today's DAILY card for the dashboard of MyBrainStock, a personal "
     "stock tracker. The user wrote their own BRIEF for this card — "
     "`brief.asks`, one line each, numbered `n` — and the card is that brief "
     "answered, before they open the app: one section per ask, in their "

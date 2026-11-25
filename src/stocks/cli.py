@@ -238,7 +238,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
             return
         for user, devices in reached:
             message = {
-                "title": "TopStocks",
+                "title": "MyBrainStock",
                 "body": translate("notify.test_message", user.lang),
                 "url": links.path("profile", tab="notify"),
                 "tag": "test",
@@ -264,7 +264,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
     if args.dry_run:
         print(text)
         return
-    status = deliver([text], subject="TopStocks test")
+    status = deliver([text], subject="MyBrainStock test")
     print("\ndelivery: " + ", ".join(f"{k}={v}" for k, v in status.items()))
 
 
@@ -449,7 +449,7 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     # unwinds into the `finally`. Which asks rather than kills: uvicorn's
     # reloader SIGKILLed leaves its worker serving the port on its own.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print(f"TopStocks at http://{args.host}:{args.port}/")
+    print(f"MyBrainStock at http://{args.host}:{args.port}/")
     children = [c for c in (vite, subprocess.Popen(cmd, cwd=PROJECT_ROOT, env=env)) if c]
     try:
         children[-1].wait()
@@ -1259,6 +1259,9 @@ def cmd_feedback(args: argparse.Namespace) -> None:
         shot = feedback.shot_path(str(it.get("shot", "")))
         if shot:
             print(f"    [screenshot] {shot}")
+        # The statement an import report came with: `stocks imports fetch`.
+        if it.get("statement"):
+            print(f"    [statement] {it['statement']}")
         if it.get("id"):
             print(f"    id {it['id']}")
         print()

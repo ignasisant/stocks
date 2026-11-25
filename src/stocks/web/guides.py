@@ -41,7 +41,7 @@ from stocks.web.markup import esc
 # their landing's `/es/` and `/it/`, which the gate and robots.txt already
 # treat as public.
 PATHS = {"en": PATH_GUIDES_EN, "es": PATH_GUIDES_ES, "it": PATH_GUIDES_IT}
-# Each language's landing, where a guide's "TopStocks" link goes.
+# Each language's landing, where a guide's "MyBrainStock" link goes.
 _HOMES = {"en": PATH_EN, "es": PATH_ES, "it": PATH_IT}
 _OG_LOCALE = {"en": "en_US", "es": "es_ES", "it": "it_IT"}
 
@@ -64,7 +64,7 @@ _UI = {
         "reviewed": "Reviewed",
         "minutes": "{n} min read",
         "related": "More guides",
-        "cta_title": "Let TopStocks do the sums",
+        "cta_title": "Let MyBrainStock do the sums",
         "cta_body": "Import your broker's statement and it works out FIFO, "
                     "each trade in euros and the two-month rule for you.",
         "cta_guest": "Try it with sample data",
@@ -79,7 +79,7 @@ _UI = {
         "reviewed": "Revisado",
         "minutes": "{n} min de lectura",
         "related": "Más guías",
-        "cta_title": "Deja que TopStocks haga las cuentas",
+        "cta_title": "Deja que MyBrainStock haga las cuentas",
         "cta_body": "Importa el extracto de tu bróker y calcula FIFO, cada "
                     "operación en euros y la regla de los dos meses.",
         "cta_guest": "Probar con datos de ejemplo",
@@ -94,7 +94,7 @@ _UI = {
         "reviewed": "Rivisto",
         "minutes": "{n} min di lettura",
         "related": "Altre guide",
-        "cta_title": "Lascia fare i conti a TopStocks",
+        "cta_title": "Lascia fare i conti a MyBrainStock",
         "cta_body": "Importa l'estratto conto del tuo broker: calcola FIFO, "
                     "ogni operazione in euro e la regola dei due mesi.",
         "cta_guest": "Provalo con dati di esempio",
@@ -234,7 +234,7 @@ def description(lesson: learn.Lesson) -> str:
 
 def page_title(title: str) -> str:
     """`<title>`: the site name only when it still fits a result line."""
-    full = f"{title} · TopStocks"
+    full = f"{title} · MyBrainStock"
     return full if len(full) <= TITLE_MAX else title
 
 
@@ -312,7 +312,7 @@ def _document(
         f'<meta property="og:title" content="{esc(title)}">'
         f'<meta property="og:description" content="{esc(desc)}">'
         f'<meta property="og:url" content="{esc(canonical)}">'
-        '<meta property="og:site_name" content="TopStocks">'
+        '<meta property="og:site_name" content="MyBrainStock">'
         f'<meta property="og:locale" content="{_OG_LOCALE[lang]}">'
         f'<meta property="og:image" content="{esc(_abs(base_url, og_image))}">'
         '<meta name="twitter:card" content="summary_large_image">'
@@ -321,7 +321,7 @@ def _document(
         "</head><body><main>"
         f"{main}"
         "<footer><nav>"
-        f'<a href="{home}">TopStocks</a>'
+        f'<a href="{home}">MyBrainStock</a>'
         f"{other_langs}"
         f'<a href="/legal/privacy{legal_q}">{esc(tr("landing.footer_privacy"))}</a>'
         f'<a href="/legal/terms{legal_q}">{esc(tr("landing.footer_terms"))}</a>'
@@ -334,7 +334,7 @@ def _document(
 def _crumbs(lang: str, base_url: str, lesson: learn.Lesson | None) -> tuple[str, dict]:
     """The visible trail and its BreadcrumbList."""
     ui = _UI[lang]
-    trail = [("TopStocks", _HOMES[lang]),
+    trail = [("MyBrainStock", _HOMES[lang]),
              (ui["home"], PATHS[lang])]
     if lesson is not None:
         trail.append((lesson.title, href(lesson.id, lang)))
@@ -390,7 +390,7 @@ def page(lesson_id: str, lang: str, base_url: str) -> str:
         "inLanguage": lang,
         "dateModified": lesson.as_of,
         "mainEntityOfPage": _abs(base_url, href(lesson.id, lang)),
-        "publisher": {"@type": "Organization", "name": "TopStocks"},
+        "publisher": {"@type": "Organization", "name": "MyBrainStock"},
     }
     return _document(
         lang, base_url, title=lesson.title, desc=desc, main=main,

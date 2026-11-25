@@ -1,4 +1,4 @@
-# TopStocks — container image for any container host. The live deploy is
+# MyBrainStock — container image for any container host. The live deploy is
 # Cloud Run (see scripts/deploy.sh), a source deploy of this image. Serves the
 # app — landing, React shell and HTTP API — on $PORT (default 8501).
 #

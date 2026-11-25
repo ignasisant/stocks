@@ -77,6 +77,58 @@ describe("a refused turn", () => {
   });
 });
 
+describe("reporting an import", () => {
+  const draw = (turn: Stored, onReport?: () => void) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={turn}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onReport={onReport}
+      />,
+    );
+  const note = refused({
+    error: undefined,
+    action: "import",
+    content: "Imported 3 rows.",
+  });
+
+  it("is offered under an import's note and beside its failure", () => {
+    expect(draw(note, () => {})).toContain("chat.import_report");
+    expect(draw(refused({ action: "import" }), () => {})).toContain(
+      "chat.import_report",
+    );
+  });
+
+  it("is drawn only where the panel passed it", () => {
+    expect(draw(note)).not.toContain("chat.import_report");
+    expect(draw(refused({ action: "import" }))).not.toContain("chat.import_report");
+  });
+
+  it("is not drawn while the note is still being written", () => {
+    expect(draw({ ...note, pending: true }, () => {})).not.toContain(
+      "chat.import_report",
+    );
+  });
+
+  it("is on the import card itself, for a file read wrong", () => {
+    const card = (onReport?: () => void) =>
+      renderToStaticMarkup(
+        <Attachment
+          preview={preview}
+          busy={false}
+          onImport={() => {}}
+          onDiscard={() => {}}
+          onReport={onReport}
+        />,
+      );
+    expect(card(() => {})).toContain("chat.import_report");
+    expect(card()).not.toContain("chat.import_report");
+  });
+});
+
 describe("a busy free chain", () => {
   it("counts down to asking again, with no allowance wall", () => {
     const out = drawTurn(refused({ error: "chat.free_busy", wait: 23 }), () => {});
@@ -104,7 +156,7 @@ describe("switching AI on a refusal", () => {
         onRetry={() => {}}
         onDrop={onDrop}
         switchTo={[
-          { id: "free", label: "TopStocks AI" },
+          { id: "free", label: "MyBrainStock AI" },
           { id: "claude", label: "Claude" },
           { id: "openai", label: "ChatGPT" },
         ]}
@@ -491,8 +543,16 @@ describe("the import card", () => {
         onDiscard={() => {}}
       />,
     );
-    expect(out).toContain("chat.import_warn_line");
+    // One warned row reads in the singular, and its row in the sample is edged.
+    expect(out).toContain("chat.import_warn_line_one");
     expect(out).toContain('data-tone="warn"');
+    expect(out).toContain("data-warn");
+  });
+
+  it("puts Import on the one filled button", () => {
+    const out = drawCard(false);
+    expect(out.match(/ag-btn-cta/g)).toHaveLength(1);
+    expect(out).toContain('class="ag-chat-act"');
   });
 
   it("draws no status while it waits on the reader", () => {
@@ -1061,11 +1121,11 @@ describe("an answer's sources", () => {
     const html = drawTurn(
       answered([
         { title: "", url: "/import_transactions", step: "import" },
-        { title: "What each part of TopStocks does", url: "", step: "" },
+        { title: "What each part of MyBrainStock does", url: "", step: "" },
       ]),
     );
     expect(html).toContain('href="/import_transactions">');
-    expect(html).toContain("<li><span>What each part of TopStocks does</span></li>");
+    expect(html).toContain("<li><span>What each part of MyBrainStock does</span></li>");
   });
 });
 

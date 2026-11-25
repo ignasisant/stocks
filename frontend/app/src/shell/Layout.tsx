@@ -238,7 +238,7 @@ function Nav() {
           below 640px, as the labels are. */}
       <div className="ag-nav-brand">
         <img className="ag-nav-mark" src={logoUrl} alt="" width={24} height={24} />
-        <span className="ag-nav-wordmark">TopStocks</span>
+        <span className="ag-nav-wordmark">MyBrainStock</span>
         <button
           type="button"
           className="ag-nav-fold"

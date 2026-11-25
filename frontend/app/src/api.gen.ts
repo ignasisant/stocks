@@ -396,6 +396,16 @@ export type BuyRun = {
   "sessions": number;
 };
 
+export type BuyZone = {
+  "state": "met" | "near" | "far";
+  "rule": string | null;
+  "level": number | null;
+  "gap": number | null;
+  "since": string | null;
+  "met": number;
+  "rules": number;
+};
+
 export type CalendarDividend = {
   "ticker": string;
   "date": string;
@@ -522,6 +532,12 @@ export type CloseRow = {
   "pct": number | null;
   "as_of": string | null;
   "active": boolean;
+  "month_pct": number | null;
+  "spark": number[];
+  "held": boolean;
+  "extreme": "high" | "low" | null;
+  "move_size": number | null;
+  "zone": BuyZone | null;
 };
 
 export type ClosedEnd = {
@@ -1225,6 +1241,8 @@ export type Feedback = {
   "kind"?: string;
   "page"?: string;
   "shot"?: string | null;
+  "statement"?: Statement | null;
+  "statement_digest"?: string | null;
   "lang"?: string | null;
 };
 
@@ -1449,6 +1467,10 @@ export type Health = {
   "status": string;
   "version": string;
   "booted": string;
+};
+
+export type Held = {
+  "held": boolean;
 };
 
 export type HeldApplied = {
@@ -3299,6 +3321,11 @@ export type State = {
   "connector": boolean;
 };
 
+export type Statement = {
+  "filename": string;
+  "content": string;
+};
+
 export type StatementRow = {
   "date": string;
   "ticker": string;
@@ -3357,6 +3384,7 @@ export type Stocks__api__routes__chat_memory__Suggestion = {
 
 export type Stocks__api__routes__feedback__Sent = {
   "ok"?: boolean;
+  "statement"?: boolean;
 };
 
 export type Stocks__api__routes__push__Sent = {
@@ -4057,6 +4085,7 @@ export interface Responses {
   "/earnings/{symbol}/result": EarningsResultDetail;
   "/extremes": Extremes;
   "/feedback/replies": FeedbackReply[];
+  "/feedback/statement/{digest}": Held;
   "/guide": GuideState;
   "/health": Health;
   "/home/closes": Closes;

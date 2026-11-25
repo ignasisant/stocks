@@ -154,3 +154,26 @@ def test_every_real_account_slug_is_one(email):
     from stocks import accounts
 
     assert failed_files._SLUG.fullmatch(accounts.slug(email))
+
+
+def test_held_finds_a_kept_file_by_its_digest(local, key):
+    """How a report names a statement a failed read already kept, instead of
+    sending it again: only the same account's, only a well-formed digest."""
+    import hashlib
+
+    digest = hashlib.sha256(STATEMENT).hexdigest()[:16]
+    assert failed_files.held(SLUG, digest) is None
+    file_id = failed_files.keep(SLUG, "a.csv", STATEMENT)
+    assert failed_files.held(SLUG, digest) == file_id
+    assert failed_files.held("bob_example_com_1a2b3c4d", digest) is None
+    assert failed_files.held(SLUG, "0" * 16) is None
+    assert failed_files.held(SLUG, "../" + digest) is None
+    assert failed_files.held("../x", digest) is None
+
+
+def test_held_reads_the_bucket_too(bucket, key):
+    import hashlib
+
+    file_id = failed_files.keep(SLUG, "a.pdf", b"%PDF-1.7 statement")
+    digest = hashlib.sha256(b"%PDF-1.7 statement").hexdigest()[:16]
+    assert failed_files.held(SLUG, digest) == file_id

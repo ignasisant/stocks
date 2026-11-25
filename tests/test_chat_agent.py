@@ -502,9 +502,9 @@ def test_a_question_about_using_the_app_gets_its_documents_not_the_web():
     from stocks.chat import websearch
 
     rule = agent.GATHER_SYSTEM
-    assert "TopStocks" in rule and "get the most out of it" in rule
+    assert "MyBrainStock" in rule and "get the most out of it" in rule
     assert "portfolio_snapshot" in rule.split("get the most out of it")[1][:200]
-    assert "TopStocks" in websearch._PLANNER_SYSTEM
+    assert "MyBrainStock" in websearch._PLANNER_SYSTEM
     assert "get the most out of it" in websearch._PLANNER_SYSTEM
 
 

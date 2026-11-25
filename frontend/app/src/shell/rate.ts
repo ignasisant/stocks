@@ -1,5 +1,5 @@
 /**
- * When the one-time "how is TopStocks for you?" prompt may ask (`RatePrompt`).
+ * When the one-time "how is MyBrainStock for you?" prompt may ask (`RatePrompt`).
  *
  * Somebody who came back, not a first look: the prompt waits for the
  * `VISIT_DAYS`th distinct day this browser opened the signed-in app. The

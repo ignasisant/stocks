@@ -23,8 +23,8 @@
   "tour.news_resume": "Torna alle novità",
   "tour.news_skip": "Salta il resto",
   "tour.news_dismiss": "Fatto",
-  "tour.welcome_title": "Benvenuto in TopStocks",
-  "tour.welcome_body": "TopStocks trasforma gli estratti conto del tuo broker nei tuoi numeri reali: rendimento, rischio e imposte, nella tua valuta. Questo tour mostra ogni funzione e ti ci porta.",
+  "tour.welcome_title": "Benvenuto in MyBrainStock",
+  "tour.welcome_body": "MyBrainStock trasforma gli estratti conto del tuo broker nei tuoi numeri reali: rendimento, rischio e imposte, nella tua valuta. Questo tour mostra ogni funzione e ti ci porta.",
   "tour.import_title": "Importa il tuo estratto conto",
   "tour.import_body": "Trascina un estratto di Revolut, Trading 212, Trade Republic, DEGIRO, IBKR, Saxo, crypto o un CSV. Vedi ogni riga prima di salvarla e reimportare non duplica. Nessun file? **Scrivi le tue operazioni** nella chat.",
   "tour.import_cta": "Apri Importa",
@@ -133,7 +133,7 @@
   "tour.news_2026_10_routines_title": "Le tue domande quotidiane, già risposte",
   "tour.news_2026_10_routines_body": "Chiedi qualcosa “ogni mattina” e la scheda di Home risponde prima che tu chieda.",
   "tour.news_2026_10_claude_title": "Il tuo portafoglio, dentro Claude",
-  "tour.news_2026_10_claude_body": "Collega TopStocks a Claude e chiedi del portafoglio da lì. Configuralo in Profilo → MCP.",
+  "tour.news_2026_10_claude_body": "Collega MyBrainStock a Claude e chiedi del portafoglio da lì. Configuralo in Profilo → MCP.",
   "tour.news_2026_10_1_fixbook_title": "Correggi le operazioni dalla chat",
   "tour.news_2026_10_1_fixbook_body": "Di' all'assistente cosa non va e lo corregge dopo la tua conferma, con **Annulla**.",
   "tour.news_2026_10_2_home_title": "Una Home nel tuo ordine",
@@ -222,5 +222,7 @@
   "tour.tip_profile_1": "Valuta, lingua e paese fiscale; ogni modifica si salva da sola.",
   "tour.tip_profile_2": "Riparti con il tour guidato da Preferenze quando vuoi.",
   "tour.news_2026_11_6_funds_title": "Fondi di ogni settore",
-  "tour.news_2026_11_6_funds_body": "Ogni settore elenca i suoi **ETF e fondi**: costo, purezza, sovrapposizione col podio e rendimenti nella tua valuta."
+  "tour.news_2026_11_6_funds_body": "Ogni settore elenca i suoi **ETF e fondi**: costo, purezza, sovrapposizione col podio e rendimenti nella tua valuta.",
+  "tour.news_2026_11_7_watchlist_title": "La tua lista, riletta",
+  "tour.news_2026_11_7_watchlist_body": "**La tua lista** in Home apre su ciò che va guardato oggi: zone d'acquisto, balzi anomali e risultati."
 }

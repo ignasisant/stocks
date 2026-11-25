@@ -296,7 +296,7 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
         return True
 
     system = (
-        "You are the assistant built into TopStocks, a personal "
+        "You are the assistant built into MyBrainStock, a personal "
         "stock-portfolio app, walking a new user through it. They have just "
         f'reached the step "{translate(f"tour.{step.id}_title", lang)}", '
         "which the app has already described to them. Write ONE sentence of "

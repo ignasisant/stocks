@@ -45,7 +45,7 @@ import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
 
 /** What a minted key is called on the reader's own provider dashboard. */
-const CONNECT_LABEL = "TopStocks";
+const CONNECT_LABEL = "MyBrainStock";
 
 function Group({ children }: { children: string }) {
   return <p className="ag-chat-group">{children}</p>;

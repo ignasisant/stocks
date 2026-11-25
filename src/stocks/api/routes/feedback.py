@@ -10,12 +10,14 @@ language.
 
 The one unauthenticated write in the whole API, which is a thing to be careful
 about rather than a thing to be sorry about: free text plus an image, from
-anybody. Three properties keep that narrow. It never touches a book — the sink
-is `data/feedback/`, not the writer's directory — so nothing a visitor sends
-can change what another visitor reads. A token may not use it, so the route
-cannot be a way to file against an account nobody can name. And an anonymous
-submission is metered per client address, below, because a free-text endpoint
-with no account behind it is a spam target by construction.
+anybody. (A signed-in writer reporting an import may add the statement too; a
+guest's is never kept — see `submit`.) Three properties keep that narrow. It
+never touches a book — the sink is `data/feedback/`, not the writer's
+directory — so nothing a visitor sends can change what another visitor reads.
+A token may not use it, so the route cannot be a way to file against an
+account nobody can name. And an anonymous submission is metered per client
+address, below, because a free-text endpoint with no account behind it is a
+spam target by construction.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ from stocks.accounts import UserPaths
 from stocks.api.deps import Writer
 from stocks.api.security import Who
 from stocks.config import PROJECT_ROOT
+from stocks.portfolio import failed_files
 from stocks.web import feedback as store
 
 router = APIRouter(tags=["feedback"])
@@ -49,6 +52,24 @@ GUEST_WINDOW_S = 3600
 MAX_SHOT = 2 * 1024 * 1024
 
 
+# The statement an import report is about, base64: the ceiling `failed_files`
+# keeps, so a file it would refuse is refused here before it is decoded.
+MAX_STATEMENT_B64 = 4 * ((failed_files.MAX_BYTES + 2) // 3)
+
+
+class Statement(BaseModel):
+    """The file a report from the chat's import is about."""
+
+    model_config = {"extra": "forbid"}
+
+    filename: str = Field(min_length=1, max_length=255)
+    content: str = Field(
+        min_length=1,
+        max_length=MAX_STATEMENT_B64,
+        description="The file's bytes, base64-encoded.",
+    )
+
+
 class Feedback(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -59,11 +80,35 @@ class Feedback(BaseModel):
         default=None,
         description="Optional base64 JPEG of the screen the writer was on.",
     )
+    statement: Statement | None = Field(
+        default=None,
+        description=(
+            "The statement an import went wrong on, sent only when the writer "
+            "ticked it. Kept encrypted for fifteen days like a failed import "
+            "(`portfolio.failed_files`), and only for a signed-in account."
+        ),
+    )
+    statement_digest: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{16}$",
+        description=(
+            "Instead of `statement`: the first 16 hex of the file's sha256, "
+            "when `GET /feedback/statement/{digest}` said it is already kept "
+            "(a read that failed keeps its file). The report links that copy."
+        ),
+    )
     lang: str | None = None
 
 
 class Sent(BaseModel):
     ok: bool = True
+    statement: bool = Field(
+        default=False,
+        description=(
+            "The statement sent with it was kept. False when none was sent — "
+            "or when it could not be: a guest, no encryption key, too big."
+        ),
+    )
 
 
 def sender(request: Request, who: Who) -> str:
@@ -160,6 +205,24 @@ def submit(body: Feedback, from_: Sender) -> Sent:
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="shot must be a JPEG",
             )
+    # The statement before the comment, so the comment can name it. `keep`
+    # turns away a guest, a test account, a file over its ceiling and a
+    # deployment with no key, and never raises: a report whose file could not
+    # be kept is still a report, and the answer says the file did not go.
+    kept = ""
+    # A file already kept is linked, not sent again.
+    if body.statement_digest and from_ != "guest":
+        kept = failed_files.held(from_, body.statement_digest) or ""
+    # A guest's could never be kept, so it is not even read.
+    if not kept and body.statement is not None and from_ != "guest":
+        try:
+            data = base64.b64decode(body.statement.content, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="statement must be base64",
+            ) from exc
+        kept = failed_files.keep(from_, body.statement.filename, data) or ""
     store.submit(
         body.text,
         body.kind,
@@ -167,8 +230,29 @@ def submit(body: Feedback, from_: Sender) -> Sent:
         shot=shot,
         sender=from_,
         lang=body.lang or "",
+        **({"statement": kept} if kept else {}),
     )
-    return Sent()
+    return Sent(statement=bool(kept))
+
+
+class Held(BaseModel):
+    held: bool
+
+
+@router.get(
+    "/feedback/statement/{digest}",
+    response_model=Held,
+    summary="Whether a statement is already kept for this account",
+)
+def statement_held(digest: str, who: Who) -> Held:
+    """Asked by the report dialog before it offers to send a file: a read
+    that failed has already kept it (`failed_files`), so the report links
+    that copy instead of uploading it twice. Only the asker's own files. A
+    guest never reaches it (not in `guest.OPEN`); a token names nobody."""
+    if who.kind != "session" or who.email is None:
+        return Held(held=False)
+    slug = _slug(accounts.paths_for(who.email, accounts.configured_owner()))
+    return Held(held=failed_files.held(slug, digest) is not None)
 
 
 class AppRating(BaseModel):

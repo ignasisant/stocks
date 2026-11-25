@@ -1,5 +1,5 @@
 /**
- * The Preferences tab's install row: TopStocks on this device.
+ * The Preferences tab's install row: MyBrainStock on this device.
  *
  * The standing half of the shell's one-time nudge (`shell/InstallNudge.tsx`):
  * drawn only where there is something to do — a Chromium browser holding the

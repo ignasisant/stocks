@@ -1,5 +1,5 @@
 /**
- * TopStocks inside any MCP app: the address to paste, how each app takes it,
+ * MyBrainStock inside any MCP app: the address to paste, how each app takes it,
  * and every app this account has let in — each one revocable from here.
  *
  * The server is plain MCP over HTTP with OAuth (dynamic registration, https or
@@ -15,7 +15,7 @@
  * from before stays revocable whatever happened to the door.
  *
  * Revoking ends the grant on the server at once; an app holding a token from
- * it gets a 401 on its next call. Signing out of TopStocks does not: those
+ * it gets a 401 on its next call. Signing out of MyBrainStock does not: those
  * apps never used the browser's session in the first place, and the card says
  * so, because the opposite is what anyone would assume.
  *

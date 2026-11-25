@@ -53,7 +53,7 @@ OWN_MOVE_PP = 5.0
 
 _TASK = (
     "The user opened the analysis behind ONE line of today's action card in "
-    "TopStocks, a personal stock tracker. Do the analysis — never tell the "
+    "MyBrainStock, a personal stock tracker. Do the analysis — never tell the "
     "user what they could analyse or compare. Where the line invites a "
     "comparison (against peers, the sector, the index, alternatives that move "
     "differently, the tax arithmetic of a sale), make it here, with the names "

@@ -790,7 +790,7 @@ def render_connector(summary: dict) -> str:
     labels = {
         "card": "saw the MCP tab",
         "copy": "copied the address",
-        "allow": "approved in TopStocks",
+        "allow": "approved in MyBrainStock",
         "used": "called a tool",
     }
     lines = [f"{'accounts':<24} {'n':>6} {'of prev':>8}", "-" * 40]

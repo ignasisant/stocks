@@ -658,7 +658,7 @@
   "ticker.more": "More actions",
   "ticker.share_menu": "Share",
   "ticker.share_link": "Link to {ticker}",
-  "ticker.share_text": "{name} ({ticker}) on TopStocks",
+  "ticker.share_text": "{name} ({ticker}) on MyBrainStock",
   "ticker.entry_title": "Your entry criteria",
   "ticker.entry_met": "Meets {met} of {total}",
   "ticker.more_figures": "More figures",

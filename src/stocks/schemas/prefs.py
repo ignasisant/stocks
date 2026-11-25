@@ -105,7 +105,7 @@ class Prefs(BaseModel):
     # asks every session until the profile is saved, and a reader who would
     # rather not answer had no way to say so.
     profile_prompt_off: bool = False
-    # The one-time "rate TopStocks" prompt has been shown — answered or not.
+    # The one-time "rate MyBrainStock" prompt has been shown — answered or not.
     # Per account, so the phone does not ask what the laptop already asked.
     rate_prompt_done: bool = False
     # A newcomer's first steps, stamped by their first real import

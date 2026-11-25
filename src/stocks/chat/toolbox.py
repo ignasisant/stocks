@@ -469,7 +469,7 @@ def _lookup_knowledge(args: dict, ctx: Context) -> str:
         return "No query given."
     hits = knowledge.lookup(query)
     if not hits:
-        return ("Nothing in the TopStocks documentation matches that. Say the "
+        return ("Nothing in the MyBrainStock documentation matches that. Say the "
                 "documentation does not cover it rather than guessing how the "
                 "app does it.")
     return _cap(knowledge.block(hits))
@@ -988,7 +988,7 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
         ), _decisions),
         (ToolSpec(
             "lookup_knowledge",
-            "Search TopStocks' own documentation: what each page and feature "
+            "Search MyBrainStock' own documentation: what each page and feature "
             "does and where it lives, what each broker's import expects, and "
             "how the app computes returns, cost basis, currency conversion, "
             "tax (per country) and its scores. Use for any question about the "

@@ -156,7 +156,7 @@ def _brand(d: ImageDraw.ImageDraw, x: int, y: int, size: int) -> None:
         fill=(255, 255, 255), width=max(3, size // 14), joint="curve",
     )
     font = _font("display", int(size * 0.72), 800)
-    d.text((x + size + 18, y + size // 2), "TopStocks", font=font, fill=TEXT,
+    d.text((x + size + 18, y + size // 2), "MyBrainStock", font=font, fill=TEXT,
            anchor="lm")
 
 

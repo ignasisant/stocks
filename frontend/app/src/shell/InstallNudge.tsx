@@ -1,5 +1,5 @@
 /**
- * "TopStocks as an app": one toast, once per device, never on a first look.
+ * "MyBrainStock as an app": one toast, once per device, never on a first look.
  *
  * A toast rather than a dialog: the reader came for their portfolio, and an
  * offer they did not ask for must not stand between them and it. It waits

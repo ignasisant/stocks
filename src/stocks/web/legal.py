@@ -21,7 +21,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-11-23"
+LAST_UPDATED = "2026-11-24"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -33,7 +33,7 @@ _PRIVACY = {
         "Privacy policy",
         [
             ("What this is", [
-                "TopStocks is a source-available, non-commercial portfolio tracker "
+                "MyBrainStock is a source-available, non-commercial portfolio tracker "
                 "operated by an individual. This page explains what data the "
                 "hosted app stores and why. Questions and requests: open an "
                 f"issue at {_CONTACT}.",
@@ -60,8 +60,10 @@ _PRIVACY = {
                 "99-99-9999, an amount 9.999,99). If you are signed in, the "
                 "file that failed is also kept, encrypted, for 15 days so the "
                 "importer can be fixed against it, then deleted; it is not in "
-                "backups, and deleting your account deletes it. Files that "
-                "import fine are never kept.",
+                "backups, and deleting your account deletes it. A file that "
+                "imports fine is kept the same way only if you send it with "
+                "a problem report from the assistant; otherwise it is never "
+                "kept.",
             ]),
             ("Bank connection (optional)", [
                 "You can connect a bank account so the app can reconcile the "
@@ -145,7 +147,7 @@ _PRIVACY = {
         "Política de privacidad",
         [
             ("Qué es esto", [
-                "TopStocks es un rastreador de carteras de código público y "
+                "MyBrainStock es un rastreador de carteras de código público y "
                 "sin ánimo comercial, operado por un particular. Esta página "
                 "explica qué datos almacena la app y por qué. Preguntas y "
                 f"solicitudes: abre una incidencia en {_CONTACT}.",
@@ -174,7 +176,9 @@ _PRIVACY = {
                 "fichero que falló también se guarda, cifrado, durante 15 días "
                 "para arreglar el importador con él, y después se borra; no "
                 "entra en las copias de seguridad y se borra al eliminar tu "
-                "cuenta. Los ficheros que se importan bien no se guardan nunca.",
+                "cuenta. Un fichero que se importa bien solo se guarda igual "
+                "si tú lo envías con un aviso de error desde el asistente; si "
+                "no, no se guarda nunca.",
             ]),
             ("Conexión bancaria (opcional)", [
                 "Puedes conectar una cuenta bancaria para que la app concilie "
@@ -261,7 +265,7 @@ _PRIVACY = {
         "Informativa sulla privacy",
         [
             ("Di cosa si tratta", [
-                "TopStocks è un tracker di portafoglio a codice sorgente "
+                "MyBrainStock è un tracker di portafoglio a codice sorgente "
                 "disponibile e senza scopo commerciale, gestito da una persona "
                 "fisica. Questa pagina spiega quali dati l'app ospitata "
                 "conserva e perché. Domande e richieste: apri una segnalazione "
@@ -293,8 +297,10 @@ _PRIVACY = {
                 "importo 9.999,99). Se hai effettuato l'accesso, anche il file "
                 "non importato viene conservato, cifrato, per 15 giorni per "
                 "correggere l'importatore, poi viene eliminato; non finisce "
-                "nei backup e si elimina con il tuo account. I file importati "
-                "senza errori non vengono mai conservati.",
+                "nei backup e si elimina con il tuo account. Un file importato "
+                "senza errori viene conservato allo stesso modo solo se lo "
+                "invii con una segnalazione dall'assistente; altrimenti non "
+                "viene mai conservato.",
             ]),
             ("Collegamento bancario (facoltativo)", [
                 "Puoi collegare un conto bancario affinché l'app possa "
@@ -394,7 +400,7 @@ _TERMS = {
         "Terms of use",
         [
             ("Not investment advice", [
-                "TopStocks is an informational tool. Nothing in the app — "
+                "MyBrainStock is an informational tool. Nothing in the app — "
                 "prices, indicators, screeners, analyses or AI assistant "
                 "replies — is investment advice, tax advice or a "
                 "recommendation to buy or sell any security. Investment "
@@ -433,7 +439,7 @@ _TERMS = {
         "Condiciones de uso",
         [
             ("No es asesoramiento de inversión", [
-                "TopStocks es una herramienta informativa. Nada en la app — "
+                "MyBrainStock es una herramienta informativa. Nada en la app — "
                 "precios, indicadores, cribadores, análisis o respuestas del "
                 "asistente de IA — constituye asesoramiento de inversión ni "
                 "fiscal, ni una recomendación de compra o venta de ningún "
@@ -474,7 +480,7 @@ _TERMS = {
         "Condizioni d'uso",
         [
             ("Non è consulenza in materia di investimenti", [
-                "TopStocks è uno strumento informativo. Nulla nell'app "
+                "MyBrainStock è uno strumento informativo. Nulla nell'app "
                 "(prezzi, indicatori, screener, analisi o risposte "
                 "dell'assistente di IA) costituisce consulenza in materia di "
                 "investimenti o fiscale, né una raccomandazione di acquisto o "
@@ -517,11 +523,11 @@ _TERMS = {
 }
 
 _UI = {
-    "en": {"updated": "Last updated", "home": "Back to TopStocks",
+    "en": {"updated": "Last updated", "home": "Back to MyBrainStock",
            "privacy": "Privacy policy", "terms": "Terms of use"},
-    "es": {"updated": "Última actualización", "home": "Volver a TopStocks",
+    "es": {"updated": "Última actualización", "home": "Volver a MyBrainStock",
            "privacy": "Política de privacidad", "terms": "Condiciones de uso"},
-    "it": {"updated": "Ultimo aggiornamento", "home": "Torna a TopStocks",
+    "it": {"updated": "Ultimo aggiornamento", "home": "Torna a MyBrainStock",
            "privacy": "Informativa sulla privacy", "terms": "Condizioni d'uso"},
 }
 
@@ -581,7 +587,7 @@ def document(doc: str, lang: str) -> str:
         'content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="theme-color" content="#18161C">'
         '<meta name="robots" content="noindex">'
-        f"<title>{esc(title)} — TopStocks</title>"
+        f"<title>{esc(title)} — MyBrainStock</title>"
         f"<style>{_CSS}</style>"
         "</head><body><main>"
         f"<h1>{esc(title)}</h1>"

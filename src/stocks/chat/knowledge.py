@@ -1,4 +1,4 @@
-"""The app's own knowledge base: how TopStocks works and how it computes things.
+"""The app's own knowledge base: how MyBrainStock works and how it computes things.
 
 The model knows investing in general and nothing about this app in particular.
 Asked "why is my Revolut PDF not importing?", "how is the money-weighted return
@@ -81,7 +81,7 @@ _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z¿¡*\"“(]|- )")
 _TOUR_TITLE = re.compile(r"^tour\.(?!news_)(\w+)_title$")
 
 HEADER = (
-    "Passages from the TopStocks documentation, maintained with the app. "
+    "Passages from the MyBrainStock documentation, maintained with the app. "
     "Cite the document when you use one. A passage dated 'as of' states the "
     "rules the app applied then: say so when the question is about current "
     "tax law.\n\n"

@@ -57,7 +57,7 @@ def _page(lang: str, title: str, body: str, form: str = "",
         'content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="theme-color" content="#18161C">'
         '<meta name="robots" content="noindex">'
-        f"<title>{esc(title)} — TopStocks</title><style>{_CSS}</style>"
+        f"<title>{esc(title)} — MyBrainStock</title><style>{_CSS}</style>"
         f"</head><body><main><h1>{esc(title)}</h1><p>{esc(body)}</p>{form}"
         "</main></body></html>"
     )
@@ -88,7 +88,7 @@ async def confirm(request: Request) -> Response:
     lang = _lang(request)
     token = request.query_params.get("t", "")
     if unsubscribe_label(token) is None:
-        return _page(lang, "TopStocks", _say("unsub_invalid", lang), status=400)
+        return _page(lang, "MyBrainStock", _say("unsub_invalid", lang), status=400)
     form = (
         f'<form method="post" action="{PATH}">'
         f'<input type="hidden" name="t" value="{esc(token)}">'
@@ -114,7 +114,7 @@ async def stop(request: Request) -> Response:
     one_click = form.get("List-Unsubscribe") == "One-Click"
     obs.event("email.unsubscribe", ok=done, one_click=one_click)
     if not done:
-        return _page(lang, "TopStocks", _say("unsub_invalid", lang), status=400)
+        return _page(lang, "MyBrainStock", _say("unsub_invalid", lang), status=400)
     return _page(lang, _say("unsub_done_title", lang), _say("unsub_done_body", lang))
 
 

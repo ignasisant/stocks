@@ -284,7 +284,7 @@ def test_the_page_paths_track_the_navigation_table():
 
 def test_a_ticker_card_names_the_symbol_and_fits_a_preview():
     title, tags = seo.ticker_head("NVDA", BASE, "en", name="NVIDIA Corporation")
-    assert title == "NVDA · NVIDIA Corporation · TopStocks"
+    assert title == "NVDA · NVIDIA Corporation · MyBrainStock"
     assert len(title) <= 60
     assert f'property="og:title" content="{title}"' in tags
     assert f'property="og:url" content="{BASE}/ticker?ticker=NVDA"' in tags
@@ -300,7 +300,7 @@ def test_a_ticker_card_names_the_symbol_and_fits_a_preview():
 
 def test_a_ticker_card_without_a_name_is_the_symbol_in_the_readers_language():
     title, tags = seo.ticker_head("BTC-EUR", BASE, "es")
-    assert title == "BTC-EUR · TopStocks"
+    assert title == "BTC-EUR · MyBrainStock"
     assert 'property="og:locale" content="es_ES"' in tags
     # No name, no drawing: the route would serve the landing's card anyway.
     assert f'property="og:image" content="{BASE}{seo.OG_IMAGE}"' in tags
@@ -318,7 +318,7 @@ def test_the_longest_card_description_still_fits(lang):
 def test_a_long_or_hostile_name_is_cut_and_escaped():
     title, tags = seo.ticker_head("X", BASE, "en", name="<b>" + "a" * 80)
     assert "<b>" not in tags and "&lt;b&gt;" in tags
-    assert len(title) <= len("X · ") + seo.NAME_MAX + len(" · TopStocks")
+    assert len(title) <= len("X · ") + seo.NAME_MAX + len(" · MyBrainStock")
 
 
 @pytest.mark.parametrize(
@@ -356,9 +356,9 @@ def test_a_shared_answer_card_says_who_asked_in_the_language_they_asked_in():
     share = {"id": "AbCdEfGh123", "question": "¿Vendo NVDA?", "by": "Ana",
              "lang": "es", "content": "**Sí**: con ••• € de ganancia. " * 20}
     title, tags = seo.share_head(share, BASE, "en")
-    assert title == "¿Vendo NVDA? · TopStocks"
+    assert title == "¿Vendo NVDA? · MyBrainStock"
     description = re.search(r'property="og:description" content="([^"]*)"', tags).group(1)
-    assert description.startswith("Ana se lo preguntó a la IA de TopStocks: Sí: con")
+    assert description.startswith("Ana se lo preguntó a la IA de MyBrainStock: Sí: con")
     assert len(html.unescape(description)) <= seo.SHARE_DESCRIPTION_MAX
     assert 'property="og:locale" content="es_ES"' in tags
     # A re-share of the canonical URL is still counted as a share.
@@ -369,20 +369,20 @@ def test_a_shared_answer_card_says_who_asked_in_the_language_they_asked_in():
     assert ('property="og:image" content="https://topstocks.example/'
             'og/share/AbCdEfGh123.png"') in tags
     assert ('property="og:image:alt" content="Ana se lo preguntó a la IA de '
-            'TopStocks: ¿Vendo NVDA?"') in tags
+            'MyBrainStock: ¿Vendo NVDA?"') in tags
 
     _, tags = seo.share_head({**share, "by": "", "lang": ""}, BASE, "en")
-    assert 'content="TopStocks&#x27; AI answers: Sí' in tags
+    assert 'content="MyBrainStock&#x27; AI answers: Sí' in tags
 
 
 def test_a_shared_list_card_names_the_list_and_its_symbols():
     share = {"id": "AbCdEfGh123", "kind": "watchlist", "title": "Semis",
              "tickers": ["NVDA", "ASML"], "by": "Ana", "lang": "es"}
     title, tags = seo.share_head(share, BASE, "en")
-    assert title == "Semis · TopStocks"
+    assert title == "Semis · MyBrainStock"
     description = re.search(r'property="og:description" content="([^"]*)"', tags).group(1)
     assert html.unescape(description) == (
-        "Ana ha compartido una lista en TopStocks: NVDA, ASML")
+        "Ana ha compartido una lista en MyBrainStock: NVDA, ASML")
     untitled, tags = seo.share_head({**share, "title": "", "by": ""}, BASE, "en")
-    assert untitled == "NVDA, ASML · TopStocks"
-    assert "Una lista en TopStocks: NVDA, ASML" in html.unescape(tags)
+    assert untitled == "NVDA, ASML · MyBrainStock"
+    assert "Una lista en MyBrainStock: NVDA, ASML" in html.unescape(tags)

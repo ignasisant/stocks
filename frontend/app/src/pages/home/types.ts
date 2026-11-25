@@ -7,9 +7,16 @@
  * renderer cannot quietly turn one into a zero.
  */
 
+import type { CloseRow } from "../../api.gen";
 import type { Line } from "../../chat/chart";
 
-export type { Position, Positions, Performance, WatchlistEntry } from "../../api.gen";
+export type {
+  CloseRow,
+  Position,
+  Positions,
+  Performance,
+  WatchlistEntry,
+} from "../../api.gen";
 
 export type DailyCard = {
   day: string | null;
@@ -338,18 +345,11 @@ export type UnbookedDividends = {
 };
 
 /**
- * `/home/closes` — one watchlist row: the last daily close, and the day move
- * close-to-close (re-read from a quote only where the exchange is shut).
+ * `/home/closes` — one watchlist row: the last daily close, the day move
+ * close-to-close (re-read from a quote only where the exchange is shut), and
+ * what the same year of closes says besides — the month, a 52-week edge, how
+ * odd today's move is, and how far the reader's own buy rules are.
  */
-export type CloseRow = {
-  ticker: string;
-  close: number | null;
-  pct: number | null;
-  as_of: string | null;
-  /** The market is quoting now; false greys the day figure. */
-  active: boolean;
-};
-
 export type Closes = { rows: CloseRow[] };
 
 /**

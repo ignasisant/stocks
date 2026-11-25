@@ -378,7 +378,7 @@ async def logout_page(request: Request) -> Response:
         'content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="theme-color" content="#18161C">'
         '<meta name="robots" content="noindex">'
-        f"<title>{say['title']} — TopStocks</title>"
+        f"<title>{say['title']} — MyBrainStock</title>"
         f"<style>{_SIGN_OUT_CSS}</style>"
         "</head><body><main>"
         f"<h1>{say['title']}</h1>"

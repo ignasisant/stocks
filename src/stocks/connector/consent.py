@@ -148,7 +148,7 @@ def _document(lang: str, title: str, body: str) -> str:
         f'<link rel="stylesheet" href="{html.escape(FONTS_HREF)}">'
         f"<style>{_STYLE}</style></head><body><main>"
         f'<div class="mark"><img src="{ASSET_BASE}topstocks-icon.svg" alt="">'
-        "TopStocks</div>"
+        "MyBrainStock</div>"
         f"{body}</main></body></html>"
     )
 
