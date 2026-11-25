@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>card</title>
+<style id="fonts"></style>
+<style>
+  :root { --accent: #FFD100; --bg: #121114; --text: #fff; --muted: #C9C7D1; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1440px; height: 810px; overflow: hidden; background: var(--bg); color: var(--text);
+    font-family: 'Instrument Sans', system-ui, sans-serif; }
+  .stage { position: absolute; inset: 0; padding: 110px 120px 150px; display: flex; flex-direction: column; justify-content: center; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .16; background: var(--accent); }
+  .b1 { width: 520px; height: 520px; right: -120px; top: -160px; }
+  .b2 { width: 380px; height: 380px; left: -140px; bottom: -180px; opacity: .09; }
+  body.play .blob { animation: float 9s ease-in-out infinite alternate; }
+  @keyframes float { to { transform: translate(-50px, 40px) scale(1.15); } }
+  .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 48px 48px; }
+  .in { opacity: 0; transform: translateY(26px); }
+  body.play .in { animation: up .8s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes up { to { opacity: 1; transform: none; } }
+  .kicker { color: var(--accent); font-weight: 700; letter-spacing: .2em; text-transform: uppercase; font-size: 18px; }
+  h1 { font-family: 'Epilogue', 'Instrument Sans', sans-serif; font-weight: 700; font-size: 74px; line-height: 1.06;
+    margin: 22px 0 18px; max-width: 1100px; letter-spacing: -.01em; }
+  .kind-title h1 { font-size: 88px; }
+  .sub { color: var(--muted); font-size: 28px; line-height: 1.35; max-width: 1000px; }
+  .bar { height: 6px; width: 0; background: var(--accent); border-radius: 3px; margin-top: 38px; }
+  body.play .bar { animation: bar 1.2s .5s ease-out forwards; }
+  @keyframes bar { to { width: 190px; } }
+  .items { margin-top: 44px; display: grid; gap: 18px; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); max-width: 1200px; }
+  .item { display: flex; gap: 18px; align-items: flex-start; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+    border-radius: 18px; padding: 20px 24px; opacity: 0; transform: translateX(-24px); transition: opacity .55s, transform .55s cubic-bezier(.2,.8,.2,1); }
+  .item.on { opacity: 1; transform: none; }
+  .item .n { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--bg);
+    font-weight: 700; font-size: 20px; display: grid; place-items: center; }
+  .item b { display: block; font-size: 27px; font-weight: 600; }
+  .item span { display: block; color: var(--muted); font-size: 21px; margin-top: 4px; line-height: 1.3; }
+  .flow { margin-top: 60px; display: flex; align-items: center; gap: 0; }
+  .node { flex: 1 1 0; min-width: 0; background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.12); border-radius: 20px;
+    padding: 24px 22px; text-align: center; opacity: 0; transform: scale(.9); transition: all .55s cubic-bezier(.2,.8,.2,1); }
+  .node.on { opacity: 1; transform: none; border-color: var(--accent); box-shadow: 0 0 0 6px rgba(255,209,0,.12); }
+  .node b { display: block; font-size: 26px; font-weight: 600; }
+  .node span { display: block; color: var(--muted); font-size: 19px; margin-top: 6px; line-height: 1.3; }
+  .arrow { flex: 0 0 70px; height: 4px; background: rgba(255,255,255,.15); position: relative; margin: 0 6px; overflow: hidden; border-radius: 2px; }
+  .arrow i { position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .5s; }
+  .arrow.on i { transform: none; }
+  .foot { position: absolute; left: 120px; right: 120px; top: 44px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 18px; }
+  .foot img { height: 34px; opacity: .9; }
+  .kind-title .stage, .kind-outro .stage { align-items: flex-start; }
+  .kind-outro h1 { font-size: 64px; }
+</style>
+</head>
+<body>
+<div class="grid"></div><div class="blob b1"></div><div class="blob b2"></div>
+<div class="stage" id="stage"></div>
+<div class="foot"><img id="logo" alt=""><span id="tag"></span></div>
+<script>
+  const d = JSON.parse(atob(decodeURIComponent(location.hash.slice(1)).replace(/-/g, '+').replace(/_/g, '/')));
+  const b = d.brand || {};
+  const root = document.documentElement.style;
+  if (b.accent) root.setProperty('--accent', b.accent);
+  if (b.background) root.setProperty('--bg', b.background);
+  if (b.muted) root.setProperty('--muted', b.muted);
+  document.getElementById('fonts').textContent = `
+    @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-Regular.ttf'); font-weight: 400; }
+    @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-SemiBold.ttf'); font-weight: 600; }
+    @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-Bold.ttf'); font-weight: 700; }
+    @font-face { font-family: 'Epilogue'; src: url('${d.assets}/fonts/Epilogue-Bold.ttf'); font-weight: 700; }`;
+  document.body.className = 'kind-' + (d.kind || 'card');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const rel = d.release || {};
+  const logo = document.getElementById('logo');
+  if (d.logo !== false && b.logo) logo.src = `${d.assets}/../${b.logo}`; else logo.remove();
+  document.getElementById('tag').textContent = d.tag ?? [rel.product, rel.version].filter(Boolean).join(' · ');
+  const s = document.getElementById('stage');
+  let html = '';
+  if (d.kicker) html += `<div class="kicker in" style="animation-delay:.1s">${esc(d.kicker)}</div>`;
+  if (d.title) html += `<h1 class="in" style="animation-delay:.25s">${esc(d.title)}</h1>`;
+  if (d.subtitle) html += `<div class="sub in" style="animation-delay:.45s">${esc(d.subtitle)}</div>`;
+  if (d.kind === 'title' || d.kind === 'outro') html += '<div class="bar"></div>';
+  const items = (d.items || []).map((it) => (typeof it === 'string' ? { title: it } : it));
+  if (d.kind === 'diagram') {
+    html += '<div class="flow">' + items.map((it, i) =>
+      (i ? '<div class="arrow"><i></i></div>' : '') +
+      `<div class="node"><b>${esc(it.title)}</b>${it.text ? `<span>${esc(it.text)}</span>` : ''}</div>`).join('') + '</div>';
+  } else if (items.length) {
+    const cols = d.columns || (items.length > 3 ? 2 : 1);
+    html += `<div class="items" style="--cols:${cols}">` + items.map((it, i) =>
+      `<div class="item"><div class="n">${i + 1}</div><div><b>${esc(it.title)}</b>${it.text ? `<span>${esc(it.text)}</span>` : ''}</div></div>`).join('') + '</div>';
+  }
+  s.innerHTML = html;
+  const nodes = [...document.querySelectorAll('.item, .node')];
+  const arrows = [...document.querySelectorAll('.arrow')];
+  window.__cardStep = (i) => {
+    if (nodes[i]) nodes[i].classList.add('on');
+    if (i > 0 && arrows[i - 1]) arrows[i - 1].classList.add('on');
+  };
+  window.__cardPlay = () => {
+    document.body.classList.add('play');
+    // Items without an `on` word appear in sequence after the heading.
+    items.forEach((it, i) => { if (!it.on) setTimeout(() => window.__cardStep(i), 900 + i * (d.stagger || 650)); });
+  };
+  document.fonts.ready.then(() => Promise.all([...document.images].map((im) => im.decode().catch(() => {}))))
+    .then(() => { window.__cardReady = true; });
+</script>
+</body>
+</html>

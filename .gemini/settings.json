@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "topstocks": {
+      "url": "https://topstocks-613330607457.europe-west1.run.app/mcp",
+      "type": "http"
+    }
+  }
+}
