@@ -567,7 +567,8 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
             _clear_old_results(sent)
             tries = 0
             while True:
-                if limit := cap() if callable(cap) else cap:
+                limit = cap if isinstance(cap, int) else cap()
+                if limit:
                     _squeeze_tool_results(convo, limit - schema_tokens)
                 try:
                     resp = client.chat.completions.create(
