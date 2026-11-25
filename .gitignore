@@ -178,3 +178,6 @@ src/stocks/web/static/**/*.br
 # prod assistant eval reports (scripts/eval_prod.py --save)
 evals/prod/runs/
 .claude/skills/release-video/assets/music/
+
+# local Gemini CLI config (per-user MCP servers)
+.gemini/
