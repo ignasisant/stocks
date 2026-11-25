@@ -548,3 +548,29 @@ def test_a_short_wait_refused_twice_still_says_when_the_model_is_back(
     with pytest.raises(llm.FreeTierBusy) as dry:
         list(llm._free_stream("", "auto", "sys", []))
     assert len(slept) == 1 and dry.value.wait == pytest.approx(3)
+
+
+def test_a_round_handed_to_another_model_fits_that_models_cap(monkeypatch, slept):
+    """groq admits 8000 a minute but qwen's input only 7000: a deep turn moved
+    from gpt-oss-120b to qwen mid-loop kept squeezing rounds to gpt-oss's cap,
+    and qwen answered 413 "ITPM: Limit 7000, Requested 7003" (prod 2026-11-24)."""
+    import openai
+
+    from stocks.llm import tokens
+
+    client = _Scripted("tool", _HttpError(429, _GROQ_429.format("36s")), "DONE")
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: client)
+    monkeypatch.setattr(llm, "_free_gone", set())
+    monkeypatch.setattr(llm, "_tpm_skew", {})
+    monkeypatch.setattr(llm, "_tpm_limit", {("groq", "qwen3.8-27b"): 7000})
+    backends = [_FreeBackend("groq", "k", m, None, "u", tpm=8000, primary=i == 0)
+                for i, m in enumerate(("gpt-oss-120b", "qwen3.8-27b"))]
+    monkeypatch.setattr(llm, "_free_backends", lambda: backends)
+    page = " ".join(f"row {i} value {i * 7}" for i in range(960))
+    tools = [ToolSpec("get_quotes", "quotes", {"type": "object", "properties": {}})]
+    run = llm._free_tools("", "", "sys", [{"role": "user", "content": "q"}],
+                          tools, lambda n, a: page, 3)
+    assert run.text == "DONE"
+    to_qwen = client.sent[-1]
+    assert to_qwen["model"] == "qwen3.8-27b"
+    assert tokens.count_messages(to_qwen["messages"]) <= llm._tpm_cap(backends[1])

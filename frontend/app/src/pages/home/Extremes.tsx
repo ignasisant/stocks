@@ -93,11 +93,15 @@ export function ExtremesCard({
       note={t("home.extremes_unavailable")}
       skeleton={<Skeleton shape="table" rows={4} />}
     >
-      {(data) =>
-        !data || data.scanned === 0 ? null : (
+      {(data) => {
+        if (!data || data.scanned === 0) return null;
+        // Prod 2026-11-23 (/home, rev 00241) painted a body without
+        // `extremes`; an absent list reads as an empty scan.
+        const found = data.extremes ?? [];
+        return (
           <Card>
             <CardTitle>{plain(t("home.extremes_52w"))}</CardTitle>
-            {data.extremes.length === 0 ? (
+            {found.length === 0 ? (
               <Note>{t("home.no_extremes")}</Note>
             ) : (
               <Responsive
@@ -110,7 +114,7 @@ export function ExtremesCard({
                         <th className="hm-num">{t("home.col_from_edge")}</th>
                       </tr>
                     </thead>
-                    {runs(data.extremes).map(({ edge, label, rows }) => (
+                    {runs(found).map(({ edge, label, rows }) => (
                       <tbody key={edge}>
                         <tr className="hm-run-head">
                           <th scope="rowgroup" colSpan={3}>
@@ -135,7 +139,7 @@ export function ExtremesCard({
                     ))}
                   </table>
                 }
-                narrow={runs(data.extremes).map(({ edge, label, rows }) => (
+                narrow={runs(found).map(({ edge, label, rows }) => (
                   <div key={edge} className="hm-run">
                     <p className="hm-caption">{t(label)}</p>
                     <DenseRows
@@ -155,8 +159,8 @@ export function ExtremesCard({
               />
             )}
           </Card>
-        )
-      }
+        );
+      }}
     </CardQuery>
   );
 }

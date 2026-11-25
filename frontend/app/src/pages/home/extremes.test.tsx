@@ -62,4 +62,12 @@ describe("ExtremesCard", () => {
     expect(html).toContain("home.extremes_highs");
     expect(html).not.toContain("home.extremes_lows");
   });
+
+  it("reads a body without its list as an empty scan, not a crash", () => {
+    const data = { scanned: 10 } as unknown as Extremes;
+    const html = renderToStaticMarkup(
+      <ExtremesCard query={{ state: "loaded", data, reload: () => {} } as never} />,
+    );
+    expect(html).toContain("home.no_extremes");
+  });
 });
