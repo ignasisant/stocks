@@ -545,9 +545,11 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
     """
 
     def run(api_key, model, system, messages, tools, execute, rounds,
-            cap: int = 0, stop=None, swap=None):
+            cap: int | Callable[[], int] = 0, stop=None, swap=None):
         """`swap(model, exc, round, tries)` names the model a failed round goes
-        on with, the conversation so far intact, or None to raise (`_tools_swap`)."""
+        on with, the conversation so far intact, or None to raise (`_tools_swap`).
+        `cap` may be a callable, asked before every request: after a swap the
+        round must fit the new model's limit, not the one it started on."""
         import json
 
         from openai import OpenAI
@@ -563,10 +565,10 @@ def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
         text = ""
         for n_round in range(max(1, rounds)):
             _clear_old_results(sent)
-            if cap:
-                _squeeze_tool_results(convo, cap - schema_tokens)
             tries = 0
             while True:
+                if limit := cap() if callable(cap) else cap:
+                    _squeeze_tool_results(convo, limit - schema_tokens)
                 try:
                     resp = client.chat.completions.create(
                         model=model, max_tokens=MAX_TOKENS, messages=convo,
@@ -1638,16 +1640,17 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds,
         b, thread = plan[attempt]
         if _skip(plan, attempt):
             continue
-        cap = _tpm_cap(b)
         for retry in range(2):
             live = [b]
             try:
                 return _openai_compat_tools(b.base_url or None, free=True,
                                             **_FREE_TOOLS_CLIENT)(
                     b.api_key, b.model, system, thread, tools, execute, rounds,
-                    cap, stop=stop, swap=_tools_swap(plan, live))
+                    lambda live=live: _tpm_cap(live[-1]), stop=stop,
+                    swap=_tools_swap(plan, live))
             except Exception as exc:
                 b = live[-1]  # the model the loop was on when it gave up
+                cap = _tpm_cap(b)  # what its last round was squeezed to
                 obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
                          attempt=attempt, error_type=type(exc).__name__,
                          error=str(exc)[:300],
