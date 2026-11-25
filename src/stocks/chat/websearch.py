@@ -98,13 +98,15 @@ class Result:
 # after this by structured.render.
 _PLANNER_SYSTEM = (
     "You write the web searches for the latest message in a stock-tracker "
-    "chat. The app is called MyBrainStock (also written \"My Brain Stock\"; formerly TopStocks). "
+    "chat. The app is called MyBrainStock (also written \"My Brain Stock\"; "
+    "formerly TopStocks). "
     "Searching is the default: anything about a company, ticker, fund, "
     "coin, market, the economy or an event gets searched, even when you think "
     "you know the answer — prices, news and the reasons behind a move change "
     f"daily. Give at most {MAX_QUERIES} web search queries. Return an empty "
     "list only when the message needs nothing from the outside world: "
-    "greetings and thanks, questions about MyBrainStock (or TopStocks) itself (how it works, "
+    "greetings and thanks, questions about MyBrainStock (or TopStocks) itself "
+    "(how it works, "
     "what it can do, how to get the most out of it), the user's own "
     "positions and their arithmetic, or definitions of long-settled terms. "
     "Write queries in the language most likely to find good sources (usually "

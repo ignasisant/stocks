@@ -112,7 +112,7 @@ rules = { invalid-assignment = "ignore" }
 [tool.ruff]
 line-length = 90
 target-version = "py312"
-extend-exclude = ["src/stocks/baml_client"]
+extend-exclude = ["src/stocks/baml_client", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
