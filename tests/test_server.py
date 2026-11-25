@@ -366,6 +366,38 @@ def test_the_canonical_host_itself_is_served_not_redirected(monkeypatch):
     assert client.get("/es/", follow_redirects=False).status_code == 200
 
 
+def test_an_installed_app_on_the_old_host_is_told_how_to_move(pinned_client):
+    # The manifest's start_url: an installed app cannot follow a 301 to a new
+    # origin, so it gets a page that drops its push subscription and worker.
+    r = pinned_client.get(
+        "/?installed=1", headers={"Accept-Language": "es-ES"}, follow_redirects=False
+    )
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-store"
+    assert "noindex" in r.headers["x-robots-tag"]
+    assert 'href="https://topstocks.example/"' in r.text
+    assert "MyBrainStock tiene nueva dirección" in r.text
+    assert '<span class="host">topstocks.example</span>' in r.text
+    assert "/api/v1/push/unsubscribe" in r.text
+    assert "unregister()" in r.text
+    # Its one inline script and style are allowed by hash, nothing else.
+    policy = r.headers["content-security-policy"]
+    assert "'unsafe-inline'" not in policy and "'sha256-" in policy
+
+
+def test_a_browser_on_the_old_host_still_gets_the_plain_redirect(pinned_client):
+    for path in ("/", "/portfolio?installed=1"):
+        r = pinned_client.get(path, follow_redirects=False)
+        assert r.status_code == 301, path
+
+
+def test_an_installed_app_on_the_canonical_host_opens_as_usual(monkeypatch):
+    monkeypatch.setattr("stocks.config.secret", lambda *a, **k: "https://topstocks.example")
+    client = TestClient(served(server.LandingGate), base_url="https://topstocks.example")
+    r = client.get("/?installed=1", follow_redirects=False)
+    assert "nueva dirección" not in r.text and "new address" not in r.text
+
+
 def test_without_a_public_url_every_host_is_served_as_is(client):
     assert client.get("/es/", follow_redirects=False).status_code == 200
 
