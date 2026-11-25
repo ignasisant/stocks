@@ -243,7 +243,7 @@ def _has_watchlist(_prefs: dict, paths) -> bool:
 def _has_ai_key(prefs: dict, _paths=None) -> bool:
     """A BYOK provider key saved to prefs (encrypted).
 
-    The keyless TopStocks free chain deliberately does not count: the step is
+    The keyless MyBrainStock free chain deliberately does not count: the step is
     about connecting your own provider, which is what lifts the daily cap.
     """
     return any(k.endswith("_key_enc") for k in prefs)
@@ -839,6 +839,18 @@ RELEASES: tuple[Release, ...] = (
             # with the podium and returns in the reader's money. A section of
             # the sector page, so the sector step.
             News(slug="funds", icon="account_balance", step="sector"),
+        ),
+    ),
+    Release(
+        version="2026.11.7",
+        date="2026-11",
+        items=(
+            # Home's watchlist card rebuilt under the reader: the collapsible
+            # groups became chips, and a «Now» block on top reads the whole
+            # list for what needs a look today (buy rule met, an odd move,
+            # results this week, a zone getting close). The card lives on
+            # Home, so the button lands there, not on the Profile editor.
+            News(slug="watchlist", icon="format_list_bulleted", step="daily"),
         ),
     ),
 )

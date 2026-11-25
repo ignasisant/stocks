@@ -72,7 +72,7 @@ COPY = {
         "pl": "P/L",
         "weight": "Weight",
         "broker": "Your broker app",
-        "real": "TopStocks",
+        "real": "MyBrainStock",
         "broker_pct": "+18.2%",
         "real_pct": "+11.4%",
         "chips": (
@@ -106,7 +106,7 @@ COPY = {
         "pl": "P/L",
         "weight": "Peso",
         "broker": "La app de tu bróker",
-        "real": "TopStocks",
+        "real": "MyBrainStock",
         "broker_pct": "+18,2 %",
         "real_pct": "+11,4 %",
         "chips": (
@@ -140,7 +140,7 @@ COPY = {
         "pl": "P/L",
         "weight": "Peso",
         "broker": "L'app del tuo broker",
-        "real": "TopStocks",
+        "real": "MyBrainStock",
         "broker_pct": "+18,2%",
         "real_pct": "+11,4%",
         "chips": (
@@ -633,11 +633,11 @@ h2 { font-size: 50px; }
 </style></head>
 <body><div id="stage">
 <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
-<div id="brand"><img src="$logo" alt="">TopStocks</div>
+<div id="brand"><img src="$logo" alt="">MyBrainStock</div>
 
 <section class="s" id="s1"><div class="in">
   <img src="$logo" alt="" data-at="0.3" data-dy="0" data-zoom="1">
-  <h1 data-at="0.9">TopStocks</h1>
+  <h1 data-at="0.9">MyBrainStock</h1>
   <p data-at="1.6">$tagline</p>
 </div></section>
 
@@ -702,7 +702,7 @@ h2 { font-size: 50px; }
     <p class="sub" data-at="30.5">$s5_sub</p>
   </div>
   <div class="chat card" data-at="30.3">
-    <header><img src="$logo" alt="">TopStocks</header>
+    <header><img src="$logo" alt="">MyBrainStock</header>
     <div class="thread">
       <div class="bubble mine" data-at="31.0" data-dy="12"><span data-type="$q" data-from="31.1" data-cps="20"></span></div>
       <div class="status" id="status" data-at="33.2" data-dy="8"><span class="star">✻</span><span>$status</span><span id="dots"></span></div>

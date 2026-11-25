@@ -426,7 +426,7 @@ def routes(provider: Provider) -> list[Route]:
         "resource": provider.resource,
         "authorization_servers": [origin],
         "scopes_supported": list(store.SCOPES),
-        "resource_name": "TopStocks",
+        "resource_name": "MyBrainStock",
     })
     registration = RegistrationHandler(
         provider, options=ClientRegistrationOptions(

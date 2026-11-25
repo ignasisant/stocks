@@ -288,7 +288,7 @@ def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
             seen.append((provider, key, prefs.get(f"{pid}_model") or ""))
     free = llm.PROVIDERS["free"]
     if free.available() and free_eligible(prefs):
-        # Picked on purpose ("Try with TopStocks AI" after a refusal, or the
+        # Picked on purpose ("Try with MyBrainStock AI" after a refusal, or the
         # settings list): it answers first, and the keys stay behind it for a
         # day its allowance runs out. Last of all otherwise, because the pot
         # is shared and a reader with a key pays their own way.

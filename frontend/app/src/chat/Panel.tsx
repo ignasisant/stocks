@@ -24,6 +24,7 @@ import { useWidth } from "../shell/useWidth";
 import { pageFor } from "../shell/pages";
 import { useRoute } from "../shell/router";
 import { holdScroll } from "../shell/settle";
+import { reportProblem } from "../shell/report";
 import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
@@ -50,7 +51,7 @@ import { ShareSheet } from "./ShareSheet";
 import { rates, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
 import type { Jump } from "./types";
-import type { Chat } from "./useChat";
+import type { Chat, Statement } from "./useChat";
 import {
   applyPixels,
   rememberPixels,
@@ -226,6 +227,21 @@ function HeadMenu({
       )}
     </div>
   );
+}
+
+/**
+ * "Something wrong?" on an import: the feedback dialog, named as the
+ * assistant's import (and the format it was read as), offering the statement
+ * when this session still holds it.
+ */
+function reportImport(statement?: Statement): void {
+  const page = statement?.platform
+    ? `chat/import?platform=${encodeURIComponent(statement.platform)}`
+    : "chat/import";
+  reportProblem("bug", {
+    page,
+    ...(statement ? { file: { name: statement.name, blob: statement.blob } } : {}),
+  });
 }
 
 export default function Panel({
@@ -789,6 +805,24 @@ export default function Panel({
                       }
                       onEdit={reword && i === all.length - 2 ? chat.edit : undefined}
                       onShare={turn.id ? () => setSharing(turn.id ?? null) : undefined}
+                      // An import this session read, or the newest one: an
+                      // older note from another day is history, and a link
+                      // under every one of them would be noise. Once per
+                      // import: not on the note the card below already
+                      // carries it for, nor on the "read" note an "imported"
+                      // one follows.
+                      onReport={
+                        turn.role !== "user" &&
+                        (chat.statementOf(turn) ||
+                          (turn.action === "import" && i === all.length - 1)) &&
+                        !(chat.preview && i === all.length - 1) &&
+                        !(
+                          all[i + 1]?.role === "assistant" &&
+                          all[i + 1]?.action === "import"
+                        )
+                          ? () => reportImport(chat.statementOf(turn))
+                          : undefined
+                      }
                     />
                   ))
                 ) : chat.opening ? (
@@ -836,6 +870,7 @@ export default function Panel({
                     }
                     onDiscard={chat.discardImport}
                     onRemap={chat.remap}
+                    onReport={() => reportImport(chat.staged())}
                   />
                 )}
                 {/* At the bottom, where the card is about to land — below

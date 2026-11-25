@@ -66,12 +66,12 @@ describe("an answer landing off-screen", () => {
 
 describe("the tab's title", () => {
   it("carries the count in front, once", () => {
-    expect(counted("TopStocks", 1)).toBe("(1) TopStocks");
-    expect(counted("(1) TopStocks", 3)).toBe("(3) TopStocks");
+    expect(counted("MyBrainStock", 1)).toBe("(1) MyBrainStock");
+    expect(counted("(1) MyBrainStock", 3)).toBe("(3) MyBrainStock");
   });
 
   it("drops it at zero", () => {
-    expect(counted("(2) TopStocks", 0)).toBe("TopStocks");
-    expect(counted("TopStocks", 0)).toBe("TopStocks");
+    expect(counted("(2) MyBrainStock", 0)).toBe("MyBrainStock");
+    expect(counted("MyBrainStock", 0)).toBe("MyBrainStock");
   });
 });

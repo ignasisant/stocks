@@ -49,11 +49,14 @@ def submit(
     *,
     sender: str = "guest",
     lang: str = "",
+    statement: str = "",
 ) -> Path:
     """Persist one submission (disk + bucket) and log the event.
 
     `shot` is the optional JPEG of the screen the writer was on, already
-    decoded and size-checked by the route.
+    decoded and size-checked by the route. `statement` is the id of the file
+    an import report came with, already kept encrypted by
+    `portfolio.failed_files` (`stocks imports fetch <id>`).
 
     `sender` and `lang` are the two facts only the caller knows: the account's
     pseudonymous slug ("guest" when anonymous) and the reader's language.
@@ -76,10 +79,13 @@ def submit(
     }
     if shot_name:
         payload["shot"] = shot_name
+    if statement:
+        payload["statement"] = statement
     atomic.write_json(path, payload, ensure_ascii=False, indent=2)
     storage.persist(path)
     obs.event("feedback", kind=kind, page=page, chars=len(text),
-              shot=len(shot) if shot and shot_name else 0)
+              shot=len(shot) if shot and shot_name else 0,
+              statement=bool(statement))
     return path
 
 
@@ -202,7 +208,7 @@ def rate(vote: str, turn: dict, question: str, *, reason: str = "",
     return path
 
 
-# The once-per-account "how is TopStocks for you" prompt (shell/RatePrompt).
+# The once-per-account "how is MyBrainStock for you" prompt (shell/RatePrompt).
 # Its own kind rather than a widget submission: a score with no comment is a
 # complete answer here, and the widget's route requires text.
 APP_RATING = "app_rating"

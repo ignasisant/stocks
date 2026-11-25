@@ -32,4 +32,4 @@ Your shares are held outside Spain. If their value exceeds **€50,000** on 31 D
 ## The typical mistake
 Copying the dollar profit the app shows, or the total dividends received. Both figures are wrong for the tax office: the first is not in euros and the second is net.
 
-TopStocks imports the Revolut CSV and does these calculations: FIFO, euros at each date's rate, the two-month rule, and each dividend's gross with its withholding. It is a help for preparing your return, not tax advice: if your case is complex, ask an adviser.
+MyBrainStock imports the Revolut CSV and does these calculations: FIFO, euros at each date's rate, the two-month rule, and each dividend's gross with its withholding. It is a help for preparing your return, not tax advice: if your case is complex, ask an adviser.

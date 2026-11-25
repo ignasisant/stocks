@@ -3,8 +3,12 @@
 A masked fingerprint (stocks.portfolio.diagnostics) says what shape a file
 had; it cannot say what a parser missed in a layout nobody has seen. For that
 the file itself is the only evidence, so a failed import keeps it — never a
-successful one, never a guest's, never the e2e suite's — for `KEEP_DAYS`, then
-it goes.
+guest's, never the e2e suite's — for `KEEP_DAYS`, then it goes.
+
+A file that read without an error is kept only when its reader says it read
+wrong: the chat's "Report a problem" on an import offers to send the file with
+the report, ticked by the reader (`api/routes/feedback.submit`). Nothing that
+imported fine is kept on our own initiative.
 
 * Encrypted with the deployment's Fernet key (`[chat] enc_key`, the one that
   already guards provider keys). No key, nothing kept: a statement in
@@ -75,7 +79,7 @@ def _skip(why: str) -> None:
 
 
 def keep(user: str, filename: str, data: bytes) -> str | None:
-    """Keep one failed statement; its id (`<slug>/<name>`), or None."""
+    """Keep one failed (or reported) statement; its id (`<slug>/<name>`), or None."""
     try:
         if not _SLUG.fullmatch(user) or diagnostics.is_test_account(user):
             return None
@@ -134,6 +138,33 @@ def _drop_old(slug: str, names: list[str]) -> None:
 def _delete(rel: str) -> None:
     (_root() / rel).unlink(missing_ok=True)
     storage.delete_key(PREFIX + rel)
+
+
+_DIGEST = re.compile(r"[0-9a-f]{16}")
+
+
+def held(user: str, digest: str) -> str | None:
+    """The id of `user`'s kept file with this digest (sha256, 16 hex), if any.
+
+    How a report names a statement we already have — one that failed to
+    import was kept then — instead of sending it a second time. Only the
+    account's own files, only while they last; never raises.
+    """
+    try:
+        if not _SLUG.fullmatch(user) or not _DIGEST.fullmatch(digest):
+            return None
+        cutoff = _cutoff(KEEP_DAYS)
+        found = next(
+            (
+                n
+                for n in _names(user)
+                if f"-{digest}." in n and not _expired(n, cutoff)
+            ),
+            None,
+        )
+        return f"{user}/{found}" if found else None
+    except Exception:  # noqa: BLE001 — a lookup that fails is a file not held
+        return None
 
 
 def kept() -> list[str]:

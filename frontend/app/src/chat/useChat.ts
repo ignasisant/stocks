@@ -85,6 +85,16 @@ const blank = (role: string, content: string): Turn => ({
   action: null,
 });
 
+/**
+ * The file an import turn is about, and how it was read: what "Report a
+ * problem" offers to send with the report (`shell/report.ts`).
+ */
+export interface Statement {
+  name: string;
+  blob: Blob;
+  platform: string;
+}
+
 /** An attachment that came to nothing, as the bubble that says why. */
 const attachFailure = (error: string, wait?: number): Turn => ({
   role: "assistant",
@@ -244,6 +254,19 @@ export function useChat(live: boolean) {
   // The statement on the card, held while the card is up: a corrected column
   // mapping reads it again, and the server keeps no copy to read.
   const staged = useRef<File | null>(null);
+  // The statement each import turn of this session was about. Beside the
+  // turns, never on them: a thread is shelved to IndexedDB to paint fast, and
+  // a statement has no business sitting there. A reload or a re-read thread
+  // forgets them, and the report then goes without the file.
+  const statements = useRef(new WeakMap<Turn, Statement>());
+  const about = useCallback((turn: Turn, statement: Statement): Turn => {
+    statements.current.set(turn, statement);
+    return turn;
+  }, []);
+  const statementOf = useCallback(
+    (turn: Turn): Statement | undefined => statements.current.get(turn),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     const [next, list] = await Promise.all([readState(), readThreads()]);
@@ -1249,7 +1272,10 @@ export function useChat(live: boolean) {
           // no broker: an empty platform is what tells this report apart from
           // the Import page's.
           reportUnreadable("", name, file, error);
-          setTurns((list) => [...list, attachFailure("chat.unreadable")]);
+          setTurns((list) => [
+            ...list,
+            about(attachFailure("chat.unreadable"), { name, blob: file, platform: "" }),
+          ]);
           return;
         }
         const found = await readAttachment({
@@ -1264,7 +1290,11 @@ export function useChat(live: boolean) {
         const here = activeRef.current;
         if (!here || here === found.conversation) {
           if (!here && found.conversation) setActiveId(found.conversation);
-          setTurns((list) => [...list, { ...found.message, skills: [], web: [] }]);
+          const note = about(
+            { ...found.message, skills: [], web: [] },
+            { name, blob: file, platform: found.platform },
+          );
+          setTurns((list) => [...list, note]);
         }
         // Only a file with something in it gets a card — or one whose columns
         // can still be corrected, since a mapping that read nothing is exactly
@@ -1281,13 +1311,17 @@ export function useChat(live: boolean) {
           ...list,
           walled
             ? attachFailure("chat.rate_limited", failure.retryAfter)
-            : attachFailure("chat.api_error"),
+            : about(attachFailure("chat.api_error"), {
+                name,
+                blob: file,
+                platform: "",
+              }),
         ]);
       } finally {
         setWork(null);
       }
     },
-    [activeId, busy, lang, reading, refresh, state],
+    [about, activeId, busy, lang, reading, refresh, state],
   );
 
   /**
@@ -1306,6 +1340,12 @@ export function useChat(live: boolean) {
   const commitImport = useCallback(
     async (broker: string, fresh: ImportRow[], duplicates: ImportRow[] = []) => {
       if (!preview || reading) return;
+      // The file goes from the card once written; the note under it keeps it,
+      // for the import that only looks wrong once it is in the book.
+      const statement: Statement | null = staged.current
+        ? { name: preview.filename, blob: staged.current, platform: preview.platform }
+        : null;
+      const noted = (turn: Turn) => (statement ? about(turn, statement) : turn);
       setWork({
         kind: "importing",
         filename: preview.filename,
@@ -1323,12 +1363,12 @@ export function useChat(live: boolean) {
         setPreview(null);
         staged.current = null;
         setImported((n) => n + 1);
-        setTurns((list) => [...list, { ...done.message, skills: [], web: [] }]);
+        setTurns((list) => [...list, noted({ ...done.message, skills: [], web: [] })]);
         await refresh().catch(() => {});
       } catch {
         setTurns((list) => [
           ...list,
-          {
+          noted({
             role: "assistant",
             content: "",
             skills: [],
@@ -1336,13 +1376,13 @@ export function useChat(live: boolean) {
             action: "import",
             error: "chat.api_error",
             ts: Date.now(),
-          },
+          }),
         ]);
       } finally {
         setWork(null);
       }
     },
-    [activeId, lang, preview, reading, refresh],
+    [about, activeId, lang, preview, reading, refresh],
   );
 
   /** Re-read one thread in place — no blank frame between the two versions. */
@@ -1466,6 +1506,15 @@ export function useChat(live: boolean) {
     remap,
     commitImport,
     discardImport,
+    statementOf,
+    /** The card's statement, read when "Report a problem" is pressed on it. */
+    staged: useCallback(
+      (): Statement | undefined =>
+        preview && staged.current
+          ? { name: preview.filename, blob: staged.current, platform: preview.platform }
+          : undefined,
+      [preview],
+    ),
     unread,
     notice,
     dismissNotice,

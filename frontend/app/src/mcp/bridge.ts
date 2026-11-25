@@ -10,7 +10,7 @@
  * - `ui/notifications/tool-result` from the host: what to draw;
  * - `ui/notifications/host-context-changed`: a theme or locale flipped;
  * - `ui/notifications/size-changed` to the host as the content grows, and
- *   `ui/open-link` to send the reader back to TopStocks.
+ *   `ui/open-link` to send the reader back to MyBrainStock.
  *
  * Anything else the host asks is answered with an empty result, so a request
  * this view does not know (`ui/resource-teardown`, `ping`) never hangs the
@@ -101,14 +101,14 @@ export class Bridge {
   async start(): Promise<void> {
     const answer = (await this.request("ui/initialize", {
       protocolVersion: PROTOCOL_VERSION,
-      appInfo: { name: "TopStocks", version: "1" },
+      appInfo: { name: "MyBrainStock", version: "1" },
       appCapabilities: {},
     })) as { hostContext?: HostContext } | undefined;
     this.on.context(answer?.hostContext ?? {});
     this.notify("ui/notifications/initialized", {});
   }
 
-  /** Back to TopStocks. A host that refuses leaves the reader where they are. */
+  /** Back to MyBrainStock. A host that refuses leaves the reader where they are. */
   open(url: string): void {
     this.request("ui/open-link", { url }).catch(() => undefined);
   }

@@ -46,7 +46,7 @@ def _persona(lang: str, task: str, prefs: dict | None = None) -> str:
 
         who = engine.persona(userprefs.load_profile(prefs))
     return (
-        "You are the portfolio assistant for TopStocks, a stock-tracking app. "
+        "You are the portfolio assistant for MyBrainStock, a stock-tracking app. "
         f"{who}{task} in {_LANG_NAME.get(lang, 'English')}. Plain text only: no "
         "markdown, no emoji, no preamble."
     )

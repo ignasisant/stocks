@@ -79,7 +79,7 @@ def test_render_with_a_book_en():
         mover=("NVDA", 1_240.0, 0.081),
     )
     message = nudge.render(data, "en")
-    assert message["title"] == "TopStocks — still here"
+    assert message["title"] == "MyBrainStock — still here"
     assert message["body"].splitlines() == [
         "9 days since your last visit.",
         "Portfolio €104,820 · week +1,940 € (+1.89%).",

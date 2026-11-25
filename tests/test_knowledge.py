@@ -163,7 +163,7 @@ GOLDEN = [
      {"cost-basis-and-currency"}),
     ("¿por qué Revolut me da otro precio medio y otra ganancia?",
      {"cost-basis-and-currency"}),
-    ("my broker shows a different gain than TopStocks",
+    ("my broker shows a different gain than MyBrainStock",
      {"cost-basis-and-currency"}),
     ("qué es la rentabilidad ponderada por tiempo",
      {"returns-and-risk", "tour:risk"}),
@@ -187,7 +187,7 @@ GOLDEN = [
     ("¿cómo se elige la cohorte del sector?", {"sector-screen"}),
     # Rated down 2026-11-10: the chat searched the web for investing tips.
     ("como sacar el maximo rendimiento de top stocks", {"getting-the-most"}),
-    ("how do I get the most out of TopStocks?", {"getting-the-most"}),
+    ("how do I get the most out of MyBrainStock?", {"getting-the-most"}),
     ("¿qué me falta configurar en la app?", {"getting-the-most"}),
 ]
 

@@ -1051,6 +1051,7 @@ function Failed({
   onSwitch,
   onPickAi,
   onMemory,
+  onReport,
 }: {
   turn: Stored;
   cap: number | null;
@@ -1058,6 +1059,7 @@ function Failed({
   provider?: string;
   onRetry: () => void;
   onDrop?: () => void;
+  onReport?: () => void;
   switchTo: { id: string; label: string }[];
   onSwitch?: (provider: string) => void;
   onPickAi?: () => void;
@@ -1081,6 +1083,8 @@ function Failed({
   // file again, so it only offers the way out.
   if (turn.action === "import") {
     if (drop) acts.push(drop);
+    if (onReport)
+      acts.push({ key: "report", label: t("chat.import_report"), run: onReport });
   } else if (quota) {
     if (onPickAi)
       acts.push({ key: "key", label: t("chat.free_add_key"), run: onPickAi });
@@ -1165,6 +1169,7 @@ export function Turn({
   onRegenerate,
   onEdit,
   onShare,
+  onReport,
   walk,
   fresh,
 }: {
@@ -1213,6 +1218,11 @@ export function Turn({
   onEdit?: (text: string) => void;
   /** Open the share sheet for this answer. Absent: a guest, or nothing to name. */
   onShare?: () => void;
+  /**
+   * "Something wrong? Report it" under an import's note or failure: the
+   * feedback dialog, offering the statement it was about. Absent: not one.
+   */
+  onReport?: () => void;
   /** Part of the exchange being asked now: it comes in rather than appears. */
   fresh?: boolean;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
@@ -1249,6 +1259,7 @@ export function Turn({
   // A link names the answer by its id, so one stored before answers had ids
   // cannot go out; nor can a refusal, which never reaches here.
   const shareable = copyable && !!turn.id && !!onShare;
+  const report = !mine && !turn.pending && !!onReport;
   // One provider answered for another. Session-only: a stored turn records
   // neither, so a reloaded thread names nobody rather than naming today's
   // head of the chain.
@@ -1273,6 +1284,7 @@ export function Turn({
         onSwitch={onSwitch}
         onPickAi={onPickAi}
         onMemory={onMemory}
+        onReport={onReport}
       />
     );
   }
@@ -1400,7 +1412,8 @@ export function Turn({
         rateable ||
         copyable ||
         onRegenerate ||
-        (mine && onEdit)) && (
+        (mine && onEdit) ||
+        report) && (
         <div className="ag-chat-foot">
           {turn.web.length > 0 && (
             <Sources web={turn.web} onLeave={onLeave ?? (() => {})} />
@@ -1411,6 +1424,11 @@ export function Turn({
           {when && <span className="ag-chat-clock">{when}</span>}
           {shots.length > 0 && <Shots readings={shots} />}
           {docs.length > 0 && <Docs docs={docs} />}
+          {report && (
+            <button type="button" className="ag-chat-link" onClick={onReport}>
+              {t("chat.import_report")}
+            </button>
+          )}
           {onWiden && copyable && wideTable(turn.content) && (
             <button type="button" className="ag-chat-link" onClick={onWiden}>
               {t("chat.see_wide")}

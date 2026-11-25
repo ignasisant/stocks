@@ -77,6 +77,12 @@ function lead(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** The tint an operation's pill wears: money in, money out, a move, a payout. */
+function tone(action: string): string {
+  if (action === "buy" || action === "sell") return action;
+  return action.startsWith("transfer") ? "move" : "other";
+}
+
 /** Currencies a slip is fixed to: the file's own, and the usual ones. */
 const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "GBX", "CAD", "JPY", "HKD"];
 
@@ -412,7 +418,7 @@ function Wide({
                             />
                           </td>
                         )}
-                        <td>{calendarDay(row.date)}</td>
+                        <td className="ag-chat-date">{calendarDay(row.date)}</td>
                         <td>
                           <span className="ag-chat-wide-op">
                             {warned && (
@@ -423,7 +429,9 @@ function Wide({
                                 !
                               </span>
                             )}
-                            {verb(row.action)}{" "}
+                            <span className="ag-chat-act" data-tone={tone(row.action)}>
+                              {verb(row.action)}
+                            </span>{" "}
                             {/* Rejected symbols are malformed by definition: no
                                 company to resolve a logo or a page from. */}
                             {tab === "rejected" ? (
@@ -441,7 +449,7 @@ function Wide({
                           {figure(total(row), 2)} {row.currency}
                         </td>
                         {tab !== "ready" && (
-                          <td className="ag-chat-why">
+                          <td className="ag-chat-reason">
                             {warned ? (
                               <Fix
                                 why={line.why}
@@ -523,6 +531,7 @@ export function Attachment({
   onImport,
   onDiscard,
   onRemap,
+  onReport,
 }: {
   preview: Preview;
   /** A statement is being read or written: both buttons wait. */
@@ -535,6 +544,8 @@ export function Attachment({
   onDiscard: () => void;
   /** Read the file again with a corrected column mapping. */
   onRemap?: (mapping: Record<string, unknown>) => void;
+  /** "Something wrong?": a file read wrong is reported from the card itself. */
+  onReport?: () => void;
 }) {
   const t = useT();
   const uid = useId();
@@ -684,11 +695,7 @@ export function Attachment({
   const acts = (long: boolean) =>
     settled ? (
       <div className="ag-chat-import-acts">
-        <button
-          type="button"
-          className="ag-chat-btn ag-chat-btn-on"
-          onClick={onDiscard}
-        >
+        <button type="button" className="ag-btn" onClick={onDiscard}>
           {t("chat.import_close")}
         </button>
       </div>
@@ -696,18 +703,13 @@ export function Attachment({
       <div className="ag-chat-import-acts">
         <button
           type="button"
-          className="ag-chat-btn ag-chat-btn-on"
+          className="ag-btn ag-btn-cta"
           disabled={busy || !origin || !count}
           onClick={write}
         >
           {t(long ? "chat.import_button_long" : "chat.import_button", { n: count })}
         </button>
-        <button
-          type="button"
-          className="ag-chat-btn"
-          disabled={busy}
-          onClick={onDiscard}
-        >
+        <button type="button" className="ag-btn" disabled={busy} onClick={onDiscard}>
           {t(long ? "chat.import_cancel_file" : "chat.import_cancel")}
         </button>
       </div>
@@ -717,25 +719,45 @@ export function Attachment({
       {settled ? t("chat.import_all_held", { n: dupes.length }) : t("chat.import_safe")}
     </p>
   );
+  const report = onReport && (
+    <button
+      type="button"
+      className="ag-chat-link ag-chat-import-report"
+      onClick={onReport}
+    >
+      {t("chat.import_report")}
+    </button>
+  );
   const warnLine = lines.flagged.length > 0 && (
     <p className="ag-chat-import-warn">
-      {t("chat.import_warn_line", { n: lines.flagged.length })}
+      {t(
+        lines.flagged.length === 1
+          ? "chat.import_warn_line_one"
+          : "chat.import_warn_line",
+        { n: lines.flagged.length },
+      )}
     </p>
   );
   const verb = useVerb();
+  const warnedAt = new Set(lines.flagged.map((line) => line.i));
+  const title = t("chat.import_preview", {
+    filename: preview.filename,
+    label: preview.label,
+  });
 
   return (
     <section ref={card} className="ag-chat-import" aria-label={preview.filename}>
       <div className="ag-chat-import-head">
-        <p>
+        <p title={title}>
           <Glyph name="attach" size={14} />
-          {t("chat.import_preview", {
-            filename: preview.filename,
-            label: preview.label,
-          })}
+          <span>{title}</span>
         </p>
         {!phone && rowCount > 0 && (
-          <button type="button" className="ag-chat-btn" onClick={() => setFull(true)}>
+          <button
+            type="button"
+            className="ag-chat-btn ag-chat-import-wide"
+            onClick={() => setFull(true)}
+          >
             <Glyph name="fullscreen" size={14} />
             {t("chat.import_review")}
           </button>
@@ -774,12 +796,20 @@ export function Attachment({
             </thead>
             <tbody>
               {fresh.slice(0, 3).map((row, i) => (
-                <tr key={`${row.date}-${row.ticker}-${i}`}>
-                  <td>{calendarDay(row.date)}</td>
+                <tr
+                  key={`${row.date}-${row.ticker}-${i}`}
+                  data-warn={warnedAt.has(i) ? "" : undefined}
+                >
+                  <td className="ag-chat-date">{calendarDay(row.date)}</td>
                   <td>
                     {/* Every ticker on screen is a logo and a link to its page —
                         in a chat bubble as anywhere else in the app. */}
-                    {verb(row.action)} <TickerCell ticker={row.ticker} />
+                    <span className="ag-chat-wide-op">
+                      <span className="ag-chat-act" data-tone={tone(row.action)}>
+                        {verb(row.action)}
+                      </span>
+                      <TickerCell ticker={row.ticker} />
+                    </span>
                   </td>
                   <td className="ag-chat-num">
                     {figure(total(row), 2)} {row.currency}
@@ -850,6 +880,7 @@ export function Attachment({
       {open || settled ? null : brokerBlock}
       {safe}
       {acts(false)}
+      {report}
       {open &&
         host &&
         createPortal(
@@ -868,6 +899,7 @@ export function Attachment({
                 {brokerBlock}
                 {acts(true)}
                 {safe}
+                {report}
               </>
             }
           />,

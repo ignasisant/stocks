@@ -1062,14 +1062,14 @@ def test_the_ticker_page_carries_a_link_preview_for_its_symbol(guest, monkeypatc
         lambda symbol: {"name": "NVIDIA"} if symbol == "NVDA" else None,
     )
     text = guest.get("/ticker?ticker=nvda").text
-    assert 'property="og:title" content="NVDA · NVIDIA · TopStocks"' in text
+    assert 'property="og:title" content="NVDA · NVIDIA · MyBrainStock"' in text
     assert (
         'property="og:url" content="https://topstocks.example/ticker?ticker=NVDA"' in text
     )
     assert STUB in text, "the shell itself is untouched"
     # A name the memo has never seen is still a card, of the symbol alone.
     assert (
-        'property="og:title" content="AMD · TopStocks"'
+        'property="og:title" content="AMD · MyBrainStock"'
         in guest.get("/ticker?ticker=AMD").text
     )
     # In the language the browser asks for, as the client router will resolve.
@@ -1284,8 +1284,8 @@ def test_a_shared_answer_opens_the_app_with_its_own_link_preview(client, monkeyp
                                "Version/18.0 Mobile Safari/604.1",
                                "Accept-Language": "en-US"}).text
     assert STUB in text, "the app, not the landing"
-    assert 'property="og:title" content="¿Vendo NVDA? · TopStocks"' in text
-    assert ('property="og:description" content="TopStocks&#x27; AI answers: '
+    assert 'property="og:title" content="¿Vendo NVDA? · MyBrainStock"' in text
+    assert ('property="og:description" content="MyBrainStock&#x27; AI answers: '
             'Sí: con ••• € de ganancia') in text
     assert ("share.opened", {"share": stored["id"]}) == (
         events[0][0], {"share": events[0][1]["share"]})

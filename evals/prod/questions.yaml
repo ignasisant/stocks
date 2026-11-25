@@ -13,7 +13,7 @@
 # Fields
 #   id        unique slug
 #   area      page or page/tab
-#   kind      howto    how to do something in TopStocks (answer from the KB)
+#   kind      howto    how to do something in MyBrainStock (answer from the KB)
 #             data     a market figure (truth read from the app's own API)
 #             book     the eval account's portfolio (demo book; truth from API)
 #             concept  a definition or general finance knowledge
@@ -800,7 +800,7 @@
   kind: howto
   message: "como sacar el maximo rendimiento de top stocks"
   goals:
-    - Answers about TopStocks itself, not about which stocks to buy or generic investing strategy
+    - Answers about MyBrainStock (formerly TopStocks) itself, not about which stocks to buy or generic investing strategy
     - Names concrete things to set up in the app (a complete import, the plan, exit rules, tax residence, notifications)
     - Says the guided tour shows which of them this account already has switched on
   mentions: [plan, importa, alertas, notificaciones, tour]
@@ -811,7 +811,7 @@
   lang: en
   message: "how do I get the most out of TopStocks?"
   goals:
-    - Answers about TopStocks itself, not about which stocks to buy or generic investing strategy
+    - Answers about MyBrainStock (formerly TopStocks) itself, not about which stocks to buy or generic investing strategy
     - Names concrete things to set up in the app (a complete import, the plan, exit rules, tax residence, notifications)
   mentions: [plan, import, alerts, notifications, tour]
 
@@ -820,7 +820,7 @@
   kind: howto
   message: "¿qué me falta configurar para aprovechar mejor la app?"
   goals:
-    - Lists what to set up in TopStocks, most consequential first (the book's own records before the extras)
+    - Lists what to set up in MyBrainStock, most consequential first (the book's own records before the extras)
     - Points to the guided tour or the Profile tabs where each one is switched on
   mentions: [plan, perfil, tour, notificaciones]
 
@@ -1066,7 +1066,7 @@
   kind: abstain
   message: "¿Cómo compro acciones directamente desde TopStocks?"
   goals:
-    - Says TopStocks does not execute trades; buying happens at the broker, then import
+    - Says MyBrainStock does not execute trades; buying happens at the broker, then import
 
 - id: abstain-guaranteed
   area: abstain

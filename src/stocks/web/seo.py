@@ -43,7 +43,7 @@ from stocks.web.landing import (
 )
 from stocks.web.markup import esc
 
-SITE_NAME = "TopStocks"
+SITE_NAME = "MyBrainStock"
 REPO_URL = landing.GITHUB_URL
 
 # The share card. 1200x630 is the size Open Graph, Twitter/X, LinkedIn,
@@ -371,7 +371,7 @@ def ticker_head(
     """(title, meta tags) for a ticker page's link preview.
 
     The app shell is one document for every page and the ticker page is the one
-    a reader pastes into a chat: without these the unfurl is "TopStocks" and
+    a reader pastes into a chat: without these the unfurl is "MyBrainStock" and
     nothing else, whatever the link was about. Open Graph and Twitter only —
     the shell stays noindex, this is for the preview, not the index.
 

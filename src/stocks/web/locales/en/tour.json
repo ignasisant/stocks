@@ -23,8 +23,8 @@
   "tour.news_resume": "Back to what's new",
   "tour.news_skip": "Skip the rest",
   "tour.news_dismiss": "Done",
-  "tour.welcome_title": "Welcome to TopStocks",
-  "tour.welcome_body": "TopStocks turns your broker statements into your real numbers: returns, risk and tax, in your own currency. This tour shows each feature and takes you to it.",
+  "tour.welcome_title": "Welcome to MyBrainStock",
+  "tour.welcome_body": "MyBrainStock turns your broker statements into your real numbers: returns, risk and tax, in your own currency. This tour shows each feature and takes you to it.",
   "tour.import_title": "Import your statement",
   "tour.import_body": "Drop a statement from Revolut, Trading 212, Trade Republic, DEGIRO, IBKR, Saxo, crypto or any CSV. You see every row before it is saved, and re-importing never duplicates. No file? **Type your trades** in the chat.",
   "tour.import_cta": "Open Import",
@@ -133,7 +133,7 @@
   "tour.news_2026_10_routines_title": "Your daily questions, answered",
   "tour.news_2026_10_routines_body": "Ask for something “every morning” and Home's card answers it before you ask.",
   "tour.news_2026_10_claude_title": "Your portfolio, inside Claude",
-  "tour.news_2026_10_claude_body": "Connect TopStocks to Claude and ask about your portfolio from there. Set it up in Profile → MCP.",
+  "tour.news_2026_10_claude_body": "Connect MyBrainStock to Claude and ask about your portfolio from there. Set it up in Profile → MCP.",
   "tour.news_2026_10_1_fixbook_title": "Fix your book from the chat",
   "tour.news_2026_10_1_fixbook_body": "Tell the assistant what's wrong and it fixes it once you confirm, with **Undo**.",
   "tour.news_2026_10_2_home_title": "A Home in your order",
@@ -222,5 +222,7 @@
   "tour.tip_profile_1": "Currency, language and tax country; each change saves itself.",
   "tour.tip_profile_2": "Restart the guided tour from Preferences whenever you like.",
   "tour.news_2026_11_6_funds_title": "Funds for each sector",
-  "tour.news_2026_11_6_funds_body": "Each sector now lists its **ETFs and funds**: cost, purity, overlap with the podium and returns in your money."
+  "tour.news_2026_11_6_funds_body": "Each sector now lists its **ETFs and funds**: cost, purity, overlap with the podium and returns in your money.",
+  "tour.news_2026_11_7_watchlist_title": "Your list, reread",
+  "tour.news_2026_11_7_watchlist_body": "Home's **Your list** now opens on what needs a look today: buy zones, odd moves and results."
 }

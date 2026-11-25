@@ -1,7 +1,7 @@
 """Speech-to-text for the assistant's voice notes.
 
 One backend, and it is one the deploy already pays for: the ``[free_llm]``
-groq key that funds the keyless "TopStocks AI" chat chain also serves Whisper
+groq key that funds the keyless "MyBrainStock AI" chat chain also serves Whisper
 at ``/audio/transcriptions`` in the OpenAI wire format, so a voice note costs
 no new secret, no new dependency and no new account to watch. Shaped like
 ``chat_web``: ``available()`` decides whether the surface appears at all, and

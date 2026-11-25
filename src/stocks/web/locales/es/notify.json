@@ -1,16 +1,16 @@
 {
   "notify.shares": "{n} acciones",
   "notify.alerts_subject": "⚠️ Alertas de precio",
-  "notify.nudge_title": "TopStocks — seguimos aquí",
-  "notify.feedback_reply_title": "TopStocks — sobre lo que nos contaste",
+  "notify.nudge_title": "MyBrainStock — seguimos aquí",
+  "notify.feedback_reply_title": "MyBrainStock — sobre lo que nos contaste",
   "notify.nudge_away": "{days} días desde tu última visita.",
   "notify.nudge_book": "Cartera {value} · semana {change}.",
   "notify.nudge_mover": "Mayor movimiento: {ticker} {pct}.",
   "notify.nudge_empty": "Tu libro sigue vacío: importa un extracto y el asistente hace el resto.",
   "notify.nudge_last": "Último aviso de este tipo; el resumen diario sigue como siempre.",
-  "notify.test_message": "👋 Mensaje de prueba de TopStocks — las notificaciones funcionan.",
+  "notify.test_message": "👋 Mensaje de prueba de MyBrainStock — las notificaciones funcionan.",
   "notify.push_answer_title": "Tu respuesta está lista",
-  "notify.push_test_title": "Las notificaciones de TopStocks funcionan",
+  "notify.push_test_title": "Las notificaciones de MyBrainStock funcionan",
   "notify.push_test_body": "Este dispositivo recibirá el resumen diario, las alertas de precio y las respuestas listas.",
   "notify.briefing_change": "Cambiar hora"
 }

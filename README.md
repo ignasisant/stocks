@@ -1,8 +1,8 @@
-# TopStocks
+# MyBrainStock
 
-<img src="src/stocks/web/assets/topstocks-logo.svg" alt="TopStocks logo" width="270">
+<img src="src/stocks/web/assets/topstocks-logo.svg" alt="MyBrainStock logo" width="270">
 
-**TopStocks** is a personal equity tracking toolkit: fetch market
+**MyBrainStock** is a personal equity tracking toolkit: fetch market
 prices, compute technical indicators, run price alerts, and browse a visual
 analytics dashboard. Stocks, ETFs and traded funds, and crypto pairs are all
 first-class — a fund shows its cost, basket and exposure where a company shows
@@ -300,7 +300,7 @@ in your language.
 
 ### Free assistant, no user key (`[free_llm]`)
 
-Optionally, the deploy can offer a keyless **TopStocks AI** provider: a chain of
+Optionally, the deploy can offer a keyless **MyBrainStock AI** provider: a chain of
 free-tier backends billed to *operator* keys in `secrets.toml`. Users get chat
 with zero setup; when a backend answers with a rate-limit (or any error before
 its first token), the chain hops to the next one, and only errors out once
@@ -328,7 +328,7 @@ openrouter = "sk-or-..."  # openrouter.ai/settings/keys (:free models)
 # allowed_emails = "you@example.com, someone@else.com"
 ```
 
-When configured, TopStocks AI is listed first and becomes the default for
+When configured, MyBrainStock AI is listed first and becomes the default for
 accounts that never picked a provider; the BYOK entries stay available in the
 same selector. Each account gets a **daily message cap** (`daily_cap`, counted
 in its prefs) so one user can't drain the shared quota, and the process keeps a

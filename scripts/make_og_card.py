@@ -151,7 +151,7 @@ def build_card() -> Image.Image:
     d = ImageDraw.Draw(img)
 
     _mark(d, 80, 96, 88)
-    d.text((196, 104), "TopStocks", font=_load("display", 84, weight=800), fill=TEXT)
+    d.text((196, 104), "MyBrainStock", font=_load("display", 84, weight=800), fill=TEXT)
 
     d.text(
         (82, 250),

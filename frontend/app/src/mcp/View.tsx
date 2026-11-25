@@ -4,7 +4,7 @@
  * Before the host has sent a result it says so; a result with no view of its
  * own (or an error) is left to the text Claude already has, with one line
  * saying as much rather than an empty frame. Each kind ends with the way back
- * to the page in TopStocks it summarises.
+ * to the page in MyBrainStock it summarises.
  */
 
 import { shortDay } from "./format";
@@ -17,7 +17,7 @@ import type {
 } from "./types";
 import type { ToolResult } from "./bridge";
 
-/** Where "Open in TopStocks" goes for each kind: the tab it summarises. */
+/** Where "Open in MyBrainStock" goes for each kind: the tab it summarises. */
 const PAGES: Record<string, string> = {
   overview: "/portfolio",
   performance: "/portfolio?tab=risk",

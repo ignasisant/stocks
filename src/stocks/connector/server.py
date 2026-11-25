@@ -1,4 +1,4 @@
-"""TopStocks as a remote MCP server: the portfolio inside Claude.
+"""MyBrainStock as a remote MCP server: the portfolio inside Claude.
 
 Read-only unless the person ticked the edits box at consent: a token without
 `store.WRITE_SCOPE` is never shown the tools that write (`_Server`), and
@@ -59,7 +59,7 @@ _MCP_PATHS = frozenset(
 _MAX_BODY = 64 * 1024
 
 INSTRUCTIONS = """\
-Access to one person's TopStocks investment portfolio: holdings, returns, \
+Access to one person's MyBrainStock investment portfolio: holdings, returns, \
 transactions, dividends and fees, risk, their tax report, and market data for \
 the tickers they follow. Nothing here can trade.
 
@@ -75,7 +75,7 @@ and present it as timing on top of the fundamentals, never as the reason to buy.
 
 Before advising, read `investor_context`: the person's investor profile, the \
 plan they hold the book to (target mix, caps, contribution, cash reserve) and \
-what they told the TopStocks assistant to remember. Frame answers by their \
+what they told the MyBrainStock assistant to remember. Frame answers by their \
 stated goals and limits, and build on a decision they recorded instead of \
 re-raising it — a position they said they keep is not a reason to suggest \
 selling it again; say what changed since, if anything did. Those are context, \
@@ -88,7 +88,7 @@ the pillars with `check_thesis` before proposing them. Their buy zones and \
 the checklist every buy or add is held to are in `entry_criteria_status`: \
 before suggesting a buy or an add, say which lines it breaks.
 
-The TopStocks assistant analyses through written frameworks; use the same \
+The MyBrainStock assistant analyses through written frameworks; use the same \
 ones so both give the person one way of reasoning. Before analysing a \
 company, `read_skill` the id `ticker_details` returns under `skill`; for an \
 earnings, tax, valuation or risk question, the lens `list_skills` names for \
@@ -171,7 +171,7 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
             views.URI,
             html,
             name="topstocks-view",
-            title="TopStocks",
+            title="MyBrainStock",
             csp=ResourceCsp(resource_domains=[origin]),
             prefers_border=True,
         )
@@ -182,7 +182,7 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
 
     mcp = _Server(
         name="TopStocks",
-        title="TopStocks",
+        title="MyBrainStock",
         instructions=INSTRUCTIONS,
         website_url=origin,
         icons=[Icon(src=f"{origin}/lp/topstocks-icon.svg", mime_type="image/svg+xml")],
@@ -235,10 +235,10 @@ def _prompts() -> list[Prompt]:
             max_length=200,
             description="A ticker or a question to apply it to; optional.")] = "",
         ) -> str:
-            target = subject.strip() or "the person's TopStocks portfolio"
+            target = subject.strip() or "the person's MyBrainStock portfolio"
             return (
                 f"Apply the {skill.name} framework below to {target}. Take every "
-                "figure from the TopStocks tools (start with investor_context), "
+                "figure from the MyBrainStock tools (start with investor_context), "
                 f"none from memory.\n\n## {skill.name}\n{skill.body}"
             )
         return fn

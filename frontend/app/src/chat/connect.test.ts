@@ -65,13 +65,13 @@ describe("the PKCE pair", () => {
 describe("leaving for the sign-in", () => {
   it("sends the challenge, never the verifier, and a callback without the query", async () => {
     page("?tab=risk");
-    const url = new URL((await connectUrl(openrouter, true, "TopStocks"))!);
+    const url = new URL((await connectUrl(openrouter, true, "MyBrainStock"))!);
     expect(`${url.origin}${url.pathname}`).toBe("https://openrouter.ai/auth");
     expect(url.searchParams.get("callback_url")).toBe(
       "https://topstocks.app/portfolio",
     );
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(url.searchParams.get("key_label")).toBe("TopStocks");
+    expect(url.searchParams.get("key_label")).toBe("MyBrainStock");
 
     const pending = takeConnect()!;
     expect(pending.provider).toBe("openrouter");
@@ -86,24 +86,24 @@ describe("leaving for the sign-in", () => {
 
   it("does not start a sign-in the tab could not finish", async () => {
     page("", true);
-    expect(await connectUrl(openrouter, true, "TopStocks")).toBeNull();
+    expect(await connectUrl(openrouter, true, "MyBrainStock")).toBeNull();
   });
 
   it("does not start one for a provider without a sign-in", async () => {
-    expect(await connectUrl({ id: "anthropic" }, true, "TopStocks")).toBeNull();
+    expect(await connectUrl({ id: "anthropic" }, true, "MyBrainStock")).toBeNull();
     expect(takeConnect()).toBeNull();
   });
 });
 
 describe("coming back", () => {
   it("hands the verifier over once", async () => {
-    await connectUrl(openrouter, false, "TopStocks");
+    await connectUrl(openrouter, false, "MyBrainStock");
     expect(takeConnect()?.remember).toBe(false);
     expect(takeConnect()).toBeNull();
   });
 
   it("refuses a verifier older than the code it was for", async () => {
-    await connectUrl(openrouter, true, "TopStocks");
+    await connectUrl(openrouter, true, "MyBrainStock");
     expect(takeConnect(Date.now() + 11 * 60 * 1000)).toBeNull();
   });
 

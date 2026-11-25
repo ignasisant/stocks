@@ -1971,11 +1971,12 @@
 .ag-chat-import {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 12px;
+  padding: 14px;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
+  border-radius: var(--ag-radius-lg);
   background: var(--ag-surface-card);
+  container: ag-chat-import / inline-size;
 }
 
 .ag-chat-import-head {
@@ -1983,17 +1984,32 @@
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-  color: var(--ag-text-secondary);
-  font-size: 12px;
 }
+/* The file's name is the card's title; its format rides after it and is the
+   part the ellipsis eats first. */
 .ag-chat-import-head p {
   display: flex;
   gap: 6px;
   align-items: center;
   min-width: 0;
   margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+.ag-chat-import-head p > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-chat-import-head svg {
+  flex: none;
+  color: var(--ag-text-muted);
+}
+/* "See it wide" keeps its one line: the title gives way, not the button. */
+.ag-chat-import-wide {
+  flex: none;
   white-space: nowrap;
 }
 
@@ -2016,13 +2032,52 @@
 }
 
 .ag-chat-rows th {
-  color: var(--ag-text-secondary);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
   font-weight: 500;
+}
+/* Column names come from the import page's catalog, lower-case there. */
+.ag-chat-rows th::first-letter {
+  text-transform: uppercase;
 }
 
 .ag-chat-rows .ag-chat-num {
   text-align: right;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
   font-variant-numeric: tabular-nums;
+}
+.ag-chat-rows th.ag-chat-num {
+  font-family: inherit;
+}
+.ag-chat-rows .ag-chat-date {
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
+}
+
+/* The operation as a pill, tinted by what it does to the money. */
+.ag-chat-act {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ag-brand-accent) 16%, transparent);
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.ag-chat-act[data-tone="buy"] {
+  background: color-mix(in srgb, var(--ag-candle-up) 16%, transparent);
+  color: var(--ag-up);
+}
+.ag-chat-act[data-tone="sell"] {
+  background: color-mix(in srgb, var(--ag-candle-down) 16%, transparent);
+  color: var(--ag-down);
+}
+.ag-chat-act[data-tone="move"] {
+  background: color-mix(in srgb, var(--ag-text-muted) 16%, transparent);
+  color: var(--ag-text-secondary);
 }
 
 .ag-chat-tier > summary {
@@ -2058,19 +2113,36 @@
   font-size: 12px;
 }
 
+.ag-chat-broker label {
+  color: var(--ag-text-secondary);
+  font-weight: 600;
+}
+
 .ag-chat-broker select,
 .ag-chat-broker input {
-  padding: 6px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-card);
   color: var(--ag-text-primary);
   font: inherit;
+  font-size: var(--ag-fs-md);
+}
+.ag-chat-broker :is(select, input):focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
 }
 
 .ag-chat-import-acts {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.ag-chat-import-acts .ag-btn:disabled {
+  box-shadow: none;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* The statement at the window's width: the panel itself, borrowed wide
@@ -2189,9 +2261,13 @@
 .ag-chat-review-rows tr[data-off] td:not(.ag-chat-pick) {
   opacity: 0.45;
 }
-.ag-chat-review-rows .ag-chat-why {
-  white-space: normal;
+/* Not `.ag-chat-why`: that is the answer-rating panel, a bordered flex box,
+   and on a table cell it breaks the cell out of its row. */
+.ag-chat-review-rows .ag-chat-reason {
   min-width: 220px;
+  color: var(--ag-text-secondary);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .ag-chat-pick {
   width: 1%;
@@ -2256,45 +2332,79 @@
   min-height: 36px;
 }
 
-/* The card's three counts: ready, warned, already held. A warned count wears
-   the status colour; a zero steps back. */
+/* The card's counts as the KPI strip: tiles one hairline apart, the figure
+   in the display face. A warned count wears the status colour; a zero steps
+   back to muted. */
 .ag-chat-counts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 1px;
   margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-border);
 }
 .ag-chat-counts > div {
-  padding: 6px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
+  padding: 8px 10px;
+  background: var(--ag-surface-card);
 }
 .ag-chat-counts > div[data-tone="warn"] {
   box-shadow: inset 3px 0 0 var(--ag-warn);
 }
-.ag-chat-counts > div[data-zero] {
-  opacity: 0.55;
-}
 .ag-chat-counts dt {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
+  font-size: var(--ag-fs-xs);
 }
 .ag-chat-counts dd {
-  margin: 0;
-  font-family: var(--ag-font-mono);
-  font-size: var(--ag-fs-base);
+  margin: 2px 0 0;
+  font-family: var(--ag-font-display);
+  font-size: 1.375rem;
   font-weight: 600;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+}
+.ag-chat-counts > div[data-tone="warn"] dd {
+  color: var(--ag-warn);
+}
+.ag-chat-counts > div[data-zero] dd {
+  color: var(--ag-text-muted);
 }
 .ag-chat-sample {
   display: table;
 }
+.ag-chat-sample th,
+.ag-chat-sample td {
+  padding: 7px 8px 7px 0;
+}
+.ag-chat-sample :is(th, td):first-child {
+  padding-left: 8px;
+}
+/* A narrow card lets the operation break under its pill rather than push
+   the total out of the card. */
+@container ag-chat-import (max-width: 380px) {
+  .ag-chat-sample td:nth-child(2) {
+    white-space: normal;
+  }
+  .ag-chat-sample .ag-chat-wide-op {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+}
+/* A warned row is edged in the status colour, like the import page's. */
+.ag-chat-sample tr[data-warn] td:first-child {
+  box-shadow: inset 3px 0 0 var(--ag-warn);
+}
 .ag-chat-import-warn {
   margin: 0;
-  padding-left: 8px;
-  border-left: 3px solid var(--ag-warn);
-  color: var(--ag-text-secondary);
-  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ag-warn-edge);
+  border-left-width: 3px;
+  border-left-color: var(--ag-warn);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
 }
 
 /* A button that reads as a link: "see all rows", "see it wide". */
@@ -2313,6 +2423,10 @@
   .ag-chat-link:hover {
     text-decoration: underline;
   }
+}
+/* "Something wrong?" under the import card's buttons, quieter than them. */
+.ag-chat-import-report {
+  margin-top: -4px;
 }
 
 /* The phone's list: one operation a row, sized for a thumb. */
@@ -2368,6 +2482,8 @@
 }
 .ag-chat-import .ag-chat-hint {
   margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
 }
 .ag-chat-op-amt {
   font-family: var(--ag-font-mono);
@@ -2429,7 +2545,9 @@ button.ag-chat-op-mark::before {
   .ag-chat-wide .ag-chat-btn,
   .ag-chat-link,
   .ag-chat-fix select,
-  .ag-chat-import-acts .ag-chat-btn {
+  .ag-chat-import-acts .ag-chat-btn,
+  .ag-chat-import-wide,
+  .ag-chat-broker :is(select, input) {
     min-height: 44px;
   }
   .ag-chat-pick input {

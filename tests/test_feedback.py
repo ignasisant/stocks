@@ -36,6 +36,15 @@ def test_submit_writes_one_json_file_per_submission(sandbox):
     assert p.parent == sandbox
 
 
+def test_a_report_names_the_statement_it_came_with(sandbox):
+    """The id `stocks imports fetch` takes — and nothing when none came."""
+    rel = "jane_example_com_1a2b3c4d/20261124T100000Z-0123456789abcdef.csv.enc"
+    with_file = json.loads(feedback.submit("wrong", "bug", statement=rel).read_text())
+    assert with_file["statement"] == rel
+    without = json.loads(feedback.submit("wrong", "bug").read_text())
+    assert "statement" not in without
+
+
 def test_submit_clamps_kind_and_length(sandbox):
     p = feedback.submit("x" * (feedback.MAX_CHARS + 500), "exploit")
     data = json.loads(p.read_text())

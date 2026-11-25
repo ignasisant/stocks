@@ -1,4 +1,4 @@
-# TopStocks — project rules
+# MyBrainStock — project rules
 
 ## Big features ship announced — nothing else does
 

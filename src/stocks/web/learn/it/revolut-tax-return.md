@@ -32,4 +32,4 @@ Le tue azioni sono custodite fuori dalla Spagna. Se il loro valore supera **50.0
 ## L'errore tipico
 Copiare il profitto in dollari che mostra l'app, o i dividendi totali ricevuti. Entrambi i dati sono sbagliati per Hacienda: il primo non è in euro e il secondo è netto.
 
-TopStocks importa il CSV di Revolut e fa questi calcoli: FIFO, euro al cambio di ogni data, regola dei due mesi, e il lordo di ogni dividendo con la sua ritenuta. È un aiuto per preparare la dichiarazione, non una consulenza fiscale: se il tuo caso è complesso, chiedi a un consulente.
+MyBrainStock importa il CSV di Revolut e fa questi calcoli: FIFO, euro al cambio di ogni data, regola dei due mesi, e il lordo di ogni dividendo con la sua ritenuta. È un aiuto per preparare la dichiarazione, non una consulenza fiscale: se il tuo caso è complesso, chiedi a un consulente.

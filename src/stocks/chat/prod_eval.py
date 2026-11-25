@@ -57,7 +57,7 @@ EXTRA_AREAS = ("assistant", "concept", "abstain")
 # answer of that kind useful to a reader rather than merely not wrong.
 KIND_GOALS: dict[str, tuple[str, ...]] = {
     "howto": (
-        "Describes how it works in TopStocks itself (its pages, tabs and buttons), "
+        "Describes how it works in MyBrainStock itself (its pages, tabs and buttons), "
         "not a generic answer about other apps or brokers",
         "Invents no button, page or feature the app does not have",
     ),

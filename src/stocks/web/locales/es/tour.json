@@ -23,8 +23,8 @@
   "tour.news_resume": "Volver a novedades",
   "tour.news_skip": "Omitir el resto",
   "tour.news_dismiss": "Listo",
-  "tour.welcome_title": "Te damos la bienvenida a TopStocks",
-  "tour.welcome_body": "TopStocks convierte los extractos de tu bróker en tus cifras reales: rentabilidad, riesgo e impuestos, en tu moneda. Este tutorial te enseña cada función y te lleva a ella.",
+  "tour.welcome_title": "Te damos la bienvenida a MyBrainStock",
+  "tour.welcome_body": "MyBrainStock convierte los extractos de tu bróker en tus cifras reales: rentabilidad, riesgo e impuestos, en tu moneda. Este tutorial te enseña cada función y te lleva a ella.",
   "tour.import_title": "Importa tu extracto",
   "tour.import_body": "Sube un extracto de Revolut, Trading 212, Trade Republic, DEGIRO, IBKR, Saxo, cripto o cualquier CSV. Ves cada fila antes de guardarla y reimportar nunca duplica. ¿Sin extracto? **Escribe tus operaciones** en el chat.",
   "tour.import_cta": "Abrir Importar",
@@ -133,7 +133,7 @@
   "tour.news_2026_10_routines_title": "Tus preguntas diarias, ya respondidas",
   "tour.news_2026_10_routines_body": "Pide algo «cada mañana» y la tarjeta de Inicio lo responde antes de que preguntes.",
   "tour.news_2026_10_claude_title": "Tu cartera, dentro de Claude",
-  "tour.news_2026_10_claude_body": "Conecta TopStocks a Claude y pregunta por tu cartera desde allí. Se activa en Perfil → MCP.",
+  "tour.news_2026_10_claude_body": "Conecta MyBrainStock a Claude y pregunta por tu cartera desde allí. Se activa en Perfil → MCP.",
   "tour.news_2026_10_1_fixbook_title": "Corrige tus operaciones desde el chat",
   "tour.news_2026_10_1_fixbook_body": "Dile al asistente qué está mal y lo corrige cuando confirmes, con **Deshacer**.",
   "tour.news_2026_10_2_home_title": "El inicio en tu orden",
@@ -222,5 +222,7 @@
   "tour.tip_profile_1": "Moneda, idioma y país fiscal; cada cambio se guarda solo.",
   "tour.tip_profile_2": "Repite el tutorial guiado desde Preferencias cuando quieras.",
   "tour.news_2026_11_6_funds_title": "Fondos de cada sector",
-  "tour.news_2026_11_6_funds_body": "Cada sector lista sus **ETF y fondos**: coste, pureza, solape con el podio y rentabilidad en tu moneda."
+  "tour.news_2026_11_6_funds_body": "Cada sector lista sus **ETF y fondos**: coste, pureza, solape con el podio y rentabilidad en tu moneda.",
+  "tour.news_2026_11_7_watchlist_title": "Tu lista, releída",
+  "tour.news_2026_11_7_watchlist_body": "**Tu lista** en Inicio abre con lo que pide mirar hoy: zonas de compra, saltos raros y resultados."
 }

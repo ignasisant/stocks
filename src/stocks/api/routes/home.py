@@ -22,6 +22,7 @@ from __future__ import annotations
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
 import pandas as pd
 from fastapi import APIRouter
@@ -33,6 +34,7 @@ from stocks.analysis.portfolio import market_active
 from stocks.api.deps import Account, Writer
 from stocks.api.routes.pulse import _reason
 from stocks.cache import carried
+from stocks.data.crypto import is_crypto
 from stocks.jsonsafe import num as _num
 from stocks.schemas import Breadth, MarketGlance, MarketTile
 from stocks.views import briefing, home
@@ -134,6 +136,29 @@ def _rate_tile(series) -> MarketTile | None:
     )
 
 
+class BuyZone(BaseModel):
+    state: Literal["met", "near", "far"] = Field(
+        description=(
+            "`met` once any buy rule is met (stored hit, or a price rule the "
+            "closes satisfy); `near` within 10 of the closest price rule; "
+            "`far` otherwise."
+        )
+    )
+    rule: str | None = Field(default=None, description="The rule the state is about.")
+    level: float | None = None
+    gap: float | None = Field(
+        default=None,
+        description=(
+            "Distance still to go: percent of price for `buy_below`, points "
+            "for `buy_drawdown_high`; negative once past. Null for a rule "
+            "only the night check reads."
+        ),
+    )
+    since: str | None = Field(default=None, description="When the rule was set, ISO.")
+    met: int = Field(default=0, description="Buy rules met on this name.")
+    rules: int = Field(default=0, description="Live buy rules on this name.")
+
+
 class CloseRow(BaseModel):
     ticker: str
     close: float | None = Field(
@@ -156,6 +181,27 @@ class CloseRow(BaseModel):
             "pre/after-hours). False greys the day figure: it is real, but it "
             "is not moving."
         )
+    )
+    month_pct: float | None = Field(
+        default=None, description="Last close against 21 sessions back, a fraction."
+    )
+    spark: list[float] = Field(
+        default_factory=list, description="The month's daily closes, oldest first."
+    )
+    held: bool = Field(default=False, description="The book holds it now.")
+    extreme: Literal["high", "low"] | None = Field(
+        default=None, description="Within 2 % of its 52-week high or low."
+    )
+    move_size: float | None = Field(
+        default=None,
+        description=(
+            "The day move in usual daily swings (standard deviations of the "
+            "year's returns). 5 or more is out of the ordinary: news, a split "
+            "or a bad print."
+        ),
+    )
+    zone: BuyZone | None = Field(
+        default=None, description="Where it stands against the reader's buy rules."
     )
 
 
@@ -191,18 +237,52 @@ def closes(account: Account) -> Closes:
     except Exception:  # noqa: BLE001 — a throttled burst is n/a cells, not a 500
         year = {}
     moves = home.last_closes(tickers, year)
-    return Closes(
-        rows=[
+    owned = {t.upper() for t in home.held(account)}
+    # Crypto has no 52-week story worth a mark — `home.extremes_scope`'s rule.
+    stocks_only = tuple(t for t in tickers if not is_crypto(t))
+    edges: dict[str, Literal["high", "low"]] = {
+        row[0]: "high" if row[2] == "high" else "low"
+        for row in home.scan_extremes(stocks_only, year)
+    }
+    rules = _buy_rules(account)
+    rows = []
+    for ticker in tickers:
+        series = year.get(ticker) or []
+        zone = home.buy_zone(rules.get(ticker.upper(), []), series)
+        rows.append(
             CloseRow(
                 ticker=ticker,
                 close=moves[ticker][0],
                 pct=moves[ticker][1],
                 as_of=moves[ticker][2],
                 active=market_active(ticker),
+                month_pct=home.month_move(series),
+                spark=[round(v, 4) for v in series[-home.SPARK_BARS :]],
+                held=ticker.upper() in owned,
+                extreme=edges.get(ticker),
+                move_size=home.move_size(series, moves[ticker][1]),
+                zone=BuyZone(**zone) if zone else None,
             )
-            for ticker in tickers
-        ]
-    )
+        )
+    return Closes(rows=rows)
+
+
+def _buy_rules(account) -> dict[str, list[dict]]:
+    """The reader's live buy rules by upper-case ticker, as `rule_row`s.
+
+    A journal that cannot be read costs the zone column, not the list."""
+    from stocks.chat import journal
+
+    if home.is_guest(account):
+        return {}
+    try:
+        entries = journal.load(account.journal)
+    except Exception:  # noqa: BLE001 — the rows stand without their zones
+        return {}
+    out: dict[str, list[dict]] = {}
+    for entry in journal.criteria(entries, side="buy"):
+        out.setdefault(entry.ticker.upper(), []).append(journal.rule_row(entry))
+    return out
 
 
 @router.post("/home/refresh", response_model=Refreshed, summary="Refresh prices")

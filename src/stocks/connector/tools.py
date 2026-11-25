@@ -94,7 +94,7 @@ ADD_MAX = 50
 
 READ_ONLY_REFUSAL = (
     "This connection can only read. To let Claude edit, the person disconnects "
-    "TopStocks in Claude and connects it again, ticking the box that lets "
+    "MyBrainStock in Claude and connects it again, ticking the box that lets "
     "Claude make changes on the consent screen."
 )
 
@@ -215,7 +215,7 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
     token = get_access_token()
     email = token.subject if token is not None else None
     if not email:
-        return _error("Not signed in to TopStocks.")
+        return _error("Not signed in to MyBrainStock.")
     # The listing already hides these from a read-only token; this is the
     # check that counts, since a client can call a name it was never shown.
     if write and not can_write():
@@ -230,7 +230,7 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
             if not ratelimit.allow(key, max_events=TOOL_MAX, window_s=TOOL_WINDOW_S):
                 outcome = "throttled"
                 wait = ratelimit.retry_after(key, window_s=TOOL_WINDOW_S)
-                return _error(f"Too many TopStocks requests; try again in {wait} s.")
+                return _error(f"Too many MyBrainStock requests; try again in {wait} s.")
             holder: dict[str, float] = {}
             stale = cache.STALE.set(holder)
             try:
@@ -263,11 +263,11 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
             outcome = f"http_{exc.status_code}"
             if exc.status_code < 500 and isinstance(exc.detail, str):
                 return _error(exc.detail)
-            return _error("TopStocks could not answer right now; try again shortly.")
+            return _error("MyBrainStock could not answer right now; try again shortly.")
         except YFRateLimitError:
             outcome = "rate_limited"
             return _error(
-                "The market data provider is rate limiting TopStocks; "
+                "The market data provider is rate limiting MyBrainStock; "
                 "try again in a minute."
             )
         except URLError:
@@ -277,7 +277,7 @@ async def _run(tool: str, work: Callable[[UserPaths], dict], *,
             outcome = "failed"
             obs.warn("mcp.tool_failed", tool=tool, error_type=type(exc).__name__,
                      where=_where(exc))
-            return _error("TopStocks hit an internal error answering this.")
+            return _error("MyBrainStock hit an internal error answering this.")
         finally:
             obs.event("mcp.tool", tool=tool, outcome=outcome,
                       ms=round((time.monotonic() - started) * 1000))
@@ -293,7 +293,7 @@ Base = Annotated[
 Ticker = Annotated[
     str,
     Field(min_length=1, max_length=32,
-          description="Ticker as TopStocks lists it, e.g. AAPL, SAN.MC, BTC-EUR."),
+          description="Ticker as MyBrainStock lists it, e.g. AAPL, SAN.MC, BTC-EUR."),
 ]
 Window = Literal["inception", "6mo", "1y", "2y", "5y"]
 RiskPeriod = Literal["inception", "6mo", "1y", "2y", "5y"]
@@ -307,7 +307,7 @@ _HISTORY_FOR: dict[str, str] = {
 def _symbol(raw: str) -> str:
     code = raw.strip().upper()
     if not _SYMBOL_RE.match(code):
-        raise _Refused("That is not a ticker symbol TopStocks can look up.")
+        raise _Refused("That is not a ticker symbol MyBrainStock can look up.")
     return code
 
 
@@ -1029,7 +1029,7 @@ async def app_help(
         max_length=120,
         description="With doc: one section to read whole, by heading.")] = "",
 ) -> CallToolResult:
-    """The documentation the app's chat answers "how does TopStocks…" from
+    """The documentation the app's chat answers "how does MyBrainStock…" from
     (`chat/knowledge.py`): methodology documents and the guided tour's copy,
     with the screen each passage is about."""
     def work(paths: UserPaths) -> dict:
@@ -1907,7 +1907,7 @@ TOOLS: tuple[Spec, ...] = (
     Spec(investor_context, "Investor profile and memories",
          "Who the portfolio belongs to: their investor profile (risk, horizon, "
          "focus, constraints, notes; `set` false means nobody filled it in) and "
-         "what they told the TopStocks assistant to remember — goals, "
+         "what they told the MyBrainStock assistant to remember — goals, "
          "preferences, decisions, constraints, and `routine` items they asked "
          "to see daily. Context to frame advice by, never a source of figures. "
          "Read it before advising."),
@@ -1917,7 +1917,7 @@ TOOLS: tuple[Spec, ...] = (
          "was met, and the checklist every buy or add is held to. Check a "
          "suggested buy or add against both and say which lines it breaks."),
     Spec(decision_journal, "Decision journal",
-         "Every move the TopStocks app proposed to this person and showed "
+         "Every move the MyBrainStock app proposed to this person and showed "
          "them — daily-card lines (fired alerts, loss harvesting, trims, "
          "rebalances), Review-page sells/trims/adds/buys, alert and watchlist "
          "changes offered in its chat — with the figures it was made on, the "
@@ -1951,14 +1951,14 @@ TOOLS: tuple[Spec, ...] = (
          "The last notifications pushed to the person's devices, newest "
          "first: topic, title, text, link, and how many devices took it."),
     Spec(list_skills, "Analysis frameworks",
-         "The frameworks the TopStocks assistant analyses with: lenses (value, "
+         "The frameworks the MyBrainStock assistant analyses with: lenses (value, "
          "dividend, earnings review, bear case, tax…) and industry playbooks "
          "(semiconductors, banks, biotech…). Method, not data."),
     Spec(read_skill, "Read a framework",
          "One framework's full text by id. Read the one that fits before "
          "analysing a company or answering a tax or earnings question; "
          "ticker_details names the company's own under `skill`."),
-    Spec(app_help, "How TopStocks works",
+    Spec(app_help, "How MyBrainStock works",
          "Search the app's own documentation: how returns, tax, imports, "
          "alerts and each screen work, with a link to the screen. Read it "
          "before explaining what the app does or why a figure is what it is."),
@@ -2088,7 +2088,7 @@ TOOLS: tuple[Spec, ...] = (
          "get_alerts first to keep the ones not being changed.",
          write=True, destructive=True),
     Spec(remember, "Remember",
-         "Save something the person wants the TopStocks assistant to keep in "
+         "Save something the person wants the MyBrainStock assistant to keep in "
          "mind; a routine is shown in their daily briefing.", write=True),
     Spec(forget, "Forget",
          "Delete one saved memory by its id from investor_context.",

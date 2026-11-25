@@ -10,7 +10,7 @@ export type Position = {
   cost: number;
   pnl_pct: number | null;
   weight: number | null;
-  /** Absolute, on the TopStocks origin, or null for initials. */
+  /** Absolute, on the MyBrainStock origin, or null for initials. */
   logo?: string | null;
 };
 
@@ -67,6 +67,6 @@ export type Performance = {
 export type Words = {
   t(key: string, slots?: Record<string, string | number>): string;
   locale: string;
-  /** Back to TopStocks, through the host. */
+  /** Back to MyBrainStock, through the host. */
   open(path: string): void;
 };

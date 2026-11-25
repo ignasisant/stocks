@@ -396,7 +396,7 @@ def _icon(key: str) -> str:
 def _mark(width_class: str = "") -> str:
     src = esc(f"{ASSET_BASE}topstocks-icon.svg")
     cls = f' class="{width_class}"' if width_class else ""
-    return f'<img src="{src}" alt="TopStocks" width="28" height="28"{cls}>'
+    return f'<img src="{src}" alt="MyBrainStock" width="28" height="28"{cls}>'
 
 
 def _lang_toggle(*, footer: bool = False) -> str:
@@ -553,7 +553,7 @@ def _top_bar() -> str:
     )
     return f"""
 <header class="ag-l-bar"><div class="ag-l-wrap ag-l-bar-in">
-  <div class="ag-l-brand">{_mark()}<span>TopStocks</span></div>
+  <div class="ag-l-brand">{_mark()}<span>MyBrainStock</span></div>
   <nav class="ag-l-nav">{nav}</nav>
   <div class="ag-l-spacer"></div>
   {_lang_toggle()}
@@ -1250,7 +1250,7 @@ def _footer() -> str:
 <footer class="ag-l-rule"><div class="ag-l-wrap ag-l-foot">
   <div class="ag-l-foot-top">
   <div class="ag-l-foot-brand">
-    <div class="ag-l-brand">{_mark()}<span>TopStocks</span></div>
+    <div class="ag-l-brand">{_mark()}<span>MyBrainStock</span></div>
     <p>{esc(tr("landing.footer_tagline"))}</p>
   </div>
   <div class="ag-l-foot-row">

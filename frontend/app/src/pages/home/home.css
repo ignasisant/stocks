@@ -279,7 +279,7 @@
 /* "Customise" takes no row of its own: it sits at the right end of the lead
    card's heading line, and that line keeps room for it. A card drawn as a
    bordered box has its heading inside the padding; a section (the portfolio's
-   title, the watchlist's first group) starts at the top edge. */
+   title) starts at the top edge. */
 .hm-slot-lead {
   --hm-lead-room: 8.5rem;
   position: relative;
@@ -297,11 +297,6 @@
   right: 0;
 }
 
-.hm-slot-lead[data-card="watchlist"] > .hm-customize {
-  top: 0.35rem;
-  right: 0.5rem;
-}
-
 /* Nothing drawn beside it (all cards put away, or the lead one empty). */
 .hm-slot-lead > .hm-customize:only-child {
   position: static;
@@ -310,8 +305,7 @@
 
 .hm-customize + .hm-card > :first-child,
 .hm-customize + .ag-skeleton,
-.hm-customize + .hm-section > .hm-h2,
-.hm-customize + .hm-section > .hm-group:first-child > summary {
+.hm-customize + .hm-section > .hm-h2 {
   padding-right: var(--hm-lead-room);
 }
 
@@ -665,27 +659,492 @@
   margin-top: 0.75rem;
 }
 
-/* -------------------------------------------------------------- the groups */
+/* ---------------------------------------------------------- the watchlist */
 
-.hm-group {
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  background: var(--ag-surface-card);
+.hm-wl {
+  gap: 0.75rem;
 }
 
-.hm-group > summary {
+.hm-wl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hm-wl-count {
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+  font-weight: 500;
+}
+
+/* «Ahora»: what needs a look first, set on the accent's band. */
+.hm-wl-now {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   padding: 0.6rem 0.75rem;
-  cursor: pointer;
-  font-size: var(--ag-fs-base, 0.875rem);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-accent-band);
+}
+
+.hm-wl-eyebrow {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hm-wl-now ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hm-wl-now li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(7rem, 13rem) minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--ag-rule-soft);
+  font-size: var(--ag-fs-md, 0.8125rem);
+}
+
+.hm-wl-now li:first-child {
+  border-top: 0;
+}
+
+.hm-wl-now .hm-ticker {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.hm-wl-now .hm-ticker .ag-tick-name {
+  min-width: 0;
+  padding-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hm-wl-kind {
+  padding: 2px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hm-wl-now .k-met .hm-wl-kind {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+/* Yellow is unreadable as text: the odd move gets the fill, the text stays ink. */
+.hm-wl-now .k-odd .hm-wl-kind {
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-text-primary);
+}
+
+.hm-wl-now .k-part .hm-wl-kind,
+.hm-wl-now .k-near .hm-wl-kind {
+  background: var(--ag-surface-card);
+  color: var(--ag-brand-accent);
+}
+
+.hm-wl-why {
+  min-width: 0;
+  color: var(--ag-text-secondary);
+}
+
+.hm-wl-more {
+  align-self: flex-start;
+}
+
+/* Groups as chips: one line that scrolls sideways rather than a wall of them. */
+.hm-wl-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hm-wl-chips > * {
+  flex: none;
+}
+
+.hm-wl-chips small {
+  margin-left: 2px;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+}
+
+.hm-wl-sum {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hm-wl-tally {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md, 0.8125rem);
+}
+
+.hm-wl-bar {
+  display: flex;
+  gap: 2px;
+  width: 7.5rem;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+}
+
+.hm-wl-bar i {
+  background: var(--ag-up);
+}
+
+.hm-wl-bar i + i {
+  background: var(--ag-down);
+}
+
+/* The rows: one grid, its columns dropping out when the group has nothing
+   for them (no-z: no buy rule; no-e: no results date). */
+.hm-wl-t {
+  --hm-wl-cols: minmax(0, 2.2fr) 8rem 7rem 5.5rem minmax(5rem, 0.8fr) 5.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.hm-wl-t.no-z {
+  --hm-wl-cols: minmax(0, 2.2fr) 8rem 7rem 5.5rem 5.5rem;
+}
+
+.hm-wl-t.no-e {
+  --hm-wl-cols: minmax(0, 2.2fr) 8rem 7rem 5.5rem minmax(5rem, 0.8fr);
+}
+
+.hm-wl-t.no-z.no-e {
+  --hm-wl-cols: minmax(0, 2.2fr) 8rem 7rem 5.5rem;
+}
+
+.hm-wl-h,
+.hm-wl-r {
+  display: grid;
+  grid-template-columns: var(--hm-wl-cols);
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.hm-wl-h {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--ag-border);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+}
+
+.hm-wl-h .is-sorted {
+  color: var(--ag-text-primary);
   font-weight: 600;
 }
 
-.hm-group[open] > summary {
-  border-bottom: 1px solid var(--ag-border);
+.hm-wl-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.hm-group > .hm-table {
-  padding: 0.25rem 0.5rem 0.5rem;
+.hm-wl-sort-l {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  white-space: nowrap;
+}
+
+.hm-wl-r {
+  min-height: 48px;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+.hm-wl-r:last-child {
+  border-bottom: 0;
+}
+
+.hm-wl-r.is-odd {
+  padding-left: 0.4rem;
+  box-shadow: inset 3px 0 0 var(--ag-warn);
+}
+
+.hm-wl-r .c-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.hm-wl-r .hm-ticker {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hm-wl-r .hm-ticker .ag-tick-logo,
+.hm-wl-r .hm-ticker .ag-tick-sym {
+  flex: none;
+}
+
+.hm-wl-r .hm-ticker .ag-tick-name {
+  min-width: 0;
+  padding-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hm-wl-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hm-wl-m,
+.hm-wl-tag {
+  padding: 1px 7px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  white-space: nowrap;
+}
+
+.hm-wl-m {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+}
+
+.hm-wl-m.held {
+  background: var(--ag-accent-band);
+  color: var(--ag-brand-accent);
+}
+
+.hm-wl-m.high {
+  color: var(--ag-up);
+}
+
+.hm-wl-m.low {
+  color: var(--ag-down);
+}
+
+.hm-wl-m.odd {
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-text-primary);
+}
+
+.hm-wl-tag {
+  border: 1px solid var(--ag-border);
+  color: var(--ag-text-muted);
+}
+
+.hm-wl-r .c-m {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The month is the second read; it takes the day's weight only when sorted on. */
+.hm-wl-t[data-sort="month"] .hm-wl-r .c-m {
+  font-size: var(--ag-fs-md, 0.8125rem);
+  font-weight: 600;
+}
+
+.hm-wl-r .c-m .pos {
+  color: var(--ag-up);
+}
+
+.hm-wl-r .c-m .neg {
+  color: var(--ag-down);
+}
+
+.hm-wl-spark {
+  flex: none;
+  width: 44px;
+  height: 18px;
+}
+
+.hm-wl-spark polyline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.hm-wl-spark.up polyline {
+  stroke: var(--ag-up);
+}
+
+.hm-wl-spark.down polyline {
+  stroke: var(--ag-down);
+}
+
+.hm-wl-r .c-px {
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-base, 0.875rem);
+}
+
+.hm-wl-r .c-d {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hm-na {
+  color: var(--ag-text-muted);
+}
+
+.hm-wl-z,
+.hm-wl-e {
+  padding: 2px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  white-space: nowrap;
+}
+
+.hm-wl-z.z-met {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.hm-wl-z.z-part,
+.hm-wl-z.z-near {
+  background: var(--ag-accent-band);
+  color: var(--ag-brand-accent);
+}
+
+.hm-wl-z.z-far {
+  color: var(--ag-text-muted);
+}
+
+.hm-wl-e {
+  border: 1px solid var(--ag-border);
+  color: var(--ag-text-secondary);
+}
+
+.hm-wl-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hm-wl-foot .hm-caption {
+  flex: 1 1 20rem;
+  max-width: 70ch;
+}
+
+/* Mid width: the results column and the tags go first. */
+@container ag-main (max-width: 56rem) {
+  .hm-wl-t {
+    --hm-wl-cols: minmax(0, 2fr) 7rem 6.5rem 5rem minmax(4.5rem, 0.8fr);
+  }
+
+  .hm-wl-t.no-z {
+    --hm-wl-cols: minmax(0, 2fr) 7rem 6.5rem 5rem;
+  }
+
+  .hm-wl-t .c-e,
+  .hm-wl-h > :nth-child(6),
+  .hm-wl-tag {
+    display: none;
+  }
+}
+
+/* Phone: dense two-line rows — name, spark, price; marks and zone, day. */
+@container ag-main (max-width: 38rem) {
+  .hm-wl-now li {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "k n" "t t";
+    row-gap: 2px;
+  }
+
+  .hm-wl-kind {
+    grid-area: k;
+  }
+
+  .hm-wl-now .hm-ticker {
+    grid-area: n;
+  }
+
+  .hm-wl-why {
+    grid-area: t;
+  }
+
+  .hm-wl-sort,
+  .hm-wl-sum .ag-seg {
+    width: 100%;
+  }
+
+  .hm-wl-h {
+    display: none;
+  }
+
+  .hm-wl-r,
+  .hm-wl-t.no-z .hm-wl-r,
+  .hm-wl-t.no-e .hm-wl-r,
+  .hm-wl-t.no-z.no-e .hm-wl-r {
+    grid-template-columns: minmax(0, 1fr) 44px auto;
+    grid-template-areas: "n m p" "s s d";
+    column-gap: 0.6rem;
+    row-gap: 2px;
+  }
+
+  .hm-wl-r .c-name {
+    grid-area: n;
+  }
+
+  .hm-wl-r .c-m {
+    grid-area: m;
+  }
+
+  .hm-wl-r .c-m > span {
+    display: none;
+  }
+
+  .hm-wl-r .c-px {
+    grid-area: p;
+  }
+
+  .hm-wl-r .c-d {
+    grid-area: d;
+  }
+
+  .hm-wl-r .c-z {
+    grid-area: s;
+  }
+
+  .hm-wl-r .hm-wl-marks {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------- the daily briefing */

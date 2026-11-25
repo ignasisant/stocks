@@ -1,0 +1,74 @@
+# Defaults for the `release-video` skill. Copy to ~/.config/release-video/config.yaml
+# and override only what changes; both files are merged (yours wins).
+
+output_dir: ~/Movies/mybrainstock-videos           # release_<version>/ is created inside
+language: es-ES
+max_duration: 60                   # seconds, unless the request says otherwise
+words_per_second: 2.4              # narration budget (≈140 words per 60 s)
+
+voice:
+  provider: edge                   # edge (free, Microsoft neural) | elevenlabs (paid, needs ELEVENLABS_API_KEY)
+  edge:
+    voice: es-ES-XimenaNeural      # female default; es-ES-ElviraNeural (female), es-ES-AlvaroNeural (male)
+    rate: '+4%'
+    pitch: '+0Hz'
+  elevenlabs:
+    voice_id: ''                   # pick a Castilian voice from the voice library
+    model_id: eleven_multilingual_v2
+    stability: 0.5
+    similarity_boost: 0.75
+    style: 0.2
+
+video:
+  viewport: [1440, 810]            # CSS px = captured frame size (CDP screencast delivers CSS px)
+  scale: 1                         # device scale factor; >1 does not raise screencast resolution
+  scene_lead: 0.35                 # silence before each scene's narration (s)
+  scene_tail: 0.55                 # pause after it (s)
+  crossfade: 0.35
+  max_speedup: 1.25                # a scene longer than its audio is sped up at most this much
+
+brand:
+  name: MyBrainStock
+  accent: '#C9A6DA'
+  background: '#18161C'
+  text: '#F9F9FA'
+  muted: '#B9B5C2'
+  logo: assets/logo/mybrainstock-white.png
+  monogram: assets/logo/monogram.png
+
+music:
+  enabled: true
+  file: assets/music/explainer_soft.m4a
+  volume_db: -21                   # bed level before ducking
+  duck_ratio: 6
+
+audio:
+  lufs: -16
+  true_peak: -1.5
+
+subtitles:
+  font: Instrument Sans SemiBold
+  size: 46
+  max_chars: 42
+  max_lines: 2
+
+# Where to record. `guest: true` = no login: a fresh headless context opens the app in
+# guest mode (sample book, never real data). Cards/diagrams need no environment at all.
+environments:
+  prod-guest:
+    base_url: https://mybrainstock.com
+    guest: true
+    guest_path: /?guest=1            # entry that starts the guest session; check landing for the real one
+  local-guest:                       # PR branch not deployed yet: dev server from the worktree
+    base_url: http://127.0.0.1:8501
+    guest: true
+    guest_path: /?guest=1
+    serve: uv run stocks dashboard --reload   # prints the URL
+  local-demo:                        # AI chat footage: throwaway account seeded from the sample book
+    base_url: http://127.0.0.1:8501
+    demo_email: video-demo@example.com   # only *@example.com on localhost; see SKILL.md 'AI footage'
+    repo: ~/Documents/stocks
+
+pii:
+  allow_emails: []
+  allow_patterns: []
