@@ -82,6 +82,7 @@ from stocks.web import (
     landing_static,
     legal,
     oidc,
+    old_host,
     precompress,
     seo,
     unsubscribe,
@@ -655,6 +656,10 @@ class LandingGate(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if (target := canonical_redirect(request)) is not None:
+            # An installed app cannot follow its address to a new host: it
+            # gets told how to move instead (`old_host`).
+            if old_host.is_app_launch(request):
+                return old_host.page(request, target)
             return RedirectResponse(target, status_code=301)
         # `?signin=1` on the landing is a request to sign in, and this is the
         # first place that can answer it with a real redirect. Guarded on the

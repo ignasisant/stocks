@@ -37,7 +37,7 @@ from stocks.config import PROJECT_ROOT
 
 ENV = "STOCKS_API_UPSTREAM"
 PROD_URL = os.environ.get(
-    "STOCKS_PROD_URL", "https://topstocks-613330607457.europe-west1.run.app"
+    "STOCKS_PROD_URL", "https://mybrainstock.com"
 ).rstrip("/")
 # What production serves for the account; everything else stays local.
 PREFIXES = ("/api/", "/app/static/")
