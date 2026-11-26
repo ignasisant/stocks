@@ -271,6 +271,14 @@ def fake_kraken_get(url, timeout):
             f"{c}{f}": {"altname": f"{c}{f}", "wsname": f"{c}/{f}", "status": "online"}
             for c in CRYPTO_NAMES for f in QUOTE_CURRENCIES
         }}
+    if "/OHLC" in url:
+        COUNTS["kraken.ohlc"] += 1
+        name = url.split("pair=", 1)[-1].split("&", 1)[0]
+        last, _ = FakeTicker(f"{name[:-3]}-{name[-3:]}")._px()
+        COUNTS["ticker.objects"] -= 1
+        start = int(time.time()) // 300 * 300 - 300 * 48
+        rows = [[start + 300 * i, *[last] * 5, "1", 3] for i in range(48)]
+        return {"error": [], "result": {name: rows, "last": start + 300 * 47}}
     names = url.rsplit("pair=", 1)[-1].split(",")
     COUNTS["kraken.calls"] += 1
     COUNTS["kraken.symbols"] += len(names)

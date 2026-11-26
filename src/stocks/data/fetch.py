@@ -893,15 +893,15 @@ def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.D
     (exchange-local ``YYYY-MM-DD``): Yahoo sends it in the same response as the
     bars, and it is what tells the price chart that a 2y range of a stock listed
     last spring would draw the same bars as "max".
+
+    A hand-mapped coin (`crypto.COINGECKO_IDS`) never reaches Yahoo, as in
+    `fetch_many`: Yahoo has no pair for MOODENG, and its CAT is another coin.
     """
+    if (pair := split_pair(ticker)) and pair[0] in COINGECKO_IDS:
+        return _hand_mapped_history(ticker, period, interval)
     symbol = resolve(ticker)
     if unaskable(symbol):
-        # The columns a blank download has too: the indicators read "Close".
-        return pd.DataFrame(
-            columns=["Open", "High", "Low", "Close", "Volume"],
-            index=pd.DatetimeIndex([], name="Date"),
-            dtype=float,
-        )
+        return _blank_history()
     handle = yf.Ticker(symbol)
     try:
         df = retry(lambda: handle.history(period=period, interval=interval))
@@ -923,6 +923,32 @@ def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.D
     if first:
         df.attrs["first_trade"] = first
     return df
+
+
+def _blank_history() -> pd.DataFrame:
+    # The columns a blank download has too: the indicators read "Close".
+    return pd.DataFrame(
+        columns=["Open", "High", "Low", "Close", "Volume"],
+        index=pd.DatetimeIndex([], name="Date"),
+        dtype=float,
+    )
+
+
+def _hand_mapped_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    """History for a coin in `crypto.COINGECKO_IDS`, with Yahoo never asked.
+
+    Daily bars are CoinGecko's, the same memo entry the book prices the coin
+    from, so the chart and the position agree and no request is added.
+    CoinGecko's free tier has no intraday history worth drawing, so the 1D and
+    1W windows read Kraken's candles instead.
+    """
+    from stocks.data import kraken
+
+    if interval == "1d":
+        df = _coingecko_fallback([ticker], period, "1d").get(ticker)
+    else:
+        df = kraken.ohlc(ticker, interval)
+    return df if df is not None and not df.empty else _blank_history()
 
 
 def _first_trade(handle) -> str | None:

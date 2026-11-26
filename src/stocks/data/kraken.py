@@ -28,6 +28,8 @@ import threading
 import time
 import urllib.parse
 
+import pandas as pd
+
 from stocks import obs
 from stocks.data.crypto import CRYPTO_NAMES, QUOTE_CURRENCIES, split_pair
 from stocks.data.http import get_json
@@ -136,6 +138,55 @@ def _row(symbol: str, tick: dict, fetched: float) -> dict | None:
         "currency": fiat,
         "quoteSource": "kraken",
     }
+
+
+# Kraken's OHLC bar sizes, in minutes, by the interval names the charts use.
+OHLC_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60, "1h": 60, "1d": 1440}
+
+# A chart waits on this, not a quote board, so it can afford longer.
+OHLC_TIMEOUT = 5.0
+
+
+def ohlc(symbol: str, interval: str, *, timeout: float = OHLC_TIMEOUT) -> pd.DataFrame:
+    """Kraken's last 720 `interval` bars for `symbol`, UTC-indexed; empty when none.
+
+    For the intraday chart of a coin Yahoo cannot draw (`crypto.COINGECKO_IDS`):
+    720 five-minute bars are two and a half days, 720 half-hour ones fifteen,
+    which covers the 1D and 1W windows. A bar with no trade in it repeats the
+    last close, so a thin pair would draw a flat line that reads "no move";
+    those bars are dropped rather than drawn.
+    """
+    minutes = OHLC_MINUTES.get(interval)
+    pair = _pair_map(timeout).get(symbol)
+    if minutes is None or pair is None:
+        return pd.DataFrame()
+    key, alt = pair
+    try:
+        url = f"{API_ROOT}/OHLC?pair={urllib.parse.quote(alt)}&interval={minutes}"
+        body = _get(url, timeout)
+        if body.get("error"):
+            raise RuntimeError(str(body["error"])[:200])
+        result = body.get("result") or {}
+        rows = result.get(key) or result.get(alt) or []
+    except Exception as exc:  # noqa: BLE001 — a chart with no bars says so
+        obs.warn("kraken.ohlc.failed", symbol=symbol, error=repr(exc)[:300])
+        return pd.DataFrame()
+    # [time, open, high, low, close, vwap, volume, count]
+    traded = [r for r in rows if len(r) >= 8 and int(r[7]) > 0]
+    if not traded:
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        {
+            "Open": [float(r[1]) for r in traded],
+            "High": [float(r[2]) for r in traded],
+            "Low": [float(r[3]) for r in traded],
+            "Close": [float(r[4]) for r in traded],
+            "Volume": [float(r[6]) for r in traded],
+        },
+        index=pd.to_datetime([int(r[0]) for r in traded], unit="s", utc=True),
+    )
+    df.index.name = "Date"
+    return df
 
 
 def quotes(symbols: list[str], *, timeout: float = TIMEOUT) -> dict[str, dict]:
