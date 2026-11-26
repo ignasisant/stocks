@@ -188,7 +188,14 @@ def quotes(
     symbol_of = {t: resolve(t) for t in tickers}
     ticker_of = {s: t for t, s in symbol_of.items()}  # last alias wins, as fetch does
     symbols = list(dict.fromkeys(symbol_of.values()))
-    age = max_age if callable(max_age) else (lambda _t, a=max_age: a)
+    if isinstance(max_age, int | float):
+        fixed = float(max_age)
+
+        def age(_ticker: str) -> float:
+            return fixed
+    else:
+        age = max_age
+
 
     rows: dict[str, dict] = {}
     mine: list[str] = []  # symbols this call fetches

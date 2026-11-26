@@ -727,7 +727,7 @@ def _clear_quotes(expire: bool = True) -> None:
     clear_board()
 
 
-quotes.cache_clear = _clear_quotes  # ty: ignore[unresolved-attribute]
+quotes.cache_clear = _clear_quotes  # ty: ignore[missing-attribute]
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=4, stale_s=_HELD_STALE)
