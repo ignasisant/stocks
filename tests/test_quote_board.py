@@ -300,3 +300,85 @@ def test_quoted_at_is_the_oldest_moving_read(monkeypatch):
     stamp = book_moves.quoted_at(live, session)
     assert stamp == datetime.fromtimestamp(old, UTC).isoformat(timespec="seconds")
     assert book_moves.quoted_at({}, {"SAP.DE": session["SAP.DE"]}) is None
+
+
+# --------------------------------------------------------- hand-mapped charts
+def _ohlc_row(t, close, count):
+    return [t, str(close), str(close), str(close), str(close), str(close), "2.5", count]
+
+
+def test_kraken_ohlc_drops_bars_nobody_traded_in(monkeypatch):
+    """A thin pair repeats its last close in empty bars; drawn, they read as a
+    flat "no move", so only bars with a trade make the chart."""
+    body = {
+        "error": [],
+        "result": {
+            "CATEUR": [
+                _ohlc_row(1_764_100_800, 1.2e-6, 4),
+                _ohlc_row(1_764_101_100, 1.2e-6, 0),
+                _ohlc_row(1_764_101_400, 1.3e-6, 1),
+            ],
+            "last": 1_764_101_400,
+        },
+    }
+    calls: list[str] = []
+    monkeypatch.setattr(kraken, "_get", _kraken(body, calls))
+    df = kraken.ohlc("CAT-EUR", "5m")
+    assert "interval=5" in calls[-1] and "pair=CATEUR" in calls[-1]
+    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert len(df) == 2
+    assert str(df.index.tz) == "UTC"
+    assert df["Close"].iloc[-1] == pytest.approx(1.3e-6)
+
+
+def test_kraken_ohlc_is_empty_for_an_unlisted_pair_or_a_failure(monkeypatch):
+    monkeypatch.setattr(kraken, "_get", _kraken({"error": ["EGeneral:Internal error"]}))
+    assert kraken.ohlc("MOODENG-EUR", "5m").empty  # not in PAIRS
+    assert kraken.ohlc("CAT-EUR", "5m").empty  # Kraken said error
+    assert kraken.ohlc("CAT-EUR", "1wk").empty  # no such bar size
+
+
+def test_a_hand_mapped_coins_chart_never_asks_yahoo(monkeypatch):
+    """MOODENG has no Yahoo pair and Yahoo's CAT is another coin: daily bars
+    come from CoinGecko, intraday from Kraken, and Yahoo is never built."""
+    from stocks.data import fetch
+
+    def no_yahoo(*args, **kwargs):
+        raise AssertionError("Yahoo asked for a hand-mapped coin")
+
+    monkeypatch.setattr(fetch.yf, "Ticker", no_yahoo)
+    day = pd.DataFrame(
+        {"Open": [0.03], "High": [0.03], "Low": [0.03], "Close": [0.03], "Volume": [0.0]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-11-25")], name="Date"),
+    )
+    gecko: list[tuple] = []
+
+    def coingecko(tickers, period, interval):
+        gecko.append((tuple(tickers), period))
+        return {tickers[0]: day}
+
+    intraday: list[tuple] = []
+
+    def candles(symbol, interval):
+        intraday.append((symbol, interval))
+        return day
+
+    monkeypatch.setattr(fetch, "_coingecko_fallback", coingecko)
+    monkeypatch.setattr(kraken, "ohlc", candles)
+
+    daily = fetch.fetch_history("MOODENG-EUR", "2y", "1d")
+    assert daily["Close"].iloc[-1] == pytest.approx(0.03)
+    assert gecko == [(("MOODENG-EUR",), "2y")]
+    assert not fetch.fetch_history("CAT-EUR", "5d", "5m").empty
+    assert intraday == [("CAT-EUR", "5m")]
+
+
+def test_a_hand_mapped_coin_with_no_bars_is_a_blank_frame(monkeypatch):
+    from stocks.data import fetch
+
+    monkeypatch.setattr(fetch, "_coingecko_fallback", lambda *args: {})
+    monkeypatch.setattr(kraken, "ohlc", lambda symbol, interval: pd.DataFrame())
+    for period, interval in (("max", "1d"), ("5d", "5m")):
+        df = fetch.fetch_history("MOODENG-EUR", period, interval)
+        assert df.empty
+        assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
