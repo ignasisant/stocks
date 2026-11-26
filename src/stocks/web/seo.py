@@ -32,7 +32,7 @@ from urllib.parse import quote
 
 from stocks import navigation
 from stocks.i18n import DEFAULT_LANG, LANGUAGES, translate
-from stocks.web import landing
+from stocks.web import landing, shortlinks
 from stocks.web.landing import (
     ASSET_BASE,
     FAQ_COUNT,
@@ -193,6 +193,7 @@ def json_ld(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
             "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
             "isAccessibleForFree": True,
             "codeRepository": REPO_URL,
+            "sameAs": list(landing.SOCIALS.values()),
             # Free, and priced explicitly: an Offer with price 0 is what turns
             # "is it free?" into something a search result can state.
             "offers": {
@@ -553,7 +554,12 @@ def robots_txt(base_url: str) -> str:
     allow = [
         "/$", *(p for p in LANDING_PATHS if p != PATH_EN), ASSET_BASE, PATH_GUIDES_EN,
     ]
-    disallow = app_page_paths() + APP_PATHS + APP_PREFIXES
+    # A bio link only redirects: exact match, so no page that merely starts
+    # with the same letters is swept in.
+    disallow = (
+        *app_page_paths(), *APP_PATHS, *APP_PREFIXES,
+        *(f"{p}$" for p in shortlinks.PATHS),
+    )
     # A group never inherits from `*`, so the preview bots repeat it with
     # the ticker page taken out of the disallow list, and a shared answer
     # named: `/` is not disallowed, but "/$" alone reads as if it were.

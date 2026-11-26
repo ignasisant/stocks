@@ -22,16 +22,23 @@ Con aviso (cuando la red lo permita): *Educativo, no es asesoramiento financiero
 
 Un `utm_source` distinto en cada una, para ver en `stocks logs funnel` qué red trae gente.
 
-| Red | Enlace |
-|---|---|
-| Instagram | https://mybrainstock.com/?utm_source=instagram&utm_medium=bio |
-| TikTok | https://mybrainstock.com/?utm_source=tiktok&utm_medium=bio |
-| X | https://mybrainstock.com/?utm_source=x&utm_medium=bio |
-| LinkedIn | https://mybrainstock.com/?utm_source=linkedin&utm_medium=bio |
-| YouTube | https://mybrainstock.com/?utm_source=youtube&utm_medium=bio |
-| Threads | https://mybrainstock.com/?utm_source=threads&utm_medium=bio |
-| Bluesky | https://mybrainstock.com/?utm_source=bluesky&utm_medium=bio |
-| Reddit | https://mybrainstock.com/?utm_source=reddit&utm_medium=bio |
+En la bio va la **dirección corta**: redirige a la home con el enlace completo
+(`src/stocks/web/shortlinks.py`), así el perfil enseña `mybrainstock.com/ig` y
+no una URL con parámetros. Una red nueva se añade a `shortlinks.SOURCES`.
+
+| Red | Dirección corta (la de la bio) | Enlace completo |
+|---|---|---|
+| Instagram | mybrainstock.com/ig | https://mybrainstock.com/?utm_source=instagram&utm_medium=bio |
+| TikTok | mybrainstock.com/tiktok | https://mybrainstock.com/?utm_source=tiktok&utm_medium=bio |
+| X | mybrainstock.com/x | https://mybrainstock.com/?utm_source=x&utm_medium=bio |
+| LinkedIn | mybrainstock.com/li | https://mybrainstock.com/?utm_source=linkedin&utm_medium=bio |
+| YouTube | mybrainstock.com/yt | https://mybrainstock.com/?utm_source=youtube&utm_medium=bio |
+| Threads | mybrainstock.com/threads | https://mybrainstock.com/?utm_source=threads&utm_medium=bio |
+| Bluesky | mybrainstock.com/bsky | https://mybrainstock.com/?utm_source=bluesky&utm_medium=bio |
+| Reddit | mybrainstock.com/reddit | https://mybrainstock.com/?utm_source=reddit&utm_medium=bio |
+
+La landing enseña en el pie los perfiles que ya existen (`landing.SOCIALS`).
+Se añade uno cuando su cuenta está creada, no antes.
 
 ## Marca visual
 

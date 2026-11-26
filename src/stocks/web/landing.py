@@ -202,6 +202,14 @@ _CHART_YEARS = ("2023", "2024", "2025", "2026")
 # is imported rather than retyped.
 GITHUB_URL = "https://github.com/ignasisant/stocks"
 
+# The brand's profiles, in the order the footer shows them. Only accounts that
+# exist belong here: a link to a handle nobody has claimed yet is a 404 on the
+# page a stranger reads first. Add one when its profile is live. The names are
+# the networks' own, so they are not translated.
+SOCIALS = {
+    "Instagram": "https://www.instagram.com/mybrainstock.app/",
+}
+
 # Q/A pairs in the FAQ section (landing.faq_q1..q8 / faq_a1..a8). `seo.py`
 # reads the same range to emit the FAQPage structured data, so the rich result
 # and the visible section can never drift apart.
@@ -1245,6 +1253,14 @@ def _final() -> str:
 </div></section>"""
 
 
+def _socials() -> str:
+    return "".join(
+        f'<a href="{esc(url)}" target="_blank" rel="noopener noreferrer me">'
+        f"{esc(name)}</a>"
+        for name, url in SOCIALS.items()
+    )
+
+
 def _footer() -> str:
     return f"""
 <footer class="ag-l-rule"><div class="ag-l-wrap ag-l-foot">
@@ -1259,6 +1275,7 @@ def _footer() -> str:
     <a href="{_guides_path()}">{esc(tr("landing.footer_guides"))}</a>
     <a href="/legal/privacy{_legal_lang_q()}">{esc(tr("landing.footer_privacy"))}</a>
     <a href="/legal/terms{_legal_lang_q()}">{esc(tr("landing.footer_terms"))}</a>
+    {_socials()}
     {_lang_toggle(footer=True)}
     {_jur_toggle(footer=True)}
   </div>
