@@ -85,6 +85,7 @@ from stocks.web import (
     old_host,
     precompress,
     seo,
+    shortlinks,
     unsubscribe,
     upstream,
 )
@@ -402,6 +403,8 @@ def _is_known_path(path: str) -> bool:
     """
     path = path.rstrip("/") or "/"
     if path == PATH_EN or _is_marketing_path(path + "/") or _is_marketing_path(path):
+        return True
+    if path in shortlinks.PATHS:
         return True
     if path.startswith(API_PREFIX) or path + "/" == API_PREFIX:
         return True
@@ -721,6 +724,15 @@ async def variant_landing(request: Request) -> Response:
     """
     lang, jur = variant_for(request.url.path) or ("es", "ES")
     return landing_response(request, lang, jur)
+
+
+async def short_link(request: Request) -> Response:
+    """`/ig` and its siblings: the landing, carrying the network's campaign."""
+    where = shortlinks.target(request.url.path)
+    if where is None:
+        return not_found(request)
+    return RedirectResponse(where, status_code=302,
+                            headers={"Cache-Control": "no-store"})
 
 
 async def variant_redirect(request: Request) -> Response:
@@ -1402,6 +1414,7 @@ routes = [
         for p in LANDING_PATHS
         if p != PATH_EN
     ),
+    *(Route(p, short_link, methods=["GET", "HEAD"]) for p in shortlinks.PATHS),
     Route("/robots.txt", robots, methods=["GET", "HEAD"]),
     Route("/sitemap.xml", sitemap, methods=["GET", "HEAD"]),
     Route("/sw.js", service_worker, methods=["GET", "HEAD"]),
