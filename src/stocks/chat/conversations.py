@@ -58,6 +58,8 @@ KEEP_DAYS = 30
 # of their own, which is how a pushed one is found again.
 MAX_CARD_THREADS = 60
 _TITLE_MAX = 80
+# An unnamed thread's stand-in title: its first question, cut this short.
+_STAND_IN_MAX = 60
 
 # Every write is a read-modify-write of the whole book, and since the daily
 # card files its thread from a background job, two can now overlap inside one
@@ -273,6 +275,23 @@ def save_chat(history: list[dict], path: Path, cid: str | None = None) -> None:
         _persist(index)  # only when it actually grew — most saves add nothing
 
 
+def _stand_in(c: dict) -> str:
+    """What an unnamed thread is listed as: its opening question, trimmed.
+
+    The model names a thread after its first answer (`engine.titles`), but a
+    turn the app answers itself — an import nudge, a memory command, a
+    refusal — saves without one, and every such thread listed as the same
+    "New conversation". The reader's own first line tells them apart. Not
+    stored, so the model's title still lands when an answer comes."""
+    first = next((m for m in c["messages"] if m.get("role") == "user"), None)
+    text = " ".join(str((first or {}).get("content") or "").split())
+    if len(text) <= _STAND_IN_MAX:
+        return text
+    head, sep, _ = text[:_STAND_IN_MAX].rpartition(" ")
+    cut = head if sep and len(head) >= _STAND_IN_MAX // 2 else text[:_STAND_IN_MAX]
+    return cut.rstrip(" ,;:-") + "\u2026"
+
+
 def list_conversations(path: Path, cards: bool = True) -> list[dict]:
     """Conversation metadata (no message bodies), most recently used first.
     `daily` is the card day of a daily card's thread, "" for any other;
@@ -288,7 +307,8 @@ def list_conversations(path: Path, cards: bool = True) -> list[dict]:
     book = load_book(path)
     metas = [
         {
-            "id": c["id"], "title": c["title"], "title_auto": c["title_auto"],
+            "id": c["id"], "title": c["title"] or _stand_in(c),
+            "title_auto": c["title_auto"],
             "created": c["created"], "updated": c["updated"],
             "messages": len(c["messages"]), "active": c["id"] == book["active"],
             "daily": str(c.get("daily") or ""),
