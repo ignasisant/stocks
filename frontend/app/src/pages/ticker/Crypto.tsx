@@ -249,8 +249,11 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
     halving !== null;
   if (!anything) return null;
   return (
+    // Open on a phone from the first visit: a coin has no earnings or
+    // analysts, so sentiment and cycle are the read a crypto reader came for.
     <Card
       fold="cycle"
+      foldOpen
       title={t("ticker.cycle_title")}
       note={
         cycle.scan_date

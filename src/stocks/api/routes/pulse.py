@@ -23,7 +23,9 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
 
 from stocks import loaders
+from stocks.analysis import crypto_market as cm
 from stocks.analysis import sentiment as sm
+from stocks.analysis.crypto_scan import DVOL_COINS
 from stocks.analysis.portfolio import beta, portfolio_returns
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.cache import carried
@@ -345,7 +347,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
 HORIZONS = {"week": 5, "month": 21, "quarter": 63, "year": 252}
 BLOCKS = (
     "indices", "gauges", "rates", "inflation", "rotation", "cross", "factors",
-    "positioning",
+    "positioning", "crypto",
 )
 # What each block reads, so a request fetches only the sources its blocks need
 # — and fetches them side by side (`tables`).
@@ -358,6 +360,7 @@ SOURCES = {
     "cross": ("closes",),
     "factors": ("closes",),
     "positioning": ("positioning",),
+    "crypto": ("crypto",),
 }
 # Rows each block is configured to carry — the tab badges. Read off the same
 # registries the blocks iterate, so a series added to one of them moves its
@@ -374,6 +377,7 @@ EXPECTED = {
     "factors": len(sm.FACTOR_PAIRS),
     "cross": len(sm.MACRO_ASSETS),
     "positioning": len(cot.MARKETS),
+    "crypto": 2 + len(DVOL_COINS) + 1,
 }
 # A gauge whose last bar is more than a week behind the freshest bar in its own
 # block has been dropped by its publisher. Measured against the block and not
@@ -693,6 +697,110 @@ def _positioning(frames: dict[str, pd.DataFrame]) -> TrendBlock:
     return TrendBlock(block="positioning", unit="contracts", rows=rows)
 
 
+# A scan older than this has missed nights: its rows are shown dimmed.
+CRYPTO_STALE_DAYS = 3
+
+
+def _crypto(scan: dict) -> TrendBlock:
+    """Crypto's own mood: Fear & Greed, implied vol, dominance, stablecoin supply.
+
+    All of it from last night's scan (`analysis.crypto_scan`): CoinGecko,
+    alternative.me and Deribit throttle the app's egress IP, so nothing here is
+    fetched on a read. Bitcoin and Ether prices stay in `cross`.
+
+    Block unit is `points`, the series' own units: Fear & Greed and DVOL move
+    in index points, dominance in percentage points. The stablecoin row is the
+    exception — its changes are fractions, as a supply in dollars has no
+    natural point — and the client formats that one row as a percent.
+
+    Kept out of the composite: the composite ranks equity-market inputs, and a
+    crypto gauge in it would move the stock read on a coin sell-off.
+    """
+    saved = scan.get("saved")
+    today = pd.Timestamp.today().normalize()
+    stale = bool(saved) and (today - pd.Timestamp(saved)).days > CRYPTO_STALE_DAYS
+    rows: list[TrendRow] = []
+
+    fg = [(str(d), float(v)) for d, v in scan.get("fear_greed") or []]
+    if fg:
+        series = pd.Series(
+            [v for _, v in fg], index=pd.to_datetime([d for d, _ in fg])
+        ).sort_index()
+        now = float(series.iloc[-1])
+        changes = {
+            name: now - float(series.iloc[-1 - days])
+            for name, days in (("week", 7), ("month", 30), ("quarter", 90))
+            if len(series) > days
+        }
+        band = cm.fear_greed_band(now)
+        rows.append(
+            TrendRow(
+                key="fear_greed",
+                name=band.key if band else "",
+                value=now,
+                changes=changes,
+                spark=_tail(series),
+                state="stale" if stale else sm.trend_state(series),
+                percentile=_num(sm.percentile_now(series, window=365)),
+                percentile_then=_num(sm.percentile_then(series, ago=30, window=365)),
+                stale=stale,
+                as_of=str(series.index[-1].date()),
+            )
+        )
+
+    for coin in DVOL_COINS:
+        vol = (scan.get("dvol") or {}).get(coin)
+        if not isinstance(vol, dict) or _num(vol.get("value")) is None:
+            continue
+        week = _num(vol.get("week_ago"))
+        rows.append(
+            TrendRow(
+                key=f"dvol_{coin.lower()}",
+                name=coin,
+                value=_num(vol["value"]),
+                changes={} if week is None else {"week": float(vol["value"]) - week},
+                percentile=_num(vol.get("percentile")),
+                # Like the VIX in `gauges`: falling implied vol is the calm.
+                welcome=-1,
+                state="stale" if stale else None,
+                stale=stale,
+                as_of=vol.get("as_of"),
+            )
+        )
+
+    dominance = _num((scan.get("global") or {}).get("btc_dominance"))
+    if dominance is not None:
+        rows.append(
+            TrendRow(
+                key="btc_dominance", name="BTC", value=dominance,
+                state="stale" if stale else None, stale=stale, as_of=saved,
+            )
+        )
+
+    stables = scan.get("stablecoins") or {}
+    if _num(stables.get("usd")) is not None:
+        changes = {
+            name: float(v)
+            for name, key in (("month", "change_30d"), ("quarter", "change_90d"))
+            if (v := _num(stables.get(key))) is not None
+        }
+        rows.append(
+            TrendRow(
+                key="stablecoins",
+                name="USD",
+                value=_num(stables["usd"]),
+                changes=changes,
+                # Dollars parked on-chain, ready to buy: a growing float is
+                # money arriving, a shrinking one money leaving.
+                welcome=1,
+                state="stale" if stale else None,
+                stale=stale,
+                as_of=stables.get("as_of") or saved,
+            )
+        )
+    return TrendBlock(block="crypto", unit="points", rows=rows)
+
+
 @router.get("/pulse/tables", response_model=TrendTables, summary="The detail blocks")
 def tables(
     account: Account,
@@ -736,6 +844,7 @@ def tables(
         "book": lambda: loaders.basket_report(db, mtime, ccy, "2y"),
         "bench": loaders.benchmark_sectors,
         "positioning": loaders.positioning,
+        "crypto": loaders.crypto_scan,
     }
     needed = list(dict.fromkeys(src for name in wanted for src in SOURCES[name]))
     pool = ThreadPoolExecutor(max_workers=max(len(needed), 1))
@@ -787,6 +896,8 @@ def tables(
                 out.append(_factors(fetched["closes"].result()))
             elif name == "positioning":
                 out.append(_positioning(fetched["positioning"].result()))
+            elif name == "crypto":
+                out.append(_crypto(fetched["crypto"].result()))
             else:
                 out.append(_cross(fetched["closes"].result()))
         except Exception as exc:

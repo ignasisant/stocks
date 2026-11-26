@@ -112,7 +112,7 @@ class TrendBlock(BaseModel):
     block: str = Field(
         description=(
             "indices | gauges | rates | inflation | rotation | cross | "
-            "factors | positioning."
+            "factors | positioning | crypto."
         )
     )
     unit: str = Field(

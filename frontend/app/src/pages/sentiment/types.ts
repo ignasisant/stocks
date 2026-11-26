@@ -154,7 +154,7 @@ export type TrendRow = {
 };
 
 export type TrendBlock = {
-  /** indices | gauges | rates | inflation | rotation | cross | positioning */
+  /** indices | gauges | rates | inflation | rotation | cross | positioning | crypto */
   block: string;
   /** How to read `changes`: percent (a fraction), basis_points, or points. */
   unit: string;
