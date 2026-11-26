@@ -51,7 +51,8 @@ def test_v1_flat_list_migrates_to_one_conversation(chat):
     assert conversations.load_chat(chat) == turns
     convs = conversations.list_conversations(chat)
     assert len(convs) == 1 and convs[0]["messages"] == 2
-    assert convs[0]["active"] and convs[0]["title"] == ""
+    # Unnamed once migrated; the list stands in the opening question.
+    assert convs[0]["active"] and convs[0]["title"] == "hi"
 
 
 def test_v1_migration_only_persists_on_the_next_write(chat):
@@ -201,6 +202,25 @@ def test_autotitle_names_an_unnamed_thread(chat):
     cid = conversations.new_conversation(chat)
     conversations.autotitle_conversation(cid, "NVDA valuation", chat)
     assert conversations.active_conversation(chat)["title"] == "NVDA valuation"
+
+
+def test_an_unnamed_thread_is_listed_by_its_opening_question(chat):
+    """Two threads the model never named must not both read "New
+    conversation": the list stands in each one's first question."""
+    conversations.save_chat(
+        [{"role": "user", "content": "  importa   mi extracto de Revolut "},
+         {"role": "assistant", "content": "Adjunta el fichero"}], chat)
+    long = "por qué " * 20
+    cid = conversations.new_conversation(chat)
+    conversations.save_chat([{"role": "user", "content": long}], chat, cid)
+    empty = conversations.new_conversation(chat)
+
+    titles = {c["id"]: c["title"] for c in conversations.list_conversations(chat)}
+    assert "importa mi extracto de Revolut" in titles.values()
+    assert titles[cid].endswith("\u2026") and len(titles[cid]) <= 61
+    assert titles[empty] == ""
+    # A stand-in, not a name: the model's title still lands later.
+    assert conversations.load_book(chat)["conversations"][0]["title"] == ""
 
 
 def test_rename_pins_the_title_against_autotitling(chat):
