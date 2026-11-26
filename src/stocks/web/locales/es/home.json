@@ -84,6 +84,7 @@
   "home.movers_side_down": "Bajan",
   "home.movers_sort": "Ordenar por",
   "home.movers_money_note": "Importe: cada movimiento sobre lo que tienes hoy.",
+  "home.movers_updated": "Actualizado {time}",
   "home.movers_still": "{n} sin cambio o sin precio",
   "home.movers_up": "{n} al alza",
   "home.movers_down": "{n} a la baja",

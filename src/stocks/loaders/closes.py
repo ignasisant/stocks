@@ -706,14 +706,28 @@ def _on_download(fn):
     return wrapper
 
 
-@ttl_cache(_QUOTES_TTL, max_entries=64)
 def quotes(tickers: tuple[str, ...]) -> dict[str, dict]:
     """Live snapshot per ticker in ONE request; unquotable names drop out.
 
     The full snapshot rather than the bare percentage, because `as_of` is what
     stops a Wednesday response from printing Monday's close as "today".
+
+    No memo of its own: the rows sit on `data.quotes`' board, one per symbol
+    for every account, re-asked once a minute while the name trades and
+    rarely while it is shut. A five-minute memo here keyed on the whole
+    tuple used to cap every live figure at five minutes old, and two
+    callers asking for overlapping sets each paid a request.
     """
     return session_quotes(list(tickers))
+
+
+def _clear_quotes(expire: bool = True) -> None:
+    from stocks.data.quotes import clear_board
+
+    clear_board()
+
+
+quotes.cache_clear = _clear_quotes  # ty: ignore[unresolved-attribute]
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=4, stale_s=_HELD_STALE)

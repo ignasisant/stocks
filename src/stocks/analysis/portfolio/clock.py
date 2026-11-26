@@ -148,6 +148,24 @@ def market_live(ticker: str, now_utc: datetime | None = None) -> bool:
     return _session_open(*hours, now_utc, market_holidays.venue(symbol))
 
 
+# How old a quote may be before it is asked again (`data.quotes`' board): a
+# minute while the name trades, pre/after-hours included for a US listing;
+# fifteen while its market is shut and the row cannot change.
+LIVE_QUOTE_AGE_S = 60.0
+SHUT_QUOTE_AGE_S = 900.0
+
+
+def quote_age(ticker: str) -> float:
+    """`data.quotes`' `max_age` for `ticker`, by whether its price moves now."""
+    from stocks.data.fetch import resolve
+
+    if market_live(ticker):
+        return LIVE_QUOTE_AGE_S
+    if "." not in resolve(ticker) and us_extended_session() is not None:
+        return LIVE_QUOTE_AGE_S
+    return SHUT_QUOTE_AGE_S
+
+
 def us_extended_session(now_utc: datetime | None = None) -> str | None:
     """ "pre" / "post" while a US extended-hours window is open, else None.
 
@@ -290,6 +308,9 @@ def quote_snapshot(quote: dict) -> dict | None:
             # on a Finnhub fallback row, which carries no year.
             "high_52w": float(high) if high else None,
             "low_52w": float(low) if low else None,
+            # When the row was read (`data.quotes`' board), epoch seconds:
+            # what a "updated at" stamp prints.
+            "fetched_at": quote.get("fetchedAt"),
         }
         if state.startswith("PRE") and pre and regular:
             price = float(pre)
@@ -353,9 +374,8 @@ def session_quotes(tickers: list[str]) -> dict[str, dict]:
 
     if not tickers:
         return {}
-    snapshots = (
-        (t, quote_snapshot(row)) for t, row in live_quotes(list(tickers)).items()
-    )
+    rows = live_quotes(list(tickers), max_age=quote_age)
+    snapshots = ((t, quote_snapshot(row)) for t, row in rows.items())
     return {t: q for t, q in snapshots if q and q.get("pct") is not None}
 
 

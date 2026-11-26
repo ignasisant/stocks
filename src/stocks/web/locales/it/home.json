@@ -84,6 +84,7 @@
   "home.movers_side_down": "Scendono",
   "home.movers_sort": "Ordina per",
   "home.movers_money_note": "Importo: ogni movimento su ciò che possiedi oggi.",
+  "home.movers_updated": "Aggiornato {time}",
   "home.movers_still": "{n} invariate o senza prezzo",
   "home.movers_up": "{n} in rialzo",
   "home.movers_down": "{n} in ribasso",

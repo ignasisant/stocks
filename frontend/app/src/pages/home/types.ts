@@ -244,6 +244,11 @@ export type Movers = {
   unpriced: number;
   /** Which session these figures are from; off-hours, the last completed one. */
   as_of: string | null;
+  /**
+   * Day window only: when the oldest price still moving was read (ISO, UTC).
+   * Null when every market in the book is shut.
+   */
+  quoted_at?: string | null;
 };
 
 /**

@@ -76,6 +76,7 @@ import { Daily } from "./Daily";
 import { SetupCard } from "./Setup";
 import { TourOffer } from "./TourOffer";
 import { Glance, MoversSlot, useBook } from "./Glance";
+import { useLiveDay } from "./liveDay";
 import { MarketCard } from "./Market";
 import { EarningsCard } from "./Earnings";
 import { RecentTransactions } from "./Transactions";
@@ -288,7 +289,10 @@ export default function Page() {
   const wanted = (id: CardId) => onPage.has(id) && seen.has(id);
   // One read behind the glance and the movers, and none until one of them is
   // in view.
-  const book = useBook(nonce, !guest && (wanted("glance") || wanted("movers")));
+  // The day then kept live while a held name trades (`useLiveDay`).
+  const book = useLiveDay(
+    useBook(nonce, !guest && (wanted("glance") || wanted("movers"))),
+  );
   // Read here, like the book, so a refresh's nonce reaches it.
   const extremes = useExtremes(nonce, wanted("extremes"));
 

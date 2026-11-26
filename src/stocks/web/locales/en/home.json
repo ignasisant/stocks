@@ -84,6 +84,7 @@
   "home.movers_side_down": "Down",
   "home.movers_sort": "Sort by",
   "home.movers_money_note": "Amount: each move on what you hold today.",
+  "home.movers_updated": "Updated {time}",
   "home.movers_still": "{n} unchanged or unpriced",
   "home.movers_up": "{n} up",
   "home.movers_down": "{n} down",
