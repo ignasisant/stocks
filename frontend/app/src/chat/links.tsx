@@ -44,6 +44,7 @@ const TAB_LABELS: Record<string, Record<string, string>> = {
     factors: "sentiment.factors_title",
     cross: "sentiment.cross_title",
     positioning: "sentiment.positioning_title",
+    crypto: "sentiment.crypto_title",
   },
   learn: {
     paths: "learn.tab_paths",

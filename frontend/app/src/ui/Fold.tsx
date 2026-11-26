@@ -9,6 +9,8 @@
  *
  * Closed by default; a section the reader opens stays open on their next
  * visit (per section, in this browser only — a convenience, not state). A
+ * section can instead start open (`start`) when it is the reason the page is
+ * opened at all; closing one of those is remembered the same way. A
  * link that lands inside it — a page's jump bar, a shared `#anchor` — opens
  * it, since a heading reached on purpose is a section asked for.
  *
@@ -29,17 +31,21 @@ const KEY = "ag.fold.";
  */
 export const LAND_EVENT = "ag:land";
 
-function remembered(id: string): boolean {
+function remembered(id: string, start: boolean): boolean {
   try {
-    return localStorage.getItem(KEY + id) === "1";
+    const kept = localStorage.getItem(KEY + id);
+    return kept === null ? start : kept === "1";
   } catch {
-    return false;
+    return start;
   }
 }
 
-function remember(id: string, open: boolean) {
+function remember(id: string, open: boolean, start: boolean) {
   try {
     if (open) localStorage.setItem(KEY + id, "1");
+    // A section that starts open has to remember being closed, or it would
+    // reopen on every visit; one that starts closed only needs forgetting.
+    else if (start) localStorage.setItem(KEY + id, "0");
     else localStorage.removeItem(KEY + id);
   } catch {
     /* private window, blocked storage — the fold just forgets */
@@ -50,6 +56,7 @@ export function Fold({
   id,
   head,
   opened = false,
+  start = false,
   onShown,
   children,
 }: {
@@ -58,12 +65,14 @@ export function Fold({
   head: ReactNode;
   /** Open on arrival whatever was remembered: the URL asked for this part. */
   opened?: boolean;
+  /** Open on a first visit, until the reader closes it. */
+  start?: boolean;
   /** The content is on show: a desktop, or the fold open. */
   onShown?: () => void;
   children: ReactNode;
 }) {
   const mobile = useMobile();
-  const [open, setOpen] = useState(() => opened || remembered(id));
+  const [open, setOpen] = useState(() => opened || remembered(id, start));
   const fold = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
     if (!mobile || open) onShown?.();
@@ -107,7 +116,7 @@ export function Fold({
       onToggle={(event) => {
         const next = event.currentTarget.open;
         setOpen(next);
-        remember(id, next);
+        remember(id, next, start);
       }}
     >
       <summary className="ag-fold-head">{head}</summary>

@@ -38,7 +38,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     "import": (),
     "ticker": (),
     "sentiment": ("indices", "gauges", "rates", "inflation", "rotation",
-                  "factors", "cross", "positioning"),
+                  "factors", "cross", "positioning", "crypto"),
     "sector": (),
     "earnings": (),
     "learn": ("paths", "glossary"),
@@ -79,6 +79,7 @@ TAB_LABELS: dict[str, dict[str, str]] = {
         "factors": "sentiment.factors_title",
         "cross": "sentiment.cross_title",
         "positioning": "sentiment.positioning_title",
+        "crypto": "sentiment.crypto_title",
     },
     "learn": {
         "paths": "learn.tab_paths",
@@ -129,7 +130,9 @@ _WHAT = {
     "sentiment": "market mood. Tabs: indices, gauges (fear and greed), "
                  "rates, inflation, rotation (sector rotation), factors "
                  "(style ratios), cross (other asset classes), positioning "
-                 "(speculators' futures positions, CFTC)",
+                 "(speculators' futures positions, CFTC), crypto (Crypto Fear "
+                 "& Greed, BTC/ETH implied vol, BTC dominance, stablecoin "
+                 "supply)",
     "sector": "sector screen and peers",
     "earnings": "the earnings calendar",
     "learn": "short lessons on investing and Spanish tax. Tabs: paths "

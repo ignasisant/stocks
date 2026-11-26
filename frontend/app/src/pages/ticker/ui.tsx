@@ -22,6 +22,7 @@ export function Card({
   title,
   note,
   fold,
+  foldOpen = false,
   onShown,
   children,
 }: {
@@ -29,6 +30,8 @@ export function Card({
   note?: string;
   /** Folds to its heading on a phone (`ui/Fold`); the id keeps it open once opened. */
   fold?: string;
+  /** On a phone, open on a first visit rather than folded (`ui/Fold` `start`). */
+  foldOpen?: boolean;
   /** Its content is on show (`ui/Fold`): what a section waiting to fetch waits for. */
   onShown?: () => void;
   children: ReactNode;
@@ -42,7 +45,7 @@ export function Card({
   return (
     <section className="tk-card">
       {fold && head ? (
-        <Fold id={fold} head={head} onShown={onShown}>
+        <Fold id={fold} head={head} start={foldOpen} onShown={onShown}>
           {children}
         </Fold>
       ) : (

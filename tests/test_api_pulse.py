@@ -488,10 +488,27 @@ def sources(monkeypatch):
             )
         },
     )
+    patch_loaders(monkeypatch, "crypto_scan", lambda: crypto_scan())
     patch_loaders(
         monkeypatch, "basket_report", lambda db, mtime, base, period: None
     )
     return closes
+
+
+def crypto_scan(saved: str | None = None) -> dict:
+    """A night's scan: a year of Fear & Greed ending in extreme fear."""
+    end = pd.Timestamp(saved) if saved else pd.Timestamp.today().normalize()
+    year = pd.date_range(end=end, periods=365, freq="D")
+    values = [60] * 364 + [12]
+    return {
+        "saved": str(end.date()),
+        "fear_greed": [[str(d.date()), v] for d, v in zip(year, values, strict=True)],
+        "global": {"btc_dominance": 57.5, "total_mcap": {"usd": 2.1e12}},
+        "dvol": {"BTC": {"value": 48.0, "percentile": 30.0, "week_ago": 52.0,
+                         "as_of": str(end.date())}},
+        "stablecoins": {"usd": 2.8e11, "change_30d": -0.05, "change_90d": 0.02,
+                        "as_of": str(end.date())},
+    }
 
 
 def blocks_of(payload) -> dict:
@@ -511,6 +528,7 @@ def test_every_block_comes_back_by_default(client, account, sources):
         "rotation",
         "cross",
         "positioning",
+        "crypto",
     }
 
 
@@ -533,6 +551,58 @@ def test_positioning_rows_carry_percentile_zscore_and_a_crowded_state(
     assert row["zscore"] > 2
     assert row["net_pct"] == 40.0
     assert "week" in row["changes"]
+
+
+def test_crypto_block_reads_last_nights_scan(client, account, sources):
+    payload = client.get(
+        "/v1/pulse/tables",
+        params={"account": EMAIL, "blocks": "crypto"},
+        headers=AUTH,
+    ).json()
+    block = blocks_of(payload)["crypto"]
+    assert block["unit"] == "points"
+    assert block["expected"] == 5
+    rows = {r["key"]: r for r in block["rows"]}
+    # ETH has no DVOL in this scan: the row is left out, the badge is not.
+    assert set(rows) == {"fear_greed", "dvol_btc", "btc_dominance", "stablecoins"}
+    fg = rows["fear_greed"]
+    assert fg["value"] == 12
+    assert fg["name"] == "extreme_fear"
+    assert fg["changes"] == {"week": -48, "month": -48, "quarter": -48}
+    assert len(fg["spark"]) == 90
+    assert fg["percentile"] is not None and fg["percentile"] < 5
+    assert not fg["stale"]
+    assert rows["dvol_btc"]["changes"] == {"week": -4.0}
+    assert rows["dvol_btc"]["welcome"] == -1
+    assert rows["stablecoins"]["changes"] == {"month": -0.05, "quarter": 0.02}
+
+
+def test_an_old_crypto_scan_dims_its_rows(client, account, sources, monkeypatch):
+    patch_loaders(monkeypatch, "crypto_scan", lambda: crypto_scan("2026-01-05"))
+    payload = client.get(
+        "/v1/pulse/tables",
+        params={"account": EMAIL, "blocks": "crypto"},
+        headers=AUTH,
+    ).json()
+    rows = blocks_of(payload)["crypto"]["rows"]
+    assert rows and all(r["stale"] for r in rows)
+    assert rows[0]["state"] == "stale"
+
+
+def test_an_empty_crypto_scan_keeps_the_tab_down_not_gone(
+    client, account, sources, monkeypatch
+):
+    patch_loaders(monkeypatch, "crypto_scan", dict)
+    block = blocks_of(
+        client.get(
+            "/v1/pulse/tables",
+            params={"account": EMAIL, "blocks": "crypto"},
+            headers=AUTH,
+        ).json()
+    )["crypto"]
+    assert block["rows"] == []
+    assert block["unavailable"] == "no_data"
+    assert block["expected"] == 5
 
 
 def test_a_dead_cftc_leaves_positioning_down_and_the_rest_up(

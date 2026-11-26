@@ -42,6 +42,7 @@ import { Fold } from "../../ui/Fold";
 const FRED = "FRED";
 const EUROSTAT = "Eurostat";
 const CFTC = "CFTC";
+const SCAN = "alternative.me · Deribit · CoinGecko";
 
 /**
  * The trend label's slow average, in sessions. Mirrors
@@ -167,6 +168,18 @@ const SPECS: Spec[] = [
     origin: CFTC,
     family: "macro",
   },
+  {
+    key: "crypto",
+    title: "sentiment.crypto_title",
+    labelCol: "sentiment.col_reading",
+    valueCol: "sentiment.col_level",
+    source: "sentiment.src_crypto",
+    countsRows: true,
+    note: "sentiment.crypto_help",
+    origin: SCAN,
+    family: "macro",
+    downSource: "sentiment.src_crypto_down",
+  },
 ];
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
@@ -186,6 +199,36 @@ function level(block: string, value: number | null): string {
 }
 
 /**
+ * The crypto block mixes units row by row: an index (Fear & Greed, 0–100), a
+ * volatility (DVOL, % annualised), a share (dominance) and a dollar supply.
+ */
+function cryptoLevel(row: TrendRow): string {
+  if (row.value === null) return NA;
+  if (row.key === "stablecoins") return "$" + compactUsd(row.value);
+  if (row.key === "btc_dominance") return fixed(row.value, 1, "%");
+  if (row.key.startsWith("dvol_")) return fixed(row.value, 0, "%");
+  return fixed(row.value, 0);
+}
+
+/** 282453561316 → "282B": a supply in hundreds of billions reads by its order. */
+function compactUsd(value: number): string {
+  if (value >= 1e12) return `${num(value / 1e12, 2)}T`;
+  if (value >= 1e9) return `${num(value / 1e9, 0)}B`;
+  return grouped(value);
+}
+
+/**
+ * A crypto row's change in that row's own unit. Index and volatility moves
+ * are index points, not percentage points; dominance moves are; the
+ * stablecoin supply's are fractions.
+ */
+function cryptoChange(row: TrendRow, change: number): string {
+  if (row.key === "stablecoins") return signedPercent(change, 1);
+  if (row.key === "btc_dominance") return signed(change, 1, "pp");
+  return signed(change, 0);
+}
+
+/**
  * The value column, which is not always a level.
  *
  * Rotation answers "which sectors led", and the answer is a difference of two
@@ -194,6 +237,7 @@ function level(block: string, value: number | null): string {
  * the month.
  */
 function valueText(block: TrendBlock, row: TrendRow): string {
+  if (block.block === "crypto") return cryptoLevel(row);
   if (block.block !== "rotation") return level(block.block, row.value);
   const excess = row.changes.month;
   return excess === undefined ? NA : changeText(block.unit, excess);
@@ -227,6 +271,26 @@ function describe(t: T, block: string, row: TrendRow) {
       label: maybe(t, `sentiment.mkt_${row.key}`) ?? row.name,
       sub: row.as_of ? t("sentiment.pos_asof", { date: row.as_of }) : undefined,
       tip: undefined,
+    };
+  }
+  if (block === "crypto") {
+    const sub =
+      row.key === "fear_greed"
+        ? maybe(t, `sentiment.fg_${row.name}`)
+        : row.key.startsWith("dvol_")
+          ? t("sentiment.crypto_dvol_sub")
+          : row.key === "btc_dominance"
+            ? t("sentiment.crypto_dominance_sub")
+            : row.key === "stablecoins"
+              ? t("sentiment.crypto_stables_sub")
+              : undefined;
+    return {
+      label: maybe(t, `sentiment.crypto_${row.key}`) ?? row.key,
+      sub,
+      tip: maybe(
+        t,
+        `sentiment.tip_crypto_${row.key.startsWith("dvol_") ? "dvol" : row.key}`,
+      ),
     };
   }
   if (block === "factors") {
@@ -299,7 +363,7 @@ type Cell = { label: string; text: string; tone: number };
  * grid, and a header that outnumbers its cells silently shifts every column.
  */
 function headers(t: T, block: string): string[] {
-  if (block === "gauges") {
+  if (block === "gauges" || block === "crypto") {
     return [
       ...HORIZONS.slice(0, 3).map((name) => t(`sentiment.h_${name}`)),
       t("sentiment.col_pctl"),
@@ -409,6 +473,29 @@ function cells(t: T, block: TrendBlock, row: TrendRow): Cell[] {
       // apart, and one "latest" over both silently misdates one of them.
       { label: labels[3] ?? "", text: row.name || NA, tone: 0 },
     ];
+  }
+
+  if (block.block === "crypto") {
+    // Changes in each row's own unit (`cryptoChange`); the percentile, like
+    // the gauges', is a position and stays uncoloured.
+    const out: Cell[] = HORIZONS.slice(0, 3).map((name, i) => {
+      const change = row.changes[name];
+      const label = labels[i] ?? "";
+      return change === undefined
+        ? { label, text: NA, tone: 0 }
+        : { label, text: cryptoChange(row, change), tone: tone(change, row.welcome) };
+    });
+    out.push({
+      label: t("sentiment.col_pctl"),
+      text:
+        row.percentile === null
+          ? NA
+          : row.percentile_then === null
+            ? `p${num(row.percentile, 0)}`
+            : `p${num(row.percentile, 0)} (${num(row.percentile_then, 0)})`,
+      tone: 0,
+    });
+    return out;
   }
 
   const gauges = block.block === "gauges";

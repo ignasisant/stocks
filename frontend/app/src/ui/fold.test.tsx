@@ -51,6 +51,21 @@ describe("Fold", () => {
     expect(html).toContain("<p>body</p>");
   });
 
+  it("starts open when asked, until the reader closes it", () => {
+    width(380);
+    const drawStart = () =>
+      renderToStaticMarkup(
+        <Fold id="cycle" head={<h2>Cycle</h2>} start>
+          <p>body</p>
+        </Fold>,
+      );
+    expect(drawStart()).toContain("<p>body</p>");
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === "ag.fold.cycle" ? "0" : null),
+    });
+    expect(drawStart()).not.toContain("body");
+  });
+
   it("stays folded when storage is blocked", () => {
     width(380);
     vi.stubGlobal("localStorage", {
