@@ -15,15 +15,14 @@ from __future__ import annotations
 
 from stocks.i18n import DEFAULT_LANG, LANGUAGES
 from stocks.web import csp
-from stocks.web.landing import GITHUB_URL
 from stocks.web.markup import esc
 
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-11-24"
+LAST_UPDATED = "2026-11-26"
 
-_CONTACT = f"{GITHUB_URL}/issues"
+_CONTACT = "soporte@mybrainstock.com"
 
 # ------------------------------------------------------------------- copy
 # {doc: {lang: (title, [(heading, [paragraphs...]), ...])}}
@@ -35,8 +34,8 @@ _PRIVACY = {
             ("What this is", [
                 "MyBrainStock is a source-available, non-commercial portfolio tracker "
                 "operated by an individual. This page explains what data the "
-                "hosted app stores and why. Questions and requests: open an "
-                f"issue at {_CONTACT}.",
+                "hosted app stores and why. Questions and requests: write to "
+                f"{_CONTACT}.",
             ]),
             ("Data we store", [
                 "Account identity: when you sign in with Google we receive your "
@@ -150,7 +149,7 @@ _PRIVACY = {
                 "MyBrainStock es un rastreador de carteras de código público y "
                 "sin ánimo comercial, operado por un particular. Esta página "
                 "explica qué datos almacena la app y por qué. Preguntas y "
-                f"solicitudes: abre una incidencia en {_CONTACT}.",
+                f"solicitudes: escribe a {_CONTACT}.",
             ]),
             ("Datos que almacenamos", [
                 "Identidad de la cuenta: al iniciar sesión con Google recibimos "
@@ -268,8 +267,8 @@ _PRIVACY = {
                 "MyBrainStock è un tracker di portafoglio a codice sorgente "
                 "disponibile e senza scopo commerciale, gestito da una persona "
                 "fisica. Questa pagina spiega quali dati l'app ospitata "
-                "conserva e perché. Domande e richieste: apri una segnalazione "
-                f"su {_CONTACT}.",
+                "conserva e perché. Domande e richieste: scrivi a "
+                f"{_CONTACT}.",
             ]),
             ("Dati che conserviamo", [
                 "Identità dell'account: quando accedi con Google riceviamo il "
@@ -556,11 +555,11 @@ POLICY = csp.policy(styles=[csp.source(_CSS)], fonts=False)
 
 
 def _linkify(text: str) -> str:
-    """Escape a paragraph, then re-link the one URL the copy may contain."""
+    """Escape a paragraph, then re-link the one address the copy may contain."""
     out = esc(text)
     if _CONTACT in text:
-        url = esc(_CONTACT)
-        out = out.replace(url, f'<a href="{url}">{url}</a>')
+        addr = esc(_CONTACT)
+        out = out.replace(addr, f'<a href="mailto:{addr}">{addr}</a>')
     return out
 
 
