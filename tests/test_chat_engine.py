@@ -452,18 +452,40 @@ def test_autotitle_leaves_a_renamed_thread_alone(providers, tmp_path):
     assert not providers["free"].calls  # not even asked
 
 
-def test_autotitle_only_fires_on_the_opening_pair(providers, tmp_path):
+def test_autotitle_names_a_thread_whose_first_turn_named_nothing(providers, tmp_path):
+    """An import nudge or a memory command answers the opening turn without
+    the model, so the thread is still unnamed when the first real answer
+    lands — and is named then, from its opening question."""
     from stocks.chat import conversations
 
     chat = tmp_path / "chat.json"
-    history = [{"role": "user", "content": "q1"},
-               {"role": "assistant", "content": "a1"},
+    history = [{"role": "user", "content": "importa mi extracto"},
+               {"role": "assistant", "content": "Adjunta el fichero",
+                "action": "import"},
                {"role": "user", "content": "q2"},
                {"role": "assistant", "content": "a2"}]
     conversations.save_chat(history, chat)
 
     engine.autotitle(chat, providers["free"], "", history)
-    assert conversations.active_conversation(chat)["title"] == ""
+    assert conversations.active_conversation(chat)["title"]
+    assert providers["free"].calls[0][3][0]["content"] == "importa mi extracto"
+
+
+def test_autotitle_fires_once_per_thread(providers, tmp_path):
+    from stocks.chat import conversations
+
+    chat = tmp_path / "chat.json"
+    history = [{"role": "user", "content": "q1"},
+               {"role": "assistant", "content": "a1"}]
+    conversations.save_chat(history, chat)
+    engine.autotitle(chat, providers["free"], "", history)
+    asked = len(providers["free"].calls)
+
+    history += [{"role": "user", "content": "q2"},
+                {"role": "assistant", "content": "a2"}]
+    conversations.save_chat(history, chat)
+    engine.autotitle(chat, providers["free"], "", history)
+    assert len(providers["free"].calls) == asked
 
 
 # ------------------------------------------------------------------ answer
@@ -1000,8 +1022,8 @@ def test_answer_appends_to_existing_thread(providers, paths):
     engine.answer(prefs=dict(BASE_PREFS), message="follow-up", **paths)
     saved = conversations.load_chat(paths["chat_path"])
     assert len(saved) == 4 and saved[2]["content"] == "follow-up"
-    # the model saw the prior turns
-    *_, messages = providers["free"].calls[-1]
+    # the model saw the prior turns (calls[1] names the still-unnamed thread)
+    *_, messages = providers["free"].calls[0]
     assert [m["content"] for m in messages] == ["old", "old answer", "follow-up"]
 
 

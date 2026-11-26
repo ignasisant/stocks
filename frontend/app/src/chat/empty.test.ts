@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { heaviest, recentThreads, startersFor } from "./Empty";
+import { heaviest, recentThreads, startersFor, tickerFamily } from "./Empty";
 import type { Conversation } from "./types";
 
 describe("heaviest", () => {
@@ -47,6 +47,32 @@ describe("startersFor", () => {
 
   it("leaves the general set alone on a page with none of its own", () => {
     expect(startersFor("home", general)).toEqual(general);
+  });
+});
+
+describe("tickerFamily", () => {
+  it("asks a coin, a fund or an index nothing about results or rivals", () => {
+    expect(tickerFamily("crypto", "MOODENG-EUR")).toBe("coin");
+    expect(tickerFamily("equity_fund", "VWCE.DE")).toBe("fund");
+    expect(tickerFamily("money_market", "XEON.DE")).toBe("fund");
+    expect(tickerFamily("index", "^GSPC")).toBe("index");
+    expect(tickerFamily("stock", "NVDA")).toBe("stock");
+  });
+
+  it("guesses from the symbol until the profile names the kind", () => {
+    expect(tickerFamily(null, "MOODENG-EUR")).toBe("coin");
+    expect(tickerFamily(undefined, "^IBEX")).toBe("index");
+    expect(tickerFamily(null, "BRK-B")).toBe("stock");
+    expect(tickerFamily(null, "PEPE24478-USD", true)).toBe("coin");
+  });
+
+  it("puts the family's questions in front of the general set", () => {
+    expect(startersFor("ticker", ["a", "b"], ["c1", "c2"])).toEqual([
+      "c1",
+      "c2",
+      "a",
+      "b",
+    ]);
   });
 });
 

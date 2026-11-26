@@ -83,11 +83,14 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
     """Name the active thread — or `thread`, the one the turn was asked in —
     from its opening question, once.
 
-    Only fires on the first completed pair of a still-unnamed, never-renamed
+    Fires on the first answered turn of a still-unnamed, never-renamed
     conversation, so the extra classifier call happens once per thread and
-    never for a title the user chose. Failures are swallowed: a nameless
-    thread must not cost the user an answer."""
-    if len(history) != 2 or history[0]["role"] != "user":
+    never for a title the user chose. Not only the opening pair: a first turn
+    the app answered itself (an import nudge, a memory command, a refusal)
+    names nothing, and the thread then stayed nameless for good. Failures
+    are swallowed: a nameless thread must not cost the user an answer."""
+    opening = next((m for m in history if m.get("role") == "user"), None)
+    if opening is None or history[-1].get("role") != "assistant":
         return
     from stocks.chat import conversations
 
@@ -96,7 +99,8 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
         if conv.get("title") or not conv.get("title_auto", True):
             return
         conversations.autotitle_conversation(
-            conv["id"], title_for(provider, api_key, history[0]["content"], lang),
+            conv["id"],
+            title_for(provider, api_key, str(opening.get("content") or ""), lang),
             chat_path,
         )
     except Exception as exc:

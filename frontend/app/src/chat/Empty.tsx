@@ -61,12 +61,49 @@ const PAGE: Record<string, string[]> = Object.fromEntries(
     [`chat.starter_${page}_1`, `chat.starter_${page}_2`],
   ]),
 );
+/**
+ * A ticker page's two questions, by what the symbol is. Results and rivals
+ * are a company's: asked of a coin, a fund or an index they are questions
+ * with no answer, so each of those gets its own pair.
+ */
+const TICKER = {
+  stock: ["chat.starter_ticker_1", "chat.starter_ticker_2"],
+  coin: ["chat.starter_coin_1", "chat.starter_coin_2"],
+  fund: ["chat.starter_fund_1", "chat.starter_fund_2"],
+  index: ["chat.starter_index_1", "chat.starter_index_2"],
+} as const;
+type TickerFamily = keyof typeof TICKER;
+
+/** Same shape as `stocks.data.crypto.split_pair`: BTC-EUR, never BRK-B. */
+const PAIR = /^[A-Z0-9]{2,10}-(?:USD|EUR|GBP)$/;
+
+/**
+ * Which pair of questions a ticker gets: the kind the profile names, or —
+ * before it answers, or from an older server — a guess from the symbol alone.
+ */
+export function tickerFamily(
+  asset: string | null | undefined,
+  symbol: string,
+  crypto = false,
+): TickerFamily {
+  if (asset === "crypto") return "coin";
+  if (asset === "index") return "index";
+  if (asset === "stock") return "stock";
+  if (asset) return "fund";
+  if (crypto || PAIR.test(symbol)) return "coin";
+  if (symbol.startsWith("^")) return "index";
+  return "stock";
+}
+
 /** How many suggestions the screen offers at most, whatever the page. */
 const MAX_STARTERS = 5;
 
 /** The suggestions for a page, its own first, then the general ones. */
-export function startersFor(page: string, general: string[]): string[] {
-  const own = PAGE[page] ?? [];
+export function startersFor(
+  page: string,
+  general: string[],
+  own: readonly string[] = PAGE[page] ?? [],
+): string[] {
   return [...own, ...general.filter((k) => !own.includes(k))].slice(0, MAX_STARTERS);
 }
 
@@ -154,7 +191,23 @@ export function Empty({
   const ticker = (params.get("ticker") ?? "").trim().toUpperCase();
   // A ticker page's questions name its ticker; without one they say nothing.
   const from = page === "ticker" && !ticker ? "" : page;
-  const shown = startersFor(from, held ? BOOK : FRESH);
+  // The kind of thing on screen decides which questions fit it. The ticker
+  // page asked for the same profile, so this is the memo's answer.
+  const profile = useApi(
+    () =>
+      from === "ticker"
+        ? get<{ asset?: string | null; is_crypto?: boolean }>(
+            `/ticker/${encodeURIComponent(ticker)}/profile`,
+          )
+        : Promise.resolve(null),
+    [from, ticker],
+  );
+  const kind = profile.state === "loaded" ? profile.data : null;
+  const own =
+    from === "ticker"
+      ? TICKER[tickerFamily(kind?.asset, ticker, Boolean(kind?.is_crypto))]
+      : undefined;
+  const shown = startersFor(from, held ? BOOK : FRESH, own);
   const recent = onOpen ? recentThreads(threads, activeId) : [];
   // No import of the reader's own — none at all, or only the example book:
   // the chat works either way, but what it is best at is the reader's book,
@@ -195,7 +248,7 @@ export function Empty({
       </div>
       <div className="ag-chat-starters">
         <div className="ag-chat-group">{t("chat.start_with")}</div>
-        {account.state === "loading" ? (
+        {account.state === "loading" || profile.state === "loading" ? (
           <div className="ag-skeleton" aria-hidden="true">
             {BOOK.map((key) => (
               <div className="ag-skeleton-row" key={key} />
