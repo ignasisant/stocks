@@ -139,7 +139,9 @@ def closes(
         raise YFRateLimitError()
     deadline = time.monotonic() + budget
     out: dict[str, pd.Series] = {}
-    with obs.timed("yahoo.spark", symbols=len(symbols)) as rec:
+    with obs.timed(
+        "yahoo.spark", expected=(YFRateLimitError,), symbols=len(symbols)
+    ) as rec:
         for i in range(0, len(symbols), chunk):
             batch = symbols[i : i + chunk]
             for entry in _ask(batch, range_, deadline):
