@@ -131,6 +131,25 @@ def test_anything_else_is_a_refusal_without_a_cooldown(monkeypatch):
     assert fetch.throttle_remaining() == 0
 
 
+def test_a_refusal_is_logged_as_weather_not_paged(monkeypatch, caplog):
+    """ERR-01 (prod 2026-11-25): a curl HTTP/2 framing error from Yahoo left
+    `yahoo.spark` as an ERROR with its stack, which pages the owner, while
+    every caller already degrades on the `YFRateLimitError` it raised."""
+    import logging
+
+    caplog.set_level(logging.INFO)
+    fake, _ = _failing(
+        _Refused(0, "Failed to perform, curl: (16) Error in the HTTP2 framing layer.")
+    )
+    monkeypatch.setattr(spark, "_fetch", fake)
+    with pytest.raises(YFRateLimitError):
+        spark.closes(["AAPL", "MSFT", "NVDA", "AMZN", "META"])
+    timed = [r for r in caplog.records if getattr(r, "event", "") == "yahoo.spark"]
+    assert len(timed) == 1
+    assert timed[0].levelno == logging.WARNING
+    assert timed[0].ok is False and timed[0].exc_info is None
+
+
 def test_one_refused_chunk_refuses_the_whole_call(monkeypatch):
     """A half-refreshed book reads as a book whose other half stopped trading."""
     fake, calls = _failing(None, _Refused(500, "Internal Server Error"))
