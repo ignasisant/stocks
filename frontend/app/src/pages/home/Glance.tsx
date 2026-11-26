@@ -39,6 +39,7 @@ import type {
 import { money, percent } from "../../shell/format";
 import { TickerCell } from "../../shell/tickers";
 import { currencySymbol } from "../ticker/format";
+import { quotedTime } from "./liveDay";
 
 /** The windows the card offers, and the labels its range selector uses. */
 const WINDOWS = [
@@ -449,6 +450,7 @@ function MoversCard({
   positions: Position[];
 }) {
   const t = useT();
+  const lang = useLang();
   const currency = useCurrency();
   const [range, setRange] = useState<WindowKey>("day");
   const [side, setSide] = useState<Side>("all");
@@ -461,6 +463,7 @@ function MoversCard({
 
   const held = new Map(positions.map((position) => [position.ticker, position]));
   const picked = movers[range];
+  const stamp = quotedTime(movers.day.quoted_at, lang);
   // The choice exists only while something is quoting before the bell; the
   // rest of the day there is one reading and a remembered "pre" sleeps.
   const early =
@@ -555,6 +558,7 @@ function MoversCard({
       <p className="hm-caption">
         {[
           t("home.movers_money_note"),
+          range === "day" && stamp ? t("home.movers_updated", { time: stamp }) : null,
           still > 0
             ? t(alone ? "home.movers_idle" : "home.movers_still", { n: still })
             : null,

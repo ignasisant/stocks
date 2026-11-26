@@ -284,6 +284,30 @@ def _finnhub_off():
 
 
 @pytest.fixture(autouse=True)
+def _quote_board_cold():
+    """Start every test with an empty quote board and Kraken offline.
+
+    The board is process-wide on purpose (every account shares one row per
+    symbol), so a row one test fetched would answer the next test's ask.
+    Kraken answers as an unreachable host does, which sends crypto on to
+    Yahoo's stub; a test about Kraken patches `kraken._get`.
+    """
+    from stocks.data import kraken, quotes
+
+    def offline(url, timeout):
+        raise ConnectionError("network is off in tests: Kraken")
+
+    before = kraken._get
+    kraken._get = offline
+    kraken.clear()
+    quotes.clear_board()
+    yield
+    kraken._get = before
+    kraken.clear()
+    quotes.clear_board()
+
+
+@pytest.fixture(autouse=True)
 def _twelvedata_off():
     """Start every test with the Twelve Data daily fallback keyless and reset,
     for the reason `_finnhub_off` gives. A test about it patches `api_key`."""

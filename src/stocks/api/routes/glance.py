@@ -182,9 +182,12 @@ def movers(
     regular session the newest daily bar is stale or flat, and the basket then
     reports a book that never moved — so the names whose own exchange is shut
     are re-read from `session_quotes`: the live pre/after-hours move while
-    there is one, the last completed session afterwards. `as_of` says which
-    session that was, and `unpriced` how much of the book is missing from all
-    of it.
+    there is one, the last completed session afterwards. The names trading now
+    get their last bar moved to the shared quote board's price (`live_frame`),
+    so a client polling this once a minute sees a minute-old book without the
+    book being rebuilt. `as_of` says which session that was, `quoted_at` when
+    the oldest moving price was read, and `unpriced` how much of the book is
+    missing from all of it.
 
     Each side is cut to its `SHOWN` strongest unless `all` is set, which is
     what Home's card asks for: it draws every name that moved.
@@ -209,6 +212,9 @@ def movers(
     if frame.empty:
         return answer
 
+    live: dict[str, dict] = {}
+    if days <= 1:
+        frame, live = book_moves.live_frame(frame, db, mtime)
     quotes = book_moves.session_quotes(frame) if days <= 1 else None
 
     premarket: set[str] = set()
@@ -259,6 +265,8 @@ def movers(
     if whole:
         answer.amount, answer.basket = _num(whole[0]), _num(whole[1])
     answer.as_of = _as_of(frame, quotes)
+    if days <= 1:
+        answer.quoted_at = book_moves.quoted_at(live, quotes)
     return answer
 
 

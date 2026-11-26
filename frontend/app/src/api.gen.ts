@@ -2124,6 +2124,7 @@ export type Movers = {
   "unpriced": number;
   "as_of": string | null;
   "basket": number | null;
+  "quoted_at": string | null;
 };
 
 export type MovesApplied = {

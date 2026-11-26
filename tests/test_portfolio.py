@@ -833,6 +833,7 @@ def _patch_quote(monkeypatch, quote):
     from stocks.data import quotes as q
 
     q._blocked_until = 0.0
+    q.clear_board()  # a new upstream: the board's rows were the old one's
     monkeypatch.setattr(
         q, "_fetch",
         lambda symbols, timeout: [{**quote, "symbol": s} for s in symbols],

@@ -260,6 +260,28 @@ def fake_get_raw_json(self, url, params=None, timeout=None, **kw):
     return {"quoteResponse": {"result": rows}}
 
 
+def fake_kraken_get(url, timeout):
+    """Kraken's public API: every curated coin listed in the three fiats, and
+    a liquid ticker for whatever is asked, priced like the Yahoo fakes."""
+    from stocks.data.crypto import CRYPTO_NAMES, QUOTE_CURRENCIES
+
+    if "/AssetPairs" in url:
+        COUNTS["kraken.pairs"] += 1
+        return {"error": [], "result": {
+            f"{c}{f}": {"altname": f"{c}{f}", "wsname": f"{c}/{f}", "status": "online"}
+            for c in CRYPTO_NAMES for f in QUOTE_CURRENCIES
+        }}
+    names = url.rsplit("pair=", 1)[-1].split(",")
+    COUNTS["kraken.calls"] += 1
+    COUNTS["kraken.symbols"] += len(names)
+    result = {}
+    for name in names:
+        last, prev = FakeTicker(f"{name[:-3]}-{name[-3:]}")._px()
+        COUNTS["ticker.objects"] -= 1
+        result[name] = {"c": [str(last), "1"], "o": str(prev), "t": [500, 1000]}
+    return {"error": [], "result": result}
+
+
 def install_upstream() -> None:
     """Swap every known market-data and LLM fetch site for the fakes above."""
     import yfinance as yf
@@ -271,6 +293,10 @@ def install_upstream() -> None:
     import stocks.data.fetch as fetch
     fetch.yf.download = fake_download
     fetch.yf.Ticker = FakeTicker
+
+    from stocks.data import kraken
+    kraken._get = fake_kraken_get
+    kraken.clear()
 
     from stocks.data import fx
     def _spot(base, quote):

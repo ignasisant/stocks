@@ -665,6 +665,15 @@ class Movers(BaseModel):
             "history does not cover it — not 0, which would read as a flat book."
         ),
     )
+    quoted_at: str | None = Field(
+        default=None,
+        description=(
+            "Day window only: when the oldest price still moving (a live "
+            "session, or US pre/after-hours) was read, ISO 8601 UTC. Null "
+            "when every market in the book is shut — a last close is not "
+            "fresher at noon than at nine."
+        ),
+    )
 
 
 class Extreme(BaseModel):
