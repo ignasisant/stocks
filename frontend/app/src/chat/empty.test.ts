@@ -67,7 +67,12 @@ describe("tickerFamily", () => {
   });
 
   it("puts the family's questions in front of the general set", () => {
-    expect(startersFor("ticker", ["a", "b"], ["c1", "c2"])).toEqual(["c1", "c2", "a", "b"]);
+    expect(startersFor("ticker", ["a", "b"], ["c1", "c2"])).toEqual([
+      "c1",
+      "c2",
+      "a",
+      "b",
+    ]);
   });
 });
 

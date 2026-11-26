@@ -99,7 +99,8 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
         if conv.get("title") or not conv.get("title_auto", True):
             return
         conversations.autotitle_conversation(
-            conv["id"], title_for(provider, api_key, str(opening.get("content") or ""), lang),
+            conv["id"],
+            title_for(provider, api_key, str(opening.get("content") or ""), lang),
             chat_path,
         )
     except Exception as exc:
