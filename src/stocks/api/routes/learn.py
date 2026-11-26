@@ -66,6 +66,17 @@ class QuizOut(BaseModel):
     why: str
 
 
+class StepOut(BaseModel):
+    text: str
+    app: str
+
+
+class LiveOut(BaseModel):
+    ticker: str
+    facts: list[str]
+    why: str
+
+
 class LessonOut(BaseModel):
     id: str
     path: str
@@ -79,6 +90,8 @@ class LessonOut(BaseModel):
     after: LessonRef | None
     done: bool
     quiz: QuizOut | None = None
+    steps: list[StepOut] = []
+    live: LiveOut | None = None
 
 
 class TermOut(BaseModel):
@@ -167,6 +180,9 @@ def lesson(
         quiz=QuizOut(question=found.quiz.question, options=list(found.quiz.options),
                      answer=found.quiz.answer, why=found.quiz.why)
         if found.quiz else None,
+        steps=[StepOut(text=x.text, app=x.app) for x in found.steps],
+        live=LiveOut(ticker=found.live.ticker, facts=list(found.live.facts),
+                     why=found.live.why) if found.live else None,
     )
 
 

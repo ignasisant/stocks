@@ -22,6 +22,13 @@ export type Quiz = {
   why: string;
 };
 
+/** One thing to try in the app: a sentence (bold tickers become links) and the
+    shell slug of the screen where it is done. */
+export type Step = { text: string; app: string };
+
+/** A real name whose figures the lesson shows as they are now. */
+export type Live = { ticker: string; facts: string[]; why: string };
+
 export type Lesson = {
   id: string;
   path: string;
@@ -36,6 +43,8 @@ export type Lesson = {
   after: LessonRef | null;
   done: boolean;
   quiz?: Quiz | null;
+  steps?: Step[];
+  live?: Live | null;
 };
 
 export type Term = {

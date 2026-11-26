@@ -192,3 +192,37 @@ export function highlight(text: string, query: string): Piece[] {
   if (from < text.length) pieces.push({ text: text.slice(from), hit: false });
   return pieces;
 }
+
+export type Block = { role: "idea" | "example" | "error" | "plain"; text: string };
+
+/**
+ * A lesson body as the blocks it is drawn in: the opening line to say apart,
+ * then, when the lesson follows the house shape of three `##` sections (the
+ * idea, an example, the typical mistake), each in its own card. Any other
+ * shape is drawn as one plain run, as it was written.
+ */
+export function blocks(body: string): { intro: string; blocks: Block[] } {
+  const parts = body.split(/^(?=## )/m);
+  const intro = parts[0]?.startsWith("## ") ? "" : (parts.shift() ?? "").trim();
+  const roles: Block["role"][] = parts.length === 3 ? ["idea", "example", "error"] : [];
+  return {
+    intro,
+    blocks: parts.map((text, at) => ({
+      role: roles[at] ?? "plain",
+      text: text.trim(),
+    })),
+  };
+}
+
+/**
+ * One term a day, the same for every reader and every visit that day: the
+ * terms a lesson teaches, in glossary order, stepped through by the calendar.
+ */
+export function termOfDay(terms: readonly Term[], day: Date): Term | null {
+  const taught = terms.filter((term) => term.lesson !== null);
+  if (taught.length === 0) return null;
+  const days = Math.floor(
+    Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()) / 86_400_000,
+  );
+  return taught[days % taught.length] ?? null;
+}

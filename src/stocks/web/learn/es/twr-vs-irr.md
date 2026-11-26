@@ -6,6 +6,7 @@ minutes: 4
 as_of: 2026-10-25
 terms: twr, irr, benchmark, cash_flow
 app: portfolio?tab=risk
+try: Abre tu rentabilidad: ¿se parecen TWR y TIR? => portfolio?tab=risk | Si no, busca el mes en que más aportaste. => portfolio?tab=risk
 ---
 Tu cartera puede haber subido un 8 % y, a la vez, haberte hecho perder dinero. No es una contradicción: son dos maneras de medir la rentabilidad, y cada una responde a una pregunta distinta.
 

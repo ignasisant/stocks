@@ -7,13 +7,15 @@
  * lesson again, to review.
  */
 
+import { get } from "../../shell/api";
 import { calendarDay } from "../../shell/dates";
 import { Icon } from "../../shell/Icon";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import { nextUp, pathKey, standing } from "./logic";
+import { useApi } from "../../shell/useApi";
+import { nextUp, pathKey, standing, termOfDay } from "./logic";
 import type { NextUp } from "./logic";
-import type { Curriculum } from "./types";
+import type { Curriculum, Glossary } from "./types";
 
 /** The path about Spanish tax law: its review date is shown beside it. */
 const TAX_PATH = "tax-es";
@@ -82,6 +84,38 @@ function Hero({ up }: { up: NextUp }) {
   );
 }
 
+/** One concept a day, with the lesson that teaches it. Quiet when the glossary
+    cannot be had: the paths below do not wait for it. */
+function TermOfDay() {
+  const t = useT();
+  const lang = useLang();
+  const glossary = useApi(() => get<Glossary>("/learn/glossary", { lang }), [lang]);
+  if (glossary.state !== "loaded") return null;
+  const term = termOfDay(glossary.data.terms, new Date());
+  if (!term?.lesson) return null;
+  return (
+    <section className="lr-day" aria-labelledby="lr-day-h">
+      <p className="lr-eyebrow" id="lr-day-h">
+        {t("learn.day_title")}
+      </p>
+      <h2 className="lr-day-term">{term.label}</h2>
+      <p className="lr-day-desc">{term.desc}</p>
+      <div className="lr-acts">
+        <Link className="ag-btn" page="learn" params={{ lesson: term.lesson.id }}>
+          {t("learn.day_lesson")}
+        </Link>
+        <Link
+          className="ag-btn"
+          page="learn"
+          params={{ tab: "glossary", term: term.id }}
+        >
+          {t("learn.day_glossary")}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export default function Paths({
   curriculum,
   done,
@@ -95,6 +129,7 @@ export default function Paths({
   return (
     <>
       {up && <Hero up={up} />}
+      <TermOfDay />
       <div className="lr-paths">
         {curriculum.paths.map((path, at) => {
           const s = standings[at]!;

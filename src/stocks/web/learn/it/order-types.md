@@ -10,6 +10,9 @@ quiz_q: Metti un acquisto limite a 10,05 e il titolo quota 10,20. Cosa succede?
 quiz_options: Compra a 10,20 | Attende e compra solo a 10,05 o meno | Viene annullato subito
 quiz_answer: 2
 quiz_why: Un ordine limite non paga mai più del tuo prezzo: resta aperto finché il mercato scende fino a lì, oppure non si esegue.
+try: Apri **NVDA** e guarda il prezzo in tempo reale. => ticker | Immagina un ordine limite più basso del 2 %: si eseguirebbe oggi? => ticker
+live: NVDA | price, limit
+live_why: Un acquisto limite più basso del 2 % non si esegue finché il prezzo non scende a quel livello.
 ---
 Quando compri o vendi scegli non solo cosa e quanto, ma anche come. Il tipo di ordine decide il prezzo a cui puoi finire per operare.
 
