@@ -52,6 +52,10 @@ PUBLIC = ("tax-es",)
 # residents first, so the Spanish page is the source.
 X_DEFAULT = "es"
 
+# The public FIFO calculator (web/calculator.py) sits beside the lessons.
+CALCULATOR_SLUGS = {"en": "fifo-calculator", "es": "calculadora-fifo",
+                    "it": "calcolatore-fifo"}
+
 TITLE_MAX = 60
 DESCRIPTION_MAX = 160
 
@@ -70,6 +74,8 @@ _UI = {
         "cta_guest": "Try it with sample data",
         "cta_signin": "Sign in with Google",
         "read_in": "Read in English",
+        "calc_title": "FIFO share calculator",
+        "calc_body": "Paste your trades: FIFO gain, two-month rule, estimated tax.",
     },
     "es": {
         "index_title": "Guías de fiscalidad para inversores en España",
@@ -85,6 +91,8 @@ _UI = {
         "cta_guest": "Probar con datos de ejemplo",
         "cta_signin": "Entrar con Google",
         "read_in": "Leer en español",
+        "calc_title": "Calculadora FIFO de acciones",
+        "calc_body": "Pega tus operaciones: ganancia FIFO, dos meses, impuesto.",
     },
     "it": {
         "index_title": "Guide al fisco spagnolo per investitori",
@@ -100,6 +108,8 @@ _UI = {
         "cta_guest": "Provalo con dati di esempio",
         "cta_signin": "Accedi con Google",
         "read_in": "Leggi in italiano",
+        "calc_title": "Calcolatore FIFO per azioni",
+        "calc_body": "Incolla le operazioni: plusvalenza FIFO, due mesi, imposta.",
     },
 }
 
@@ -276,6 +286,7 @@ def _cta(lang: str, app: str, src: str) -> str:
 def _document(
     lang: str, base_url: str, *, title: str, desc: str, main: str,
     alternates: dict[str, str], og_type: str, ld: list[dict],
+    extra_css: str = "", scripts: str = "",
 ) -> str:
     canonical = _abs(base_url, alternates[lang])
     links = "".join(
@@ -317,7 +328,7 @@ def _document(
         f'<meta property="og:image" content="{esc(_abs(base_url, og_image))}">'
         '<meta name="twitter:card" content="summary_large_image">'
         f"{_json_ld(ld)}"
-        f"<style>{_CSS}</style>"
+        f"<style>{_CSS}{extra_css}</style>"
         "</head><body><main>"
         f"{main}"
         "<footer><nav>"
@@ -327,17 +338,25 @@ def _document(
         f'<a href="/legal/terms{legal_q}">{esc(tr("landing.footer_terms"))}</a>'
         "</nav>"
         f"<p>{esc(tr('landing.footer_disclaimer'))}</p>"
-        "</footer></main></body></html>"
+        f"</footer></main>{scripts}</body></html>"
     )
 
 
 def _crumbs(lang: str, base_url: str, lesson: learn.Lesson | None) -> tuple[str, dict]:
     """The visible trail and its BreadcrumbList."""
+    extra = None if lesson is None else (lesson.title, href(lesson.id, lang))
+    return _crumbs_for(lang, base_url, extra)
+
+
+def _crumbs_for(
+    lang: str, base_url: str, extra: tuple[str, str] | None,
+) -> tuple[str, dict]:
+    """The trail to the guides index, plus one more page when `extra` is given."""
     ui = _UI[lang]
     trail = [("MyBrainStock", _HOMES[lang]),
              (ui["home"], PATHS[lang])]
-    if lesson is not None:
-        trail.append((lesson.title, href(lesson.id, lang)))
+    if extra is not None:
+        trail.append(extra)
     html = " › ".join(
         f'<a href="{esc(p)}">{esc(name)}</a>' for name, p in trail[:-1]
     )
@@ -405,7 +424,11 @@ def index(lang: str, base_url: str) -> str:
     lang = _lang(lang)
     ui = _UI[lang]
     crumbs, crumbs_ld = _crumbs(lang, base_url, None)
-    items = "".join(
+    tool = (
+        f'<li><a href="{esc(PATHS[lang] + CALCULATOR_SLUGS[lang])}">'
+        f"{esc(ui['calc_title'])}</a><p>{esc(ui['calc_body'])}</p></li>"
+    )
+    items = tool + "".join(
         f'<li><a href="{esc(href(x.id, lang))}">{esc(x.title)}</a>'
         f"<p>{esc(description(x))}</p></li>"
         for i in lesson_ids()

@@ -30,7 +30,10 @@ paths:
       - fifo
       - two-month-rule
       - offsetting-losses
+      - year-end-checklist
       - dividends-and-withholding
       - forms-720-721
       - tax-calendar
       - revolut-tax-return
+      - trade-republic-tax-return
+      - ibkr-tax-return
