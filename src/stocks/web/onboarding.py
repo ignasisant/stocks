@@ -853,6 +853,16 @@ RELEASES: tuple[Release, ...] = (
             News(slug="watchlist", icon="format_list_bulleted", step="daily"),
         ),
     ),
+    Release(
+        version="2026.11.8",
+        date="2026-11",
+        items=(
+            # Something the journal could not do: every holding at once,
+            # heaviest first, with which exit and buy rules it has, which it
+            # lacks and which are due a second look, drafted from the row.
+            News(slug="rules", icon="checklist", step="journal"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

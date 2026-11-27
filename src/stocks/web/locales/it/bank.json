@@ -30,6 +30,7 @@
   "bank.privacy_caption": "Il consenso dura fino a 90 giorni e puoi revocarlo qui o presso la tua banca in qualsiasi momento.",
   "bank.back": "Torna ad Allocazione",
   "bank.cash_total": "Liquidità in banca",
+  "bank.with_book": "+ portafoglio",
   "bank.days_left": "{days} giorni rimasti",
   "bank.days_left_one": "1 giorno rimasto",
   "bank.consent_used": "Giorni di consenso usati",

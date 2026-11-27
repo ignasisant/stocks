@@ -133,6 +133,41 @@ def test_detect_action_declares_every_field_a_tool_reads():
     assert data.read <= declared, data.read - declared
 
 
+def test_a_drafted_thesis_rule_keeps_its_pillars():
+    """The journal's "Draft" asks for a thesis rule; on the fallback path the
+    router's reply is a dumped ActionCall, so a pillar the class cannot carry
+    would leave a thesis rule with nothing to check, and the draft empty."""
+    call = baml_types.ActionCall(
+        action="set_criteria",
+        ticker="NVDA",
+        criteria=[
+            baml_types.CriterionRule(
+                rule="thesis", pillars=["Data-centre GPUs lead", "CUDA lock-in"]
+            ),
+            baml_types.CriterionRule(rule="below", level=95),
+        ],
+    )
+    action = tools._action_from(call.model_dump())
+    assert action is not None and action.kind == "set_criteria"
+    thesis = next(r for r in action.args["criteria"] if r["rule"] == "thesis")
+    assert thesis["pillars"] == ["Data-centre GPUs lead", "CUDA lock-in"]
+
+
+def test_a_thesis_only_reply_reaches_the_card():
+    """What the journal's thesis button gets back: one thesis rule, nothing
+    else, read through the regenerated schema as the router's raw reply."""
+    data = structured.parse(
+        '{"action": "set_criteria", "ticker": "NVDA", "criteria": '
+        '[{"rule": "thesis", "pillars": ["Hyperscalers keep raising AI capex"]}]}',
+        "DetectAction",
+    )
+    action = tools._action_from(data)
+    assert action is not None and action.kind == "set_criteria"
+    assert action.args["criteria"] == [
+        {"rule": "thesis", "pillars": ["Hyperscalers keep raising AI capex"]}
+    ]
+
+
 # ------------------------------------------------------------------- parse
 
 

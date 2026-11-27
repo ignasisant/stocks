@@ -273,10 +273,30 @@ def broker_domain(key: str) -> str | None:
 OTHER = "other"  # a real origin, just not one this registry parses
 
 
-def broker_options() -> tuple[str, ...]:
+def book_brokers(transactions: list[Transaction]) -> tuple[str, ...]:
+    """Origins the book already files trades under that the registry has no
+    name for: a broker typed in under `OTHER` on an earlier import (Finizens,
+    MyInvestor…), so the next import from it is a pick, not a retype.
+
+    Read off buys and sells, the rows the Custody view groups by broker, so a
+    hand-written note on a dividend or a split ("Dividendo", "20:1") is never
+    offered as a broker; and only one-word keys, the shape `broker_key` stamps.
+    """
+    known = {p.key for p in PLATFORMS} | set(BROKER_NAMES) | {OTHER, "manual", "demo"}
+    return tuple(sorted({
+        word
+        for tx in transactions
+        if tx.action in ("buy", "sell")
+        and (word := broker_of(tx)) not in known
+        and word == broker_key(word)
+    }))
+
+
+def broker_options(book: tuple[str, ...] = ()) -> tuple[str, ...]:
     """Keys to offer when the user names an upload's origin: every broker the
-    ledger already knows by name, `OTHER` last."""
-    return (*sorted(BROKER_NAMES), OTHER)
+    ledger knows by name, plus the ones this book already files trades under
+    (`book_brokers`), `OTHER` last."""
+    return (*sorted({*BROKER_NAMES, *book}), OTHER)
 
 
 def broker_key(name: str) -> str:

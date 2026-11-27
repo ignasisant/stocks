@@ -81,6 +81,25 @@ class BankState(BaseModel):
         ),
     )
     connections: list[BankConnection] = Field(default_factory=list)
+    currency: str = Field(
+        default="",
+        description="The reader's reporting currency, which the two figures below use.",
+    )
+    cash_value: float | None = Field(
+        default=None,
+        description=(
+            "Every read balance at today's rate, in `currency`. Null when none "
+            "has been read, or when one cannot be converted: a total that "
+            "silently left a bank out would be a claim about somebody's money."
+        ),
+    )
+    book_value: float | None = Field(
+        default=None,
+        description=(
+            "The book's market value in `currency`, for the sum with the cash. "
+            "Null when the book has nothing priced."
+        ),
+    )
 
 
 class BankChoice(BaseModel):

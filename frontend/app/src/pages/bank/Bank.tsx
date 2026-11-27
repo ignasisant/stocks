@@ -142,9 +142,19 @@ function Balance({
   return <span className={cls}>{text}</span>;
 }
 
-/** Cash at the connected banks, on top. Its sum with the book needs a server
-    total that /bank does not carry yet, so this is the banks' side only. */
-function CashTotal({ connections }: { connections: BankConnection[] }) {
+/** Cash at the connected banks, on top, and — when the server could convert
+    every balance and price the book — its sum with the book. */
+function CashTotal({
+  connections,
+  currency,
+  cash,
+  book,
+}: {
+  connections: BankConnection[];
+  currency: string;
+  cash: number | null;
+  book: number | null;
+}) {
   const t = useT();
   const lang = useLang();
   const totals = cashTotals(connections);
@@ -160,6 +170,16 @@ function CashTotal({ connections }: { connections: BankConnection[] }) {
           lang={lang}
         />
       ))}
+      {cash !== null && book !== null ? (
+        <span className="bk-note">
+          {t("bank.with_book")}{" "}
+          <Balance amount={book} currency={currency} lang={lang} />
+          {" = "}
+          <b>
+            <Balance amount={cash + book} currency={currency} lang={lang} />
+          </b>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -583,7 +603,12 @@ function Bank() {
             <>
               <p className="bk-note">{t("bank.intro_caption")}</p>
 
-              <CashTotal connections={data.connections} />
+              <CashTotal
+                connections={data.connections}
+                currency={data.currency}
+                cash={data.cash_value}
+                book={data.book_value}
+              />
 
               <div className="bk-layout">
                 <div className="bk-col">

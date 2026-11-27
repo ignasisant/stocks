@@ -1,0 +1,510 @@
+/* Perfil → Diario, "Your rules by holding" (JournalRules.tsx). */
+
+/* A section's name and its one line read as one block: the card body's gap
+   and the paragraph's margin would part them. */
+.pr-cardbody.jc-lede {
+  gap: 2px;
+}
+
+.jc-lede > .pr-subhead {
+  margin: 8px 0 0;
+}
+
+.jc-lede > .pr-hint {
+  margin: 0;
+}
+
+.jc-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* By weight: one slice per holding, coloured by how it reads. */
+.jc-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  overflow: hidden;
+}
+
+.jc-bar i {
+  flex: 0 1 0;
+  min-width: 2px;
+  background: var(--jc-c);
+}
+
+.jc [data-status="ok"] {
+  --jc-c: var(--ag-up);
+}
+.jc [data-status="review"] {
+  --jc-c: var(--ag-warn);
+}
+.jc [data-status="hit"] {
+  --jc-c: var(--ag-brand-accent);
+}
+.jc [data-status="gap"] {
+  --jc-c: color-mix(in srgb, var(--ag-down) 45%, transparent);
+}
+.jc [data-status="none"] {
+  --jc-c: var(--ag-down);
+}
+
+.jc-legend {
+  list-style: none;
+  margin: -0.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-secondary);
+}
+
+.jc-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.jc-legend li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--jc-c);
+}
+
+.jc-legend b {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.jc-next,
+.jc-want {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-accent-band);
+}
+
+.jc-next p,
+.jc-want p {
+  margin: 0;
+  flex: 1 1 16rem;
+  max-width: 60ch;
+  font-size: var(--ag-fs-sm, 0.75rem);
+}
+
+.jc-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.jc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.jc-head .pr-hint {
+  margin: 0;
+}
+
+.jc-link {
+  padding: 0 0.25rem;
+  min-height: 32px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  color: var(--ag-brand-accent);
+  cursor: pointer;
+}
+
+/* The list: on a narrow column a row is name, weight and status, then its
+   families as chips; on a wide one, a table with a column per family. */
+.jc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jc-cols {
+  display: none;
+}
+
+.jc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "tick weight toggle"
+    "cells cells cells"
+    "detail detail detail";
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--ag-border);
+}
+
+.jc-row > .jc-tick {
+  grid-area: tick;
+  min-width: 0;
+}
+
+.jc-weight {
+  grid-area: weight;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  color: var(--ag-text-secondary);
+  text-align: right;
+}
+
+.jc-cells {
+  grid-area: cells;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.jc-toggle {
+  grid-area: toggle;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: none;
+  font: inherit;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.jc-toggle svg {
+  transition: transform var(--ag-dur-move, 200ms)
+    var(--ag-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.jc-row[data-open] .jc-toggle svg {
+  transform: rotate(180deg);
+}
+
+.jc-status {
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  color: var(--jc-c);
+  background: color-mix(in srgb, var(--jc-c) 14%, transparent);
+}
+
+.jc-status[data-status="gap"] {
+  color: var(--ag-down);
+}
+
+.jc-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-card);
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+}
+
+.jc-cell i {
+  font-style: normal;
+  color: var(--ag-text-muted);
+}
+
+.jc-cell b {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.jc-cell[data-cell="ok"] b {
+  color: var(--ag-up);
+}
+/* Secondary and muted grey read under 4.5:1 on the red fill. */
+.jc-cell[data-cell="miss"] {
+  background: var(--ag-down-fill);
+}
+.jc-cell[data-cell="miss"],
+.jc-cell[data-cell="miss"] i {
+  color: var(--ag-text-primary);
+}
+.jc-cell[data-cell="miss"] b {
+  color: var(--ag-down);
+}
+.jc-cell[data-cell="hit"] {
+  background: var(--ag-accent-band);
+}
+.jc-cell[data-cell="hit"] b {
+  color: var(--ag-brand-accent);
+}
+.jc-cell[data-cell="review"] {
+  background: var(--ag-warn-fill-soft);
+}
+.jc-cell[data-cell="review"] b {
+  color: var(--ag-warn);
+}
+/* Nothing to say on a narrow row: a family it has no rule for and does not
+   need, or one its kind has no use for. */
+.jc-cell[data-cell="off"],
+.jc-cell[data-cell="na"] {
+  display: none;
+}
+
+.jc-detail {
+  grid-area: detail;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.4rem 0 0.25rem;
+}
+
+.jc-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jc-rule {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "fam what read"
+    ". acts acts";
+  gap: 0.35rem 0.75rem;
+  align-items: start;
+  padding: 0.5rem 0;
+  border-top: 1px dashed var(--ag-border);
+}
+
+.jc-rule-fam {
+  grid-area: fam;
+  padding-top: 1px;
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-muted);
+}
+
+.jc-rule-what {
+  grid-area: what;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.jc-rule-text {
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.jc-rule-what small {
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-muted);
+}
+
+.jc-rule-quote {
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.jc-flag {
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-warn);
+}
+
+.jc-rule-read {
+  grid-area: read;
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.jc-rule[data-read="hit"] .jc-rule-read {
+  color: var(--ag-brand-accent);
+}
+
+.jc-rule[data-read="review"] .jc-rule-read {
+  color: var(--ag-warn);
+}
+
+.jc-rule-acts {
+  grid-area: acts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.jc-foot {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--ag-fs-xs, 0.6875rem);
+  color: var(--ag-text-muted);
+}
+
+@container ag-main (max-width: 40rem) {
+  .jc-rule {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "fam read"
+      "what what"
+      "acts acts";
+  }
+}
+
+@container ag-main (min-width: 56rem) {
+  .jc-cols,
+  .jc-row {
+    display: grid;
+    grid-template-columns:
+      minmax(14rem, 2.5fr) 3.5rem repeat(5, minmax(4.5rem, 1fr))
+      10.5rem;
+    grid-template-areas: none;
+    gap: 0 0.6rem;
+    align-items: center;
+  }
+
+  .jc-cols {
+    padding: 0.4rem 0;
+    font-size: var(--ag-fs-xs, 0.6875rem);
+    color: var(--ag-text-muted);
+  }
+
+  .jc-cols span:nth-child(2),
+  .jc-cols span:last-child {
+    text-align: right;
+  }
+
+  .jc-row > .jc-tick,
+  .jc-weight,
+  .jc-toggle {
+    grid-area: auto;
+  }
+
+  .jc-cells {
+    display: contents;
+  }
+
+  .jc-cell,
+  .jc-cell[data-cell="off"],
+  .jc-cell[data-cell="na"] {
+    display: inline-flex;
+    justify-self: start;
+    padding: 0;
+    background: none;
+    font-size: var(--ag-fs-sm, 0.75rem);
+  }
+
+  /* The column heads name the family; the label stays for a screen reader. */
+  .jc-cell i {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .jc-cell[data-cell="off"] b,
+  .jc-cell[data-cell="na"] b {
+    font-weight: 400;
+    color: var(--ag-text-muted);
+  }
+
+  .jc-cell[data-cell="miss"],
+  .jc-cell[data-cell="hit"],
+  .jc-cell[data-cell="review"] {
+    padding: 2px 8px;
+  }
+
+  .jc-row > .jc-detail {
+    grid-area: auto;
+    grid-column: 1 / -1;
+  }
+}
+
+@media (pointer: coarse) {
+  .jc-toggle,
+  .jc-link,
+  .jc-cta,
+  .jc-rule-acts > * {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jc-toggle svg {
+    transition: none;
+  }
+}
+
+/* The mark, the symbol in bold and the company under it. */
+.jc-row .jc-tick {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.6rem;
+  align-items: center;
+  text-decoration: none;
+  color: var(--ag-text-primary);
+}
+
+.jc-row .jc-tick .ag-tick-logo,
+.jc-row .jc-tick .ag-tick-initials {
+  grid-row: 1 / span 2;
+  width: 1.9rem;
+  height: 1.9rem;
+  margin: 0;
+  vertical-align: baseline;
+}
+
+.jc-row .jc-tick .ag-tick-sym {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.jc-row .jc-tick .ag-tick-name {
+  grid-column: 2;
+  font-size: var(--ag-fs-sm, 0.75rem);
+  line-height: 1.2;
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jc-row .jc-tick .ag-tick-name::before {
+  content: none;
+}
+
+.jc-next .jc-cta {
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font-weight: 600;
+}

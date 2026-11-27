@@ -30,6 +30,7 @@
   "bank.privacy_caption": "Consent lasts up to 90 days and can be withdrawn here or at your bank at any time.",
   "bank.back": "Back to Allocation",
   "bank.cash_total": "Cash at banks",
+  "bank.with_book": "+ portfolio",
   "bank.days_left": "{days} days left",
   "bank.days_left_one": "1 day left",
   "bank.consent_used": "Consent days used",

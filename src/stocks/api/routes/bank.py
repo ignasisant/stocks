@@ -26,6 +26,7 @@ says something different for each and none of them is a defect:
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
@@ -33,10 +34,12 @@ from pydantic import BaseModel, Field
 
 from stocks import loaders
 from stocks.accounts import UserPaths
-from stocks.api.deps import Account, Writer
+from stocks.analysis.portfolio import priced_totals
+from stocks.api.deps import Account, Writer, reporting_currency
 from stocks.api.security import Authed
 from stocks.bank import access, enablebanking, store
 from stocks.bank.enablebanking import BankError, ConsentError, RateLimited
+from stocks.data import fx
 from stocks.schemas import (
     BankAccount,
     BankAuth,
@@ -119,15 +122,47 @@ def _refuse(exc: BankError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
 
+def _totals(
+    paths: UserPaths, ccy: str, rows: list[dict]
+) -> tuple[float | None, float | None]:
+    """Cash at the banks and the book, both in `ccy`; None where not knowable."""
+    cash: float | None = 0.0
+    seen = False
+    for acc in rows:
+        money = store.balance_money((acc.get("snapshot") or {}).get("balances") or [])
+        if money is None:
+            continue
+        seen = True
+        try:
+            cash += fx.to_base(money[0], money[1] or ccy, date.today(), ccy)  # type: ignore[operator]
+        except Exception:  # noqa: BLE001 - an unreadable rate leaves the total out
+            cash = None
+            break
+    db = str(paths.db)
+    table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
+    _cost, value, _unpriced = priced_totals(table)
+    return (cash if seen else None), (value if len(table) and value else None)
+
+
 def _view(paths: UserPaths, *, email: str, request: Request) -> BankState:
     """Everything the page draws, in one answer."""
     if not access.available(email):
         # Not an error: the page has a written state for this, and a client
         # that cannot see the feature still has to be told so to render it.
         return BankState(available=False, redirect_url="", connections=[])
+    ccy = reporting_currency(paths, None)
+    rows = [
+        acc
+        for conn in store.connections(paths.bank)
+        for acc in conn.get("accounts", [])
+    ]
+    cash, book = _totals(paths, ccy, rows)
     return BankState(
         available=True,
         redirect_url=access.redirect_url(_origin(request)),
+        currency=ccy,
+        cash_value=cash,
+        book_value=book,
         connections=[
             BankConnection(
                 session_id=conn.get("session_id", ""),

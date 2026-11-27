@@ -620,6 +620,48 @@ def test_rows_added_by_hand_carry_their_broker(site, editor, book):
     assert (added.ticker, added.note) == ("MSFT", "revolut app")
 
 
+def _book_rows():
+    return [
+        {"date": "2024-05-02", "ticker": "MSFT", "action": "buy", "quantity": 2,
+         "price": 300.0, "currency": "EUR"},
+        {"date": "2024-06-03", "ticker": "AAPL", "action": "buy", "quantity": 1,
+         "price": 180.0, "currency": "EUR"},
+    ]
+
+
+def test_import_book_previews_then_writes_one_undoable_batch(site, editor, book):
+    before = len(ledger.all_transactions(book.db))
+    rows = _book_rows()
+    plan = ok(call(site, editor, "import_book", rows=rows, broker="Revolut"))
+    assert plan["applied"] is False and plan["importable"] == 2
+    assert len(ledger.all_transactions(book.db)) == before  # preview writes nothing
+    done = ok(call(site, editor, "import_book", rows=rows, broker="Revolut",
+                   confirm_token=plan["confirm_token"]))
+    assert done["applied"] is True and done["imported"] == 2
+    assert len(ledger.all_transactions(book.db)) == before + 2
+    assert ledger.all_transactions(book.db)[-1].note.startswith("revolut")
+    undone = ok(call(site, editor, "undo_last_import", confirm=True))
+    assert undone["applied"] is True
+    assert len(ledger.all_transactions(book.db)) == before
+
+
+def test_import_book_leaves_out_what_the_book_already_holds(site, editor, book):
+    rows = _book_rows()
+    plan = ok(call(site, editor, "import_book", rows=rows, broker="revolut"))
+    ok(call(site, editor, "import_book", rows=rows, broker="revolut",
+            confirm_token=plan["confirm_token"]))
+    again = ok(call(site, editor, "import_book", rows=rows, broker="revolut"))
+    assert again["importable"] == 0 and again["already_in_book"] == 2
+
+
+def test_import_book_refuses_a_token_for_other_rows(site, editor, book):
+    plan = ok(call(site, editor, "import_book", rows=_book_rows(), broker="revolut"))
+    other = _book_rows()[:1]
+    result = call(site, editor, "import_book", rows=other, broker="revolut",
+                  confirm_token=plan["confirm_token"])
+    assert result["isError"] is True
+
+
 def test_a_book_started_from_the_connector_is_a_first_book(site, editor, book):
     """A first row added from Claude or ChatGPT makes a newcomer of the
     account like an import does; one more row in a book that exists does not."""

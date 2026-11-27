@@ -3102,6 +3102,22 @@ def test_a_question_asked_on_three_days_is_added_and_said(
     assert memory["kind"] == "routine"
 
 
+def test_a_pasted_summary_is_previewed_then_saved_as_separate_memories(
+    client, account, signed_in
+):
+    text = "- Prefers dividend growers\n- Never more than 10% in one position\n"
+    preview = signed_in.post("/v1/chat/memories/import/preview", json={"text": text})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert [s["text"] for s in body["statements"]] == [
+        "Prefers dividend growers", "Never more than 10% in one position"]
+    assert signed_in.get("/v1/chat/memories").json()["memories"] == []
+    done = signed_in.post("/v1/chat/memories/import", json={
+        "statements": [s["text"] for s in body["statements"]]})
+    assert done.json() == {"added": 2, "updated": 0, "known": 0, "left_out": 0}
+    assert len(signed_in.get("/v1/chat/memories").json()["memories"]) == 2
+
+
 def test_a_saved_memory_reaches_every_later_prompt(
     client, account, signed_in, served
 ):
@@ -3349,6 +3365,36 @@ def test_tidy_up_proposals_are_applied_or_dismissed_by_the_reader(
     assert texts == {a["id"]: "Vivo en Valencia", b["id"]: b["text"]}
     assert signed_in.post(f"/v1/chat/memories/suggestions/{move.sid}",
                           json={"action": "apply"}).status_code == 404
+    [moved] = [m for m in listed["memories"] if m["id"] == a["id"]]
+    assert moved["history"] == [{
+        "day": moved["updated"][:10], "why": "review", "was": "Vivo en Barcelona",
+        "said": None, "reason": "model", "ticker": None, "event": None,
+        "on": None}]
+
+
+def test_a_memory_the_book_overtook_is_retired_with_its_trade(
+    client, account, signed_in
+):
+    from stocks.chat import memory_review
+
+    held = signed_in.post("/v1/chat/memories",
+                          json={"text": "Tengo 50 NVDA a 120"}).json()
+    retire = memory_review.proposal("retire", (held["id"],), "book",
+                                    ticker="NVDA", event="closed", on="2026-10-03")
+    memory_review.keep(account.learnings, [retire], "2026-11-26")
+
+    [listed] = signed_in.get("/v1/chat/memories").json()["suggestions"]
+    assert (listed["action"], listed["reason"]) == ("retire", "book")
+    assert (listed["ticker"], listed["event"], listed["on"]) == (
+        "NVDA", "closed", "2026-10-03")
+
+    done = signed_in.post(f"/v1/chat/memories/suggestions/{retire.sid}",
+                          json={"action": "apply"}).json()
+    assert done["changes"][0]["op"] == "updated"
+    [memory] = signed_in.get("/v1/chat/memories").json()["memories"]
+    assert memory["until"] == "2026-10-03" and memory["expired"]
+    assert memory["history"][-1]["why"] == "book"
+    assert memory["history"][-1]["event"] == "closed"
 
 
 def test_a_turn_names_the_memory_a_new_one_may_clash_with(

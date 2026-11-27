@@ -122,29 +122,6 @@ export function tone(cell: string): "up" | "down" | null {
   return null;
 }
 
-/** How many lines Home's teaser keeps before it points at the page. */
-const TEASER_LINES = 3;
-
-/**
- * The teaser's lines — the fired alerts first, then the card's order — and how
- * much more the page holds: the lines left out plus the Today sections' rows,
- * which the teaser never draws.
- */
-export function teaserOf(
-  card: Pick<PersonalCard, "items" | "bullets" | "sections" | "today">,
-  max: number = TEASER_LINES,
-): { lines: DailyItem[]; more: number } {
-  const { alerts, watch } = sectionsOf(linesOf(card));
-  const brief = (card.sections ?? []).flatMap((section) => section.lines);
-  // The brief is the card when there is one: "worth a look" is not on it.
-  const ordered = [...alerts, ...(brief.length ? brief : watch)];
-  const rows = (card.today ?? []).reduce((n, section) => n + section.rows.length, 0);
-  return {
-    lines: ordered.slice(0, max),
-    more: Math.max(0, ordered.length - max) + rows,
-  };
-}
-
 /* ----------------------------------------------------------------- the page */
 
 export type TabId =

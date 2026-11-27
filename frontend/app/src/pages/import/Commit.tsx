@@ -84,6 +84,9 @@ export function CommitPanel({
   const me = useAccount();
   const { reload } = useSession();
   const options = useMemo(() => brands(platforms), [platforms]);
+  // A broker typed under "other" on an earlier import (Finizens, say) is one
+  // the book already knows: offered by name, so it is not retyped differently.
+  const known = preview.brokers ?? [];
   const [pick, setPick] = useState("");
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -182,6 +185,11 @@ export function CommitPanel({
               {options.map((option) => (
                 <option key={option.key} value={option.key}>
                   {option.label}
+                </option>
+              ))}
+              {known.map((broker) => (
+                <option key={broker.key} value={broker.key}>
+                  {broker.label}
                 </option>
               ))}
               <option value={OTHER}>{t("import.broker_other")}</option>

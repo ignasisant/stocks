@@ -104,6 +104,43 @@
   }
 }
 
+/* A tile that filters what follows it (Kpi `onPress`): pressed, it holds the
+   filter, and the same tile pressed again lets it go. */
+.ag-kpi-press {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--ag-dur-press, 100ms)
+      var(--ag-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+    border-color var(--ag-dur-press, 100ms)
+      var(--ag-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+@media (hover: hover) {
+  .ag-kpi-press:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+.ag-kpi-press[aria-pressed="true"] {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-accent-band);
+}
+
+@media (pointer: coarse) {
+  .ag-kpi-press {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-kpi-press {
+    transition: none;
+  }
+}
+
 /* Inline flow, not flex: a label that wraps keeps its "?" after the last word.
    As a flex item the wrapped label took the tile's whole width and pushed the
    mark to the far edge, a line away from the words it explains. The block

@@ -124,7 +124,7 @@
   "today.bench_book_all": "Your book",
   "today.bench_book_all_help": "What your money did since your first day: gains over the money at stake, deposits not counted as gains.",
   "today.bench_same_money": "{symbol} bought with your own money, on the days you put it in.",
-  "today.bench_since": "All moves in {ccy}, since {date}.",
+  "today.bench_since": "Cards: your money in each index. Table: each name's price move. All in {ccy}, since {date}.",
   "today.all_from": "Listed after your first day: measured from {date}, as are its gaps.",
   "today.col_verdict": "Verdict",
   "today.rate_us10y": "US 10-year",

@@ -989,7 +989,28 @@
 .ag-chat-memory-add {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.ag-chat-memory-add .ag-chat-group {
+  margin: 0;
+}
+
+.ag-chat-memory-addrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ag-chat-memory-addacts {
+  display: flex;
+  gap: 8px;
 }
 
 .ag-chat-memory-input {
@@ -1085,9 +1106,238 @@
   }
 }
 
-.ag-chat-memory-clear {
+/* Forget-all sits on the list's own header: a quiet link until pressed, and
+   the confirmation names the exact number. */
+.ag-chat-memory-clear,
+.ag-chat-memory-more {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-2xs);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-memory-more {
   align-self: flex-start;
-  margin-top: 12px;
+  color: var(--ag-brand-accent);
+}
+
+/* The tap area is wider than the word, so nothing is pushed apart for it. */
+.ag-chat-memory-row .ag-chat-memory-more {
+  position: relative;
+  min-height: 20px;
+}
+
+.ag-chat-memory-row .ag-chat-memory-more::after {
+  position: absolute;
+  inset: -12px -14px;
+  content: "";
+}
+
+@media (hover: hover) {
+  .ag-chat-memory-clear:hover {
+    color: var(--ag-critical-fill);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-chat-memory-clear {
+    min-height: 44px;
+  }
+
+  .ag-chat-memory-tidyhead .ag-chat-memory-more {
+    min-height: 44px;
+  }
+}
+
+/* The switch, the count and the note are one card: the state of the memory. */
+.ag-chat-card.ag-chat-memory-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  padding: 12px;
+}
+
+.ag-chat-memory-head p {
+  margin: 0;
+}
+
+.ag-chat-memory-switch {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+.ag-chat-memory-switch input {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 999px;
+  background: var(--ag-surface-hover);
+  appearance: none;
+  cursor: pointer;
+}
+
+.ag-chat-memory-switch input::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ag-text-secondary);
+  content: "";
+  transition: transform 100ms;
+}
+
+.ag-chat-memory-switch input:checked {
+  border-color: var(--ag-brand-cta);
+  background: var(--ag-brand-cta);
+}
+
+.ag-chat-memory-switch input:checked::after {
+  background: var(--ag-on-brand);
+  transform: translateX(16px);
+}
+
+.ag-chat-memory-switch input:disabled {
+  opacity: 0.5;
+}
+
+.ag-chat-memory-count {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ag-chat-memory-count .ag-chat-bar {
+  flex: 1;
+}
+
+/* Nearly full: the bar warns before the list refuses. */
+.ag-chat-memory-count[data-near] .ag-chat-bar::-webkit-progress-value {
+  background: var(--ag-warn);
+}
+
+.ag-chat-memory-count[data-near] .ag-chat-bar::-moz-progress-bar {
+  background: var(--ag-warn);
+}
+
+/* The weekly tidy-up folds to one line: it is the only thing here that asks
+   for an action, and the list is what the reader came for. */
+.ag-chat-card.ag-chat-memory-tidy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  padding: 0 12px;
+  border-color: var(--ag-brand-accent);
+}
+
+.ag-chat-card.ag-chat-memory-tidy:has(> :nth-child(2)) {
+  padding-bottom: 10px;
+}
+
+.ag-chat-memory-tidyhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ag-chat-memory-tidyhead .ag-chat-group {
+  margin: 0;
+}
+
+.ag-chat-memory-tidy .ag-chat-memory-row {
+  border-width: 1px 0 0;
+  border-radius: 0;
+  background: none;
+}
+
+.ag-chat-memory-open {
+  align-self: stretch;
+  justify-content: flex-start;
+  border-style: dashed;
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-select.ag-chat-memory-kinds {
+  width: auto;
+  max-width: 70%;
+  flex: none;
+  padding-block: 5px;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-select.ag-chat-memory-kinds {
+    min-height: 44px;
+  }
+}
+
+.ag-chat-memory-listhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ag-chat-memory-listhead .ag-chat-group {
+  margin: 0;
+}
+
+/* A long routine reads two lines; the rest opens on a tap. */
+.ag-chat-memory-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ag-chat-memory-kind {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
+  font-family: var(--ag-font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Forgetting is quieter than editing until it is hovered. */
+.ag-chat-memory-del {
+  color: var(--ag-text-muted);
+}
+
+@media (hover: hover) {
+  .ag-chat-memory-del:hover {
+    color: var(--ag-critical-fill);
+  }
+}
+
+.ag-chat-memory-fold {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--ag-border);
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* --------------------------------------------------- the answer's markup */
@@ -4149,7 +4399,7 @@ a.ag-chat-btn {
 }
 
 .ag-sched-body > .ag-chat-note {
-  margin: 4px 8px;
+  margin: 4px 11px;
 }
 
 /* A job's switch, at the end of its row where a thread has rename/delete. */
@@ -4342,6 +4592,14 @@ a.ag-chat-btn {
 
 /* What the link will show, framed as a page of its own: a reader should see
    at a glance that this is the preview and not the thread behind it. */
+.ag-share-cap {
+  margin: 4px 0 -6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
+}
+
 .ag-share-preview {
   max-height: 40dvh;
   overflow-y: auto;
@@ -4374,4 +4632,56 @@ a.ag-chat-btn {
   .ag-share-stop {
     min-height: 44px;
   }
+}
+
+/* A settings row that opens another screen: label, state under it, a chevron. */
+.ag-chat-navrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ag-chat-navrow-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ag-chat-navrow-text small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ag-text-muted);
+}
+.ag-chat-navrow-go {
+  display: inline-flex;
+  flex: none;
+  color: var(--ag-text-muted);
+  transform: rotate(180deg);
+}
+@media (hover: hover) {
+  .ag-chat-navrow:hover {
+    border-color: var(--ag-border-focus);
+  }
+}
+@media (pointer: coarse) {
+  .ag-chat-navrow {
+    min-height: 44px;
+  }
+}
+
+.ag-chat-act-note {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }

@@ -14,6 +14,12 @@ in is recognisable: a split written after a broker's last import, on a name
 that broker still shows open. Re-uploading that statement is safe (rows the
 book has are dropped as duplicates) and is the only way to recover the sale,
 so Import says so until the reader does it or waves it off.
+
+A broker in `imported_brokers` was read by an import that already shelved
+what it refused (both arrived in one change), so it never gets that hint: the
+sale, if there was one, is on the shelf and `ready` offers it. Naming the
+statement too told a reader to re-upload for nothing, right under a split scan
+that had just said nothing was missing.
 """
 
 from __future__ import annotations
@@ -211,12 +217,10 @@ def seen_broker(broker: str, path: Path) -> None:
     storage.persist(path)
 
 
-def _tops(path: Path) -> dict[str, int]:
+def _shelved(path: Path) -> set[str]:
+    """Brokers imported since refused sales are kept on the shelf."""
     with closing(connect(path)) as conn:
-        return {
-            r["broker"]: r["top_id"]
-            for r in conn.execute("SELECT broker, top_id FROM imported_brokers")
-        }
+        return {r["broker"] for r in conn.execute("SELECT broker FROM imported_brokers")}
 
 
 def dismissed(path: Path) -> set[str]:
@@ -238,9 +242,11 @@ def dismiss(key: str, path: Path) -> None:
 
 def reuploads(rows: list[Transaction], path: Path) -> list[Reupload]:
     """Statements that may hold a sale the book lost: per broker and name, a
-    split written after that broker's last import, on shares it bought before
-    the split and still shows open. One per broker and name, latest split."""
-    tops = _tops(path)
+    split written after that broker's last trade, on shares it bought before
+    the split and still shows open. Only brokers last imported before the
+    shelf existed, i.e. not in `imported_brokers`. One per broker and name,
+    latest split."""
+    shelved = _shelved(path)
     gone = dismissed(path)
     splits = [t for t in rows if t.action == "split" and t.quantity > 0 and t.id]
     if not splits:
@@ -251,9 +257,9 @@ def reuploads(rows: list[Transaction], path: Path) -> list[Reupload]:
         if t.action in ("buy", "sell", "transfer_in", "transfer_out"):
             by.setdefault((broker_of(t), t.ticker), []).append(t)
     for (broker, ticker), trades in by.items():
-        if broker in ("manual", "demo"):
+        if broker in ("manual", "demo") or broker in shelved:
             continue
-        top = tops.get(broker, max(t.id or 0 for t in trades))
+        top = max(t.id or 0 for t in trades)
         for s in sorted((s for s in splits if s.ticker == ticker), key=lambda s: s.date):
             if (s.id or 0) <= top:
                 continue

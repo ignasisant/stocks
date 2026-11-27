@@ -270,6 +270,8 @@ export function Kpi({
   note,
   noteTone,
   valueTone,
+  pressed,
+  onPress,
   children,
 }: {
   label: ReactNode;
@@ -284,26 +286,48 @@ export function Kpi({
   valueTone?: Tone | null;
   /** Anything the domain draws under the figure: a meter, a sparkline. */
   children?: ReactNode;
+  /**
+   * A tile that filters what follows it: drawn as a toggle button, `pressed`
+   * while its filter holds. Leave `help` off one — a "?" is a button too, and
+   * a button inside a button is two targets in one.
+   */
+  pressed?: boolean;
+  onPress?: () => void;
 }) {
-  return (
-    <div className="ag-kpi">
-      <div className="ag-kpi-head">
-        <Label label={label} help={help} />
-      </div>
-      <div className="ag-kpi-row">
+  // Inside a button only phrasing content is valid: the slots become spans,
+  // which ui.css styles by class, not by tag.
+  const Box = onPress ? "span" : "div";
+  const body = (
+    <>
+      <Box className="ag-kpi-head">
+        <Label label={label} help={onPress ? null : help} />
+      </Box>
+      <Box className="ag-kpi-row">
         <span
           className={valueTone ? `ag-kpi-value ag-tone-${valueTone}` : "ag-kpi-value"}
         >
           {counted(value, true)}
         </span>
         <Chip chip={chip} />
-      </div>
+      </Box>
       {note ? (
         <span className={noteTone ? `ag-kpi-note ag-tone-${noteTone}` : "ag-kpi-note"}>
           {note}
         </span>
       ) : null}
       {children}
-    </div>
+    </>
+  );
+  return onPress ? (
+    <button
+      type="button"
+      className="ag-kpi ag-kpi-press"
+      aria-pressed={pressed ?? false}
+      onClick={onPress}
+    >
+      {body}
+    </button>
+  ) : (
+    <div className="ag-kpi">{body}</div>
   );
 }

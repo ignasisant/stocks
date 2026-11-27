@@ -124,7 +124,7 @@
   "today.bench_book_all": "Il tuo portafoglio",
   "today.bench_book_all_help": "Cosa ha fatto il tuo denaro dal primo giorno: guadagno sul denaro in gioco, i versamenti non contano come guadagno.",
   "today.bench_same_money": "{symbol} comprato con il tuo denaro, nei giorni in cui l'hai versato.",
-  "today.bench_since": "Tutte le variazioni in {ccy}, dal {date}.",
+  "today.bench_since": "Schede: i tuoi soldi in ogni indice. Tabella: variazione di prezzo di ogni titolo. Tutto in {ccy}, dal {date}.",
   "today.all_from": "Quotato dopo il tuo primo giorno: misurato dal {date}, come i suoi scarti.",
   "today.col_verdict": "Verdetto",
   "today.rate_us10y": "USA 10 anni",

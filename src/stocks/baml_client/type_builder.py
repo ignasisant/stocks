@@ -929,7 +929,7 @@ class CriterionRuleAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("CriterionRule")
-        self._properties: typing.Set[str] = set([  "rule",  "level",  "quarters",  ])
+        self._properties: typing.Set[str] = set([  "rule",  "level",  "quarters",  "pillars",  ])
         self._props = CriterionRuleProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -968,6 +968,10 @@ class CriterionRuleProperties:
     @property
     def quarters(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("quarters"))
+    
+    @property
+    def pillars(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("pillars"))
     
     
 

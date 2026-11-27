@@ -249,6 +249,38 @@ def test_refreshing_stores_what_the_bank_reported(signed_in, connected, monkeypa
     assert account["fetched_at"]
 
 
+def test_the_state_carries_the_cash_beside_the_book(signed_in, connected, monkeypatch):
+    monkeypatch.setattr(enablebanking, "balances", lambda uid: BALANCES)
+    signed_in.post("/v1/bank/connections/sid-1/refresh")
+
+    payload = signed_in.get("/v1/bank").json()
+
+    assert payload["currency"] == "EUR"
+    assert payload["cash_value"] == pytest.approx(1234.56)
+    # An empty ledger has no value: null, not a zero that reads as "worth nothing".
+    assert payload["book_value"] is None
+
+
+def test_cash_that_cannot_be_converted_leaves_no_total(signed_in, connected, monkeypatch):
+    monkeypatch.setattr(
+        enablebanking,
+        "balances",
+        lambda uid: [
+            {
+                "balance_type": "CLBD",
+                "balance_amount": {"amount": "10", "currency": "XXX"},
+            }
+        ],
+    )
+    signed_in.post("/v1/bank/connections/sid-1/refresh")
+    monkeypatch.setattr(
+        "stocks.api.routes.bank.fx.to_base",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("no rate")),
+    )
+
+    assert signed_in.get("/v1/bank").json()["cash_value"] is None
+
+
 def test_a_spent_fetch_budget_is_its_own_status(signed_in, connected, monkeypatch):
     """Nothing is wrong and nothing needs reconnecting — the answer is to come
     back tomorrow, which is not what a 502 would tell the page to say."""

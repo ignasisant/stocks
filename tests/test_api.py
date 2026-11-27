@@ -846,6 +846,11 @@ WRITES = {
     # applied or dismissed: the same list, rewritten.
     ("/v1/chat/memories/{lid}/replace", "post"),
     ("/v1/chat/memories/suggestions/{sid}", "post"),
+    # Bringing memories over from another assistant: the preview saves nothing
+    # (it is here for the reason /v1/import/preview is), the import writes each
+    # reviewed statement as its own memory.
+    ("/v1/chat/memories/import/preview", "post"),
+    ("/v1/chat/memories/import", "post"),
     # Marking the what's-new modal as read. A write because that is exactly
     # what it is: the stamp is what stops the card interrupting this account
     # again, and a token that could set it would retire an announcement the

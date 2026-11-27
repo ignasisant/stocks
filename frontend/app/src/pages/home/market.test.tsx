@@ -153,7 +153,7 @@ describe("the editor", () => {
       <Editor layout={defaultLayout()} onClose={() => {}} />,
     );
     const at = (key: string) => html.indexOf(`<strong>${key}</strong>`);
-    expect(at("home.card_market")).toBeLessThan(at("home.card_daily"));
+    expect(at("home.card_movers")).toBeLessThan(at("home.card_market"));
     expect(at("home.card_watchlist")).toBeLessThan(html.indexOf("home.edit_tray"));
     expect(html.indexOf("home.edit_tray")).toBeLessThan(at("home.card_risk"));
     // The first row cannot go up, the last shown cannot go down — switched

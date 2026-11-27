@@ -541,3 +541,60 @@ def test_nothing_is_read_unasked_when_it_cannot_be_kept(tmp_path, extraction,
     monkeypatch.setattr(accounts, "GUEST_DIR", tmp_path)
     assert engine.learn({}, chat, about_me, watchlist) is None
     assert handed == []
+
+
+# -------------------------------------------------------------------- import
+
+WORDS = ("copper uranium lithium banks airlines retailers shipping software "
+         "chips cement coffee cocoa wheat gold silver oil gas solar wind water "
+         "steel rail trucks hotels cruises casinos pharma biotech dental "
+         "insurers brokers exchanges telecoms cables towers drones robots "
+         "satellites rockets farms fishing timber paper glass").split()
+
+SUMMARY = """## What I know about you
+**Investing**
+- Prefers dividend growers over high-growth tech.
+- Never wants more than 10% in one position. Holds for 10+ years.
+2) Lives in Spain and pays tax there
+
+ok
+Prefers dividend growers over high-growth tech.
+"""
+
+
+def test_a_pasted_summary_splits_into_its_statements():
+    assert learnings.split(SUMMARY) == [
+        "Prefers dividend growers over high-growth tech.",
+        "Never wants more than 10% in one position.",
+        "Holds for 10+ years.",
+        "Lives in Spain and pays tax there",
+    ]
+
+
+def test_an_import_never_files_a_routine():
+    assert learnings.import_kind("Todos los lunes dime cómo va mi cartera") != "routine"
+
+
+def test_bring_saves_each_statement_alone_and_refreshes_repeats(path):
+    first = learnings.bring(path, learnings.split(SUMMARY))
+    assert (first.added, first.known, first.left_out) == (4, 0, 0)
+    assert len(learnings.load(path)) == 4
+    again = learnings.bring(path, learnings.split(SUMMARY))
+    assert (again.added, again.known) == (0, 4)
+    assert len(learnings.load(path)) == 4
+
+
+def test_bring_keeps_at_most_max_import(path):
+    lines = [f"Follows {w} closely every single week" for w in WORDS]
+    done = learnings.bring(path, lines)
+    assert done.added == learnings.MAX_IMPORT
+    assert done.left_out == len(WORDS) - learnings.MAX_IMPORT
+
+
+def test_bring_stops_at_a_full_list_and_evicts_nothing(path):
+    for w in WORDS[:learnings.MAX_ITEMS]:
+        learnings.save(path, f"Owns plenty of {w} stock lately")
+    before = learnings.load(path)
+    done = learnings.bring(path, ["Brand new statement about bonds"])
+    assert done.added == 0 and done.left_out == 1
+    assert learnings.load(path) == before

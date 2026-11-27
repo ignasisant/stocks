@@ -30,6 +30,7 @@
   "bank.privacy_caption": "El consentimiento dura hasta 90 días y puedes retirarlo aquí o en tu banco cuando quieras.",
   "bank.back": "Volver a Asignación",
   "bank.cash_total": "Efectivo en bancos",
+  "bank.with_book": "+ cartera",
   "bank.days_left": "quedan {days} días",
   "bank.days_left_one": "queda 1 día",
   "bank.consent_used": "Días de consentimiento usados",

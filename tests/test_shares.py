@@ -273,6 +273,65 @@ def test_a_link_comes_down_after_its_thread_was_pruned(account):
     assert shares.load(share["id"]) is None
 
 
+# ---------------------------------------------------------------- expiry
+
+
+def _later(monkeypatch, hours: float) -> None:
+    """The clock `hours` past now, as `shares` reads it."""
+    now = shares._now()
+    monkeypatch.setattr(shares, "_now", lambda: now + hours * 3600)
+
+
+def test_a_link_works_for_48_hours_and_is_then_gone(account, monkeypatch):
+    _book(account.chat)
+    share = shares.create(account, "a1", masked=True, lang="es")
+    _later(monkeypatch, 47)
+    assert shares.load(share["id"]) is not None
+    _later(monkeypatch, 1.1)
+    assert shares.load(share["id"]) is None
+    assert not (shares.SHARES_DIR / f"{share['id']}.json").exists(), "deleted"
+
+
+def test_a_stamp_that_cannot_say_when_reads_as_expired():
+    assert shares.expired("") and shares.expired("yesterday")
+    assert shares.expires_at("2026-11-04T10:00:00Z") == shares.expires_at(
+        "2026-11-02T10:00:00Z") + 2 * 24 * 3600
+    made = datetime(2026, 11, 4, 10, tzinfo=UTC).timestamp()
+    assert shares.expires_at("2026-11-04T10:00:00Z") == made + 48 * 3600
+
+
+def test_an_expired_link_leaves_the_list_and_takes_its_copy(account, monkeypatch):
+    _book(account.chat)
+    old = shares.create(account, "a1", masked=True, lang="es")
+    _later(monkeypatch, 49)
+    new = shares.create(account, "a1", masked=False, lang="es")
+    assert [r["id"] for r in shares.listed(account)] == [new["id"]]
+    assert not (shares.SHARES_DIR / f"{old['id']}.json").exists()
+    assert shares.live_ids(account) == {new["id"]}
+
+
+def test_sharing_an_answer_again_after_expiry_makes_a_new_link(account, monkeypatch):
+    _book(account.chat)
+    old = shares.create(account, "a1", masked=True, lang="es")
+    _later(monkeypatch, 49)
+    again = shares.create(account, "a1", masked=True, lang="es")
+    assert again["id"] != old["id"]
+    stamped = conversations.find_answer("a1", account.chat)["answer"]["shares"]
+    assert [k["id"] for k in stamped] == [again["id"]]
+
+
+def test_an_expired_link_is_404_and_off_its_answer(account, signed_in, monkeypatch):
+    _book(account.chat)
+    made = signed_in.post("/v1/chat/turns/a1/share", json={"masked": True}).json()
+    thread = signed_in.get("/v1/chat/conversations/c1").json()
+    assert thread["messages"][-1]["shares"] == [{"id": made["id"], "masked": True}]
+    _later(monkeypatch, 49)
+    assert signed_in.get(f"/v1/shares/{made['id']}").status_code == 404
+    thread = signed_in.get("/v1/chat/conversations/c1").json()
+    assert thread["messages"][-1]["shares"] == []
+    assert signed_in.get("/v1/chat/shares").json() == []
+
+
 # -------------------------------------------------------------- the list
 
 

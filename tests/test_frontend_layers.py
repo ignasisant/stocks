@@ -67,7 +67,6 @@ _DEBT: dict[tuple[str, str], str] = {
     ("pages/home", "pages/portfolio"): "portfolio/api and the tax words",
     ("pages/home", "pages/sentiment"): "sentiment/format and its types",
     ("pages/home", "pages/ticker"): "ticker/format",
-    ("pages/home", "pages/today"): "Home's daily card is Today's card",
     ("pages/portfolio", "pages/home"): "home/format",
     ("pages/portfolio", "pages/sentiment"): "sentiment/format",
     ("pages/portfolio", "pages/ticker"): "ticker/plot",

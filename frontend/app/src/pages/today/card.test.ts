@@ -37,7 +37,6 @@ import {
   sourceKey,
   stampOf,
   tabsOf,
-  teaserOf,
   tone,
   wantsWriting,
 } from "./card";
@@ -266,27 +265,6 @@ function market(over: Partial<MarketCard> = {}): MarketCard {
     ...over,
   };
 }
-
-describe("teaserOf", () => {
-  it("puts the fired alerts first and counts what the page holds besides", () => {
-    const personal: PersonalCard = card({
-      items: [item("a"), item("b"), item("alert", "alerts"), item("c")],
-      today: [section("news", [row("n1"), row("n2")])],
-    });
-    const { lines, more } = teaserOf(personal);
-    expect(lines.map((line) => line.key)).toEqual(["alert", "a", "b"]);
-    expect(more).toBe(1 + 2);
-  });
-
-  it("reads the brief in place of worth-a-look when there is one", () => {
-    const asked = { title: "NVDA", asks: [1], lines: [item("brief")], chart: null };
-    const { lines, more } = teaserOf(
-      card({ items: [item("watch")], sections: [asked] }),
-    );
-    expect(lines.map((line) => line.key)).toEqual(["brief"]);
-    expect(more).toBe(0);
-  });
-});
 
 describe("tabsOf / activeTab / shows", () => {
   it("offers only the tabs with something under them, All first", () => {
