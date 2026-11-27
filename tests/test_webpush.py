@@ -660,6 +660,5 @@ def test_a_push_carries_webkits_declarative_form_beside_the_flat_fields():
     assert {k: out[k] for k in flat} == flat
     # No usable origin or a non-path url: the plain message, nothing to navigate.
     assert webpush.declarative(flat, "") == flat
-    assert webpush.declarative({**flat, "url": "https://evil.example/"}, "https://mybrainstock.com") == {
-        **flat, "url": "https://evil.example/",
-    }
+    foreign = {**flat, "url": "https://evil.example/"}
+    assert webpush.declarative(foreign, "https://mybrainstock.com") == foreign
