@@ -18,9 +18,12 @@ A PR (URL / `owner/repo#n` / number) and/or a feature description — at least o
 duration (60 s), language (es-ES), environment (`prod-guest` default, `local-guest` for an unmerged
 branch), `--auto` (skip script approval). Output is 16:9 1080p30 (landing, YouTube, X, LinkedIn).
 Vertical 9:16 (1080×1920, Reels/TikTok/Shorts) is a second export of the same script: after the 16:9
-build run `$PY $R record|build|qa --work $W --format 9x16` (`check --format 9x16` first). UI scenes are
-re-framed from the 16:9 recording (square stage, badge above, captions below); only the cards are
-re-recorded in portrait. Aim a scene with `focus: [fx, fy]` (0–1) when its subject is not centred.
+build run `$PY $R record|build|qa --work $W --format 9x16` (`check --format 9x16` first). Videos are
+made for social, so 9:16 is the primary deliverable: ship it first. UI scenes are re-recorded in the
+phone layout (`video.mobile_ui_viewport`, 540×600, drawn 2× on a stage between badge and captions): the
+app's real mobile UI, legible on a phone. A scene overrides its desktop steps with a `mobile:` block
+(`setup`/`steps`): no side-menu closers or zooms, tab strips scroll, scroll the subject into view.
+Set `mobile_ui_viewport: null` to fall back to cropping the 16:9 take (`focus: [fx, fy]`).
 Deliverable: `release_<ver>_9x16.mp4`/`.srt`. Free: ffmpeg only.
 
 **Start from the standard format: read `references/formato.md` first.** It fixes the spine (hook on
@@ -100,7 +103,7 @@ go in `references/pronunciacion.yaml` (audio only).
 - **Review frames densely** (≈2 fps per UI clip), not 6 stills: zooms must land on the narrated element
   (`zoom target:`, not guessed `box:` pixels). You cannot hear audio: voice is the user's call — give
   2–3 short samples before building. No draft goes to the user that you would not post yourself.
-- 9:16 never records UI again: it crops the 16:9 take, so a target must be zoomed or clicked (or have `focus:`) to be legible; `check --format 9x16` warns about scenes that are not. `kind: video` scenes are letterboxed.
+- 9:16 re-records UI in the phone layout: give each UI scene a `mobile:` block; a transient yfinance banner ("la fuente de precios no responde") can show in a recording, hide it in setup. `kind: video` scenes are letterboxed.
 - **Two platforms = two looks.** When a scene is about another product (Claude…), its card, logo, colours and
   imagery are that product's, never MyBrainStock's, or the viewer cannot tell them apart. `card.brand:`
   overrides the global brand per card (`name, logo, plain: true, accent, cta, info, soft, up, background,

@@ -697,6 +697,9 @@ async def record(
         except Exception:  # noqa: BLE001 - channel not installed
             headless = await pw.chromium.launch(headless=True)
         size = {'width': vw, 'height': vh}
+        uvw, uvh = cfg['video'].get('ui_viewport') or (vw, vh)
+        ui_size = {'width': uvw, 'height': uvh}
+        ui_cfg = {**cfg, 'video': {**cfg['video'], 'viewport': [uvw, uvh]}}
         card_ctx = await headless.new_context(
             viewport=size, screen=size, device_scale_factor=scale
         )
@@ -716,8 +719,8 @@ async def record(
             if envc.get('guest') or envc.get('demo_email'):
                 # Guest mode or a throwaway demo account: no login, fresh context, nothing to copy.
                 ui_ctx = await headless.new_context(
-                    viewport=size,
-                    screen=size,
+                    viewport=ui_size,
+                    screen=ui_size,
                     device_scale_factor=scale,
                     locale='es-ES',
                     timezone_id='Europe/Madrid',
@@ -739,8 +742,8 @@ async def record(
                 state = await session_state(src)  # in memory only, never written
                 ui_ctx = await headless.new_context(
                     storage_state=state,
-                    viewport=size,
-                    screen=size,
+                    viewport=ui_size,
+                    screen=ui_size,
                     device_scale_factor=scale,
                     locale='es-ES',
                     timezone_id='Europe/Madrid',
@@ -764,8 +767,8 @@ async def record(
                         await cdp.send(
                             'Emulation.setDeviceMetricsOverride',
                             {
-                                'width': vw,
-                                'height': vh,
+                                'width': uvw,
+                                'height': uvh,
                                 'deviceScaleFactor': scale,
                                 'mobile': False,
                             },
@@ -774,7 +777,7 @@ async def record(
                         page = await ui_ctx.new_page()
                     await install_mocks(page, board, scene)
                     rec = SceneRecorder(
-                        page, scene, timing, cfg['environments'][env_name], cfg, out
+                        page, scene, timing, cfg['environments'][env_name], ui_cfg, out
                     )
                 else:
                     shot = resolve_shot(

@@ -226,12 +226,24 @@ def cmd_record(a: argparse.Namespace, cfg: dict) -> None:
         sys.exit(f'Run tts first; no narration for {missing}')
     if VERTICAL:
         # UI footage is shared with the 16:9 take: only the cards are re-recorded, at portrait size.
-        print('9:16: recording cards only (UI scenes are re-framed from the 16:9 recording)')
-        board = {
-            **board,
-            'scenes': [s for s in board['scenes'] if s['kind'] in CARD_KINDS],
+        ui_vp = cfg['video'].get('mobile_ui_viewport')
+        if ui_vp:
+            print(f'9:16: UI scenes recorded at the phone layout {ui_vp}')
+            # `mobile:` overrides a scene's own keys (setup/steps/focus) for the phone layout.
+            board = {
+                **board,
+                'scenes': [{**s, **s.get('mobile', {})} for s in board['scenes']],
+            }
+        else:
+            print('9:16: recording cards only (UI scenes are re-framed from the 16:9 recording)')
+            board = {
+                **board,
+                'scenes': [s for s in board['scenes'] if s['kind'] in CARD_KINDS],
+            }
+        cfg = {
+            **cfg,
+            'video': {**cfg['video'], 'viewport': [1080, 1920], 'ui_viewport': ui_vp},
         }
-        cfg = {**cfg, 'video': {**cfg['video'], 'viewport': [1080, 1920]}}
     failed = asyncio.run(
         record(
             build,

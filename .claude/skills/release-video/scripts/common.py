@@ -28,7 +28,7 @@ OUT_W, OUT_H = (1080, 1920) if VERTICAL else (1920, 1080)
 # Where the recorded UI is drawn on the canvas (x, y, w, h). Vertical: a square stage with a badge row
 # above it and a caption band below it; the top and bottom keep clear of the platform's own UI
 # (approximate: Reels/TikTok/Shorts differ, so these are constants to tune, not a spec).
-STAGE = (0, 270, 1080, 1080) if VERTICAL else (0, 0, 1920, 1080)
+STAGE = (0, 250, 1080, 1200) if VERTICAL else (0, 0, 1920, 1080)
 BADGE_Y = 196 if VERTICAL else 26          # vertical: centred above the stage; 16:9: top right
 CAPTION_BOTTOM = 330 if VERTICAL else 58   # ASS MarginV of the bottom caption style
 SUFFIX = '_9x16' if VERTICAL else ''       # deliverables and per-format build folders

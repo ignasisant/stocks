@@ -22,6 +22,7 @@ voice:
 video:
   viewport: [1440, 810]            # CSS px = captured frame size (CDP screencast delivers CSS px)
   scale: 1                         # device scale factor; >1 does not raise screencast resolution
+  mobile_ui_viewport: [540, 600]   # 9:16 only: UI scenes recorded in the phone layout (2x upscale); null = re-frame the 16:9 take
   scene_lead: 0.35                 # silence before each scene's narration (s)
   scene_tail: 0.55                 # pause after it (s)
   crossfade: 0.35
