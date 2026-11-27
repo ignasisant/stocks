@@ -6,6 +6,7 @@ minutes: 3
 as_of: 2026-10-25
 terms: var, confidence_level
 app: portfolio?tab=risk
+try: Guarda il VaR del tuo portafoglio, in euro. => portfolio?tab=risk
 ---
 Quanto posso perdere in una brutta giornata? Il value at risk (VaR) risponde con un unico numero, a patto di ricordare cosa quel numero non copre.
 

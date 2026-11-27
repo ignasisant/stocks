@@ -51,5 +51,16 @@
   "learn.filter_all": "All",
   "learn.try": "Try:",
   "learn.try_terms": "IRR|VaR|withholding|P/E",
-  "learn.search_all": "Search every path"
+  "learn.search_all": "Search every path",
+  "learn.try_title": "Try it in MyBrainStock",
+  "learn.lesson_done": "Lesson done",
+  "learn.live_title": "In MyBrainStock, right now",
+  "learn.live_open": "Open {ticker}",
+  "learn.live_price": "Price",
+  "learn.live_limit": "Limit −2 %",
+  "learn.live_cap": "Market cap",
+  "learn.live_pe": "P/E",
+  "learn.day_title": "Term of the day",
+  "learn.day_lesson": "Read the lesson",
+  "learn.day_glossary": "See in the glossary"
 }

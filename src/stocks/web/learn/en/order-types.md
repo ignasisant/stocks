@@ -10,6 +10,9 @@ quiz_q: You place a limit buy at 10.05 and the stock trades at 10.20. What happe
 quiz_options: It buys at 10.20 | It waits and buys only at 10.05 or lower | It is cancelled at once
 quiz_answer: 2
 quiz_why: A limit order never pays more than your price: it stays open until the market comes down to it, or it never fills.
+try: Open **NVDA** and look at the live price. => ticker | Picture a limit order 2 % lower: would it fill today? => ticker
+live: NVDA | price, limit
+live_why: A limit buy 2 % below does not fill until the price drops to that level.
 ---
 When you buy or sell you choose not only what and how much, but also how. The order type decides the price you may end up trading at.
 

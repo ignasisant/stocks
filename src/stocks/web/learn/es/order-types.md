@@ -10,6 +10,9 @@ quiz_q: Pones una compra limitada a 10,05 y la acción cotiza a 10,20. ¿Qué pa
 quiz_options: Compra a 10,20 | Espera y compra solo a 10,05 o menos | Se cancela al instante
 quiz_answer: 2
 quiz_why: Una limitada nunca paga más que tu precio: queda abierta hasta que el mercado baje a él, o no se ejecuta.
+try: Abre **NVDA** y mira el precio en vivo. => ticker | Imagina una limitada un 2 % más baja: ¿llegaría hoy? => ticker
+live: NVDA | price, limit
+live_why: Una compra limitada un 2 % por debajo no se ejecuta hasta que el precio baje a ese nivel.
 ---
 Al comprar o vender no solo eliges qué y cuánto: también eliges cómo. El tipo de orden decide a qué precio puedes acabar operando.
 

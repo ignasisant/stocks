@@ -10,9 +10,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { TermList } from "./Glossary";
+import { figure } from "./Live";
 import { LessonBody, Quiz } from "./Lesson";
 import {
   appTarget,
+  blocks,
   fold,
   guestDone,
   matching,
@@ -25,6 +27,7 @@ import {
   inPath,
   lessonPaths,
   nextUp,
+  termOfDay,
   toggled,
 } from "./logic";
 import Paths from "./Paths";
@@ -202,7 +205,25 @@ describe("LessonBody", () => {
       <LessonBody lesson={lesson} progress={{ ...progress, done: new Set(["b"]) }} />,
     );
     expect(html).toContain('aria-pressed="true"');
-    expect(html).not.toContain("ag-btn-cta");
+    expect(html).toContain("lr-mark-on");
+    expect(html).not.toContain("ag-btn-cta lr-mark");
+  });
+
+  it("closes a read lesson with the way on, and lists the steps to try", () => {
+    const html = renderToStaticMarkup(
+      <LessonBody
+        lesson={{ ...lesson, steps: [{ text: "Open it.", app: "ticker" }] }}
+        progress={{ ...progress, done: new Set(["b"]) }}
+      />,
+    );
+    expect(html).toContain("learn.lesson_done");
+    expect(html).toContain("learn.try_title");
+    expect(html).toContain("Open it.");
+    const fresh = renderToStaticMarkup(
+      <LessonBody lesson={lesson} progress={progress} />,
+    );
+    expect(fresh).not.toContain("learn.lesson_done");
+    expect(fresh).not.toContain("learn.try_title");
   });
 
   it("carries the tax disclaimer on the Spanish-tax path only", () => {
@@ -261,5 +282,63 @@ describe("Quiz", () => {
     expect(html).toContain("Q?");
     expect(html.match(/class="lr-opt"/g)).toHaveLength(2);
     expect(html).not.toContain("Because.");
+  });
+});
+
+describe("blocks", () => {
+  it("sets the opening line apart and gives a three-section lesson its cards", () => {
+    const out = blocks("Intro.\n\n## Idea\n\nA\n\n## Example\n\nB\n\n## Mistake\n\nC");
+    expect(out.intro).toBe("Intro.");
+    expect(out.blocks.map((b) => b.role)).toEqual(["idea", "example", "error"]);
+  });
+
+  it("draws any other shape as it was written", () => {
+    const out = blocks("## One\n\nA\n\n## Two\n\nB");
+    expect(out.intro).toBe("");
+    expect(out.blocks.map((b) => b.role)).toEqual(["plain", "plain"]);
+  });
+});
+
+describe("termOfDay", () => {
+  const taught = (id: string, lesson: boolean): Term =>
+    ({
+      id,
+      label: id,
+      aliases: [],
+      desc: "",
+      lesson: lesson ? { id: "x", title: "X", minutes: 1 } : null,
+    }) as Term;
+  const list = [taught("a", true), taught("b", false), taught("c", true)];
+
+  it("steps through the taught terms by the calendar, the same all day", () => {
+    const one = termOfDay(list, new Date(2026, 10, 26, 8))!;
+    expect(termOfDay(list, new Date(2026, 10, 26, 23))).toEqual(one);
+    expect(termOfDay(list, new Date(2026, 10, 27))!.id).not.toBe(one.id);
+    expect(["a", "c"]).toContain(one.id);
+  });
+
+  it("has none when no lesson teaches any", () => {
+    expect(termOfDay([taught("b", false)], new Date())).toBeNull();
+  });
+});
+
+describe("live figures", () => {
+  const quote = { ticker: "NVDA", price: 100, currency: "USD" } as never;
+  const metrics = {
+    kpis: [
+      { key: "market_cap", value: 1, formatted: "4,2 B $" },
+      { key: "pe_ttm", value: null, formatted: "n/a" },
+    ],
+  } as never;
+
+  it("reads the price and the limit two per cent below it", () => {
+    expect(figure("price", { quote, metrics: null }, "en")).toContain("100");
+    expect(figure("limit", { quote, metrics: null }, "en")).toContain("98");
+  });
+
+  it("leaves out a figure that is missing rather than guess", () => {
+    expect(figure("cap", { quote, metrics }, "en")).toBe("4,2 B $");
+    expect(figure("pe", { quote, metrics }, "en")).toBeNull();
+    expect(figure("price", { quote: null, metrics: null }, "en")).toBeNull();
   });
 });

@@ -6,6 +6,9 @@ minutes: 3
 as_of: 2026-10-25
 terms: stock, dividend, market_cap, ipo, ticker_symbol, isin
 app: ticker
+try: Abre **NVDA** y busca su capitalización. => ticker | Compárala con **AMD**: ¿cuál vale más entera? => ticker
+live: NVDA | price, cap, pe
+live_why: Una acción real. La capitalización es el precio por todas las acciones: lo que vale la empresa entera.
 ---
 Una acción es un trocito de una empresa. Si compras una, pasas a ser propietario, aunque sea de una parte minúscula.
 

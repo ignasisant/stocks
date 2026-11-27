@@ -18,11 +18,12 @@ import { useT } from "../../shell/i18n";
 import { canonical, pageFor } from "../../shell/pages";
 import { Link } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
-import { Markdown } from "../../chat/markdown";
+import { Inline, Markdown } from "../../chat/markdown";
 import { SidePanel } from "../../ui/SidePanel";
-import { appTarget, pathKey, type Place } from "./logic";
+import LiveCard from "./Live";
+import { appTarget, blocks, pathKey, type Place } from "./logic";
 import type { Progress } from "./useProgress";
-import type { Lesson, LessonRef, Quiz as QuizData, TermRef } from "./types";
+import type { Lesson, LessonRef, Quiz as QuizData, Step, TermRef } from "./types";
 
 /** The path whose lessons are about Spanish tax law, which changes yearly. */
 const TAX_PATH = "tax-es";
@@ -94,6 +95,88 @@ export function Quiz({ quiz }: { quiz: QuizData }) {
   );
 }
 
+const ROLE_ICON = { example: "lightbulb", error: "warning" } as const;
+
+/** The lesson text: its opening line set apart, and the example and the typical
+    mistake each in a card of their own, so the page has places to rest the eye. */
+function Body({ text }: { text: string }) {
+  const { intro, blocks: parts } = blocks(text);
+  return (
+    <div className="lr-body">
+      {intro && (
+        <div className="lr-gist">
+          <Markdown text={intro} />
+        </div>
+      )}
+      {parts.map((part) =>
+        part.role === "example" || part.role === "error" ? (
+          <div className={`lr-box lr-box-${part.role}`} key={part.text}>
+            <span className="lr-box-ico" aria-hidden="true">
+              <Icon name={ROLE_ICON[part.role]} size={20} />
+            </span>
+            <div className="lr-box-body">
+              <Markdown text={part.text} />
+            </div>
+          </div>
+        ) : (
+          <Markdown text={part.text} key={part.text} />
+        ),
+      )}
+    </div>
+  );
+}
+
+/** What to do in the app now, one step per screen; a bold ticker in a step is
+    drawn as the house ticker link by `Inline`. */
+function TrySteps({ steps }: { steps: Step[] }) {
+  const t = useT();
+  return (
+    <section className="lr-try" aria-labelledby="lr-try-h">
+      <h2 className="lr-h2" id="lr-try-h">
+        {t("learn.try_title")}
+      </h2>
+      <ol className="lr-try-list">
+        {steps.map((step) => {
+          const target = appTarget(step.app);
+          const where = target ? pageFor(canonical(target.page)) : null;
+          return (
+            <li key={step.text}>
+              <span className="lr-try-text">
+                <Inline text={step.text} />
+              </span>
+              {target && where && (
+                <Link className="lr-try-go" page={where.slug} params={target.params}>
+                  {t(where.label)}
+                  <Icon name="arrow_forward" size={14} />
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** Marked read: the way on to the next lesson, where the reader's eye is. */
+function Done({ next }: { next: LessonRef | null }) {
+  const t = useT();
+  return (
+    <section className="lr-done" aria-label={t("learn.lesson_done")}>
+      <span className="lr-done-ck">
+        <Icon name="check" size={18} />
+      </span>
+      <b className="lr-done-t">{t("learn.lesson_done")}</b>
+      {next && (
+        <Link className="ag-btn ag-btn-cta" page="learn" params={{ lesson: next.id }}>
+          {next.title}
+          <Icon name="arrow_forward" size={16} />
+        </Link>
+      )}
+    </section>
+  );
+}
+
 export function LessonBody({
   lesson,
   progress,
@@ -118,9 +201,7 @@ export function LessonBody({
       <h1 className="lr-title" id="lr-lesson-title">
         {lesson.title}
       </h1>
-      <div className="lr-body">
-        <Markdown text={lesson.body} />
-      </div>
+      <Body text={lesson.body} />
       <div className="lr-acts">
         <button
           type="button"
@@ -149,6 +230,8 @@ export function LessonBody({
           {t("learn.ask")}
         </button>
       </div>
+      {lesson.live && <LiveCard live={lesson.live} />}
+      {lesson.steps && lesson.steps.length > 0 && <TrySteps steps={lesson.steps} />}
       {lesson.quiz && <Quiz key={lesson.id} quiz={lesson.quiz} />}
       {lesson.terms.length > 0 && (
         <section className="lr-terms" aria-labelledby="lr-terms-h">
@@ -171,6 +254,7 @@ export function LessonBody({
           </ul>
         </section>
       )}
+      {read && <Done next={lesson.after} />}
       <nav className="lr-steps" aria-label={t("learn.title")}>
         <Step to={lesson.before} dir="prev" />
         <Step to={lesson.after} dir="next" />

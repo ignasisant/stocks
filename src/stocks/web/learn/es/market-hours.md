@@ -6,6 +6,7 @@ minutes: 3
 as_of: 2026-10-25
 terms: trading_session, premarket, after_hours, gap, market_holiday
 app: earnings
+try: Mira qué bolsas están abiertas ahora. => today
 ---
 Los mercados no están abiertos siempre. Cuando cierran, el precio se queda quieto, pero las noticias siguen llegando.
 

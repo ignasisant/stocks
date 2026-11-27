@@ -6,6 +6,9 @@ minutes: 3
 as_of: 2026-10-25
 terms: stock, dividend, market_cap, ipo, ticker_symbol, isin
 app: ticker
+try: Open **NVDA** and find its market cap. => ticker | Compare it with **AMD**: which is worth more as a whole? => ticker
+live: NVDA | price, cap, pe
+live_why: A real stock. Market cap is the price times every share: what the whole company is worth.
 ---
 A stock is a small slice of a company. Buy one and you become an owner, even if of a tiny part.
 
