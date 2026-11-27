@@ -54,7 +54,9 @@ describe("the shared answers block", () => {
     const made = "2026-11-04T10:00:00Z";
     const at = new Date(Date.parse(made) + 48 * 3600 * 1000);
     expect(expiresOn(made, "en")).toBe(
-      new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(at),
+      new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(
+        at,
+      ),
     );
     expect(expiresOn(made, "en")).not.toContain("Nov 4,");
     expect(expiresOn("", "en")).toBe("");

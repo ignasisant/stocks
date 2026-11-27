@@ -30,8 +30,9 @@ export function expiresOn(created: string, lang: string): string {
   const made = new Date(created).getTime();
   return Number.isNaN(made)
     ? ""
-    : new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" })
-        .format(new Date(made + SHARE_TTL_MS));
+    : new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(made + SHARE_TTL_MS),
+      );
 }
 
 /** What the block draws for one answer — no fetch, so a test can draw it. */
