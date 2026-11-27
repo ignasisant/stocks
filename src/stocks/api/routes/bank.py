@@ -33,13 +33,13 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field
 
 from stocks import loaders
-from stocks.analysis.portfolio import priced_totals
 from stocks.accounts import UserPaths
+from stocks.analysis.portfolio import priced_totals
 from stocks.api.deps import Account, Writer, reporting_currency
-from stocks.data import fx
 from stocks.api.security import Authed
 from stocks.bank import access, enablebanking, store
 from stocks.bank.enablebanking import BankError, ConsentError, RateLimited
+from stocks.data import fx
 from stocks.schemas import (
     BankAccount,
     BankAuth,
@@ -151,7 +151,11 @@ def _view(paths: UserPaths, *, email: str, request: Request) -> BankState:
         # that cannot see the feature still has to be told so to render it.
         return BankState(available=False, redirect_url="", connections=[])
     ccy = reporting_currency(paths, None)
-    rows = [acc for conn in store.connections(paths.bank) for acc in conn.get("accounts", [])]
+    rows = [
+        acc
+        for conn in store.connections(paths.bank)
+        for acc in conn.get("accounts", [])
+    ]
     cash, book = _totals(paths, ccy, rows)
     return BankState(
         available=True,

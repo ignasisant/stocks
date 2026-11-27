@@ -383,7 +383,7 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  font-size: var(--ag-fs-xs, 0.75rem);
+  font-size: var(--ag-fs-xs);
   font-weight: 700;
   color: var(--ag-brand-accent);
   border: 1px solid color-mix(in srgb, var(--ag-brand-accent) 55%, transparent);
@@ -956,7 +956,7 @@
 }
 .pr-persona-text {
   padding: 10px 12px;
-  border-left: 3px solid var(--ag-accent, var(--ag-border));
+  border-left: 3px solid var(--ag-border);
   border-radius: 0 var(--ag-radius-sm) var(--ag-radius-sm) 0;
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);

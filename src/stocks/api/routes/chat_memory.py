@@ -291,7 +291,7 @@ class Brought(BaseModel):
 
 @router.post("/import/preview", response_model=Preview,
              summary="Split a pasted summary into memories, saving nothing")
-def import_preview(body: Summary, paths: Account) -> Preview:
+def import_preview(body: Summary, paths: Writer) -> Preview:
     """The statements `import` would keep, for the reader to review first:
     every memory rides in every prompt, so what is saved is chosen, never
     poured in. Nothing is written."""
