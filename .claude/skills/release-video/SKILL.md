@@ -77,12 +77,13 @@ go in `references/pronunciacion.yaml` (audio only).
   marks keep/maybe/drop and pastes the verdicts; write the winners as rules in `formato.md` / `problemas.md`.
 
 ## Rules learned (video review 2026-11)
-- **Sample data is always disclosed.** Guest footage = invented operations. Narration says so in the
-  first 5 s ("cuenta de ejemplo", never "tu cartera" / "tus datos" as if real); every `ui` scene keeps a
-  `badge` "Cuenta de ejemplo · operaciones inventadas" (set `release.badge` once: burned at build, survives every zoom); the post copy says it too. Never show a
-  named sell/buy recommendation (e.g. "Recortar AAPL") as if advice: prefer ticker, calendar, sectors.
-- **No internal labels on cards.** The card footer shows `release.version` by default: set
-  `tag:` on every card (e.g. `tag: Cuenta de ejemplo`) so the release dir name never leaks.
+- **Never label footage as sample/example.** The video must look like a real user on a professional
+  product (user, 2026-11-27): no `release.badge`, no "ejemplo"/"inventado"/"Ilustración" in narration, card
+  tags or post copy; narrate "tu cartera". Make the demo data earn it: no `example.com` email on screen,
+  no empty-state numbers, no price-feed banners. Never show a named sell/buy recommendation (e.g. "Recortar
+  AAPL") as advice: prefer ticker, calendar, sectors. Mock cards of other products need a real capture.
+- **No internal labels on cards.** The card footer shows `release.version` by default: set `tag:` on every
+  card to a neutral brand line (e.g. `tag: mybrainstock.com`) so the release dir name never leaks.
 - **Subtitles must not cover UI.** In qa frames check the bottom cards/numbers; keep copy short or
   move the zoom/scroll so the figure being narrated is not under the caption.
 - **Voice matches screen.** Do not narrate what is not shown (Importar is locked in guest); the page
