@@ -5,89 +5,167 @@
 <title>card</title>
 <style id="fonts"></style>
 <style>
-  :root { --accent: #FFD100; --bg: #121114; --text: #fff; --muted: #C9C7D1; }
+  /* MyBrainStock landing look (src/stocks/web/landing_css.py): dark page, blue + violet glows,
+     gradient headline, mono eyebrow pill, gradient CTA, real product shot in a bordered card. */
+  :root { --bg: #18161C; --text: #F9F9FA; --muted: #B3AFBD; --border: #3B3942;
+    --accent: #A98EF7; --cta: #7F3FE8; --info: #4C8DFF; --soft: #DED7FD; --up: #2AC77E;
+    --grad: linear-gradient(100deg, var(--info), var(--accent) 50%, var(--soft));
+    --grad-btn: linear-gradient(100deg, var(--cta), color-mix(in srgb, var(--cta) 55%, var(--info)));
+    --ease: cubic-bezier(.22, 1, .36, 1); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1440px; height: 810px; overflow: hidden; background: var(--bg); color: var(--text);
     font-family: 'Instrument Sans', system-ui, sans-serif; }
-  .stage { position: absolute; inset: 0; padding: 110px 120px 150px; display: flex; flex-direction: column; justify-content: center; }
-  .blob { position: absolute; border-radius: 50%; filter: blur(80px); opacity: .16; background: var(--accent); }
-  .b1 { width: 520px; height: 520px; right: -120px; top: -160px; }
-  .b2 { width: 380px; height: 380px; left: -140px; bottom: -180px; opacity: .09; }
-  body.play .blob { animation: float 9s ease-in-out infinite alternate; }
-  @keyframes float { to { transform: translate(-50px, 40px) scale(1.15); } }
-  .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 48px 48px; }
-  .in { opacity: 0; transform: translateY(26px); }
-  body.play .in { animation: up .8s cubic-bezier(.2,.8,.2,1) forwards; }
+  .glow { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .glow i { position: absolute; width: 900px; height: 900px; border-radius: 50%; }
+  .glow i:nth-child(1) { top: -420px; left: -380px;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--info) 26%, transparent), transparent); }
+  .glow i:nth-child(2) { top: -120px; right: -420px;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--cta) 34%, transparent), transparent); }
+  .glow i:nth-child(3) { bottom: -560px; left: 280px;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--cta) 18%, transparent), transparent); }
+  body.play .glow i { animation: drift 14s ease-in-out infinite alternate; }
+  body.play .glow i:nth-child(2) { animation-duration: 17s; animation-direction: alternate-reverse; }
+  @keyframes drift { to { transform: translate(60px, 40px) scale(1.12); } }
+
+  .bar { position: absolute; left: 72px; right: 72px; top: 34px; display: flex; align-items: center; justify-content: space-between; }
+  .brand { display: flex; align-items: center; gap: 12px; font-family: 'Epilogue', sans-serif; font-weight: 700; font-size: 25px;
+    letter-spacing: -.015em; }
+  .brand img { width: 40px; height: 40px; filter: brightness(1.9) saturate(.4); }
+  .brand.plain img { filter: none; }
+  .tag { font-family: 'Martian Mono', monospace; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  .stage { position: absolute; left: 72px; top: 110px; bottom: 70px; width: 1296px; display: flex; flex-direction: column; justify-content: center; }
+  .has-shot .stage { width: 560px; }
+  .in { opacity: 0; transform: translateY(22px); }
+  body.play .in { animation: up .8s var(--ease) forwards; }
   @keyframes up { to { opacity: 1; transform: none; } }
-  .kicker { color: var(--accent); font-weight: 700; letter-spacing: .2em; text-transform: uppercase; font-size: 18px; }
-  h1 { font-family: 'Epilogue', 'Instrument Sans', sans-serif; font-weight: 700; font-size: 74px; line-height: 1.06;
-    margin: 22px 0 18px; max-width: 1100px; letter-spacing: -.01em; }
-  .kind-title h1 { font-size: 88px; }
-  .sub { color: var(--muted); font-size: 28px; line-height: 1.35; max-width: 1000px; }
-  .bar { height: 6px; width: 0; background: var(--accent); border-radius: 3px; margin-top: 38px; }
-  body.play .bar { animation: bar 1.2s .5s ease-out forwards; }
-  @keyframes bar { to { width: 190px; } }
-  .items { margin-top: 44px; display: grid; gap: 18px; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); max-width: 1200px; }
-  .item { display: flex; gap: 18px; align-items: flex-start; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
-    border-radius: 18px; padding: 20px 24px; opacity: 0; transform: translateX(-24px); transition: opacity .55s, transform .55s cubic-bezier(.2,.8,.2,1); }
-  .item.on { opacity: 1; transform: none; }
-  .item .n { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--bg);
-    font-weight: 700; font-size: 20px; display: grid; place-items: center; }
-  .item b { display: block; font-size: 27px; font-weight: 600; }
-  .item span { display: block; color: var(--muted); font-size: 21px; margin-top: 4px; line-height: 1.3; }
-  .flow { margin-top: 60px; display: flex; align-items: center; gap: 0; }
-  .node { flex: 1 1 0; min-width: 0; background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.12); border-radius: 20px;
-    padding: 24px 22px; text-align: center; opacity: 0; transform: scale(.9); transition: all .55s cubic-bezier(.2,.8,.2,1); }
-  .node.on { opacity: 1; transform: none; border-color: var(--accent); box-shadow: 0 0 0 6px rgba(255,209,0,.12); }
-  .node b { display: block; font-size: 26px; font-weight: 600; }
-  .node span { display: block; color: var(--muted); font-size: 19px; margin-top: 6px; line-height: 1.3; }
-  .arrow { flex: 0 0 70px; height: 4px; background: rgba(255,255,255,.15); position: relative; margin: 0 6px; overflow: hidden; border-radius: 2px; }
-  .arrow i { position: absolute; inset: 0; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .5s; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 10px; align-self: flex-start; padding: 8px 16px; border-radius: 999px;
+    background: color-mix(in srgb, var(--cta) 16%, transparent); border: 1px solid color-mix(in srgb, var(--cta) 38%, transparent);
+    font-family: 'Martian Mono', monospace; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); }
+  .eyebrow i { width: 9px; height: 9px; border-radius: 50%; background: var(--up); }
+  body.play .eyebrow i { animation: pulse 2.2s ease-out infinite; }
+  @keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up) 60%, transparent); }
+    to { box-shadow: 0 0 0 9px transparent; } }
+  h1 { font-family: 'Epilogue', sans-serif; font-weight: 800; font-size: 76px; line-height: 1.04; letter-spacing: -.025em;
+    margin: 26px 0 20px; text-wrap: balance; }
+  .has-shot h1 { font-size: 62px; }
+  .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--muted); font-size: 27px; line-height: 1.38; max-width: 980px; }
+  .has-shot .sub { font-size: 24px; }
+  .cta { display: inline-flex; align-items: center; gap: 12px; align-self: flex-start; margin-top: 34px; padding: 18px 32px;
+    border-radius: 999px; background: var(--grad-btn); color: #FEFEFF; font-weight: 600; font-size: 26px;
+    box-shadow: 0 10px 34px -8px color-mix(in srgb, var(--cta) 70%, transparent); }
+  .cta svg { width: 24px; height: 24px; }
+
+  .items { margin-top: 30px; display: grid; gap: 14px; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); }
+  .item { display: flex; gap: 16px; align-items: flex-start; background: color-mix(in srgb, var(--text) 4%, transparent);
+    border: 1px solid var(--border); border-radius: 16px; padding: 16px 20px; opacity: 0; transform: translateX(-22px);
+    transition: opacity .5s, transform .5s var(--ease), border-color .5s; }
+  .item.on { opacity: 1; transform: none; border-color: color-mix(in srgb, var(--cta) 50%, var(--border)); }
+  .item .n { flex: none; font-family: 'Martian Mono', monospace; font-size: 15px; color: var(--accent); padding-top: 6px; }
+  .item b { display: block; font-size: 24px; font-weight: 600; }
+  .item span { display: block; color: var(--muted); font-size: 19px; margin-top: 3px; line-height: 1.3; }
+
+  .flow { margin-top: 54px; display: flex; align-items: center; }
+  .node { flex: 1 1 0; min-width: 0; background: color-mix(in srgb, var(--text) 4%, transparent); border: 1px solid var(--border);
+    border-radius: 18px; padding: 22px 20px; text-align: center; opacity: 0; transform: scale(.92); transition: all .5s var(--ease); }
+  .node.on { opacity: 1; transform: none; border-color: var(--accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--cta) 18%, transparent); }
+  .node b { display: block; font-size: 24px; font-weight: 600; }
+  .node span { display: block; color: var(--muted); font-size: 18px; margin-top: 6px; line-height: 1.3; }
+  .arrow { flex: 0 0 60px; height: 3px; background: var(--border); position: relative; margin: 0 6px; overflow: hidden; border-radius: 2px; }
+  .arrow i { position: absolute; inset: 0; background: var(--grad); transform: scaleX(0); transform-origin: left; transition: transform .5s; }
   .arrow.on i { transform: none; }
-  .foot { position: absolute; left: 120px; right: 120px; top: 44px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 18px; }
-  .foot img { height: 34px; opacity: .9; }
-  .kind-title .stage, .kind-outro .stage { align-items: flex-start; }
-  .kind-outro h1 { font-size: 64px; }
+
+  /* The real product: a frame of a recorded scene, in the landing's bordered mock card. */
+  .shot { position: absolute; right: 72px; top: 150px; width: 728px; height: 500px; border-radius: 20px; overflow: hidden;
+    border: 1px solid var(--border); background: #1E1C23;
+    box-shadow: 0 40px 90px -30px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.03), 0 0 120px -40px var(--cta);
+    opacity: 0; transform: translateY(30px) scale(.97); }
+  body.play .shot { animation: rise 1s .15s var(--ease) forwards, float 7s 1.2s ease-in-out infinite alternate; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @keyframes float { from { transform: none; } to { transform: translateY(-10px); } }
+  .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: var(--fx, 50%) var(--fy, 40%); }
+  body.play .shot img { animation: kb 9s linear forwards; }
+  @keyframes kb { from { transform: scale(var(--z0, 1.02)); } to { transform: scale(var(--z1, 1.14)); } }
+  .shot::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, transparent 70%, color-mix(in srgb, var(--bg) 55%, transparent)); }
+
+  /* 9:16 (1080×1920): content kept inside y 230–1330; caption band and bottom 330px stay clear. */
+  html.portrait, html.portrait body { width: 1080px; height: 1920px; }
+  .portrait .glow i:nth-child(3) { left: 60px; bottom: -480px; }
+  .portrait .bar { top: 90px; }
+  .portrait .stage { top: 230px; bottom: 590px; width: 936px; }
+  .portrait.has-shot .stage { width: 936px; bottom: 1050px; }
+  .portrait h1 { font-size: 76px; }
+  .portrait.has-shot h1 { font-size: 68px; }
+  .portrait .sub { font-size: 32px; max-width: none; }
+  .portrait.has-shot .sub { font-size: 30px; }
+  .portrait .item b { font-size: 30px; }
+  .portrait .item span { font-size: 24px; }
+  .portrait .items { --cols: 1 !important; }
+  .portrait .flow { flex-direction: column; align-items: stretch; margin-top: 36px; }
+  .portrait .node { flex: none; }
+  .portrait .node b { font-size: 30px; }
+  .portrait .node span { font-size: 23px; }
+  .portrait .arrow { flex: none; width: 3px; height: 34px; margin: 4px auto; }
+  .portrait .arrow i { transform: scaleY(0); transform-origin: top; }
+  .portrait .arrow.on i { transform: none; }
+  .portrait .shot { left: 72px; right: auto; top: 890px; width: 936px; height: 440px; }
 </style>
 </head>
 <body>
-<div class="grid"></div><div class="blob b1"></div><div class="blob b2"></div>
+<div class="glow"><i></i><i></i><i></i></div>
+<div class="bar"><div class="brand" id="brand"></div><span class="tag" id="tag"></span></div>
 <div class="stage" id="stage"></div>
-<div class="foot"><img id="logo" alt=""><span id="tag"></span></div>
 <script>
   const d = JSON.parse(atob(decodeURIComponent(location.hash.slice(1)).replace(/-/g, '+').replace(/_/g, '/')));
   const b = d.brand || {};
   const root = document.documentElement.style;
-  if (b.accent) root.setProperty('--accent', b.accent);
-  if (b.background) root.setProperty('--bg', b.background);
-  if (b.muted) root.setProperty('--muted', b.muted);
+  for (const k of ['accent', 'cta', 'info', 'soft', 'up', 'background', 'text', 'muted', 'border'])
+    if (b[k]) root.setProperty(k === 'background' ? '--bg' : '--' + k, b[k]);
   document.getElementById('fonts').textContent = `
     @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-Regular.ttf'); font-weight: 400; }
     @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-SemiBold.ttf'); font-weight: 600; }
     @font-face { font-family: 'Instrument Sans'; src: url('${d.assets}/fonts/InstrumentSans-Bold.ttf'); font-weight: 700; }
-    @font-face { font-family: 'Epilogue'; src: url('${d.assets}/fonts/Epilogue-Bold.ttf'); font-weight: 700; }`;
-  document.body.className = 'kind-' + (d.kind || 'card');
+    @font-face { font-family: 'Epilogue'; src: url('${d.assets}/fonts/Epilogue-Variable.ttf'); font-weight: 100 900; }
+    @font-face { font-family: 'Martian Mono'; src: url('${d.assets}/fonts/MartianMono-Variable.ttf'); font-weight: 100 800; }`;
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // *words* in a title get the landing's gradient.
+  const rich = (s) => esc(s).replace(/\*([^*]+)\*/g, '<span class="grad">$1</span>');
   const rel = d.release || {};
-  const logo = document.getElementById('logo');
-  if (d.logo !== false && b.logo) logo.src = `${d.assets}/../${b.logo}`; else logo.remove();
-  document.getElementById('tag').textContent = d.tag ?? [rel.product, rel.version].filter(Boolean).join(' · ');
+  const portrait = d.format === '9x16';
+  document.documentElement.classList.toggle('portrait', portrait);
+  document.body.className = 'kind-' + (d.kind || 'card') + (d.shot ? ' has-shot' : '') + (portrait ? ' portrait' : '');
+  const brand = document.getElementById('brand');
+  if (b.plain) brand.classList.add('plain');
+  brand.innerHTML = (b.logo ? `<img src="${d.assets}/../${b.logo}" alt="">` : '') + esc(b.name || rel.product || '');
+  document.getElementById('tag').textContent = d.tag ?? '';
+  if (d.shot) {
+    const f = document.createElement('div');
+    f.className = 'shot';
+    const fx = d.shot_focus || [50, 40];
+    f.style.setProperty('--fx', fx[0] + '%');
+    f.style.setProperty('--fy', fx[1] + '%');
+    if (d.shot_zoom) { f.style.setProperty('--z0', d.shot_zoom[0]); f.style.setProperty('--z1', d.shot_zoom[1]); }
+    if (d.shot_size && !portrait) { f.style.width = d.shot_size[0] + 'px'; f.style.height = d.shot_size[1] + 'px'; }
+    f.innerHTML = `<img src="${d.shot}" alt="">`;
+    document.body.appendChild(f);
+  }
   const s = document.getElementById('stage');
   let html = '';
-  if (d.kicker) html += `<div class="kicker in" style="animation-delay:.1s">${esc(d.kicker)}</div>`;
-  if (d.title) html += `<h1 class="in" style="animation-delay:.25s">${esc(d.title)}</h1>`;
-  if (d.subtitle) html += `<div class="sub in" style="animation-delay:.45s">${esc(d.subtitle)}</div>`;
-  if (d.kind === 'title' || d.kind === 'outro') html += '<div class="bar"></div>';
+  if (d.kicker) html += `<div class="eyebrow in" style="animation-delay:.1s"><i></i>${esc(d.kicker)}</div>`;
+  if (d.title) html += `<h1 class="in" style="animation-delay:.22s">${rich(d.title)}</h1>`;
+  if (d.subtitle) html += `<div class="sub in" style="animation-delay:.4s">${esc(d.subtitle)}</div>`;
+  if (d.cta) html += `<div class="cta in" style="animation-delay:.6s">${esc(d.cta)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>`;
   const items = (d.items || []).map((it) => (typeof it === 'string' ? { title: it } : it));
   if (d.kind === 'diagram') {
     html += '<div class="flow">' + items.map((it, i) =>
       (i ? '<div class="arrow"><i></i></div>' : '') +
       `<div class="node"><b>${esc(it.title)}</b>${it.text ? `<span>${esc(it.text)}</span>` : ''}</div>`).join('') + '</div>';
   } else if (items.length) {
-    const cols = d.columns || (items.length > 3 ? 2 : 1);
+    const cols = d.columns || (!d.shot && items.length > 3 ? 2 : 1);
     html += `<div class="items" style="--cols:${cols}">` + items.map((it, i) =>
-      `<div class="item"><div class="n">${i + 1}</div><div><b>${esc(it.title)}</b>${it.text ? `<span>${esc(it.text)}</span>` : ''}</div></div>`).join('') + '</div>';
+      `<div class="item"><div class="n">0${i + 1}</div><div><b>${esc(it.title)}</b>${it.text ? `<span>${esc(it.text)}</span>` : ''}</div></div>`).join('') + '</div>';
   }
   s.innerHTML = html;
   const nodes = [...document.querySelectorAll('.item, .node')];

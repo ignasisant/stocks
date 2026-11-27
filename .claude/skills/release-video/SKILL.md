@@ -16,11 +16,20 @@ R=.claude/skills/release-video/scripts/release.py; PY=~/.cache/release-video/ven
 ## Inputs
 A PR (URL / `owner/repo#n` / number) and/or a feature description — at least one. Optional: focus,
 duration (60 s), language (es-ES), environment (`prod-guest` default, `local-guest` for an unmerged
-branch), `--auto` (skip script approval). Output is 16:9 1080p30 (landing, YouTube, X, LinkedIn);
-vertical 9:16 for Reels/TikTok is not supported yet (`OUT_W/OUT_H` in `common.py`, `card.html`, viewport).
+branch), `--auto` (skip script approval). Output is 16:9 1080p30 (landing, YouTube, X, LinkedIn).
+Vertical 9:16 (1080×1920, Reels/TikTok/Shorts) is a second export of the same script: after the 16:9
+build run `$PY $R record|build|qa --work $W --format 9x16` (`check --format 9x16` first). UI scenes are
+re-framed from the 16:9 recording (square stage, badge above, captions below); only the cards are
+re-recorded in portrait. Aim a scene with `focus: [fx, fy]` (0–1) when its subject is not centred.
+Deliverable: `release_<ver>_9x16.mp4`/`.srt`. Free: ffmpeg only.
+
+**Start from the standard format: read `references/formato.md` first.** It fixes the spine (hook on
+real UI → mapa → IA → MCP → branded outro), the landing branding and the demo-account workflow, so a
+new video is copy and steps, not a redesign.
 
 ## 1. Gather and understand
-1. `$PY $R init --version <slug>` → release dir `W` (`~/Movies/mybrainstock-videos`).
+1. `$PY $R init --version <slug>` → release dir `W` (`~/Movies/mybrainstock-videos`) with
+   `escenas.yaml` copied from `assets/templates/escenas.yaml` (the standard format).
 2. `$PY $R gather --work $W --pr <refs…>` → `contexto.json` (PR body, commits, files). With no PR,
    read the code / `src/stocks/web/onboarding.py` card and write the context in `W/contexto.json` by hand.
 3. Classify changes (visible feature / improvement / fix / internal). Internal stays out. Same bar as
@@ -50,10 +59,19 @@ go in `references/pronunciacion.yaml` (audio only).
 
 ## 5. Build and QA (mandatory)
 1. `$PY $R build --work $W [--scenes changed]` — clips fitted to narration, zooms, crossfades,
-   subtitles, music ducked, −16 LUFS, H.264/AAC 1080p30.
+   karaoke subtitles (spoken word in the accent), auto-zoom on clicks when a scene has no manual
+   zooms, click/pop/whoosh SFX, music ducked, −16 LUFS, H.264/AAC 1080p30.
 2. `$PY $R qa --work $W` — duration, format, loudness, sync, PII + error/loading text, plus
    `qa/contact_sheet.jpg`. **Look at the contact sheet and frames of every UI scene**: readable
    subtitles, right thing on screen, no sample-book weirdness, no error/empty screens. Traps: `references/problemas.md`.
+
+## Optional: measure and choose
+- **Pace targets from references**: `$PY scripts/analyze_reference.py <local.mp4> --out DIR` → cuts/min, median shot,
+  first cut, LUFS. Run on 2–3 product videos you like (the user supplies the files; never download or reuse
+  third-party footage) and compare with ours (`qa` output). Record the numbers in `references/formato.md`.
+- **Taste round**: when a style is open (card look, caption style, music), render 3–5 options on one short
+  scene into a folder, check each against its label, then `$PY scripts/review_page.py DIR --open`. The user
+  marks keep/maybe/drop and pastes the verdicts; write the winners as rules in `formato.md` / `problemas.md`.
 
 ## Rules learned (video review 2026-11)
 - **Sample data is always disclosed.** Guest footage = invented operations. Narration says so in the
@@ -71,15 +89,29 @@ go in `references/pronunciacion.yaml` (audio only).
 - **Differentiators first.** For MyBrainStock: the Quality×Price map on `/review` (with the 1A/2A trail),
   the AI assistant answering about the book, and the MCP connector (Claude reading your book).
   Value/TWR/FIFO/sell lists are copyable basics: supporting shots only, never the spine of a video.
-- **AI footage**: guest locks the chat. Use a throwaway local account: copy `data/users/_guest/*` to
-  the slug of `video-demo@example.com`, relabel its `note` 'demo…' rows (else `demo.has_real` walls
-  /review), mint `ts_session` (`stocks.session.mint`). Never the owner's account. Answers take ~50 s: cut.
+- **AI footage**: guest locks the chat. Use the throwaway `video-demo@example.com` account (`env local-demo`):
+  seeded from `data/users/_guest/*` with its 'demo…' `note` rows relabelled (else `demo.has_real` walls
+  /review); `record` mints its session and runs `scripts/demo_reset.py`. Gemini BYOK via
+  `scripts/demo_gemini.py`, model flash-lite. Never the owner's account. Full workflow: `references/formato.md`.
+- **Branding = the web landing**, never a generic dark card: every card has a real `shot`, `*gradient*`
+  title words, the outro a `cta`. `check` enforces the shot.
 - **MCP lives in Claude's client**, not the app: Playwright cannot record it, and the connected
   `mcp__topstocks__*` tools read the owner's real book — never put that output on screen.
 - **Review frames densely** (≈2 fps per UI clip), not 6 stills: zooms must land on the narrated element
   (`zoom target:`, not guessed `box:` pixels). You cannot hear audio: voice is the user's call — give
   2–3 short samples before building. No draft goes to the user that you would not post yourself.
-- Only 16:9 is supported (9:16 needs `common.py`, `card.html`, `qa.py`).
+- 9:16 never records UI again: it crops the 16:9 take, so a target must be zoomed or clicked (or have `focus:`) to be legible; `check --format 9x16` warns about scenes that are not. `kind: video` scenes are letterboxed.
+- **Two platforms = two looks.** When a scene is about another product (Claude…), its card, logo, colours and
+  imagery are that product's, never MyBrainStock's, or the viewer cannot tell them apart. `card.brand:`
+  overrides the global brand per card (`name, logo, plain: true, accent, cta, info, soft, up, background,
+  text, muted, border`); Claude theme: `assets/logo/claude.svg`, terracotta `#D97757` on cream `#F5F4ED`.
+  Until a real capture exists, a mock page of the other product is a placeholder: say so to the user.
+- **A shot shows ONE thing, whole.** A zoom-baked frame cover-cropped in the shot box cuts the page and the
+  viewer does not know what to look at. For a card, screenshot exactly the element at 2× (`clip=`) into a PNG
+  in the release dir, hide floating bits (chat FAB, banners), and size the frame to it with
+  `shot_size: [w, h]` (+ `shot_zoom: [1, 1.03]` for a gentle drift).
+- **Playwright `get_by_role(name=…)` matches substrings**: "Plegar el menú" also hits "Desplegar el menú" and
+  toggles the persisted fold. Always `exact=True`; wait for the button before clicking.
 
 ## 6. Deliver
 - `W/release_<version>.mp4`, `.srt`, `guion.md`, `notas_release.md` (template in `references/guion.md`).

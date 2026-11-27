@@ -1,0 +1,65 @@
+# Plantilla del formato estándar (references/formato.md). Cambia copy y pasos; mantén la forma.
+# mapa (ui, gancho) → ia (ui, cuenta demo) → mcp (video del usuario; card con shot hasta tenerlo) → cierre (outro con CTA).
+release:
+  version: VERSION
+  title: TITULO
+  product: MyBrainStock
+  max_duration: 60
+  badge: 'Cartera de ejemplo · operaciones inventadas'
+scenes:
+  - id: mapa
+    kind: ui
+    narration: "¿Cuáles de tus acciones son buen negocio… y además están baratas? Mira esta cartera de ejemplo en un mapa: arriba, mejor negocio; a la derecha, más barato. Pulsa dos años y cada punto deja su rastro: Tesla ha pasado de calidad cincuenta y tres a veintiocho."
+    setup: &mapsetup
+      - {do: goto, url: '/review?in=all'}
+      - {do: wait_for, target: {text: 'Calidad frente a precio', exact: true}}
+      - {do: press, key: Escape}
+      - {do: python, code: "await page.wait_for_timeout(1500)\nx = page.locator('button.ag-chat-head-wide[aria-label=\"Cerrar\"]')\nif await x.count() and await x.first.is_visible():\n    await x.first.click()\n    await page.wait_for_timeout(700)"}
+      - {do: python, code: "b = page.get_by_role('button', name='Plegar el menú')\nif await b.count() and await b.first.is_visible():\n    await b.first.click()\n    await page.wait_for_timeout(600)"}
+      - {do: python, code: "await page.get_by_text('Calidad frente a precio', exact=True).evaluate('e => e.scrollIntoView({block: \"start\"})')\nawait page.wait_for_timeout(800)"}
+    steps:
+      - {do: zoom, box: {x: 1000, y: 260, width: 10, height: 10}, scale: 1.45, dur: 1.2, at: 0}
+      - {do: zoom, box: {x: 1030, y: 200, width: 10, height: 10}, scale: 2.1, dur: 2.2, on: buen}
+      - {do: zoom, box: {x: 745, y: 330, width: 10, height: 10}, scale: 1.12, dur: 0.8, on: Mira}
+      - {do: zoom, box: {x: 560, y: 170, width: 10, height: 10}, scale: 1.5, dur: 0.9, on: arriba}
+      - {do: zoom, box: {x: 1100, y: 300, width: 10, height: 10}, scale: 1.5, dur: 0.9, on: derecha}
+      - {do: zoom, box: {x: 300, y: 90, width: 10, height: 10}, scale: 2.4, dur: 0.7, on: Pulsa}
+      - {do: click, target: {text: '2A', exact: true}, on: dos}
+      - {do: zoom, box: {x: 745, y: 330, width: 10, height: 10}, scale: 1.12, dur: 0.8, on: cada}
+      - {do: zoom, box: {x: 330, y: 330, width: 10, height: 10}, scale: 2.2, dur: 0.9, on: Tesla}
+      - {do: hover, target: {css: '.ag-rev-dot[aria-label^="TSLA"]'}, on: veintiocho}
+  - id: ia
+    kind: ui
+    narration: "Y pregúntale a la IA: ha leído tu cartera entera. No te da titulares: te dice qué vigilar, por qué, y con tus propias cifras."
+    setup:
+      - {do: goto, url: '/review?in=all'}
+      - {do: wait_for, target: {text: 'Calidad frente a precio', exact: true}}
+      - {do: press, key: Escape}
+      - {do: python, code: "await page.wait_for_timeout(1500)\nx = page.locator('button.ag-chat-head-wide[aria-label=\"Cerrar\"]')\nif await x.count() and await x.first.is_visible():\n    await x.first.click()\n    await page.wait_for_timeout(700)"}
+      - {do: python, code: "b = page.get_by_role('button', name='Plegar el menú')\nif await b.count() and await b.first.is_visible():\n    await b.first.click()\n    await page.wait_for_timeout(600)"}
+      - {do: python, code: "await page.get_by_text('Calidad frente a precio', exact=True).evaluate('e => e.scrollIntoView({block: \"start\"})')\nawait page.wait_for_timeout(500)"}
+      - {do: python, code: "await page.evaluate(\"localStorage.setItem('chatPanelWidth', '640px'); document.documentElement.style.setProperty('--chat-w', '640px')\")"}
+      - {do: click, target: {css: 'button.ag-chat-fab'}}
+      - {do: wait_for, target: {placeholder: 'Tu pregunta…'}}
+      - {do: wait, s: 1.2}
+    steps:
+      - {do: zoom, target: {placeholder: 'Tu pregunta…'}, scale: 1.7, dur: 0.6, at: 0}
+      - {do: fill, target: {placeholder: 'Tu pregunta…'}, text: '¿Qué posición debería vigilar más y por qué?', delay: 25, at: 0.2}
+      - {do: press, key: Enter}
+      - {do: wait_for, target: {css: '.ag-chat-assistant .ag-chat-meta-btn, .ag-chat-assistant .ag-chat-clock'}, timeout: 150000}
+      - do: python
+        held: true
+        code: |
+          b = page.locator('.ag-chat-assistant .ag-chat-bubble').first
+          await b.evaluate('e => { e.scrollIntoView({block: "start"}); let p = e.parentElement; while (p && p.scrollHeight <= p.clientHeight) p = p.parentElement; if (p) p.scrollTop -= 120; }')
+          await page.wait_for_timeout(400)
+      - {do: zoom, target: {css: '.ag-chat-assistant .ag-chat-bubble > :first-child'}, scale: 2.3, dur: 0.8}
+      - {do: highlight, target: {css: '.ag-chat-assistant .ag-chat-bubble li'}, on: cifras}
+  - id: mcp
+    kind: card
+    narration: "Y si usas Claude, conéctalo por MCP: tu cartera, dentro de tu propio chat."
+    card: {tag: 'Cartera de ejemplo', kicker: Conector MCP, title: 'Tu cartera, *dentro de Claude*', shot: {scene: mapa, at: 0.5}, shot_focus: [50, 40], items: [{title: 'Claude Desktop o claude.ai', text: 'Añade el conector de MyBrainStock', on: Claude}, {title: 'Pregunta como siempre', text: 'Claude lee posiciones, rentabilidad e impuestos', on: cartera}]}
+  - id: cierre
+    kind: outro
+    narration: "MyBrainStock. Pruébalo gratis en mybrainstock.com."
+    card: {tag: 'Cartera de ejemplo', kicker: 'Gratis · sin registro', title: 'Tu cartera, *leída y en un mapa*', cta: mybrainstock.com, shot: {scene: mapa, at: 0.97}, shot_focus: [25, 45]}

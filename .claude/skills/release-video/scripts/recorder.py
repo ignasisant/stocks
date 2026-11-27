@@ -9,7 +9,7 @@ import time
 import unicodedata
 from pathlib import Path
 
-from common import ASSETS, SKILL_DIR, write_json
+from common import ASSETS, CLIPS, FORMAT, SKILL_DIR, write_json
 
 OVERLAY = (SKILL_DIR / 'scripts' / 'overlay.js').read_text()
 CARD = SKILL_DIR / 'assets' / 'templates' / 'card.html'
@@ -141,6 +141,8 @@ class SceneRecorder:
         :return: None
         """
         (self.out / 'frames').mkdir(parents=True, exist_ok=True)
+        # Setup steps (unrecorded) mark too: their clicks must not zoom or sound in the clip.
+        self.events = []
         self.cdp = await self.page.context.new_cdp_session(self.page)
         vw, vh = self.cfg['video']['viewport']
         scale = self.cfg['video']['scale']
@@ -367,14 +369,17 @@ class SceneRecorder:
             await self.page.wait_for_timeout(st.get('s', 1) * 1000)
         elif do in ('click', 'hover', 'move'):
             bb = await self.box(st['target'])
+            t_act = round(self.clock.virtual(), 3)
             x, y = bb['x'] + bb['width'] * st.get('fx', 0.5), bb['y'] + bb[
                 'height'
             ] * st.get('fy', 0.5)
             await self.move(x, y, st.get('ms', 650))
             if st.get('ring', do == 'click'):
                 await self.page.evaluate('r => window.__rv.ring(r, 6)', bb)
-                self.mark('highlight', box=bb, dur=1.2)
+                self.mark('highlight', box=bb, dur=1.2, by='click')
                 await self.page.wait_for_timeout(st.get('ring_ms', 450))
+            # Actions drive the automatic zoom and the click sound (compose.auto_zooms / sfx).
+            self.mark('click' if do == 'click' else 'point', box=bb, start=t_act)
             if do == 'click':
                 await self.page.mouse.down()
                 await self.page.wait_for_timeout(90)
@@ -383,10 +388,15 @@ class SceneRecorder:
                 await self.page.evaluate('window.__rv && window.__rv.clearRing()')
         elif do == 'fill':
             bb = await self.box(st['target'])
+            t_act = round(self.clock.virtual(), 3)
             await self.move(bb['x'] + 24, bb['y'] + bb['height'] / 2)
             await self.page.mouse.click(bb['x'] + 24, bb['y'] + bb['height'] / 2)
             await self.page.keyboard.press('Control+A')
+            # As on a real desktop, the pointer hides while typing (it would cover the text);
+            # the next mouse move brings it back.
+            await self.page.evaluate('window.__rv && window.__rv.hideCursor(true)')
             await self.page.keyboard.type(str(st['text']), delay=st.get('delay', 55))
+            self.mark('type', box=bb, start=t_act)
         elif do == 'press':
             await self.page.keyboard.press(st['key'])
         elif do == 'scroll':
@@ -461,6 +471,7 @@ class SceneRecorder:
                     'js': f'window.__cardStep({i})',
                     'on': it['on'],
                     'early': 0.15,
+                    'mark': 'item',
                 }
                 for i, it in enumerate(items)
                 if isinstance(it, dict) and it.get('on')
@@ -470,7 +481,15 @@ class SceneRecorder:
                 await self.until(self.word_time(st['on']) - st.get('early', 0.35))
             elif 'at' in st:
                 await self.until(self.lead + st['at'])
+            # `held: true` runs a step inside a hold: its time is cut, so e.g. a scroll that
+            # lands the answer in frame happens in the same cut as the answer's arrival.
+            if st.get('held'):
+                self.clock.hold()
             await self.step(st)
+            if st.get('mark'):
+                self.mark(st['mark'])
+            if st.get('held'):
+                self.clock.release()
             await self.apply_masks()
             await self.snapshot_text()
         end = (
@@ -529,21 +548,61 @@ async def install_mocks(page, board: dict, scene: dict) -> None:
     )
 
 
-def card_url(scene: dict, cfg: dict, board: dict) -> str:
+IMAGE_EXT = ('.png', '.jpg', '.jpeg', '.webp')
+
+
+def resolve_shot(spec, clips: Path, src: Path, out: Path) -> str | None:
+    """
+    Turn a card's `shot` into a file:// URL of a real product image.
+
+    `shot` is a recorded ui scene (`mapa`, or `{scene: mapa, at: 0.9}` for the frame at 90 %
+    of it) or an image path relative to the release folder.
+
+    :param spec: str | dict | None, the card's `shot`
+    :param clips: Path, build clips directory (frames of recorded scenes)
+    :param src: Path, release work folder (escenas.yaml)
+    :param out: Path, this card's clip directory (the frame is copied here)
+    :return: str | None, file URL, or None when the card has no shot
+    """
+    import shutil
+
+    if not spec:
+        return None
+    if isinstance(spec, str) and spec.lower().endswith(IMAGE_EXT):
+        path = (src / spec).expanduser()
+        if not path.exists():
+            raise RuntimeError(f'shot image not found: {path}')
+    else:
+        sid = spec['scene'] if isinstance(spec, dict) else spec
+        at = float(spec.get('at', 0.9)) if isinstance(spec, dict) else 0.9
+        tl = clips / sid / 'timeline.json'
+        if not tl.exists():
+            raise RuntimeError(f'shot: scene {sid!r} not recorded yet (record it first)')
+        frames = json.loads(tl.read_text())['frames']
+        path = clips / sid / 'frames' / frames[min(len(frames) - 1, int(at * len(frames)))]['file']
+    dst = out / ('shot' + path.suffix)
+    shutil.copyfile(path, dst)
+    return dst.as_uri()
+
+
+def card_url(scene: dict, cfg: dict, board: dict, shot: str | None = None) -> str:
     """
     Build the file:// URL of the card template for a card/diagram scene.
 
     :param scene: dict, storyboard scene with a `card` block
     :param cfg: dict, full skill config
     :param board: dict, storyboard (release metadata)
+    :param shot: str | None, file URL of the real product image shown beside the copy
     :return: str, URL whose hash carries the card data
     """
     data = {
         **scene.get('card', {}),
+        'shot': shot,
         'kind': scene.get('card', {}).get('kind', scene['kind']),
         'release': board.get('release', {}),
-        'brand': cfg['brand'],
+        'brand': {**cfg['brand'], **scene.get('card', {}).get('brand', {})},
         'assets': ASSETS.as_uri(),
+        'format': FORMAT,
     }
     return (
         CARD.as_uri()
@@ -553,6 +612,22 @@ def card_url(scene: dict, cfg: dict, board: dict) -> str:
 
 
 DEMO_GUARD = '@example.com'
+
+
+def demo_reset(envc: dict) -> None:
+    """
+    Clean the demo account before the take: one real empty chat thread, drawer closed.
+
+    :param envc: dict, environment config with `demo_email` and `repo`
+    :return: None
+    """
+    import subprocess
+
+    subprocess.run(
+        ['uv', 'run', 'python', str(Path(__file__).with_name('demo_reset.py')), envc['demo_email']],
+        cwd=os.path.expanduser(envc.get('repo', '.')),
+        check=True,
+    )
 
 
 def demo_cookies(envc: dict) -> list[dict]:
@@ -632,6 +707,8 @@ async def record(
             for s in board['scenes']
             if (not only or s['id'] in only) and s['kind'] != 'video'
         ]
+        # UI scenes first: cards take their `shot` from recorded UI frames.
+        scenes.sort(key=lambda s: s['kind'] != 'ui')
         if any(s['kind'] == 'ui' for s in scenes):
             if not env_name:
                 raise SystemExit('UI scenes need --env')
@@ -648,6 +725,7 @@ async def record(
                 )
                 in_login_browser = False
                 if envc.get('demo_email'):
+                    demo_reset(envc)
                     await ui_ctx.add_cookies(demo_cookies(envc))
                 else:
                     boot = await ui_ctx.new_page()  # `?guest=1` sets the ts_guest cookie
@@ -671,7 +749,7 @@ async def record(
                     ),
                 )
         for scene in scenes:
-            out = work / 'clips' / scene['id']
+            out = work / CLIPS / scene['id']
             if out.exists():
                 import shutil
 
@@ -699,8 +777,14 @@ async def record(
                         page, scene, timing, cfg['environments'][env_name], cfg, out
                     )
                 else:
+                    shot = resolve_shot(
+                        scene.get('card', {}).get('shot'),
+                        work / 'clips',
+                        Path(board.get('_dir', '.')),
+                        out,
+                    )
                     page = await card_ctx.new_page()
-                    await page.goto(card_url(scene, cfg, board))
+                    await page.goto(card_url(scene, cfg, board, shot))
                     await page.wait_for_function(
                         'window.__cardReady === true', timeout=15000
                     )

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from common import OUT_H, OUT_W
+from common import CAPTION_BOTTOM, OUT_H, OUT_W, VERTICAL
 
 SENTENCE_END = ('.', '?', '!', ':', '…')
 
@@ -35,7 +35,7 @@ def build_cues(scenes: list[dict], max_chars: int, max_lines: int) -> list[dict]
     :param scenes: list[dict], [{'offset': global start of narration, 'words': [...]}]
     :param max_chars: int, characters per line
     :param max_lines: int, lines per cue
-    :return: list[dict], [{'start', 'end', 'lines'}]
+    :return: list[dict], [{'start', 'end', 'lines', 'words': [{'start', 'text'}]}] (global seconds)
     """
     cues = []
     for sc in scenes:
@@ -51,6 +51,9 @@ def build_cues(scenes: list[dict], max_chars: int, max_lines: int) -> list[dict]
                     'start': sc['offset'] + cur[0]['start'] - 0.05,
                     'end': sc['offset'] + cur[-1]['end'] + 0.25,
                     'lines': split_lines(text, max_chars) or [text],
+                    'words': [
+                        {'start': sc['offset'] + w['start'], 'text': w['text']} for w in cur
+                    ],
                 }
             )
             cur.clear()
@@ -90,7 +93,8 @@ def place(cues: list[dict], highlights: list[dict], zone_top: int = 800) -> None
     :return: None
     """
     for c in cues:
-        c['top'] = any(
+        # Vertical captions live in their own band under the stage: nothing to dodge.
+        c['top'] = not VERTICAL and any(
             h['start'] < c['end']
             and h['end'] > c['start']
             and h['box'][3] > zone_top
@@ -142,7 +146,64 @@ def write_srt(cues: list[dict], path: Path) -> None:
     path.write_text('\n\n'.join(blocks) + '\n', encoding='utf-8')
 
 
-def write_ass(cues: list[dict], path: Path, font: str, size: int) -> None:
+def _ass_color(hex_color: str) -> str:
+    """
+    Convert #RRGGBB to an ASS colour override value.
+
+    :param hex_color: str, e.g. '#A98EF7'
+    :return: str, e.g. '&H00F78EA9&'
+    """
+    h = hex_color.lstrip('#')
+    return f'&H00{h[4:6]}{h[2:4]}{h[0:2]}&'.upper()
+
+
+def _esc(text: str) -> str:
+    """
+    Keep ASS override braces out of spoken text.
+
+    :param text: str, raw text
+    :return: str, safe text
+    """
+    return text.replace('{', '(').replace('}', ')')
+
+
+def karaoke_events(cue: dict, accent: str) -> list[tuple[float, float, str]]:
+    """
+    One event per spoken word: the cue's lines with that word in the accent colour.
+
+    The box and the line breaks are identical in every event, so only the colour moves.
+
+    :param cue: dict, cue with 'lines' and 'words'
+    :param accent: str, ASS colour value of the current word
+    :return: list[tuple[float, float, str]], (start, end, text)
+    """
+    words = cue.get('words') or []
+    tokens = [t for ln in cue['lines'] for t in ln.split(' ')]
+    owner = [i for i, w in enumerate(words) for _ in w['text'].split(' ')]
+    if not words or len(owner) != len(tokens):
+        return [(cue['start'], cue['end'], r'\N'.join(_esc(ln) for ln in cue['lines']))]
+    per_line = [len(ln.split(' ')) for ln in cue['lines']]
+    out = []
+    for i, w in enumerate(words):
+        start = cue['start'] if i == 0 else w['start']
+        end = words[i + 1]['start'] if i + 1 < len(words) else cue['end']
+        if end <= start:
+            continue
+        parts, k = [], 0
+        for n in per_line:
+            line = []
+            for _ in range(n):
+                tok = _esc(tokens[k])
+                line.append(f'{{\\c{accent}}}{tok}{{\\r}}' if owner[k] == i else tok)
+                k += 1
+            parts.append(' '.join(line))
+        out.append((start, end, r'\N'.join(parts)))
+    return out
+
+
+def write_ass(
+    cues: list[dict], path: Path, font: str, size: int, accent: str | None = None
+) -> None:
     """
     Write cues as ASS with a high-contrast boxed style (bottom by default, top when flagged).
 
@@ -150,11 +211,12 @@ def write_ass(cues: list[dict], path: Path, font: str, size: int) -> None:
     :param path: Path, destination
     :param font: str, font family name available in the fonts dir
     :param size: int, font size in output px
+    :param accent: str | None, #RRGGBB of the spoken word (karaoke); None keeps plain white cues
     :return: None
     """
     style = (
-        f'{font},{size},&H00FFFFFF,&H00FFFFFF,&H38000000,&H38000000,0,0,0,0,100,100,0.3,0,3,13,0,'
-        '{align},120,120,{margin},1'
+        f'{font},{size},&H00FFFFFF,&H00FFFFFF,&H00181818,&H00181818,0,0,0,0,100,100,0.3,0,3,13,0,'
+        '{align},' + ('60,60' if VERTICAL else '120,120') + ',{margin},1'
     )
     head = [
         '[Script Info]',
@@ -168,15 +230,21 @@ def write_ass(cues: list[dict], path: Path, font: str, size: int) -> None:
         'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, '
         'Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, '
         'MarginR, MarginV, Encoding',
-        'Style: Bottom,' + style.format(align=2, margin=58),
+        'Style: Bottom,' + style.format(align=2, margin=CAPTION_BOTTOM),
         'Style: Top,' + style.format(align=8, margin=64),
         '',
         '[Events]',
         'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
     ]
-    lines = [
-        f'Dialogue: 0,{_ass_ts(c["start"])},{_ass_ts(c["end"])},{"Top" if c.get("top") else "Bottom"},,0,0,0,,'
-        + r'\N'.join(ln.replace('{', '(').replace('}', ')') for ln in c['lines'])
-        for c in cues
-    ]
+    lines = []
+    for c in cues:
+        where = 'Top' if c.get('top') else 'Bottom'
+        events = (
+            karaoke_events(c, _ass_color(accent))
+            if accent
+            else [(c['start'], c['end'], r'\N'.join(_esc(ln) for ln in c['lines']))]
+        )
+        lines += [
+            f'Dialogue: 0,{_ass_ts(a)},{_ass_ts(b)},{where},,0,0,0,,{text}' for a, b, text in events
+        ]
     path.write_text('\n'.join(head + lines) + '\n', encoding='utf-8')

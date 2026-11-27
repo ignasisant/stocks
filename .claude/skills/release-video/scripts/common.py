@@ -16,7 +16,23 @@ CACHE = Path(
     os.environ.get('RELEASE_VIDEO_CACHE', Path.home() / '.cache' / 'release-video')
 )
 USER_CONFIG = Path.home() / '.config' / 'release-video' / 'config.yaml'
-OUT_W, OUT_H, FPS = 1920, 1080, 30
+FPS = 30
+
+# Output format. `release.py` sets RELEASE_VIDEO_FORMAT from --format before anything imports this,
+# so every module sees one layout. 16x9 is the master; 9x16 re-frames the same recording.
+FORMAT = os.environ.get('RELEASE_VIDEO_FORMAT', '16x9').replace(':', 'x')
+VERTICAL = FORMAT == '9x16'
+if FORMAT not in ('16x9', '9x16'):
+    sys.exit(f'Unknown format {FORMAT!r} (use 16x9 or 9x16)')
+OUT_W, OUT_H = (1080, 1920) if VERTICAL else (1920, 1080)
+# Where the recorded UI is drawn on the canvas (x, y, w, h). Vertical: a square stage with a badge row
+# above it and a caption band below it; the top and bottom keep clear of the platform's own UI
+# (approximate: Reels/TikTok/Shorts differ, so these are constants to tune, not a spec).
+STAGE = (0, 270, 1080, 1080) if VERTICAL else (0, 0, 1920, 1080)
+BADGE_Y = 196 if VERTICAL else 26          # vertical: centred above the stage; 16:9: top right
+CAPTION_BOTTOM = 330 if VERTICAL else 58   # ASS MarginV of the bottom caption style
+SUFFIX = '_9x16' if VERTICAL else ''       # deliverables and per-format build folders
+CLIPS = 'clips' + SUFFIX                   # composed clips (and, for cards, their frames)
 
 
 def load_config(path: str | None = None) -> dict:

@@ -11,9 +11,9 @@ release:
   badge: 'Cartera de ejemplo · operaciones inventadas'   # burned top-right on every ui/video frame at build
   scenes:
   - id: gancho
-    kind: title                        # title | card | diagram | outro | ui
+    kind: card                         # title | card | diagram | outro | ui | video
     narration: MyBrainStock estrena el comparador con el índice…
-    card: {kicker: Novedad, title: Compara con el índice, subtitle: …}
+    card: {kicker: Novedad, title: 'Compara con *el índice*', shot: {scene: exportar, at: 0.8}}
   - id: exportar
     kind: ui
     narration: En Hoy, tu cartera frente al S&P 500 con tu mismo dinero, desde tu primer día.
@@ -40,7 +40,11 @@ release:
 - `diagram` — heading + `items` drawn as a left-to-right flow; arrows light up as each node appears.
   Use it as **plan B**: backend-only changes, or a UI scene that cannot be recorded.
 
-Card fields: `kicker`, `title`, `subtitle`, `items`, `columns`, `tag` (footer right), `logo: false`.
+Card fields: `kicker` (eyebrow pill), `title` (`*words*` get the landing gradient), `subtitle`, `items`
+(≤2 read best), `columns`, `cta` (outro button, e.g. `mybrainstock.com`), `tag` (top right), `logo: false`,
+and the **required** `shot`: real product beside the copy — a ui scene id, `{scene: id, at: 0.0–1.0}`
+(which frame of that take), or a PNG in the release dir. `shot_focus: [x%, y%]` aims it,
+`shot_zoom: [from, to]` sets its slow push-in. See `references/formato.md`.
 An item with `on: <word>` appears when the narration says that word; others appear in sequence.
 A scene with no narration needs `hold: <seconds>`.
 
@@ -52,7 +56,15 @@ A scene with no narration needs `hold: <seconds>`.
 - Neither — run right after the previous step.
 - `goto`, `wait_for` and `wait` are **holds**: their time is cut from the clip, so slow loads never show
   and never desync the voice. `pause` is a visible pause.
+- `held: true` on any step runs it inside a hold too: a scroll right after a `wait_for` lands in the
+  same cut instead of showing as a jump.
 - After the last step the recorder waits until the narration ends plus `scene_tail`.
+- **Auto-zoom**: a `ui` scene with no `zoom`/`zoom_out` step zooms itself (Screen Studio style) on
+  each `click`, `hover` and `fill` at `video.auto_zoom_scale` (1.8×, hover ×0.8 so tooltips fit), and
+  pulls back 1.6 s after the last one. One manual zoom turns it off for that scene; `auto_zoom: false`
+  on the scene turns it off without adding any.
+- While a `fill` types, subtitles move to the top so they never cover the field.
+- Steps in `setup` leave no marks: their clicks neither zoom nor sound.
 
 ## Steps
 | do | args | effect |

@@ -3,8 +3,8 @@
 // its text through CSS ::after so Playwright text locators never match it.
 (() => {
   if (window.__rv) return;
-  const ACCENT = window.__RV_ACCENT || '#FFD100';
-  const BG = window.__RV_BG || '#121114';
+  const ACCENT = window.__RV_ACCENT || '#A98EF7';
+  const BG = window.__RV_BG || '#18161C';
   const css = `
   #rv-root{position:fixed;inset:0;width:100vw;height:100vh;margin:0;padding:0;border:0;background:transparent;
     overflow:visible;pointer-events:none;z-index:2147483647;font-family:'Instrument Sans',system-ui,sans-serif}
@@ -14,11 +14,11 @@
   .rv-ripple{position:fixed;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:3px solid ${ACCENT};
     animation:rvRip .6s ease-out forwards}
   @keyframes rvRip{to{transform:scale(3.4);opacity:0}}
-  .rv-ring{position:fixed;border:3px solid ${ACCENT};border-radius:12px;box-shadow:0 0 0 6px rgba(255,209,0,.22);
+  .rv-ring{position:fixed;border:3px solid ${ACCENT};border-radius:12px;box-shadow:0 0 0 6px color-mix(in srgb,${ACCENT} 24%,transparent);
     animation:rvPulse 1.3s ease-in-out infinite, rvIn .3s ease-out}
-  @keyframes rvPulse{50%{box-shadow:0 0 0 13px rgba(255,209,0,.07)}}
+  @keyframes rvPulse{50%{box-shadow:0 0 0 13px color-mix(in srgb,${ACCENT} 8%,transparent)}}
   @keyframes rvIn{from{opacity:0;transform:scale(1.12)}}
-  .rv-spot{position:fixed;border-radius:14px;box-shadow:0 0 0 200vmax rgba(18,17,20,.42);transition:all .45s ease}
+  .rv-spot{position:fixed;border-radius:14px;box-shadow:0 0 0 200vmax rgba(24,22,28,.45);transition:all .45s ease}
   .rv-blur{position:fixed;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);background:rgba(255,255,255,.18);border-radius:6px}
   #rv-badge{position:fixed;right:28px;top:22px;background:${BG};color:#fff;border-radius:999px;padding:9px 18px 9px 9px;
     display:flex;align-items:center;gap:12px;font-size:17px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);
@@ -29,6 +29,14 @@
   const style = document.createElement('style');
   style.textContent = css;
   document.head.appendChild(style);
+  // A <style> in <head> can end up unparsed (sheet === null) once the app opens the chat
+  // drawer; the root then falls back to the UA popover box (a framed square mid-screen).
+  // An adopted sheet is not tied to the DOM, so it always applies.
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  } catch (e) { /* no constructable stylesheets: the <style> above is all there is */ }
   const root = document.createElement('div');
   root.id = 'rv-root';
   root.setAttribute('popover', 'manual');
@@ -45,6 +53,7 @@
   root.appendChild(badge);
   addEventListener('mousemove', (e) => {
     cur.style.display = 'block';
+    cur.style.visibility = '';
     cur.style.left = e.clientX + 'px';
     cur.style.top = e.clientY + 'px';
   }, true);

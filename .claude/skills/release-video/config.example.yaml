@@ -26,21 +26,32 @@ video:
   scene_tail: 0.55                 # pause after it (s)
   crossfade: 0.35
   max_speedup: 1.25                # a scene longer than its audio is sped up at most this much
+  auto_zoom_scale: 1.8             # Screen Studio-style zoom on clicks/hovers/fills (scenes without manual zooms)
 
 brand:
   name: MyBrainStock
-  accent: '#C9A6DA'
-  background: '#18161C'
+  # Landing design system (src/stocks/web/landing_css.py, dark): keep in step with it.
+  accent: '#A98EF7'                # --ag-brand-accent: rings, ripples, badge dot
+  cta: '#7F3FE8'                   # --ag-brand-cta: buttons, glows
+  info: '#4C8DFF'                  # --ag-landing-info: gradient start, blue glow
+  soft: '#DED7FD'                  # --ag-purple-300: gradient end
+  up: '#2AC77E'                    # --ag-landing-up: live dot
+  background: '#18161C'            # --ag-surface-page
   text: '#F9F9FA'
-  muted: '#B9B5C2'
-  logo: assets/logo/mybrainstock-white.png
-  monogram: assets/logo/monogram.png
+  muted: '#B3AFBD'                 # --ag-text-secondary
+  border: '#3B3942'
+  logo: assets/logo/mark.svg       # app icon (static/logos/topstocks-icon.svg)
 
 music:
   enabled: true
   file: assets/music/explainer_soft.m4a
   volume_db: -21                   # bed level before ducking
   duck_ratio: 6
+
+sfx:                               # assets/sfx/*.wav, made by scripts/make_sfx.py
+  enabled: true
+  volume_db: -12                   # all effects, after the music duck
+  gain: {click: 0, pop: -2, whoosh: -4}   # per kind, added to volume_db
 
 audio:
   lufs: -16
@@ -51,6 +62,11 @@ subtitles:
   size: 46
   max_chars: 42
   max_lines: 2
+  karaoke: true                    # spoken word in brand.accent
+  vertical:                        # 9:16 overrides: captions sit in a band under the stage
+    size: 56
+    max_chars: 30
+    max_lines: 2
 
 # Where to record. `guest: true` = no login: a fresh headless context opens the app in
 # guest mode (sample book, never real data). Cards/diagrams need no environment at all.
