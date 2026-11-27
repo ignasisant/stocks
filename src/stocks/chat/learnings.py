@@ -530,6 +530,78 @@ def add(path: Path, text: str, *, kind: str | None = None, thread: str = "",
     return saved.item, saved.op == "added"
 
 
+# A pasted summary is read in one go, but it rides in every prompt from then
+# on: capped well under MAX_ITEMS so the list keeps room for what the user says
+# afterwards.
+MAX_IMPORT = 12
+
+_BULLET_RE = re.compile(r"^\s*(?:[-*•–—]+|\d{1,2}[.)])\s+")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])")
+
+
+def split(text: str) -> list[str]:
+    """The statements in a summary pasted from another assistant: one per
+    bullet or line, a long line cut at its sentences, headings and repeats
+    dropped. What is left may still be too long for one memory — `save` cuts
+    it — but never runs several statements together."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in str(text).splitlines():
+        row = _BULLET_RE.sub("", row).strip()
+        if re.fullmatch(r"(\*\*|__).+?(\*\*|__):?", row):
+            continue
+        row = row.replace("**", "").replace("__", "").strip()
+        if not row or row.startswith("#") or row.endswith(":"):
+            continue
+        for part in _SENTENCE_RE.split(row):
+            part = _clean(part)
+            key = _fold(part)
+            if len(part) >= MIN_CHARS and key not in seen:
+                seen.add(key)
+                out.append(part)
+    return out
+
+
+def import_kind(text: str) -> str:
+    """The kind an imported statement is filed under: guessed from its words,
+    but never a routine — a standing request is something the user asks for
+    here, not something a summary of another assistant's notes creates."""
+    kind = guess_kind(_clean(text))
+    return "preference" if kind == "routine" else kind
+
+
+@dataclass(frozen=True)
+class Brought:
+    """What `bring` did: how many statements were kept new, corrected a kept
+    one, were kept already, and how many did not fit (the list was full, or
+    more than MAX_IMPORT were sent)."""
+
+    added: int = 0
+    updated: int = 0
+    known: int = 0
+    left_out: int = 0
+
+
+def bring(path: Path, texts: Iterable[str]) -> Brought:
+    """Save a reviewed batch of statements one by one, each through `save`, so
+    a repeat refreshes, new figures correct, and nothing is evicted: the first
+    one that finds the list full stops the batch."""
+    texts = list(texts)
+    count = {"added": 0, "updated": 0, "known": 0}
+    used = 0
+    for text in texts[:MAX_IMPORT]:
+        try:
+            saved = save(path, text, kind=import_kind(text))
+        except ValueError:
+            used += 1
+            continue
+        except Full:
+            break
+        used += 1
+        count[saved.op] += 1
+    return Brought(**count, left_out=len(texts) - used)
+
+
 def _routines(items: list[Learning]) -> int:
     return sum(i.kind == "routine" for i in items)
 

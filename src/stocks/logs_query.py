@@ -812,6 +812,157 @@ def render_connector(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------- wizard
+
+#: The first-run wizard's events (`stocks logs wizard`).
+WIZARD_EXTRA = 'jsonPayload.event="wizard.step"'
+
+#: The screens in the order a newcomer meets them. `connect`, `memo` and
+#: `review` are only seen by readers who use an AI.
+WIZARD_STEPS = ("lang", "residence", "ai", "which", "connect", "memo", "review",
+                "risk", "horizon", "focus", "constraints", "notes")
+
+#: The steps whose answer says who the audience is.
+_WIZARD_AUDIENCE = ("lang", "residence", "ai", "which", "risk", "horizon",
+                    "focus", "constraints")
+
+_WIZARD_LISTS = ("focus", "constraints")
+
+
+def wizard(entries: Iterable[dict]) -> dict:
+    """Who opened the first-run wizard, what they answered and where they left.
+
+    Counted in accounts, not events. A step's `answered` and `skipped` are
+    the accounts that did each at least once, so going back and changing an
+    answer is not a second reader. `finished` is an account that reached the
+    last screen; `skipped_all` pressed the header's "skip" instead; whoever is
+    neither stopped somewhere, and `left_at` says where (the last screen they
+    were shown).
+
+    `audience` is the answers themselves, each account's latest, as a share of
+    the accounts that answered that step. Interests are a list, so each one
+    counts for the account that picked it. The wizard never logs free text, so
+    there is nothing here that names a person.
+    """
+    seen: dict[str, dict[str, set[str]]] = {
+        step: {"shown": set(), "answered": set(), "skipped": set()}
+        for step in WIZARD_STEPS
+    }
+    started: set[str] = set()
+    finished: set[str] = set()
+    skipped_all: set[str] = set()
+    last_shown: dict[str, str] = {}
+    latest: dict[str, dict[str, str]] = {}
+    spent: dict[str, list[int]] = {step: [] for step in WIZARD_STEPS}
+    for entry in entries:
+        body = payload(entry)
+        if body.get("event") != "wizard.step":
+            continue
+        user = str(body.get("user") or "")
+        if not user or user in ("-", "anon", "?"):
+            continue
+        step = str(body.get("step") or "")
+        action = str(body.get("action") or "")
+        started.add(user)
+        if step == "done":
+            if action == "shown":
+                finished.add(user)
+            continue
+        if step == "all":
+            if action == "skipped":
+                skipped_all.add(user)
+            continue
+        if step not in seen:
+            continue
+        if action in seen[step]:
+            seen[step][action].add(user)
+        if action == "shown":
+            last_shown[user] = step
+        value = body.get("value")
+        if action == "answered" and value is not None:
+            latest.setdefault(step, {})[user] = str(value)
+        ms = body.get("ms")
+        if action in ("answered", "skipped") and isinstance(ms, int):
+            spent[step].append(ms)
+    left = {u for u in started if u not in finished and u not in skipped_all}
+    left_at: dict[str, int] = {}
+    for user in left:
+        where = last_shown.get(user, "lang")
+        left_at[where] = left_at.get(where, 0) + 1
+    steps = []
+    for step in WIZARD_STEPS:
+        row = seen[step]
+        times = sorted(spent[step])
+        steps.append({
+            "step": step,
+            "shown": len(row["shown"]),
+            "answered": len(row["answered"]),
+            "skipped": len(row["skipped"]),
+            "median_s": times[len(times) // 2] // 1000 if times else None,
+        })
+    audience: dict[str, list[dict]] = {}
+    for step in _WIZARD_AUDIENCE:
+        counts: dict[str, int] = {}
+        for value in latest.get(step, {}).values():
+            tokens = value.split(",") if step in _WIZARD_LISTS else [value]
+            for token in tokens:
+                if token:
+                    counts[token] = counts.get(token, 0) + 1
+        audience[step] = [
+            {"value": v, "accounts": n}
+            for v, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+    return {
+        "started": len(started),
+        "finished": len(finished),
+        "skipped_all": len(skipped_all),
+        "left": len(left),
+        "left_at": [
+            {"step": s, "accounts": n}
+            for s, n in sorted(left_at.items(), key=lambda kv: (-kv[1], kv[0]))
+        ],
+        "steps": steps,
+        "audience": audience,
+        "answered": {step: len(latest.get(step, {})) for step in _WIZARD_AUDIENCE},
+    }
+
+
+def render_wizard(summary: dict) -> str:
+    if not summary["started"]:
+        return "(no wizard events in range)"
+    n = summary["started"]
+    lines = [
+        f"opened the wizard: {n} accounts",
+        f"  reached the end:  {summary['finished']} ({_rate(summary['finished'], n)})",
+        f"  skipped it all:   {summary['skipped_all']} "
+        f"({_rate(summary['skipped_all'], n)})",
+        f"  stopped midway:   {summary['left']} ({_rate(summary['left'], n)})",
+    ]
+    if summary["left_at"]:
+        lines.append("  stopped at: " + ", ".join(
+            f"{r['step']} {r['accounts']}" for r in summary["left_at"]))
+    head = (f"{'step':<12} {'shown':>6} {'answered':>9} {'skipped':>8} "
+            f"{'answer%':>8} {'median s':>9}")
+    lines += ["", head, "-" * len(head)]
+    for r in summary["steps"]:
+        if not r["shown"]:
+            continue
+        median = "-" if r["median_s"] is None else str(r["median_s"])
+        lines.append(
+            f"{r['step']:<12} {r['shown']:>6} {r['answered']:>9} {r['skipped']:>8} "
+            f"{_rate(r['answered'], r['shown']):>8} {median:>9}")
+    for step, rows in summary["audience"].items():
+        if not rows:
+            continue
+        total = summary["answered"][step]
+        lines += ["", f"{step} ({total} answered):"]
+        for r in rows[:12]:
+            lines.append(
+                f"  {r['value']:<18} {r['accounts']:>5} "
+                f"{_rate(r['accounts'], total):>7}")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------- shares
 
 #: The share funnel's events, fetched together (`stocks logs shares`).

@@ -304,6 +304,13 @@ export function Tour() {
           if (asked) {
             booted.current = true;
             firstLoadInterrupted(true);
+            // `?tour=welcome` replays the first-run wizard on demand, so it
+            // can be tried again without a new account. Not stamped: the
+            // account's real first run is untouched.
+            if (asked === "welcome" && !guest) {
+              setWelcome(true);
+              return;
+            }
             setPlace(asking(next.steps, asked));
             return;
           }

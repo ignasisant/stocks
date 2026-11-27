@@ -63,7 +63,15 @@ def save_prefs(prefs: dict, path: Path) -> None:
 # agree on which end is "more".
 PROFILE_RISK = ("conservative", "balanced", "aggressive", "very_aggressive")
 PROFILE_HORIZON = ("under_1y", "1_3y", "3_5y", "5y_plus")
-PROFILE_FOCUS = ("tech", "em", "crypto", "dividends_value")
+# The first four are the historical ones, kept first and in this order: a stored
+# list is normalised to offering order, so reordering them would read as an edit
+# to every account that already saved one. The rest are the finer interests the
+# onboarding asks about (`web/locales/*/profile.json` groups them).
+PROFILE_FOCUS = (
+    "tech", "em", "crypto", "dividends_value",
+    "ai", "semis", "health", "energy", "fin", "consumer", "realestate",
+    "growth", "small", "us", "eu", "etf", "commod",
+)
 PROFILE_CONSTRAINTS = ("spain_tax", "us_tax", "eur", "no_leverage", "esg")
 
 # Example tickers per declared focus, offered on the Profile page to an
@@ -99,6 +107,58 @@ FOCUS_EXAMPLES: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("KO", "Coca-Cola", "Dividends"),
         ("PG", "Procter & Gamble", "Dividends"),
         ("ENB", "Enbridge", "Dividends"),
+    ),
+    "ai": (
+        ("MSFT", "Microsoft", "AI"),
+        ("PLTR", "Palantir", "AI"),
+    ),
+    "semis": (
+        ("TSM", "TSMC", "Semiconductors"),
+        ("ASML", "ASML", "Semiconductors"),
+    ),
+    "health": (
+        ("LLY", "Eli Lilly", "Health"),
+        ("JNJ", "Johnson & Johnson", "Health"),
+    ),
+    "energy": (
+        ("XOM", "Exxon Mobil", "Energy"),
+        ("IBE.MC", "Iberdrola", "Energy"),
+    ),
+    "fin": (
+        ("JPM", "JPMorgan Chase", "Financials"),
+        ("SAN.MC", "Banco Santander", "Financials"),
+    ),
+    "consumer": (
+        ("COST", "Costco", "Consumer"),
+        ("ITX.MC", "Inditex", "Consumer"),
+    ),
+    "realestate": (
+        ("O", "Realty Income", "Real estate"),
+        ("PLD", "Prologis", "Real estate"),
+    ),
+    "growth": (
+        ("NFLX", "Netflix", "Growth"),
+        ("SHOP", "Shopify", "Growth"),
+    ),
+    "small": (
+        ("IWM", "iShares Russell 2000", "Small caps"),
+        ("VB", "Vanguard Small-Cap", "Small caps"),
+    ),
+    "us": (
+        ("SPY", "SPDR S&P 500", "US"),
+        ("BRK-B", "Berkshire Hathaway", "US"),
+    ),
+    "eu": (
+        ("EXS1.DE", "iShares Core DAX", "Europe"),
+        ("NVO", "Novo Nordisk", "Europe"),
+    ),
+    "etf": (
+        ("VWCE.DE", "Vanguard FTSE All-World", "Index funds"),
+        ("QQQ", "Invesco QQQ", "Index funds"),
+    ),
+    "commod": (
+        ("GLD", "SPDR Gold", "Commodities"),
+        ("CPER", "United States Copper", "Commodities"),
     ),
 }
 

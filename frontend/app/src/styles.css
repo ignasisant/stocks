@@ -2359,6 +2359,311 @@ img.ag-search-logo {
   font-size: var(--ag-fs-sm);
 }
 
+/* "Did you already use an AI?": the question, then the address and the message. */
+.ag-welcome-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-welcome-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ag-welcome-copy {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ag-welcome-code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  font-size: var(--ag-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-welcome-ok {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+/* The first-login wizard: one question per screen, big cards to pick from. */
+.ag-wz {
+  max-height: min(92dvh, 720px);
+  overflow-y: auto;
+}
+
+/* The wizard is a screen of its own, not a dialog: full viewport, opaque,
+   no click-outside and no Escape. Its only ways out are each step's small
+   skip and the header's "skip setup". */
+.ag-wz-screen {
+  display: block;
+  padding: 0;
+  overflow-y: auto;
+  background: var(--ag-surface-page);
+}
+
+.ag-wz-screen > .ag-wz {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  max-height: none;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  animation: none;
+}
+
+.ag-wz-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.ag-wz-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-self: center;
+  gap: 14px;
+  width: min(100%, 640px);
+  padding-block: 24px;
+}
+
+.ag-wz-bar {
+  height: 4px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-border);
+  overflow: hidden;
+}
+
+.ag-wz-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ag-brand-accent);
+  transition: width var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-wz-skipall {
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-wz-screen > .ag-wz > .ag-tour-foot {
+  align-self: center;
+  width: min(100%, 640px);
+}
+
+.ag-wz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 10px;
+}
+
+.ag-wz-card,
+.ag-wz-mrow,
+.ag-wz-chip {
+  border: 1px solid var(--ag-border);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ag-wz-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 64px;
+  padding: 14px;
+  border-radius: var(--ag-radius-md);
+}
+
+.ag-wz-mark {
+  display: inline-flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.ag-wz-ct {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ag-wz-ctitle {
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ag-wz-cline {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-md);
+}
+
+.ag-wz-on {
+  border-color: var(--ag-brand-accent);
+}
+
+.ag-wz-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ag-wz-gh {
+  margin: 0 0 6px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+.ag-wz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ag-wz-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--ag-radius-pill);
+  font-size: var(--ag-fs-md);
+}
+
+.ag-wz-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.45;
+}
+
+.ag-wz-wrap {
+  white-space: normal;
+  text-overflow: clip;
+}
+
+.ag-wz-text {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  resize: vertical;
+}
+
+.ag-wz-mem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 40dvh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.ag-wz-mrow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--ag-radius-md);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.4;
+}
+
+.ag-wz-mrow.ag-wz-on {
+  color: var(--ag-text-primary);
+}
+
+.ag-wz-mck {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border: 1px solid var(--ag-border);
+  border-radius: 6px;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-wz-on .ag-wz-mck {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-brand-accent);
+  color: #fff;
+}
+
+.ag-wz-err {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.ag-wz-back {
+  margin-right: auto;
+}
+
+/* A tall step scrolls under its buttons, which stay in reach. */
+.ag-wz .ag-tour-foot {
+  position: sticky;
+  bottom: 0;
+  padding-block: 10px;
+  background: var(--ag-surface-page);
+}
+
+@media (hover: hover) {
+  :is(.ag-wz-card, .ag-wz-mrow, .ag-wz-chip):hover {
+    border-color: var(--ag-border-focus);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-wz-card,
+  .ag-wz-mrow,
+  .ag-wz-chip,
+  .ag-wz-skipall {
+    min-height: 44px;
+  }
+}
+
 /* Feedback. The trigger sits at the foot of the nav rail — out of the way of
    the page, on every screen. */
 .ag-fb-open {

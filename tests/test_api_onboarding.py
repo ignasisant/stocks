@@ -326,3 +326,38 @@ def test_no_way_out_of_being_new_leaves_a_backlog(
     assert body["news"] == []
     assert body["seen_version"] == onboarding.CURRENT_VERSION
     assert signed_in.get("/v1/prefs").json()["tour_offer"] is False
+
+
+# -------------------------------------------------------------------- wizard
+
+
+def test_the_wizard_reports_each_screen_with_a_closed_vocabulary(
+    signed_in, account, monkeypatch
+):
+    from stocks import obs
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **kw: seen.append((name, kw)))
+    body = {"step": "residence", "action": "answered", "value": "es", "ms": 4200}
+    assert signed_in.post("/v1/onboarding/wizard", json=body).status_code == 204
+    assert seen == [("wizard.step", body)]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"step": "nowhere", "action": "shown"},
+        {"step": "ai", "action": "typed"},
+        {"step": "notes", "action": "answered", "value": "Free Text"},
+        {"step": "notes", "action": "answered", "value": "a" * 61},
+        {"step": "ai", "action": "shown", "ms": -1},
+        {"step": "ai", "action": "shown", "extra": 1},
+    ],
+)
+def test_the_wizard_refuses_anything_that_could_carry_free_text(
+    signed_in, account, monkeypatch, bad
+):
+    from stocks import obs
+
+    monkeypatch.setattr(obs, "event", lambda *a, **k: pytest.fail("logged"))
+    assert signed_in.post("/v1/onboarding/wizard", json=bad).status_code == 422

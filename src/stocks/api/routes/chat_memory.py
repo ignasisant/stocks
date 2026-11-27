@@ -229,6 +229,64 @@ def add(body: NewMemory, paths: Writer) -> SavedMemory:
         related=_out(done.related, titles) if done.related else None)
 
 
+class Summary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # What another assistant wrote about the user, pasted whole.
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+class Statements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The reviewed lines, as the reader left them; at most MAX_IMPORT are kept.
+    statements: list[str] = Field(min_length=1, max_length=50)
+
+
+class Statement(BaseModel):
+    text: str
+    kind: str
+
+
+class Preview(BaseModel):
+    statements: list[Statement]
+    # How many more the summary held than one import keeps.
+    over: int
+    room: int
+
+
+class Brought(BaseModel):
+    added: int
+    updated: int
+    known: int
+    left_out: int
+
+
+@router.post("/import/preview", response_model=Preview,
+             summary="Split a pasted summary into memories, saving nothing")
+def import_preview(body: Summary, paths: Account) -> Preview:
+    """The statements `import` would keep, for the reader to review first:
+    every memory rides in every prompt, so what is saved is chosen, never
+    poured in. Nothing is written."""
+    found = learnings.split(body.text)
+    room = max(0, learnings.MAX_ITEMS - len(learnings.load(paths.learnings)))
+    return Preview(
+        statements=[Statement(text=t, kind=learnings.import_kind(t))
+                    for t in found[:learnings.MAX_IMPORT]],
+        over=max(0, len(found) - learnings.MAX_IMPORT), room=room)
+
+
+@router.post("/import", response_model=Brought,
+             summary="Save reviewed statements as separate memories")
+def import_statements(body: Statements, paths: Writer) -> Brought:
+    """Each statement becomes its own memory through the same path as a typed
+    one: repeats refresh, corrected figures update, nothing is evicted, and
+    none becomes a routine."""
+    done = learnings.bring(paths.learnings, body.statements)
+    return Brought(added=done.added, updated=done.updated, known=done.known,
+                   left_out=done.left_out)
+
+
 @router.patch("/{lid}", response_model=Memory, summary="Reword a memory")
 def edit(lid: str, body: EditMemory, paths: Writer) -> Memory:
     until = (body.until or "") if "until" in body.model_fields_set else None

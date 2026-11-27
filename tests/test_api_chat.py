@@ -3102,6 +3102,22 @@ def test_a_question_asked_on_three_days_is_added_and_said(
     assert memory["kind"] == "routine"
 
 
+def test_a_pasted_summary_is_previewed_then_saved_as_separate_memories(
+    client, account, signed_in
+):
+    text = "- Prefers dividend growers\n- Never more than 10% in one position\n"
+    preview = signed_in.post("/v1/chat/memories/import/preview", json={"text": text})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert [s["text"] for s in body["statements"]] == [
+        "Prefers dividend growers", "Never more than 10% in one position"]
+    assert signed_in.get("/v1/chat/memories").json()["memories"] == []
+    done = signed_in.post("/v1/chat/memories/import", json={
+        "statements": [s["text"] for s in body["statements"]]})
+    assert done.json() == {"added": 2, "updated": 0, "known": 0, "left_out": 0}
+    assert len(signed_in.get("/v1/chat/memories").json()["memories"]) == 2
+
+
 def test_a_saved_memory_reaches_every_later_prompt(
     client, account, signed_in, served
 ):

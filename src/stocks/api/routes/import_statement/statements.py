@@ -14,6 +14,7 @@ from stocks.api.deps import Account, Writer
 from stocks.api.routes.import_statement import doubts
 from stocks.api.routes.import_statement.lookups import _within
 from stocks.api.routes.import_statement.upload import (
+    BOOK_KEY,
     Commit,
     Upload,
     _decode,
@@ -257,7 +258,9 @@ def commit(
     raw, report, digest = b"", False, body.expect
     if body.rows is not None:
         parsed = ParseResult(transactions=[_statement_row(r) for r in body.rows])
-        read_by = prefer or autodetect.LLM_KEY
+        read_by = BOOK_KEY if body.platform.strip() == BOOK_KEY else (
+            prefer or autodetect.LLM_KEY
+        )
         obs.event("import.upload", stage="commit", surface=body.surface,
                   rows=len(body.rows), named=body.platform or "", wipe=body.wipe,
                   digest=digest[:16])

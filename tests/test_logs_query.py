@@ -779,3 +779,46 @@ def test_invites_count_what_their_links_brought():
 
 def test_no_share_events_says_so():
     assert lq.render_shares(lq.shares([])) == "(no share events in range)"
+
+
+# ------------------------------------------------------------------- wizard
+
+
+def _wz(user, step, action, value=None, ms=None):
+    return entry(event="wizard.step", user=user, step=step, action=action,
+                 value=value, ms=ms)
+
+
+def test_wizard_counts_accounts_who_finished_skipped_or_stopped():
+    entries = [
+        _wz("ana", "lang", "shown"), _wz("ana", "lang", "answered", "es", 2000),
+        _wz("ana", "ai", "shown"), _wz("ana", "ai", "answered", "yes", 3000),
+        _wz("ana", "ai", "answered", "no", 3000),  # changed mind: still one account
+        _wz("ana", "done", "shown"),
+        _wz("bo", "lang", "shown"), _wz("bo", "all", "skipped", "lang"),
+        _wz("cy", "lang", "shown"), _wz("cy", "residence", "shown"),
+        _wz("cy", "focus", "answered", "income,growth"),
+    ]
+    out = lq.wizard(entries)
+    counts = (out["started"], out["finished"], out["skipped_all"], out["left"])
+    assert counts == (3, 1, 1, 1)
+    assert out["left_at"] == [{"step": "residence", "accounts": 1}]
+    lang = next(r for r in out["steps"] if r["step"] == "lang")
+    assert (lang["shown"], lang["answered"]) == (3, 1)
+    assert lang["median_s"] == 2
+    assert out["audience"]["ai"] == [{"value": "no", "accounts": 1}]
+    assert {r["value"] for r in out["audience"]["focus"]} == {"income", "growth"}
+
+
+def test_wizard_ignores_anonymous_and_other_events():
+    out = lq.wizard([_wz("-", "lang", "shown"), entry(event="other", user="ana")])
+    assert out["started"] == 0
+    assert lq.render_wizard(out) == "(no wizard events in range)"
+
+
+def test_render_wizard_shows_the_funnel():
+    text = lq.render_wizard(
+        lq.wizard([_wz("ana", "lang", "shown"), _wz("ana", "done", "shown")])
+    )
+    assert "opened the wizard: 1 accounts" in text
+    assert "reached the end:  1" in text
