@@ -383,6 +383,12 @@ def test_a_push_reaches_the_device_readable_and_signed(tmp_path, vapid, outbox):
         "body": "¿Cómo va NVDA?",
         "url": "/?thread=t-1",
         "tag": "answer-t-1",
+        "web_push": 8030,
+        "notification": {
+            "title": "Tu respuesta está lista",
+            "body": "¿Cómo va NVDA?",
+            "navigate": "https://topstocks.example/?thread=t-1",
+        },
     }
 
 
@@ -644,3 +650,16 @@ def test_the_push_state_lists_what_was_last_sent(monkeypatch, tmp_path):
     assert [s.topic for s in out.recent] == ["alert", "test"]
     assert out.recent[0].took == 1
     assert out.recent[1].title == ""
+
+
+def test_a_push_carries_webkits_declarative_form_beside_the_flat_fields():
+    flat = {"title": "Listo", "body": "hola", "url": "/?thread=c_1", "tag": "t"}
+    out = webpush.declarative(flat, "https://mybrainstock.com")
+    assert out["web_push"] == 8030
+    assert out["notification"]["navigate"] == "https://mybrainstock.com/?thread=c_1"
+    assert {k: out[k] for k in flat} == flat
+    # No usable origin or a non-path url: the plain message, nothing to navigate.
+    assert webpush.declarative(flat, "") == flat
+    assert webpush.declarative({**flat, "url": "https://evil.example/"}, "https://mybrainstock.com") == {
+        **flat, "url": "https://evil.example/",
+    }
