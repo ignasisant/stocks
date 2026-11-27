@@ -643,6 +643,9 @@ def test_asks_criteria(text, asks):
     ("ayúdame con los kill criteria de AMD", True),
     ("¿cuándo debería vender NVDA?", False),
     ("pon un stop a ASML", False),
+    ("Ayúdame a escribir reglas de compra para NVDA", True),
+    ("help me write buy rules for NVDA", True),
+    ("¿compro NVDA a 120?", False),
 ])
 def test_asks_rules_only_when_they_are_to_be_written(text, asks):
     assert toolbox.asks_rules(text) is asks
@@ -659,7 +662,9 @@ def test_the_proposal_schema_offers_exit_and_buy_rules():
                                  "ceo_change", "guidance_cut", "dividend_cut",
                                  "buy_below", "buy_drawdown_high",
                                  "buy_revenue_growth_above", "buy_gross_margin_above",
-                                 "buy_operating_margin_above", "buy_pe_fwd_below"}
+                                 "buy_operating_margin_above", "buy_pe_fwd_below",
+                                 "thesis"}
+    assert props["criteria"]["items"]["properties"]["pillars"]["maxItems"] == 3
     item = props["criteria"]["items"]
     # An event rule has no level, and only a fundamental one a quarters run.
     assert item["required"] == ["rule"]
@@ -719,3 +724,16 @@ def test_technicals_says_when_history_is_short_or_absent(monkeypatch):
     monkeypatch.setattr(ticker, "read_trend", lambda s: TrendRead())
     assert "No trend for XEON.DE" in _run("technicals", {"ticker": "XEON.DE"})
     assert _run("technicals", {}) == "No ticker given."
+
+
+@pytest.mark.parametrize("lang", ["es", "en", "it"])
+@pytest.mark.parametrize("key", ["journal.criteria_prompt", "journal.thesis_prompt",
+                                 "journal.price_prompt", "journal.entry_prompt"])
+def test_the_journal_buttons_ask_for_rules_in_every_language(lang, key):
+    # The Diario's "draft with the assistant" sends these: one that missed
+    # the pattern would get an answer with no rule form under it.
+    import json
+
+    words = json.loads((Path(__file__).parents[1] / "src/stocks/web/locales"
+                        / lang / "journal.json").read_text())[key]
+    assert toolbox.asks_rules(words.format(ticker="NVDA"))

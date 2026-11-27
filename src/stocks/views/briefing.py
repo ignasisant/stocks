@@ -1082,6 +1082,60 @@ def _alerted(facts: dict) -> list[str]:
                                   signals.FILING_FLAG)]
 
 
+def _compare_positions(db: str, mtime: float, ccy: str):
+    """(weights, names held at cost, listing currencies) of the book as the
+    comparisons weigh it; empty when the book cannot be read."""
+    weights: dict[str, float] = {}
+    currencies: dict[str, str] = {}
+    unpriced: list[str] = []
+    try:
+        tbl = home.enriched(db, mtime, ccy)
+        if tbl is not None and not tbl.empty:
+            weights, unpriced = _today_weights(tbl)
+            if "ccy" in tbl:
+                currencies = {str(t): str(c).upper() for t, c in tbl["ccy"].items()
+                              if isinstance(c, str) and c}
+    except Exception as exc:  # noqa: BLE001 — no positions, no sections
+        obs.warn("today.positions_unavailable", error_type=type(exc).__name__)
+    return weights, unpriced, currencies
+
+
+def _compare_closes_of(db: str, mtime: float, hist) -> dict:
+    """Every close the comparisons read: the card's, the indexes' back to the
+    book's first day, and the held names'."""
+    try:
+        first = today_sections.book_start(hist)
+    except Exception as exc:  # noqa: BLE001 — the fixed spans still stand
+        obs.warn("today.history_failed", error_type=type(exc).__name__)
+        first = None
+    try:
+        bench = _bench_closes(_period_since(first))
+    except Exception as exc:  # noqa: BLE001 — SPY and the US funds still stand
+        obs.warn("today.bench_closes_failed", error_type=type(exc).__name__)
+        bench = {}
+    return {**card_closes(), **bench, **loaders.held_closes(db, mtime)}
+
+
+def live_compare(paths, section: dict, lang: str) -> dict:
+    """A stored comparisons section with its figures as the book and the
+    prices stand now (`today_sections.refresh_compare`), so the page's
+    comparisons, its since-inception card and its chart read one moment, not
+    the morning the card was written. The stored section when anything fails."""
+    try:
+        db = str(paths.db)
+        mtime = loaders.db_mtime(db)
+        ccy = accounts.reporting_currency(paths)
+        weights, _unpriced, currencies = _compare_positions(db, mtime, ccy)
+        hist, _twr, _missing = loaders.history(db, mtime, ccy)
+        hist = None if hist is None or hist.empty else hist
+        return today_sections.refresh_compare(
+            section, weights, _compare_closes_of(db, mtime, hist), hist,
+            currencies=currencies, base=ccy, lang=lang)
+    except Exception as exc:  # noqa: BLE001 — the stored section still stands
+        obs.warn("today.compare_live_failed", error_type=type(exc).__name__)
+        return section
+
+
 def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
                  reviewed: list | None = None) -> dict:
     """`today_sections.gather` for one account, off the API's cached loaders.
@@ -1097,18 +1151,7 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
     db = str(paths.db)
     mtime = loaders.db_mtime(db)
     ccy = accounts.reporting_currency(paths)
-    weights: dict[str, float] = {}
-    currencies: dict[str, str] = {}
-    unpriced: list[str] = []
-    try:
-        tbl = home.enriched(db, mtime, ccy)
-        if tbl is not None and not tbl.empty:
-            weights, unpriced = _today_weights(tbl)
-            if "ccy" in tbl:
-                currencies = {str(t): str(c).upper() for t, c in tbl["ccy"].items()
-                              if isinstance(c, str) and c}
-    except Exception as exc:  # noqa: BLE001 — no positions, no sections
-        obs.warn("today.positions_unavailable", error_type=type(exc).__name__)
+    weights, unpriced, currencies = _compare_positions(db, mtime, ccy)
 
     def verdicts() -> dict[str, dict]:
         rows = _review_rows(paths)
@@ -1128,17 +1171,7 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
         return book[0]
 
     def closes() -> dict:
-        try:
-            first = today_sections.book_start(history())
-        except Exception as exc:  # noqa: BLE001 — the fixed spans still stand
-            obs.warn("today.history_failed", error_type=type(exc).__name__)
-            first = None
-        try:
-            bench = _bench_closes(_period_since(first))
-        except Exception as exc:  # noqa: BLE001 — SPY and the US funds still stand
-            obs.warn("today.bench_closes_failed", error_type=type(exc).__name__)
-            bench = {}
-        return {**card_closes(), **bench, **loaders.held_closes(db, mtime)}
+        return _compare_closes_of(db, mtime, history())
 
     filings = None
     if os.environ.get("EDGAR_USER_AGENT"):

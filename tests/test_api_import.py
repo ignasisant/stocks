@@ -1223,6 +1223,25 @@ def test_an_unattributed_batch_has_to_be_told_its_broker(client, account, signed
     assert all_transactions(account.db)[0].note.split()[0] == "clicktrade"
 
 
+def test_a_broker_named_before_is_offered_on_the_next_import(client, account, signed_in):
+    """Finizens has no parser: named under "other" once, the next import's
+    broker question offers it by name instead of asking for it retyped."""
+    first = (
+        "date,ticker,action,quantity,price,currency,fee\n"
+        "2024-01-02,AAPL,buy,10,100.00,EUR,1.00\n"
+    )
+    assert signed_in.post(
+        "/v1/import/commit", json=body(first, broker="Finizens")
+    ).status_code == 200
+    second = (
+        "date,ticker,action,quantity,price,currency,fee\n"
+        "2024-02-02,AAPL,buy,5,110.00,EUR,1.00\n"
+    )
+    preview = signed_in.post("/v1/import/preview", json=body(second)).json()
+    assert preview["needs_broker"] is True
+    assert preview["brokers"] == [{"key": "finizens", "label": "Finizens"}]
+
+
 
 def rows_of(preview: dict) -> list[dict]:
     """The commit's `rows`, as a client builds them from the preview."""

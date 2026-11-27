@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { ListedShare } from "../../chat/types";
-import { SharedLinkList, sharedOn } from "./SharedLinks";
+import { SharedLinkList, expiresOn } from "./SharedLinks";
 
 const row = (over: Partial<ListedShare> = {}): ListedShare => ({
   id: "AbCdEfGh123",
@@ -50,9 +50,15 @@ describe("the shared answers block", () => {
     expect(draw([row({ question: "<img src=x onerror=1>" })])).not.toContain("<img");
   });
 
-  it("dates a link by its day, and skips a stamp it cannot read", () => {
-    expect(sharedOn("2026-11-04T10:00:00Z", "en")).toBe("Nov 4, 2026");
-    expect(sharedOn("", "en")).toBe("");
-    expect(draw([row({ created: "" })])).not.toContain("profile.shares_on");
+  it("dates a link by when it expires, and skips a stamp it cannot read", () => {
+    const made = "2026-11-04T10:00:00Z";
+    const at = new Date(Date.parse(made) + 48 * 3600 * 1000);
+    expect(expiresOn(made, "en")).toBe(
+      new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(at),
+    );
+    expect(expiresOn(made, "en")).not.toContain("Nov 4,");
+    expect(expiresOn("", "en")).toBe("");
+    expect(draw([row()])).toContain("profile.shares_until");
+    expect(draw([row({ created: "" })])).not.toContain("profile.shares_until");
   });
 });

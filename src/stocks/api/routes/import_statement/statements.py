@@ -14,6 +14,7 @@ from stocks.api.deps import Account, Writer
 from stocks.api.routes.import_statement import doubts
 from stocks.api.routes.import_statement.lookups import _within
 from stocks.api.routes.import_statement.upload import (
+    BOOK_KEY,
     Commit,
     Upload,
     _decode,
@@ -48,6 +49,7 @@ from stocks.portfolio import (
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.statement import ParseResult
 from stocks.schemas import (
+    ImportBroker,
     ImportHolding,
     ImportPlatform,
     ImportPlatforms,
@@ -150,6 +152,10 @@ def preview(
         else {}
     )
     gains = _gains(rows, prior, prices)
+    needs_broker = bool(importable or found.holdings) and not detected
+    # Only brokers the registry has no platform for: those the page already
+    # lists, with their logos.
+    book = platforms.book_brokers(_real_rows(account)) if needs_broker else ()
     return ImportPreview(
         platform=found.platform,
         label=found.label,
@@ -162,7 +168,10 @@ def preview(
         duplicates=len(checked.duplicates),
         skipped=[_skipped(s) for s in found.result.skipped],
         broker=detected,
-        needs_broker=bool(importable or found.holdings) and not detected,
+        needs_broker=needs_broker,
+        brokers=[
+            ImportBroker(key=key, label=platforms.broker_label(key)) for key in book
+        ],
         holdings=[ImportHolding(**held) for held in found.holdings],
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
         doubted=doubted,
@@ -257,7 +266,9 @@ def commit(
     raw, report, digest = b"", False, body.expect
     if body.rows is not None:
         parsed = ParseResult(transactions=[_statement_row(r) for r in body.rows])
-        read_by = prefer or autodetect.LLM_KEY
+        read_by = BOOK_KEY if body.platform.strip() == BOOK_KEY else (
+            prefer or autodetect.LLM_KEY
+        )
         obs.event("import.upload", stage="commit", surface=body.surface,
                   rows=len(body.rows), named=body.platform or "", wipe=body.wipe,
                   digest=digest[:16])

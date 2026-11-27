@@ -268,6 +268,11 @@ def _platform(key: str):
     )
 
 
+# What a batch a connected AI sent is read by: no parser and no model of ours,
+# so a platform key of its own for the history and the "via AI" label.
+BOOK_KEY = "mcp"
+
+
 def _prefer(key: str) -> str | None:
     """The parser a reader named, to try first — None when they named none.
 
@@ -276,7 +281,7 @@ def _prefer(key: str) -> str | None:
     a client bug worth a 404, not a hint to drop quietly.
     """
     key = key.strip()
-    if not key or key == autodetect.LLM_KEY:
+    if not key or key in (autodetect.LLM_KEY, BOOK_KEY):
         return None
     return _platform(key).key
 

@@ -138,9 +138,11 @@ function Grip() {
  */
 function HeadMenu({
   onThreads,
+  onMemory,
   onSettings,
 }: {
   onThreads: () => void;
+  onMemory: () => void;
   onSettings: () => void;
 }) {
   const t = useT();
@@ -182,6 +184,7 @@ function HeadMenu({
   };
   const entries: { key: string; glyph: string; run: () => void }[] = [
     { key: "chat.threads_title", glyph: "forum", run: onThreads },
+    { key: "chat.menu_memory", glyph: "memory", run: onMemory },
     { key: "chat.settings_short", glyph: "settings", run: onSettings },
   ];
   return (
@@ -297,6 +300,12 @@ export default function Panel({
   }, [share]);
   // The answer whose share sheet is open.
   const [sharing, setSharing] = useState<string | null>(null);
+  // Where the memory screen was opened from: its back button returns there.
+  const [memoryFrom, setMemoryFrom] = useState<"settings" | "thread">("thread");
+  const openMemory = (from: "settings" | "thread") => {
+    setMemoryFrom(from);
+    setView("memory");
+  };
   // The reader left from the key section and comes back to it: the settings
   // view is where the sign-in is finished and where its outcome is said.
   useEffect(() => {
@@ -586,6 +595,7 @@ export default function Panel({
             the tab bar's other items and the handle's swipe leave. */}
         <HeadMenu
           onThreads={() => setView("threads")}
+          onMemory={() => openMemory("thread")}
           onSettings={() => setView("settings")}
         />
         <button
@@ -672,7 +682,7 @@ export default function Panel({
           onDeleteThread={(cid) => void chat.remove(cid)}
           connect={connect}
           onConnectTaken={onConnectTaken}
-          onMemory={() => setView("memory")}
+          onMemory={() => openMemory("settings")}
           onLeave={onPark ?? onClose}
         />
       )}
@@ -695,7 +705,14 @@ export default function Panel({
       )}
 
       {state && view === "memory" && (
-        <MemoryView onBack={() => setView("settings")} onOpen={openThread} />
+        <MemoryView
+          from={memoryFrom}
+          on={state.memory ?? true}
+          busy={chat.busy}
+          onSwitch={(next) => void chat.settings({ memory: next })}
+          onBack={() => setView(memoryFrom)}
+          onOpen={openThread}
+        />
       )}
 
       {(state || early) && view === "thread" && (
@@ -793,7 +810,7 @@ export default function Panel({
                       onLeave={onPark ?? onClose}
                       onPress={(activity, action) => chat.press(i, activity, action)}
                       onOpenThread={openThread}
-                      onMemory={() => setView("memory")}
+                      onMemory={() => openMemory("thread")}
                       askRating={rates(turn)}
                       // The exchange being asked right now: the question and
                       // the answer under it come in; a thread opened onto

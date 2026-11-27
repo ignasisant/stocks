@@ -926,7 +926,8 @@ def _rule_words(rule: dict, translate: Callable[..., str]) -> str:
     """One exit rule as the confirmation line says it."""
     level = rule.get("level")
     text = translate(f"chat.action_crit_{rule['rule']}",
-                     level=f"{level:g}" if isinstance(level, int | float) else "")
+                     level=f"{level:g}" if isinstance(level, int | float) else "",
+                     pillars=" · ".join(rule.get("pillars") or []))
     if int(rule.get("quarters") or 1) > 1:
         text = translate("chat.action_crit_run", rule=text, n=int(rule["quarters"]))
     return text
@@ -1001,7 +1002,7 @@ FORMS: dict[str, tuple[str, ...]] = {
                      "crit_buy_revenue_growth_above", "crit_buy_gross_margin_above",
                      "crit_buy_operating_margin_above", "crit_buy_pe_fwd_below",
                      "crit_quarters", "crit_ceo_change", "crit_guidance_cut",
-                     "crit_dividend_cut", "thesis"),
+                     "crit_dividend_cut", "crit_thesis", "thesis"),
 }
 _CRIT = "crit_"
 # The exit-rule fields a set_criteria card shows only when its proposal
@@ -1018,6 +1019,10 @@ _CRIT_EXIT_PRICE = ("crit_below", "crit_drawdown_cost", "crit_drawdown_high",
 _CRIT_BUY = ("crit_buy_below", "crit_buy_drawdown_high", "crit_buy_pe_fwd_below")
 CHECK_FIELDS = frozenset({"crit_ceo_change", "crit_guidance_cut",
                           "crit_dividend_cut"})
+# A thesis rule's pillars, in one box: " · " between them, as the journal
+# prints them. Shown only when the proposal drafts one.
+PILLARS_FIELD = "crit_thesis"
+_PILLAR_SPLIT = re.compile(r"\s*(?:·|;|\n)\s*")
 NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below",
                             *_CRIT_EXIT_PRICE, *_CRIT_BUY, *_CRIT_FUNDAMENTAL,
                             "crit_quarters"})
@@ -1034,7 +1039,8 @@ def form_names(action: Action) -> tuple[str, ...]:
     buy_only = bool(used) and all(n.startswith("crit_buy_") for n in used)
     return tuple(
         n for n in names
-        if not (n in _CRIT_FUNDAMENTAL or n in _CRIT_BUY or n in CHECK_FIELDS)
+        if not (n in _CRIT_FUNDAMENTAL or n in _CRIT_BUY or n in CHECK_FIELDS
+                or n == PILLARS_FIELD)
         or n in used
         if n != "crit_quarters" or fundamental
         if not (buy_only and n in _CRIT_EXIT_PRICE))
@@ -1055,6 +1061,9 @@ def form_of(action: Action) -> dict[str, str | bool]:
                                      default=1))
         elif name in CHECK_FIELDS:
             form[name] = any(c["rule"] == name[len(_CRIT):] for c in criteria)
+        elif name == PILLARS_FIELD:
+            form[name] = " · ".join(next((c.get("pillars") or [] for c in criteria
+                                         if c["rule"] == "thesis"), []))
         elif name.startswith(_CRIT):
             rule = next((c for c in criteria if c["rule"] == name[len(_CRIT):]), None)
             form[name] = _figure(rule.get("level")) if rule else ""
@@ -1102,6 +1111,10 @@ def args_from_form(kind: str, form: dict) -> dict:
             if name in CHECK_FIELDS:
                 if form.get(name) in (True, "true", "1", "on"):
                     rules.append({"rule": rule})
+            elif name == PILLARS_FIELD:
+                pillars = [p for p in _PILLAR_SPLIT.split(text(name)) if p]
+                if pillars:
+                    rules.append({"rule": rule, "pillars": pillars})
             elif (v := figure(name)) is not None:
                 rules.append({"rule": rule, "level": v,
                               **({"quarters": quarters} if name in _CRIT_FUNDAMENTAL

@@ -442,3 +442,37 @@ def test_rows_that_cannot_be_redone_stay_as_written(account, monkeypatch):
     monkeypatch.setattr(book_moves, "moves", boom)
     card = _card_with_book()
     assert daily_card.live_book(account, card) is card
+
+
+def test_the_comparisons_are_worked_out_again_on_every_read(account, monkeypatch):
+    """The card's tiles, table and since-inception figure must read the same
+    close as the chart beside them, not the morning the card was written."""
+    from stocks.schemas import TodaySection
+
+    stored = {"id": "compare", "title": "Comparativas", "note": "As written",
+              "rows": [], "benchmarks": []}
+    card = _card_with_book().model_copy(
+        update={"today": [TodaySection.model_validate(stored)]})
+    fresh = {**stored, "since": "2025-01-02", "currency": "EUR"}
+    seen = {}
+
+    def live(paths, section, lang):
+        seen["lang"] = lang
+        return fresh
+
+    monkeypatch.setattr(briefing, "live_compare", live)
+    out = daily_card._live_compare(account, card, "es")
+    assert seen["lang"] == "es"
+    assert out.today[0].note == "As written"
+    assert (out.today[0].since, out.today[0].currency) == ("2025-01-02", "EUR")
+
+
+def test_comparisons_that_cannot_be_redone_stay_as_written(account, monkeypatch):
+    from stocks.chat import today_sections
+
+    def boom(*a, **k):
+        raise RuntimeError("prices down")
+
+    monkeypatch.setattr(today_sections, "refresh_compare", boom)
+    section = {"id": "compare", "title": "C", "rows": [], "benchmarks": []}
+    assert briefing.live_compare(account, section, "en") is section

@@ -11,7 +11,7 @@
  * tab strip promises there is none.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { get, send } from "../../shell/api";
 import { Loaded, Skeleton } from "../../shell/Layout";
@@ -20,6 +20,7 @@ import { useApi } from "../../shell/useApi";
 import { useSession } from "../../shell/session";
 import { residenceClash } from "./residence";
 import { describe } from "./errors";
+import { Glyph } from "../../ui/Glyph";
 import { Options } from "../../ui/Options";
 import { Segmented } from "../../ui/Segmented";
 import { Card, Failure, MultiChips, Row } from "./ui";
@@ -207,6 +208,7 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
               onCommit={(notes) =>
                 notes !== profile.notes && commit({ ...profile, notes }, "notes")
               }
+              importer
             />
           </Row>
           <Failure message={failure} />
@@ -241,21 +243,138 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
             <span className="pr-sum-note">{t("profile.iv_privacy")}</span>
           </div>
           {/* The summary above says what was chosen; this says what the model
-              is told. Folded rather than always open — it is a prompt, and the
-              point of showing it is that somebody *can* check the second
-              follows from the first, not that they have to read it. A native
-              <details>, as the watchlist groups use: no popover in this shell
-              to hang it on, and none needed. */}
+              is told. Folded: it is a prompt, and the point of showing it is
+              that somebody *can* check the second follows from the first, not
+              that they have to read it. A native <details>, as the watchlist
+              groups use. */}
           {profile.persona ? (
-            <div className="pr-persona">
-              <span className="pr-sum-t">{t("profile.iv_persona_open")}</span>
+            <details className="pr-persona">
+              <summary>
+                <span>{t("profile.iv_persona_open")}</span>
+                <Glyph name="expand" size={16} />
+              </summary>
               <p className="pr-sum-note">{t("profile.iv_persona_help")}</p>
-              <code className="pr-persona-text">{profile.persona}</code>
-            </div>
+              <blockquote className="pr-persona-text" lang="en">
+                {profile.persona}
+              </blockquote>
+            </details>
           ) : null}
         </Card>
       </aside>
     </div>
+  );
+}
+
+/**
+ * Somebody who already talks money with another AI has months of context there.
+ * Two steps bring it over: copy a request to paste into that chat, then paste
+ * its answer back. The request asks for the note's own ceiling, so the summary
+ * fits the box instead of being cut where the textarea stops.
+ *
+ * Full while the note is empty, when it is the quickest way to fill it; one
+ * line once there is a note, in the same place, so the field does not jump.
+ */
+function ImportHint({
+  compact,
+  disabled,
+  onPaste,
+}: {
+  compact: boolean;
+  disabled?: boolean;
+  /** Text read from the clipboard; null when the browser would not give it. */
+  onPaste: (text: string | null) => void;
+}) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const prompt = t("profile.iv_import_prompt", { max: NOTES_MAX });
+  const copy = () =>
+    navigator.clipboard?.writeText(prompt).then(
+      () => setCopied(true),
+      () => {},
+    );
+  // Still holding our own request means the other chat has not answered yet:
+  // saving it as the note would hand the assistant its own instructions.
+  const paste = () => {
+    const read = navigator.clipboard?.readText?.();
+    if (!read) return onPaste(null);
+    read.then(
+      (text) => {
+        const got = text.trim();
+        onPaste(got && got !== prompt.trim() ? got : null);
+      },
+      () => onPaste(null),
+    );
+  };
+  const copyBtn = (
+    <button
+      type="button"
+      className={`pr-btn pr-import-btn${!compact && !copied ? " pr-btn-p" : ""}`}
+      data-on={copied || undefined}
+      onClick={copy}
+    >
+      <Glyph name={copied ? "check" : "copy"} size={14} />
+      {t(copied ? "profile.iv_import_copied" : "profile.iv_import_copy")}
+    </button>
+  );
+  const pasteBtn = (
+    <button
+      type="button"
+      className={`pr-btn pr-import-btn${!compact && copied ? " pr-btn-p" : ""}`}
+      disabled={disabled}
+      onClick={paste}
+    >
+      <Glyph name="paste" size={14} />
+      {t("profile.iv_import_paste")}
+    </button>
+  );
+  const status = (
+    <span className="ag-sr" role="status">
+      {copied ? t("profile.iv_import_copied") : ""}
+    </span>
+  );
+  if (compact)
+    return (
+      <div className="pr-import pr-import-min">
+        <span className="pr-import-icon" aria-hidden="true">
+          <Glyph name="spark" size={14} />
+        </span>
+        <span className="pr-import-min-t">{t("profile.iv_import_short")}</span>
+        <span className="pr-import-acts">
+          {copyBtn}
+          {pasteBtn}
+        </span>
+        {status}
+      </div>
+    );
+  return (
+    <section className="pr-import" aria-labelledby="pr-import-t">
+      <div className="pr-import-head">
+        <span className="pr-import-icon" aria-hidden="true">
+          <Glyph name="spark" size={18} />
+        </span>
+        <div className="pr-import-text">
+          <b id="pr-import-t">{t("profile.iv_import_title")}</b>
+          <span>{t("profile.iv_import_body")}</span>
+        </div>
+      </div>
+      <ol className="pr-import-steps">
+        <li data-done={copied || undefined}>
+          <span className="pr-import-n" aria-hidden="true">
+            {copied ? <Glyph name="check" size={12} /> : "1"}
+          </span>
+          <span className="pr-import-step">{t("profile.iv_import_step1")}</span>
+          {copyBtn}
+        </li>
+        <li>
+          <span className="pr-import-n" aria-hidden="true">
+            2
+          </span>
+          <span className="pr-import-step">{t("profile.iv_import_step2")}</span>
+          {pasteBtn}
+        </li>
+      </ol>
+      {status}
+    </section>
   );
 }
 
@@ -285,10 +404,13 @@ export function Notes({
   placeholder,
   disabled,
   examples = [],
+  importer = false,
   onCommit,
 }: {
   /** Sentences that append to the note with a touch. */
   examples?: string[];
+  /** Offer to bring the note over from another AI chat (`ImportHint`). */
+  importer?: boolean;
   value: string;
   label: string;
   placeholder: string;
@@ -299,15 +421,33 @@ export function Notes({
   // A save that came back normalised (or another tab's edit) has to win over a
   // draft nobody is typing into any more.
   useEffect(() => setDraft(value), [value]);
+  const field = useRef<HTMLTextAreaElement>(null);
   const add = (text: string) => {
     const next = draft.trim() ? `${draft.trim()} ${text}` : text;
     if (next.length > NOTES_MAX) return;
     setDraft(next);
     onCommit(next);
   };
+  // A pasted answer fills what room is left rather than being refused whole:
+  // the request asked for the ceiling, and an answer a little over it is still
+  // mostly worth keeping. No clipboard access: the caret goes to the field so
+  // the person pastes it themselves.
+  const pasted = (text: string | null) => {
+    if (text === null) return field.current?.focus();
+    const room = NOTES_MAX - (draft.trim() ? draft.trim().length + 1 : 0);
+    if (room > 0) add(text.slice(0, room).trim());
+  };
   return (
     <>
+      {importer && (
+        <ImportHint
+          compact={draft.trim() !== ""}
+          disabled={disabled}
+          onPaste={pasted}
+        />
+      )}
       <textarea
+        ref={field}
         className="pr-notes"
         rows={4}
         value={draft}

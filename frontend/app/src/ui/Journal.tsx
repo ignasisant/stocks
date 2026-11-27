@@ -186,7 +186,7 @@ export function buyRule(entry: JournalEntry): boolean {
  */
 export function ruleText(
   t: (key: string, vars?: Record<string, string | number>) => string,
-  entry: JournalEntry,
+  entry: Pick<JournalEntry, "action" | "snapshot">,
   lang: string,
 ): string {
   const rule = String(entry.snapshot.rule ?? entry.action);
@@ -804,6 +804,91 @@ function reviewLine(
 }
 
 /**
+ * Retiring with an Undo: the row leaves at the press, the journal is re-read
+ * behind it (`onChange`), and a refusal puts it back. The Undo takes the
+ * focus, since the row it was on has gone, and lapses after a while — never
+ * from under the focus. `RetireNotes` draws it and any failure.
+ */
+export function useRetire(onChange: () => void) {
+  const [failed, setFailed] = useState<"retire" | "restore" | null>(null);
+  const [gone, setGone] = useState<readonly string[]>([]);
+  const [undo, setUndo] = useState<{ id: string; words: string } | null>(null);
+  const undoButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!undo) return;
+    undoButton.current?.focus();
+    let timer = 0;
+    const expire = () => {
+      if (document.activeElement === undoButton.current) {
+        timer = window.setTimeout(expire, UNDO_MS);
+      } else setUndo(null);
+    };
+    timer = window.setTimeout(expire, UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+
+  const retire = (id: string, words: string) => {
+    setFailed(null);
+    setUndo(null);
+    setGone((ids) => [...ids, id]);
+    retireRule(id)
+      .then(() => {
+        setUndo({ id, words });
+        onChange();
+      })
+      .catch(() => {
+        setFailed("retire");
+        setGone((ids) => ids.filter((one) => one !== id));
+      });
+  };
+  const putBack = (id: string) => {
+    setUndo(null);
+    setFailed(null);
+    restoreRule(id)
+      .then(() => {
+        setGone((ids) => ids.filter((one) => one !== id));
+        onChange();
+      })
+      .catch(() => setFailed("restore"));
+  };
+  return { gone, retire, notes: { failed, undo, undoButton, putBack } };
+}
+
+/** The Undo after a retire, and the line when a retire or its undo failed. */
+export function RetireNotes({
+  failed,
+  undo,
+  undoButton,
+  putBack,
+}: ReturnType<typeof useRetire>["notes"]) {
+  const t = useT();
+  return (
+    <>
+      <div className="ag-jr-undo" role="status">
+        {undo ? (
+          <>
+            <span>{t("journal.retired_note", { rule: undo.words })}</span>
+            <button
+              ref={undoButton}
+              type="button"
+              className="ag-jr-btn ag-jr-btn-accent"
+              onClick={() => putBack(undo.id)}
+            >
+              {t("journal.undo")}
+            </button>
+          </>
+        ) : null}
+      </div>
+      {failed ? (
+        <p className="ag-jr-rules-error" role="alert">
+          {t(failed === "retire" ? "journal.criteria_failed" : "journal.undo_failed")}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * The reader's rules on this name, at the panel's head, each read against
  * today: the figure now, how far the line is, a track that shows it, and a
  * state — met (only once the server says so), near, far, waiting for the
@@ -838,27 +923,7 @@ export function RulesBlock({
   const t = useT();
   const lang = useLang();
   const [menu, setMenu] = useState<string | null>(null);
-  const [failed, setFailed] = useState<"retire" | "restore" | null>(null);
-  // Rules taken down here and not yet gone from `rules`: the row leaves at
-  // the press, the journal is re-read behind it, and a refusal puts it back.
-  const [gone, setGone] = useState<readonly string[]>([]);
-  const [undo, setUndo] = useState<{ id: string; words: string } | null>(null);
-  const undoButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!undo) return;
-    // The row the focus was on has gone: the Undo is where it lands.
-    undoButton.current?.focus();
-    // It goes after a while, but never from under the focus: while the Undo
-    // still holds it, the note waits for the next turn.
-    let timer = 0;
-    const expire = () => {
-      if (document.activeElement === undoButton.current) {
-        timer = window.setTimeout(expire, UNDO_MS);
-      } else setUndo(null);
-    };
-    timer = window.setTimeout(expire, UNDO_MS);
-    return () => window.clearTimeout(timer);
-  }, [undo]);
+  const { gone, retire: retireId, notes } = useRetire(onChange);
 
   const subject = rulesSubject(ticker, name);
   const topic = tickerTopic(ticker);
@@ -868,28 +933,7 @@ export function RulesBlock({
   };
   const retire = (rule: JournalEntry, words: string) => {
     setMenu(null);
-    setFailed(null);
-    setUndo(null);
-    setGone((ids) => [...ids, rule.id]);
-    retireRule(rule.id)
-      .then(() => {
-        setUndo({ id: rule.id, words });
-        onChange();
-      })
-      .catch(() => {
-        setFailed("retire");
-        setGone((ids) => ids.filter((one) => one !== rule.id));
-      });
-  };
-  const putBack = (id: string) => {
-    setUndo(null);
-    setFailed(null);
-    restoreRule(id)
-      .then(() => {
-        setGone((ids) => ids.filter((one) => one !== id));
-        onChange();
-      })
-      .catch(() => setFailed("restore"));
+    retireId(rule.id, words);
   };
 
   const standing = rules.filter((rule) => !gone.includes(rule.id));
@@ -1048,12 +1092,6 @@ export function RulesBlock({
     return null;
   })();
 
-  const failedNote = failed ? (
-    <p className="ag-jr-rules-error" role="alert">
-      {t(failed === "retire" ? "journal.criteria_failed" : "journal.undo_failed")}
-    </p>
-  ) : null;
-
   const exitSide = exits.length ? (
     <section className="ag-jr-rules" aria-labelledby="ag-jr-criteria-h">
       <h3 id="ag-jr-criteria-h" className="ag-jr-h">
@@ -1171,22 +1209,7 @@ export function RulesBlock({
 
   return (
     <>
-      <div className="ag-jr-undo" role="status">
-        {undo ? (
-          <>
-            <span>{t("journal.retired_note", { rule: undo.words })}</span>
-            <button
-              ref={undoButton}
-              type="button"
-              className="ag-jr-btn ag-jr-btn-accent"
-              onClick={() => putBack(undo.id)}
-            >
-              {t("journal.undo")}
-            </button>
-          </>
-        ) : null}
-      </div>
-      {failedNote}
+      <RetireNotes {...notes} />
       {held ? (
         <>
           {exitSide}

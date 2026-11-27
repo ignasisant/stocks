@@ -163,7 +163,7 @@ class Message(BaseModel):
     documents: list[AttachedDocument] = []
 
 
-def _turn(raw: dict, lang: str = "en") -> Message:
+def _turn(raw: dict, lang: str = "en", up: set[str] | None = None) -> Message:
     return Message(
         role=str(raw.get("role", "")),
         content=str(raw.get("content", "")),
@@ -218,9 +218,12 @@ def _turn(raw: dict, lang: str = "en") -> Message:
         id=str(raw.get("id") or ""),
         rating=raw.get("rating") if raw.get("rating") in ("up", "down") else None,
         at=str(raw.get("at") or ""),
+        # `up`: the links still working (`shares.live_ids`); an expired
+        # one is no longer this answer's to manage.
         shares=[ShareLink(id=str(k["id"]), masked=k.get("masked") is True)
                 for k in (raw.get("shares") or [])
-                if isinstance(k, dict) and k.get("id")],
+                if isinstance(k, dict) and k.get("id")
+                and (up is None or str(k["id"]) in up)],
         shared_from=str(raw.get("shared_from") or ""),
     )
 

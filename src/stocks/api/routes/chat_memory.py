@@ -34,6 +34,25 @@ from stocks.chat import engine, learnings, market, memory_review
 router = APIRouter(prefix="/chat/memories", tags=["chat"])
 
 
+class MemoryChange(BaseModel):
+    """Why a memory changed, as `learnings.history` keeps it. `why` is
+    "said" (restated with other figures), "learned" (read from the user's
+    message, quoted in `said`), "edited" (by hand), "replaced" (another
+    memory took the place of one that said `was`), "review" (a tidy-up
+    proposal, `reason`) or "book" (a trade: `ticker`, `event` "closed" or
+    "opened", on day `on`). `was` is what it said before, when it was
+    reworded."""
+
+    day: str
+    why: Literal["said", "learned", "edited", "replaced", "review", "book"]
+    was: str | None = None
+    said: str | None = None
+    reason: str | None = None
+    ticker: str | None = None
+    event: str | None = None
+    on: str | None = None
+
+
 class Memory(BaseModel):
     """One saved memory.
 
@@ -60,6 +79,8 @@ class Memory(BaseModel):
     last_used: str | None = None
     # What it said before it was reworded, newest last.
     replaced: list[str] = []
+    # Why it changed, oldest first (at most `learnings.MAX_HISTORY`).
+    history: list[MemoryChange] = []
 
 
 class SavedMemory(Memory):
@@ -74,16 +95,21 @@ class SavedMemory(Memory):
 
 class Suggestion(BaseModel):
     """One change the weekly tidy-up proposes (`memory_review.Proposal`):
-    drop the memories in `ids`, merge them into `text`, or reword the one in
-    `ids` to `text`. `reason` is "expired", "idle", "same" or "model" — the
-    last with the model's own `note`."""
+    drop the memories in `ids`, merge them into `text`, reword the one in
+    `ids` to `text`, or retire it (it ends, and stays listed). `reason` is
+    "expired", "idle", "same", "model" — with the model's own `note` — or
+    "book": a trade in `ticker` that `event` ("closed" or "opened") the
+    position on day `on`, after the memory was said."""
 
     sid: str
-    action: Literal["drop", "merge", "reword"]
+    action: Literal["drop", "merge", "reword", "retire"]
     ids: list[str]
     reason: str
     text: str = ""
     note: str = ""
+    ticker: str = ""
+    event: str = ""
+    on: str = ""
 
 
 class Memories(BaseModel):
@@ -171,6 +197,7 @@ def _out(item: learnings.Learning, titles: dict[str, str],
         expired=item.expired(day or learnings._today()),
         uses=int(use.get("n") or 0), last_used=use.get("last") or None,
         replaced=list(item.replaced),
+        history=[MemoryChange(**h) for h in item.history],
     )
 
 
@@ -227,6 +254,64 @@ def add(body: NewMemory, paths: Writer) -> SavedMemory:
         **_out(done.item, titles).model_dump(), op=done.op,
         before=done.before or None,
         related=_out(done.related, titles) if done.related else None)
+
+
+class Summary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # What another assistant wrote about the user, pasted whole.
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+class Statements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The reviewed lines, as the reader left them; at most MAX_IMPORT are kept.
+    statements: list[str] = Field(min_length=1, max_length=50)
+
+
+class Statement(BaseModel):
+    text: str
+    kind: str
+
+
+class Preview(BaseModel):
+    statements: list[Statement]
+    # How many more the summary held than one import keeps.
+    over: int
+    room: int
+
+
+class Brought(BaseModel):
+    added: int
+    updated: int
+    known: int
+    left_out: int
+
+
+@router.post("/import/preview", response_model=Preview,
+             summary="Split a pasted summary into memories, saving nothing")
+def import_preview(body: Summary, paths: Account) -> Preview:
+    """The statements `import` would keep, for the reader to review first:
+    every memory rides in every prompt, so what is saved is chosen, never
+    poured in. Nothing is written."""
+    found = learnings.split(body.text)
+    room = max(0, learnings.MAX_ITEMS - len(learnings.load(paths.learnings)))
+    return Preview(
+        statements=[Statement(text=t, kind=learnings.import_kind(t))
+                    for t in found[:learnings.MAX_IMPORT]],
+        over=max(0, len(found) - learnings.MAX_IMPORT), room=room)
+
+
+@router.post("/import", response_model=Brought,
+             summary="Save reviewed statements as separate memories")
+def import_statements(body: Statements, paths: Writer) -> Brought:
+    """Each statement becomes its own memory through the same path as a typed
+    one: repeats refresh, corrected figures update, nothing is evicted, and
+    none becomes a routine."""
+    done = learnings.bring(paths.learnings, body.statements)
+    return Brought(added=done.added, updated=done.updated, known=done.known,
+                   left_out=done.left_out)
 
 
 @router.patch("/{lid}", response_model=Memory, summary="Reword a memory")

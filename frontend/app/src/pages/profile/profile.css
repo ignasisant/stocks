@@ -311,6 +311,148 @@
 .pr-notes:focus {
   outline: 2px solid var(--ag-brand-accent);
 }
+/* The way in for someone with months of context in another AI: tinted with
+   the accent so it reads as an offer, not one more help line. Two numbered
+   steps because it is a sequence (copy there, paste back); each step's button
+   sits under its text, and only the next step's button is filled.
+   Once the note has text it shrinks to one line in the same place. */
+.pr-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--ag-brand-accent) 35%, transparent);
+  border-radius: var(--ag-radius-sm);
+  background: color-mix(in srgb, var(--ag-brand-accent) 8%, var(--ag-surface-card));
+}
+.pr-import-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.pr-import-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--ag-brand-accent);
+  background: color-mix(in srgb, var(--ag-brand-accent) 16%, transparent);
+}
+.pr-import-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+  color: var(--ag-text-secondary);
+}
+.pr-import-text b {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-md);
+  text-wrap: balance;
+}
+.pr-import-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.pr-import-steps li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--ag-brand-accent) 18%, transparent);
+}
+.pr-import-steps li > .pr-import-btn {
+  grid-column: 2;
+  justify-self: start;
+}
+.pr-import-steps li:last-child {
+  padding-bottom: 0;
+}
+.pr-import-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: var(--ag-fs-xs, 0.75rem);
+  font-weight: 700;
+  color: var(--ag-brand-accent);
+  border: 1px solid color-mix(in srgb, var(--ag-brand-accent) 55%, transparent);
+}
+.pr-import-steps li[data-done] .pr-import-n {
+  color: var(--ag-surface-card);
+  background: var(--ag-brand-accent);
+  border-color: transparent;
+}
+.pr-import-step {
+  min-width: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-primary);
+}
+.pr-import-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  border-color: color-mix(in srgb, var(--ag-brand-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--ag-brand-accent) 14%, var(--ag-surface-card));
+}
+.pr-import-btn.pr-btn-p {
+  background: var(--ag-purple-900);
+  border-color: var(--ag-purple-800);
+}
+.pr-import-btn[data-on] {
+  color: var(--ag-brand-accent);
+}
+@media (hover: hover) {
+  .pr-import-btn:hover:enabled {
+    border-color: var(--ag-brand-accent);
+  }
+}
+.pr-import-min {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 8px 8px 12px;
+}
+.pr-import-min .pr-import-icon {
+  width: 24px;
+  height: 24px;
+}
+.pr-import-min-t {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+.pr-import-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pr-import-min .pr-import-btn {
+  min-height: 32px;
+}
+@media (pointer: coarse) {
+  .pr-import-btn,
+  .pr-import-min .pr-import-btn {
+    min-height: 44px;
+  }
+}
 .pr-examples {
   list-style: none;
   margin: 8px 0;
@@ -770,34 +912,57 @@
   color: var(--ag-text-muted);
 }
 
-/* The persona, folded under the summary it is built from. Monospaced because
-   it is a prompt and not prose: what the model reads, wrapped as it arrives. */
+/* The persona, folded under the summary it is built from. Body font, not
+   mono: it is one sentence of prose, and a wall of code on a phone buried the
+   card. Read-only, wrapped as it arrives. */
 .pr-persona {
-  margin-top: 14px;
+  padding: 0 20px 16px;
+  border-top: 1px solid var(--ag-border);
 }
 .pr-persona > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
   cursor: pointer;
+  list-style: none;
   font-size: var(--ag-fs-sm);
   font-weight: 600;
   color: var(--ag-text-secondary);
+}
+.pr-persona > summary::-webkit-details-marker {
+  display: none;
+}
+.pr-persona > summary svg {
+  flex: none;
+  transition: transform 0.15s;
+}
+.pr-persona[open] > summary svg {
+  transform: rotate(180deg);
 }
 @media (hover: hover) {
   .pr-persona > summary:hover {
     color: var(--ag-text-primary);
   }
 }
-.pr-persona > * {
-  margin-top: 8px;
+@media (pointer: coarse) {
+  .pr-persona > summary {
+    min-height: 44px;
+  }
+}
+.pr-persona > :not(summary) {
+  margin: 0 0 8px;
 }
 .pr-persona-text {
-  display: block;
   padding: 10px 12px;
-  border-radius: var(--ag-radius-sm);
+  border-left: 3px solid var(--ag-accent, var(--ag-border));
+  border-radius: 0 var(--ag-radius-sm) var(--ag-radius-sm) 0;
   background: var(--ag-surface-sunken);
-  color: var(--ag-text-secondary);
-  font-family: var(--ag-font-mono, "Martian Mono", ui-monospace, monospace);
+  color: var(--ag-text-primary);
   font-size: var(--ag-fs-sm);
-  line-height: 1.6;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 

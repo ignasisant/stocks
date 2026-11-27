@@ -91,6 +91,10 @@ DESTROYS = ToolAnnotations(
 
 # Rows one `add_transactions` call may carry; a statement is an import.
 ADD_MAX = 50
+# Rows one `import_book` call may carry: a whole history, previewed once.
+BOOK_MAX = 1000
+# Rows of the preview shown back in full; the rest are counted.
+BOOK_SHOWN = 15
 
 READ_ONLY_REFUSAL = (
     "This connection can only read. To let Claude edit, the person disconnects "
@@ -946,7 +950,7 @@ async def daily_brief() -> CallToolResult:
         lang = str(accounts.load_prefs(paths.prefs).get("language") or "en")
         _, day = briefing.now_day(paths)
         market, stale = today._market(lang)
-        card = daily_card.live_book(paths, daily_card.status(paths, lang))
+        card = daily_card.live_book(paths, daily_card.status(paths, lang), lang)
         personal = _plain(card) if card is not None else None
         if personal and isinstance(personal.get("book"), dict):
             # The month's chart is the page's to draw; the rows carry it.
@@ -1474,6 +1478,93 @@ async def undo_change(
         return {"kind": "undo_done", "applied": True, **_plain(change_view(done))}
 
     return await _run("undo_change", work, write=True)
+
+
+class BookRow(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    date: str = Field(min_length=10, max_length=10, description="YYYY-MM-DD.")
+    ticker: str = Field(min_length=1, max_length=40,
+                        description="The listing's symbol (NVDA, ALV.DE) or the ISIN.")
+    action: Literal["buy", "sell", "dividend", "fee", "split", "capital",
+                    "transfer_in", "transfer_out"]
+    quantity: float = Field(ge=0, description="Shares; for a split, the ratio.")
+    price: float = Field(ge=0, description="Per share; for a dividend or fee, "
+                                           "the amount.")
+    currency: str = Field(min_length=3, max_length=3)
+    fee: float = Field(default=0.0, ge=0)
+    note: str = Field(default="", max_length=300)
+
+
+def _book_token(rows: list[BookRow], broker: str, paths: UserPaths) -> str:
+    """Binds a commit to the rows previewed and the book they were read against."""
+    import hashlib
+
+    book = _rows(paths)
+    stamp = [len(book), max((t.id or 0 for t in book), default=0)]
+    blob = json.dumps([[r.model_dump() for r in rows], broker, stamp],
+                      sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()[:32]
+
+
+async def import_book(
+    rows: Annotated[list[BookRow], Field(min_length=1, max_length=BOOK_MAX)],
+    broker: Annotated[str, Field(
+        min_length=1, max_length=40,
+        description="Lowercase broker the rows come from, e.g. ibkr or "
+                    "trade_republic.")],
+    confirm_token: Annotated[str | None, Field(
+        description="The token the preview returned. Without it nothing is "
+                    "written.")] = None,
+) -> CallToolResult:
+    def work(paths: UserPaths) -> dict:
+        from stocks.api.routes.import_statement import statements, validation
+        from stocks.api.routes.import_statement.upload import Commit, StatementRow
+        from stocks.portfolio.statement import ParseResult
+
+        wanted = [StatementRow(**r.model_dump()) for r in rows]
+        token = _book_token(rows, broker, paths)
+        if confirm_token is None:
+            parsed = ParseResult(
+                transactions=[validation._statement_row(r) for r in wanted])
+            checked, _ = validation._validated(paths, parsed)
+            fresh = [c for c in checked.checked if not c.errors and not c.duplicate]
+            per_ticker: dict[str, int] = {}
+            for c in fresh:
+                per_ticker[c.tx.ticker] = per_ticker.get(c.tx.ticker, 0) + 1
+            return {
+                "kind": "book_plan", "applied": False,
+                "importable": len(fresh),
+                "already_in_book": len(checked.duplicates),
+                "rejected": [_plain(validation._row(c)) for c in checked.rejected],
+                "tickers": dict(sorted(per_ticker.items(), key=lambda kv: -kv[1])),
+                "first_rows": [_plain(validation._row(c)) for c in fresh[:BOOK_SHOWN]],
+                "confirm_token": token,
+                "next": "Nothing was written. Show the person how many rows are "
+                        "new, which were already in the book and which were "
+                        "rejected and why. If they agree, call import_book "
+                        "again with the same rows, broker and this confirm_token.",
+            }
+        if confirm_token != token:
+            raise _Refused("The book or the rows changed since the preview. "
+                           "Preview again and show the person the new plan.")
+        try:
+            done = statements.commit(
+                None, paths,
+                Commit(rows=wanted, broker=broker.strip().lower(),
+                       platform=statements.BOOK_KEY, surface="paste",
+                       filename="Sent by a connected AI"),
+            )
+        except HTTPException as exc:
+            raise _Refused(str(exc.detail)) from exc
+        obs.event("ledger.edited", rows=done.imported, via="mcp_book")
+        return {"kind": "book_done", "applied": True, "imported": done.imported,
+                "already_in_book": done.duplicates,
+                "next": "Written as one import. undo_last_import takes the whole "
+                        "batch back."}
+
+    return await _run("import_book", work, write=True)
+
 
 
 async def undo_last_import(confirm: Confirm = False) -> CallToolResult:
@@ -2071,6 +2162,17 @@ TOOLS: tuple[Spec, ...] = (
     Spec(undo_change, "Undo an edit",
          "Put back the rows one edit changed. confirm false previews.",
          write=True, destructive=True),
+    Spec(import_book, "Import a whole book",
+         f"Send a person's whole transaction history (up to {BOOK_MAX} rows) "
+         "as one import: checked, deduplicated against the book and "
+         "undoable as a batch. Only send what the person gave you: never "
+         "invent a trade, price, date or fee, and ask once if something is "
+         "missing. One row per trade: ISO date, ticker as listed, positive "
+         "quantity and price, 3-letter currency, broker named once. Preview "
+         "first: without confirm_token nothing is written; show the person "
+         "the counts and first rows, and confirm with the returned "
+         "confirm_token only after they say yes. undo_last_import reverses "
+         "the batch.", write=True),
     Spec(undo_last_import, "Undo the last import",
          "Delete exactly the rows the last statement import added. confirm "
          "false previews.", write=True, destructive=True),

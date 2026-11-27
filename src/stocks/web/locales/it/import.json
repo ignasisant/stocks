@@ -365,7 +365,7 @@
   "import.toast_held_applied": "{n} vendite aggiunte.",
   "import.toast_held_applied_one": "{n} vendita aggiunta.",
   "import.reupload_title": "Carica di nuovo il tuo estratto conto {broker}",
-  "import.reupload_note": "Lo split di {ticker} ({date}) è arrivato dopo, quindi una vendita rifiutata allora può ora entrare. Le righe che hai già vengono saltate.",
+  "import.reupload_note": "La tua ultima importazione è precedente allo split di {ticker} ({date}). Se allora ha rifiutato una vendita di {ticker}, caricandolo di nuovo entra. Le righe che hai già vengono saltate.",
   "import.hide": "Nascondi",
   "import.fix": "Correggi",
   "import.fix_two_labels": "{labels} sono lo stesso titolo. Unisci in {ticker}.",

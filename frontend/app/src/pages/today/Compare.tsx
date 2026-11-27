@@ -271,7 +271,7 @@ export function Compare({ section }: { section: TodaySection }) {
               </td>
               {verdicts ? (
                 <td>
-                  <Chip chip={f.verdict(data.verdict)} />
+                  {data.verdict ? <Chip chip={f.verdict(data.verdict)} /> : "—"}
                 </td>
               ) : null}
             </tr>

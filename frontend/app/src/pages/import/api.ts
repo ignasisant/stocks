@@ -108,6 +108,11 @@ export type Preview = {
   broker: string;
   needs_broker: boolean;
   /**
+   * Brokers the book already files trades under that the platform registry
+   * has none for (one typed under "other" before). Optional for an older server.
+   */
+  brokers?: { key: string; label: string }[];
+  /**
    * Importable tickers Yahoo said it does not list: they go in, but hold at
    * cost with no price until mapped. Optional for an older server.
    */

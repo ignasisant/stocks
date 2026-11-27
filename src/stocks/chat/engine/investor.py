@@ -32,6 +32,19 @@ _FOCUS_EN = {
     "em": "emerging markets",
     "crypto": "crypto assets",
     "dividends_value": "dividends, value and broad-index holdings",
+    "ai": "artificial intelligence",
+    "semis": "semiconductors",
+    "health": "healthcare and biotech",
+    "energy": "energy and utilities",
+    "fin": "banks and financials",
+    "consumer": "consumer brands",
+    "realestate": "real estate and REITs",
+    "growth": "growth companies",
+    "small": "small caps",
+    "us": "US stocks",
+    "eu": "European stocks",
+    "etf": "index funds and ETFs",
+    "commod": "commodities and precious metals",
 }
 _CONSTRAINT_EN = {
     # Not "no wash-sale rule": a model read that as "no repurchase rule" and

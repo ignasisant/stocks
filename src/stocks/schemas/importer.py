@@ -80,6 +80,11 @@ class ImportRow(BaseModel):
     )
 
 
+class ImportBroker(BaseModel):
+    key: str = Field(description="The word a commit sends as `broker`.")
+    label: str
+
+
 class ImportHolding(BaseModel):
     """One line of a holdings snapshot: held, but never dated."""
 
@@ -177,6 +182,15 @@ class ImportPreview(BaseModel):
     )
     needs_broker: bool = Field(
         default=False, description="Whether a commit must supply `broker`."
+    )
+    brokers: list[ImportBroker] = Field(
+        default_factory=list,
+        description=(
+            "With `needs_broker`, the origins this book already files trades "
+            "under that `/import/platforms` has no entry for — a broker named "
+            "under `other` on an earlier import. Offer them beside the "
+            "platforms, so the same broker is filed under the same word again."
+        ),
     )
     holdings: list[ImportHolding] = Field(
         default_factory=list,

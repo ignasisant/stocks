@@ -59,7 +59,6 @@ import { Card, Note } from "./ui";
 /** Spelled out so the catalog keys are greppable. */
 const TEXT: Record<CardId, { name: string; blurb: string }> = {
   market: { name: "home.card_market", blurb: "home.card_market_blurb" },
-  daily: { name: "home.card_daily", blurb: "home.card_daily_blurb" },
   glance: { name: "home.card_glance", blurb: "home.card_glance_blurb" },
   movers: { name: "home.card_movers", blurb: "home.card_movers_blurb" },
   extremes: { name: "home.card_extremes", blurb: "home.card_extremes_blurb" },

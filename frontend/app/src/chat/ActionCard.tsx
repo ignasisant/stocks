@@ -135,32 +135,35 @@ export function ActionCard({
       {saving ? (
         <Status label={t("chat.action_working")} />
       ) : (
-        <div className="ag-guide-acts">
-          <button
-            type="button"
-            className="ag-chat-btn ag-chat-btn-on"
-            disabled={filling && !ready}
-            onClick={() => void answer(true)}
-          >
-            {t(filling ? "chat.action_review" : "chat.action_approve")}
-          </button>
-          {!editing && form && !book && (
+        <>
+          <p className="ag-chat-act-note">{t("chat.action_nothing_saved")}</p>
+          <div className="ag-guide-acts">
+            <button
+              type="button"
+              className="ag-chat-btn ag-chat-btn-on"
+              disabled={filling && !ready}
+              onClick={() => void answer(true)}
+            >
+              {t(filling ? "chat.action_review" : "chat.action_approve")}
+            </button>
+            {!editing && form && !book && (
+              <button
+                type="button"
+                className="ag-chat-btn"
+                onClick={() => setEditing(true)}
+              >
+                {t("chat.action_edit")}
+              </button>
+            )}
             <button
               type="button"
               className="ag-chat-btn"
-              onClick={() => setEditing(true)}
+              onClick={() => void answer(false)}
             >
-              {t("chat.action_edit")}
+              {t("chat.action_cancel")}
             </button>
-          )}
-          <button
-            type="button"
-            className="ag-chat-btn"
-            onClick={() => void answer(false)}
-          >
-            {t("chat.action_cancel")}
-          </button>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

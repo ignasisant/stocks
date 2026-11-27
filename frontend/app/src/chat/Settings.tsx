@@ -426,8 +426,7 @@ function ToConnector({
 function useTag() {
   const t = useT();
   return (provider: ProviderInfo) => {
-    const said = providerTag(provider);
-    return said ? t(said.key, said.days === undefined ? {} : { days: said.days }) : "";
+    return t(providerTag(provider).key);
   };
 }
 
@@ -607,31 +606,30 @@ export function Settings({
       <label className="ag-chat-check">
         <input
           type="checkbox"
-          checked={state.memory ?? true}
-          disabled={busy}
-          onChange={(event) => onSave({ memory: event.target.checked })}
-        />
-        {t("chat.mem_switch")}
-      </label>
-      <label className="ag-chat-check">
-        <input
-          type="checkbox"
           checked={state.recall ?? true}
           disabled={busy}
           onChange={(event) => onSave({ recall: event.target.checked })}
         />
         {t("chat.recall_switch")}
       </label>
-      <p className="ag-chat-hint">{t("chat.mem_switch_note")}</p>
+      {/* One row, one tap: what it is, whether it is on, and the way in. */}
       {onMemory && (
-        <button type="button" className="ag-chat-btn" onClick={onMemory}>
-          <Glyph name="memory" size={14} />
-          {t("chat.mem_manage")}
+        <button type="button" className="ag-chat-navrow" onClick={onMemory}>
+          <Glyph name="memory" size={16} />
+          <span className="ag-chat-navrow-text">
+            <span>{t("chat.mem_manage")}</span>
+            <small>
+              {t((state.memory ?? true) ? "chat.mem_row_on" : "chat.mem_row_off")}
+            </small>
+          </span>
+          <span className="ag-chat-navrow-go" aria-hidden="true">
+            <Glyph name="back" size={14} />
+          </span>
         </button>
       )}
 
-      <Group>{t("chat.sec_thread")}</Group>
-      {confirming && thread ? (
+      {thread && <Group>{t("chat.sec_thread")}</Group>}
+      {!thread ? null : confirming ? (
         <div className="ag-chat-confirm">
           <p>
             {t("chat.delete_confirm", {
@@ -664,7 +662,6 @@ export function Settings({
         <button
           type="button"
           className="ag-chat-btn"
-          disabled={!thread}
           onClick={() => setConfirming(true)}
         >
           <Glyph name="trash" size={14} />

@@ -279,6 +279,19 @@ def test_the_rows_land_in_the_ledger_stamped_with_their_broker(
     assert all(tx.note.lower().startswith("revolut") for tx in rows)
 
 
+def test_a_broker_typed_in_before_is_on_the_roster(client, account, signed_in):
+    """A broker with no parser (Finizens), named once under "other", is offered
+    by name on the next file rather than retyped."""
+    preview = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    signed_in.post(
+        "/v1/chat/attachments/commit", json=committed(preview, broker="Finizens")
+    )
+    again = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    keys = [b["key"] for b in again["brokers"]]
+    assert "finizens" in keys
+    assert keys[-1] == "other"
+
+
 def test_the_commit_files_its_receipt_and_the_undo_hint(client, account, signed_in):
     preview = signed_in.post("/v1/chat/attachments", json=attach()).json()
     payload = signed_in.post(

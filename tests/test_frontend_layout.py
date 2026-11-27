@@ -98,7 +98,6 @@ _TOUCH_TARGETS = [
     ("pages/today/today.css", ".td-icon-btn", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-toggle", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-more-btn", r"min-height\s*:\s*44px"),
-    ("pages/home/home.css", ".hm-daily-open .ag-btn", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-icon", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-back", r"min-height\s*:\s*44px"),
     ("styles.css", ".ag-nav-fold", r"min-height\s*:\s*44px"),

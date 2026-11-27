@@ -536,6 +536,27 @@ def test_the_exit_rule_card_round_trips_its_fields():
         "set_criteria", {**form, **blank})) is None
 
 
+def test_a_thesis_rule_rides_the_card_as_its_pillars():
+    # Drafted by the answer (`propose_action`), which reads its call as is.
+    act = tools.proposed({
+        "action": "set_criteria", "ticker": "AMD",
+        "criteria": [{"rule": "thesis", "pillars": ["AI share grows", "Margins hold"]},
+                     {"rule": "below", "level": 90}]})
+    assert "crit_thesis" in tools.form_names(act)
+    # A card without a thesis keeps the box out.
+    assert "crit_thesis" not in tools.form_names(_criteria_action())
+    form = tools.form_of(act)
+    assert form["crit_thesis"] == "AI share grows · Margins hold"
+    edited = {**form, "crit_thesis": "AI share grows; Margins hold · FCF positive"}
+    revised = tools.revise(act, "AMD", tools.args_from_form("set_criteria", edited))
+    assert revised.args["criteria"][-1] == {
+        "rule": "thesis", "pillars": ["AI share grows", "Margins hold", "FCF positive"]}
+    from stocks.i18n import translate
+
+    line = tools.reply(act, lambda key, **kw: translate(key, "en", **kw))
+    assert "AI share grows · Margins hold" in line
+
+
 def test_the_exit_rule_confirmation_names_each_rule():
     from stocks.i18n import translate
 

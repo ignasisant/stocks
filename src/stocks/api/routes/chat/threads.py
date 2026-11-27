@@ -121,6 +121,7 @@ def thread(cid: str, paths: Account, request: Request) -> Thread:
     """The thread, and the run still answering on it. One a restart cut short
     is started again here (`_resumed`), so it is still answering."""
     from stocks.chat import conversations
+    from stocks.web import shares
 
     lang = str(_prefs(paths).get("language") or "en")
     book = conversations.load_book(paths.chat)
@@ -128,10 +129,14 @@ def thread(cid: str, paths: Account, request: Request) -> Thread:
         if conv["id"] == cid:
             run = runs.on_thread(str(paths.chat), cid) or _resumed(
                 paths, request, thread=cid)
+            # Links expire (`web/shares.py` TTL_S): read which still work
+            # only when an answer here was shared.
+            up = (shares.live_ids(paths)
+                  if any(m.get("shares") for m in conv["messages"]) else None)
             return Thread(
                 id=conv["id"],
                 title=conv["title"],
-                messages=[_turn(m, lang) for m in conv["messages"]],
+                messages=[_turn(m, lang, up) for m in conv["messages"]],
                 running=(
                     Running(run_id=run.id, question=run.question, live=run.live)
                     if run is not None

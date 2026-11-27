@@ -724,7 +724,7 @@ def learn(prefs: dict, chat_path: Path, history: list[dict], watchlist: Path,
                 session_keys=session_keys,
             )
             made = learnings.apply(
-                path, kept or [], thread=thread,
+                path, kept or [], thread=thread, said=newest,
                 tickers=lambda text: market.mentioned(
                     text, names, lookup=lambda _name: ""))
             if made:

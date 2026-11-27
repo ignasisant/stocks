@@ -1353,3 +1353,104 @@ def test_the_route_restores_a_retired_rule(book, sign_in):
     session.delete(f"/v1/journal/criteria/{rule.id}")
     journal.add_criteria(book.journal, "AMD", [{"rule": "below", "level": 80}], DAY)
     assert session.post(url).status_code == 409
+
+
+# ------------------------------------------------------------------ coverage
+
+
+def _held(ticker, weight, kind="stock", price=None):
+    return {"ticker": ticker, "weight": weight, "kind": kind, "price": price}
+
+
+def test_coverage_reads_each_holding_by_what_its_kind_needs(path):
+    today = DAY + timedelta(days=40)
+    journal.add_criteria(path, "AMD", [{"rule": "thesis", "pillars": ["AI share"]},
+                                       {"rule": "below", "level": 90}], DAY)
+    journal.add_criteria(path, "SNAP", [{"rule": "drawdown_high", "level": 30}], DAY)
+    journal.add_criteria(path, "IWDA.AS", [{"rule": "drawdown_high", "level": 25}], DAY)
+    journal.add_criteria(path, "NVDA", [{"rule": "buy_below", "level": 100}], DAY)
+    got = journal.coverage(journal.load(path), [
+        _held("SNAP", 0.1), _held("AMD", 0.4, price=100),
+        _held("IWDA.AS", 0.3, kind="fund"), _held("NVDA", 0.2),
+        _held("BTC-EUR", None, kind="crypto"),
+    ], today)
+    rows = {r["ticker"]: r for r in got["rows"]}
+    # Heaviest first, the unpriced last.
+    assert [r["ticker"] for r in got["rows"]] == ["AMD", "IWDA.AS", "NVDA", "SNAP",
+                                                  "BTC-EUR"]
+    assert (rows["AMD"]["status"], rows["AMD"]["missing"]) == ("ok", [])
+    assert [r["family"] for r in rows["AMD"]["rules"]] == ["thesis", "price"]
+    # A fund needs no thesis; a share with a floor alone lacks one.
+    assert rows["IWDA.AS"]["status"] == "ok"
+    assert (rows["SNAP"]["status"], rows["SNAP"]["missing"]) == ("gap", ["thesis"])
+    # A buy zone is no exit rule.
+    assert (rows["NVDA"]["status"], rows["NVDA"]["missing"]) == (
+        "none", ["thesis", "price"])
+    assert rows["BTC-EUR"]["status"] == "none"
+    summary = got["summary"]
+    assert summary["covered"] == pytest.approx(0.7)
+    assert (summary["ok"], summary["gap"], summary["none"]) == (2, 1, 2)
+    assert summary["no_buy"] == 4
+
+
+def test_coverage_flags_rules_due_a_second_look(path):
+    old = DAY - timedelta(days=journal.THESIS_STALE_DAYS + 1)
+    journal.add_criteria(path, "AMD", [{"rule": "thesis", "pillars": ["A"]}], old)
+    journal.add_criteria(path, "AMD", [{"rule": "below", "level": 60},
+                                       {"rule": "weight_above", "level": 10}], DAY)
+    journal.add_criteria(path, "SNAP", [{"rule": "thesis", "pillars": ["B"]},
+                                        {"rule": "below", "level": 8},
+                                        {"rule": "weight_above", "level": 10}], DAY)
+    got = journal.coverage(journal.load(path), [
+        _held("AMD", 0.04, price=95), _held("SNAP", 0.06, price=10)], DAY)
+    rows = {r["ticker"]: r for r in got["rows"]}
+    assert {r["rule"]: r.get("flag") for r in rows["AMD"]["rules"]} == {
+        "thesis": "old", "below": "drift", "weight_above": "cap"}
+    assert rows["AMD"]["status"] == "review"
+    # 10 % cap on a 6 % position and a floor 20 % under: nothing to review.
+    assert rows["SNAP"]["status"] == "ok"
+    assert not any(r.get("flag") for r in rows["SNAP"]["rules"])
+
+
+def test_coverage_puts_a_met_rule_first_and_counts_the_retired(path):
+    [floor, thesis] = journal.add_criteria(
+        path, "AMD", [{"rule": "below", "level": 90},
+                      {"rule": "thesis", "pillars": ["A"]}], DAY)
+    saved = journal.load(path)
+    saved = [replace(e, state="hit") if e.id == floor.id else e for e in saved]
+    journal._save(path, saved)
+    [gone] = journal.add_criteria(path, "AMD", [{"rule": "ceo_change"}], DAY)
+    journal.retire(path, gone.id)
+    [row] = journal.coverage(journal.load(path), [_held("AMD", 1.0)], DAY)["rows"]
+    assert (row["status"], row["retired"]) == ("hit", 1)
+    assert {r["id"] for r in row["rules"]} == {floor.id, thesis.id}
+
+
+def test_coverage_takes_a_rule_on_another_line_of_the_company(companies, path):
+    journal.add_criteria(path, "SAP", [{"rule": "thesis", "pillars": ["Cloud"]},
+                                       {"rule": "below", "level": 150}], DAY)
+    [row] = journal.coverage(journal.load(path),
+                             [_held("SAP.DE", 1.0, price=400)], DAY)["rows"]
+    assert row["status"] == "ok"
+    # A level is its own line's currency: no drift read across lines.
+    assert [r["ticker"] for r in row["rules"]] == ["SAP", "SAP"]
+    assert not any(r.get("flag") for r in row["rules"])
+
+
+def test_the_coverage_route_weighs_the_book(book, monkeypatch):
+    import pandas as pd
+
+    table = pd.DataFrame({"shares": [10.0, 5.0], "cost": [800.0, 500.0],
+                          "value": [900.0, 100.0], "ccy": ["USD", "EUR"]},
+                         index=["AMD", "BTC-EUR"])
+    patch_loaders(monkeypatch, "positions_table", lambda db, mtime, ccy: table)
+    patch_loaders(monkeypatch, "spot_rates", lambda ccys, ccy: {"USD": 0.9, "EUR": 1.0})
+    journal.add_criteria(book.journal, "AMD", [{"rule": "below", "level": 50}], DAY)
+    body = TestClient(fastapi_app).get(
+        "/v1/journal/coverage", params={"account": EMAIL}, headers=AUTH).json()
+    assert [(r["ticker"], r["kind"], r["status"]) for r in body["rows"]] == [
+        ("AMD", "stock", "gap"), ("BTC-EUR", "crypto", "none")]
+    assert body["rows"][0]["weight"] == pytest.approx(0.9)
+    # 900 € over 10 shares at 0.9 €/$ is $100, twice the $50 floor.
+    assert body["rows"][0]["rules"][0]["flag"] == "drift"
+    assert body["summary"]["holdings"] == 2

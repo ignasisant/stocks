@@ -84,7 +84,28 @@ def _book(raw: dict) -> DailyBook | None:
         return None
 
 
-def live_book(account, card: DailyCard | None) -> DailyCard | None:
+def live_book(account, card: DailyCard | None, lang: str = "en") -> DailyCard | None:
+    """`card` with its figures as the book stands now: the Portfolio rows
+    (`_live_rows`) and the comparisons (`_live_compare`)."""
+    return _live_compare(account, _live_rows(account, card), lang)
+
+
+def _live_compare(account, card: DailyCard | None, lang: str) -> DailyCard | None:
+    """`card` with its comparisons section worked out again
+    (`briefing.live_compare`): its tiles, its table and the since-inception
+    card all read the same close and the same book as the rows above."""
+    if card is None or not any(s.id == "compare" for s in card.today):
+        return card
+    today = []
+    for section in card.today:
+        if section.id == "compare":
+            fresh = briefing.live_compare(account, section.model_dump(), lang)
+            section = _today(fresh) or section
+        today.append(section)
+    return card.model_copy(update={"today": today})
+
+
+def _live_rows(account, card: DailyCard | None) -> DailyCard | None:
     """`card` with its Portfolio rows as the book stands now.
 
     The card is written once a morning and its words keep that morning's

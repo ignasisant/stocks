@@ -30,7 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
-from stocks.chat.journal import CRITERION_RULES, THESIS_RULES
+from stocks.chat.journal import CRITERION_RULES, MAX_PILLARS
 from stocks.llm import ToolSpec
 
 MAX_RESULT_CHARS = 4000  # per tool result, before the model ever sees it
@@ -790,17 +790,19 @@ def asks_criteria(text: str) -> bool:
 
 
 # Asking to have the rules written, not only naming a line: "ayúdame a
-# escribir reglas de salida", "my exit rules for NVDA", "kill criteria". The
-# journal's button sends the first. Narrower than `asks_criteria` on purpose:
-# "¿vendo NVDA?" wants an answer, not a form under it.
+# escribir reglas de salida", "my buy rules for NVDA", "kill criteria". The
+# journal's buttons send the first. Narrower than `asks_criteria` on purpose:
+# "¿vendo NVDA?" or "¿compro NVDA?" wants an answer, not a form under it.
 _RULES_ASK_RE = re.compile(
-    r"\breglas? de (?:salida|venta)\b|\bcriterios? de (?:salida|venta)\b"
-    r"|\bexit (?:rules?|criteri)|\bkill[- ]criteri|\bsell (?:rules?|criteri)",
+    r"\breglas? de (?:salida|venta|compra)\b"
+    r"|\bcriterios? de (?:salida|venta|compra)\b"
+    r"|\bregol[ae] di (?:uscita|vendita|acquisto)\b"
+    r"|\b(?:exit|sell|buy) (?:rules?|criteri)|\bkill[- ]criteri",
     re.IGNORECASE)
 
 
 def asks_rules(text: str) -> bool:
-    """Whether `text` asks for exit rules to be drafted for it."""
+    """Whether `text` asks for exit or buy rules to be drafted for it."""
     return bool(_RULES_ASK_RE.search(text or ""))
 
 
@@ -1118,16 +1120,18 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                                     "name held or not: buy_below a price, "
                                     "buy_drawdown_high and the *_above "
                                     "ones percent, buy_pe_fwd_below a "
-                                    "forward P/E.",
+                                    "forward P/E. thesis: no level, 1-3 "
+                                    "pillars, each a fact that would break "
+                                    "why they hold it (\"cloud growth stays "
+                                    "over 20 %\"), in the reader's language.",
                      "items": {"type": "object",
                                "properties": {
                                    "rule": {"type": "string",
-                                            # A thesis rule's pillars are
-                                            # drafted through Claude (MCP)
-                                            # for now, not in the chat's card.
-                                            "enum": [r for r in CRITERION_RULES
-                                                     if r not in THESIS_RULES]},
+                                            "enum": list(CRITERION_RULES)},
                                    "level": {"type": "number"},
+                                   "pillars": {"type": "array",
+                                               "items": {"type": "string"},
+                                               "maxItems": MAX_PILLARS},
                                    "quarters": {"type": "integer",
                                                 "minimum": 1, "maximum": 4}},
                                "required": ["rule"]}},
