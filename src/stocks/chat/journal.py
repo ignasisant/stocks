@@ -57,7 +57,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import SupportsFloat
+from typing import Any, SupportsFloat
 
 from stocks import accounts, obs, storage, userstore
 
@@ -1226,6 +1226,133 @@ def criteria_status(entries: Iterable[Entry], held: set[str]) -> dict:
             h for h, rows in covering.items()
             if not any(r["rule"] in THESIS_RULES for r in rows)),
         "not_held": sorted(t for t in by if held_as(t, held) is None),
+    }
+
+
+# ------------------------------------------------------------- coverage
+# What each holding has ruled, by family, and what it still lacks: the Perfil
+# journal's "rules by holding". A family is what a rule watches; a holding
+# needs the families its kind can break on (a share its thesis and a price
+# floor, a fund or a coin a price floor alone) and may carry the rest.
+FAMILIES = ("thesis", "price", "fundamental", "event", "buy")
+NEEDS = {"stock": ("thesis", "price"), "fund": ("price",), "crypto": ("price",)}
+# The families a kind can carry at all: a fund files no income statement and
+# has no chief executive of its own, a coin neither.
+APPLIES = {"stock": FAMILIES, "fund": ("price", "buy"),
+           "crypto": ("thesis", "price", "buy")}
+# A rule worth a second look, though nothing is wrong with it yet:
+#   drift — a `below` floor the price has run far from (DRIFT_X times it);
+#   cap   — a `weight_above` cap over CAP_X times what the position weighs,
+#           so it cannot go off before the position triples;
+#   old   — a thesis written more than THESIS_STALE_DAYS ago.
+DRIFT_X = 1.5
+CAP_X = 2.0
+THESIS_STALE_DAYS = 183
+# How a holding reads, the most pressing first: a rule met waits on a
+# decision, no exit rule at all, a needed family missing, a rule to review.
+STATUSES = ("hit", "none", "gap", "review", "ok")
+
+
+def family_of(rule: str) -> str:
+    """Which of FAMILIES `rule` belongs to."""
+    if rule in BUY_RULES:
+        return "buy"
+    if rule in THESIS_RULES:
+        return "thesis"
+    if rule in FUNDAMENTAL_RULES:
+        return "fundamental"
+    return "event" if rule in EVENT_RULES else "price"
+
+
+def review_flag(row: dict, line: bool, price: float | None,
+                weight: float | None, day: date) -> str:
+    """Why a live rule wants a second look ("drift", "cap", "old"), or "".
+    `line` is whether the rule is drawn on the held line itself: a price
+    level is in its own line's currency. `price` in that currency, `weight`
+    a fraction of the book."""
+    rule, level = row["rule"], _finite(row.get("level"))
+    if row["state"] != "open":
+        return ""
+    if rule == "below" and line and level and price and price >= level * DRIFT_X:
+        return "drift"
+    if rule == "weight_above" and level and weight is not None \
+            and level > max(weight * 100, 0.1) * CAP_X:
+        return "cap"
+    if rule in THESIS_RULES:
+        try:
+            since = date.fromisoformat(str(row.get("since") or "")[:10])
+        except ValueError:
+            return ""
+        if (day - since).days > THESIS_STALE_DAYS:
+            return "old"
+    return ""
+
+
+def coverage(entries: Iterable[Entry], holdings: Iterable[dict], day: date) -> dict:
+    """Every holding with its live rules, exit and buy, heaviest first.
+
+    `holdings` are {"ticker", "kind" (a NEEDS key), "weight" (a fraction, or
+    None unpriced), "price" (one share in its own currency, or None)}. A rule
+    drawn on another line of the company covers the holding, as in
+    `criteria_status`. Each row says what its kind still `missing`, its
+    `status` (STATUSES) and how many of its rules were retired; `summary`
+    counts the rows by status and how much of the book is fully covered."""
+    entries = list(entries)
+    by: dict[str, list[Entry]] = {}
+    for e in criteria(entries):
+        by.setdefault(e.ticker.upper(), []).append(e)
+    retired: dict[str, int] = {}
+    for e in entries:
+        if e.type == "criterion" and e.state == "retired":
+            retired[e.ticker.upper()] = retired.get(e.ticker.upper(), 0) + 1
+    rows: list[dict[str, Any]] = []
+    for h in holdings:
+        ticker = str(h["ticker"]).upper()
+        kind = str(h.get("kind") or "")
+        if kind not in NEEDS:
+            kind = "stock"
+        weight, price = _finite(h.get("weight")), _finite(h.get("price"))
+        mine = [t for t in by if same_name(t, ticker)]
+        rules = []
+        for t in mine:
+            for e in by[t]:
+                row = rule_row(e)
+                flag = review_flag(row, t == ticker, price, weight, day)
+                rules.append(row | {"ticker": t, "family": family_of(row["rule"]),
+                                    **({"flag": flag} if flag else {})})
+        rules.sort(key=lambda r: (FAMILIES.index(r["family"]), r["since"]))
+        exit_families = {r["family"] for r in rules if r["side"] == "exit"}
+        missing = [f for f in NEEDS[kind] if f not in exit_families]
+        if any(r["state"] == "hit" for r in rules):
+            status = "hit"
+        elif not exit_families:
+            status = "none"
+        elif missing:
+            status = "gap"
+        elif any(r.get("flag") for r in rules):
+            status = "review"
+        else:
+            status = "ok"
+        rows.append({"ticker": ticker, "kind": kind, "weight": weight,
+                     "status": status, "missing": missing, "rules": rules,
+                     "applies": list(APPLIES.get(kind, FAMILIES)),
+                     "retired": sum(retired.get(t, 0) for t in retired
+                                    if same_name(t, ticker))})
+    rows.sort(key=lambda r: (r["weight"] is None, -(r["weight"] or 0), r["ticker"]))
+    total = sum(r["weight"] or 0 for r in rows)
+    covered = sum(r["weight"] or 0 for r in rows if not r["missing"]
+                  and r["status"] != "none")
+    counts = {s: sum(r["status"] == s for r in rows) for s in STATUSES}
+    return {
+        "rows": rows,
+        "summary": {
+            "holdings": len(rows),
+            "covered": round(covered / total, 4) if total else 0.0,
+            **counts,
+            # Not a status: any holding may lack a buy zone, whatever else.
+            "no_buy": sum(not any(r["side"] == "buy" for r in row["rules"])
+                          for row in rows),
+        },
     }
 
 

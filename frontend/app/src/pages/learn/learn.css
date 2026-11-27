@@ -206,7 +206,7 @@
 
 /* The chat renderer's blocks, at reading size and width. */
 .lr-body {
-  max-width: 68ch;
+  max-width: 40rem;
   font-size: var(--ag-fs-base);
   line-height: 1.6;
   text-wrap: pretty;
@@ -529,7 +529,7 @@
 }
 
 .lr-quiz {
-  max-width: 68ch;
+  max-width: 40rem;
   margin: 0 0 1.25rem;
   padding: 14px 16px;
   border: 1px solid var(--ag-border);
@@ -652,4 +652,221 @@
   .lr-opt:not(:disabled):hover {
     background: var(--ag-surface-hover);
   }
+}
+
+/* Try it in the app: steps that open the screen where each is done. */
+.lr-try,
+.lr-done {
+  max-width: 40rem;
+  margin: 0 0 1.25rem;
+  padding: 14px 16px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-raised);
+}
+.lr-try-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: lr-try;
+}
+.lr-try-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  counter-increment: lr-try;
+}
+.lr-try-list li::before {
+  content: counter(lr-try);
+  flex: none;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border: 1.5px solid var(--ag-border);
+  border-radius: 50%;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-secondary);
+}
+.lr-try-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: var(--ag-text-primary);
+  line-height: 1.6;
+}
+.lr-try-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .lr-try-go:hover {
+    text-decoration: underline;
+  }
+}
+@media (pointer: coarse) {
+  .lr-try-go {
+    min-height: 44px;
+  }
+}
+.lr-done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.lr-done-ck {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ag-surface-sunken);
+  color: var(--ag-brand-accent);
+}
+.lr-done-t {
+  flex: 1 1 8rem;
+}
+
+/* The lesson text in blocks: the opening line, the example, the typical mistake. */
+.lr-gist {
+  margin: 0 0 1rem;
+  padding: 12px 14px;
+  border-radius: var(--ag-radius-lg);
+  background: color-mix(in srgb, var(--ag-brand-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ag-brand-accent) 35%, transparent);
+  font-size: var(--ag-fs-lg);
+  font-weight: 500;
+  line-height: 1.45;
+}
+.lr-gist .ag-chat-p {
+  margin: 0;
+}
+.lr-box {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  margin: 1rem 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-raised);
+}
+.lr-box-ico {
+  margin-top: 0.8rem;
+  color: var(--ag-brand-accent);
+}
+.lr-box-body .ag-chat-h {
+  margin-top: 0.5rem;
+}
+.lr-box-body > :last-child {
+  margin-bottom: 0;
+}
+.lr-box-error {
+  border-color: var(--ag-warn);
+  background: var(--ag-warn-band);
+}
+.lr-box-error .lr-box-ico {
+  color: var(--ag-warn);
+}
+
+/* The lesson's example as it stands today. */
+.lr-live {
+  max-width: 40rem;
+  margin: 0 0 1.25rem;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--ag-brand-accent) 35%, transparent);
+  border-radius: var(--ag-radius-lg);
+  background: color-mix(in srgb, var(--ag-brand-accent) 8%, var(--ag-surface-raised));
+}
+.lr-live-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.lr-live-title {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  color: var(--ag-brand-accent);
+}
+.lr-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-border);
+}
+.lr-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--ag-surface-raised);
+}
+.lr-facts dt {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+.lr-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.lr-live-why {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+@media (pointer: coarse) {
+  .lr-live-open {
+    min-height: 44px;
+  }
+}
+
+/* The term of the day. */
+.lr-day {
+  margin: 0 0 1rem;
+  padding: 14px 16px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-raised);
+}
+.lr-day-term {
+  margin: 0.25rem 0;
+  font-size: var(--ag-fs-lg);
+}
+.lr-day-desc {
+  max-width: 62ch;
+  margin: 0 0 0.5rem;
+  color: var(--ag-text-secondary);
+}
+.lr-day .lr-acts {
+  margin: 0.5rem 0 0;
+}
+
+.lr-try {
+  max-width: 40rem;
+}
+
+/* A section inside a lesson reads as a heading, not as body text. */
+.lr-body .ag-chat-h {
+  font-weight: 600;
+  font-size: var(--ag-fs-lg);
 }

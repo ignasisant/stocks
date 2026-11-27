@@ -8,6 +8,7 @@ terms: two_month_rule, wash_sale
 app: portfolio?tab=tax
 slug: regola-dei-due-mesi-spagna
 description: Se ricompri lo stesso titolo entro due mesi da una vendita in perdita, la Spagna differisce la perdita. Come funziona la regola, con un esempio.
+try: Guarda nella scheda imposte le vendite in perdita. => portfolio?tab=tax | Prima di ricomprare lo stesso titolo, controlla quando finiscono i suoi due mesi. => portfolio?tab=tax
 ---
 Vendi in perdita per compensare delle plusvalenze e, il giorno dopo, ricompri la stessa azione. Puoi far valere la perdita? In Spagna, di solito no. Questa lezione riguarda la **Spagna**: spiega la regola per chi è fiscalmente residente lì.
 

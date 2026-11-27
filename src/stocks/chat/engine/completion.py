@@ -31,6 +31,25 @@ if TYPE_CHECKING:
 # wait for the turn comes out of the caller's own timeout.
 _FREE_TURN = threading.Lock()
 
+# A reader's own key that answered 429 for its quota (not a busy minute) is
+# passed over for a while: the journal's judge asks once per thesis, and nine
+# asks in 30 s were nine 429s before the free chain answered each (prod
+# 2026-11-27). Keyed by provider and a hash of the key, so a new key is tried at once.
+QUOTA_REST_S = 600.0
+_key_resting: dict[tuple[str, int], float] = {}  # -> lifts at (monotonic)
+
+
+def _quota_spent(exc: Exception) -> bool:
+    """A 429 / RESOURCE_EXHAUSTED that names the plan's quota or billing."""
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    text = str(exc).lower()
+    return (code == 429 or "resource_exhausted" in text) and (
+        "quota" in text or "billing" in text)
+
+
+def _key_slot(provider, key) -> tuple[str, int]:
+    return (getattr(provider, "id", ""), hash(key))
+
 
 def _patiently(complete, *args):
     from stocks import llm
@@ -91,6 +110,10 @@ def complete_attempts(
         free = getattr(provider, "id", "") == "free"
         if free and not spend_free(prefs):
             continue  # today's free allowance is gone — caller degrades
+        slot = _key_slot(provider, key)
+        if not free and _key_resting.get(slot, 0.0) > time.monotonic():
+            missed.append(f"{getattr(provider, 'id', '')}:resting")
+            continue  # its quota is spent; the next candidate answers
         queued = patient and free
         began = time.monotonic()
         if queued and not _FREE_TURN.acquire(timeout=timeout_s):
@@ -121,6 +144,8 @@ def complete_attempts(
                      model=model or getattr(provider, "default_model", ""),
                      error_type=type(exc).__name__, error=str(exc)[:300])
             missed.append(f"{getattr(provider, 'id', '')}:{type(exc).__name__}")
+            if not free and _quota_spent(exc):
+                _key_resting[slot] = time.monotonic() + QUOTA_REST_S
             continue  # timeout, bad key, rate limit, unparseable — next one
         finally:
             pool.shutdown(wait=False, cancel_futures=True)

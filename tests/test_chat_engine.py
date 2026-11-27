@@ -655,6 +655,26 @@ def test_a_background_reply_thrown_away_counts_as_rejected(
                              "why": "gemini:rejected"}]
 
 
+def test_a_key_whose_quota_is_spent_is_not_asked_again(providers, enc, monkeypatch):
+    # prod 2026-11-27: nine 429s in 30 s from one reader's judge, one per ask.
+    from stocks.chat.engine import completion
+
+    monkeypatch.setattr(completion, "_key_resting", {})
+    calls = []
+
+    def spent(*_a, **_k):
+        calls.append(1)
+        raise RuntimeError("429 RESOURCE_EXHAUSTED. You exceeded your current quota")
+
+    monkeypatch.setattr(providers["gemini"], "complete", spent)
+    prefs = enc("gemini")
+    for _ in range(3):
+        out = engine.complete_attempts(
+            prefs, "sys", [{"role": "user", "content": "x"}], 5,
+            spend_free=lambda _p: True)
+        assert out == "Free answer."
+    assert len(calls) == 1
+
 
 def test_patient_callers_take_the_free_chain_one_at_a_time(providers):
     # prod 2026-11-03 07:31: four 08:30 cards at once on groq's 8k tokens a

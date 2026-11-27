@@ -1,10 +1,15 @@
 """A chat answer shared by link — the store behind `/?share=<id>`.
 
 A shared answer is a frozen copy, not a pointer into the sharer's chat.json:
-threads there are pruned (idle, capped, deleted by their owner) and a link
-sent to a group chat is opened weeks later. So `create` cuts the answer once
-(`chat/share_mask.py`) and writes it to data/shares/<id>.json, mirrored to the
-bucket like feedback; `load` reads it from either.
+threads there are pruned (idle, capped, deleted by their owner) while a
+link is still up. So `create` cuts the answer once (`chat/share_mask.py`) and
+writes it to data/shares/<id>.json, mirrored to the bucket like feedback;
+`load` reads it from either.
+
+A link lasts TTL_S (48 hours) from the moment it was made, then is gone as if
+taken down: `load` answers None for it and deletes the copy, and the
+account's list and the answer's stamps stop naming it. Sharing the answer
+again makes a new link.
 
 What is copied: the question, the answer's words, the bull and bear cases
 argued above it, the pages it cited, the lenses it used and the surfaces it
@@ -34,6 +39,7 @@ follows it whole (`follow`), under its title as a group of their own.
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import secrets
@@ -59,6 +65,30 @@ _LISTED_CHARS = 140
 # name, and the reader's watchlist shows it as one.
 LIST_MAX = 50
 _TITLE_CHARS = 60
+# How long a link is read: the chat it was sent to opens it within two days,
+# and an answer quoting a book does not live on in it past that.
+TTL_S = 48 * 3600
+_STAMP = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _now() -> float:
+    return time.time()
+
+
+def expires_at(created: str) -> float | None:
+    """When a link made at `created` stops working, as epoch seconds; None
+    for a stamp that is not one."""
+    try:
+        return calendar.timegm(time.strptime(created, _STAMP)) + TTL_S
+    except (TypeError, ValueError):
+        return None
+
+
+def expired(created: str) -> bool:
+    """A link past its TTL_S, or one whose stamp cannot say when it was made
+    (it could be any age, so it is read as gone)."""
+    until = expires_at(created)
+    return until is None or until <= _now()
 
 
 def owner_of(paths: UserPaths) -> str:
@@ -153,7 +183,7 @@ def create(
         **snapshot(found, masked),
         "by": by,
         "lang": lang,
-        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "created": time.strftime(_STAMP, time.gmtime(_now())),
     }
     userstore.write(SHARES_DIR / f"{share_id}.json", share,
                     ensure_ascii=False, indent=2)
@@ -233,7 +263,7 @@ def create_list(
         **cut,
         "by": by,
         "lang": lang,
-        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "created": time.strftime(_STAMP, time.gmtime(_now())),
     }
     userstore.write(SHARES_DIR / f"{share_id}.json", share,
                     ensure_ascii=False, indent=2)
@@ -262,7 +292,8 @@ def _links(answer: dict) -> list[dict]:
 
 def load(share_id: str) -> dict | None:
     """The share `share_id` names, from disk or the bucket; None when there
-    is none (never made, revoked, or not an id at all)."""
+    is none (never made, revoked, expired, or not an id at all). An expired
+    one is deleted on the way."""
     path = _path(share_id)
     if path is None or not (path.exists() or storage.restore(path)):
         return None
@@ -271,7 +302,20 @@ def load(share_id: str) -> dict | None:
     except (OSError, ValueError):
         obs.warn("share.unreadable", share=share_id)
         return None
-    return share if isinstance(share, dict) else None
+    if not isinstance(share, dict):
+        return None
+    if expired(str(share.get("created") or "")):
+        _drop(share_id)
+        obs.event("share.expired", share=share_id)
+        return None
+    return share
+
+
+def live_ids(paths: UserPaths) -> set[str]:
+    """The ids of this account's links that still work. An answer's stamps
+    carry no date, so a thread drawn with them keeps only the ones named
+    here (`api/routes/chat/threads.py`)."""
+    return {str(row["id"]) for row in listed(paths)}
 
 
 def _drop(share_id: str) -> None:
@@ -333,17 +377,27 @@ def _write_list(paths: UserPaths, entries: list[dict]) -> None:
 def listed(paths: UserPaths) -> list[dict]:
     """The links this account has up, newest first: {id, kind, answer_id,
     question, masked, created}. The question is the stored one, so a masked
-    link is listed masked; a list's is its name (`_entry`).
+    link is listed masked; a list's is its name (`_entry`). A link past its
+    TTL_S leaves the list here, and its copy goes with it.
 
     An account that shared before the list was kept gets it built once from
-    the stamps its threads still carry; what a pruned thread took with it is
-    beyond recovering here, and those links stay up until the account goes.
+    the stamps its threads still carry; what a pruned thread took with it
+    expires on its own.
     """
     if paths.shares.exists():
-        rows = userstore.read(paths.shares).get("shares")
-        if isinstance(rows, list):
-            return [r for r in rows if isinstance(r, dict)
-                    and ID_RE.match(str(r.get("id") or ""))]
+        with userstore.lock(paths.shares):
+            rows = userstore.read(paths.shares).get("shares")
+            if isinstance(rows, list):
+                rows = [r for r in rows if isinstance(r, dict)
+                        and ID_RE.match(str(r.get("id") or ""))]
+                up = [r for r in rows
+                      if not expired(str(r.get("created") or ""))]
+                if len(up) < len(rows):
+                    for row in rows:
+                        if row not in up:
+                            _drop(str(row["id"]))
+                    _write_list(paths, up)
+                return up
     entries = []
     for conv in conversations.load_book(paths.chat)["conversations"]:
         for message in conv["messages"]:

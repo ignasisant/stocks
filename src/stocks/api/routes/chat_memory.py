@@ -34,6 +34,25 @@ from stocks.chat import engine, learnings, market, memory_review
 router = APIRouter(prefix="/chat/memories", tags=["chat"])
 
 
+class MemoryChange(BaseModel):
+    """Why a memory changed, as `learnings.history` keeps it. `why` is
+    "said" (restated with other figures), "learned" (read from the user's
+    message, quoted in `said`), "edited" (by hand), "replaced" (another
+    memory took the place of one that said `was`), "review" (a tidy-up
+    proposal, `reason`) or "book" (a trade: `ticker`, `event` "closed" or
+    "opened", on day `on`). `was` is what it said before, when it was
+    reworded."""
+
+    day: str
+    why: Literal["said", "learned", "edited", "replaced", "review", "book"]
+    was: str | None = None
+    said: str | None = None
+    reason: str | None = None
+    ticker: str | None = None
+    event: str | None = None
+    on: str | None = None
+
+
 class Memory(BaseModel):
     """One saved memory.
 
@@ -60,6 +79,8 @@ class Memory(BaseModel):
     last_used: str | None = None
     # What it said before it was reworded, newest last.
     replaced: list[str] = []
+    # Why it changed, oldest first (at most `learnings.MAX_HISTORY`).
+    history: list[MemoryChange] = []
 
 
 class SavedMemory(Memory):
@@ -74,16 +95,21 @@ class SavedMemory(Memory):
 
 class Suggestion(BaseModel):
     """One change the weekly tidy-up proposes (`memory_review.Proposal`):
-    drop the memories in `ids`, merge them into `text`, or reword the one in
-    `ids` to `text`. `reason` is "expired", "idle", "same" or "model" — the
-    last with the model's own `note`."""
+    drop the memories in `ids`, merge them into `text`, reword the one in
+    `ids` to `text`, or retire it (it ends, and stays listed). `reason` is
+    "expired", "idle", "same", "model" — with the model's own `note` — or
+    "book": a trade in `ticker` that `event` ("closed" or "opened") the
+    position on day `on`, after the memory was said."""
 
     sid: str
-    action: Literal["drop", "merge", "reword"]
+    action: Literal["drop", "merge", "reword", "retire"]
     ids: list[str]
     reason: str
     text: str = ""
     note: str = ""
+    ticker: str = ""
+    event: str = ""
+    on: str = ""
 
 
 class Memories(BaseModel):
@@ -171,6 +197,7 @@ def _out(item: learnings.Learning, titles: dict[str, str],
         expired=item.expired(day or learnings._today()),
         uses=int(use.get("n") or 0), last_used=use.get("last") or None,
         replaced=list(item.replaced),
+        history=[MemoryChange(**h) for h in item.history],
     )
 
 

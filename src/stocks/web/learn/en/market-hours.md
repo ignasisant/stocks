@@ -6,6 +6,7 @@ minutes: 3
 as_of: 2026-10-25
 terms: trading_session, premarket, after_hours, gap, market_holiday
 app: earnings
+try: See which exchanges are open right now. => today
 ---
 Markets are not open all the time. When they close, the price stands still, but the news keeps coming.
 

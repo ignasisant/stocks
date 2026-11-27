@@ -21,7 +21,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from stocks import session
-from stocks.web import guides, landing, landing_static, markup, seo, server
+from stocks.web import calculator, guides, landing, landing_static, markup, seo, server
 
 BASE = "https://topstocks.example"
 VARIANTS = sorted(landing.VARIANTS.items())  # [((lang, jur), path), ...]
@@ -297,7 +297,8 @@ def test_legal_pages_are_noindex_and_not_in_the_sitemap(client):
 
 
 def _guide_paths() -> list[str]:
-    return [path for path, _, _ in guides.sitemap_pages()]
+    return [path for path, _, _ in
+            (*guides.sitemap_pages(), *calculator.sitemap_pages())]
 
 
 def test_sitemap_lists_exactly_the_landing_variants_and_the_guides(client):

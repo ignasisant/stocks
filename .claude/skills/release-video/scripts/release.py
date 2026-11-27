@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import json
+import os
 import re
 import shutil
 import sys
@@ -11,9 +12,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import CACHE, load_config, load_storyboard, read_json  # noqa: E402
+# The output format must be known before `common` is imported: its size constants are read at import.
+for _i, _arg in enumerate(sys.argv):
+    if _arg.startswith('--format='):
+        os.environ['RELEASE_VIDEO_FORMAT'] = _arg.split('=', 1)[1]
+    elif _arg == '--format' and _i + 1 < len(sys.argv):
+        os.environ['RELEASE_VIDEO_FORMAT'] = sys.argv[_i + 1]
+
+from common import (  # noqa: E402
+    ASSETS,
+    CACHE,
+    CLIPS,
+    VERTICAL,
+    load_config,
+    load_storyboard,
+    read_json,
+)
 
 KINDS = {'ui', 'card', 'title', 'outro', 'diagram', 'video'}
+CARD_KINDS = {'card', 'title', 'outro', 'diagram'}
 
 
 def build_dir(work: Path) -> Path:
@@ -39,6 +56,11 @@ def cmd_init(a: argparse.Namespace, cfg: dict) -> None:
     slug = re.sub(r'[^\w.-]+', '-', a.version).strip('-')
     work = Path(cfg['output_dir']).expanduser() / f'release_{slug}'
     work.mkdir(parents=True, exist_ok=True)
+    # Start from the standard format (references/formato.md), never from a blank file.
+    board = work / 'escenas.yaml'
+    if not board.exists():
+        tpl = ASSETS / 'templates' / 'escenas.yaml'
+        board.write_text(tpl.read_text().replace('VERSION', slug, 1))
     print(
         json.dumps({'work': str(work), 'build': str(build_dir(work)), 'version': slug})
     )
@@ -77,7 +99,7 @@ def cmd_check(a: argparse.Namespace, cfg: dict) -> None:
     :param cfg: dict, config
     :return: None
     """
-    from recorder import _norm
+    from recorder import IMAGE_EXT, _norm
 
     board = load_storyboard(a.work)
     rel = board.get('release', {})
@@ -112,6 +134,30 @@ def cmd_check(a: argparse.Namespace, cfg: dict) -> None:
             errs.append(f'{sc["id"]}: video scene needs an existing `src:` file')
         if sc['kind'] == 'ui' and not sc.get('steps'):
             errs.append(f'{sc["id"]}: ui scene without steps')
+        if sc['kind'] in CARD_KINDS:
+            shot = sc.get('card', {}).get('shot')
+            ids = {s['id']: s['kind'] for s in board['scenes']}
+            ref = shot.get('scene') if isinstance(shot, dict) else shot
+            if not shot:
+                errs.append(
+                    f'{sc["id"]}: a card needs real product behind it: `card.shot:` '
+                    'a ui scene id or an image (see references/formato.md)'
+                )
+            elif isinstance(ref, str) and ref.lower().endswith(IMAGE_EXT):
+                if not (a.work / ref).exists():
+                    errs.append(f'{sc["id"]}: shot image {ref} not found')
+            elif ids.get(ref) != 'ui':
+                errs.append(f'{sc["id"]}: shot {ref!r} is not a ui scene')
+    if VERTICAL:
+        for sc in board['scenes']:
+            if sc.get('kind') == 'ui' and not sc.get('focus'):
+                acts = [
+                    st for st in sc.get('steps', []) if st.get('do') in ('zoom', 'click', 'fill', 'hover')
+                ]
+                if not acts:
+                    print(f'WARN {sc["id"]}: no zoom/click/hover to follow; 9:16 shows the page centre (add `focus: [x, y]`, fractions 0-1)')
+            if sc.get('kind') == 'video':
+                print(f'WARN {sc["id"]}: external video is letterboxed into the 9:16 stage (it keeps its own 16:9)')
     limit = rel.get('max_duration', cfg['max_duration'])
     budget = int(limit * cfg['words_per_second'] * 0.92)
     print(f'narration words {total} / budget {budget} for {limit}s')
@@ -167,7 +213,7 @@ def cmd_record(a: argparse.Namespace, cfg: dict) -> None:
     """
     from recorder import record
 
-    board = load_storyboard(a.work)
+    board = {**load_storyboard(a.work), '_dir': str(a.work)}
     build = build_dir(a.work)
     tpath = build / 'audio' / 'timings.json'
     timings = read_json(tpath) if tpath.exists() else {}
@@ -178,6 +224,26 @@ def cmd_record(a: argparse.Namespace, cfg: dict) -> None:
     ]
     if missing:
         sys.exit(f'Run tts first; no narration for {missing}')
+    if VERTICAL:
+        # UI footage is shared with the 16:9 take: only the cards are re-recorded, at portrait size.
+        ui_vp = cfg['video'].get('mobile_ui_viewport')
+        if ui_vp:
+            print(f'9:16: UI scenes recorded at the phone layout {ui_vp}')
+            # `mobile:` overrides a scene's own keys (setup/steps/focus) for the phone layout.
+            board = {
+                **board,
+                'scenes': [{**s, **s.get('mobile', {})} for s in board['scenes']],
+            }
+        else:
+            print('9:16: recording cards only (UI scenes are re-framed from the 16:9 recording)')
+            board = {
+                **board,
+                'scenes': [s for s in board['scenes'] if s['kind'] in CARD_KINDS],
+            }
+        cfg = {
+            **cfg,
+            'video': {**cfg['video'], 'viewport': [1080, 1920], 'ui_viewport': ui_vp},
+        }
     failed = asyncio.run(
         record(
             build,
@@ -217,16 +283,21 @@ def cmd_build(a: argparse.Namespace, cfg: dict) -> None:
         if (
             a.scenes
             and sc['id'] not in a.scenes
-            and (build / 'clips' / sc['id'] / 'clip.mp4').exists()
+            and (build / CLIPS / sc['id'] / 'clip.mp4').exists()
         ):
             continue
+        # 9:16 re-frames the 16:9 recording of UI scenes; cards have their own portrait frames.
+        src = build / CLIPS / sc['id']
+        if not (src / 'timeline.json').exists():
+            src = build / 'clips' / sc['id']
+        focus = tuple(sc.get('focus', (0.5, 0.5)))
         badge = sc.get(
             'badge',
             board['release'].get('badge') if sc.get('kind') in ('ui', 'video') else None,
         )
         if sc.get('kind') == 'video':
             meta = compose_video(
-                build / 'clips' / sc['id'],
+                build / CLIPS / sc['id'],
                 timings.get(sc['id'], {}),
                 cfg,
                 sc['src'],
@@ -237,7 +308,14 @@ def cmd_build(a: argparse.Namespace, cfg: dict) -> None:
             print(f'CLIP {sc["id"]:<14} {meta["duration"]:5.1f}s  video {sc["src"]}')
             continue
         meta = compose_scene(
-            build / 'clips' / sc['id'], timings.get(sc['id'], {}), cfg, sc.get('hold'), badge
+            build / CLIPS / sc['id'],
+            timings.get(sc['id'], {}),
+            cfg,
+            sc.get('hold'),
+            badge,
+            sc.get('auto_zoom', True),
+            focus,
+            src,
         )
         print(
             f'CLIP {sc["id"]:<14} {meta["duration"]:5.1f}s  cut_holds={meta["cut_holds"]}s overrun={meta["overrun"]}s'
@@ -290,6 +368,13 @@ def main() -> None:
     work.add_argument(
         '--work', type=Path, required=True, help='release directory (from init)'
     )
+    fmt = argparse.ArgumentParser(add_help=False)
+    fmt.add_argument(
+        '--format',
+        choices=['16x9', '9x16'],
+        default='16x9',
+        help='output format: 16x9 master (default) or 9x16 re-framed from the same recording',
+    )
     scenes = argparse.ArgumentParser(add_help=False)
     scenes.add_argument(
         '--scenes', type=lambda s: s.split(','), help='comma-separated scene ids'
@@ -304,7 +389,7 @@ def main() -> None:
         '--repo', default='ignasisant/stocks', help='repo for bare PR numbers'
     )
     s.add_argument('--owner', default='ignasisant')
-    sub.add_parser('check', parents=[work])
+    sub.add_parser('check', parents=[work, fmt])
     sub.add_parser('tts', parents=[work, scenes])
     s = sub.add_parser('browser')
     s.add_argument('action', choices=['start', 'wait', 'tabs', 'stop'])
@@ -312,7 +397,7 @@ def main() -> None:
     s.add_argument('--url', help='override login URL')
     s.add_argument('--pattern', help='override logged-in URL regex')
     s.add_argument('--timeout', type=int, default=900)
-    s = sub.add_parser('record', parents=[work, scenes])
+    s = sub.add_parser('record', parents=[work, scenes, fmt])
     s.add_argument('--env')
     s.add_argument(
         '--in-login-browser',
@@ -324,8 +409,8 @@ def main() -> None:
         action='store_true',
         help='run setup steps only (selector check)',
     )
-    sub.add_parser('build', parents=[work, scenes])
-    sub.add_parser('qa', parents=[work])
+    sub.add_parser('build', parents=[work, scenes, fmt])
+    sub.add_parser('qa', parents=[work, fmt])
     sub.add_parser('clean', parents=[work])
     a = p.parse_args()
     cfg = load_config(a.config)

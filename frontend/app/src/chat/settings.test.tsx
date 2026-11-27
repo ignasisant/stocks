@@ -15,6 +15,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { MemoryView } from "./Memory";
 import { Settings } from "./Settings";
 import type { ChatState, ProviderInfo } from "./types";
 
@@ -331,18 +332,47 @@ describe("memory", () => {
       />,
     );
 
-  it("offers both switches, on for an account that never touched them", () => {
+  it("offers the recall switch and a way into the memory screen, saying its state", () => {
     const out = drawn(state({}));
     expect(out).toContain("chat.sec_memory");
-    expect(out).toContain("chat.mem_switch");
     expect(out).toContain("chat.recall_switch");
     expect(out).toContain("chat.mem_manage");
-    expect(out.match(/checked=""/g)?.length).toBe(2);
+    expect(out).toContain("chat.mem_row_on");
+    // The memory's own switch lives on its screen now.
+    expect(out).not.toContain("chat.mem_switch");
+    expect(out.match(/checked=""/g)?.length).toBe(1);
   });
 
-  it("shows a switch the account turned off as off", () => {
+  it("says a memory the account turned off is off", () => {
     const out = drawn(state({ memory: false, recall: true }));
-    expect(out.match(/checked=""/g)?.length).toBe(1);
+    expect(out).toContain("chat.mem_row_off");
+  });
+});
+
+describe("the memory screen", () => {
+  const screen = (on: boolean, from: "settings" | "thread") =>
+    renderToStaticMarkup(
+      <MemoryView
+        from={from}
+        on={on}
+        busy={false}
+        onSwitch={() => {}}
+        onBack={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+
+  it("carries the memory switch, reflecting the account's setting", () => {
+    expect(screen(true, "settings")).toMatch(
+      /role="switch"[^>]*checked=""|checked=""[^>]*role="switch"/,
+    );
+    expect(screen(false, "settings")).not.toContain('checked=""');
+    expect(screen(true, "settings")).toContain("chat.mem_switch");
+  });
+
+  it("names where back goes", () => {
+    expect(screen(true, "settings")).toContain("chat.mem_back<");
+    expect(screen(true, "thread")).toContain("chat.mem_back_chat");
   });
 });
 

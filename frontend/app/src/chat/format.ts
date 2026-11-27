@@ -105,23 +105,17 @@ export function keyError(status: number): string {
  * The one line a provider row says about itself, as a key and its slot.
  *
  * Three facts, and they are not interchangeable: a keyless provider costs
- * nothing and is rationed, a provider with a key of its own says how long that
- * key has left, and one that needs a key it has not been given says so. The
- * days are the server's — 90 from when the key was entered, one fewer each
- * day — and never computed here.
- *
- * Null when a stored key has no lifetime to report. "Expires in 0 days" over a
- * key that works is a worse thing to say than nothing.
+ * nothing and is rationed, a provider with a key of its own says so, and one
+ * that needs a key it has not been given says that. How long the key has left
+ * is the key section's business, not a tile's: on a half-width tile it wrapped
+ * to three lines.
  */
-export function providerTag(provider: {
-  needs_key: boolean;
-  has_key: boolean;
-  key_days_left: number | null;
-}): { key: string; days?: number } | null {
+export function providerTag(provider: { needs_key: boolean; has_key: boolean }): {
+  key: string;
+} {
   if (!provider.needs_key) return { key: "chat.free_tag" };
   if (!provider.has_key) return { key: "chat.key_needed" };
-  if (provider.key_days_left === null) return null;
-  return { key: "chat.key_stored", days: provider.key_days_left };
+  return { key: "chat.key_tag_on" };
 }
 
 /** A provider's brand name from its id, falling back to the id itself. */

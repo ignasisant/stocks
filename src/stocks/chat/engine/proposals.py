@@ -60,7 +60,7 @@ def _proposed(evidence: agent.Evidence) -> dict | None:
 
 
 def _rules_asked(message: str, watchlist: Path, focus: str) -> str:
-    """The ticker a question asks exit rules for, or "" when it asks none.
+    """The ticker a question asks exit or buy rules for, or "" when it asks none.
 
     The symbol the reader typed wins over the page they typed it on; the
     journal's button names both the key and the company ("RCF
@@ -75,7 +75,7 @@ def _rules_asked(message: str, watchlist: Path, focus: str) -> str:
 
 def _drafted_rules(ticker: str, text: str, provider: Provider,
                    key: str) -> dict | None:
-    """The card for the exit rules an answer wrote out but never proposed.
+    """The card for the rules an answer wrote out but never proposed.
 
     The reader asked for rules and the answer drafted them in prose ("copy
     into your notes"): the research model skipped `propose_action`, which a
@@ -86,7 +86,7 @@ def _drafted_rules(ticker: str, text: str, provider: Provider,
     from stocks.chat import tools
 
     act = tools.detect(provider, key,
-                       f"Save these exit rules for {ticker}:\n{text[:_DRAFT_CHARS]}")
+                       f"Save these rules for {ticker}:\n{text[:_DRAFT_CHARS]}")
     if act is None or act.kind != "set_criteria":
         return None
     # Filed under the key that was asked about, whatever the prose called it.

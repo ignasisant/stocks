@@ -62,6 +62,29 @@ class Quiz:
 
 
 @dataclass(frozen=True)
+class Step:
+    """One thing to try in the app: a sentence and the shell slug (optionally
+    with a query) of the screen where it is done."""
+
+    text: str
+    app: str
+
+
+#: The figures a lesson can show live beside its example.
+LIVE_FACTS = ("price", "limit", "cap", "pe")
+
+
+@dataclass(frozen=True)
+class Live:
+    """A real name whose figures the lesson shows as they are now: the ticker,
+    which of `LIVE_FACTS` to read, and the sentence that ties them to the text."""
+
+    ticker: str
+    facts: tuple[str, ...]
+    why: str
+
+
+@dataclass(frozen=True)
 class Lesson:
     id: str
     path: str
@@ -79,6 +102,8 @@ class Lesson:
     # The search-result line; "" lets the page fall back to the opening one.
     description: str = ""
     quiz: Quiz | None = None
+    steps: tuple[Step, ...] = ()
+    live: Live | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +153,38 @@ def _quiz(meta: dict[str, str], name: str) -> Quiz | None:
     return Quiz(meta["quiz_q"], options, answer - 1, meta["quiz_why"])
 
 
+def _steps(raw: str, name: str) -> tuple[Step, ...]:
+    """The optional `try` frontmatter: steps separated by ` | `, each
+    `sentence => slug`. A bold ticker in the sentence is drawn as the house
+    ticker link by the page."""
+    steps = []
+    for part in raw.split(" | "):
+        text, arrow, app = part.partition("=>")
+        if not part.strip():
+            continue
+        if not arrow or not text.strip() or not app.strip():
+            raise ValueError(f"{name}: try step {part.strip()!r} needs 'text => slug'")
+        steps.append(Step(text.strip(), app.strip()))
+    return tuple(steps)
+
+
+def _live(meta: dict[str, str], name: str) -> Live | None:
+    """The optional `live` frontmatter: `TICKER | fact, fact`, with `live_why`
+    the sentence beside the figures. Both or neither."""
+    raw = meta.get("live", "")
+    if not raw and not meta.get("live_why"):
+        return None
+    ticker, _, facts = raw.partition("|")
+    ticker = ticker.strip()
+    picked = _list(facts)
+    if not ticker or not picked or not meta.get("live_why"):
+        raise ValueError(f"{name}: live needs 'TICKER | facts' and live_why")
+    unknown = [f for f in picked if f not in LIVE_FACTS]
+    if unknown:
+        raise ValueError(f"{name}: live fact {unknown[0]!r} is not one of {LIVE_FACTS}")
+    return Live(ticker, picked, meta["live_why"])
+
+
 def parse_lesson(text: str, name: str = "") -> Lesson:
     """One lesson file. Raises ValueError naming the file and what is wrong."""
     m = _FRONTMATTER.match(text)
@@ -161,6 +218,8 @@ def parse_lesson(text: str, name: str = "") -> Lesson:
         slug=meta.get("slug") or meta["id"],
         description=meta.get("description", ""),
         quiz=quiz,
+        steps=_steps(meta.get("try", ""), name),
+        live=_live(meta, name),
     )
 
 

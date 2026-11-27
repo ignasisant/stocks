@@ -950,7 +950,7 @@ async def daily_brief() -> CallToolResult:
         lang = str(accounts.load_prefs(paths.prefs).get("language") or "en")
         _, day = briefing.now_day(paths)
         market, stale = today._market(lang)
-        card = daily_card.live_book(paths, daily_card.status(paths, lang))
+        card = daily_card.live_book(paths, daily_card.status(paths, lang), lang)
         personal = _plain(card) if card is not None else None
         if personal and isinstance(personal.get("book"), dict):
             # The month's chart is the page's to draw; the rows carry it.

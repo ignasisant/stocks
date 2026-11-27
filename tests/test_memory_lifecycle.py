@@ -332,6 +332,303 @@ def test_the_review_runs_only_when_memory_is_on_and_due(path, tmp_path):
     assert memory_review.start({}, chat, day="2026-10-23") is None  # nothing saved
 
 
+# ----------------------------------------------------------------- history
+
+
+def _whys(path, lid):
+    [item] = [i for i in learnings.load(path) if i.id == lid]
+    return [h["why"] for h in item.history]
+
+
+def test_a_correction_keeps_what_it_said_and_why(path):
+    first = learnings.save(path, "Nunca más de un 10% en una sola posición").item
+    learnings.save(path, "Nunca más de un 5% en una sola posición")
+    [kept] = learnings.load(path)
+    [entry] = kept.history
+    assert entry["why"] == "said"
+    assert entry["was"] == first.text and entry["day"] == kept.updated[:10]
+
+
+def test_an_edit_by_hand_is_noted_and_undoing_it_takes_the_note_back(path):
+    item = learnings.save(path, "Prefiero ETFs baratos").item
+    learnings.edit(path, item.id, text="Prefiero ETFs de acumulación")
+    assert _whys(path, item.id) == ["edited"]
+    learnings.edit(path, item.id, text="Prefiero ETFs baratos")
+    assert _whys(path, item.id) == []
+
+
+def test_an_unasked_update_quotes_the_message_it_came_from(path):
+    item = learnings.save(path, "Mi horizonte es de 10 años").item
+    said = "Al final me jubilo antes, mi horizonte es de 5 años"
+    learnings.apply(path, [learnings.Lesson("update", item.id,
+                                            "Mi horizonte es de 5 años")],
+                    said=said)
+    [kept] = learnings.load(path)
+    [entry] = kept.history
+    assert entry["why"] == "learned" and entry["said"] == said
+    assert entry["was"] == "Mi horizonte es de 10 años"
+
+
+def test_an_unasked_update_from_earlier_words_quotes_nothing(path):
+    item = learnings.save(path, "Mi horizonte es de 10 años").item
+    learnings.apply(path, [learnings.Lesson("update", item.id,
+                                            "Mi horizonte es de 5 años")],
+                    said="Vale, cámbialo entonces")
+    [kept] = learnings.load(path)
+    assert kept.history[-1]["why"] == "learned"
+    assert "said" not in kept.history[-1]
+
+
+def test_a_superseded_memory_is_named_in_the_one_that_replaced_it(path):
+    old = learnings.save(path, "Mi horizonte es de 10 años").item
+    new = learnings.save(path, "Me jubilo en 2040, ese es mi horizonte").item
+    learnings.supersede(path, new.id, old.id)
+    [kept] = learnings.load(path)
+    assert kept.history[-1]["why"] == "replaced"
+    assert kept.history[-1]["was"] == old.text
+
+
+def test_history_is_capped_and_survives_a_reload(path):
+    item = learnings.save(path, "Prefiero ETFs baratos").item
+    for n in range(learnings.MAX_HISTORY + 3):
+        learnings.edit(path, item.id, text=f"Prefiero ETFs baratos, versión {n}")
+    [kept] = learnings.load(path)
+    assert len(kept.history) == learnings.MAX_HISTORY
+    assert kept.history[-1]["was"].endswith(f"{learnings.MAX_HISTORY + 1}")
+
+
+def test_a_history_entry_off_the_contract_is_dropped_on_load(path):
+    item = learnings.save(path, "Vivo en Girona").item
+    raw = json.loads(path.read_text())
+    raw["items"][0]["history"] = [
+        {"day": "2026-10-01", "why": "edited", "was": "Vivo en Lleida"},
+        {"day": "ayer", "why": "edited", "was": "x"},
+        {"day": "2026-10-02", "why": "hunch", "was": "x"},
+        {"day": "2026-10-03", "why": "edited", "was": 3, "secret": "y"},
+    ]
+    path.write_text(json.dumps(raw))
+    [kept] = learnings.load(path)
+    assert kept.id == item.id
+    assert kept.history == ({"day": "2026-10-01", "why": "edited",
+                             "was": "Vivo en Lleida"},
+                            {"day": "2026-10-03", "why": "edited"})
+
+
+def test_retire_ends_a_memory_and_says_why(path):
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    note = {"ticker": "NVDA", "event": "closed", "on": "2026-10-03"}
+    done = learnings.retire(path, item.id, day="2026-10-03", why="book",
+                            note=note)
+    assert done is not None and done.until == "2026-10-03"
+    assert done.history[-1] == {"day": done.updated[:10], "why": "book", **note}
+    assert done.text not in learnings.block(learnings.load(path), day="2026-11-26")
+    with pytest.raises(ValueError):
+        learnings.retire(path, item.id, day="ayer", why="book")
+    with pytest.raises(ValueError):
+        learnings.retire(path, item.id, day="2026-10-03", why="hunch")
+
+
+def test_retire_keeps_an_earlier_end_and_leaves_routines_alone(path):
+    item = learnings.save(path, "Solo ETFs", tickers=["VWCE"]).item
+    learnings.edit(path, item.id, until="2026-11-15")
+    done = learnings.retire(path, item.id, day="2026-12-20", why="book")
+    assert done is not None and done.until == "2026-11-15"
+    routine = learnings.save(path, "Cada mañana dime cómo va NVDA",
+                             tickers=["NVDA"]).item
+    assert learnings.retire(path, routine.id, day="2026-10-03",
+                            why="book") is None
+
+
+# -------------------------------------------------------------------- book
+
+
+def _tx(day, ticker, action, qty):
+    from stocks.portfolio.ledger import Transaction
+    return Transaction(date=day, ticker=ticker, action=action, quantity=qty,
+                       price=10.0, currency="USD", fee=0.0, note="")
+
+
+def test_book_events_are_positions_opened_and_closed():
+    events = memory_review.book_events([
+        _tx("2026-01-02", "NVDA", "buy", 10),
+        _tx("2026-06-01", "NVDA", "sell", 4),       # trimmed: no event
+        _tx("2026-10-03", "NVDA", "sell", 6),
+        _tx("2026-05-01", "SAN.MC", "buy", 5),
+        _tx("2026-07-01", "SAN.MC", "sell", 5),
+        _tx("2026-07-01", "SAN.MC", "buy", 5),      # bought back that day
+        _tx("2026-03-01", "AAPL", "buy", 1),
+        _tx("2026-04-01", "AAPL", "split", 4),
+        _tx("2026-09-01", "AAPL", "sell", 4),       # all of the split shares
+    ])
+    assert events == {
+        "NVDA": [("2026-01-02", "opened"), ("2026-10-03", "closed")],
+        "SAN.MC": [("2026-05-01", "opened")],
+        "AAPL": [("2026-03-01", "opened"), ("2026-09-01", "closed")],
+    }
+
+
+_SOLD = {"NVDA": [("2026-01-02", "opened"), ("2026-10-03", "closed")]}
+
+
+def test_a_memory_said_before_the_sale_is_offered_to_retire(path):
+    item = learnings.save(path, "Tengo 50 NVDA a 120", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    [p] = memory_review.from_book(learnings.load(path), _SOLD, "2026-11-26")
+    assert (p.action, p.reason, p.ids) == ("retire", "book", (item.id,))
+    assert (p.ticker, p.event, p.on) == ("NVDA", "closed", "2026-10-03")
+
+
+@pytest.mark.parametrize(("text", "said"), [
+    # Said after the sale: it already knows.
+    ("No compro más NVDA hasta fin de año", "2026-10-20"),
+    # Said on the day of the sale: it may be about that sale.
+    ("Vendo todas mis NVDA hoy", "2026-10-03"),
+])
+def test_a_memory_said_after_the_trade_is_left_alone(path, text, said):
+    item = learnings.save(path, text, tickers=["NVDA"]).item
+    _backdate(path, item.id, said)
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-11-26") == []
+
+
+@pytest.mark.parametrize(("kind", "text"), [
+    ("constraint", "Nunca más de un 10 % en NVDA"),
+    ("preference", "Prefiero no promediar a la baja en NVDA"),
+])
+def test_a_rule_or_a_taste_outlives_the_sale(path, kind, text):
+    item = learnings.save(path, text, kind=kind, tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-11-26") == []
+
+
+def test_a_name_never_traded_is_left_alone(path):
+    item = learnings.save(path, "Quiero comprar ASML si baja de 600",
+                          tickers=["ASML"]).item
+    _backdate(path, item.id, "2026-03-01")
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-11-26") == []
+
+
+def test_a_trade_after_today_or_an_expired_memory_is_left_alone(path):
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-10-02") == []
+    learnings.edit(path, item.id, until="2026-04-01")
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-11-26") == []
+
+
+def test_a_memory_naming_the_bare_symbol_finds_its_listing(path):
+    item = learnings.save(path, "Tengo 100 SAN", tickers=["SAN"]).item
+    _backdate(path, item.id, "2026-03-01")
+    events = {"SAN.MC": [("2026-01-02", "opened"), ("2026-10-03", "closed")]}
+    [p] = memory_review.from_book(learnings.load(path), events, "2026-11-26")
+    assert p.ticker == "SAN"
+    two = {**events, "SAN.L": [("2026-05-01", "opened")]}
+    assert memory_review.from_book(learnings.load(path), two,
+                                   "2026-11-26") == []
+
+
+@pytest.mark.parametrize(("said", "book", "found"), [
+    ("SAN.MC", "SAN.PA", False),    # another venue is another company
+    ("BTC-USD", "BTC-EUR", True),   # one coin against another currency
+    ("BTC-USD", "BTCS", False),
+    ("SAN", "SANM", False),
+])
+def test_only_a_bare_symbol_or_a_coin_reaches_another_label(path, said, book,
+                                                            found):
+    item = learnings.save(path, f"Tengo {said}", tickers=[said]).item
+    _backdate(path, item.id, "2026-03-01")
+    events = {book: [("2026-01-02", "opened"), ("2026-10-03", "closed")]}
+    got = memory_review.from_book(learnings.load(path), events, "2026-11-26")
+    assert bool(got) is found
+
+
+def test_applying_a_book_proposal_retires_the_memory(path):
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    [p] = memory_review.from_book(learnings.load(path), _SOLD, "2026-11-26")
+    memory_review.add_book(path, [p], "2026-11-26")
+    assert memory_review.pending(path, "2026-11-26") == [p]
+    done = memory_review.settle(path, p.sid, "apply", "2026-11-26")
+    assert done is not None and done["changes"][0]["op"] == "updated"
+    [kept] = learnings.load(path)
+    assert kept.until == "2026-10-03" and kept.history[-1]["why"] == "book"
+    # Retired, it is out of the book's reach for good.
+    assert memory_review.from_book(learnings.load(path), _SOLD,
+                                   "2026-11-27") == []
+
+
+def test_a_dismissed_book_proposal_stays_away_for_good(path):
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    [p] = memory_review.from_book(learnings.load(path), _SOLD, "2026-11-26")
+    memory_review.add_book(path, [p], "2026-11-26")
+    memory_review.settle(path, p.sid, "dismiss", "2026-11-26")
+    assert memory_review.add_book(path, [p], "2027-06-01") == []
+
+
+def test_the_book_is_read_daily_without_making_it_a_new_week(path):
+    a, b, c = _three(path)
+    memory_review.keep(path, [], "2026-10-23")
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    assert memory_review.book_due(path, "2026-10-24")
+    _backdate(path, item.id, "2026-03-01")
+    [p] = memory_review.from_book(learnings.load(path), _SOLD, "2026-10-24")
+    memory_review.add_book(path, [p], "2026-10-24")
+    assert not memory_review.book_due(path, "2026-10-24")
+    assert memory_review.book_due(path, "2026-10-25")
+    assert memory_review.due(path, "2026-10-30")  # the week still counts
+    assert memory_review.pending(path, "2026-10-24") == [p]
+
+
+def test_book_proposals_go_before_the_weeks(path):
+    a, _, _ = _three(path)
+    week = memory_review.proposal("drop", (a.id,), "idle")
+    memory_review.keep(path, [week], "2026-10-23")
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    [p] = memory_review.from_book(learnings.load(path), _SOLD, "2026-10-24")
+    assert memory_review.add_book(path, [p], "2026-10-24") == [p, week]
+
+
+def test_a_list_with_no_holding_named_has_no_book_to_read(path):
+    _three(path)
+    assert not memory_review.book_due(path, "2026-10-24")
+
+
+def test_the_daily_run_reads_the_book_beside_the_chat(path, tmp_path):
+    from stocks.portfolio import ledger
+
+    chat = tmp_path / "chat.json"
+    item = learnings.save(path, "Tengo 50 NVDA", tickers=["NVDA"]).item
+    _backdate(path, item.id, "2026-03-01")
+    # A list of one: too short for the week's review, not for the book.
+    assert not memory_review.due(path, "2026-11-26")
+    assert memory_review.start({}, chat, day="2026-11-26") is None  # no book
+    ledger.add_many([_tx("2026-01-02", "NVDA", "buy", 50),
+                     _tx("2026-10-03", "NVDA", "sell", 50)],
+                    tmp_path / "portfolio.db")
+    done = memory_review.start({}, chat, day="2026-11-26")
+    assert done is not None and done.wait(10)
+    [p] = memory_review.pending(path, "2026-11-26")
+    assert (p.action, p.on) == ("retire", "2026-10-03")
+    assert memory_review.start({}, chat, day="2026-11-26") is None  # read today
+
+
+def test_the_book_sid_differs_by_trade():
+    one = memory_review.proposal("retire", ("m_1",), "book", ticker="NVDA",
+                                 event="closed", on="2026-10-03")
+    two = memory_review.proposal("retire", ("m_1",), "book", ticker="NVDA",
+                                 event="opened", on="2026-11-03")
+    assert one.sid != two.sid
+    # The other reasons' sids are what they were before the book.
+    assert memory_review.proposal("drop", ("m_1",), "idle").sid == \
+        memory_review._sid("drop", ("m_1",), "")
+
+
 # ------------------------------------------------------------------- aliases
 
 

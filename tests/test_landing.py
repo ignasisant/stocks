@@ -384,3 +384,11 @@ def test_the_language_hint_waits_hidden_for_the_script():
     assert ".ag-l-langhint[hidden] { display: none; }" in landing_css.CSS
     js = landing.hint_script()
     assert "navigator.languages" in js and "localStorage" in js
+
+
+def test_the_footer_links_the_brand_profiles():
+    html = landing._footer()
+    assert landing.SOCIALS
+    for name, url in landing.SOCIALS.items():
+        assert f'href="{url}"' in html and f">{name}</a>" in html
+    assert 'rel="noopener noreferrer me"' in html

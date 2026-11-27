@@ -121,18 +121,23 @@ _HEAD = "---\nid: a\npath: start\ntitle: A\nminutes: 1\nas_of: 2026-01-01\n"
 def test_a_lessons_quiz_is_optional_and_parsed():
     plain = learn.parse_lesson(_HEAD + "---\nBody", "a.md")
     assert plain.quiz is None
-    text = (_HEAD + "quiz_q: Q?\nquiz_options: x | y | z\nquiz_answer: 2\n"
-            "quiz_why: Because.\n---\nBody")
+    text = (
+        _HEAD + "quiz_q: Q?\nquiz_options: x | y | z\nquiz_answer: 2\n"
+        "quiz_why: Because.\n---\nBody"
+    )
     quiz = learn.parse_lesson(text, "a.md").quiz
     assert quiz == learn.Quiz("Q?", ("x", "y", "z"), 1, "Because.")
 
 
-@pytest.mark.parametrize("extra", [
-    "quiz_q: Q?\n",
-    "quiz_q: Q?\nquiz_options: x\nquiz_answer: 1\nquiz_why: w\n",
-    "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: 3\nquiz_why: w\n",
-    "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: b\nquiz_why: w\n",
-])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        "quiz_q: Q?\n",
+        "quiz_q: Q?\nquiz_options: x\nquiz_answer: 1\nquiz_why: w\n",
+        "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: 3\nquiz_why: w\n",
+        "quiz_q: Q?\nquiz_options: x | y\nquiz_answer: b\nquiz_why: w\n",
+    ],
+)
 def test_a_broken_quiz_is_refused_by_file_name(extra):
     with pytest.raises(ValueError, match="a.md"):
         learn.parse_lesson(_HEAD + extra + "---\nBody", "a.md")
@@ -157,3 +162,51 @@ def test_neighbours_stop_at_a_paths_ends():
     assert learn.neighbours(path.lessons[0])[0] is None
     assert learn.neighbours(path.lessons[-1])[1] is None
     assert learn.neighbours(path.lessons[0])[1] == path.lessons[1]
+
+
+def test_try_steps_are_optional_and_parsed():
+    assert learn.parse_lesson(_HEAD + "---\nBody", "a.md").steps == ()
+    text = (
+        _HEAD
+        + "try: Open **NVDA**. => ticker | Then risk. => portfolio?tab=risk\n---\nBody"
+    )
+    assert learn.parse_lesson(text, "a.md").steps == (
+        learn.Step("Open **NVDA**.", "ticker"),
+        learn.Step("Then risk.", "portfolio?tab=risk"),
+    )
+
+
+def test_a_try_step_without_a_screen_is_refused():
+    with pytest.raises(ValueError, match="try step"):
+        learn.parse_lesson(_HEAD + "try: Open it\n---\nBody", "a.md")
+
+
+def test_try_steps_exist_in_every_language_with_the_same_screens():
+    for lesson_id in learn.lessons("en"):
+        screens = {
+            lang: [s.app for s in learn.lessons(lang)[lesson_id].steps]
+            for lang in learn.LANGS
+        }
+        assert screens["es"] == screens["en"] == screens["it"], lesson_id
+
+
+def test_live_figures_are_optional_and_checked():
+    assert learn.parse_lesson(_HEAD + "---\nBody", "a.md").live is None
+    text = _HEAD + "live: NVDA | price, cap\nlive_why: Why.\n---\nBody"
+    assert learn.parse_lesson(text, "a.md").live == learn.Live(
+        "NVDA", ("price", "cap"), "Why."
+    )
+    for bad in ("live: NVDA | price\n", "live: NVDA | beta\nlive_why: w\n"):
+        with pytest.raises(ValueError, match="live"):
+            learn.parse_lesson(_HEAD + bad + "---\nBody", "a.md")
+
+
+def test_live_figures_name_the_same_facts_in_every_language():
+    for lesson_id in learn.lessons("en"):
+        shown = {
+            lang: (lv.ticker, lv.facts)
+            if (lv := learn.lessons(lang)[lesson_id].live)
+            else None
+            for lang in learn.LANGS
+        }
+        assert shown["es"] == shown["en"] == shown["it"], lesson_id

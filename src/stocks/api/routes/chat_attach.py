@@ -479,7 +479,9 @@ def attach(
                     else platforms.broker_label(key)
                 ),
             )
-            for key in platforms.broker_options()
+            for key in platforms.broker_options(
+                platforms.book_brokers(page._real_rows(paths))
+            )
         ],
         fresh=[_row(tx) for tx in checked.fresh],
         duplicates=_issues(checked.duplicates, lang),

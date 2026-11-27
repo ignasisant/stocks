@@ -8,6 +8,7 @@ terms: irpf, savings_base, capital_gain_tax, tax_bracket, fund_transfer
 app: portfolio?tab=tax
 slug: base-del-ahorro-irpf-scaglioni
 description: Gli scaglioni della base del ahorro dell'IRPF spagnolo (dal 19 % al 30 %), come si applicano alle plusvalenze sulla vendita di azioni e un esempio svolto.
+try: Guarda la tua base del risparmio di quest'anno. => portfolio?tab=tax
 ---
 Vendi azioni in guadagno e il fisco vuole la sua parte. Ma chi guadagna 3.000 € non paga la stessa aliquota di chi ne guadagna 70.000: l'imposta funziona a scaglioni. Questa lezione riguarda la **Spagna**: spiega l'imposta per chi è fiscalmente residente lì.
 

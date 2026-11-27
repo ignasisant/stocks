@@ -449,20 +449,44 @@ export type Memory = {
   last_used: string | null;
   /** What it said before it was reworded, newest last. */
   replaced: string[];
+  /** Why it changed, oldest first. Older servers send none. */
+  history?: MemoryChange[];
+};
+
+/**
+ * Why a memory changed (`learnings.history`): restated with other figures
+ * ("said"), read from a message quoted in `said` ("learned"), by hand
+ * ("edited"), in place of a memory that said `was` ("replaced"), by a
+ * tidy-up proposal ("review"), or by a trade that `event` the `ticker`
+ * position on day `on` ("book"). `was` is the wording before.
+ */
+export type MemoryChange = {
+  day: string;
+  why: "said" | "learned" | "edited" | "replaced" | "review" | "book";
+  was?: string | null;
+  said?: string | null;
+  reason?: string | null;
+  ticker?: string | null;
+  event?: "closed" | "opened" | string | null;
+  on?: string | null;
 };
 
 /**
  * A change the weekly tidy-up proposes (`chat/memory_review.py`), never made
- * until the reader applies it: drop `ids`, merge them into `text`, or reword
- * the one in `ids` as `text`. A "model" reason carries the model's `note`.
+ * until the reader applies it: drop `ids`, merge them into `text`, reword
+ * the one in `ids` as `text`, or retire it. A "model" reason carries the
+ * model's `note`; a "book" one the trade (`ticker`, `event`, `on`).
  */
 export type Suggestion = {
   sid: string;
-  action: "drop" | "merge" | "reword";
+  action: "drop" | "merge" | "reword" | "retire";
   ids: string[];
-  reason: "expired" | "idle" | "same" | "model";
+  reason: "expired" | "idle" | "same" | "model" | "book";
   text: string;
   note: string;
+  ticker?: string;
+  event?: "closed" | "opened" | string;
+  on?: string;
 };
 
 export type Memories = {

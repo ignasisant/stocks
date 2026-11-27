@@ -79,7 +79,7 @@ def today(account: Account, who: Who, lang: Lang = "en") -> TodayCard:
     market, stale = _market(lang)
     personal = (
         None if who.kind == "guest"
-        else daily_card.live_book(account, daily_card.status(account, lang))
+        else daily_card.live_book(account, daily_card.status(account, lang), lang)
     )
     return TodayCard(
         action_day=day.isoformat(),
@@ -108,7 +108,7 @@ def write_today(
     _, day = briefing.now_day(account)
     market, stale = _market(lang)
     personal = daily_card.live_book(
-        account, daily_card.request(account, lang, force=force, patient=True)
+        account, daily_card.request(account, lang, force=force, patient=True), lang
     )
     return TodayCard(
         action_day=day.isoformat(),

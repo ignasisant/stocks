@@ -4,13 +4,12 @@
  *
  * The running order is the reader's. The page draws the cards in
  * `prefs.home_layout` (see `cards.ts`), and the default a new account gets is
- * the order the page always had, with the market strip on top: the market,
- * the AI "Daily action" briefing, the movers (every position, the full
- * row), the 52-week extremes, the Portfolio page's headline metrics, the
- * earnings calendar, the recent
- * transactions, the watchlist groups. Risk, dividends, the tax year and
- * sector rotation wait in the editor's tray. Every ticker cell links to its
- * own page; the full ledger analytics stay on Portfolio.
+ * the movers on top (every position, the full row), the market strip right
+ * under them, then the 52-week extremes, the Portfolio page's headline metrics, the earnings
+ * calendar, the recent transactions, the watchlist groups. Risk, dividends,
+ * the tax year and sector rotation wait in the editor's tray. The AI daily
+ * briefing is not a Home card: it lives on Today, one tab away. Every ticker
+ * cell links to its own page; the full ledger analytics stay on Portfolio.
  *
  * Cards are a fixed width each — a full row or half of one — and flow two to
  * a row on a wide page. A half card with no half beside it runs the full row,
@@ -30,7 +29,7 @@
  * same way. The ledger is the exception: one small read three cards share,
  * cheaper to have than to time.
  *
- * The start card opens the page, above the briefing: a line of icons, each a
+ * The start card opens the page, above the cards: a line of icons, each a
  * door into the section that switches it on, is the first thing a new account
  * needs and the last thing a settled one reads — which is why it is gone once
  * everything on it is done.
@@ -39,7 +38,7 @@
  * the guided tour, both mounted by the shell.
  *
  * For a guest this page loses everything that is *somebody's* and keeps
- * everything that is the market's: no briefing, no glance, no recent
+ * everything that is the market's: no movers, no glance, no recent
  * transactions — the glance is per-account and a guest has no ledger — but the
  * market strip, the watchlist, the earnings calendar and the 52-week extremes
  * all stay, because they are the same for everybody and they are what makes
@@ -72,7 +71,6 @@ import {
 import { Link } from "../../shell/router";
 import { Icon } from "../../shell/Icon";
 import { useInView } from "../../shell/useInView";
-import { Daily } from "./Daily";
 import { SetupCard } from "./Setup";
 import { TourOffer } from "./TourOffer";
 import { Glance, MoversSlot, useBook } from "./Glance";
@@ -339,8 +337,6 @@ export default function Page() {
     switch (id) {
       case "market":
         return <MarketCard nonce={nonce} />;
-      case "daily":
-        return <Daily />;
       case "glance":
         return <Glance query={book} ledger={ledger} />;
       case "movers":

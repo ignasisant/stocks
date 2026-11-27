@@ -1147,22 +1147,7 @@
   }
 }
 
-/* ------------------------------------------------------- the daily briefing */
-
-.hm-daily-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* Edit the brief, regenerate, ask: the card's three controls, icons at the
-   header's far end, named by their label and tooltip. */
-.hm-daily-tools {
-  display: flex;
-  gap: 0.15rem;
-  margin-left: auto;
-}
-
+/* A card's icon controls: named by their label and tooltip. */
 .hm-icon-btn {
   display: inline-grid;
   flex: none;
@@ -1204,88 +1189,6 @@
   .hm-icon-btn {
     width: 44px;
     height: 44px;
-  }
-}
-
-/* A line's tickers, at its end: logo and link, no chip row of their own. */
-.hm-daily-tks {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.15rem 0.5rem;
-  margin-left: 0.4rem;
-  vertical-align: baseline;
-  font-size: var(--ag-fs-sm, 0.75rem);
-}
-
-.hm-daily-when {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.6875rem);
-}
-
-.hm-daily-headline {
-  margin: 0;
-  font-size: var(--ag-fs-lg, 1rem);
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.hm-daily-list {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: var(--ag-fs-base, 0.875rem);
-  line-height: 1.45;
-}
-
-/* A line's way to act on it, at its end: accent text naming the page it
-   opens. Underlined on hover only where there is a pointer to hover with;
-   a touch gets the full 44px row to press. */
-.hm-daily-go {
-  color: var(--ag-brand-accent);
-  font-size: var(--ag-fs-sm, 0.75rem);
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.hm-daily-go::after {
-  content: " \2192";
-  content: " \2192" / "";
-}
-
-@media (hover: hover) {
-  .hm-daily-go:hover {
-    text-decoration: underline;
-  }
-}
-
-.hm-daily-go:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-@media (pointer: coarse) {
-  .hm-daily-go {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-  }
-}
-
-/* The way on to Today: the page holds the rest of the card. */
-.hm-daily-open {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-}
-
-@media (pointer: coarse) {
-  .hm-daily-open .ag-btn {
-    min-height: 44px;
   }
 }
 
@@ -2023,22 +1926,12 @@ a.hm-step {
   min-height: 15rem;
 }
 
-.hm-slot[data-card="daily"]:has(.ag-skeleton) {
-  min-height: 14rem;
-}
-
 .hm-slot[data-card="movers"]:has(.ag-skeleton) {
   min-height: 30rem;
 }
 
 .hm-slot[data-card="earnings"]:has(.ag-skeleton) {
   min-height: 14rem;
-}
-
-/* The briefing while its sentence is written: the card keeps the room its
-   lines will take. */
-.hm-daily {
-  min-height: 12rem;
 }
 
 /* One row on a desktop page; a narrow one scrolls the strip sideways rather

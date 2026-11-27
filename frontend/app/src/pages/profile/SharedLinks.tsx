@@ -1,6 +1,7 @@
 /**
  * The answers and lists this account shared by link, each one takeable down
- * from here.
+ * from here, each with the moment it expires (48 hours after it was made;
+ * the server drops an expired one from the list).
  *
  * `GET /chat/shares` lists them from the account's own index, so a link
  * whose thread was pruned is still here to stop. Stopping one takes down
@@ -20,12 +21,18 @@ import { useApi } from "../../shell/useApi";
 import { Badge } from "../../ui/Badge";
 import { Failure, Row } from "./ui";
 
-/** The day a link went up, in the reader's language; "" for a bad stamp. */
-export function sharedOn(created: string, lang: string): string {
-  const when = new Date(created);
-  return Number.isNaN(when.getTime())
+/** How long a link works after it is made — the server's `shares.TTL_S`. */
+export const SHARE_TTL_MS = 48 * 3600 * 1000;
+
+/** When a link stops working, day and time in the reader's language and
+ *  clock; "" for a bad stamp. */
+export function expiresOn(created: string, lang: string): string {
+  const made = new Date(created).getTime();
+  return Number.isNaN(made)
     ? ""
-    : new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(when);
+    : new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(made + SHARE_TTL_MS),
+      );
 }
 
 /** What the block draws for one answer — no fetch, so a test can draw it. */
@@ -46,7 +53,7 @@ export function SharedLinkList({
     <Row label={t("profile.shares_title")} help={t("profile.shares_help")}>
       <ul className="pr-conns">
         {rows.map((row) => {
-          const date = sharedOn(row.created, lang);
+          const date = expiresOn(row.created, lang);
           return (
             <li className="pr-conn" key={row.id}>
               <div className="pr-conn-l">
@@ -57,7 +64,7 @@ export function SharedLinkList({
                   {row.question}
                 </a>
                 <span className="pr-conn-meta pr-share-meta">
-                  {date && t("profile.shares_on", { date })}
+                  {date && t("profile.shares_until", { date })}
                   {row.masked && <Badge>{t("profile.shares_masked")}</Badge>}
                   {row.kind === "watchlist" && (
                     <Badge>{t("profile.shares_list")}</Badge>

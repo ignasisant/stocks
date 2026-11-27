@@ -51,5 +51,16 @@
   "learn.filter_all": "Todos",
   "learn.try": "Prueba con:",
   "learn.try_terms": "TIR|VaR|retención|P/E",
-  "learn.search_all": "Buscar en todas las rutas"
+  "learn.search_all": "Buscar en todas las rutas",
+  "learn.try_title": "Pruébalo en MyBrainStock",
+  "learn.lesson_done": "Lección hecha",
+  "learn.live_title": "En MyBrainStock, ahora",
+  "learn.live_open": "Abrir {ticker}",
+  "learn.live_price": "Precio",
+  "learn.live_limit": "Limitada −2 %",
+  "learn.live_cap": "Capitalización",
+  "learn.live_pe": "PER",
+  "learn.day_title": "Término del día",
+  "learn.day_lesson": "Leer la lección",
+  "learn.day_glossary": "Ver en el glosario"
 }

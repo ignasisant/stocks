@@ -5,7 +5,9 @@ import re
 import subprocess
 from pathlib import Path
 
-from common import ffmpeg, read_json, run, write_json
+from common import CLIPS, OUT_H, OUT_W, SUFFIX, VERTICAL, ffmpeg, read_json, run, write_json
+
+TILE = '540:960' if VERTICAL else '960:540'
 
 PII = {
     'email': re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+'),
@@ -167,7 +169,7 @@ def contact_sheet(
     grid = qa_dir / 'contact_sheet.jpg'
     ins = sum([['-i', f] for f in files], [])
     tiles = ''.join(
-        f'[{i}:v]scale=960:540,drawtext=text=\'{float(Path(f).stem.split("_")[-1][:-1]):.1f}s\':'
+        f'[{i}:v]scale={TILE},drawtext=text=\'{float(Path(f).stem.split("_")[-1][:-1]):.1f}s\':'
         f'x=14:y=14:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.6[t{i}];'
         for i, f in enumerate(files)
     )
@@ -203,17 +205,18 @@ def qa(work: Path, build: Path, board: dict, cfg: dict, timings: dict) -> dict:
     :return: dict, report
     """
     version = board['release']['version']
-    video = work / f'release_{version}.mp4'
-    qa_dir = build / 'qa'
+    video = work / f'release_{version}{SUFFIX}.mp4'
+    qa_dir = build / f'qa{SUFFIX}'
     qa_dir.mkdir(exist_ok=True)
-    layout = read_json(build / 'layout.json')
-    cues = read_json(build / 'cues.json')
+    layout = read_json(build / f'layout{SUFFIX}.json')
+    cues = read_json(build / f'cues{SUFFIX}.json')
+    sub = {**cfg['subtitles'], **(cfg['subtitles'].get('vertical', {}) if VERTICAL else {})}
     max_d = board['release'].get('max_duration', cfg['max_duration'])
     info, loud = probe(video), loudness(video)
     fails, warns = [], []
     if info['duration'] > max_d + 0.5:
         fails.append(f'duration {info["duration"]:.1f}s > {max_d}s')
-    for need in ('h264', '1920x1080', '30 fps'):
+    for need in ('h264', f'{OUT_W}x{OUT_H}', '30 fps'):
         if need not in info['video']:
             fails.append(f'video stream lacks {need}: {info["video"]}')
     if 'aac' not in info['audio']:
@@ -243,8 +246,8 @@ def qa(work: Path, build: Path, board: dict, cfg: dict, timings: dict) -> dict:
             )
     for c in cues:
         if (
-            any(len(ln) > cfg['subtitles']['max_chars'] for ln in c['lines'])
-            or len(c['lines']) > cfg['subtitles']['max_lines']
+            any(len(ln) > sub['max_chars'] for ln in c['lines'])
+            or len(c['lines']) > sub['max_lines']
         ):
             warns.append(f'long cue at {c["start"]:.1f}s: {" / ".join(c["lines"])}')
     cfg = {
@@ -253,14 +256,16 @@ def qa(work: Path, build: Path, board: dict, cfg: dict, timings: dict) -> dict:
     }
     pii, errors = {}, {}
     for p in layout:
-        txt = build / 'clips' / p['id'] / 'text.txt'
+        txt = build / CLIPS / p['id'] / 'text.txt'
+        if not txt.exists():
+            txt = build / 'clips' / p['id'] / 'text.txt'  # UI scenes are shared with the 16:9 take
         if txt.exists():
             text = txt.read_text()
             if hits := scan_pii(text, cfg):
                 pii[p['id']] = hits
             if errs := sorted(set(ERROR_HINTS.findall(text))):
                 errors[p['id']] = errs
-        meta = read_json(build / 'clips' / p['id'] / 'clip.json')
+        meta = read_json(build / CLIPS / p['id'] / 'clip.json')
         if meta.get('overrun', 0) > 1.0:
             warns.append(f'{p["id"]}: actions overran narration by {meta["overrun"]}s')
     if pii:

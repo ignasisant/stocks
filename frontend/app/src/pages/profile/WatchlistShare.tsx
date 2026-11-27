@@ -122,7 +122,8 @@ function ListSheet({
       <p className="pr-hint">
         {tickers.length > LIST_MAX
           ? t("watchlist.share_note_cut", { n: LIST_MAX })
-          : t("watchlist.share_note")}
+          : t("watchlist.share_note")}{" "}
+        {t("chat.share_expires")}
       </p>
       <div className="pr-wshare-preview">
         <SharedList share={{ title: name.trim(), tickers: going }} onLeave={onClose} />

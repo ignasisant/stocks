@@ -40,7 +40,11 @@ memory screen), and past it the memory leaves the prompt but stays on the
 list, marked, for the user to drop or extend. A memory reworded — by the
 user, or by a newer statement that says the same thing with other figures —
 keeps the wordings it replaced (`replaced`): what the user said is evidence,
-and the newest version is not allowed to erase it.
+and the newest version is not allowed to erase it. Each change also keeps why
+(`history`, a code from WHYS and its evidence): the user said so, edited it,
+or the book shows it stopped holding — a sale that closed the position it was
+about. A memory the world has overtaken is retired (`retire`), not deleted:
+it ends on the day of the evidence and stays listed, saying why.
 
 What a memory is *for* shows in how often the user's own questions touch it
 (`note_used`, kept beside the list so the prompt stays byte-identical). The
@@ -92,6 +96,18 @@ MAX_UNSEEN = 12
 # see how a view moved, not a history of every edit.
 MAX_REPLACED = 3
 
+# Why a memory changed, newest last (`Learning.history`): a code the app words
+# in the reader's language, never prose a model wrote. "said": the user
+# restated it with other figures; "learned": the unasked extraction updated it
+# from the user's message (`said` quotes it); "edited": the user changed it on
+# the memory screen; "replaced": another memory took the place of one that
+# said `was`; "review": the weekly tidy-up's proposal, applied (`reason`);
+# "book": the book showed it no longer holds (`ticker`, `event`, `on`).
+WHYS = ("said", "learned", "edited", "replaced", "review", "book")
+MAX_HISTORY = 5
+_HISTORY_KEYS = ("was", "said", "reason", "ticker", "event", "on")
+_SAID_QUOTE = 160
+
 # A memory none of the user's questions touched in this long, and older than
 # it, is the first a full list offers to let go.
 UNUSED_DAYS = 60
@@ -112,7 +128,9 @@ class Learning:
     routine's: what the daily card fetches to answer it (`routine_plan`),
     {} until it has been worked out. `until` is the ISO day after which it no
     longer holds ("" = for good); `replaced` the wordings it replaced, newest
-    last."""
+    last; `history` why it changed, newest last ({day, why, ...} with `why`
+    one of WHYS) — what lets the reader see not only that it changed but on
+    what evidence."""
 
     id: str
     text: str
@@ -124,12 +142,14 @@ class Learning:
     recipe: dict = field(default_factory=dict, compare=False)
     until: str = ""
     replaced: tuple[str, ...] = field(default=(), compare=False)
+    history: tuple[dict, ...] = field(default=(), compare=False)
 
     def as_dict(self) -> dict:
         out = asdict(self)
         out["tickers"] = list(self.tickers)
         out["replaced"] = list(self.replaced)
-        for key in ("recipe", "until", "replaced"):
+        out["history"] = [dict(h) for h in self.history]
+        for key in ("recipe", "until", "replaced", "history"):
             if not out[key]:
                 del out[key]
         return out
@@ -202,8 +222,38 @@ def load(path: Path) -> list[Learning]:
             until="" if kind == "routine" else _day(item.get("until")),
             replaced=tuple(str(t) for t in item.get("replaced") or ()
                            if isinstance(t, str) and t)[-MAX_REPLACED:],
+            history=_history(item.get("history")),
         ))
     return out
+
+
+def _history(raw: object) -> tuple[dict, ...]:
+    """A stored `history`, keeping only well-formed entries."""
+    out = []
+    for entry in raw if isinstance(raw, list) else ():
+        if not isinstance(entry, dict) or entry.get("why") not in WHYS:
+            continue
+        when = _day(entry.get("day"))
+        if not when:
+            continue
+        kept = {"day": when, "why": entry["why"]}
+        for key in _HISTORY_KEYS:
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                kept[key] = value[:MAX_ROUTINE_CHARS]
+        out.append(kept)
+    return tuple(out[-MAX_HISTORY:])
+
+
+def _noted(item: Learning, why: str, day: str, **params: str) -> tuple[dict, ...]:
+    """`item.history` with one more entry: `why` (one of WHYS) on `day`."""
+    entry = {"day": _day(day) or _today(), "why": why}
+    for key in _HISTORY_KEYS:
+        value = params.get(key)
+        if value:
+            value = " ".join(str(value).split())
+            entry[key] = _cut(value, _SAID_QUOTE) if key == "said" else value
+    return (*item.history, entry)[-MAX_HISTORY:]
 
 
 def _unseen(path: Path) -> list[dict]:
@@ -471,13 +521,23 @@ def _related(items: list[Learning], text: str, kind: str,
     return best
 
 
-def _reword(item: Learning, text: str, now: str, **changes: object) -> Learning:
-    """`item` saying `text` now, keeping what it said before."""
+def _reword(item: Learning, text: str, now: str, *, why: str = "",
+            note: dict | None = None, **changes: object) -> Learning:
+    """`item` saying `text` now, keeping what it said before — and, given a
+    `why` (one of WHYS, with `note` its params), why it changed. Going back
+    to the wording the last change replaced is that change undone: its entry
+    goes rather than a second one saying the opposite."""
     if text == item.text:
         return replace(item, updated=now, **changes)
     kept = tuple(t for t in item.replaced if t != item.text)
+    history = item.history
+    if history and history[-1].get("was") == text:
+        history = history[:-1]
+    elif why:
+        history = _noted(item, why, now, was=item.text, **(note or {}))
     return replace(item, text=text, updated=now,
-                   replaced=(*kept, item.text)[-MAX_REPLACED:], **changes)
+                   replaced=(*kept, item.text)[-MAX_REPLACED:],
+                   history=history, **changes)
 
 
 def save(path: Path, text: str, *, kind: str | None = None, thread: str = "",
@@ -507,7 +567,8 @@ def save(path: Path, text: str, *, kind: str | None = None, thread: str = "",
                 return Saved(items[n], "known")
         for n, item in enumerate(items):
             if _corrects(item, text, kind):
-                items[n] = _reword(item, text, now, until=until or item.until,
+                items[n] = _reword(item, text, now, why="said",
+                                   until=until or item.until,
                                    tickers=tickers or item.tickers)
                 _save(path, items)
                 return Saved(items[n], "updated", before=item.text)
@@ -622,10 +683,15 @@ def _new(text: str, kind: str | None, thread: str, tickers: Iterable[str],
 def edit(path: Path, lid: str, *, text: str | None = None,
          kind: str | None = None,
          tickers: Iterable[str] | None = None,
-         until: str | None = None) -> Learning | None:
+         until: str | None = None,
+         why: str = "edited",
+         note: dict | None = None) -> Learning | None:
     """Change one learning's wording, kind, tickers or end (`until`, an ISO
     day; "" holds for good). None when there is no such id. New words keep
-    the old ones (`replaced`), and bring their own end when they name one."""
+    the old ones (`replaced`) and why they changed (`why`, one of WHYS, with
+    `note` its params), and bring their own end when they name one."""
+    if why not in WHYS:
+        raise ValueError(f"why must be one of {', '.join(WHYS)}")
     with userstore.lock(path):
         items = load(path)
         for n, item in enumerate(items):
@@ -662,7 +728,8 @@ def edit(path: Path, lid: str, *, text: str | None = None,
             if final == "routine":
                 changes["until"] = ""
             if text is not None:
-                items[n] = _reword(item, new_text, now, **changes)
+                items[n] = _reword(item, new_text, now, why=why, note=note,
+                                   **changes)
             else:
                 items[n] = replace(item, text=new_text, updated=now, **changes)
             _save(path, items)
@@ -680,11 +747,41 @@ def supersede(path: Path, keep: str, old: str) -> tuple[Learning, Learning] | No
         if at is None or gone is None or keep == old:
             return None
         kept = items[at]
+        now = _now()
         earlier = tuple(t for t in (*kept.replaced, gone.text) if t != kept.text)
         items[at] = replace(kept, replaced=earlier[-MAX_REPLACED:],
-                            updated=_now())
+                            updated=now,
+                            history=_noted(kept, "replaced", now, was=gone.text))
         _save(path, [i for i in items if i.id != old])
         return items[at], gone
+
+
+def retire(path: Path, lid: str, *, day: str, why: str,
+           note: dict | None = None) -> Learning | None:
+    """Stop memory `lid` holding from `day` on, saying why (`why`, one of
+    WHYS, with `note` its params). Not a delete: it stays on the list,
+    marked, and out of the prompt — the same as one past its own `until` —
+    so the reader can see what it said and why it no longer does. An end
+    already earlier is kept. None when there is no such memory (or it is a
+    routine, which has no end)."""
+    if why not in WHYS:
+        raise ValueError(f"why must be one of {', '.join(WHYS)}")
+    end = _day(day)
+    if not end:
+        raise ValueError("day must be an ISO date")
+    with userstore.lock(path):
+        items = load(path)
+        for n, item in enumerate(items):
+            if item.id != lid or item.kind == "routine":
+                continue
+            now = _now()
+            items[n] = replace(
+                item, updated=now,
+                until=min(item.until, end) if item.until else end,
+                history=_noted(item, why, now, **(note or {})))
+            _save(path, items)
+            return items[n]
+        return None
 
 
 # -------------------------------------------------------------------- usage
@@ -1089,7 +1186,7 @@ def block(items: list[Learning], *, routines: bool = True,
     if asks:
         out += (
             "Daily routines — what this user asked to be shown every day. "
-            "Their daily card on Home answers these each morning; here they "
+            "Their daily card on Today answers these each morning; here they "
             "only tell you what the user follows. Answer one when it is asked, "
             "never unprompted.\n"
             + "\n".join(f"- [{(i.created or '')[:10]}] "
@@ -1323,9 +1420,11 @@ def lessons(raw: str, items: list[Learning], newest: str,
 
 def apply(path: Path, proposed: list[Lesson], *, thread: str = "",
           tickers: Callable[[str], Iterable[str]] = lambda _text: (),
-          ) -> list[dict]:
+          said: str = "") -> list[dict]:
     """Carry out what `lessons` kept, and leave it waiting to be said
-    (`take_unseen`). Returns the changes, as `change` files them.
+    (`take_unseen`). Returns the changes, as `change` files them. `said` is
+    the user's message the changes were read from: an update keeps it as its
+    reason (`history`), quoted — the user's words, not the model's.
 
     Against the list as it is now, not as it was when the model read it: the
     user may have edited it in the meantime, and a change to a memory that
@@ -1357,8 +1456,12 @@ def apply(path: Path, proposed: list[Lesson], *, thread: str = "",
             elif lesson.op == "update":
                 old = items[at]
                 final = lesson.kind or old.kind
+                # The message is the reason only when the new words are its
+                # own; grounded in earlier ones, it would quote the wrong line.
+                quote = said and _grounded(lesson.text, said)
                 items[at] = _reword(
-                    old, lesson.text, now, kind=final,
+                    old, lesson.text, now, why="learned",
+                    note={"said": said} if quote else None, kind=final,
                     tickers=tuple(dict.fromkeys(
                         t.upper() for t in tickers(lesson.text) if t))[:5]
                     or old.tickers,

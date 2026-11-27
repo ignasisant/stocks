@@ -28,6 +28,12 @@ export type BankState = {
   /** "" when this host cannot offer one: banks only redirect to https. */
   redirect_url: string;
   connections: BankConnection[];
+  /** The reader's reporting currency, which the next two figures use. */
+  currency: string;
+  /** All read balances at today's rate; null when none, or one can't convert. */
+  cash_value: number | null;
+  /** The book's market value; null when nothing priced. */
+  book_value: number | null;
 };
 
 export type BankChoice = { name: string; country: string; logo: string | null };

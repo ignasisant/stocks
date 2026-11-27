@@ -6,6 +6,7 @@ minutes: 4
 as_of: 2026-10-25
 terms: twr, irr, benchmark, cash_flow
 app: portfolio?tab=risk
+try: Apri il tuo rendimento: TWR e IRR si somigliano? => portfolio?tab=risk | Se no, cerca il mese in cui hai versato di più. => portfolio?tab=risk
 ---
 Il tuo portafoglio può essere in rialzo dell'8 % e averti comunque fatto perdere soldi. Non è una contraddizione: ci sono due modi di misurare un rendimento, e ognuno risponde a una domanda diversa.
 

@@ -100,6 +100,7 @@ from stocks.api.routes.import_statement.upload import (
 from stocks.api.routes.import_statement.validation import (
     QUOTES_BUDGET_S,
     _place_isins,
+    _real_rows,
     _retag,
     _validated,
 )
@@ -112,6 +113,7 @@ __all__ = [
     "_place_isins",
     "_provider",
     "_read",
+    "_real_rows",
     "_retag",
     "_ticker_exists",
     "_validated",

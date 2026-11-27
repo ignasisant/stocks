@@ -11,6 +11,9 @@
  * is the same link, so pressing it again on an answer already shared shows
  * the link it went out under rather than minting a second one.
  *
+ * A link works for 48 hours (`web/shares.py` TTL_S), and the sheet says so;
+ * the thread stops listing an expired one, so this sheet makes a new one.
+ *
  * Then the destinations (`share/ShareOut.tsx`). The URL carries `src=share`,
  * so a signup it leads to is credited (`attribution.py`).
  */
@@ -140,6 +143,9 @@ export function ShareSheet({
         </span>
       </label>
 
+      <p className="ag-share-cap" aria-hidden="true">
+        {t("chat.share_preview")}
+      </p>
       <div className="ag-share-preview" aria-label={t("chat.share_preview")}>
         {preview ? (
           <SharedBody share={preview} onLeave={onClose} />
@@ -153,6 +159,8 @@ export function ShareSheet({
           {t("chat.share_failed")}
         </p>
       )}
+
+      <p className="ag-chat-hint">{t("chat.share_expires")}</p>
 
       {link ? null : (
         <button

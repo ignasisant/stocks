@@ -6,6 +6,7 @@ minutes: 4
 as_of: 2026-10-25
 terms: twr, irr, benchmark, cash_flow
 app: portfolio?tab=risk
+try: Open your returns: are TWR and IRR close? => portfolio?tab=risk | If not, find the month you added the most money. => portfolio?tab=risk
 ---
 Your portfolio can be up 8 % and still have lost you money. That is not a contradiction: there are two ways to measure a return, and each answers a different question.
 

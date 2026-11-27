@@ -856,6 +856,45 @@ def benchmarks(weights: dict[str, float], kinds: dict[str, str], closes: dict,
     return out
 
 
+def refresh_compare(section: dict, weights: dict[str, float], closes: dict, history,
+                    *, currencies: dict[str, str] | None, base: str | None,
+                    lang: str) -> dict:
+    """`section` (a stored comparisons section) with its figures worked out
+    again off today's closes and the book as it stands: the rows, the
+    benchmarks and the first day. What the card wrote stays — the title, the
+    note, the missing sources — and so does each row's Review verdict, read
+    back off the stored row rather than asked for again. The stored section
+    when nothing can be measured."""
+    from stocks.i18n import translate
+
+    weights = {str(t): float(w) for t, w in weights.items() if finite(w) is not None}
+    if not weights or not closes:
+        return section
+    kinds = {t: kind_of(t) for t in weights}
+    verdicts = {}
+    for row in section.get("rows") or []:
+        data, tickers = row.get("data") or {}, row.get("tickers") or []
+        if tickers:
+            verdicts[tickers[0]] = {k: data.get(k) for k in
+                                    ("verdict", "sector", "quality", "cheapness")}
+    moves: dict[str, dict] = {}
+    hist = history if base else None
+    start = book_start(hist)
+    rows = compare_rows(weights, kinds, verdicts, closes,
+                        lambda key, **kw: translate(key, lang, **kw), lang,
+                        currencies=currencies, base=base, moves=moves, start=start)
+    if not rows:
+        return section
+    out = {**section, "rows": rows,
+           "benchmarks": benchmarks(weights, kinds, closes, currencies or {}, base,
+                                    moves, hist if start is not None else None)}
+    if base:
+        out["currency"] = base
+    if start is not None:
+        out["since"] = start.date().isoformat()
+    return out
+
+
 def _bitcoin(weights: dict[str, float], kinds: dict[str, str], closes: dict):
     """The bitcoin pair a book with coins is measured against: the one it
     holds, when the closes carry it."""

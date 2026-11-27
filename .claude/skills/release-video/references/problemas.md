@@ -28,9 +28,22 @@ Lessons from hand-made tutorials and from building this skill. Check here before
 | Release dir name in card corner | `tag` defaults to product · version | Set `tag:` on every card. |
 | Looks like real results / advice | guest sample book shown as the user's | See SKILL.md 'Rules learned': disclose, badge, no named recommendations. |
 | Zoom lands on the wrong thing / on the chat drawer | a drawer or panel left open by an earlier take shifts the layout (prefs remember `chat_panel_open`) | Setup closes the drawer (`button.ag-chat-icon.ag-chat-head-wide` when `:root[data-chat=open]`) and collapses the sidebar ("Plegar el menú"); re-measure boxes with a probe screenshot. |
-| Chat take leaves an empty "Conversación nueva" / failure toast | a failed or aborted turn in the demo account | Before each AI take overwrite `chat.json` with `{"version": 2, "active": null, "conversations": []}` (no `rm`). |
+| Chat take leaves an empty "Conversación nueva" / failure toast / POST /chat/runs 404 | a failed turn, or an empty `chat.json` (the app then invents a new thread id per read) | `record` runs `scripts/demo_reset.py` (real empty thread, drawer closed); `--probe` checks the AI first. |
 | AI scene: "El asistente no está disponible… api_error" | local free chain dead: Groq 403s from the dev network, OpenRouter free has a daily cap (resets 00:00 UTC) | Probe first: `llm._free_backends()` and stream "di hola" per backend; record the AI take only when one answers. |
+| Framed square in the middle of a chat take | overlay `<style>` unparsed after the drawer opened; root fell back to the UA popover box | Overlay CSS is also an adopted stylesheet. |
+| Cursor covers the text being typed | pointer parked on the input | `fill` hides the cursor until the next mouse move. |
+| Zoom pumps / page jumps when the answer lands | zoom_out + re-zoom, visible scroll | Chain zooms without zoom_out; scroll with `held: true`. |
+| Video looks like Ánfora, a title sits alone | generic card | Landing card template; `card.shot` required (formato.md). |
 | Hook frame is the whole page, tiny | first zoom eased in late (lead before narration) | Start zoomed on the answer to the hook question (`at: 0`, short `dur`), reveal the whole view on the next phrase. |
 | Click on a small control unreadable | clicked at full frame | Zoom to the control (≈2.4×) on the word before, click, then pull back. |
 | Disclosure pill covers page title | pill top-centre | Pill burned top-right. |
 | `ffmpeg` not on PATH (macOS) | no system ffmpeg | `$PY -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())"`; 2 fps sheets: `-vf "fps=2,scale=480:-1,tile=4x3"`. |
+| Clip zooms/pops on a click nobody sees | setup steps (unrecorded) left events in the timeline | `Recorder.start()` empties `events`. |
+| Subtitles cover the question being typed | bottom subtitles over the chat input | `fill` marks a `type` event: subtitles go to the top while it types. |
+| Tooltip cut at the top under auto-zoom | hover zoomed like a click | Hover auto-zoom uses 0.8× the scale. |
+| Sidebar unfolded in a later scene / zooms land wrong | `get_by_role('button', name='Plegar el menú')` matched "Desplegar el menú" and toggled the persisted fold | `exact=True` and `wait_for` the button in every setup. |
+| Mi plan tab shows a skeleton while recording | the tab loads slowly | Warm it in setup (visit the tab), then switch away and record. |
+| Transient banner "la fuente de precios no responde" in frame 0 | price feed retry at page load | Start with a zoom at `at: 0` that excludes it; hide it in clean screenshots. |
+| Card shot cropped, unclear what it shows | recorded frame zoomed + `object-fit: cover` | Dedicated 2× element screenshot, `shot_size`; see SKILL.md 'A shot shows ONE thing'. |
+| Claude scene looks like MyBrainStock | global brand on every card | `card.brand` override (logo, colours) and a Claude-looking shot. |
+

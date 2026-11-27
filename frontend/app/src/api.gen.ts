@@ -274,6 +274,9 @@ export type BankState = {
   "available": boolean;
   "redirect_url": string;
   "connections": BankConnection[];
+  "currency": string;
+  "cash_value": number | null;
+  "book_value": number | null;
 };
 
 export type Bars = {
@@ -379,6 +382,13 @@ export type BrokerCost = {
   "outside_range": number;
   "total": number | null;
   "cost_pct": number | null;
+};
+
+export type Brought = {
+  "added": number;
+  "updated": number;
+  "known": number;
+  "left_out": number;
 };
 
 export type BuyDates = {
@@ -729,6 +739,55 @@ export type Conversations = {
 export type Copied = {
   "what": "url" | "command";
   "app"?: "claude" | "claude_code" | "chatgpt" | "codex" | "gemini" | "cursor" | "vscode" | "windsurf" | "lechat" | "other" | null;
+};
+
+export type Coverage = {
+  "rows": CoverageRow[];
+  "summary": CoverageSummary;
+};
+
+export type CoverageRow = {
+  "ticker": string;
+  "kind": "stock" | "fund" | "crypto";
+  "weight": number | null;
+  "status": "hit" | "none" | "gap" | "review" | "ok";
+  "missing": ("thesis" | "price" | "fundamental" | "event" | "buy")[];
+  "applies": ("thesis" | "price" | "fundamental" | "event" | "buy")[];
+  "rules": CoverageRule[];
+  "retired": number;
+};
+
+export type CoverageRule = {
+  "id": string;
+  "ticker": string;
+  "rule": string;
+  "family": "thesis" | "price" | "fundamental" | "event" | "buy";
+  "side": "exit" | "buy";
+  "state": "open" | "hit";
+  "since": string;
+  "level": number | null;
+  "quarters": number | null;
+  "pillars": string[];
+  "checked": string | null;
+  "last_value": number | null;
+  "watch": string[];
+  "flag": "drift" | "cap" | "old" | null;
+  "quote": string | null;
+  "source": string | null;
+  "source_day": string | null;
+  "pillar": string | null;
+  "verdict": string | null;
+};
+
+export type CoverageSummary = {
+  "holdings": number;
+  "covered": number;
+  "hit": number;
+  "none": number;
+  "gap": number;
+  "review": number;
+  "ok": number;
+  "no_buy": number;
 };
 
 export type CryptoCycle = {
@@ -1241,7 +1300,7 @@ export type Feedback = {
   "kind"?: string;
   "page"?: string;
   "shot"?: string | null;
-  "statement"?: Statement | null;
+  "statement"?: StatementInput | null;
   "statement_digest"?: string | null;
   "lang"?: string | null;
 };
@@ -1534,6 +1593,11 @@ export type ImpliedVol = {
   "week_ago": number | null;
 };
 
+export type ImportBroker = {
+  "key": string;
+  "label": string;
+};
+
 export type ImportHolding = {
   "row": number;
   "ticker": string;
@@ -1583,6 +1647,7 @@ export type ImportPreview = {
   }[];
   "broker"?: string;
   "needs_broker"?: boolean;
+  "brokers"?: ImportBroker[];
   "holdings"?: ImportHolding[];
   "unlisted"?: string[];
   "doubted"?: string[];
@@ -1825,6 +1890,8 @@ export type LessonOut = {
   "after": LessonRef | null;
   "done": boolean;
   "quiz": QuizOut | null;
+  "steps": StepOut[];
+  "live": LiveOut | null;
 };
 
 export type LessonRef = {
@@ -1846,6 +1913,12 @@ export type ListedShare = {
   "question": string;
   "masked": boolean;
   "created": string;
+};
+
+export type LiveOut = {
+  "ticker": string;
+  "facts": string[];
+  "why": string;
 };
 
 export type MarketBank = {
@@ -2009,6 +2082,18 @@ export type Memory = {
   "uses": number;
   "last_used": string | null;
   "replaced": string[];
+  "history": MemoryChange[];
+};
+
+export type MemoryChange = {
+  "day": string;
+  "why": "said" | "learned" | "edited" | "replaced" | "review" | "book";
+  "was": string | null;
+  "said": string | null;
+  "reason": string | null;
+  "ticker": string | null;
+  "event": string | null;
+  "on": string | null;
 };
 
 export type MetricTile = {
@@ -2395,28 +2480,6 @@ export type PrefsPatch = {
 export type Presence = {
   "client": string;
   "visible": boolean;
-};
-
-export type Preview = {
-  "filename": string;
-  "label": string;
-  "platform": string;
-  "kind": string;
-  "unavailable": boolean;
-  "broker": string;
-  "needs_broker": boolean;
-  "brokers": Broker[];
-  "fresh": Row[];
-  "duplicates": Row[];
-  "flagged": Row[];
-  "rejected": Row[];
-  "skipped": Skipped[];
-  "note": string;
-  "message": Stocks__api__routes__chat_attach__Message;
-  "conversation"?: string | null;
-  "surface"?: {
-    [key: string]: unknown;
-  }[] | null;
 };
 
 export type PriceCheck = {
@@ -3028,6 +3091,7 @@ export type SavedMemory = {
   "uses"?: number;
   "last_used"?: string | null;
   "replaced"?: string[];
+  "history"?: MemoryChange[];
   "op"?: "added" | "updated" | "known";
   "before"?: string | null;
   "related"?: Memory | null;
@@ -3322,9 +3386,14 @@ export type State = {
   "connector": boolean;
 };
 
-export type Statement = {
+export type StatementInput = {
   "filename": string;
   "content": string;
+};
+
+export type StatementOutput = {
+  "text": string;
+  "kind": string;
 };
 
 export type StatementRow = {
@@ -3338,10 +3407,19 @@ export type StatementRow = {
   "note"?: string;
 };
 
+export type Statements = {
+  "statements": string[];
+};
+
 export type Step = {
   "tool": string;
   "arg": string;
   "out": string;
+};
+
+export type StepOut = {
+  "text": string;
+  "app": string;
 };
 
 export type Stocks__api__routes__chat__messages__Message = {
@@ -3374,13 +3452,44 @@ export type Stocks__api__routes__chat_attach__Message = {
   "action"?: string | null;
 };
 
+export type Stocks__api__routes__chat_attach__Preview = {
+  "filename": string;
+  "label": string;
+  "platform": string;
+  "kind": string;
+  "unavailable": boolean;
+  "broker": string;
+  "needs_broker": boolean;
+  "brokers": Broker[];
+  "fresh": Row[];
+  "duplicates": Row[];
+  "flagged": Row[];
+  "rejected": Row[];
+  "skipped": Skipped[];
+  "note": string;
+  "message": Stocks__api__routes__chat_attach__Message;
+  "conversation"?: string | null;
+  "surface"?: {
+    [key: string]: unknown;
+  }[] | null;
+};
+
+export type Stocks__api__routes__chat_memory__Preview = {
+  "statements": StatementOutput[];
+  "over": number;
+  "room": number;
+};
+
 export type Stocks__api__routes__chat_memory__Suggestion = {
   "sid": string;
-  "action": "drop" | "merge" | "reword";
+  "action": "drop" | "merge" | "reword" | "retire";
   "ids": string[];
   "reason": string;
   "text": string;
   "note": string;
+  "ticker": string;
+  "event": string;
+  "on": string;
 };
 
 export type Stocks__api__routes__feedback__Sent = {
@@ -3414,7 +3523,11 @@ export type Suggestions = {
   "suggestions": Stocks__api__routes__watchlist_edit__Suggestion[];
 };
 
-export type Summary = {
+export type SummaryInput = {
+  "text": string;
+};
+
+export type SummaryOutput = {
   "base": string;
   "cost": number;
   "value": number;
@@ -4099,6 +4212,7 @@ export interface Responses {
   "/import/platforms": ImportPlatforms;
   "/import/splits/scan": SplitGaps;
   "/journal": Journal;
+  "/journal/coverage": Coverage;
   "/jurisdictions": Jurisdictions;
   "/kpi-sources": KpiSources;
   "/learn": Curriculum;
@@ -4126,7 +4240,7 @@ export interface Responses {
   "/portfolio/positions": Positions;
   "/portfolio/projection": Projection;
   "/portfolio/risk": Risk;
-  "/portfolio/summary": Summary;
+  "/portfolio/summary": SummaryOutput;
   "/portfolio/tax": TaxReport;
   "/portfolio/tax/harvest": {
     [key: string]: unknown;

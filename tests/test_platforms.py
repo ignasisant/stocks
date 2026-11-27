@@ -102,6 +102,27 @@ def test_broker_options_offers_known_brokers_and_other_last():
     assert set(options[:-1]) == set(platforms.BROKER_NAMES)
 
 
+def test_book_brokers_are_the_typed_in_origins_of_its_trades():
+    book = [
+        _tx("finizens Atrevido"),
+        _tx("revolut"),
+        _tx("other"),
+        _tx(""),
+        _tx("demo"),
+        Transaction("2025-01-02", "AAPL", "dividend", 0, 1.0, note="Dividendo"),
+        Transaction("2025-01-02", "AAPL", "split", 20, 0, note="20:1"),
+    ]
+    # Registry brokers are listed already; hand notes on dividends and splits
+    # are not origins.
+    assert platforms.book_brokers(book) == ("finizens",)
+
+
+def test_broker_options_add_the_book_brokers_before_other():
+    options = platforms.broker_options(("finizens",))
+    assert "finizens" in options
+    assert options[-1] == platforms.OTHER
+
+
 def test_broker_key_slugs_a_typed_name_to_one_word():
     # Only the note's first word is read back, so a typed name must not keep
     # its spaces or punctuation.

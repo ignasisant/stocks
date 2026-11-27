@@ -117,6 +117,15 @@ def test_importing_that_broker_again_retires_the_hint(tmp_path):
     assert held.reuploads(all_transactions(db), db) == []
 
 
+def test_a_broker_imported_since_the_shelf_names_nothing(tmp_path):
+    # That import kept whatever it refused; re-uploading recovers nothing.
+    db = tmp_path / "portfolio.db"
+    add_many([BUY], db)
+    held.seen_broker("clicktrade", db)
+    add_many([SPLIT], db)
+    assert held.reuploads(all_transactions(db), db) == []
+
+
 def test_a_dismissed_hint_stays_dismissed(tmp_path):
     db = tmp_path / "portfolio.db"
     add_many([BUY], db)
@@ -292,8 +301,8 @@ def test_a_commit_keeps_the_sale_it_refused_and_checkup_offers_it_back(
     assert (sale["ticker"], sale["quantity"], sale["broker"]) == (
         "AMZN", 20.0, "clicktrade"
     )
-    # The split came after this broker's import: the statement is named too.
-    assert [h["broker"] for h in checkup["reupload"]] == ["clicktrade"]
+    # The shelf carries the sale, so the statement is not named as well.
+    assert checkup["reupload"] == []
 
     applied = signed_in.post("/v1/import/held/apply", json={"ids": [sale["id"]]})
     assert applied.json()["applied"] == 1
@@ -386,7 +395,6 @@ def test_the_chat_check_offers_a_held_sale_and_approving_writes_it(
 def test_the_chat_check_names_the_statement_to_upload_again(tmp_path):
     db = tmp_path / "portfolio.db"
     add_many([BUY], db)
-    held.seen_broker("clicktrade", db)
     add_many([SPLIT], db)
     drafted = checked(db, "AMZN")
     assert "chat.book_finding_reupload" in drafted.text

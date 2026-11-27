@@ -18,7 +18,6 @@ type Span = "full" | "half";
 
 export type CardId =
   | "market"
-  | "daily"
   | "glance"
   | "movers"
   | "extremes"
@@ -44,9 +43,8 @@ export type CardSpec = {
 export type Slot = { id: string; hidden: boolean };
 
 export const HOME_CARDS: readonly CardSpec[] = [
-  { id: "market", span: "full", optional: false, signedIn: false },
-  { id: "daily", span: "full", optional: false, signedIn: true },
   { id: "movers", span: "full", optional: false, signedIn: true },
+  { id: "market", span: "full", optional: false, signedIn: false },
   { id: "extremes", span: "half", optional: false, signedIn: false },
   { id: "glance", span: "full", optional: false, signedIn: true },
   { id: "earnings", span: "full", optional: false, signedIn: false },
@@ -57,6 +55,21 @@ export const HOME_CARDS: readonly CardSpec[] = [
   { id: "tax", span: "half", optional: true, signedIn: true },
   { id: "rotation", span: "half", optional: true, signedIn: false },
 ];
+
+/**
+ * A layout saved while Home still carried the AI briefing (the `daily` card,
+ * now only on Today) had the market above the movers: it gets the market
+ * moved to just below the movers, every other card where the reader put it.
+ * The next save drops `daily`, and with it this.
+ */
+function migrate(stored: readonly Slot[]): readonly Slot[] {
+  if (!stored.some((slot) => slot.id === "daily")) return stored;
+  const market = stored.filter((slot) => slot.id === "market");
+  const rest = stored.filter((slot) => slot.id !== "market");
+  const at = rest.findIndex((slot) => slot.id === "movers");
+  if (at < 0 || market.length === 0) return stored;
+  return [...rest.slice(0, at + 1), ...market, ...rest.slice(at + 1)];
+}
 
 /** The page a new account gets, as slots. */
 export function defaultLayout(registry: readonly CardSpec[] = HOME_CARDS): Slot[] {
@@ -75,7 +88,7 @@ export function resolveLayout(
   const known = new Set<string>(registry.map((card) => card.id));
   const out: Slot[] = [];
   const seen = new Set<string>();
-  for (const slot of stored) {
+  for (const slot of migrate(stored)) {
     if (!known.has(slot.id) || seen.has(slot.id)) continue;
     seen.add(slot.id);
     out.push({ id: slot.id, hidden: slot.hidden === true });

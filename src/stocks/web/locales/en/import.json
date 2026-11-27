@@ -365,7 +365,7 @@
   "import.toast_held_applied": "{n} sales added.",
   "import.toast_held_applied_one": "{n} sale added.",
   "import.reupload_title": "Upload your {broker} statement again",
-  "import.reupload_note": "The {ticker} split ({date}) arrived after it, so a sale refused then may now go in. Rows you already have are skipped.",
+  "import.reupload_note": "Your last import predates the {ticker} split ({date}). If it refused a {ticker} sale then, uploading it again lets it in. Rows you already have are skipped.",
   "import.hide": "Hide",
   "import.fix": "Fix",
   "import.fix_two_labels": "{labels} are the same security. Merge into {ticker}.",
