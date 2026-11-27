@@ -387,6 +387,29 @@ def _post(endpoint: str, body: bytes, headers: dict[str, str]) -> int:
         return exc.code
 
 
+def declarative(message: dict, origin: str) -> dict:
+    """`message` plus WebKit's declarative form (`web_push: 8030`).
+
+    An iPhone PWA pressed from the background was launched on `start_url`
+    without our worker's `notificationclick` ever running (prod 2026-11-27: no
+    `push.opened`, no `?thread=` load). With `navigate` in the payload iOS
+    opens that page itself. The flat fields stay: the service worker (every
+    other browser) reads those.
+    """
+    url = message.get("url") or ""
+    if not origin.startswith("https://") or not url.startswith("/"):
+        return message
+    return {
+        **message,
+        "web_push": 8030,
+        "notification": {
+            "title": message.get("title") or "MyBrainStock",
+            "body": message.get("body") or "",
+            "navigate": origin.rstrip("/") + url,
+        },
+    }
+
+
 def send(path: Path, row: dict, message: dict, *, topic: str = "") -> int:
     """Push `message` (the service worker's JSON) to one device; the status.
 
@@ -395,7 +418,10 @@ def send(path: Path, row: dict, message: dict, *, topic: str = "") -> int:
     key = _private_key()
     if key is None:
         return 0
-    body = encrypt(json.dumps(message).encode(), row["p256dh"], row["auth"])
+    body = encrypt(
+        json.dumps(declarative(message, row.get("origin") or "")).encode(),
+        row["p256dh"], row["auth"],
+    )
     headers = {
         "Authorization": vapid_header(row["endpoint"], row.get("origin") or "", key),
         "Content-Encoding": "aes128gcm",
