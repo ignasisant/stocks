@@ -1825,6 +1825,8 @@ export type LessonOut = {
   "after": LessonRef | null;
   "done": boolean;
   "quiz": QuizOut | null;
+  "steps": StepOut[];
+  "live": LiveOut | null;
 };
 
 export type LessonRef = {
@@ -1846,6 +1848,12 @@ export type ListedShare = {
   "question": string;
   "masked": boolean;
   "created": string;
+};
+
+export type LiveOut = {
+  "ticker": string;
+  "facts": string[];
+  "why": string;
 };
 
 export type MarketBank = {
@@ -3342,6 +3350,11 @@ export type Step = {
   "tool": string;
   "arg": string;
   "out": string;
+};
+
+export type StepOut = {
+  "text": string;
+  "app": string;
 };
 
 export type Stocks__api__routes__chat__messages__Message = {
