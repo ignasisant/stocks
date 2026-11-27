@@ -7,6 +7,8 @@ does this for every `record` on an environment with `demo_email`). It:
 - gives the chat one real, empty thread. An absent or empty chat.json makes the app invent a
   new random thread id on every read, so the drawer sends to a thread the server never
   listed and the turn fails with `chat.api_error` (POST /chat/runs 404);
+- gives every held name exit rules and a thesis, so the Diario reads as a book in use, not an
+  empty state (`seed_rules`; stops sit ~25 % under the price: a stop further than 1.5x away is flagged 'drift' (Toca revisar));
 - closes the chat drawer (`chat_panel_open: false`) so every take starts on the bare page;
 - with `--probe`, asks the AI the demo question once and reports how long it took, so a slow
   or failing provider is found before a take, not in the clip.
@@ -36,11 +38,48 @@ def main() -> None:
     paths.root.mkdir(parents=True, exist_ok=True)
     conversations.save_book(conversations._empty_book(), paths.chat)
     conversations.new_conversation(paths.chat)
+    seed_rules(paths)
     if paths.prefs.exists():
         accounts.update_prefs(paths.prefs, {'chat_panel_open': False})
     print(f'demo_reset: {paths.root.name} chat cleared, drawer closed')
     if '--probe' in sys.argv:
         probe(paths)
+
+
+RULES = {
+    'AAPL': (270, 'Servicios y recompra sostienen el margen'),
+    'MSFT': (370, 'Azure sigue creciendo por encima del 25 %'),
+    'TSLA': (300, 'Margen automotriz estable y energía creciendo'),
+    'GOOGL': (205, 'Search resiste y Cloud gana margen'),
+    'NVDA': (112, 'Los hiperescaladores siguen subiendo el capex en IA'),
+    'META': (470, 'Publicidad crece con inversión en IA controlada'),
+    'NOW': (70, 'Renovaciones por encima del 98 % y alza de precios'),
+}
+
+
+def seed_rules(paths) -> None:
+    """
+    Give each held name a price stop, a drawdown stop and a thesis rule (idempotent).
+
+    :param paths: accounts.UserPaths, demo account paths
+    :return: None
+    """
+    from datetime import date
+
+    from stocks.chat import journal
+
+    for code, (stop, thesis) in RULES.items():
+        journal.add_criteria(
+            paths.journal,
+            code,
+            [
+                {'rule': 'below', 'level': stop},
+                {'rule': 'drawdown_high', 'level': 40},
+                {'rule': 'thesis', 'pillars': [thesis]},
+            ],
+            date.today(),
+            thesis,
+        )
 
 
 def probe(paths) -> None:
