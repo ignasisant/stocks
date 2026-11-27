@@ -697,7 +697,7 @@
 .lr-try-text {
   flex: 1 1 14rem;
   min-width: 0;
-  color: var(--ag-text);
+  color: var(--ag-text-primary);
   line-height: 1.6;
 }
 .lr-try-go {

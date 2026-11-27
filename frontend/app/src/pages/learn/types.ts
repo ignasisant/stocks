@@ -56,3 +56,9 @@ export type Term = {
 };
 
 export type Glossary = { terms: Term[] };
+
+/** The few figures of the Ticker page's quote and metrics a live card reads. */
+export type LiveQuote = { price: number | null; currency: string | null };
+export type LiveMetrics = {
+  kpis: { key: string; value: number | null; formatted: string }[];
+};

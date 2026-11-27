@@ -12,8 +12,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
-import type { Metrics, Quote } from "../ticker/types";
-import type { Live } from "./types";
+import type { Live, LiveMetrics as Metrics, LiveQuote as Quote } from "./types";
 
 /** How far below the price the lesson's limit order sits. */
 const LIMIT_BELOW = 0.02;
