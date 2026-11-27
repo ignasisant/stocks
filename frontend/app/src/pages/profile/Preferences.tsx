@@ -427,21 +427,6 @@ export function Preferences({
               {t("profile.export_all_button")}
             </a>
           </Row>
-          {/* The assistant's answers, sampled for an automated quality check
-              (chat/review.py): scores only, as the privacy policy says. */}
-          <Row
-            label={t("profile.review_answers")}
-            help={t("profile.review_answers_help")}
-            middle
-          >
-            <Toggle
-              label={t("profile.review_answers")}
-              checked={prefs.review_answers ?? true}
-              disabled={saving === "review_answers"}
-              onToggle={(on) => save("review_answers", on)}
-            />
-            <Failure message={fail("review_answers")} />
-          </Row>
         </Card>
         {/* Who has a way in: the signed-in browsers and the links out. Each
             draws nothing until it has something, so the card is only there

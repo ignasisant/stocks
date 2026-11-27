@@ -44,13 +44,27 @@ export class Crash extends Component<
 }
 
 /** The fallback's body: what happened, and the one thing that fixes most of it. */
-export function Broken({ text, action }: { text: string; action: string }) {
+export function Broken({
+  text,
+  action,
+  home,
+}: {
+  text: string;
+  action: string;
+  /** The way out when reloading lands on the same failure: the start page. */
+  home?: string;
+}) {
   return (
     <div className="ag-wall" role="alert">
       <p>{text}</p>
       <button className="ag-btn" onClick={() => window.location.reload()}>
         {action}
       </button>
+      {home ? (
+        <p>
+          <a href="/">{home}</a>
+        </p>
+      ) : null}
     </div>
   );
 }
