@@ -703,6 +703,10 @@ WRITES = {
     ("/v1/watchlist/tags/{tag}", "patch"),
     ("/v1/watchlist/tags/{tag}", "delete"),
     ("/v1/import/commit", "post"),
+    # What the import page did (override, replace, guide…): action names only.
+    ("/v1/import/event", "post"),
+    # The onboarding wizard's answers (language, residence) and step events.
+    ("/v1/onboarding/wizard", "post"),
     # A statement attached to a conversation. The preview writes no ledger rows
     # — but it files the assistant's note on the thread and, for an export no
     # parser owns, spends a model call, so it is a write like the commit that

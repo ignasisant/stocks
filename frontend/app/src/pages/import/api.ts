@@ -117,6 +117,11 @@ export type Preview = {
    * cost with no price until mapped. Optional for an older server.
    */
   unlisted?: string[];
+  /** When the model read it: which column of the file it took for each field
+   *  (`date`, `price`…). Empty when a parser read it. */
+  columns?: { field: string; column: string }[];
+  /** Names bought here that the book does not hold yet. */
+  new_positions?: string[];
   /**
    * Tickers the model named whose fills sit far from their closes: maybe
    * another company. Their rows carry `validate.ticker_doubt`, and the reader
@@ -502,6 +507,31 @@ export function reportUnreadable(
       bytes: blob.size,
       error: (typeof kind === "string" && kind ? kind : "Error").slice(0, 64),
       message: String(message ?? error ?? "").slice(0, 500),
+    },
+    { touches: [] },
+  ).catch(() => undefined);
+}
+
+/** What a reader did on the page that no request of its own records. The
+ *  list is the server's (`UI_ACTIONS`); nothing from the statement travels,
+ *  and a failure changes nothing for the reader. */
+export type UiAction =
+  | "override"
+  | "replace"
+  | "guide"
+  | "guide_broker"
+  | "paste"
+  | "broker_asked"
+  | "broker_answered";
+
+export function note(action: UiAction, detail = "", digest = ""): void {
+  send<void>(
+    "POST",
+    "/import/event",
+    {
+      action,
+      detail: detail.replace(/[^\w>:. -]/g, "").slice(0, 80),
+      digest: digest.slice(0, 16),
     },
     { touches: [] },
   ).catch(() => undefined);

@@ -18,12 +18,12 @@ saw, which is a small lie the account can never get back.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, i18n, learn
+from stocks import accounts, i18n, learn, obs
 from stocks.api.deps import Account, Writer
 from stocks.api.security import Who
 from stocks.web import onboarding
@@ -228,6 +228,50 @@ def seen(body: Seen, account: Writer, caller: Who) -> Onboarding:
         changes[onboarding.PREF_DONE] = body.done
     accounts.update_prefs(account.prefs, changes)
     return state(account, caller)
+
+
+# ------------------------------------------------------------ first-run wizard
+# What the full-screen first-run flow (`Welcome`) tells the log: which screen a
+# newcomer saw, and whether they answered it, skipped it or finished. It is the
+# only way to learn who the audience is — language, residence, whether they use
+# an AI — and where they leave. `stocks logs wizard` reads it back.
+
+WizardStep = Literal[
+    "lang", "residence", "ai", "which", "connect", "memo", "review", "risk",
+    "horizon", "focus", "constraints", "notes", "done", "all",
+]
+
+
+class WizardEvent(BaseModel):
+    """One thing that happened on one screen of the first-run wizard."""
+
+    model_config = {"extra": "forbid"}
+
+    step: WizardStep
+    action: Literal["shown", "answered", "skipped", "finished"]
+    value: str | None = Field(
+        default=None,
+        max_length=60,
+        pattern=r"^[a-z0-9_,.-]*$",
+        description=(
+            "The answer, as a closed token (a language code, `yes`, `claude`, "
+            "`balanced`, interests joined by commas). Never free text: the "
+            "pasted memory and the notes are not sent, and the pattern refuses "
+            "anything that looks like prose."
+        ),
+    )
+    ms: int | None = Field(
+        default=None, ge=0, le=3_600_000,
+        description="Milliseconds the screen was open before this action.",
+    )
+
+
+@router.post("/wizard", status_code=status.HTTP_204_NO_CONTENT,
+             summary="Note a step of the first-run wizard")
+def wizard(body: WizardEvent, _account: Writer) -> None:
+    """Log `wizard.step`. Nothing is stored on the account."""
+    obs.event("wizard.step", step=body.step, action=body.action,
+              value=body.value, ms=body.ms)
 
 
 # ------------------------------------------------------------ first-visit tips

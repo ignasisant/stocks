@@ -67,7 +67,7 @@ export function Holdings({
     <section aria-labelledby="im-hold-title" className="im-card im-review">
       <header className="im-review-head">
         <h2 className="im-review-title" id="im-hold-title">
-          <Eyebrow n={3}>{t("import.hold_title")}</Eyebrow>
+          <Eyebrow n={2}>{t("import.hold_title")}</Eyebrow>
           <span className="im-review-sum">
             {vocab.tn("import.hold_sum", rows.length, {
               total: vocab.num(holdings.length, 0),

@@ -157,6 +157,7 @@ from stocks.schemas.fundamentals import (
 )
 from stocks.schemas.importer import (
     ImportBroker,
+    ImportColumn,
     ImportHolding,
     ImportIssue,
     ImportPlatform,
@@ -353,6 +354,7 @@ __all__ = [
     "HomeSlot",
     "ImpliedVol",
     "ImportBroker",
+    "ImportColumn",
     "ImportHolding",
     "ImportIssue",
     "ImportPlatform",

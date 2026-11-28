@@ -61,7 +61,11 @@ export function currencyLabel(code: string): string {
  * `stocks.i18n.LANGUAGES`. Endonyms: a language names itself the same way
  * in every catalog, which is why they are not translated.
  */
-export const LANGUAGES: Record<string, string> = { en: "English", es: "Español" };
+export const LANGUAGES: Record<string, string> = {
+  en: "English",
+  es: "Español",
+  it: "Italiano",
+};
 
 /**
  * `stocks.i18n.LANGUAGE_FLAGS`. A language has no flag of its own, so this

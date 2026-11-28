@@ -20,11 +20,11 @@
  * a disabled control with no reason reads as a broken one.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { useAccount, useSession } from "../../shell/session";
 import { Status } from "../../ui/Status";
-import { MAX_BYTES, commit, written } from "./api";
+import { MAX_BYTES, commit, note, written } from "./api";
 import type { Platform, Preview, Refusal, Result, Row, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { names } from "./repairs";
@@ -91,6 +91,12 @@ export function CommitPanel({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+
+  // Said once per reading: the question a model-read file adds is the most
+  // likely place to give up, and "asked" without a commit is how that shows.
+  useEffect(() => {
+    if (preview.needs_broker) note("broker_asked", "", preview.digest);
+  }, [preview.needs_broker, preview.digest]);
 
   const rows = written(preview, keep).length;
   const dupes = keep ? 0 : preview.importable.length - rows;
@@ -178,7 +184,16 @@ export function CommitPanel({
               className="im-input"
               disabled={busy}
               id="im-broker"
-              onChange={(event) => setPick(event.target.value)}
+              onChange={(event) => {
+                setPick(event.target.value);
+                // The key only: a typed name stays between the reader and the book.
+                if (event.target.value)
+                  note(
+                    "broker_answered",
+                    event.target.value === OTHER ? "other" : event.target.value,
+                    preview.digest,
+                  );
+              }}
               value={pick}
             >
               <option value="">{t("import.broker_pick")}</option>
@@ -214,7 +229,7 @@ export function CommitPanel({
       <div aria-label={t("import.confirm")} className="im-confirm" role="region">
         <div className="im-confirm-main">
           <div className="im-confirm-text">
-            <Eyebrow n={4}>{t("import.confirm")}</Eyebrow>
+            <Eyebrow n={3}>{t("import.confirm")}</Eyebrow>
             {busy ? (
               <Status label={vocab.tn("import.work_committing", rows)} />
             ) : (

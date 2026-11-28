@@ -1,7 +1,19 @@
 /**
- * The first-login wizard: one question per screen, every one skippable.
+ * The first-login wizard: a full screen of its own, one question at a time,
+ * every one skippable — like an installer, not a pop-up.
  *
- * It does two jobs a newcomer would otherwise meet as forms. First, what an AI
+ * It covers the whole page and has no way out by a stray click or Escape: a
+ * pop-up that closes when its backdrop is touched tells a newcomer it does not
+ * matter, and what it asks is what the assistant and the tax tab run on. The
+ * only exits are each screen's small "skip" and the header's "skip setup".
+ *
+ * Every screen reports itself (`POST /onboarding/wizard`: shown, answered,
+ * skipped, finished) with a closed answer token, never free text, so
+ * `stocks logs wizard` can say who answers, who skips, where they stop, and
+ * who the audience is (language, residence, whether they use an AI).
+ *
+ * It starts with language (applied live) and tax residence. Then it does two
+ * jobs a newcomer would otherwise meet as forms. First, what an AI
  * the reader already uses knows about them: which AI, the connector set up in
  * its own app, its summary pasted here, reviewed line by line and saved as
  * separate memories (`/chat/memories/import`). Then the investor profile the
@@ -16,9 +28,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { LANGUAGE_FLAGS, LANGUAGES } from "../pages/profile/data";
+import type { Jurisdictions } from "../pages/profile/data";
+import { useSettings } from "../pages/profile/prefs";
 import { AiLogo } from "./aiLogos";
 import { get, send } from "./api";
-import { useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
 import { landing } from "./Tour";
@@ -33,6 +48,8 @@ type Target = {
 };
 
 type Id =
+  | "lang"
+  | "residence"
   | "ai"
   | "which"
   | "connect"
@@ -70,6 +87,27 @@ type Options = {
 type Connections = { url: string | null; connections: unknown[] };
 type Statement = { text: string; kind: string };
 type Preview = { statements: Statement[]; over: number; room: number };
+
+/**
+ * Tell the log what happened on a screen (`stocks logs wizard`). Fire and
+ * forget: a failed note must never stand between a newcomer and the next
+ * screen. `value` is a closed token — a code, `yes`, an option — never text
+ * the reader typed or pasted.
+ */
+function note(
+  step: string,
+  action: "shown" | "answered" | "skipped" | "finished",
+  since: number,
+  value?: string,
+): void {
+  const ms = action === "shown" ? undefined : Math.max(0, Date.now() - since);
+  send<void>(
+    "POST",
+    "/onboarding/wizard",
+    { step, action, value, ms },
+    { touches: [] },
+  ).catch(() => undefined);
+}
 
 /** Milliseconds between asks while the other AI is still connecting. */
 const POLL_MS = 4000;
@@ -189,8 +227,12 @@ export function Welcome({
   useExitGhost(scrim);
   useDialog(card);
   const { go } = useRoute();
+  const lang = useLang();
+  const settings = useSettings(t("tour.wz_failed"));
 
-  const [at, setAt] = useState<Id>("ai");
+  const [at, setAt] = useState<Id>("lang");
+  const [places, setPlaces] = useState<Jurisdictions | null>(null);
+  const [home, setHome] = useState<string | null>(settings.prefs.tax_residence);
   const [uses, setUses] = useState<boolean | null>(null);
   const [which, setWhich] = useState("");
   const [memo, setMemo] = useState("");
@@ -215,15 +257,17 @@ export function Welcome({
 
   useEffect(() => {
     get<Options>("/profile-options").then(setOptions, () => undefined);
+    get<Jurisdictions>("/jurisdictions").then(setPlaces, () => undefined);
   }, []);
 
+  // When the screen opened, so a note can say how long it was looked at.
+  const since = useRef(Date.now());
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    since.current = Date.now();
+    note(at, "shown", since.current);
+  }, [at]);
+  const answered = (value?: string) => note(at, "answered", since.current, value);
+  const skipped = () => note(at, "skipped", since.current);
 
   /** The screens this reader will see, in order; "done" is not counted. */
   const seq = (): Id[] => {
@@ -235,7 +279,17 @@ export function Welcome({
           "memo",
           ...(shown.length ? (["review"] as Id[]) : []),
         ];
-    return ["ai", ...ai, "risk", "horizon", "focus", "constraints", "notes"];
+    return [
+      "lang",
+      "residence",
+      "ai",
+      ...ai,
+      "risk",
+      "horizon",
+      "focus",
+      "constraints",
+      "notes",
+    ];
   };
   const order = seq();
   const index = Math.max(0, order.indexOf(at));
@@ -245,7 +299,7 @@ export function Welcome({
     setAt(to);
   };
   const next = () => move(order[index + 1] ?? "done");
-  const back = () => move(order[index - 1] ?? "ai");
+  const back = () => move(order[index - 1] ?? "lang");
   /** The AI part ends here, whatever was done in it. */
   const toProfile = () => move("risk");
 
@@ -265,6 +319,7 @@ export function Welcome({
       .then((answer) => {
         setFound(answer);
         setOff([]);
+        answered(String(answer.statements.length));
         // Nothing worth keeping in what was pasted: straight on, not an empty list.
         setAt(answer.statements.length ? "review" : "risk");
       })
@@ -280,15 +335,20 @@ export function Welcome({
     })
       .then((done) => {
         setSaved(done.added + done.updated);
+        answered(String(kept.length));
         setAt("risk");
       })
       .catch(() => setFailed(true))
       .finally(() => setBusy(false));
   }
 
+  const anyProfile = () =>
+    risk || horizon || focus.length || constraints.length || notes.trim();
+
   function finish() {
-    const any = risk || horizon || focus.length || constraints.length || notes.trim();
-    if (!any) return move("done");
+    if (notes.trim()) answered("text");
+    else skipped();
+    if (!anyProfile()) return move("done");
     setBusy(true);
     setFailed(false);
     send("PUT", "/profile", { risk, horizon, focus, constraints, notes: notes.trim() })
@@ -297,7 +357,23 @@ export function Welcome({
       .finally(() => setBusy(false));
   }
 
+  /** The header's way out of the rest. What was already picked is still kept. */
+  function skipAll() {
+    note("all", "skipped", since.current, at);
+    if (!anyProfile()) return move("done");
+    send("PUT", "/profile", {
+      risk,
+      horizon,
+      focus,
+      constraints,
+      notes: notes.trim(),
+    }).catch(() => undefined);
+    move("done");
+  }
+
   const heading: Record<Id, string> = {
+    lang: t("tour.wz_lang_q"),
+    residence: t("tour.wz_residence_q"),
     ai: t("tour.wz_ai_q"),
     which: t("tour.wz_which_q"),
     connect: t("tour.wz_connect_h", { ai }),
@@ -311,6 +387,8 @@ export function Welcome({
     done: t("tour.wz_done_h"),
   };
   const sub: Partial<Record<Id, string>> = {
+    lang: t("tour.wz_lang_sub"),
+    residence: t("tour.wz_residence_sub"),
     ai: t("tour.wz_ai_sub"),
     which: t("tour.wz_which_sub"),
     connect: t("tour.wz_connect_sub"),
@@ -339,12 +417,26 @@ export function Welcome({
   let body: React.ReactNode = null;
   let foot: React.ReactNode = null;
   const skipAi = (
-    <button type="button" className="ag-tour-quiet" onClick={toProfile}>
+    <button
+      type="button"
+      className="ag-tour-quiet"
+      onClick={() => {
+        skipped();
+        toProfile();
+      }}
+    >
       {t("tour.wz_skip")}
     </button>
   );
   const skip = (
-    <button type="button" className="ag-tour-quiet" onClick={next}>
+    <button
+      type="button"
+      className="ag-tour-quiet"
+      onClick={() => {
+        skipped();
+        next();
+      }}
+    >
       {t("tour.wz_skip")}
     </button>
   );
@@ -364,13 +456,53 @@ export function Welcome({
     </p>
   ) : null;
 
-  if (at === "ai") {
+  if (at === "lang") {
+    body = (
+      <div className="ag-wz-grid">
+        {Object.entries(LANGUAGES).map(([code, name]) => (
+          <Card
+            key={code}
+            on={lang === code}
+            onPick={() => {
+              answered(code);
+              if (code !== lang) settings.save("language", code);
+              next();
+            }}
+            title={name}
+            mark={LANGUAGE_FLAGS[code]}
+          />
+        ))}
+      </div>
+    );
+    foot = skip;
+  } else if (at === "residence") {
+    body = (
+      <div className="ag-wz-grid">
+        {(places?.jurisdictions ?? []).map((j) => (
+          <Card
+            key={j.code}
+            on={home === j.code}
+            onPick={() => {
+              setHome(j.code);
+              answered(j.code.toLowerCase());
+              settings.save("tax_residence", j.code);
+              next();
+            }}
+            title={t(j.label_key)}
+            mark={j.flag}
+          />
+        ))}
+      </div>
+    );
+    foot = skip;
+  } else if (at === "ai") {
     body = (
       <div className="ag-wz-grid">
         <Card
           on={uses === true}
           onPick={() => {
             setUses(true);
+            answered("yes");
             move("which");
           }}
           title={t("tour.wz_yes")}
@@ -380,6 +512,7 @@ export function Welcome({
           on={uses === false}
           onPick={() => {
             setUses(false);
+            answered("no");
             toProfile();
           }}
           title={t("tour.wz_no")}
@@ -396,6 +529,7 @@ export function Welcome({
             on={which === id}
             onPick={() => {
               setWhich(id);
+              answered(id);
               // The connector's menu exists for two of them; the rest go
               // straight to pasting what they know.
               setAt(CONNECTABLE.has(id) && connector?.url ? "connect" : "memo");
@@ -424,10 +558,23 @@ export function Welcome({
     );
     foot = (
       <>
-        <button type="button" className="ag-tour-quiet" onClick={next}>
+        <button
+          type="button"
+          className="ag-tour-quiet"
+          onClick={() => {
+            if (connected) answered("connected");
+            else skipped();
+            next();
+          }}
+        >
           {connected ? t("tour.wz_next") : t("tour.wz_connect_skip")}
         </button>
-        {connected ? cta(t("tour.wz_next"), next) : null}
+        {connected
+          ? cta(t("tour.wz_next"), () => {
+              answered("connected");
+              next();
+            })
+          : null}
       </>
     );
   } else if (at === "memo") {
@@ -508,6 +655,7 @@ export function Welcome({
             on={value === o}
             onPick={() => {
               pick(o);
+              answered(o.toLowerCase());
               next();
             }}
             title={t(`profile.iv_${at}_${o}`)}
@@ -545,7 +693,11 @@ export function Welcome({
     foot = (
       <>
         {skip}
-        {cta(t("tour.wz_next"), next)}
+        {cta(t("tour.wz_next"), () => {
+          if (focus.length) answered(focus.join(",").toLowerCase());
+          else skipped();
+          next();
+        })}
       </>
     );
   } else if (at === "constraints") {
@@ -567,7 +719,11 @@ export function Welcome({
     foot = (
       <>
         {skip}
-        {cta(t("tour.wz_next"), next)}
+        {cta(t("tour.wz_next"), () => {
+          if (constraints.length) answered(constraints.join(",").toLowerCase());
+          else skipped();
+          next();
+        })}
       </>
     );
   } else if (at === "notes") {
@@ -591,7 +747,10 @@ export function Welcome({
           type="button"
           className="ag-tour-quiet"
           disabled={busy}
-          onClick={() => move("done")}
+          onClick={() => {
+            skipped();
+            move("done");
+          }}
         >
           {t("tour.wz_skip")}
         </button>
@@ -602,19 +761,32 @@ export function Welcome({
     body = null;
     foot = (
       <>
-        <button type="button" className="ag-tour-quiet" onClick={onTour}>
+        <button
+          type="button"
+          className="ag-tour-quiet"
+          onClick={() => {
+            note("done", "finished", since.current, "tour");
+            onTour();
+          }}
+        >
           {t("tour.wz_done_tour")}
         </button>
         {importNow
-          ? cta(t("tour.wz_done_import"), importNow)
-          : cta(t("tour.wz_done_close"), onClose)}
+          ? cta(t("tour.wz_done_import"), () => {
+              note("done", "finished", since.current, "import");
+              importNow();
+            })
+          : cta(t("tour.wz_done_close"), () => {
+              note("done", "finished", since.current, "close");
+              onClose();
+            })}
       </>
     );
   }
 
   const last = at === "done";
   return (
-    <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onClose}>
+    <div ref={scrim} className="ag-tour-scrim ag-wz-screen">
       <div
         ref={card}
         tabIndex={-1}
@@ -622,19 +794,40 @@ export function Welcome({
         role="dialog"
         aria-modal="true"
         aria-label={t("tour.wz_title")}
-        onClick={(event) => event.stopPropagation()}
       >
-        <header className="ag-tour-head">
+        <header className="ag-wz-top">
           <span className="ag-tour-title">{t("tour.wz_title")}</span>
           {last ? null : (
-            <span className="ag-tour-progress">
-              {t("tour.wz_progress", { n: index + 1, total: order.length })}
-            </span>
+            <button
+              type="button"
+              className="ag-tour-quiet ag-wz-skipall"
+              disabled={busy}
+              onClick={skipAll}
+            >
+              {t("tour.wz_skip_all")}
+            </button>
           )}
         </header>
-        <h2 className="ag-tour-h">{heading[at]}</h2>
-        {sub[at] ? <p className="ag-tour-intro">{sub[at]}</p> : null}
-        {body}
+        <div className="ag-wz-main">
+          {last ? null : (
+            <div
+              className="ag-wz-bar"
+              role="progressbar"
+              aria-valuemin={1}
+              aria-valuemax={order.length}
+              aria-valuenow={index + 1}
+              aria-valuetext={t("tour.wz_progress", {
+                n: index + 1,
+                total: order.length,
+              })}
+            >
+              <span style={{ width: `${((index + 1) / order.length) * 100}%` }} />
+            </div>
+          )}
+          <h2 className="ag-tour-h">{heading[at]}</h2>
+          {sub[at] ? <p className="ag-tour-intro">{sub[at]}</p> : null}
+          {body}
+        </div>
         <footer className="ag-tour-foot">
           {index > 0 && !last ? (
             <button

@@ -48,6 +48,7 @@ _IMPORT = re.compile(r"""(?:\bfrom|\bimport)\s*\(?\s*["'](\.{1,2}/[^"']+)["']"""
 _DEBT: dict[tuple[str, str], str] = {
     # The base layer reaching the chat.
     ("shell/Layout.tsx", "chat"): "the frame mounts the drawer",
+    ("shell/Welcome.tsx", "pages/profile"): "the wizard sets the language and residence",
     ("shell/assistant.ts", "chat"): "seeds the chat's draft",
     ("shell/Feedback.tsx", "chat"): "dictates with the chat's recorder",
     # The chat reading a page's modules.

@@ -155,7 +155,7 @@ export function Tiers({
     <section aria-labelledby="im-review-title" className="im-card im-review">
       <header className="im-review-head">
         <h2 className="im-review-title" id="im-review-title">
-          <Eyebrow n={3}>{t("import.review")}</Eyebrow>
+          <Eyebrow n={2}>{t("import.review")}</Eyebrow>
           <span className="im-review-sum">
             {vocab.tn("import.sum_importable", going.length)}
             {warned.length > 0 && (

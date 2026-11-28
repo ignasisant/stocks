@@ -106,6 +106,13 @@ class ImportHolding(BaseModel):
     )
 
 
+class ImportColumn(BaseModel):
+    """One field of the ledger and the column of the file it was read from."""
+
+    field: str = Field(description="`date`, `ticker`, `action`, `quantity`, ...")
+    column: str = Field(description="The file's own name for that column.")
+
+
 class ImportPreview(BaseModel):
     """What a statement would do, having changed nothing.
 
@@ -198,6 +205,21 @@ class ImportPreview(BaseModel):
             "With `kind` `positions`, what the report says is held. Nothing to "
             "commit as it is: each becomes a buy once dated, and "
             "`/import/buy-dates` offers the days its price was on the board."
+        ),
+    )
+    columns: list[ImportColumn] = Field(
+        default_factory=list,
+        description=(
+            "How a file no parser owns was read, field by field. Empty for a "
+            "dedicated parser and for a PDF: only a read by column mapping "
+            "has columns to show, and the reader checks them before confirming."
+        ),
+    )
+    new_positions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tickers of the rows a commit would add that the book holds no "
+            "line of yet — what \"2 new positions\" on the confirm button counts."
         ),
     )
     unlisted: list[str] = Field(

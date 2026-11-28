@@ -2407,6 +2407,74 @@ img.ag-search-logo {
   overflow-y: auto;
 }
 
+/* The wizard is a screen of its own, not a dialog: full viewport, opaque,
+   no click-outside and no Escape. Its only ways out are each step's small
+   skip and the header's "skip setup". */
+.ag-wz-screen {
+  display: block;
+  padding: 0;
+  overflow-y: auto;
+  background: var(--ag-surface-page);
+}
+
+.ag-wz-screen > .ag-wz {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  max-height: none;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  animation: none;
+}
+
+.ag-wz-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.ag-wz-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-self: center;
+  gap: 14px;
+  width: min(100%, 640px);
+  padding-block: 24px;
+}
+
+.ag-wz-bar {
+  height: 4px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-border);
+  overflow: hidden;
+}
+
+.ag-wz-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ag-brand-accent);
+  transition: width var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-wz-skipall {
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-wz-screen > .ag-wz > .ag-tour-foot {
+  align-self: center;
+  width: min(100%, 640px);
+}
+
 .ag-wz-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
@@ -2450,6 +2518,7 @@ img.ag-search-logo {
 .ag-wz-ctitle {
   font-size: var(--ag-fs-base);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .ag-wz-cline {
@@ -2575,10 +2644,9 @@ img.ag-search-logo {
 /* A tall step scrolls under its buttons, which stay in reach. */
 .ag-wz .ag-tour-foot {
   position: sticky;
-  bottom: -22px;
-  margin-bottom: -22px;
-  padding-block: 8px 22px;
-  background: var(--ag-surface-raised);
+  bottom: 0;
+  padding-block: 10px;
+  background: var(--ag-surface-page);
 }
 
 @media (hover: hover) {
@@ -2590,7 +2658,8 @@ img.ag-search-logo {
 @media (pointer: coarse) {
   .ag-wz-card,
   .ag-wz-mrow,
-  .ag-wz-chip {
+  .ag-wz-chip,
+  .ag-wz-skipall {
     min-height: 44px;
   }
 }

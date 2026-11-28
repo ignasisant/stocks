@@ -532,7 +532,8 @@ _HEADER_WORDS: dict[str, tuple[str, ...]] = {
     "price": ("price", "precio", "price per share", "price per coin",
               "precio unitario", "cotizacion", "kurs", "prezzo", "cours",
               "unit price", "valor liquidativo", "nav", "net asset value",
-              "preco", "ausfuhrungskurs", "cambio", "prix", "koers"),
+              "preco", "ausfuhrungskurs", "cambio", "prix", "koers", "each",
+              "per unit", "per share", "unit"),
     "amount": ("value", "total", "importe", "total amount", "gross amount",
                "valor total", "importe total", "efectivo", "contravalor",
                "montant", "betrag", "amount", "controvalore", "consideration",
@@ -801,6 +802,21 @@ _SENTENCE = re.compile(
 )
 
 
+def _has_sell_sign(rows: list[list[str]], indexes: list[int | None],
+                   decimal: str, thousands: str) -> bool:
+    """Whether any money or quantity cell is negative: the only way a file
+    with no type column tells a sale from a purchase."""
+    for row in rows:
+        for i in indexes:
+            if i is None or i >= len(row):
+                continue
+            cell = row[i].strip()
+            value = _number(cell, decimal, thousands)
+            if value is not None and (value < 0 or cell.startswith("(")):
+                return True
+    return False
+
+
 def guess_mapping(grid: list[list[str]]) -> dict | None:
     """A mapping worked out from the file alone, or None.
 
@@ -925,6 +941,17 @@ def guess_mapping(grid: list[list[str]]) -> dict | None:
     decimal, thousands = _sniff_separators(
         rows, [columns[f] for f in ("price", "amount", "quantity", "fee")]
         + [debit, credit])
+    if (columns["action"] is None and not sentence and debit is None
+            and credit is None
+            and (columns["ticker"] is None
+                 or _symbol_tier(rows, columns["ticker"]) != 2)
+            and not _has_sell_sign(
+                rows, [columns["quantity"], columns["amount"]], decimal, thousands)):
+        # No column says what happened and no sign says which way: every row
+        # would be booked a buy, unless an ISIN names each line outright.
+        # A shipping or order list has a date, a name, a count and a price too;
+        # a statement says what each row was.
+        return None
     date_cells = [r[columns["date"]] for r in _data_rows(grid, header_row)
                   if columns["date"] < len(r)]
     price_head = header[columns["price"]] if columns["price"] is not None else ""

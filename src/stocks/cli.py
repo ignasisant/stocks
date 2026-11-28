@@ -1020,6 +1020,8 @@ def cmd_logs(args: argparse.Namespace) -> None:
             entries += fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
         elif args.logs_command == "connector" and not files:
             entries = fetch(args.limit, http=False, extra=lq.CONNECTOR_EXTRA)
+        elif args.logs_command == "wizard" and not files:
+            entries = fetch(args.limit, http=False, extra=lq.WIZARD_EXTRA)
         elif args.logs_command == "shares" and not files:
             entries = fetch(args.limit, http=False, extra=lq.SHARES_EXTRA)
         elif args.logs_command == "installs" and not files:
@@ -1053,6 +1055,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
         return
     if args.logs_command == "connector":
         print(lq.render_connector(lq.connector(entries)))
+        return
+    if args.logs_command == "wizard":
+        print(lq.render_wizard(lq.wizard(entries)))
         return
     if args.logs_command == "shares":
         print(lq.render_shares(lq.shares(entries)))
@@ -1870,6 +1875,12 @@ def build_parser() -> argparse.ArgumentParser:
              "-> approved -> first tool call, in accounts")
     _common(p_con, with_output=False)
     p_con.set_defaults(since="30d", limit=20000)
+    p_wiz = logs_sub.add_parser(
+        "wizard",
+        help="first-run wizard: who opened it, answered, skipped or stopped, "
+             "and the audience it describes (language, residence, AI, profile)")
+    _common(p_wiz, with_output=False)
+    p_wiz.set_defaults(since="30d", limit=20000)
     p_shr = logs_sub.add_parser(
         "shares",
         help="shared answers: links made -> opened -> kept asking -> signup "
