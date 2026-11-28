@@ -1598,6 +1598,11 @@ export type ImportBroker = {
   "label": string;
 };
 
+export type ImportColumn = {
+  "field": string;
+  "column": string;
+};
+
 export type ImportHolding = {
   "row": number;
   "ticker": string;
@@ -1649,6 +1654,8 @@ export type ImportPreview = {
   "needs_broker"?: boolean;
   "brokers"?: ImportBroker[];
   "holdings"?: ImportHolding[];
+  "columns"?: ImportColumn[];
+  "new_positions"?: string[];
   "unlisted"?: string[];
   "doubted"?: string[];
 };
@@ -3980,6 +3987,12 @@ export type TrendTables = {
   "blocks": TrendBlock[];
 };
 
+export type UiEvent = {
+  "action": "override" | "replace" | "guide" | "guide_broker" | "paste" | "broker_asked" | "broker_answered";
+  "detail"?: string;
+  "digest"?: string;
+};
+
 export type UnbookedDividend = {
   "ticker": string;
   "ex_date": string;
@@ -4176,6 +4189,13 @@ export type WatchlistEntry = {
 
 export type Wipe = {
   "confirm": string;
+};
+
+export type WizardEvent = {
+  "step": "lang" | "residence" | "ai" | "which" | "connect" | "memo" | "review" | "risk" | "horizon" | "focus" | "constraints" | "notes" | "done" | "all";
+  "action": "shown" | "answered" | "skipped" | "finished";
+  "value"?: string | null;
+  "ms"?: number | null;
 };
 
 /** The 200 answer of every GET route, by path under `/api/v1`. */

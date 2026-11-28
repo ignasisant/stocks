@@ -215,7 +215,19 @@ def _tally(values) -> str:
     return ",".join(f"{k}:{n}" for k, n in ranked)
 
 
-def watch_preview(fp: dict, found, checked, rows: int, digest: str) -> None:
+def _mapped(found) -> str:
+    cols = (found.mapping or {}).get("columns") or {}
+    names = found.columns
+    pairs = [
+        f"{field}:{names[i].split(' · ')[0][:40]}"
+        for field, i in cols.items()
+        if isinstance(i, int) and 0 <= i < len(names)
+    ]
+    return ",".join(pairs)
+
+
+def watch_preview(fp: dict, found, checked, rows: int, digest: str,
+                  asks_broker: bool = False) -> None:
     """Log a finished preview and hand it to the owner's alert: watched until
     a commit when it has something to write, reported now when it has nothing
     (and not because every row is already in the book)."""
@@ -233,6 +245,11 @@ def watch_preview(fp: dict, found, checked, rows: int, digest: str) -> None:
         skipped=len(found.result.skipped),
         unavailable=found.unavailable,
         digest=digest[:16],
+        # Which header fed which field, when a model or the sniffer mapped the
+        # file: the one fact that explains a misread (a price taken from the
+        # wrong column) without keeping a single value from the statement.
+        mapped=_mapped(found),
+        asks_broker=asks_broker,
         currencies=_tally(tx.currency for tx in checked.importable),
         actions=_tally(tx.action for tx in checked.importable),
     )

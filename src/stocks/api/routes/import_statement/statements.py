@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -50,6 +50,7 @@ from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_ma
 from stocks.portfolio.statement import ParseResult
 from stocks.schemas import (
     ImportBroker,
+    ImportColumn,
     ImportHolding,
     ImportPlatform,
     ImportPlatforms,
@@ -138,9 +139,10 @@ def preview(
         found.platform, body.filename, raw, found.result, checked,
         surface=body.surface,
     )
-    watch_preview(fp, found, checked, len(checked.fresh), digest)
     importable = checked.importable
     detected = platforms.detected_broker(importable)
+    watch_preview(fp, found, checked, len(checked.fresh), digest,
+                  asks_broker=bool(importable or found.holdings) and not detected)
     # How each row has done: the book it lands in for a sale's cost, and one
     # bounded quote request for the buys — a throttled Yahoo costs the column,
     # never the preview.
@@ -173,9 +175,29 @@ def preview(
             ImportBroker(key=key, label=platforms.broker_label(key)) for key in book
         ],
         holdings=[ImportHolding(**held) for held in found.holdings],
+        columns=_columns(found),
+        new_positions=_new_positions(checked.fresh, prior),
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
         doubted=doubted,
     )
+
+
+def _columns(found) -> list[ImportColumn]:
+    """The mapping a model or sniffed read used, named by the file's columns."""
+    mapping = found.mapping or {}
+    cols = mapping.get("columns") or {}
+    names = found.columns
+    return [
+        ImportColumn(field=f, column=names[i].split(" · ")[0])
+        for f, i in cols.items()
+        if isinstance(i, int) and 0 <= i < len(names) and names[i].strip()
+    ]
+
+
+def _new_positions(fresh, prior) -> list[str]:
+    """Tickers the rows to write open that the book has no line of."""
+    held = {t.ticker for t in prior}
+    return sorted({t.ticker for t in fresh if t.action == "buy"} - held)
 
 
 def _crashed(body: Upload, raw: bytes, stage: str, exc: Exception,
@@ -228,6 +250,44 @@ def client_failure(account: Writer, body: Annotated[ClientFailure, ...]) -> None
     obs.warn("import.refused", stage="browser_read", surface="import",
              why=body.error, bytes=body.bytes)
     import_alert.failed(fp, stage="browser_read", detail=body.error)
+
+
+UI_ACTIONS = (
+    "override",  # "¿No es? Cambiar": detail = "<detected>><chosen>"
+    "replace",  # "Cambiar archivo" on the model's reading
+    "guide",  # the folded "where do I get my statement" opened
+    "guide_broker",  # a broker's steps opened: detail = its key
+    "paste",  # the paste way opened
+    "broker_asked",  # the model-read file asks whose broker it is
+    "broker_answered",  # ...and the reader answered
+)
+
+
+class UiEvent(BaseModel):
+    """What a reader did on the page that no request of its own records."""
+
+    model_config = {"extra": "forbid"}
+
+    action: Literal[UI_ACTIONS]  # type: ignore[valid-type]
+    detail: str = Field(default="", max_length=80, pattern=r"^[\w>:. -]*$")
+    digest: str = Field(default="", max_length=16, pattern=r"^[0-9a-f]*$")
+
+
+@router.post(
+    "/event",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="A reader's choice on the import page",
+)
+def ui_event(account: Writer, body: Annotated[UiEvent, ...]) -> None:
+    """Log one of a closed list of page actions (`UI_ACTIONS`).
+
+    Nothing from the statement travels: the action, a platform key or a
+    broker name the reader picked, and the digest the preview already logged,
+    which is what joins a "broker asked" to the commit that did or did not
+    follow it.
+    """
+    obs.event("import.ui", action=body.action, detail=body.detail,
+              digest=body.digest)
 
 
 @router.post("/commit", response_model=ImportResult, summary="Write the rows")

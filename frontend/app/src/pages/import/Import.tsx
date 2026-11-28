@@ -57,6 +57,7 @@ import { Ledger } from "./Ledger";
 import { Repairs } from "./RepairCard";
 import { Rich } from "./Rich";
 import { Sample } from "./Sample";
+import { ReadAs } from "./ReadAs";
 import { Source } from "./Source";
 import { STUCK_AFTER, missed } from "./stuck";
 import { RowTable } from "./Tables";
@@ -73,13 +74,8 @@ import { SignInWall } from "../../shell/guest";
 import { useGuest } from "../../shell/session";
 import "./import.css";
 
-/** The four steps the canvas numbers, in the order the page is worked. */
-const STEPS = [
-  "import.step_platform",
-  "import.step_statement",
-  "import.step_review",
-  "import.step_confirm",
-];
+/** The three steps the canvas numbers, in the order the page is worked. */
+const STEPS = ["import.step_statement", "import.step_review", "import.step_confirm"];
 
 export default function Page() {
   // In the rail and refusing inside, for the reason given on Profile. A guest
@@ -124,7 +120,7 @@ export default function Page() {
 
 /**
  * The title, the one promise the page makes, and where the reader is in it.
- * `at` is the step being worked; five means all four are done.
+ * `at` is the step being worked; four means all three are done.
  */
 function Head({ at }: { at?: number }) {
   const t = useT();
@@ -198,12 +194,15 @@ function Importer({
   const record = last.state === "loaded" ? last.data : null;
   // No platform named by the link or the page left behind: the one the last
   // import used, which is the likeliest for the next. Still a plain choice.
+  // The reader no longer picks a broker up front: the file says whose it is.
+  // A platform only enters when they correct the reading ("¿No es? Cambiar",
+  // `?platform=`), and then it is the parser tried first.
   const asked = params.get("platform") ?? left?.platform;
-  const recalled = asked
-    ? undefined
-    : platforms.find((e) => e.key === record?.platform);
-  const platform =
-    platforms.find((entry) => entry.key === asked) ?? recalled ?? platforms[0]!;
+  const override = platforms.find((entry) => entry.key === asked) ?? null;
+  const platformKey = override?.key ?? "";
+  const recalled = platforms.find((e) => e.key === record?.platform);
+  // Display only (the sample, the error hint): never the preview's identity.
+  const platform = override ?? recalled ?? platforms[0]!;
   // The picked platform is only tried first: the model reads every file and
   // every parser checks it, so a Revolut PDF dropped under Trading 212 is read
   // anyway. An older server sends no list, and there the platform's is it.
@@ -235,7 +234,7 @@ function Importer({
   const root = useRef<HTMLDivElement>(null);
 
   // Before the preview is asked, so the ask finds this statement kept.
-  useEffect(() => keep(staged, wipe, platform.key), [staged, wipe, platform.key]);
+  useEffect(() => keep(staged, wipe, platformKey), [staged, wipe, platformKey]);
 
   // The platform is part of this query's identity and not just its input: it
   // is the parser tried first, and the one whose reading the model is checked
@@ -246,11 +245,11 @@ function Importer({
   const preview = useApi(
     async () =>
       staged
-        ? await remembered(platform.key, staged, wipe.on, () =>
-            previewOf(platform.key, staged, wipe.on),
+        ? await remembered(platformKey, staged, wipe.on, () =>
+            previewOf(platformKey, staged, wipe.on),
           )
         : null,
-    [platform.key, staged, wipe.on, writes],
+    [platformKey, staged, wipe.on, writes],
   );
   useEffect(() => {
     if (preview.state === "loaded") land(root.current);
@@ -266,12 +265,12 @@ function Importer({
   useEffect(() => {
     const seen = tried.current;
     if (!staged || outcome === null || outcome === seen.data) return;
-    const same = seen.platform === platform.key && seen.staged === staged;
-    tried.current = { platform: platform.key, staged, data: outcome };
+    const same = seen.platform === platformKey && seen.staged === staged;
+    tried.current = { platform: platformKey, staged, data: outcome };
     if (!same && missed(outcome)) miss();
     // `staged` and the platform are read, not watched: a change to either
     // without a new outcome stops at the `seen.data` check above.
-  }, [outcome, staged, platform.key]);
+  }, [outcome, staged, platformKey]);
 
   const held = ledger.state === "loaded" ? ledger.data : null;
   // What the repairs work on and what the example statement must not be offered
@@ -327,7 +326,7 @@ function Importer({
       setStaged(null);
       // So picking the same file again, once it is saved locally, still fires.
       if (file.current) file.current.value = "";
-      reportUnreadable(platform.key, name, blob, error);
+      reportUnreadable(platformKey, name, blob, error);
       miss();
       return;
     }
@@ -395,7 +394,9 @@ function Importer({
   // The staged statement stays: the platform is only the parser tried first,
   // and the preview, keyed on it, reads the same file again under the new one.
   const choose = (key: string) => {
-    if (key === platform.key) return;
+    if (key === platformKey) return;
+    // "" is kept in the link on purpose: it says "no override" and stops
+    // the page left behind (`left`) speaking for the reader again.
     setParams({ platform: key });
     setResult(null);
   };
@@ -416,10 +417,12 @@ function Importer({
   if (unreadable) errors.push(t("import.unreadable"));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
-      t("import.nothing_read", {
-        platform: platform.label,
-        hint: platformHint(t, platform),
-      }),
+      override
+        ? t("import.nothing_read", {
+            platform: override.label,
+            hint: platformHint(t, override),
+          })
+        : t("import.nothing_read_any"),
     );
   const stuck = misses >= STUCK_AFTER && !result;
 
@@ -430,7 +433,7 @@ function Importer({
       ref={root}
     >
       <div className="im-main">
-        <Head at={result ? 5 : staged ? 3 : 2} />
+        <Head at={result ? 4 : staged ? 2 : 1} />
 
         {/* Beside the task the repairs card says this itself; under it, the
             card is a screen away, so the one line that matters comes up here. */}
@@ -450,15 +453,11 @@ function Importer({
           dragging={dragging}
           errors={errors}
           file={file}
-          hint={!staged && !empty}
-          remembered={!!recalled && !staged}
-          onChoose={choose}
           onDragging={setDragging}
           onDrop={onDrop}
           onPaste={onPaste}
           onPick={onPick}
           accepts={kinds}
-          platform={platform}
           platforms={platforms}
           staged={staged}
           assistant={<ToAssistant accepts={kinds} onHanded={clear} staged={staged} />}
@@ -542,21 +541,34 @@ function Importer({
               );
               // A holdings report has no dated rows: its lines are dated here
               // first, and become the rows the same commit writes.
-              return read.kind === "positions" && (read.holdings ?? []).length > 0 ? (
-                <Holdings key={read.digest} preview={read}>
-                  {(dated) => panel(dated, false)}
-                </Holdings>
-              ) : (
-                <Tiers
-                  // A new reading starts with its duplicates left out again,
-                  // and with no ticker corrected.
-                  key={`${read.digest}:${read.platform}`}
-                  onVenue={wrote}
-                  picked={platform}
-                  preview={read}
-                >
-                  {(keep, shown) => panel(shown, keep)}
-                </Tiers>
+              const body =
+                read.kind === "positions" && (read.holdings ?? []).length > 0 ? (
+                  <Holdings key={read.digest} preview={read}>
+                    {(dated) => panel(dated, false)}
+                  </Holdings>
+                ) : (
+                  <Tiers
+                    // A new reading starts with its duplicates left out again,
+                    // and with no ticker corrected.
+                    key={`${read.digest}:${read.platform}`}
+                    onVenue={wrote}
+                    picked={override ?? undefined}
+                    preview={read}
+                  >
+                    {(keep, shown) => panel(shown, keep)}
+                  </Tiers>
+                );
+              return (
+                <>
+                  <ReadAs
+                    onChange={choose}
+                    onReplace={() => file.current?.click()}
+                    override={platformKey}
+                    platforms={platforms}
+                    preview={read}
+                  />
+                  {body}
+                </>
               );
             }}
           </Loaded>
@@ -698,7 +710,7 @@ function Committed({
           <Glyph name="check" />
         </span>
         <div className="im-done-text">
-          <Eyebrow n={4}>{t("import.confirm")}</Eyebrow>
+          <Eyebrow n={3}>{t("import.confirm")}</Eyebrow>
           <Loaded query={ledger} skeleton={<Skeleton rows={1} />}>
             {(count) => (
               <Refreshable>

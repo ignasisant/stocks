@@ -2681,3 +2681,94 @@
   flex-direction: column;
   gap: 12px;
 }
+
+/* ------------------------------------------ how the file was read (ReadAs) */
+
+.im-readas {
+  gap: 10px;
+  padding: 14px 20px;
+}
+
+.im-readas-line {
+  margin: 0;
+  color: var(--ag-text-primary);
+}
+
+.im-readas-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-readas-cols li {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  font-size: 13px;
+}
+
+.im-readas-field {
+  color: var(--ag-text-secondary);
+}
+
+.im-readas-col {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.im-readas-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.im-readas-select {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+}
+
+.im-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .im-link {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------ where to get a statement, folded */
+
+.im-where {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.im-where > summary {
+  cursor: pointer;
+  color: var(--ag-text-secondary);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.im-where[open] > summary {
+  color: var(--ag-text-primary);
+}

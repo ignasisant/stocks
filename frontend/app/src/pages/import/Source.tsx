@@ -1,9 +1,10 @@
 /**
- * Steps one and two in one card: which broker, and its statement.
+ * Step one: the statement, and nothing else asked first.
  *
- * They share a card because they are one decision — a statement means nothing
- * until the parser that reads it is chosen, and changing the platform reads a
- * staged file again under the new one. Under the drop zone, the other ways in
+ * No broker to pick: every parser and the model check the file, so it says
+ * whose it is (`ReadAs` shows the reading and lets the reader overrule it).
+ * Brokers appear only folded under "where do I get my statement", as a help
+ * for a reader who has none yet. Under the drop zone, the other ways in
  * (the paste box for a browser that will not hand over a file, the assistant
  * for a statement no parser here reads), then apart from them the wipe, which
  * has to be decided before the preview is read, not after.
@@ -16,6 +17,7 @@ import { useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent, ReactNode, RefObject } from "react";
 import { useT } from "../../shell/i18n";
 import { MAX_BYTES, acceptOf } from "./api";
+import { note } from "./api";
 import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { Glyph } from "./Glyph";
@@ -25,8 +27,6 @@ import { Way } from "./Way";
 export function Source({
   platforms,
   accepts,
-  platform,
-  onChoose,
   staged,
   dragging,
   onDragging,
@@ -35,16 +35,12 @@ export function Source({
   onPaste,
   file,
   errors,
-  hint,
-  remembered,
   wipe,
   assistant,
 }: {
   platforms: Platform[];
-  /** Every extension a statement can arrive as — not only this platform's. */
+  /** Every extension a statement can arrive as. */
   accepts: string[];
-  platform: Platform;
-  onChoose: (key: string) => void;
   staged: Staged | null;
   /** A file is held over the zone, which lights it up as a target. */
   dragging: boolean;
@@ -55,10 +51,6 @@ export function Source({
   file: RefObject<HTMLInputElement | null>;
   /** What went wrong reading the statement, one sentence each. */
   errors: string[];
-  /** Say where this platform's statement is found. */
-  hint: boolean;
-  /** The platform on show is the one the last import used, not a default. */
-  remembered?: boolean;
   /** The wipe's tick and, once ticked, its confirmation. */
   wipe: ReactNode;
   /** The same statement, read in the assistant instead (`ToAssistant`). */
@@ -73,66 +65,11 @@ export function Source({
   const chosen = staged && staged.surface !== "paste" ? staged : null;
 
   return (
-    <section aria-labelledby="im-platform" className="im-card im-source">
+    <section aria-labelledby="im-file-label" className="im-card im-source">
       <div className="im-block">
-        <div className="im-eyebrow-row">
-          <Eyebrow id="im-platform" n={1}>
-            {t("import.step_platform")}
-          </Eyebrow>
-        </div>
-        {/* One control at every width. Seven brand names do not fit a phone row
-            side by side; letting them wrap solves that without a second control
-            (a dropdown) to keep in step. */}
-        <div aria-labelledby="im-platform" className="im-chips" role="group">
-          {platforms.map((entry) => (
-            <button
-              aria-pressed={entry.key === platform.key}
-              className={entry.key === platform.key ? "im-chip im-chip-on" : "im-chip"}
-              key={entry.key}
-              onClick={() => onChoose(entry.key)}
-              type="button"
-            >
-              {/* The brand mark over its initial, so a logo that fails to load
-                  leaves a letter rather than a hole. Decorative either way:
-                  the name beside it is the label. */}
-              <span aria-hidden="true" className="im-chip-mark">
-                {entry.label.charAt(0).toUpperCase()}
-                {entry.logo ? (
-                  <img
-                    alt=""
-                    height={22}
-                    loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                    src={entry.logo}
-                    width={22}
-                  />
-                ) : null}
-              </span>
-              {entry.label}
-            </button>
-          ))}
-        </div>
-        {remembered && (
-          <p className="im-fine im-remembered">
-            {t("import.remembered", { platform: platform.label })}
-          </p>
-        )}
-      </div>
-
-      <hr className="im-rule" />
-
-      <div className="im-block">
-        <Eyebrow id="im-file-label" n={2}>
-          {t("import.statement_from", { platform: platform.label })}
+        <Eyebrow id="im-file-label" n={1}>
+          {t("import.step_statement")}
         </Eyebrow>
-        {/* A drop zone in this app's words: a bare <input type=file> prints
-            "Choose File / No file chosen" in the browser's language rather than
-            the reader's, and says nothing about what it takes. The input is
-            still the control — visually hidden, focusable, inside the label
-            that opens it — so the keyboard and a screen reader get the native
-            dialog, and a drop lands on the same pipeline as a pick. */}
         <label
           className={dragging ? "im-drop im-drop-on" : "im-drop"}
           onDragEnter={(event) => {
@@ -153,7 +90,6 @@ export function Source({
             aria-labelledby="im-file-label"
             className="im-file"
             id="im-file"
-            key={platform.key}
             onChange={onPick}
             ref={file}
             type="file"
@@ -192,7 +128,7 @@ export function Source({
           </ul>
         )}
 
-        {hint && <Guide platform={platform} />}
+        {!chosen && <Guide platforms={platforms} />}
 
         <p className="im-eyebrow im-ways-label" id="im-ways-label">
           {t("import.ways")}
@@ -205,7 +141,10 @@ export function Source({
             aria-controls="im-paste-body"
             aria-expanded={pasting}
             icon="paste"
-            onClick={() => setPasting((open) => !open)}
+            onClick={() => {
+              if (!pasting) note("paste");
+              setPasting((open) => !open);
+            }}
             sub={t("import.paste_sub")}
             title={t("import.paste_expander")}
             trail="down"
@@ -217,13 +156,12 @@ export function Source({
           <div className="im-paste-body" hidden={!pasting} id="im-paste-body">
             <p className="im-fine">{t("import.paste_caption")}</p>
             <label className="im-label" htmlFor="im-paste">
-              {t("import.paste_label", { platform: platform.label })}
+              {t("import.paste_label_any")}
             </label>
             {/* No button: the text area commits on blur. */}
             <textarea
               className="im-paste"
               id="im-paste"
-              key={platform.key}
               onBlur={onPaste}
               placeholder={t("import.paste_placeholder")}
               rows={8}
@@ -237,25 +175,73 @@ export function Source({
 }
 
 /**
- * Where the statement is found, in numbered steps beside the file. A platform
- * with no steps written falls back to its one-line hint.
+ * Where to get a statement, folded: broker chips and numbered steps for the
+ * reader who has no file yet. Choosing a chip only changes the steps shown —
+ * it never touches how the file is read.
  */
-function Guide({ platform }: { platform: Platform }) {
+function Guide({ platforms }: { platforms: Platform[] }) {
   const t = useT();
-  const key = `import.guide_${platform.key}`;
-  if (!t.has(key)) return <p className="im-fine">{platformHint(t, platform)}</p>;
-  const text = t(key);
+  const [shown, setShown] = useState<string | null>(null);
+  const entry = platforms.find((e) => e.key === shown) ?? null;
+  const key = entry ? `import.guide_${entry.key}` : "";
   return (
-    <div className="im-guide">
-      <p className="im-guide-title">
-        {t("import.guide_title", { platform: platform.label })}
-      </p>
-      <ol className="im-guide-steps">
-        {text.split("|").map((step) => (
-          <li key={step}>{step}</li>
+    <details
+      className="im-where"
+      onToggle={(event) => {
+        if (event.currentTarget.open) note("guide");
+      }}
+    >
+      <summary>{t("import.where_title")}</summary>
+      <div aria-label={t("import.where_title")} className="im-chips" role="group">
+        {platforms.map((p) => (
+          <button
+            aria-pressed={p.key === shown}
+            className={p.key === shown ? "im-chip im-chip-on" : "im-chip"}
+            key={p.key}
+            onClick={() => {
+              if (p.key !== shown) note("guide_broker", p.key);
+              setShown(p.key === shown ? null : p.key);
+            }}
+            type="button"
+          >
+            <span aria-hidden="true" className="im-chip-mark">
+              {p.label.charAt(0).toUpperCase()}
+              {p.logo ? (
+                <img
+                  alt=""
+                  height={22}
+                  loading="lazy"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
+                  src={p.logo}
+                  width={22}
+                />
+              ) : null}
+            </span>
+            {p.label}
+          </button>
         ))}
-      </ol>
-    </div>
+      </div>
+      {entry &&
+        (t.has(key) ? (
+          <div className="im-guide">
+            <p className="im-guide-title">
+              {t("import.guide_title", { platform: entry.label })}
+            </p>
+            <ol className="im-guide-steps">
+              {t(key)
+                .split("|")
+                .map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+            </ol>
+          </div>
+        ) : (
+          <p className="im-fine">{platformHint(t, entry)}</p>
+        ))}
+      <p className="im-fine">{t("import.where_other")}</p>
+    </details>
   );
 }
 
