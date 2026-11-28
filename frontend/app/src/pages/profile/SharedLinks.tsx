@@ -22,7 +22,7 @@ import { Badge } from "../../ui/Badge";
 import { Failure, Row } from "./ui";
 
 /** How long a link works after it is made — the server's `shares.TTL_S`. */
-export const SHARE_TTL_MS = 48 * 3600 * 1000;
+const SHARE_TTL_MS = 48 * 3600 * 1000;
 
 /** When a link stops working, day and time in the reader's language and
  *  clock; "" for a bad stamp. */

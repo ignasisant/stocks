@@ -23,7 +23,7 @@ One differentiator per scene. Basics (value, TWR, FIFO) never get a scene of the
   (= `src/stocks/web/landing_css.py`, dark). Titles mark the gradient words with `*asterisks*`:
   `'Tu cartera, *dentro de Claude*'`. Kicker = mono eyebrow pill. Outro carries `cta:`.
 - **Hook in ≤2 s on real UI**: a question with stakes, already zoomed on where the answer is.
-- **Sample data disclosed**: `release.badge` set, narration says "cartera de ejemplo" early, `tag:` on cards.
+- **Looks real**: no sample/example label anywhere (no `release.badge`, narration, tags); `tag:` is a neutral brand line.
 - **Short copy**: ≈2.4 words/s; cards ≤2 items; subtitles ≤42 chars × 2 lines.
 
 ## Polish (on by default)

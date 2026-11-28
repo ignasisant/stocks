@@ -265,7 +265,12 @@ def test_cash_that_cannot_be_converted_leaves_no_total(signed_in, connected, mon
     monkeypatch.setattr(
         enablebanking,
         "balances",
-        lambda uid: [{"balance_type": "CLBD", "balance_amount": {"amount": "10", "currency": "XXX"}}],
+        lambda uid: [
+            {
+                "balance_type": "CLBD",
+                "balance_amount": {"amount": "10", "currency": "XXX"},
+            }
+        ],
     )
     signed_in.post("/v1/bank/connections/sid-1/refresh")
     monkeypatch.setattr(

@@ -39,6 +39,7 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts, cache, obs, ratelimit
 from stocks.api import deps
+from stocks.api.security import Caller
 from stocks.config import public_origin
 from stocks.connector import store
 from stocks.portfolio.edits import EditError
@@ -1550,7 +1551,7 @@ async def import_book(
                            "Preview again and show the person the new plan.")
         try:
             done = statements.commit(
-                None, paths,
+                Caller(kind="token"), paths,
                 Commit(rows=wanted, broker=broker.strip().lower(),
                        platform=statements.BOOK_KEY, surface="paste",
                        filename="Sent by a connected AI"),

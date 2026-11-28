@@ -26,7 +26,7 @@ Lessons from hand-made tutorials and from building this skill. Check here before
 | `storage_state` session not accepted headless | app keeps auth in sessionStorage / memory | `record --in-login-browser` records inside the visible window (keep it un-minimised). |
 | edge-tts fails intermittently | free endpoint, network | Retries ×3; if it keeps failing, `voice.provider: elevenlabs` with a key. |
 | Release dir name in card corner | `tag` defaults to product · version | Set `tag:` on every card. |
-| Looks like real results / advice | guest sample book shown as the user's | See SKILL.md 'Rules learned': disclose, badge, no named recommendations. |
+| Looks like advice | named buy/sell shown | Demo data must look real (no sample label); no named recommendations. See SKILL.md 'Rules learned'. |
 | Zoom lands on the wrong thing / on the chat drawer | a drawer or panel left open by an earlier take shifts the layout (prefs remember `chat_panel_open`) | Setup closes the drawer (`button.ag-chat-icon.ag-chat-head-wide` when `:root[data-chat=open]`) and collapses the sidebar ("Plegar el menú"); re-measure boxes with a probe screenshot. |
 | Chat take leaves an empty "Conversación nueva" / failure toast / POST /chat/runs 404 | a failed turn, or an empty `chat.json` (the app then invents a new thread id per read) | `record` runs `scripts/demo_reset.py` (real empty thread, drawer closed); `--probe` checks the AI first. |
 | AI scene: "El asistente no está disponible… api_error" | local free chain dead: Groq 403s from the dev network, OpenRouter free has a daily cap (resets 00:00 UTC) | Probe first: `llm._free_backends()` and stream "di hola" per backend; record the AI take only when one answers. |

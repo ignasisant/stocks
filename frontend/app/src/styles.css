@@ -2627,7 +2627,7 @@ img.ag-search-logo {
 .ag-wz-on .ag-wz-mck {
   border-color: var(--ag-brand-accent);
   background: var(--ag-brand-accent);
-  color: #fff;
+  color: var(--ag-on-brand);
 }
 
 .ag-wz-err {

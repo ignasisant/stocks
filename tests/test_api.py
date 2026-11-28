@@ -705,6 +705,8 @@ WRITES = {
     ("/v1/import/commit", "post"),
     # What the import page did (override, replace, guide…): action names only.
     ("/v1/import/event", "post"),
+    # The onboarding wizard's answers (language, residence) and step events.
+    ("/v1/onboarding/wizard", "post"),
     # A statement attached to a conversation. The preview writes no ledger rows
     # — but it files the assistant's note on the thread and, for an export no
     # parser owns, spends a model call, so it is a write like the commit that
@@ -848,6 +850,11 @@ WRITES = {
     # applied or dismissed: the same list, rewritten.
     ("/v1/chat/memories/{lid}/replace", "post"),
     ("/v1/chat/memories/suggestions/{sid}", "post"),
+    # Bringing memories over from another assistant: the preview saves nothing
+    # (it is here for the reason /v1/import/preview is), the import writes each
+    # reviewed statement as its own memory.
+    ("/v1/chat/memories/import/preview", "post"),
+    ("/v1/chat/memories/import", "post"),
     # Marking the what's-new modal as read. A write because that is exactly
     # what it is: the stamp is what stops the card interrupting this account
     # again, and a token that could set it would retire an announcement the

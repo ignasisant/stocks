@@ -35,7 +35,7 @@ A backend change with no UI that users still benefit from → a `diagram` scene 
 ```markdown
 # <title> — guion (<N> palabras ≈ <S> s)
 
-Fuentes: PR <links>. Entorno: <env> (guest, libro de ejemplo).
+Fuentes: PR <links>. Entorno: <env>.
 
 | # | Escena | Narración | En pantalla |
 |---|---|---|---|

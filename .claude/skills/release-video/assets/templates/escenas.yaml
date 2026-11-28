@@ -5,11 +5,10 @@ release:
   title: TITULO
   product: MyBrainStock
   max_duration: 60
-  badge: 'Cartera de ejemplo · operaciones inventadas'
 scenes:
   - id: mapa
     kind: ui
-    narration: "¿Cuáles de tus acciones son buen negocio… y además están baratas? Mira esta cartera de ejemplo en un mapa: arriba, mejor negocio; a la derecha, más barato. Pulsa dos años y cada punto deja su rastro: Tesla ha pasado de calidad cincuenta y tres a veintiocho."
+    narration: "¿Cuáles de tus acciones son buen negocio… y además están baratas? Mira tu cartera en un mapa: arriba, mejor negocio; a la derecha, más barato. Pulsa dos años y cada punto deja su rastro: Tesla ha pasado de calidad cincuenta y tres a veintiocho."
     setup: &mapsetup
       - {do: goto, url: '/review?in=all'}
       - {do: wait_for, target: {text: 'Calidad frente a precio', exact: true}}
@@ -58,8 +57,8 @@ scenes:
   - id: mcp
     kind: card
     narration: "Y si usas Claude, conéctalo por MCP: tu cartera, dentro de tu propio chat."
-    card: {tag: 'Cartera de ejemplo', kicker: Conector MCP, title: 'Tu cartera, *dentro de Claude*', shot: {scene: mapa, at: 0.5}, shot_focus: [50, 40], items: [{title: 'Claude Desktop o claude.ai', text: 'Añade el conector de MyBrainStock', on: Claude}, {title: 'Pregunta como siempre', text: 'Claude lee posiciones, rentabilidad e impuestos', on: cartera}]}
+    card: {tag: mybrainstock.com, kicker: Conector MCP, title: 'Tu cartera, *dentro de Claude*', shot: {scene: mapa, at: 0.5}, shot_focus: [50, 40], items: [{title: 'Claude Desktop o claude.ai', text: 'Añade el conector de MyBrainStock', on: Claude}, {title: 'Pregunta como siempre', text: 'Claude lee posiciones, rentabilidad e impuestos', on: cartera}]}
   - id: cierre
     kind: outro
     narration: "MyBrainStock. Pruébalo gratis en mybrainstock.com."
-    card: {tag: 'Cartera de ejemplo', kicker: 'Gratis · sin registro', title: 'Tu cartera, *leída y en un mapa*', cta: mybrainstock.com, shot: {scene: mapa, at: 0.97}, shot_focus: [25, 45]}
+    card: {tag: mybrainstock.com, kicker: 'Gratis · sin registro', title: 'Tu cartera, *leída y en un mapa*', cta: mybrainstock.com, shot: {scene: mapa, at: 0.97}, shot_focus: [25, 45]}

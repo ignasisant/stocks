@@ -1183,7 +1183,7 @@
   height: 24px;
   flex: none;
   margin: 0;
-  border: 1px solid var(--ag-border-strong, var(--ag-border));
+  border: 1px solid var(--ag-border);
   border-radius: 999px;
   background: var(--ag-surface-hover);
   appearance: none;
@@ -1208,7 +1208,7 @@
 }
 
 .ag-chat-memory-switch input:checked::after {
-  background: #fff;
+  background: var(--ag-on-brand);
   transform: translateX(16px);
 }
 
@@ -1309,7 +1309,7 @@
   border-radius: 4px;
   background: var(--ag-cta-tint);
   color: var(--ag-text-primary);
-  font-family: var(--ag-font-mono, monospace);
+  font-family: var(--ag-font-mono);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -4671,7 +4671,7 @@ a.ag-chat-btn {
 }
 @media (hover: hover) {
   .ag-chat-navrow:hover {
-    border-color: var(--ag-border-strong, var(--ag-border));
+    border-color: var(--ag-border-focus);
   }
 }
 @media (pointer: coarse) {

@@ -8,7 +8,7 @@ release:
   title: Compara tu cartera con el S&P 500
   product: MyBrainStock                    # shown on cards
   max_duration: 60                     # optional override
-  badge: 'Cartera de ejemplo · operaciones inventadas'   # burned top-right on every ui/video frame at build
+  # badge: '...'   # optional pill burned on every ui/video frame; leave unset (never a sample-data label)
   scenes:
   - id: gancho
     kind: card                         # title | card | diagram | outro | ui | video
