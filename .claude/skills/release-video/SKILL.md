@@ -68,6 +68,21 @@ go in `references/pronunciacion.yaml` (audio only).
    `qa/contact_sheet.jpg`. **Look at the contact sheet and frames of every UI scene**: readable
    subtitles, right thing on screen, no sample-book weirdness, no error/empty screens. Traps: `references/problemas.md`.
 
+3. **Self-review gate — before telling the user the video is ready.** `qa: ok` is only technical; it is
+   never "done". Open EVERY `qa_<format>/frame_*.png` (not only the contact sheet) and judge each scene
+   as a viewer on a phone, in the 9:16 file first. Write the verdict per scene (one line) in your reply;
+   fix and rebuild until all pass. Do not wait for the user to find these:
+   - **Hook (0-3 s)**: moving real UI or a question with stakes, not a static title card.
+   - **Frame**: nothing cut by the edges, caption or bottom nav; no dead black band; cards show whole.
+   - **Cursor/highlight** never covers the text being narrated; zoom lands on the narrated element.
+   - **Voice = screen** at each subtitle: what is said is what is visible (last words included).
+   - **Something happens** in every UI scene (a click, an edit, a scroll), not a static page.
+   - **Looks real**: no internal labels (model name, thread title, `example.com`), empty states,
+     0 % tiles, error/price-feed banners, mock cards that pass as real captures of another product.
+   - **Brand**: karaoke accent, colours and logo match the product being shown (Claude cards = Claude).
+   - **Ending**: CTA readable, last card complete.
+   Report the problems you fixed and any you could not (e.g. needs a real capture).
+
 ## Optional: measure and choose
 - **Pace targets from references**: `$PY scripts/analyze_reference.py <local.mp4> --out DIR` → cuts/min, median shot,
   first cut, LUFS. Run on 2–3 product videos you like (the user supplies the files; never download or reuse
