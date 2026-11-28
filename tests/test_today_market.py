@@ -326,3 +326,17 @@ def test_a_weekend_old_read_on_the_right_session_is_not_stale():
 def test_cron_missed_waits_for_the_morning_run(now, missed):
     stored = {"session": "2026-10-30"}
     assert today_market.cron_missed(stored, now.timestamp()) is missed
+
+
+def test_a_us_holiday_is_not_a_session_the_cron_could_miss():
+    # Prod 2026-11-27: the 06:30 cron wrote Wednesday's close (Thursday was
+    # Thanksgiving), and every /today view that day logged today.cron_absent
+    # and asked for a rebuild of a session that never happened.
+    morning = datetime(2026, 11, 27, 7, 38, tzinfo=UTC)
+    assert today_market.expected_session(morning) == "2026-11-25"
+    stored = {"session": "2026-11-25"}
+    assert not today_market.cron_missed(stored, morning.timestamp())
+    assert not today_market.stale(stored, today_market.expected_session(morning))
+    # Black Friday is a half session, not a closure: it still counts.
+    saturday = datetime(2026, 11, 28, 6, 30, tzinfo=UTC)
+    assert today_market.expected_session(saturday) == "2026-11-27"
