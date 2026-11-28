@@ -38,6 +38,7 @@ from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_alias
 from stocks.data.crypto import crypto_name, is_crypto
 from stocks.data.symbols import resolved_codes
 from stocks.portfolio import consistency, lexicon, revolut_crypto, transfers
+from stocks.portfolio.crypto_map import FIAT
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -102,6 +103,9 @@ ISSUE_TEXT = {
     "validate.unknown_ticker": (
         "we don't recognise {ticker} — it imports, but may show no price if "
         "it's your broker's own code (SAN instead of SAN.MC)"
+    ),
+    "validate.currency_pair": (
+        "{ticker} is a currency conversion, not a share — it is not a position"
     ),
     "validate.negative_quantity": "the number of shares can't be negative ({value})",
     "validate.negative_price": "the price can't be negative ({value})",
@@ -403,6 +407,15 @@ def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:
         return
     if t in known:
         return
+    if _currency_pair(t):
+        # IBKR writes a conversion as BASE.QUOTE (EUR.USD). Asking Yahoo for it
+        # raises yahoo.unlisted, and a bought pair would be a holding that
+        # never prices; its fee row may still be real, so only trades are out.
+        severity = "error" if c.tx.action in _QUANTIFIED else "warning"
+        c.issues.append(
+            Issue(severity, "ticker", "validate.currency_pair", {"ticker": t})
+        )
+        return
     # A pair whose coin the app has a name for is as known as a watchlist
     # symbol: crypto is never in EDGAR, so without this every row of a
     # perfectly ordinary wallet export carries an "unknown ticker" warning.
@@ -423,6 +436,11 @@ def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:
             {"ticker": t, "sources": sources},
         )
     )
+
+
+def _currency_pair(ticker: str) -> bool:
+    base, dot, quote = ticker.partition(".")
+    return bool(dot) and base in FIAT and quote in FIAT
 
 
 def _check_duplicate(c: Checked, seen: set, similar: set) -> None:

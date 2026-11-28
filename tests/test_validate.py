@@ -416,3 +416,39 @@ def test_a_net_dividend_is_a_duplicate_of_its_grossed_up_row():
     v = validate(_result([again]), [booked], known=KNOWN, today=TODAY)
     assert v.fresh == []
     assert len(v.duplicates) == 1
+
+
+def test_an_fx_conversion_is_not_a_security_and_never_reaches_yahoo():
+    # Prod 2026-11-27: an IBKR export read by the model carried its currency
+    # conversions as EUR.USD / USD.AED rows; validation asked Yahoo for them
+    # (yahoo.unlisted, which pages the owner) and a bought pair would sit in
+    # the book as a holding that never prices.
+    asked: list[str] = []
+
+    def lookup(t):
+        asked.append(t)
+        return False
+
+    fee = Transaction(date="2025-01-03", ticker="USD.AED", action="fee", fee=2.0)
+    v = validate(
+        _result([_buy(ticker="EUR.USD", qty=1000.0, price=1.08), fee]),
+        [],
+        known=KNOWN,
+        lookup=lookup,
+        today=TODAY,
+    )
+    assert asked == []
+    assert [i.key for c in v.rejected for i in c.errors] == ["validate.currency_pair"]
+    assert [i.key for c in v.flagged for i in c.warnings] == ["validate.currency_pair"]
+
+
+def test_a_listed_share_with_a_suffix_is_still_looked_up():
+    asked: list[str] = []
+    v = validate(
+        _result([_buy(ticker="RMS.PA")]),
+        [],
+        known=KNOWN,
+        lookup=lambda t: asked.append(t) or True,
+        today=TODAY,
+    )
+    assert asked == ["RMS.PA"] and len(v.importable) == 1
