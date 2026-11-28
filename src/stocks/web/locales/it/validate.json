@@ -5,6 +5,7 @@
   "validate.missing_ticker": "manca il ticker",
   "validate.malformed_ticker": "{ticker} non sembra un ticker",
   "validate.unknown_ticker": "non riconosciamo {ticker} — viene importato, ma potrebbe non mostrare alcun prezzo se è un codice interno del tuo broker (SAN invece di SAN.MC)",
+  "validate.currency_pair": "{ticker} è un cambio di valuta, non un'azione — non è una posizione",
   "validate.negative_quantity": "il numero di azioni non può essere negativo ({value})",
   "validate.negative_price": "il prezzo non può essere negativo ({value})",
   "validate.zero_price_sell": "venduto a 0 — corretto se la società è fallita o è stata delistata; l'intera posizione conta come perdita",

@@ -640,15 +640,17 @@ SETTLED_HOUR_UTC = 22
 
 
 def expected_session(now: datetime | None = None) -> str:
-    """The last weekday whose US close has settled, ISO — the session a read
-    built now should close on. Holidays are not known here: on one this names
-    a session that never happened, the rebuild finds the same figures, and
-    MIN_REBUILD_S keeps that from repeating."""
+    """The last US trading day whose close has settled, ISO — the session a
+    read built now should close on. A full NYSE closure is skipped like a
+    weekend (naming it would flag the cron as missed all day and rebuild on
+    every view); a half session still counts."""
     from datetime import timedelta
+
+    from stocks.data.market_holidays import CLOSED, DAYS, US
 
     now = now or datetime.now(UTC)
     day = now.date() if now.hour >= SETTLED_HOUR_UTC else now.date() - timedelta(days=1)
-    while day.weekday() >= 5:
+    while day.weekday() >= 5 or DAYS[US].get(day) == CLOSED:
         day -= timedelta(days=1)
     return day.isoformat()
 
