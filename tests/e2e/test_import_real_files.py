@@ -7,6 +7,7 @@ Without it these tests skip. What is asserted is what a reader would see: the
 page names who read the file, never shows a raw error, and never offers to
 commit zero rows.
 """
+# ruff: noqa: E501
 
 from __future__ import annotations
 

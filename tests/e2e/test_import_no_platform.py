@@ -4,6 +4,7 @@ Synthetic statements only (the reader's own are tried by
 `test_import_real_files.py`). The server here has no model, so an unknown
 layout is read by the column heuristic, which is the path that must not lie.
 """
+# ruff: noqa: E501
 
 from __future__ import annotations
 

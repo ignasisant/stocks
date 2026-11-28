@@ -252,7 +252,7 @@ def client_failure(account: Writer, body: Annotated[ClientFailure, ...]) -> None
     import_alert.failed(fp, stage="browser_read", detail=body.error)
 
 
-UI_ACTIONS = (
+UiAction = Literal[
     "override",  # "¿No es? Cambiar": detail = "<detected>><chosen>"
     "replace",  # "Cambiar archivo" on the model's reading
     "guide",  # the folded "where do I get my statement" opened
@@ -260,15 +260,14 @@ UI_ACTIONS = (
     "paste",  # the paste way opened
     "broker_asked",  # the model-read file asks whose broker it is
     "broker_answered",  # ...and the reader answered
-)
-
+]
 
 class UiEvent(BaseModel):
     """What a reader did on the page that no request of its own records."""
 
     model_config = {"extra": "forbid"}
 
-    action: Literal[UI_ACTIONS]  # type: ignore[valid-type]
+    action: UiAction
     detail: str = Field(default="", max_length=80, pattern=r"^[\w>:. -]*$")
     digest: str = Field(default="", max_length=16, pattern=r"^[0-9a-f]*$")
 
@@ -279,7 +278,7 @@ class UiEvent(BaseModel):
     summary="A reader's choice on the import page",
 )
 def ui_event(account: Writer, body: Annotated[UiEvent, ...]) -> None:
-    """Log one of a closed list of page actions (`UI_ACTIONS`).
+    """Log one of a closed list of page actions (`UiAction`).
 
     Nothing from the statement travels: the action, a platform key or a
     broker name the reader picked, and the digest the preview already logged,

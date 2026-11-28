@@ -10,7 +10,9 @@ leans on, tested here with files shaped like the ones real users bring:
   a count and a price too) is refused, not booked as purchases;
 * the preview says which tickers a commit opens positions in.
 """
+# ruff: noqa: E501
 
+# ruff: noqa: F811
 from __future__ import annotations
 
 from pathlib import Path

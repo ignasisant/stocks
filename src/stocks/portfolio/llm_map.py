@@ -942,12 +942,15 @@ def guess_mapping(grid: list[list[str]]) -> dict | None:
         rows, [columns[f] for f in ("price", "amount", "quantity", "fee")]
         + [debit, credit])
     if (columns["action"] is None and not sentence and debit is None
-            and credit is None and _symbol_tier(rows, columns["ticker"]) != 2
+            and credit is None
+            and (columns["ticker"] is None
+                 or _symbol_tier(rows, columns["ticker"]) != 2)
             and not _has_sell_sign(
                 rows, [columns["quantity"], columns["amount"]], decimal, thousands)):
         # No column says what happened and no sign says which way: every row
-        # would be booked a buy, unless an ISIN names each line outright. A shipping or order list has a date, a name,
-        # a count and a price too; a statement says what each row was.
+        # would be booked a buy, unless an ISIN names each line outright.
+        # A shipping or order list has a date, a name, a count and a price too;
+        # a statement says what each row was.
         return None
     date_cells = [r[columns["date"]] for r in _data_rows(grid, header_row)
                   if columns["date"] < len(r)]
